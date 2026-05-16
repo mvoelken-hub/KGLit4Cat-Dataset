@@ -1,0 +1,29 @@
+services:
+
+  neo4j:
+    image: neo4j:2026.01.3
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:7474:7474"
+      - "127.0.0.1:7687:7687"
+    environment:
+      NEO4J_AUTH: ${NEO4J_USER}/${NEO4J_PASSWORD}
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_apoc_export_file_enabled: "true"
+      NEO4J_server_jvm_additional: "--add-modules jdk.incubator.vector"
+    volumes:
+      - ./data/docker/neo4j/data:/data
+      - ./data/docker/neo4j/logs:/logs
+      - ./data/docker/neo4j/plugins:/plugins
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    environment:
+      - OLLAMA_KV_CACHE_TYPE=q8_0
+      - OLLAMA_KEEP_ALIVE=-1
+      - OLLAMA_HOST=0.0.0.0:11433
+    ports:
+      - "127.0.0.1:11433:11433"
+    volumes:
+      - ./data/docker/ollama/data:/root/.ollama
