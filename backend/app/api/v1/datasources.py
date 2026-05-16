@@ -1,5 +1,5 @@
 from io import BytesIO
-from typing import Any, Annotated
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status, Query
 

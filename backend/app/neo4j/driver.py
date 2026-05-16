@@ -4,7 +4,6 @@ import time
 from neo4j import AsyncGraphDatabase
 from rdflib import Graph, Namespace
 from rdflib_neo4j import HANDLE_VOCAB_URI_STRATEGY, Neo4jStore, Neo4jStoreConfig
-from typing_extensions import deprecated
 
 from app.core.config import Settings, settings
 from logging import Logger
@@ -26,6 +25,8 @@ class Neo4jDriver:
         self.databases: dict[str, str] = settings.db_names.copy()
 
         self.logger = logger
+
+    # Driver management
 
     def get_new_driver(self):
         return AsyncGraphDatabase.driver(
@@ -65,6 +66,8 @@ class Neo4jDriver:
     async def close(self):
         await self._driver.close()
 
+    # Querying and graph management
+
     async def query(self, query: str, parameters: dict | None = None, db_name: str | None = None) -> list[dict]:
         _db_name = self._resolve_db_name(db_name)
         async with self._driver.session(database=_db_name) as session:
@@ -81,7 +84,15 @@ class Neo4jDriver:
         default_graph_store += graph
         default_graph_store.close(commit_pending_transaction=True)
 
-    ## Helpers
+    # Constraint management
+    async def create_uniqueness_constraint(self, label: str, property_key: str, db_name: str | None = None) -> None:
+        query = (
+            f"CREATE CONSTRAINT {label.lower()}_{property_key}_unique IF NOT EXISTS\n"
+            f"ON (n:{label}) REQUIRE n.{property_key} IS UNIQUE"
+        )
+        await self.query(query, db_name=db_name)
+
+    # Helpers
 
     def _get_neo4j_store_config(self, namespaces: list[tuple[str, str]], db_name: str | None = None) -> Neo4jStoreConfig:
         db_name = self._resolve_db_name(db_name)
