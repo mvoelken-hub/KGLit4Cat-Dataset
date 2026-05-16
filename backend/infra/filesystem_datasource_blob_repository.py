@@ -29,13 +29,19 @@ class FileSystemDataSourceBlobRepository:
         with open(zip_path, "rb") as f:
             data = BytesIO(f.read())
             
-        file_name = zip_path.stem
+        file_name = zip_path.name
         return DataPackage.from_bytes(data, file_name)
         
-    def delete_data_package(self, id: str, file_name: str) -> None:
+    def delete_data_package(self, id: str) -> None:
         zip_path = self._get_zip_path(id)
         if zip_path.exists():
             zip_path.unlink()
+
+    def list_data_package_ids(self) -> list[str]:
+        if not self.base_path.exists() or not self.base_path.is_dir():
+            return []
+        
+        return [p.name for p in self.base_path.iterdir() if p.is_dir()]
 
     # Helper methods for internal use
     

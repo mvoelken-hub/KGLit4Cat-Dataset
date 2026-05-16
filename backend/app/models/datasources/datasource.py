@@ -3,7 +3,7 @@ from zipfile import ZipFile, BadZipFile
 from io import BytesIO
 from hashlib import sha256
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field, computed_field, field_validator
 
 from app.models.datasources.errors import (
     InvalidDataPackageZipFileError,
@@ -18,12 +18,17 @@ class FileEntry(BaseModel):
     
     def is_data_package(self) -> bool:
         return self.file_extension == ".zip"
-    
 
 class DataPackage(BaseModel):
     file_name: str
-    file_extension: Literal[".zip"]
     files: list[FileEntry] = Field(..., min_length=1)
+
+    @field_validator("file_name")
+    @classmethod
+    def validate_file_name(cls, v: str):
+        if v.lower().endswith(".zip"):
+            return v[:-4]
+        return v
 
     @computed_field
     @property
@@ -41,6 +46,7 @@ class DataPackage(BaseModel):
 
     @classmethod
     def from_zip_file(cls, zip_file: ZipFile, file_name: str, root_path: str = "") -> "DataPackage":
+        normalized_file_name = cls.normalize_zip_file_name(file_name)
         file_entries: list[FileEntry] = []
         for zip_info in zip_file.infolist():
             if zip_info.is_dir():
@@ -49,7 +55,7 @@ class DataPackage(BaseModel):
             with zip_file.open(zip_info) as f:
                 content = f.read()
             file_entry = FileEntry(
-                file_path=DataPackage.resolve_file_path(zip_info.filename, root_path),
+                file_path=cls.resolve_file_path(zip_info.filename, root_path),
                 file_name=zip_info.filename.split("/")[-1],
                 file_extension="." + zip_info.filename.split(".")[-1],
                 raw_content=content
@@ -62,11 +68,20 @@ class DataPackage(BaseModel):
             else:
                 file_entries.append(file_entry)
         return cls(
-            file_name=file_name,
-            file_extension=".zip",
+            file_name=normalized_file_name,
             files=file_entries
         )
 
+    @staticmethod
+    def normalize_zip_file_name(file_name: str) -> str:
+        if not file_name.lower().endswith(".zip"):
+            raise InvalidDataPackageZipFileError(f"Data package file name must end with .zip: {file_name}")
+        return file_name[:-4]
+    
+    @staticmethod
+    def resolve_file_path(file_name: str, current_path: str) -> str:
+        return current_path + "/" + file_name if current_path else file_name
+    
     def get_file_path_list(self) -> list[str]:
         return [file.file_path for file in self.files]
     
@@ -77,7 +92,7 @@ class DataPackage(BaseModel):
         raise FileEntryNotFoundError(f"File entry with path {file_path} not found in data package {self.file_name}")
     
     def dump_without_raw_content(self) -> dict:
-        return self.model_dump(
+        reduced_dict = self.model_dump(
             mode="json",
             exclude={
                 "files": {
@@ -85,24 +100,13 @@ class DataPackage(BaseModel):
                 }
             }
         )
-    
-    @staticmethod
-    def resolve_file_path(file_name: str, current_path: str) -> str:
-        return current_path + "/" + file_name if current_path else file_name
+
+        for red_file_entry, src_file_entry in zip(reduced_dict["files"], self.files):
+            red_file_entry["byte_size"] = len(src_file_entry.raw_content)
+
+        return reduced_dict
+
     
 DataPackage.model_rebuild()
 FileEntry.model_rebuild()
 
-if __name__ == "__main__":
-    from pprint import pprint as print
-
-    # Example usage
-    with open("C:\\Users\\simcl\\Sciebo\\Masterarbeit_Simon_Clemens\\04_Datensätze\\only_NMR_Files\\1H-1H_STM125.zip", "rb") as f:
-        data = BytesIO(f.read())
-        data_package = DataPackage.from_bytes(data, file_name="1H-1H_STM125.zip")
-    
-    print(data_package.dump_without_raw_content())
-    print(data_package.get_file_path_list())
-    file_entry = data_package.get_file_entry("241.zip/241/pdata/1/parm.txt")
-    if file_entry:
-        print(file_entry.model_dump())

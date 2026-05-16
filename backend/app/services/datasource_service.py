@@ -10,7 +10,9 @@ class DataSourceService:
     def save_data_package(self, data: BytesIO, file_name: str) -> DataPackage:
         
         data_package = DataPackage.from_bytes(data, file_name)
-        self.blob_repository.save_data_package(data, data_package.id, file_name)
+
+        # Note: file_name in DataPackage is stored without the .zip extension
+        self.blob_repository.save_data_package(data, data_package.id, data_package.file_name)
         
         return data_package
 
