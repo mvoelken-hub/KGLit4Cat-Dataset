@@ -181,16 +181,7 @@ cython_debug/
 .cursorindexingignore
 
 # Docker Infra
-**/infra/docker/neo4j/data/*
-**/infra/docker/neo4j/logs/*
-**/infra/docker/neo4j/plugins/*
-**/app/infra/docker/ollama/data/*
-
-
-!**/infra/docker/neo4j/data/.gitkeep
-!**/infra/docker/neo4j/logs/.gitkeep
-!**/infra/docker/neo4j/plugins/.gitkeep
-!**/app/infra/docker/ollama/data/.gitkeep
+data/
 
 # Uplaods / temp
 .runtime/

@@ -30,7 +30,7 @@ if not exist .env.development (
 )
 
 docker compose --env-file .env.development -f docker-compose.dev.yml up -d
-start "API" powershell -NoExit -ExecutionPolicy Bypass -Command "Get-Content .env.development | Where-Object { $_ -and -not $_.StartsWith('#') } | ForEach-Object { $name, $value = $_ -split '=', 2; [Environment]::SetEnvironmentVariable($name, $value, 'Process') }; uv run uvicorn backend.app.main:fastapi_app --host 127.0.0.1 --port 8000"
+start "API" /D "%~dp0backend" powershell -NoExit -ExecutionPolicy Bypass -Command "uv run --env-file ../.env.development uvicorn app.main:fastapi_app --host 127.0.0.1 --port 8000"
 call :wait_for_api
 goto open_browser
 

@@ -3,6 +3,9 @@ services:
   neo4j:
     image: neo4j:2026.01.3
     restart: always
+    ports:
+      - "127.0.0.1:7474:7474"
+      - "127.0.0.1:7687:7687"
     environment:
       NEO4J_AUTH: ${NEO4J_USER}/${NEO4J_PASSWORD}
       NEO4J_PLUGINS: '["apoc"]'
@@ -25,8 +28,8 @@ services:
 
   api:
     build:
-      context: .
-      dockerfile: ./app/infra/docker/api/Dockerfile
+      context: ./backend
+      dockerfile: Dockerfile
     depends_on:
       neo4j:
         condition: service_started
