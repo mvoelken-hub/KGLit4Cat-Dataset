@@ -36,6 +36,7 @@ class FileSystemDataSourceBlobRepository:
         zip_path = self._get_zip_path(id)
         if zip_path.exists():
             zip_path.unlink()
+        zip_path.parent.rmdir()  # Remove the id directory if empty
 
     def list_data_packages(self) -> list[DataPackage]:
         if not self.base_path.exists() or not self.base_path.is_dir():

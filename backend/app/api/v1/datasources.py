@@ -79,3 +79,15 @@ async def list_data_packages(
     datasource_service: DataSourceService = Depends(get_datasource_service),
 ):
     return [_data_package_response(dp) for dp in datasource_service.list_data_packages()]
+
+
+@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_data_package(
+    id: str,
+    datasource_service: DataSourceService = Depends(get_datasource_service),
+):
+    try:
+        datasource_service.delete_data_package(id)
+    except Exception as exc:
+        _raise_datasource_error(exc)
+
