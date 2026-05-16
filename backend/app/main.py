@@ -10,7 +10,9 @@ from app.neo4j.driver import neo4j_driver
 from app.ollama.client import ollama_client
 from app.core.task_registry import task_registry
 
-from app.core.setup import start_setup
+from app.dependencies import get_semantic_service
+
+from app.setup import start_setup
 
 # Import API routers
 from app.api.v1.datasources import router as datasources_router
@@ -32,7 +34,8 @@ async def lifespan(app: FastAPI):
         logger=logger,
         ollama_client=ollama_client,
         neo4j_driver=neo4j_driver,
-        task_registry=task_registry
+        task_registry=task_registry,
+        semantic_service=get_semantic_service(),
     )
 
     # ---------------------------------------------------------------------------

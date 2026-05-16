@@ -11,6 +11,7 @@ from app.domain.semantics import (
     SerializedRdfGraph,
     LoadedRdfGraph,
     load_rdf_graph,
+    VocabAlreadyExistsError
 )
 from app.repositories.semantic_graph_repository import SemanticGraphRepository
 
@@ -23,6 +24,11 @@ class SemanticService:
         self.task_registry = task_registry
 
     async def import_vocabulary(self, rdf_source: HttpUrl | UploadFile, identifier: str) -> VocabSchemeInfo:
+
+        existing_identifiers = await self.semantic_graph_repository.list_vocabulary_identifiers()
+        if identifier in existing_identifiers:
+            raise VocabAlreadyExistsError(f"A vocabulary with identifier '{identifier}' already exists.")
+
         _rdf_source: HttpUrl | SerializedRdfGraph
         if isinstance(rdf_source, UploadFile):
             file_content = await rdf_source.read()

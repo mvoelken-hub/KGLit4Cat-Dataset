@@ -90,4 +90,11 @@ class Neo4jSemanticGraphRepository:
 
         return vocab_info
     
-    
+    async def list_vocabulary_identifiers(self) -> list[str]:
+        result = await self._neo4j_driver.query(
+            """
+            MATCH (v:VocabScheme)
+            RETURN v.identifier AS identifier
+            """
+        )
+        return [record["identifier"] for record in result]

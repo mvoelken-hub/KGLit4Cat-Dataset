@@ -11,3 +11,6 @@ class SemanticGraphRepository(Protocol):
 
     async def get_vocabulary(self, identifier: str) -> VocabSchemeInfo | None:
         ...
+
+    async def list_vocabulary_identifiers(self) -> list[str]:
+        ...

@@ -88,7 +88,7 @@ class Neo4jDriver:
     async def create_uniqueness_constraint(self, label: str, property_key: str, db_name: str | None = None) -> None:
         query = (
             f"CREATE CONSTRAINT {label.lower()}_{property_key}_unique IF NOT EXISTS\n"
-            f"ON (n:{label}) REQUIRE n.{property_key} IS UNIQUE"
+            f"FOR (n:{label}) REQUIRE n.{property_key} IS UNIQUE"
         )
         await self.query(query, db_name=db_name)
 

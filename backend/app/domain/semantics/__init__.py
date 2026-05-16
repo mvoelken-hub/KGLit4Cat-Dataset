@@ -9,6 +9,7 @@ from app.domain.semantics.controlled_vocabularies import (
     VocabResource,
     VocabSchemeInfo,
     VocabTermScheme,
+    VocabAlreadyExistsError
 )
 
 __all__ = [
@@ -19,4 +20,5 @@ __all__ = [
     "VocabResource",
     "VocabSchemeInfo",
     "VocabTermScheme",
+    "VocabAlreadyExistsError",
 ]
