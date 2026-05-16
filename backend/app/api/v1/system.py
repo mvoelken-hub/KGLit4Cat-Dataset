@@ -1,0 +1,156 @@
+import asyncio
+from typing import Any
+
+from fastapi import APIRouter, Depends, Response, status
+
+from app.core.config import Settings
+from app.core.task_registry import TaskRegistry
+from app.dependencies import (
+    get_neo4j_driver,
+    get_ollama_client,
+    get_settings,
+    get_task_registry,
+)
+from app.neo4j.driver import Neo4jDriver
+from app.ollama.client import OllamaClientWrapper
+
+router = APIRouter(tags=["System"])
+
+#region --- Helper functions for health checks and task serialization ---
+
+def _format_check_error(exc: Exception) -> dict[str, str]:
+    return {
+        "type": exc.__class__.__name__,
+        "message": str(exc),
+    }
+
+
+async def _check_neo4j(neo4j_driver: Neo4jDriver, settings: Settings) -> dict[str, Any]:
+    try:
+        await neo4j_driver.verify_connection()
+        return {
+            "status": "ok",
+            "uri": settings.neo4j_uri,
+            "database": settings.db_names["default"],
+        }
+    except Exception as exc:
+        return {
+            "status": "unavailable",
+            "uri": settings.neo4j_uri,
+            "database": settings.db_names["default"],
+            "error": _format_check_error(exc),
+        }
+
+
+async def _check_ollama_embedding(ollama_client: OllamaClientWrapper, settings: Settings) -> dict[str, Any]:
+    try:
+        await ollama_client.verify_embedding()
+        return {
+            "status": "ok",
+            "base_url": settings.ollama_base_url,
+            "model": settings.ollama_embed_model,
+        }
+    except Exception as exc:
+        return {
+            "status": "unavailable",
+            "base_url": settings.ollama_base_url,
+            "model": settings.ollama_embed_model,
+            "error": _format_check_error(exc),
+        }
+
+
+async def _check_ollama_chat(ollama_client: OllamaClientWrapper, settings: Settings) -> dict[str, Any]:
+    try:
+        await ollama_client.verify_chat()
+        return {
+            "status": "ok",
+            "base_url": settings.ollama_base_url,
+            "model": settings.ollama_chat_model,
+        }
+    except Exception as exc:
+        return {
+            "status": "unavailable",
+            "base_url": settings.ollama_base_url,
+            "model": settings.ollama_chat_model,
+            "error": _format_check_error(exc),
+        }
+
+
+def _serialize_task(name: str, task_registry: TaskRegistry) -> dict[str, Any]:
+    task_info = task_registry.get_task_info(name)
+    if task_info is None:
+        return {}
+
+    task = task_info.task
+    exception: str | None = None
+    if task.done() and not task.cancelled():
+        task_exception = task.exception()
+        if task_exception is not None:
+            exception = f"{task_exception.__class__.__name__}: {task_exception}"
+
+    return {
+        "name": name,
+        "status": task_info.status.value,
+        "type": task_info.type.value,
+        "done": task.done(),
+        "cancelled": task.cancelled(),
+        "exception": exception,
+    }
+
+#endregion 
+
+#region --- API endpoints ---
+
+@router.get("/health")
+async def health_check(
+    response: Response,
+    settings: Settings = Depends(get_settings),
+    neo4j_driver: Neo4jDriver = Depends(get_neo4j_driver),
+    ollama_client: OllamaClientWrapper = Depends(get_ollama_client),
+):
+    """
+    Health check endpoint to verify that the API dependencies are reachable.
+    """
+    neo4j_check, embedding_check, chat_check = await asyncio.gather(
+        _check_neo4j(neo4j_driver, settings),
+        _check_ollama_embedding(ollama_client, settings),
+        _check_ollama_chat(ollama_client, settings),
+    )
+
+    checks = {
+        "neo4j": neo4j_check,
+        "ollama_embedding": embedding_check,
+        "ollama_chat": chat_check,
+    }
+
+    healthy = all(check["status"] == "ok" for check in checks.values())
+    if not healthy:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+
+    return {
+        "status": "ok" if healthy else "degraded",
+        "checks": checks,
+    }
+
+
+@router.get("/settings")
+async def get_current_settings(settings: Settings = Depends(get_settings)):
+    """
+    Return current application settings.
+    """
+    return settings.model_dump(mode="json")
+
+
+@router.get("/tasks")
+async def get_tasks(task_registry: TaskRegistry = Depends(get_task_registry)):
+    """
+    Return all currently registered background tasks.
+    """
+    return {
+        "tasks": [
+            _serialize_task(name, task_registry)
+            for name in sorted(task_registry.tasks)
+        ]
+    }
+
+#endregion

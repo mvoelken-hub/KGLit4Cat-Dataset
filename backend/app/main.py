@@ -12,6 +12,9 @@ from app.core.task_registry import task_registry
 
 from app.core.setup import start_setup
 
+# Import API routers
+from app.api.v1.system import router as system_router
+
 
 V1_PREFIX = "/api/v1"
 
@@ -65,4 +68,4 @@ async def root_redirect():
 
 
 # Register routes
-
+fastapi_app.include_router(system_router, prefix=V1_PREFIX)
