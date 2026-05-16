@@ -5,7 +5,7 @@ from hashlib import sha256
 
 from pydantic import BaseModel, Field, computed_field
 
-from errors import (
+from app.models.datasources.errors import (
     InvalidDataPackageZipFileError,
     FileEntryNotFoundError
 )
