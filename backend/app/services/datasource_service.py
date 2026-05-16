@@ -84,9 +84,9 @@ class DataSourceService:
                 continue
             content_chunks_by_file.append(content_chunks)
 
-        return content_chunks_by_file, task_info.status        
+        return content_chunks_by_file, task_info.status
 
-    # Helper
+    # Task runner
 
     async def _run_chunking_task(self, data_package_id: str, buffer_window_size: int, embedding_batch_size: int, semantic_chunking_threshold: float):
         data_package = self.get_data_package(data_package_id)
