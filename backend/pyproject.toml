@@ -5,6 +5,7 @@ description = "My thesis work contributes an automated extraction approach that 
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "charset-normalizer>=3.4.7",
     "fastapi[standard]>=0.136.1",
     "ollama>=0.6.2",
     "pydantic>=2.13.4",
