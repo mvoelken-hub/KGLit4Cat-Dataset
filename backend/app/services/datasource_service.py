@@ -10,12 +10,15 @@ class DataSourceService:
     def save_data_package(self, data: BytesIO, file_name: str) -> DataPackage:
         
         data_package = DataPackage.from_bytes(data, file_name)
-        path = self.blob_repository.save_data_package(data, data_package.id)
+        self.blob_repository.save_data_package(data, data_package.id, file_name)
         
         return data_package
 
     def get_data_package(self, id: str) -> DataPackage:
-       return self.blob_repository.load_data_package(id)
+        return self.blob_repository.load_data_package(id)
+
+    def list_data_package_ids(self) -> list[str]:
+        return self.blob_repository.list_data_package_ids()
     
     def delete_data_package(self, id: str) -> None:
         self.blob_repository.delete_data_package(id)
