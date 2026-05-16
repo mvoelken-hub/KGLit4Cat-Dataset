@@ -1,9 +1,9 @@
-from datasource import (
+from app.models.datasources.datasource import (
     DataPackage,
     FileEntry,
 )
 
-from errors import (
+from app.models.datasources.errors import (
     InvalidDataPackageZipFileError,
     InvalidDataPackageFileNameError,
     DataPackageZipNotFoundError,
