@@ -2,7 +2,7 @@ from typing import Protocol
 from io import BytesIO
 from pathlib import Path
 
-from app.models.datasources import DataPackage, DataPackageIdNotFoundError
+from app.models.datasources import DataPackage, ContentChunk
 
 class DataSourceBlobRepository(Protocol):
     def save_data_package(self, data: BytesIO, id: str, file_name: str) -> Path:
@@ -15,4 +15,10 @@ class DataSourceBlobRepository(Protocol):
         ...
 
     def list_data_packages(self) -> list[DataPackage]:
+        ...
+
+    def save_content_chunks(self, chunks: list[ContentChunk]) -> None:
+        ...
+
+    def load_content_chunks_by_file_path(self, data_package_id: str, file_path: str) -> list[ContentChunk]:
         ...

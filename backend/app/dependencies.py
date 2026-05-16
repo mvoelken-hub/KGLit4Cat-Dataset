@@ -8,7 +8,12 @@ from app.services.datasource_service import DataSourceService
 
 
 datasource_blob_repository = FileSystemDataSourceBlobRepository(settings.uploads_dir)
-datasource_service = DataSourceService(datasource_blob_repository)
+datasource_service = DataSourceService(
+    datasource_blob_repository,
+    settings,
+    ollama_client,
+    task_registry
+)
 
 
 def get_settings() -> Settings:

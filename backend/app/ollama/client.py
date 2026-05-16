@@ -7,8 +7,7 @@ from app.core.config import Settings, settings
 from logging import Logger
 from app.core.logging import logger
 
-Embedding = Sequence[float]
-Embeddings = Sequence[Embedding]
+Embedding = list[float]
 
 class OllamaClientWrapper:
     def __init__(self, settings: Settings, logger: Logger):
@@ -108,13 +107,13 @@ class OllamaClientWrapper:
             await self.verify_chat()
             return await self.chat_client.show(model=previous_model)
 
-    async def get_embeddings(self, input: list[str]) -> Embeddings:
+    async def get_embeddings(self, input: list[str]) -> list[Embedding]:
         response = await self.embedding_client.embed(
             model=self.embed_model,
             input=input,
             dimensions=self.embed_dimensions,
             truncate=False,
         )
-        return response.embeddings
+        return response.embeddings # type: ignore
 
 ollama_client = OllamaClientWrapper(settings=settings, logger=logger)

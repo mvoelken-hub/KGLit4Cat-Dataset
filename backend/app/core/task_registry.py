@@ -44,7 +44,7 @@ class TaskRegistry:
         self.tasks: dict[str, TaskInfo] = {}
         self.logger = logger
 
-    def create_task(self, coro: Coroutine[Any, Any, Any], type: TaskType, name: str) -> asyncio.Task:
+    async def create_task(self, coro: Coroutine[Any, Any, Any], type: TaskType, name: str) -> asyncio.Task:
         """
         Creates and registers a new background task. If a task with the same name is already running, raises TaskStillRunningError. If a task with the same name exists but is not running, it will be removed and replaced by the new task.
 
@@ -64,7 +64,7 @@ class TaskRegistry:
             if task_info.status == TaskStatus.RUNNING:
                 raise TaskStillRunningError(f"Task with name '{name}' is already running.")
             
-            self.remove_task(name)
+            await self.remove_task(name)
         
         task = asyncio.create_task(coro, name=name)
 
@@ -98,20 +98,26 @@ class TaskRegistry:
         with suppress(asyncio.CancelledError):
             await task_info.task
 
-    def get_all_running_tasks(self) -> list[asyncio.Task]:
-        return [task_info.task for task_info in self.tasks.values() if task_info.status == TaskStatus.RUNNING]
+    def get_all_running_tasks(self) -> list[TaskInfo]:
+        return [task_info for task_info in self.tasks.values() if task_info.status == TaskStatus.RUNNING]
         
     async def cancel_all_tasks(self):
         running_tasks = self.get_all_running_tasks()
         
-        for task in running_tasks:
-            task.cancel()
+        for task_info in running_tasks:
+            task_info.task.cancel()
 
-        await asyncio.gather(*running_tasks, return_exceptions=True)
+        await asyncio.gather(*[task_info.task for task_info in running_tasks], return_exceptions=True)
 
-    def remove_task(self, name: str) -> None:
-        if name in self.tasks:
-            del self.tasks[name]
+    async def remove_task(self, name: str) -> None:
+        task_info = self.get_task_info(name)
+        if task_info is None:
+            return
+        await self.cancel_task(name)
+        del self.tasks[name]
+
+        
+
 
     # Internal helper methods for task status management and logging
 

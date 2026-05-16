@@ -1,11 +1,26 @@
 from app.api.v1.schemas.datasources import (
     DataPackageResponse,
     FileEntryResponse,
-    FileEntryContentResponse
+    FileEntryContentResponse,
+    _data_package_response,
+    ChunkingRequest,
+    ChunkResponse,
+    ChunkRequestResponse
+)
+
+from app.api.v1.schemas.tasks import (
+    TaskResponse,
+    _serialize_task
 )
 
 __all__ = [
     "DataPackageResponse",
     "FileEntryResponse",
-    "FileEntryContentResponse"
+    "FileEntryContentResponse",
+    "_data_package_response",
+    "ChunkingRequest",
+    "ChunkResponse",
+    "ChunkRequestResponse",
+    "TaskResponse",
+    "_serialize_task"
 ]

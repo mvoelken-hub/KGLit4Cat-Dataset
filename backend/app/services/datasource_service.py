@@ -1,11 +1,18 @@
 from io import BytesIO
 
-from app.models.datasources import DataPackage, FileEntry
+from app.core.config import Settings
+from app.ollama.client import OllamaClientWrapper
+from app.core.task_registry import TaskRegistry, TaskInfo, TaskType, TaskStatus
+
+from app.models.datasources import DataPackage, FileEntry, ContentChunk, FileEntryNotFoundError
 from app.repositories.datasource_blob_repository import DataSourceBlobRepository
 
 class DataSourceService:
-    def __init__(self, blob_repository: DataSourceBlobRepository):
+    def __init__(self, blob_repository: DataSourceBlobRepository, settings: Settings, ollama_client: OllamaClientWrapper, task_registry: TaskRegistry):
         self.blob_repository = blob_repository
+        self.settings = settings
+        self.ollama_client = ollama_client
+        self.task_registry = task_registry
 
     def save_data_package(self, data: BytesIO, file_name: str) -> DataPackage:
         
@@ -28,3 +35,73 @@ class DataSourceService:
     def get_file_entry(self, id: str, file_path: str) -> FileEntry:
         data_package = self.get_data_package(id)
         return data_package.get_file_entry(file_path)
+    
+    async def chunk_file_entries_in_data_package(
+        self,
+        data_package_id: str,
+        buffer_window_size: int,
+        embedding_batch_size: int,
+        semantic_chunking_threshold: float
+    ) -> tuple[list[list[ContentChunk]], TaskStatus]:
+        
+        TASK_NAME = f"chunking:file_entries:{data_package_id}"
+
+        task_info: TaskInfo | None = self.task_registry.get_task_info(TASK_NAME)
+
+        if not task_info or task_info.status == TaskStatus.CANCELLED:
+            await self.task_registry.create_task(
+                coro=self._run_chunking_task(
+                    data_package_id=data_package_id,
+                    buffer_window_size=buffer_window_size,
+                    embedding_batch_size=embedding_batch_size,
+                    semantic_chunking_threshold=semantic_chunking_threshold
+                ),
+                type=TaskType.CHUNKING,
+                name=TASK_NAME
+            )
+            return [], TaskStatus.RUNNING        
+        
+        elif task_info.status == TaskStatus.CRASHED:
+            exception = task_info.task.exception()
+            raise exception if exception else Exception("Chunking task crashed without an exception.")
+        
+        if task_info.status != TaskStatus.COMPLETED and task_info.status != TaskStatus.RUNNING:
+            raise Exception(f"Unexpected task status: {task_info.status}")
+        
+        # From here the task is either RUNNING or COMPLETED
+        
+        data_package = self.get_data_package(data_package_id)
+        files = data_package.files
+
+        if not files:
+            raise FileEntryNotFoundError("No file entries found in the data package.")
+
+        content_chunks_by_file: list[list[ContentChunk]] = []        
+
+        for file_entry in files:
+            content_chunks = self.blob_repository.load_content_chunks_by_file_path(data_package_id, file_entry.file_path)
+            if not content_chunks:
+                continue
+            content_chunks_by_file.append(content_chunks)
+
+        return content_chunks_by_file, task_info.status        
+
+    # Helper
+
+    async def _run_chunking_task(self, data_package_id: str, buffer_window_size: int, embedding_batch_size: int, semantic_chunking_threshold: float):
+        data_package = self.get_data_package(data_package_id)
+        files = data_package.files
+
+        if not files:
+            raise FileEntryNotFoundError("No file entries found in the data package.")
+        
+        for file_entry in files:
+            content_chunks = await ContentChunk.create_chunks_for_file_entry(
+                data_package_id=data_package_id,
+                file_entry=file_entry,
+                embedding_func=self.ollama_client.get_embeddings,
+                buffer_window_size=buffer_window_size,
+                embedding_batch_size=embedding_batch_size,
+                semantic_chunking_threshold=semantic_chunking_threshold,
+            )
+            self.blob_repository.save_content_chunks(content_chunks)

@@ -1,7 +1,8 @@
 from io import BytesIO
-from typing import Any
+from typing import Any, Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status, Query
+
 
 from app.dependencies import get_datasource_service
 from app.models.datasources import (
@@ -14,15 +15,16 @@ from app.models.datasources import (
 from app.api.v1.schemas import (
     DataPackageResponse,
     FileEntryResponse,
-    FileEntryContentResponse
+    FileEntryContentResponse,
+    _data_package_response,
+    ChunkingRequest,
+    ChunkResponse,
+    ChunkRequestResponse
 )
 from app.services.datasource_service import DataSourceService
 
 router = APIRouter(prefix="/datasources", tags=["Datasources"])
 
-
-def _data_package_response(data_package: DataPackage) -> DataPackageResponse:
-    return DataPackageResponse(**data_package.dump_without_raw_content())
 
 
 def _raise_datasource_error(exc: Exception) -> None:
@@ -108,6 +110,27 @@ async def get_file_entry_content(
             file_extension=file_entry.file_extension,
             content=file_entry.get_extracted_content()
         )
+    except Exception as exc:
+        _raise_datasource_error(exc)
+
+
+@router.post("/chunk", response_model=ChunkRequestResponse)
+async def chunk_file_entries_in_data_package(
+    chunking_request: Annotated[ChunkingRequest, Query(..., description="Chunking parameters")],
+    datasource_service: DataSourceService = Depends(get_datasource_service),
+):
+    try:
+        chunks_by_file, status = await datasource_service.chunk_file_entries_in_data_package(
+            data_package_id=chunking_request.id,
+            buffer_window_size=chunking_request.buffer_window_size,
+            embedding_batch_size=chunking_request.embedding_batch_size,
+            semantic_chunking_threshold=chunking_request.semantic_chunking_threshold
+        )
+        return ChunkRequestResponse(
+            chunks=[[ChunkResponse(**chunk.model_dump()) for chunk in chunks] for chunks in chunks_by_file],
+            status=status
+        )
+    
     except Exception as exc:
         _raise_datasource_error(exc)
 

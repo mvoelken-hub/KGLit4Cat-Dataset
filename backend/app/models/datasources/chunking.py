@@ -1,0 +1,177 @@
+from typing import Any, Callable, TypeVar, Awaitable
+from sklearn.metrics.pairwise import cosine_similarity
+from numpy import percentile
+from hashlib import sha256
+
+from dataclasses import dataclass
+from pydantic import BaseModel, Field, computed_field
+
+from app.models.datasources.datasource import (
+    FileEntry
+)
+
+from app.models.datasources.text_quality import (
+    TextQualityDecision,
+    DecisionKind,
+    classify_text_line
+)
+
+from app.models.datasources.errors import (
+    EmbeddingDistanceCalcError
+)
+
+@dataclass
+class FilteredLine:
+    text: str
+    line_idx: int
+
+@dataclass
+class BufferWindow:
+    line: FilteredLine
+    combined: str
+    embedding: list[float] | None = None
+    distance_next: float | None = None
+
+
+
+class ContentChunk(BaseModel):
+    content: str
+    data_package_id: str
+    file_path: str
+    start_idx: int = Field(..., ge=0, description="Start line index of the chunk in the original file")
+    end_idx: int = Field(..., ge=0, description="End line index of the chunk in the original file")
+    summary: str | None = None
+    embedding: list[float] | None = None
+
+    @computed_field
+    @property
+    def chunk_group_id(self) -> str:
+        return self.get_chunk_group_id_from_file_path(self.file_path)
+
+    @classmethod
+    async def create_chunks_for_file_entry(
+        cls,
+        data_package_id: str,
+        file_entry: FileEntry,
+        embedding_func: Callable[[list[str]], Awaitable[list[list[float]]]],
+        text_classification_func: Callable[[str], TextQualityDecision] = classify_text_line,
+        min_lines_for_chunking: int = 100,
+        buffer_window_size: int = 1,
+        embedding_batch_size: int = 32,
+        semantic_chunking_threshold: float = 95.0,
+    ) -> list["ContentChunk"]:
+        
+        chunk_list: list[ContentChunk] = []
+        
+        lines: list[str] = file_entry.get_extracted_content().splitlines(keepends=True)
+        filtered_lines: list[FilteredLine] = [
+            FilteredLine(text=line, line_idx=i) for i, line in enumerate(lines)
+            if text_classification_func(line).kind == DecisionKind.KEEP
+        ]
+
+        if not filtered_lines:
+            return []
+
+        if len(filtered_lines) < min_lines_for_chunking:
+            return [cls(
+                content="".join(line.text for line in filtered_lines),
+                data_package_id=data_package_id,
+                file_path=file_entry.file_path,
+                start_idx=filtered_lines[0].line_idx,
+                end_idx=filtered_lines[-1].line_idx
+            )]
+        
+        combined_lines = combine_lines(
+            filtered_lines,
+            buffer_size=buffer_window_size
+        )
+
+        for i in range(0, len(combined_lines), embedding_batch_size):
+            batch = combined_lines[i:i + embedding_batch_size]
+            texts_to_embed = [item.combined for item in batch]
+            embeddings = await embedding_func(texts_to_embed)
+            for item, embedding in zip(batch, embeddings):
+                item.embedding = embedding
+
+        distances = attach_cosine_distances(combined_lines)
+
+        breakpoint_distance_threshold = percentile(distances, semantic_chunking_threshold)
+
+        indices_about_threshold = [
+            index for index, distance in enumerate(distances)
+            if distance >= breakpoint_distance_threshold
+        ]
+
+        for i, breakpoint_index in enumerate(indices_about_threshold):
+
+            start_index = 0 if i == 0 else indices_about_threshold[i - 1]
+            end_index = (
+                breakpoint_index
+                if i < len(indices_about_threshold) - 1
+                else len(combined_lines) - 1
+            )
+
+            group = combined_lines[start_index : end_index + 1]
+            combined_text = "".join(item.line.text for item in group)
+            chunk_list.append(cls(
+                content=combined_text,
+                data_package_id=data_package_id,
+                file_path=file_entry.file_path,
+                start_idx=group[0].line.line_idx,
+                end_idx=group[-1].line.line_idx
+            ))
+
+        return chunk_list
+
+    @staticmethod
+    def get_chunk_group_id_from_file_path(file_path: str) -> str:
+        return sha256(file_path.encode()).hexdigest()[:5]
+
+def combine_lines(lines: list[FilteredLine], buffer_size: int = 1) -> list[BufferWindow]:
+    """Combine each line with its neighbours using a sliding buffer window.
+
+    Returns a list of BufferWindow objects.
+    """
+    combined_lines: list[BufferWindow] = []
+
+    for i, line in enumerate(lines):
+        combined_text = ""
+        for j in range(i - buffer_size, i):
+            if 0 <= j:
+                combined_text += lines[j].text
+
+        combined_text += line.text
+
+        for j in range(i + 1, i + buffer_size + 1):
+            if j < len(lines):
+                combined_text += lines[j].text
+
+        combined_lines.append(BufferWindow(line=line, combined=combined_text))
+
+    return combined_lines
+
+def attach_cosine_distances(
+    combined_lines: list[BufferWindow],
+) -> list[float]:
+    """
+    Calculate cosine distances between the embeddings of combined lines and attach them to the BufferWindow objects.
+    
+    Args:
+        - combined_lines: List of BufferWindow objects with embeddings already computed.
+
+    Returns:
+        - List of cosine distances between each line and the next line.
+    """
+    distances: list[float] = []
+    for i, item in enumerate(combined_lines[:-1]):
+        embedding_current = item.embedding
+        embedding_next = combined_lines[i + 1].embedding
+        if embedding_current is None or embedding_next is None:
+            raise EmbeddingDistanceCalcError(f"Missing embedding for line index {i} or {i + 1}")
+        
+        similarity = cosine_similarity([embedding_current], [embedding_next])[0][0] # type: ignore
+        distance = 1 - similarity
+        distances.append(distance)
+        item.distance_next = distance
+
+    return distances

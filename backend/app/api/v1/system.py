@@ -14,6 +14,11 @@ from app.dependencies import (
 from app.neo4j.driver import Neo4jDriver
 from app.ollama.client import OllamaClientWrapper
 
+from app.api.v1.schemas import (
+    TaskResponse,
+    _serialize_task
+)
+
 router = APIRouter(tags=["System"])
 
 #region --- Helper functions for health checks and task serialization ---
@@ -76,27 +81,6 @@ async def _check_ollama_chat(ollama_client: OllamaClientWrapper, settings: Setti
         }
 
 
-def _serialize_task(name: str, task_registry: TaskRegistry) -> dict[str, Any]:
-    task_info = task_registry.get_task_info(name)
-    if task_info is None:
-        return {}
-
-    task = task_info.task
-    exception: str | None = None
-    if task.done() and not task.cancelled():
-        task_exception = task.exception()
-        if task_exception is not None:
-            exception = f"{task_exception.__class__.__name__}: {task_exception}"
-
-    return {
-        "name": name,
-        "status": task_info.status.value,
-        "type": task_info.type.value,
-        "done": task.done(),
-        "cancelled": task.cancelled(),
-        "exception": exception,
-    }
-
 #endregion 
 
 #region --- API endpoints ---
@@ -141,16 +125,11 @@ async def get_current_settings(settings: Settings = Depends(get_settings)):
     return settings.model_dump(mode="json")
 
 
-@router.get("/tasks")
+@router.get("/tasks", response_model=list[TaskResponse])
 async def get_tasks(task_registry: TaskRegistry = Depends(get_task_registry)):
     """
     Return all currently registered background tasks.
     """
-    return {
-        "tasks": [
-            _serialize_task(name, task_registry)
-            for name in sorted(task_registry.tasks)
-        ]
-    }
+    return [_serialize_task(name, task_info) for name, task_info in task_registry.tasks.items()]
 
 #endregion

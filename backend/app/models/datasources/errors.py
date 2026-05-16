@@ -18,3 +18,6 @@ class MultipleDataPackageZipFilesError(ValueError):
 
 class FileEntryNotFoundError(FileNotFoundError):
     pass
+
+class EmbeddingDistanceCalcError(ValueError):
+    pass

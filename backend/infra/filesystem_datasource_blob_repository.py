@@ -1,6 +1,7 @@
 from io import BytesIO
 from pathlib import Path
 from zipfile import ZipFile
+import json
 
 from app.models.datasources import (
     DataPackage,
@@ -8,7 +9,8 @@ from app.models.datasources import (
     InvalidDataPackageFileNameError,
     DataPackageZipNotFoundError,
     DataPackageIdNotFoundError,
-    MultipleDataPackageZipFilesError
+    MultipleDataPackageZipFilesError,
+    ContentChunk
 )
 
 class FileSystemDataSourceBlobRepository:
@@ -53,8 +55,37 @@ class FileSystemDataSourceBlobRepository:
                 continue
         return data_packages
 
-    # Helper methods for internal use
+    def save_content_chunks(self, chunks: list[ContentChunk]) -> None:
+        if not chunks:
+            return
+        
+        data_package_id = chunks[0].data_package_id
+        chunk_group_id = chunks[0].chunk_group_id
+        chunk_dir = self._create_content_chunk_dir(data_package_id)
+        chunk_path = chunk_dir / f"{chunk_group_id}.json"
+        with open(chunk_path, "w", encoding="utf-8") as f:
+            json_chunks = [chunk.model_dump_json() for chunk in chunks]
+            json.dump(json_chunks, f, ensure_ascii=False, indent=2)
     
+    def load_content_chunks_by_file_path(self, data_package_id: str, file_path: str) -> list[ContentChunk]:
+        chunk_group_id = ContentChunk.get_chunk_group_id_from_file_path(file_path)
+        chunks_dir = self._create_content_chunk_dir(data_package_id)
+        if not chunks_dir.exists() or not chunks_dir.is_dir():
+            return []
+        chunk_path = chunks_dir / f"{chunk_group_id}.json"
+        if not chunk_path.exists():
+            return []
+        with open(chunk_path, "r", encoding="utf-8") as f:
+            json_chunks = json.load(f)
+            return [ContentChunk.model_validate_json(json_chunk) for json_chunk in json_chunks]
+
+    # Helper methods for internal use
+
+    def _create_content_chunk_dir(self, data_package_id: str) -> Path:
+        chunk_dir = self.base_path / data_package_id / "chunks"
+        chunk_dir.mkdir(parents=True, exist_ok=True)
+        return chunk_dir
+
     def _create_zip_path(self, id: str, file_name: str) -> Path:
         zip_path = self.base_path / id / f"{file_name}.zip"
         if not str(zip_path).startswith(str(self.base_path)):

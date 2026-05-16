@@ -37,11 +37,11 @@ async def start_setup(
     if settings.skip_model_pull:
         logger.info("Skipping Ollama model pull because skip_model_pull is enabled.")
     else:
-        task_registry.create_task(pull_ollama_models(ollama_client=ollama_client, settings=settings), name="startup:pull_ollama_models:01", type=TaskType.STARTUP)
+        await task_registry.create_task(pull_ollama_models(ollama_client=ollama_client, settings=settings), name="startup:pull_ollama_models:01", type=TaskType.STARTUP)
         await pull_ollama_models(ollama_client=ollama_client, settings=settings)
 
     if settings.load_ollama_models_on_startup:
-        task_registry.create_task(load_ollama_models(ollama_client=ollama_client, model="both"), name="startup:load_ollama_models:01", type=TaskType.STARTUP)
+        await task_registry.create_task(load_ollama_models(ollama_client=ollama_client, model="both"), name="startup:load_ollama_models:01", type=TaskType.STARTUP)
     else:
         logger.info("Skipping Ollama model warm-up because load_ollama_models_on_startup is disabled.")
 
@@ -52,4 +52,4 @@ async def start_setup(
     if settings.skip_initial_vocab_import:
         logger.info("Skipping initial vocabulary import because skip_initial_vocab_import is enabled.")
     else:
-        task_registry.create_task(import_inital_vocab(), name="startup:import_initial_vocabs:01", type=TaskType.STARTUP)
+        await task_registry.create_task(import_inital_vocab(), name="startup:import_initial_vocabs:01", type=TaskType.STARTUP)
