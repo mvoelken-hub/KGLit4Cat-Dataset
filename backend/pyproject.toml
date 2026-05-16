@@ -8,6 +8,8 @@ dependencies = [
     "charset-normalizer>=3.4.7",
     "fastapi[standard]>=0.136.1",
     "ollama>=0.6.2",
+    "pandas[excel]>=3.0.3",
     "pydantic>=2.13.4",
+    "pymupdf>=1.27.2.3",
     "rdflib-neo4j>=1.1",
 ]

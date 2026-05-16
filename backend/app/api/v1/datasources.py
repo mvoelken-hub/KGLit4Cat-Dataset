@@ -12,7 +12,9 @@ from app.models.datasources import (
     MultipleDataPackageZipFilesError,
 )
 from app.api.v1.schemas import (
-    DataPackageResponse
+    DataPackageResponse,
+    FileEntryResponse,
+    FileEntryContentResponse
 )
 from app.services.datasource_service import DataSourceService
 
@@ -88,6 +90,24 @@ async def delete_data_package(
 ):
     try:
         datasource_service.delete_data_package(id)
+    except Exception as exc:
+        _raise_datasource_error(exc)
+
+@router.get("/{id}/files/{file_path:path}", response_model=FileEntryContentResponse)
+async def get_file_entry_content(
+    id: str,
+    file_path: str,
+    datasource_service: DataSourceService = Depends(get_datasource_service),
+):
+    try:
+        data_package = datasource_service.get_data_package(id)
+        file_entry = data_package.get_file_entry(file_path)
+        return FileEntryContentResponse(
+            file_path=file_entry.file_path,
+            file_name=file_entry.file_name,
+            file_extension=file_entry.file_extension,
+            content=file_entry.get_extracted_content()
+        )
     except Exception as exc:
         _raise_datasource_error(exc)
 

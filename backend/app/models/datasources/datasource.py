@@ -7,7 +7,12 @@ from pydantic import BaseModel, Field, computed_field, field_validator
 
 from app.models.datasources.errors import (
     InvalidDataPackageZipFileError,
-    FileEntryNotFoundError
+    FileEntryNotFoundError,
+)
+from app.models.datasources.file_types import (
+    FileType,
+    determine_file_type,
+    extract_text_from_file
 )
 
 class FileEntry(BaseModel):
@@ -15,9 +20,18 @@ class FileEntry(BaseModel):
     file_name: str
     file_extension: str
     raw_content: bytes
+
+    @computed_field
+    @property
+    def file_type(self) -> FileType:
+        return determine_file_type(self.file_extension)
     
     def is_data_package(self) -> bool:
-        return self.file_extension == ".zip"
+        return self.file_type == FileType.ARCHIVE
+    
+    def get_extracted_content(self) -> str:
+        return extract_text_from_file(content=self.raw_content, file_name=self.file_name)
+    
 
 class DataPackage(BaseModel):
     file_name: str

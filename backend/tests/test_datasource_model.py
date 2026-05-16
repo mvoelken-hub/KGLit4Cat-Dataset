@@ -4,7 +4,10 @@ from tempfile import TemporaryDirectory
 from zipfile import ZipFile
 import unittest
 
+import pymupdf
+
 from app.models.datasources import DataPackage, InvalidDataPackageZipFileError
+from app.models.datasources.file_types import FileType, determine_file_type, extract_text_from_file
 from infra.filesystem_datasource_blob_repository import FileSystemDataSourceBlobRepository
 
 
@@ -15,6 +18,13 @@ def zip_bytes(entries: dict[str, bytes]) -> BytesIO:
             zip_file.writestr(file_path, content)
     data.seek(0)
     return data
+
+
+def pdf_bytes(text: str) -> bytes:
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((72, 72), text)
+    return doc.tobytes()
 
 
 class DataPackageTests(unittest.TestCase):
@@ -45,6 +55,40 @@ class DataPackageTests(unittest.TestCase):
 
         self.assertEqual(loaded_data_package.file_name, "sample")
         self.assertEqual(loaded_data_package.get_file_path_list(), ["sample.txt"])
+
+    def test_extract_text_from_file_dispatches_pdf_without_dot_suffix(self):
+        extracted = extract_text_from_file(
+            content=pdf_bytes("Catalyst test content"),
+            file_name="email_Jun23-2017_241_1.pdf",
+        )
+
+        self.assertIn("Catalyst test content", extracted)
+
+    def test_nested_zip_pdf_entry_extracts_text_by_request_path(self):
+        pdf_path = "241/pdata/1/email_Jun23-2017_241_1.pdf"
+        inner_zip = zip_bytes({pdf_path: pdf_bytes("Nested catalyst content")})
+        data_package = DataPackage.from_bytes(
+            zip_bytes({"241.zip": inner_zip.getvalue()}),
+            file_name="outer.zip",
+        )
+
+        file_entry = data_package.get_file_entry(f"241.zip/{pdf_path}")
+
+        self.assertEqual(file_entry.file_extension, ".pdf")
+        self.assertIn("Nested catalyst content", file_entry.get_extracted_content())
+
+    def test_extract_text_from_file_dispatches_csv_without_dot_suffix(self):
+        extracted = extract_text_from_file(
+            content=b"name,value\nsample,42\n",
+            file_name="sample.csv",
+        )
+
+        self.assertIn("Sheet1/1: sample", extracted)
+        self.assertIn("sample,42", extracted)
+
+    def test_determine_file_type_accepts_dotless_extensions(self):
+        self.assertEqual(determine_file_type("pdf"), FileType.PDF)
+        self.assertEqual(determine_file_type("csv"), FileType.TABLE)
 
 
 if __name__ == "__main__":

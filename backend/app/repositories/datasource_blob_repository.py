@@ -16,4 +16,3 @@ class DataSourceBlobRepository(Protocol):
 
     def list_data_packages(self) -> list[DataPackage]:
         ...
-

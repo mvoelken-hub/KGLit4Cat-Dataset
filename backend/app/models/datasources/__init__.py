@@ -3,6 +3,12 @@ from app.models.datasources.datasource import (
     FileEntry,
 )
 
+from app.models.datasources.file_types import (
+    FileType,
+    determine_file_type,
+    extract_text_from_file
+)
+
 from app.models.datasources.errors import (
     InvalidDataPackageZipFileError,
     InvalidDataPackageFileNameError,
@@ -15,6 +21,8 @@ from app.models.datasources.errors import (
 __all__ = [
     "DataPackage",
     "FileEntry",
+    "FileType",
+    "determine_file_type",
     "InvalidDataPackageZipFileError",
     "InvalidDataPackageFileNameError",
     "DataPackageZipNotFoundError",

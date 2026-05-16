@@ -1,7 +1,11 @@
 from app.api.v1.schemas.datasources import (
-    DataPackageResponse
+    DataPackageResponse,
+    FileEntryResponse,
+    FileEntryContentResponse
 )
 
 __all__ = [
-    "DataPackageResponse"
+    "DataPackageResponse",
+    "FileEntryResponse",
+    "FileEntryContentResponse"
 ]

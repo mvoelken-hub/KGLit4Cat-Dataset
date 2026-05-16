@@ -1,5 +1,11 @@
 from pydantic import BaseModel, Field
 
+class FileEntryContentResponse(BaseModel):
+    file_path: str
+    file_name: str
+    file_extension: str
+    content: str
+
 class FileEntryResponse(BaseModel):
     file_path: str
     file_name: str
