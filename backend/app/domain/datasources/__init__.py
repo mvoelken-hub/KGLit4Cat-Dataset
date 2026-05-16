@@ -1,25 +1,25 @@
-from app.models.datasources.datasource import (
+from app.domain.datasources.datasource import (
     DataPackage,
     FileEntry,
 )
 
-from app.models.datasources.file_types import (
+from app.domain.datasources.file_types import (
     FileType,
     determine_file_type,
     extract_text_from_file
 )
 
-from app.models.datasources.chunking import (
+from app.domain.datasources.chunking import (
     ContentChunk,
 )
 
-from app.models.datasources.text_quality import (
+from app.domain.datasources.text_quality import (
     DecisionKind,
     TextQualityDecision,
     classify_text_line,
 )
 
-from app.models.datasources.errors import (
+from app.domain.datasources.errors import (
     InvalidDataPackageZipFileError,
     InvalidDataPackageFileNameError,
     DataPackageZipNotFoundError,

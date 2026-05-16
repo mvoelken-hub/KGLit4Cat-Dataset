@@ -4,7 +4,7 @@ from app.core.config import Settings
 from app.ollama.client import OllamaClientWrapper
 from app.core.task_registry import TaskRegistry, TaskInfo, TaskType, TaskStatus
 
-from app.models.datasources import DataPackage, FileEntry, ContentChunk, FileEntryNotFoundError
+from app.domain.datasources import DataPackage, FileEntry, ContentChunk, FileEntryNotFoundError
 from app.repositories.datasource_blob_repository import DataSourceBlobRepository
 
 class DataSourceService:

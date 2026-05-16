@@ -6,8 +6,8 @@ import unittest
 
 import pymupdf
 
-from app.models.datasources import DataPackage, InvalidDataPackageZipFileError
-from app.models.datasources.file_types import FileType, determine_file_type, extract_text_from_file
+from app.domain.datasources import DataPackage, InvalidDataPackageZipFileError
+from app.domain.datasources.file_types import FileType, determine_file_type, extract_text_from_file
 from infra.filesystem_datasource_blob_repository import FileSystemDataSourceBlobRepository
 
 

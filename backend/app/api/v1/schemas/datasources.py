@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 
-from app.models.datasources import DataPackage
+from app.domain.datasources import DataPackage
 
 from app.core.task_registry import TaskStatus
 

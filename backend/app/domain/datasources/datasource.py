@@ -5,11 +5,11 @@ from hashlib import sha256
 
 from pydantic import BaseModel, Field, computed_field, field_validator
 
-from app.models.datasources.errors import (
+from app.domain.datasources.errors import (
     InvalidDataPackageZipFileError,
     FileEntryNotFoundError,
 )
-from app.models.datasources.file_types import (
+from app.domain.datasources.file_types import (
     FileType,
     determine_file_type,
     extract_text_from_file

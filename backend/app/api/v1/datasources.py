@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status,
 
 
 from app.dependencies import get_datasource_service
-from app.models.datasources import (
+from app.domain.datasources import (
     DataPackage,
     DataPackageIdNotFoundError,
     DataPackageZipNotFoundError,

@@ -6,17 +6,17 @@ from hashlib import sha256
 from dataclasses import dataclass
 from pydantic import BaseModel, Field, computed_field
 
-from app.models.datasources.datasource import (
+from app.domain.datasources.datasource import (
     FileEntry
 )
 
-from app.models.datasources.text_quality import (
+from app.domain.datasources.text_quality import (
     TextQualityDecision,
     DecisionKind,
     classify_text_line
 )
 
-from app.models.datasources.errors import (
+from app.domain.datasources.errors import (
     EmbeddingDistanceCalcError
 )
 

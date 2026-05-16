@@ -3,7 +3,7 @@ from pathlib import Path
 from zipfile import ZipFile
 import json
 
-from app.models.datasources import (
+from app.domain.datasources import (
     DataPackage,
     FileEntry,
     InvalidDataPackageFileNameError,

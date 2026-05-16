@@ -2,7 +2,7 @@ from typing import Protocol
 from io import BytesIO
 from pathlib import Path
 
-from app.models.datasources import DataPackage, ContentChunk
+from app.domain.datasources import DataPackage, ContentChunk
 
 class DataSourceBlobRepository(Protocol):
     def save_data_package(self, data: BytesIO, id: str, file_name: str) -> Path:
