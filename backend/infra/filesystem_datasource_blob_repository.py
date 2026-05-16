@@ -37,11 +37,20 @@ class FileSystemDataSourceBlobRepository:
         if zip_path.exists():
             zip_path.unlink()
 
-    def list_data_package_ids(self) -> list[str]:
+    def list_data_packages(self) -> list[DataPackage]:
         if not self.base_path.exists() or not self.base_path.is_dir():
             return []
-        
-        return [p.name for p in self.base_path.iterdir() if p.is_dir()]
+        data_packages = []
+        for zip_path in self.base_path.glob("*/**/*.zip"):
+            with open(zip_path, "rb") as f:
+                data = BytesIO(f.read())
+            file_name = zip_path.name
+            try:
+                data_package = DataPackage.from_bytes(data, file_name)
+                data_packages.append(data_package)
+            except InvalidDataPackageFileNameError:
+                continue
+        return data_packages
 
     # Helper methods for internal use
     

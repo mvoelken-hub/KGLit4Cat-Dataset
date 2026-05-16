@@ -60,8 +60,6 @@ async def upload_data_package(
     except Exception as exc:
         _raise_datasource_error(exc)
 
-    
-
 
 @router.get("/{id}")
 async def get_data_package(
@@ -76,3 +74,8 @@ async def get_data_package(
         _raise_datasource_error(exc)
 
     
+@router.get("", response_model=list[DataPackageResponse])
+async def list_data_packages(
+    datasource_service: DataSourceService = Depends(get_datasource_service),
+):
+    return [_data_package_response(dp) for dp in datasource_service.list_data_packages()]

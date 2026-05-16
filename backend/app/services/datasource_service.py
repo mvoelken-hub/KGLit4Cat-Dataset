@@ -19,9 +19,9 @@ class DataSourceService:
     def get_data_package(self, id: str) -> DataPackage:
         return self.blob_repository.load_data_package(id)
 
-    def list_data_package_ids(self) -> list[str]:
-        return self.blob_repository.list_data_package_ids()
-    
+    def list_data_packages(self) -> list[DataPackage]:
+        return self.blob_repository.list_data_packages()
+
     def delete_data_package(self, id: str) -> None:
         self.blob_repository.delete_data_package(id)
 

@@ -14,6 +14,6 @@ class DataSourceBlobRepository(Protocol):
     def delete_data_package(self, id: str) -> None:
         ...
 
-    def list_data_package_ids(self) -> list[str]:
+    def list_data_packages(self) -> list[DataPackage]:
         ...
 
