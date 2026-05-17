@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 from dataclasses import dataclass
 from hashlib import sha256
 from pydantic import HttpUrl
@@ -9,7 +10,8 @@ from rdflib import (
     Node,
     URIRef,
     util as rdflib_util,
-    RDF
+    RDF,
+    Node
 )
 
 from app.domain.semantics.ontologies import (
@@ -92,21 +94,14 @@ async def load_rdf_graph_from_file(file: SerializedRdfGraph, identifier: str) ->
     )
 
 def extract_description_for_graph(graph: Graph) -> str:
+    root_subject = URIRef(str(graph.identifier))
 
-    desc = "Root Graph:\n"
-    graph_identifier = graph.identifier
-    root_subject = URIRef(graph_identifier)
-    for predicate, object_ in graph.predicate_objects(root_subject):
-        desc += f" - {predicate}: {object_}\n"
-    desc += "\n"
+    subjects: list[Node] = [root_subject]
+
     for desc_type in VOCAB_DESC_TYPES:
-        for subject in graph.subjects(RDF.type, desc_type):
-            desc += f"Vocab contains {subject} as {desc_type}:\n"
-            for predicate, object_ in graph.predicate_objects(subject):
-                desc += f" - {predicate}: {object_}\n"
-            desc += "\n"
+        subjects.extend(graph.subjects(RDF.type, desc_type))
 
-    return desc.strip()
+    return serialize_subjects_as_turtle(graph, subjects)
 
     
 def remove_non_en_literals(graph: Graph) -> None:
@@ -149,3 +144,17 @@ def skolemize_bnodes_deterministically(
         skolemized_graph.add((replace_node(subject), replace_node(predicate), replace_node(object_)))
 
     return skolemized_graph
+
+def serialize_subjects_as_turtle(graph: Graph, subjects: Iterable[Node]) -> str:
+    subgraph = Graph(identifier=graph.identifier)
+    _copy_namespaces(graph, subgraph)
+
+    for subject in subjects:
+        for predicate, object_ in graph.predicate_objects(subject):
+            subgraph.add((subject, predicate, object_))
+
+    return subgraph.serialize(format="turtle").strip()
+
+def _copy_namespaces(source: Graph, target: Graph) -> None:
+    for prefix, namespace in source.namespace_manager.namespaces():
+        target.bind(prefix, namespace)
