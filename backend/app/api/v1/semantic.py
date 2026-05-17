@@ -42,3 +42,10 @@ async def get_vocabulary(
             detail=f"Vocabulary scheme with identifier '{identifier}' not found.",
         )
     return vocab_scheme_info
+
+@router.delete("/vocabularies/{identifier:path}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_vocabulary(
+    identifier: str = Path(..., description="The identifier of the vocabulary scheme to delete."),
+    semantic_service: SemanticService = Depends(get_semantic_service),
+):
+    await semantic_service.delete_vocabulary(identifier)

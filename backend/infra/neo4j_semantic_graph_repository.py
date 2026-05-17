@@ -98,3 +98,21 @@ class Neo4jSemanticGraphRepository:
             """
         )
         return [record["identifier"] for record in result]
+    
+    async def delete_vocabulary(self, identifier: str) -> None:
+        await self._neo4j_driver.query(
+            """
+            MATCH (v:VocabScheme { identifier: $identifier })-[:HAS_RESOURCE]->(r:Resource)
+            WHERE COUNT { (r)<-[:HAS_RESOURCE]-() } = 1
+            DETACH DELETE r
+            """,
+            parameters={"identifier": identifier},
+        )
+
+        await self._neo4j_driver.query(
+            """
+            MATCH (v:VocabScheme { identifier: $identifier })
+            DETACH DELETE v
+            """,
+            parameters={"identifier": identifier},
+        )

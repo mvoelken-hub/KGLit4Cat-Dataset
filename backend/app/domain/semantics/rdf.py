@@ -93,7 +93,12 @@ async def load_rdf_graph_from_file(file: SerializedRdfGraph, identifier: str) ->
 
 def extract_description_for_graph(graph: Graph) -> str:
 
-    desc = ""
+    desc = "Root Graph:\n"
+    graph_identifier = graph.identifier
+    root_subject = URIRef(graph_identifier)
+    for predicate, object_ in graph.predicate_objects(root_subject):
+        desc += f" - {predicate}: {object_}\n"
+    desc += "\n"
     for desc_type in VOCAB_DESC_TYPES:
         for subject in graph.subjects(RDF.type, desc_type):
             desc += f"Vocab contains {subject} as {desc_type}:\n"

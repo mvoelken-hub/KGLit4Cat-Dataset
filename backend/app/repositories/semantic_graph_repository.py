@@ -14,3 +14,6 @@ class SemanticGraphRepository(Protocol):
 
     async def list_vocabulary_identifiers(self) -> list[str]:
         ...
+
+    async def delete_vocabulary(self, identifier: str) -> None:
+        ...

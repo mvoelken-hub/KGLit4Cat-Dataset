@@ -49,3 +49,6 @@ class SemanticService:
 
     async def list_vocabularies(self) -> list[str]:
         return await self.semantic_graph_repository.list_vocabulary_identifiers()
+    
+    async def delete_vocabulary(self, identifier: str) -> None:
+        await self.semantic_graph_repository.delete_vocabulary(identifier)
