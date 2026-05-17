@@ -24,6 +24,12 @@ async def import_vocabulary(
             detail=str(exc),
         ) from exc
     
+@router.get("/vocabularies", response_model=list[str])
+async def list_vocabularies(
+    semantic_service: SemanticService = Depends(get_semantic_service),
+):
+    return await semantic_service.list_vocabularies()
+    
 @router.get("/vocabularies/{identifier:path}", response_model=VocabSchemeInfo)
 async def get_vocabulary(
     identifier: str = Path(..., description="The identifier of the vocabulary scheme to retrieve."),

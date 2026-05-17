@@ -103,8 +103,6 @@ def extract_description_for_graph(graph: Graph) -> str:
 
     return desc.strip()
 
-
-
     
 def remove_non_en_literals(graph: Graph) -> None:
     triples_to_remove = []

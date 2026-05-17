@@ -46,3 +46,6 @@ class SemanticService:
     
     async def get_vocabulary(self, identifier: str) -> VocabSchemeInfo | None:
         return await self.semantic_graph_repository.get_vocabulary(identifier)
+
+    async def list_vocabularies(self) -> list[str]:
+        return await self.semantic_graph_repository.list_vocabulary_identifiers()

@@ -80,7 +80,7 @@ class Neo4jSemanticGraphRepository:
 
         vocab_info.vocab_term_schemes = [
             VocabTermScheme(
-                rdf_types=record["RdfTypes"],
+                rdf_types=[record["RdfTypes"]],
                 properties=record["Properties"],
                 applicable_relationships=record["ApplicableRelationships"],
                 count=record["Count"]
