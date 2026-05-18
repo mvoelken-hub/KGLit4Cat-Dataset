@@ -12,9 +12,18 @@ if /I "%BACKUP_CHOICE%"=="Y" (
 echo Stopping Neo4j development container...
 docker compose --env-file .env.development -f docker-compose.dev.yml down neo4j
 
-echo Removing Neo4j data directory...
+echo Removing Neo4j data contents...
 if exist data\docker\neo4j\data (
-    rmdir /s /q data\docker\neo4j\data
+    for /d %%D in (data\docker\neo4j\data\*) do rmdir /s /q "%%D"
+    for %%F in (data\docker\neo4j\data\*) do (
+        if /I not "%%~nxF"==".gitkeep" del /f /q "%%F"
+    )
+) else (
+    mkdir data\docker\neo4j\data
+)
+
+if not exist data\docker\neo4j\data\.gitkeep (
+    type nul > data\docker\neo4j\data\.gitkeep
 )
 
 echo Development Neo4j database reset complete.
