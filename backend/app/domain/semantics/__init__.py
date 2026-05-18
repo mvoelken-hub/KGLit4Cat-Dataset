@@ -12,6 +12,11 @@ from app.domain.semantics.controlled_vocabularies import (
     VocabAlreadyExistsError
 )
 
+from app.domain.semantics.ontologies import (
+    META_PROPERTIES,
+    META_ONTOLOGY_TYPES
+)
+
 __all__ = [
     "LoadedRdfGraph",
     "SerializedRdfGraph",
@@ -21,4 +26,6 @@ __all__ = [
     "VocabSchemeInfo",
     "VocabTermScheme",
     "VocabAlreadyExistsError",
+    "META_PROPERTIES",
+    "META_ONTOLOGY_TYPES"
 ]

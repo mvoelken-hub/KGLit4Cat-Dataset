@@ -19,7 +19,7 @@ class InitialVocab(BaseModel):
 
 INITIAL_VOCABS = [
     InitialVocab(
-        rdf_source=HttpUrl("http://nfdi4cat.github.io/voc4cat/v2025-10-14/voc4cat.ttl"),
+        rdf_source=HttpUrl("https://nfdi4cat.github.io/voc4cat/v2026-02-24/voc4cat.ttl"),
         identifier="https://w3id.org/nfdi4cat/voc4cat",
     ),
     InitialVocab(

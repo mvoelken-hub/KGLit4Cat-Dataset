@@ -1,17 +1,34 @@
-from typing import Any
+import re
+from typing import Any, Literal
 
 from rdflib import Graph, URIRef
 
-from app.neo4j.driver import Neo4jDriver
+from app.neo4j import (
+    Neo4jDriver,
+    VectorIndexInfo,
+    FullTextIndexInfo,
+    CreateIndexRequest,
+    normalize_index_token,
+    SemanticIndexType,
+    SEMANTIC_INDEX_TYPES
+)
+
+from app.ollama import OllamaClientWrapper
 
 from app.domain.semantics import (
     VocabSchemeInfo,
+    VocabResource,
+    META_ONTOLOGY_TYPES,
+    META_PROPERTIES
 )
 from app.domain.semantics.controlled_vocabularies import VocabTermScheme
 
+VOCAB_INDEX_PREFIX = "vocab"
+
 class Neo4jSemanticGraphRepository:
-    def __init__(self, neo4j_driver: Neo4jDriver):
+    def __init__(self, neo4j_driver: Neo4jDriver, ollama_client: OllamaClientWrapper):
         self._neo4j_driver = neo4j_driver
+        self._ollama_client = ollama_client
 
     async def import_vocabulary(self, vocab_scheme_info: VocabSchemeInfo, rdf_graph: Graph) -> None:
         self._neo4j_driver.add_graph(rdf_graph)
@@ -21,7 +38,7 @@ class Neo4jSemanticGraphRepository:
         await self._neo4j_driver.query(
             """
             MERGE (v:VocabScheme { identifier: $identifier })
-            SET v.source = $source, v.rdfFormat = $rdfFormat, v.numTriples = $numTriples
+            SET v += $props
             WITH v
             UNWIND $resources AS resUri
             MATCH (r:Resource { uri: resUri })
@@ -29,9 +46,7 @@ class Neo4jSemanticGraphRepository:
             """,
             parameters={
                 "identifier": vocab_scheme_info.identifier,
-                "source": vocab_scheme_info.source,
-                "rdfFormat": vocab_scheme_info.rdf_format,
-                "numTriples": vocab_scheme_info.num_triples,
+                "props": vocab_scheme_info.model_dump(exclude={"resources", "vocab_term_schemes"}),
                 "resources": vocab_scheme_info.resources,
             },
         )
@@ -49,28 +64,23 @@ class Neo4jSemanticGraphRepository:
             return None
 
         record = result[0]
-        vocab_info = VocabSchemeInfo(
-            identifier=record["v"].get("identifier"),   
-            source=record["v"].get("source"),
-            rdf_format=record["v"].get("rdfFormat"),
-            num_triples=record["v"].get("numTriples"),
-            resources=record["resources"],
-        )
+        vocab_info = VocabSchemeInfo.model_validate(record["v"])
+        vocab_info.resources = record["resources"]
 
         result_2 = await self._neo4j_driver.query(
             """
             MATCH (v:VocabScheme { identifier: $identifier })-[:HAS_RESOURCE]->(r:Resource)
-            UNWIND labels(r) AS rdfTypes
-            WITH v, r, rdfTypes
-            WHERE rdfTypes<> 'Resource'
+            UNWIND labels(r) AS rdfType
+            WITH v, r, rdfType
+            WHERE rdfType <> 'Resource'
             OPTIONAL MATCH (r)-[rel]-()
             WHERE rel IS NULL OR type(rel) <> 'HAS_RESOURCE'
             WITH
-                rdfTypes,
+                rdfType,
                 [relType IN collect(DISTINCT type(rel)) WHERE relType IS NOT NULL] AS relTypes,
                 apoc.coll.toSet(apoc.coll.flatten(collect(keys(r)))) AS props,
                 count(DISTINCT r) AS resourceCount
-            RETURN rdfTypes AS RdfTypes,
+            RETURN rdfType AS RdfType,
                    relTypes AS ApplicableRelationships,
                    props AS Properties,
                    resourceCount AS Count
@@ -78,15 +88,27 @@ class Neo4jSemanticGraphRepository:
             parameters={"identifier": identifier},
         )
 
-        vocab_info.vocab_term_schemes = [
-            VocabTermScheme(
-                rdf_types=[record["RdfTypes"]],
-                properties=record["Properties"],
+        for record in result_2:
+            # Skip meta-ontology types
+            if record["RdfType"] in META_ONTOLOGY_TYPES:
+                continue
+            # Filter out meta-ontology properties
+            properties = [
+                p for p in record["Properties"]
+                if not any(substring.lower() in p.lower() for substring in META_PROPERTIES)
+            ]
+
+            if not properties:
+                continue
+
+            vocab_term_scheme = VocabTermScheme(
+                rdf_types=[record["RdfType"]],
+                properties=properties,
                 applicable_relationships=record["ApplicableRelationships"],
                 count=record["Count"]
             )
-            for record in result_2
-        ]
+            
+            vocab_info.vocab_term_schemes.append(vocab_term_scheme)
 
         return vocab_info
     
@@ -116,3 +138,152 @@ class Neo4jSemanticGraphRepository:
             """,
             parameters={"identifier": identifier},
         )
+
+
+    async def create_vocab_indexes(self, identifier: str) -> None:
+        vocab_info = await self.get_vocabulary(identifier)
+        if not vocab_info:
+            raise ValueError(f"Vocabulary with identifier '{identifier}' not found")
+        
+        for term_scheme in vocab_info.vocab_term_schemes:
+            await self._create_vector_index_for_vocab_term_scheme(term_scheme)
+            await self._create_fulltext_index_for_vocab_term_scheme(term_scheme)
+
+    async def get_vocab_indexes(self, identifier: str) -> list[VectorIndexInfo | FullTextIndexInfo]:
+        vocab_info = await self.get_vocabulary(identifier)
+        if not vocab_info:
+            raise ValueError(f"Vocabulary with identifier '{identifier}' not found")
+        
+        all_indexes = await self._neo4j_driver.list_indexes()
+        vocab_indexes = []
+        for term in vocab_info.vocab_term_schemes:
+            # First find all vector indexes
+            for rdf_type in term.rdf_types:
+                vector_index_name = self.get_index_name(rdf_type, "VECTOR")
+                vector_index = next((idx for idx in all_indexes if idx.name == vector_index_name), None)
+                if vector_index:
+                    vocab_indexes.append(vector_index)
+            # Then find all fulltext indexes
+            fulltext_index_name = self.get_index_name(term.rdf_types, "FULLTEXT")
+            fulltext_index = next((idx for idx in all_indexes if idx.name == fulltext_index_name), None)
+            if fulltext_index:
+                vocab_indexes.append(fulltext_index)
+                
+        return vocab_indexes
+                            
+    async def delete_vocab_indexes(self, identifier: str) -> None:
+        vocab_info = await self.get_vocabulary(identifier)
+        if not vocab_info:
+            raise ValueError(f"Vocabulary with identifier '{identifier}' not found")
+        
+        for term in vocab_info.vocab_term_schemes:
+            for rdf_type in term.rdf_types:
+                for index_type in SEMANTIC_INDEX_TYPES:
+                    index_name = self.get_index_name(rdf_type, index_type)
+                    await self._neo4j_driver.drop_index_by_name(index_name)
+
+
+    async def get_vocab_resources(self, uris: set[str]) -> list[VocabResource]:
+        query = f"""
+        UNWIND $uris AS uri
+        MATCH (r:Resource {{ uri: uri }})
+        RETURN r.uri AS uri, labels(r) AS rdfTypes, properties(r) AS props
+        """
+        result = await self._neo4j_driver.query(query, parameters={"uris": list(uris)})
+        resources = []
+        for record in result:
+            labels = [label for label in record["rdfTypes"] if label != "Resource"]
+            if not labels:
+                raise ValueError(f"Resource with URI '{record['uri']}' has no RDF types other than 'Resource'")
+            
+            labels = [label for label in labels if label not in META_ONTOLOGY_TYPES]
+            if not labels:
+                raise ValueError(f"Resource with URI '{record['uri']}' has no RDF types after filtering out meta-ontology types")
+            
+            resources.append(
+                VocabResource(
+                    uri=record["uri"],
+                    rdf_types=labels,
+                    properties=record["props"]
+                )
+            )
+
+        return resources
+
+    async def check_pending_embedding_updates(self, identifier: str) -> list[VocabResource]:
+        vocab_indexes = await self.get_vocab_indexes(identifier)
+        if not vocab_indexes:
+            raise ValueError(f"No indexes found for vocabulary with identifier '{identifier}'")
+        
+        vector_indexes = [idx for idx in vocab_indexes if isinstance(idx, VectorIndexInfo)]
+        if not vector_indexes:
+            raise ValueError(f"No vector indexes found for vocabulary with identifier '{identifier}'")
+        
+        node_uris_without_embeddings: set[str] = set()
+        for vector_index in vector_indexes:
+            uris = await self.find_nodes_without_emebdding(vector_index)
+            node_uris_without_embeddings.update(uris)
+        
+        return await self.get_vocab_resources(node_uris_without_embeddings)
+
+    async def update_resource_embeddings(self, vocab_resources: list[VocabResource]) -> None:
+        query = f"""
+        UNWIND $resources AS res
+        MATCH (r:Resource {{ uri: res.uri }})
+        SET r.embedding = res.embedding
+        """
+        resources_data = [
+            {"uri": resource.uri, "embedding": resource.embedding}
+            for resource in vocab_resources
+        ]
+        await self._neo4j_driver.query(query, parameters={"resources": resources_data})
+
+    # Helper
+
+    @staticmethod
+    def get_index_name(rdf_type: str | list[str], index_type: SemanticIndexType) -> str:
+
+        if index_type == "VECTOR":
+            if isinstance(rdf_type, list):
+                raise ValueError("RDF type must be a single string for VECTOR indexes")
+            safe_rdf_type = normalize_index_token(rdf_type)
+
+        else: # FULLTEXT
+            if isinstance(rdf_type, str):
+                rdf_type = [rdf_type]
+            safe_rdf_type = "_".join([normalize_index_token(rt) for rt in rdf_type])
+        
+        return f"{VOCAB_INDEX_PREFIX}_{safe_rdf_type}_{index_type}"
+    
+    async def find_nodes_without_emebdding(self, vector_index: VectorIndexInfo) -> set[str]:
+        query = f"""
+        MATCH (n:`{vector_index.labels_or_types[0]}`)
+        WHERE n.`{vector_index.properties[0]}` IS NULL
+        RETURN n.uri AS uri
+        """
+        result = await self._neo4j_driver.query(query)
+        return set([str(record["uri"]) for record in result])
+    
+    async def _create_vector_index_for_vocab_term_scheme(self, term_scheme: VocabTermScheme) -> None:
+        for rdf_type in term_scheme.rdf_types:
+            index_name = self.get_index_name(rdf_type, "VECTOR")
+            index_request = CreateIndexRequest(
+                name=index_name,
+                type="VECTOR",
+                entity_type="NODE",
+                on_label_or_type=[rdf_type],
+                on_property=["embedding"],
+            )
+            await self._neo4j_driver.create_node_index(index_request)
+
+    async def _create_fulltext_index_for_vocab_term_scheme(self, term_scheme: VocabTermScheme) -> None:
+    
+        index_name = self.get_index_name(term_scheme.rdf_types, "FULLTEXT")
+        index_request = CreateIndexRequest(
+            name=index_name,
+            type="FULLTEXT",
+            entity_type="NODE",
+            on_label_or_type=term_scheme.rdf_types,
+            on_property=term_scheme.properties,
+        )
+        await self._neo4j_driver.create_node_index(index_request)

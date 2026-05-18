@@ -35,6 +35,10 @@ META_ONTOLOGY_TYPES: frozenset[str] = frozenset({
     "rdfs__Datatype",
     "rdfs__Container",
     "rdfs__ContainerMembershipProperty",
+    # schema types from common vocabularies that are not useful for indexing or embedding.
+    "skos__ConceptScheme",
+    "schema__Organization",
+    "schema__Person",
     # Any swrl types
     "swrl__",
     # Blank-node identifiers (internal RDF structure, not vocabulary content)
@@ -55,6 +59,9 @@ META_PROPERTIES: frozenset[str] = frozenset({
     "contributor",
     "publisher",
     "contact",
+    "embedding",
+    "embeddings",
+    "uri",
 })
 
 

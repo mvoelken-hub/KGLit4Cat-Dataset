@@ -22,15 +22,20 @@ class VocabResource(BaseModel):
     uri: str
     rdf_types: list[str]
     properties: dict[str, Any] = Field(default_factory=dict)
+    embedding: list[float] | None = None
 
     def to_embedding_str(self) -> str:
+        
         lines = [
             "RDF Resource",
             self.uri,
             f"Applicable RDF Types: {', '.join(self.rdf_types)}",
             "Properties:",
         ]
+
         for key, value in self.properties.items():
+            if key == "embedding":
+                continue
             if key not in META_PROPERTIES:
                 lines.append(f" - {key}: {value}")
         return "\n".join(lines)

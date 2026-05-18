@@ -9,6 +9,18 @@ from app.core.config import Settings, settings
 from logging import Logger
 from app.core.logging import logger
 
+from app.neo4j.indexes import (
+    BaseIndex,
+    CreateIndexRequest,
+    FullTextIndexConfiguration,
+    IndexCreationError,
+    VectorIndexConfiguration,
+    VectorIndexInfo,
+    FullTextIndexInfo,
+    SemanticIndexType,
+    SEMANTIC_INDEX_TYPES
+)
+
 
 class Neo4jDriver:
     def __init__(self, settings: Settings, logger: Logger):
@@ -85,12 +97,60 @@ class Neo4jDriver:
         default_graph_store.close(commit_pending_transaction=True)
 
     # Constraint management
+
     async def create_uniqueness_constraint(self, label: str, property_key: str, db_name: str | None = None) -> None:
         query = (
             f"CREATE CONSTRAINT {label.lower()}_{property_key}_unique IF NOT EXISTS\n"
             f"FOR (n:{label}) REQUIRE n.{property_key} IS UNIQUE"
         )
         await self.query(query, db_name=db_name)
+
+    # Index management
+
+    async def create_node_index(self, index_request: CreateIndexRequest, db_name: str | None = None) -> None:
+        """Create a NODE index."""
+        is_fulltext = index_request.type == "FULLTEXT"
+        properties = index_request.on_property
+        labels = index_request.on_label_or_type
+        name = index_request.name
+        index_type = index_request.type
+        
+        if index_request.index_config is None:
+            raise IndexCreationError("Index configuration must be provided.")
+        index_config = index_request.index_config.model_dump(mode="json", by_alias=True)
+
+        if is_fulltext:
+            assign_prop_str = "ON EACH [" + ", ".join(
+                f"n.`{prop}`" for prop in properties
+            ) + "]"
+        else:
+            assign_prop_str = f"ON n.`{properties[0]}`"
+
+        labels_str = "|".join(f"`{label}`" for label in labels)
+
+        await self.query(
+            (
+                f"CREATE {index_type} INDEX `{name}` IF NOT EXISTS "
+                f"FOR (n:{labels_str}) "
+                f"{assign_prop_str} "
+                "OPTIONS { indexConfig: $indexConfig };"
+            ),
+            {"indexConfig": index_config},
+        )
+        
+    async def list_indexes(self, db_name: str | None = None) -> list[VectorIndexInfo | FullTextIndexInfo]:
+        query = "SHOW {index_type} INDEXES YIELD *"
+        indexes = []
+        for index_type in SEMANTIC_INDEX_TYPES:
+            result = await self.query(query.format(index_type=index_type), db_name=db_name)            
+            for record in result:
+                indexes.append(
+                    BaseIndex.from_row(record).convert_to_dedicated_index()
+                )
+        return indexes
+    
+    async def drop_index_by_name(self, index_name: str, db_name: str | None = None) -> None:
+        await self.query(f"DROP INDEX $index_name IF EXISTS", parameters={"index_name": index_name}, db_name=db_name)
 
     # Helpers
 

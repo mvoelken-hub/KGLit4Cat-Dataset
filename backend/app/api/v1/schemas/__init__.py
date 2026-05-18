@@ -13,6 +13,12 @@ from app.api.v1.schemas.tasks import (
     _serialize_task
 )
 
+from app.api.v1.schemas.semantic import (
+    VocabSchemeInfoResponse,
+    VocabTermSchemeResponse,
+    VocabEmbeddingUpdateResponse
+)
+
 __all__ = [
     "DataPackageResponse",
     "FileEntryResponse",
@@ -22,5 +28,8 @@ __all__ = [
     "ChunkResponse",
     "ChunkRequestResponse",
     "TaskResponse",
-    "_serialize_task"
+    "_serialize_task",
+    "VocabSchemeInfoResponse",
+    "VocabTermSchemeResponse",
+    "VocabEmbeddingUpdateResponse",
 ]

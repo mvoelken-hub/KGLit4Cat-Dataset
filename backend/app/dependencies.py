@@ -37,7 +37,7 @@ def get_datasource_service() -> DataSourceService:
 from infra.neo4j_semantic_graph_repository import Neo4jSemanticGraphRepository
 from app.services.semantic_service import SemanticService
 
-semantic_graph_repository = Neo4jSemanticGraphRepository(neo4j_driver)
+semantic_graph_repository = Neo4jSemanticGraphRepository(neo4j_driver, ollama_client)
 semantic_service = SemanticService(
     semantic_graph_repository,
     settings,
