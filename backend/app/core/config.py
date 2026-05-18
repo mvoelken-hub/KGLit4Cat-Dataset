@@ -70,6 +70,7 @@ class Settings(BaseSettings):
     skip_initial_vocab_import: bool = True
     skip_model_pull: bool = False
     load_ollama_models_on_startup: bool = False
+    generate_missing_embeddings_on_startup: bool = False
 
     # Frontend configuration
     frontend_base_url: str = "http://localhost:3000"

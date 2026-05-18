@@ -1,3 +1,4 @@
+import asyncio
 from logging import Logger
 from typing import Literal
 
@@ -63,12 +64,22 @@ async def load_ollama_models(ollama_client: OllamaClientWrapper, task_registry: 
     if model in ("chat", "both"):
         await ollama_client.verify_chat()
 
-async def import_initial_vocab(semantic_service: SemanticService):    
+async def import_initial_vocab(semantic_service: SemanticService, generate_embeddings_on_import: bool):    
     for vocab in INITIAL_VOCABS:
         try:
             await semantic_service.import_vocabulary(rdf_source=vocab.rdf_source, identifier=vocab.identifier)
         except VocabAlreadyExistsError:
             pass
+
+    if not generate_embeddings_on_import:
+        return
+    
+    for vocab in INITIAL_VOCABS:
+        pending_updates, status = await semantic_service.generate_embeddings_for_vocabulary(vocab.identifier)
+        while status == TaskStatus.RUNNING:
+            await asyncio.sleep(10)
+            pending_updates, status = await semantic_service.generate_embeddings_for_vocabulary(vocab.identifier)
+            
 
 
 async def start_setup(
@@ -99,4 +110,4 @@ async def start_setup(
     if settings.skip_initial_vocab_import:
         logger.info("Skipping initial vocabulary import because skip_initial_vocab_import is enabled.")
     else:
-        await task_registry.create_task(import_initial_vocab(semantic_service), name="startup:import_initial_vocabs:01", type=TaskType.STARTUP)
+        await task_registry.create_task(import_initial_vocab(semantic_service, settings.generate_missing_embeddings_on_startup), name="startup:import_initial_vocabs:01", type=TaskType.STARTUP)
