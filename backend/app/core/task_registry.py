@@ -116,7 +116,11 @@ class TaskRegistry:
         await self.cancel_task(name)
         del self.tasks[name]
 
-        
+    async def wait_for_task(self, name: str, timeout: float | None = None) -> None:
+        task_info = self.get_task_info(name)
+        if not task_info:
+            raise ValueError(f"No task found with name '{name}'")
+        await asyncio.wait_for(asyncio.shield(task_info.task), timeout=timeout)
 
 
     # Internal helper methods for task status management and logging

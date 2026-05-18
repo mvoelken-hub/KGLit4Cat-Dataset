@@ -7,7 +7,7 @@ from app.neo4j.driver import Neo4jDriver
 from app.ollama.client import OllamaClientWrapper
 
 from app.core.config import Settings
-from app.core.task_registry import TaskRegistry, TaskType
+from app.core.task_registry import TaskRegistry, TaskType, TaskStatus
 
 from app.services.semantic_service import SemanticService
 from app.domain.semantics import VocabAlreadyExistsError
@@ -48,14 +48,19 @@ async def pull_ollama_models(ollama_client: OllamaClientWrapper, settings: Setti
         settings.ollama_chat_model,
     ])
 
-async def load_ollama_models(ollama_client: OllamaClientWrapper, model: Literal["embedding", "chat", "both", "none"] = "none"):
+async def load_ollama_models(ollama_client: OllamaClientWrapper, task_registry: TaskRegistry, model: Literal["embedding", "chat", "both", "none"] = "none"):
+
+    pull_models_task = task_registry.get_task_info("startup:pull_ollama_models:01")
+    if pull_models_task and pull_models_task.status != TaskStatus.COMPLETED:
+        await task_registry.wait_for_task("startup:pull_ollama_models:01")
+    
     if model in ("embedding", "both"):
         await ollama_client.verify_embedding()
     if model in ("chat", "both"):
         await ollama_client.verify_chat()
 
 async def import_initial_vocab(semantic_service: SemanticService):    
-    for vocab in INITIAL_VOCABS[0:1]:  # Currently only importing the first vocab for testing purposes. Change to INITIAL_VOCABS to import all.
+    for vocab in INITIAL_VOCABS:
         try:
             await semantic_service.import_vocabulary(rdf_source=vocab.rdf_source, identifier=vocab.identifier)
         except VocabAlreadyExistsError:
@@ -79,7 +84,7 @@ async def start_setup(
         await task_registry.create_task(pull_ollama_models(ollama_client=ollama_client, settings=settings), name="startup:pull_ollama_models:01", type=TaskType.STARTUP)
 
     if settings.load_ollama_models_on_startup:
-        await task_registry.create_task(load_ollama_models(ollama_client=ollama_client, model="both"), name="startup:load_ollama_models:01", type=TaskType.STARTUP)
+        await task_registry.create_task(load_ollama_models(ollama_client=ollama_client,task_registry=task_registry, model="both"), name="startup:load_ollama_models:01", type=TaskType.STARTUP)
     else:
         logger.info("Skipping Ollama model warm-up because load_ollama_models_on_startup is disabled.")
 
