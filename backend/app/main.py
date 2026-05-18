@@ -16,6 +16,7 @@ from app.setup import start_setup
 
 # Import API routers
 from app.api.v1.datasources import router as datasources_router
+from app.api.v1.extraction import router as extraction_router
 from app.api.v1.semantic import router as semantic_router
 from app.api.v1.system import router as system_router
 
@@ -75,4 +76,5 @@ async def root_redirect():
 # Register routes
 fastapi_app.include_router(system_router, prefix=V1_PREFIX)
 fastapi_app.include_router(datasources_router, prefix=V1_PREFIX)
+fastapi_app.include_router(extraction_router, prefix=V1_PREFIX)
 fastapi_app.include_router(semantic_router, prefix=V1_PREFIX)

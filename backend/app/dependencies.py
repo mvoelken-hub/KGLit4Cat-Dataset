@@ -34,6 +34,19 @@ def get_datasource_service() -> DataSourceService:
     return datasource_service
 
 
+from infra.filesystem_extraction_profile_repository import FileSystemExtractionProfileRepository
+from app.services.extraction_service import ExtractionService
+
+extraction_profile_repository = FileSystemExtractionProfileRepository(settings.dcat_profiles_dir)
+extraction_service = ExtractionService(
+    extraction_profile_repository,
+    settings,
+)
+
+def get_extraction_service() -> ExtractionService:
+    return extraction_service
+
+
 from infra.neo4j_semantic_graph_repository import Neo4jSemanticGraphRepository
 from app.services.semantic_service import SemanticService
 

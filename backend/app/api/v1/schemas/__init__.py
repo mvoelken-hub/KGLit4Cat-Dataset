@@ -24,6 +24,16 @@ from app.api.v1.schemas.semantic import (
     VocabSeedResponse,
     _vocab_query_result_response,
 )
+from app.api.v1.schemas.extraction import (
+    JsonLdExportResponse,
+    ProfileDocumentRequest,
+    ProfileManifestResponse,
+    ProfileValidationIssueResponse,
+    ProfileValidationResponse,
+    _jsonld_export_response,
+    _profile_manifest_response,
+    _profile_validation_response,
+)
 
 __all__ = [
     "DataPackageResponse",
@@ -44,4 +54,12 @@ __all__ = [
     "VocabGraphStatementResponse",
     "CompactVocabResourceResponse",
     "_vocab_query_result_response",
+    "JsonLdExportResponse",
+    "ProfileDocumentRequest",
+    "ProfileManifestResponse",
+    "ProfileValidationIssueResponse",
+    "ProfileValidationResponse",
+    "_jsonld_export_response",
+    "_profile_manifest_response",
+    "_profile_validation_response",
 ]

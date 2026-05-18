@@ -7,10 +7,15 @@ requires-python = ">=3.12"
 dependencies = [
     "charset-normalizer>=3.4.7",
     "fastapi[standard]>=0.136.1",
+    "jsonschema>=4.26.0",
+    "linkml>=1.11.0",
+    "linkml-runtime>=1.11.0",
     "ollama>=0.6.2",
     "pandas[excel]>=3.0.3",
     "pydantic>=2.13.4",
     "pymupdf>=1.27.2.3",
+    "pyyaml>=6.0.3",
+    "rdflib>=7.6.0",
     "rdflib-neo4j>=1.1",
     "scikit-learn>=1.8.0",
 ]
