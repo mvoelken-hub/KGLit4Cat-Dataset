@@ -1,16 +1,20 @@
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Path, UploadFile, status
 from pydantic import HttpUrl
 
 from app.api.v1.schemas import (
     InitialContextRequest,
+    InitialDraftRequest,
     JsonLdExportResponse,
+    PatchDraftRequest,
     ProfileDocumentRequest,
     ProfileManifestResponse,
     ProfileValidationResponse,
     _initial_context_response,
+    _initial_draft_response,
     _jsonld_export_response,
+    _patch_draft_response,
     _profile_manifest_response,
     _profile_validation_response,
 )
@@ -20,8 +24,11 @@ from app.domain.datasources import (
     DataPackageZipNotFoundError,
 )
 from app.domain.extraction import (
+    ChunkingRequiredError,
+    InitialContextRequiredError,
     InitialContext,
     InvalidProfileIdentifierError,
+    PatchDraftPrerequisiteError,
     ProfileAlreadyExistsError,
     ProfileCompatibilityError,
     ProfileNotFoundError,
@@ -71,6 +78,18 @@ def _raise_extraction_error(exc: Exception) -> None:
             detail=str(exc),
         ) from exc
 
+    if isinstance(exc, InitialContextRequiredError):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+
+    if isinstance(exc, (PatchDraftPrerequisiteError, ChunkingRequiredError)):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+
     if isinstance(exc, AgentRunError):
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -92,6 +111,37 @@ async def extract_initial_context(
             max_chars_per_file=request.max_chars_per_file,
         )
         return _initial_context_response(result)
+    except Exception as exc:
+        _raise_extraction_error(exc)
+
+
+@router.post("/initial-draft", response_model=dict[str, Any])
+async def extract_initial_draft(
+    request: InitialDraftRequest,
+    extraction_service: ExtractionService = Depends(get_extraction_service),
+):
+    try:
+        result = await extraction_service.extract_initial_draft(
+            data_package_id=request.data_package_id,
+            profile_identifier=request.profile_identifier,
+        )
+        return _initial_draft_response(result)
+    except Exception as exc:
+        _raise_extraction_error(exc)
+
+
+@router.post("/patch-draft", response_model=dict[str, Any])
+async def patch_initial_draft(
+    request: PatchDraftRequest,
+    extraction_service: ExtractionService = Depends(get_extraction_service),
+):
+    try:
+        result = await extraction_service.patch_initial_draft(
+            data_package_id=request.data_package_id,
+            profile_identifier=request.profile_identifier,
+            num_chunks_per_turn=request.num_chunks_per_turn,
+        )
+        return _patch_draft_response(result)
     except Exception as exc:
         _raise_extraction_error(exc)
 

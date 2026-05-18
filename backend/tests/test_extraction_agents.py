@@ -7,19 +7,27 @@ from pydantic_ai.models.test import TestModel
 from pydantic_ai.output import PromptedOutput
 
 from app.domain.datasources import DataPackage, FileEntry
+from app.domain.datasources.chunking import ContentChunk
 from app.domain.extraction import (
     DEFAULT_OUTPUT_RETRIES,
     JSON_OUTPUT_TEMPLATE,
     InitialContext,
     InitialContextDeps,
+    InitialDraftDeps,
+    ProfileManifest,
+    apply_merge_patch,
     create_initial_context_agent,
+    create_initial_draft_agent,
+    create_patch_draft_agent,
     extract_initial_context_from_data_package,
+    initialize_draft_from_initial_context,
     list_initial_context_dataset_files,
     create_schema_validated_agent,
     prompted_json_output,
     read_initial_context_file_content,
     structured_profile_output,
     validate_json_output_against_schema,
+    patch_draft_from_content_chunks,
 )
 
 
@@ -32,6 +40,38 @@ OUTPUT_SCHEMA = {
     },
     "required": ["title"],
     "additionalProperties": False,
+}
+
+PROFILE_JSON_SCHEMA = {
+    "$schema": "https://json-schema.org/draft/2019-09/schema",
+    "$defs": {
+        "Dataset": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "description": {"type": "string"},
+                "keywords": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+            },
+            "required": ["title"],
+            "additionalProperties": False,
+        }
+    },
+}
+
+INITIAL_DRAFT_OUTPUT = {
+    "title": "Mass spectrometry dataset for sample-1",
+    "description": "Initial draft for a mass spectrometry package.",
+    "keywords": ["mass spectrometry", "sample-1"],
+}
+
+MERGE_PATCH_OUTPUT = {
+    "patch": {
+        "description": "Updated with chunk evidence.",
+        "keywords": ["chunk-keyword"],
+    }
 }
 
 
@@ -91,6 +131,31 @@ def make_data_package() -> DataPackage:
             ),
         ],
     )
+
+
+def make_profile_manifest() -> ProfileManifest:
+    return ProfileManifest(
+        identifier="test-profile",
+        source="profile.yaml",
+        source_type="upload",
+        schema_file_name="profile.yaml",
+        target_class="Dataset",
+        checksum="sha256:test",
+    )
+
+
+def make_content_chunks() -> list[list[ContentChunk]]:
+    return [
+        [
+            ContentChunk(
+                content="Technique: GC-MS\nSample: sample-1",
+                data_package_id="package-id",
+                file_path="README.txt",
+                start_idx=0,
+                end_idx=1,
+            )
+        ]
+    ]
 
 
 class ExtractionAgentHelperTests(unittest.IsolatedAsyncioTestCase):
@@ -198,6 +263,92 @@ class ExtractionAgentHelperTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsInstance(result, InitialContext)
         self.assertEqual(result.device_name, "Mass spectrometer")
+
+    def test_create_initial_draft_agent_uses_retry_budget(self):
+        agent = create_initial_draft_agent(
+            model=TestModel(
+                call_tools=[],
+                custom_output_text=json.dumps(INITIAL_DRAFT_OUTPUT),
+            ),
+            profile_json_schema=PROFILE_JSON_SCHEMA,
+            target_class="Dataset",
+        )
+
+        self.assertEqual(agent._max_output_retries, DEFAULT_OUTPUT_RETRIES)
+
+    async def test_initialize_draft_from_initial_context_returns_profile_dict(self):
+        result = await initialize_draft_from_initial_context(
+            initial_context=InitialContext.model_validate(INITIAL_CONTEXT_OUTPUT),
+            data_package=make_data_package(),
+            profile_manifest=make_profile_manifest(),
+            profile_json_schema=PROFILE_JSON_SCHEMA,
+            model=TestModel(
+                call_tools=[],
+                custom_output_text=json.dumps(INITIAL_DRAFT_OUTPUT),
+            ),
+        )
+
+        self.assertEqual(result["title"], "Mass spectrometry dataset for sample-1")
+        self.assertEqual(result["keywords"], ["mass spectrometry", "sample-1"])
+
+    def test_initial_draft_deps_carry_context_and_profile(self):
+        deps = InitialDraftDeps(
+            initial_context=InitialContext.model_validate(INITIAL_CONTEXT_OUTPUT),
+            data_package=make_data_package(),
+            profile_manifest=make_profile_manifest(),
+            profile_json_schema=PROFILE_JSON_SCHEMA,
+        )
+
+        self.assertEqual(deps.profile_manifest.identifier, "test-profile")
+        self.assertEqual(deps.initial_context.device_model, "MS-1000")
+
+    def test_apply_merge_patch_merges_nested_values_and_string_lists(self):
+        draft = {
+            "title": "Dataset",
+            "keywords": ["existing"],
+            "items": [{"id": "a", "label": "old"}],
+        }
+        patch = {
+            "keywords": ["existing", "new"],
+            "items": [{"id": "a", "label": "new"}, {"label": "added"}],
+            "ignored": None,
+        }
+
+        result = apply_merge_patch(draft, patch)
+
+        self.assertEqual(result["keywords"], ["existing", "new"])
+        self.assertEqual(result["items"][0]["label"], "new")
+        self.assertEqual(result["items"][1]["label"], "added")
+        self.assertNotIn("ignored", result)
+        self.assertNotIn("ignored", draft)
+
+    def test_create_patch_draft_agent_uses_retry_budget(self):
+        agent = create_patch_draft_agent(
+            model=TestModel(
+                call_tools=[],
+                custom_output_text=json.dumps(MERGE_PATCH_OUTPUT),
+            ),
+        )
+
+        self.assertEqual(agent._max_output_retries, DEFAULT_OUTPUT_RETRIES)
+
+    async def test_patch_draft_from_content_chunks_returns_updated_draft_and_patches(self):
+        result = await patch_draft_from_content_chunks(
+            initial_context=InitialContext.model_validate(INITIAL_CONTEXT_OUTPUT),
+            initial_draft=INITIAL_DRAFT_OUTPUT,
+            content_chunks_by_file=make_content_chunks(),
+            profile_manifest=make_profile_manifest(),
+            profile_json_schema=PROFILE_JSON_SCHEMA,
+            model=TestModel(
+                call_tools=[],
+                custom_output_text=json.dumps(MERGE_PATCH_OUTPUT),
+            ),
+            num_chunks_per_turn=1,
+        )
+
+        self.assertEqual(result.draft["description"], "Updated with chunk evidence.")
+        self.assertIn("chunk-keyword", result.draft["keywords"])
+        self.assertEqual(result.patches[0].patch, MERGE_PATCH_OUTPUT["patch"])
 
 
 if __name__ == "__main__":

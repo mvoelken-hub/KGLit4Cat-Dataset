@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 from typing import Any
 
@@ -82,23 +83,37 @@ def create_schema_validated_agent(
     output_retries: int = DEFAULT_OUTPUT_RETRIES,
     tool_retries: int | None = None,
 ) -> Agent[Any, Any]:
-    agent_kwargs: dict[str, Any] = {
-        "model": model,
-        "output_type": structured_profile_output(
-            json_schema,
-            name=output_name,
-            description=output_description,
-        ),
-        "instructions": instructions,
-        "model_settings": model_settings,
-        "output_retries": output_retries,
-    }
-    if tool_retries is not None:
-        agent_kwargs["tool_retries"] = tool_retries
-    if deps_type is not None:
-        agent_kwargs["deps_type"] = deps_type
+    agent_kwargs = _schema_validated_agent_kwargs(
+        model=model,
+        json_schema=json_schema,
+        output_name=output_name,
+        output_description=output_description,
+        instructions=instructions,
+        deps_type=deps_type,
+        model_settings=model_settings,
+        output_retries=output_retries,
+        tool_retries=tool_retries,
+        use_structured_output=True,
+    )
 
-    agent = Agent(**agent_kwargs)
+    try:
+        agent = Agent(**agent_kwargs)
+    except KeyError as exc:
+        if not _is_pydantic_ref_resolution_error(exc):
+            raise
+        agent_kwargs = _schema_validated_agent_kwargs(
+            model=model,
+            json_schema=json_schema,
+            output_name=output_name,
+            output_description=output_description,
+            instructions=_instructions_with_json_schema(instructions, json_schema),
+            deps_type=deps_type,
+            model_settings=model_settings,
+            output_retries=output_retries,
+            tool_retries=tool_retries,
+            use_structured_output=False,
+        )
+        agent = Agent(**agent_kwargs)
 
     @agent.output_validator
     def validate_against_schema(
@@ -108,6 +123,62 @@ def create_schema_validated_agent(
         return validate_json_output_against_schema(output, json_schema)
 
     return agent
+
+
+def _schema_validated_agent_kwargs(
+    *,
+    model: Any,
+    json_schema: dict[str, Any],
+    output_name: str,
+    output_description: str | None,
+    instructions: str | None,
+    deps_type: type[Any] | None,
+    model_settings: dict[str, Any] | None,
+    output_retries: int,
+    tool_retries: int | None,
+    use_structured_output: bool,
+) -> dict[str, Any]:
+    output_type = (
+        structured_profile_output(
+            json_schema,
+            name=output_name,
+            description=output_description,
+        )
+        if use_structured_output
+        else prompted_json_output(
+            dict[str, Any],
+            name=output_name,
+            description=output_description,
+        )
+    )
+    agent_kwargs: dict[str, Any] = {
+        "model": model,
+        "output_type": output_type,
+        "instructions": instructions,
+        "model_settings": model_settings,
+        "output_retries": output_retries,
+    }
+    if tool_retries is not None:
+        agent_kwargs["tool_retries"] = tool_retries
+    if deps_type is not None:
+        agent_kwargs["deps_type"] = deps_type
+
+    return agent_kwargs
+
+
+def _is_pydantic_ref_resolution_error(exc: KeyError) -> bool:
+    return bool(exc.args) and isinstance(exc.args[0], str) and exc.args[0].startswith("#/")
+
+
+def _instructions_with_json_schema(
+    instructions: str | None,
+    json_schema: dict[str, Any],
+) -> str:
+    return (
+        (instructions or "")
+        + "\n\nReturn a valid JSON object conforming to this JSON Schema:\n"
+        + json.dumps(json_schema, ensure_ascii=False, indent=2)
+    ).strip()
 
 
 def _schema_validator(json_schema: dict[str, Any]):

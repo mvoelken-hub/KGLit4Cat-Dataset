@@ -43,6 +43,28 @@ class InitialContextRequest(BaseModel):
     )
 
 
+class InitialDraftRequest(BaseModel):
+    data_package_id: str = Field(..., description="ID of the uploaded data package.")
+    profile_identifier: str = Field(
+        ...,
+        description="Identifier of the registered extraction profile.",
+    )
+
+
+class PatchDraftRequest(BaseModel):
+    data_package_id: str = Field(..., description="ID of the uploaded data package.")
+    profile_identifier: str = Field(
+        ...,
+        description="Identifier of the registered extraction profile.",
+    )
+    num_chunks_per_turn: int | None = Field(
+        None,
+        ge=1,
+        le=50,
+        description="Optional number of chunks to include in each patch agent call.",
+    )
+
+
 class ProfileValidationIssueResponse(BaseModel):
     path: str
     message: str
@@ -61,6 +83,14 @@ class JsonLdExportResponse(BaseModel):
 
 def _initial_context_response(initial_context: InitialContext) -> InitialContext:
     return initial_context
+
+
+def _initial_draft_response(initial_draft: dict[str, Any]) -> dict[str, Any]:
+    return initial_draft
+
+
+def _patch_draft_response(draft: dict[str, Any]) -> dict[str, Any]:
+    return draft
 
 
 def _profile_manifest_response(manifest: ProfileManifest) -> ProfileManifestResponse:

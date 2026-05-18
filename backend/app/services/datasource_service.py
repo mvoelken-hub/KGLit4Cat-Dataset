@@ -35,6 +35,27 @@ class DataSourceService:
     def get_file_entry(self, id: str, file_path: str) -> FileEntry:
         data_package = self.get_data_package(id)
         return data_package.get_file_entry(file_path)
+
+    def get_completed_content_chunks_by_file(
+        self,
+        data_package_id: str,
+    ) -> list[list[ContentChunk]]:
+        task_name = f"chunking:file_entries:{data_package_id}"
+        task_info = self.task_registry.get_task_info(task_name)
+        if task_info is None or task_info.status != TaskStatus.COMPLETED:
+            return []
+
+        data_package = self.get_data_package(data_package_id)
+        content_chunks_by_file: list[list[ContentChunk]] = []
+        for file_entry in data_package.files:
+            content_chunks = self.blob_repository.load_content_chunks_by_file_path(
+                data_package_id,
+                file_entry.file_path,
+            )
+            if content_chunks:
+                content_chunks_by_file.append(content_chunks)
+
+        return content_chunks_by_file
     
     async def chunk_file_entries_in_data_package(
         self,
