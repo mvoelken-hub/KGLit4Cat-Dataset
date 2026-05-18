@@ -13,6 +13,7 @@ dependencies = [
     "ollama>=0.6.2",
     "pandas[excel]>=3.0.3",
     "pydantic>=2.13.4",
+    "pydantic-ai-slim[openai]>=1.97.0",
     "pymupdf>=1.27.2.3",
     "pyyaml>=6.0.3",
     "rdflib>=7.6.0",

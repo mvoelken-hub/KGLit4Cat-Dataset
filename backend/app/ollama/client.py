@@ -1,7 +1,7 @@
-from typing import Sequence
-
 import httpx
 import ollama
+from pydantic_ai.models.ollama import OllamaModel
+from pydantic_ai.providers.ollama import OllamaProvider
 
 from app.core.config import Settings, settings
 from logging import Logger
@@ -22,10 +22,10 @@ class OllamaClientWrapper:
         self.embed_dimensions = settings.ollama_embed_dimensions
         self.max_context_length = settings.max_context_length
 
-        # self.agent_model = OllamaModel(
-        #     settings.ollama_chat_model,
-        #     provider=OllamaProvider(base_url=settings.ollama_base_url+"/v1"),
-        # )
+        self.agent_model = OllamaModel(
+            settings.ollama_chat_model,
+            provider=OllamaProvider(base_url=settings.ollama_base_url+"/v1"),
+        )
 
     async def stop_all_models(self) -> None:
         await self.stop_embedding_model()
