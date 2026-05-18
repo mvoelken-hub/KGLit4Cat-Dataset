@@ -4,16 +4,23 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Path, UploadF
 from pydantic import HttpUrl
 
 from app.api.v1.schemas import (
+    InitialContextRequest,
     JsonLdExportResponse,
     ProfileDocumentRequest,
     ProfileManifestResponse,
     ProfileValidationResponse,
+    _initial_context_response,
     _jsonld_export_response,
     _profile_manifest_response,
     _profile_validation_response,
 )
 from app.dependencies import get_extraction_service
+from app.domain.datasources import (
+    DataPackageIdNotFoundError,
+    DataPackageZipNotFoundError,
+)
 from app.domain.extraction import (
+    InitialContext,
     InvalidProfileIdentifierError,
     ProfileAlreadyExistsError,
     ProfileCompatibilityError,
@@ -21,6 +28,7 @@ from app.domain.extraction import (
     ProfileSourceError,
 )
 from app.services.extraction_service import ExtractionService
+from pydantic_ai.exceptions import AgentRunError
 
 
 router = APIRouter(prefix="/extraction", tags=["Extraction"])
@@ -54,6 +62,38 @@ def _raise_profile_error(exc: Exception) -> None:
         ) from exc
 
     raise exc
+
+
+def _raise_extraction_error(exc: Exception) -> None:
+    if isinstance(exc, (DataPackageIdNotFoundError, DataPackageZipNotFoundError)):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+    if isinstance(exc, AgentRunError):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+    _raise_profile_error(exc)
+
+
+@router.post("/initial-context", response_model=InitialContext)
+async def extract_initial_context(
+    request: InitialContextRequest,
+    extraction_service: ExtractionService = Depends(get_extraction_service),
+):
+    try:
+        result = await extraction_service.extract_initial_context(
+            data_package_id=request.data_package_id,
+            max_files_to_read=request.max_files_to_read,
+            max_chars_per_file=request.max_chars_per_file,
+        )
+        return _initial_context_response(result)
+    except Exception as exc:
+        _raise_extraction_error(exc)
 
 
 @router.post(

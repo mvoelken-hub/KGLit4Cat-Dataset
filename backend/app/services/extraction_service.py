@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import TYPE_CHECKING
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -9,6 +10,7 @@ from fastapi import UploadFile
 
 from app.core.config import Settings
 from app.domain.extraction import (
+    InitialContext,
     JsonLdExportResult,
     ProfileAlreadyExistsError,
     ProfileManifest,
@@ -16,11 +18,17 @@ from app.domain.extraction import (
     ProfileSourceError,
     ProfileValidationResult,
     export_document_to_jsonld,
+    extract_initial_context_from_data_package,
     generate_profile_artifacts,
     validate_document_against_profile,
     validate_profile_identifier,
 )
 from app.repositories.extraction_profile_repository import ExtractionProfileRepository
+from app.repositories.extraction_output_repository import ExtractionOutputRepository
+
+if TYPE_CHECKING:
+    from app.ollama.client import OllamaClientWrapper
+    from app.services.datasource_service import DataSourceService
 
 
 class ExtractionService:
@@ -28,9 +36,15 @@ class ExtractionService:
         self,
         profile_repository: ExtractionProfileRepository,
         settings: Settings,
+        datasource_service: DataSourceService | None = None,
+        ollama_client: OllamaClientWrapper | None = None,
+        output_repository: ExtractionOutputRepository | None = None,
     ):
         self.profile_repository = profile_repository
         self.settings = settings
+        self.datasource_service = datasource_service
+        self.ollama_client = ollama_client
+        self.output_repository = output_repository
 
     async def register_profile(
         self,
@@ -130,6 +144,33 @@ class ExtractionService:
             jsonld_context=jsonld_context,
             target_class=manifest.target_class,
         )
+
+    async def extract_initial_context(
+        self,
+        *,
+        data_package_id: str,
+        max_files_to_read: int = 12,
+        max_chars_per_file: int = 3000,
+    ) -> InitialContext:
+        if self.datasource_service is None or self.ollama_client is None:
+            raise RuntimeError(
+                "ExtractionService requires datasource_service and ollama_client "
+                "to run extraction agents."
+            )
+
+        data_package = self.datasource_service.get_data_package(data_package_id)
+        initial_context = await extract_initial_context_from_data_package(
+            data_package=data_package,
+            model=self.ollama_client.agent_model,
+            max_files_to_read=max_files_to_read,
+            max_chars_per_file=max_chars_per_file,
+        )
+        if self.output_repository is not None:
+            self.output_repository.save_initial_context(
+                workflow_id=data_package_id,
+                initial_context=initial_context,
+            )
+        return initial_context
 
     async def _load_schema_from_upload(self, schema_file: UploadFile | None) -> tuple[str, str]:
         if schema_file is None:

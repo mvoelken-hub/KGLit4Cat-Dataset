@@ -35,12 +35,17 @@ def get_datasource_service() -> DataSourceService:
 
 
 from infra.filesystem_extraction_profile_repository import FileSystemExtractionProfileRepository
+from infra.filesystem_extraction_output_repository import FileSystemExtractionOutputRepository
 from app.services.extraction_service import ExtractionService
 
 extraction_profile_repository = FileSystemExtractionProfileRepository(settings.dcat_profiles_dir)
+extraction_output_repository = FileSystemExtractionOutputRepository(settings.output_dir)
 extraction_service = ExtractionService(
     extraction_profile_repository,
     settings,
+    datasource_service,
+    ollama_client,
+    extraction_output_repository,
 )
 
 def get_extraction_service() -> ExtractionService:

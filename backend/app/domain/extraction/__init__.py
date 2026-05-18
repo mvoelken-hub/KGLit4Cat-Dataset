@@ -1,3 +1,24 @@
+from app.domain.extraction.agents import (
+    DEFAULT_OUTPUT_RETRIES,
+    JSON_OUTPUT_TEMPLATE,
+    create_schema_validated_agent,
+    prompted_json_output,
+    structured_profile_output,
+    validate_json_output_against_schema,
+)
+from app.domain.extraction.artifacts import (
+    FileRelationship,
+    InitialContext,
+    MetadataSource,
+)
+from app.domain.extraction.initial_context import (
+    INITIAL_CONTEXT_INSTRUCTIONS,
+    InitialContextDeps,
+    create_initial_context_agent,
+    extract_initial_context_from_data_package,
+    list_initial_context_dataset_files,
+    read_initial_context_file_content,
+)
 from app.domain.extraction.profiles import (
     GeneratedProfileArtifacts,
     InvalidProfileIdentifierError,
@@ -20,6 +41,21 @@ from app.domain.extraction.profiles import (
 )
 
 __all__ = [
+    "DEFAULT_OUTPUT_RETRIES",
+    "INITIAL_CONTEXT_INSTRUCTIONS",
+    "InitialContextDeps",
+    "JSON_OUTPUT_TEMPLATE",
+    "FileRelationship",
+    "InitialContext",
+    "MetadataSource",
+    "create_initial_context_agent",
+    "create_schema_validated_agent",
+    "extract_initial_context_from_data_package",
+    "list_initial_context_dataset_files",
+    "prompted_json_output",
+    "read_initial_context_file_content",
+    "structured_profile_output",
+    "validate_json_output_against_schema",
     "GeneratedProfileArtifacts",
     "InvalidProfileIdentifierError",
     "JsonLdExportResult",
