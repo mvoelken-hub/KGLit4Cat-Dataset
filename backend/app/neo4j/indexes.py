@@ -13,7 +13,7 @@ from typing import Any, Literal, Self, get_args
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
-from app.neo4j.types import Neo4jDateTimeType
+from app.neo4j.types import normalize_neo4j_value
 
 
 SemanticIndexType = Literal["VECTOR", "FULLTEXT"]
@@ -118,8 +118,7 @@ class BaseIndex(BaseModel):
     @classmethod
     def from_row(cls, row: dict) -> Self:
         for key, val in row.items():
-            if isinstance(val, Neo4jDateTimeType):
-                row[key] = val.to_native().isoformat()
+            row[key] = normalize_neo4j_value(val)
         return cls.model_validate(row)
 
     def convert_to_dedicated_index(self) -> VectorIndexInfo | FullTextIndexInfo:

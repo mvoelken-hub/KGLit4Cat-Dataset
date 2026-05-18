@@ -1,6 +1,3 @@
-import re
-from typing import Any, Literal
-
 from rdflib import Graph, URIRef
 
 from app.neo4j import (
@@ -9,6 +6,7 @@ from app.neo4j import (
     FullTextIndexInfo,
     CreateIndexRequest,
     normalize_index_token,
+    normalize_neo4j_value,
     SemanticIndexType,
     SEMANTIC_INDEX_TYPES,
 )
@@ -16,8 +14,11 @@ from app.neo4j import (
 from app.ollama import OllamaClientWrapper
 
 from app.domain.semantics import (
+    TraversalDirection,
+    VocabGraphStatement,
     VocabSchemeInfo,
     VocabResource,
+    VocabSearchCandidate,
     META_ONTOLOGY_TYPES,
     META_PROPERTIES,
     RELEVANT_QUDT_TYPES,
@@ -220,11 +221,132 @@ class Neo4jSemanticGraphRepository:
                 VocabResource(
                     uri=record["uri"],
                     rdf_types=labels,
-                    properties=record["props"]
+                    properties=normalize_neo4j_value(record["props"])
                 )
             )
 
         return resources
+
+    async def query_vocab_vector_candidates(
+        self,
+        identifier: str,
+        rdf_type: str,
+        embedding: list[float],
+        top_k: int,
+    ) -> list[VocabSearchCandidate]:
+        index_name = self.get_index_name(rdf_type, "VECTOR")
+        result = await self._neo4j_driver.query(
+            """
+            CALL db.index.vector.queryNodes($indexName, $limit, $embedding)
+            YIELD node, score
+            MATCH (v:VocabScheme { identifier: $identifier })-[:HAS_RESOURCE]->(node)
+            RETURN node.uri AS uri, score
+            ORDER BY score DESC
+            LIMIT $limit
+            """,
+            parameters={
+                "identifier": identifier,
+                "indexName": index_name,
+                "embedding": embedding,
+                "limit": top_k,
+            },
+        )
+        return [
+            VocabSearchCandidate(
+                uri=str(record["uri"]),
+                score=float(record["score"]),
+                rank=rank,
+                source="vector",
+            )
+            for rank, record in enumerate(result, start=1)
+        ]
+
+    async def query_vocab_fulltext_candidates(
+        self,
+        identifier: str,
+        rdf_type: str,
+        query_text: str,
+        top_k: int,
+    ) -> list[VocabSearchCandidate]:
+        index_name = self.get_index_name(rdf_type, "FULLTEXT")
+        result = await self._neo4j_driver.query(
+            """
+            CALL db.index.fulltext.queryNodes($indexName, $queryText, { limit: $limit })
+            YIELD node, score
+            MATCH (v:VocabScheme { identifier: $identifier })-[:HAS_RESOURCE]->(node)
+            RETURN node.uri AS uri, score
+            ORDER BY score DESC
+            LIMIT $limit
+            """,
+            parameters={
+                "identifier": identifier,
+                "indexName": index_name,
+                "queryText": query_text,
+                "limit": top_k,
+            },
+        )
+        return [
+            VocabSearchCandidate(
+                uri=str(record["uri"]),
+                score=float(record["score"]),
+                rank=rank,
+                source="fulltext",
+            )
+            for rank, record in enumerate(result, start=1)
+        ]
+
+    async def expand_vocab_graph(
+        self,
+        identifier: str,
+        seed_uris: list[str],
+        allowed_rel_types: list[str],
+        traversal_direction: TraversalDirection,
+        max_hops: int,
+        max_statements_per_seed: int,
+    ) -> list[VocabGraphStatement]:
+        if not seed_uris or not allowed_rel_types:
+            return []
+
+        path_pattern = self._expansion_path_pattern(traversal_direction, max_hops)
+        result = await self._neo4j_driver.query(
+            f"""
+            UNWIND $seedUris AS seedUri
+            MATCH (v:VocabScheme {{ identifier: $identifier }})-[:HAS_RESOURCE]->(seed:Resource)
+            WHERE seed.uri = seedUri
+            CALL (seed) {{
+                MATCH path = {path_pattern}
+                WHERE all(rel IN relationships(path)
+                    WHERE type(rel) <> 'HAS_RESOURCE'
+                    AND type(rel) IN $allowedRelTypes
+                )
+                WITH DISTINCT relationships(path) AS rels
+                UNWIND rels AS rel
+                WITH DISTINCT
+                    startNode(rel).uri AS subjectUri,
+                    type(rel) AS predicate,
+                    endNode(rel).uri AS objectUri
+                WHERE subjectUri IS NOT NULL AND objectUri IS NOT NULL
+                ORDER BY subjectUri, predicate, objectUri
+                LIMIT $maxStatementsPerSeed
+                RETURN subjectUri, predicate, objectUri
+            }}
+            RETURN subjectUri, predicate, objectUri
+            """,
+            parameters={
+                "identifier": identifier,
+                "seedUris": seed_uris,
+                "allowedRelTypes": allowed_rel_types,
+                "maxStatementsPerSeed": max_statements_per_seed,
+            },
+        )
+        return [
+            VocabGraphStatement(
+                subject_uri=str(record["subjectUri"]),
+                predicate=str(record["predicate"]),
+                object_uri=str(record["objectUri"]),
+            )
+            for record in result
+        ]
 
     async def check_pending_embedding_updates(self, identifier: str) -> list[VocabResource]:
         vocab_indexes = await self.get_vocab_indexes(identifier)
@@ -260,6 +382,14 @@ class Neo4jSemanticGraphRepository:
     def get_index_name(rdf_type: str, index_type: SemanticIndexType) -> str:
         safe_rdf_type = normalize_index_token(rdf_type)        
         return f"{VOCAB_INDEX_PREFIX}_{safe_rdf_type}_{index_type}"
+
+    @staticmethod
+    def _expansion_path_pattern(traversal_direction: TraversalDirection, max_hops: int) -> str:
+        if traversal_direction == "outgoing":
+            return f"(seed)-[*1..{max_hops}]->(other)"
+        if traversal_direction == "incoming":
+            return f"(seed)<-[*1..{max_hops}]-(other)"
+        return f"(seed)-[*1..{max_hops}]-(other)"
     
     async def find_nodes_without_emebdding(self, vector_index: VectorIndexInfo) -> set[str]:
         query = f"""

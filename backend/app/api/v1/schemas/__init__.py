@@ -14,9 +14,15 @@ from app.api.v1.schemas.tasks import (
 )
 
 from app.api.v1.schemas.semantic import (
+    CompactVocabResourceResponse,
+    VocabGraphStatementResponse,
     VocabSchemeInfoResponse,
     VocabTermSchemeResponse,
-    VocabEmbeddingUpdateResponse
+    VocabEmbeddingUpdateResponse,
+    VocabQueryRequest,
+    VocabQueryResultResponse,
+    VocabSeedResponse,
+    _vocab_query_result_response,
 )
 
 __all__ = [
@@ -32,4 +38,10 @@ __all__ = [
     "VocabSchemeInfoResponse",
     "VocabTermSchemeResponse",
     "VocabEmbeddingUpdateResponse",
+    "VocabQueryRequest",
+    "VocabQueryResultResponse",
+    "VocabSeedResponse",
+    "VocabGraphStatementResponse",
+    "CompactVocabResourceResponse",
+    "_vocab_query_result_response",
 ]

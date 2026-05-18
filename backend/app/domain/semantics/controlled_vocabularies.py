@@ -16,6 +16,10 @@ class VocabAlreadyExistsError(Exception):
     pass
 
 
+class VocabNotFoundError(Exception):
+    pass
+
+
 class VocabResource(BaseModel):
     """A vocabulary resource projection used for embedding generation."""
 

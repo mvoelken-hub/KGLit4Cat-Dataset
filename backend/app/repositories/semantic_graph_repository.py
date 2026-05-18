@@ -2,8 +2,11 @@ from typing import Protocol
 from rdflib import Graph
 
 from app.domain.semantics import (
+    TraversalDirection,
+    VocabGraphStatement,
     VocabSchemeInfo,
-    VocabResource
+    VocabResource,
+    VocabSearchCandidate,
 )
 
 from app.neo4j import (
@@ -31,6 +34,35 @@ class SemanticGraphRepository(Protocol):
         ...
 
     async def get_vocab_resources(self, uris: set[str]) -> list[VocabResource]:
+        ...
+
+    async def query_vocab_vector_candidates(
+        self,
+        identifier: str,
+        rdf_type: str,
+        embedding: list[float],
+        top_k: int,
+    ) -> list[VocabSearchCandidate]:
+        ...
+
+    async def query_vocab_fulltext_candidates(
+        self,
+        identifier: str,
+        rdf_type: str,
+        query_text: str,
+        top_k: int,
+    ) -> list[VocabSearchCandidate]:
+        ...
+
+    async def expand_vocab_graph(
+        self,
+        identifier: str,
+        seed_uris: list[str],
+        allowed_rel_types: list[str],
+        traversal_direction: TraversalDirection,
+        max_hops: int,
+        max_statements_per_seed: int,
+    ) -> list[VocabGraphStatement]:
         ...
 
     async def check_pending_embedding_updates(self, identifier: str) -> list[VocabResource]:

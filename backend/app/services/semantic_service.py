@@ -7,12 +7,18 @@ from app.ollama.client import OllamaClientWrapper
 from app.core.task_registry import TaskRegistry, TaskInfo, TaskType, TaskStatus
 
 from app.domain.semantics import (
+    VocabGraphStatement,
     VocabSchemeInfo,
     SerializedRdfGraph,
     LoadedRdfGraph,
     load_rdf_graph,
     VocabAlreadyExistsError,
-    VocabResource
+    VocabNotFoundError,
+    VocabQuery,
+    VocabQueryResult,
+    VocabResource,
+    compact_vocab_query_result,
+    fuse_vocab_candidates,
 )
 from app.repositories.semantic_graph_repository import SemanticGraphRepository
 
@@ -57,6 +63,90 @@ class SemanticService:
 
     async def list_vocabularies(self) -> list[str]:
         return await self.semantic_graph_repository.list_vocabulary_identifiers()
+
+    async def query_vocabulary(self, identifier: str, query: VocabQuery) -> VocabQueryResult:
+        vocab_scheme_info = await self.get_vocabulary(identifier)
+        if vocab_scheme_info is None:
+            raise VocabNotFoundError(f"Vocabulary with identifier '{identifier}' not found.")
+
+        term_scheme = next(
+            (
+                term
+                for term in vocab_scheme_info.vocab_term_schemes
+                if term.rdf_type == query.rdf_type
+            ),
+            None,
+        )
+        if term_scheme is None:
+            raise ValueError(
+                f"RDF type '{query.rdf_type}' is not available in vocabulary '{identifier}'."
+            )
+
+        vector_candidates = []
+        if query.vector_query:
+            embedding = (await self.ollama_client.get_embeddings([query.vector_query]))[0]
+            vector_candidates = await self.semantic_graph_repository.query_vocab_vector_candidates(
+                identifier=identifier,
+                rdf_type=query.rdf_type,
+                embedding=embedding,
+                top_k=query.vector_top_k,
+            )
+
+        fulltext_candidates = []
+        if query.fulltext_query:
+            fulltext_candidates = await self.semantic_graph_repository.query_vocab_fulltext_candidates(
+                identifier=identifier,
+                rdf_type=query.rdf_type,
+                query_text=query.fulltext_query,
+                top_k=query.fulltext_top_k,
+            )
+
+        seeds = fuse_vocab_candidates(
+            rdf_type=query.rdf_type,
+            vector_candidates=vector_candidates,
+            fulltext_candidates=fulltext_candidates,
+            seed_top_k=query.seed_top_k,
+            vector_weight=query.vector_weight,
+            fulltext_weight=query.fulltext_weight,
+            rrf_k=query.rrf_k,
+        )
+
+        seed_uris = [seed.uri for seed in seeds]
+        allowed_rel_types = (
+            term_scheme.applicable_relationships
+            if query.allowed_rel_types is None
+            else query.allowed_rel_types
+        )
+
+        graph_statements: list[VocabGraphStatement] = []
+        if seed_uris and allowed_rel_types:
+            graph_statements = await self.semantic_graph_repository.expand_vocab_graph(
+                identifier=identifier,
+                seed_uris=seed_uris,
+                allowed_rel_types=allowed_rel_types,
+                traversal_direction=query.traversal_direction,
+                max_hops=query.max_hops,
+                max_statements_per_seed=query.max_statements_per_seed,
+            )
+
+        resource_uris = set(seed_uris)
+        for statement in graph_statements:
+            resource_uris.add(statement.subject_uri)
+            resource_uris.add(statement.object_uri)
+
+        resources = (
+            await self.semantic_graph_repository.get_vocab_resources(resource_uris)
+            if resource_uris
+            else []
+        )
+
+        return compact_vocab_query_result(
+            identifier=identifier,
+            rdf_type=query.rdf_type,
+            seeds=seeds,
+            graph_statements=graph_statements,
+            resources=resources,
+        )
     
     async def delete_vocabulary(self, identifier: str) -> None:
         vocab_info = await self.get_vocabulary(identifier)
@@ -92,8 +182,6 @@ class SemanticService:
         
         else:
             return len(pending_updates), task_info.status
-        
-
     # task runners
 
     async def _run_embedding_generation(self, pending_vocab_resources: list[VocabResource]) -> None:

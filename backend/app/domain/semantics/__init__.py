@@ -9,7 +9,22 @@ from app.domain.semantics.controlled_vocabularies import (
     VocabResource,
     VocabSchemeInfo,
     VocabTermScheme,
-    VocabAlreadyExistsError
+    VocabAlreadyExistsError,
+    VocabNotFoundError,
+)
+
+from app.domain.semantics.vocab_queries import (
+    CompactVocabResource,
+    TraversalDirection,
+    VocabGraphStatement,
+    VocabQuery,
+    VocabQueryResult,
+    VocabSearchCandidate,
+    VocabSeed,
+    VocabSearchSource,
+    compact_vocab_query_result,
+    compact_vocab_resource,
+    fuse_vocab_candidates,
 )
 
 from app.domain.semantics.ontologies import (
@@ -27,6 +42,18 @@ __all__ = [
     "VocabSchemeInfo",
     "VocabTermScheme",
     "VocabAlreadyExistsError",
+    "VocabNotFoundError",
+    "CompactVocabResource",
+    "TraversalDirection",
+    "VocabGraphStatement",
+    "VocabQuery",
+    "VocabQueryResult",
+    "VocabSearchCandidate",
+    "VocabSeed",
+    "VocabSearchSource",
+    "compact_vocab_query_result",
+    "compact_vocab_resource",
+    "fuse_vocab_candidates",
     "META_PROPERTIES",
     "META_ONTOLOGY_TYPES"
 ]

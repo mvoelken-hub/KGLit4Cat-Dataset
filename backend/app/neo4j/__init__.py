@@ -10,7 +10,7 @@ from app.neo4j.indexes import (
     SemanticIndexType,
     SEMANTIC_INDEX_TYPES,
 )
-from app.neo4j.types import Neo4jDateTimeType
+from app.neo4j.types import Neo4jDateTimeType, normalize_neo4j_value
 
 __all__ = [
     "Neo4jDriver",
@@ -21,6 +21,7 @@ __all__ = [
     "IndexCreationError",
     "VectorIndexConfiguration",
     "Neo4jDateTimeType",
+    "normalize_neo4j_value",
     "normalize_index_token",
     "SemanticIndexType",
     "SEMANTIC_INDEX_TYPES"

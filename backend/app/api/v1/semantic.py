@@ -1,13 +1,17 @@
 from fastapi import APIRouter, Depends, Path, UploadFile, File, Form, HTTPException, status
 from typing import Annotated
-from pydantic import HttpUrl
+from pydantic import HttpUrl, ValidationError
 
 from app.dependencies import get_semantic_service
+from app.domain.semantics import VocabNotFoundError
 
 from app.api.v1.schemas import (
     VocabSchemeInfoResponse,
     VocabTermSchemeResponse,
     VocabEmbeddingUpdateResponse,
+    VocabQueryRequest,
+    VocabQueryResultResponse,
+    _vocab_query_result_response,
 )
 
 from app.services.semantic_service import SemanticService
@@ -30,7 +34,7 @@ async def import_vocabulary(
             description=vocab_scheme_info.description,
             vocab_term_schemes=[
                 VocabTermSchemeResponse(
-                    rdf_types=term_scheme.rdf_type,
+                    rdf_type=term_scheme.rdf_type,
                     properties=term_scheme.properties,
                     applicable_relationships=term_scheme.applicable_relationships,
                     count=term_scheme.count
@@ -50,6 +54,26 @@ async def list_vocabularies(
     semantic_service: SemanticService = Depends(get_semantic_service),
 ):
     return await semantic_service.list_vocabularies()
+
+@router.post("/vocabularies/query/{identifier:path}", response_model=VocabQueryResultResponse)
+async def query_vocabulary(
+    query_request: VocabQueryRequest,
+    identifier: str = Path(..., description="The identifier of the vocabulary scheme to query."),
+    semantic_service: SemanticService = Depends(get_semantic_service),
+):
+    try:
+        result = await semantic_service.query_vocabulary(identifier, query_request.to_domain())
+        return _vocab_query_result_response(result)
+    except VocabNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except (ValueError, ValidationError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
 
 @router.post("/vocabularies/embeddings/{identifier:path}", response_model=VocabEmbeddingUpdateResponse)
 async def check_pending_embedding_updates(
@@ -89,7 +113,7 @@ async def get_vocabulary(
         description=vocab_scheme_info.description,
         vocab_term_schemes=[
             VocabTermSchemeResponse(
-                rdf_types=term_scheme.rdf_type,
+                rdf_type=term_scheme.rdf_type,
                 properties=term_scheme.properties,
                 applicable_relationships=term_scheme.applicable_relationships,
                 count=term_scheme.count
