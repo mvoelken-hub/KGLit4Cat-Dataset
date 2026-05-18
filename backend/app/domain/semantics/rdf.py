@@ -132,7 +132,7 @@ def skolemize_bnodes_deterministically(
         graph.namespace_manager.bind(skolem_prefix, URIRef(skolem_base), override=True, replace=True)
         return graph
 
-    skolemized_graph = Graph()
+    skolemized_graph = Graph(identifier=graph.identifier)
     for prefix, namespace in graph.namespace_manager.namespaces():
         skolemized_graph.namespace_manager.bind(prefix, namespace)
     skolemized_graph.namespace_manager.bind(skolem_prefix, URIRef(skolem_base), override=True, replace=True)

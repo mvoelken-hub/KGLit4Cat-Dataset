@@ -4,7 +4,7 @@ from app.core.task_registry import TaskStatus
 
 
 class VocabTermSchemeResponse(BaseModel):
-    rdf_types: list[str] = Field(...)
+    rdf_types: str = Field(...)
     properties: list[str] = Field(default_factory=list)
     applicable_relationships: list[str] = Field(default_factory=list)
     count: int = Field(...)

@@ -10,7 +10,7 @@ from app.neo4j import (
     CreateIndexRequest,
     normalize_index_token,
     SemanticIndexType,
-    SEMANTIC_INDEX_TYPES
+    SEMANTIC_INDEX_TYPES,
 )
 
 from app.ollama import OllamaClientWrapper
@@ -19,7 +19,8 @@ from app.domain.semantics import (
     VocabSchemeInfo,
     VocabResource,
     META_ONTOLOGY_TYPES,
-    META_PROPERTIES
+    META_PROPERTIES,
+    RELEVANT_QUDT_TYPES,
 )
 from app.domain.semantics.controlled_vocabularies import VocabTermScheme
 
@@ -90,7 +91,8 @@ class Neo4jSemanticGraphRepository:
 
         for record in result_2:
             # Skip meta-ontology types
-            if record["RdfType"] in META_ONTOLOGY_TYPES:
+            rdf_type: str = str(record["RdfType"])
+            if any(rdf_type.startswith(prefix) for prefix in META_ONTOLOGY_TYPES) and rdf_type not in RELEVANT_QUDT_TYPES:
                 continue
             # Filter out meta-ontology properties
             properties = [
@@ -102,7 +104,7 @@ class Neo4jSemanticGraphRepository:
                 continue
 
             vocab_term_scheme = VocabTermScheme(
-                rdf_types=[record["RdfType"]],
+                rdf_type=rdf_type,
                 properties=properties,
                 applicable_relationships=record["ApplicableRelationships"],
                 count=record["Count"]
@@ -146,8 +148,23 @@ class Neo4jSemanticGraphRepository:
             raise ValueError(f"Vocabulary with identifier '{identifier}' not found")
         
         for term_scheme in vocab_info.vocab_term_schemes:
-            await self._create_vector_index_for_vocab_term_scheme(term_scheme)
-            await self._create_fulltext_index_for_vocab_term_scheme(term_scheme)
+            for index_type in SEMANTIC_INDEX_TYPES:
+                index_name = self.get_index_name(term_scheme.rdf_type, index_type)
+                existing_index = await self._neo4j_driver.get_index_info(index_name)
+                if existing_index:
+                    await self._neo4j_driver.resample_index(index_name)
+                    # We assume that the existing index covers all important properties for the FULLTEXT index (e.g. labels, descriptions, etc.).
+                    # If the new term scheme had new props we would need to delete the old index and add the new propetties to the esisting ones.
+                    continue
+                index_request = CreateIndexRequest(
+                    name=index_name,
+                    type=index_type,
+                    entity_type="NODE",
+                    on_label_or_type=[term_scheme.rdf_type],
+                    on_property=["embedding"] if index_type == "VECTOR" else term_scheme.properties,
+                )
+                await self._neo4j_driver.create_node_index(index_request)
+                        
 
     async def get_vocab_indexes(self, identifier: str) -> list[VectorIndexInfo | FullTextIndexInfo]:
         vocab_info = await self.get_vocabulary(identifier)
@@ -158,13 +175,12 @@ class Neo4jSemanticGraphRepository:
         vocab_indexes = []
         for term in vocab_info.vocab_term_schemes:
             # First find all vector indexes
-            for rdf_type in term.rdf_types:
-                vector_index_name = self.get_index_name(rdf_type, "VECTOR")
-                vector_index = next((idx for idx in all_indexes if idx.name == vector_index_name), None)
-                if vector_index:
-                    vocab_indexes.append(vector_index)
+            vector_index_name = self.get_index_name(term.rdf_type, "VECTOR")
+            vector_index = next((idx for idx in all_indexes if idx.name == vector_index_name), None)
+            if vector_index:
+                vocab_indexes.append(vector_index)
             # Then find all fulltext indexes
-            fulltext_index_name = self.get_index_name(term.rdf_types, "FULLTEXT")
+            fulltext_index_name = self.get_index_name(term.rdf_type, "FULLTEXT")
             fulltext_index = next((idx for idx in all_indexes if idx.name == fulltext_index_name), None)
             if fulltext_index:
                 vocab_indexes.append(fulltext_index)
@@ -177,10 +193,10 @@ class Neo4jSemanticGraphRepository:
             raise ValueError(f"Vocabulary with identifier '{identifier}' not found")
         
         for term in vocab_info.vocab_term_schemes:
-            for rdf_type in term.rdf_types:
-                for index_type in SEMANTIC_INDEX_TYPES:
-                    index_name = self.get_index_name(rdf_type, index_type)
-                    await self._neo4j_driver.drop_index_by_name(index_name)
+            for index_type in SEMANTIC_INDEX_TYPES:
+                index_name = self.get_index_name(term.rdf_type, index_type)
+                await self._neo4j_driver.drop_index_by_name(index_name)
+
 
 
     async def get_vocab_resources(self, uris: set[str]) -> list[VocabResource]:
@@ -241,18 +257,8 @@ class Neo4jSemanticGraphRepository:
     # Helper
 
     @staticmethod
-    def get_index_name(rdf_type: str | list[str], index_type: SemanticIndexType) -> str:
-
-        if index_type == "VECTOR":
-            if isinstance(rdf_type, list):
-                raise ValueError("RDF type must be a single string for VECTOR indexes")
-            safe_rdf_type = normalize_index_token(rdf_type)
-
-        else: # FULLTEXT
-            if isinstance(rdf_type, str):
-                rdf_type = [rdf_type]
-            safe_rdf_type = "_".join([normalize_index_token(rt) for rt in rdf_type])
-        
+    def get_index_name(rdf_type: str, index_type: SemanticIndexType) -> str:
+        safe_rdf_type = normalize_index_token(rdf_type)        
         return f"{VOCAB_INDEX_PREFIX}_{safe_rdf_type}_{index_type}"
     
     async def find_nodes_without_emebdding(self, vector_index: VectorIndexInfo) -> set[str]:
@@ -264,26 +270,3 @@ class Neo4jSemanticGraphRepository:
         result = await self._neo4j_driver.query(query)
         return set([str(record["uri"]) for record in result])
     
-    async def _create_vector_index_for_vocab_term_scheme(self, term_scheme: VocabTermScheme) -> None:
-        for rdf_type in term_scheme.rdf_types:
-            index_name = self.get_index_name(rdf_type, "VECTOR")
-            index_request = CreateIndexRequest(
-                name=index_name,
-                type="VECTOR",
-                entity_type="NODE",
-                on_label_or_type=[rdf_type],
-                on_property=["embedding"],
-            )
-            await self._neo4j_driver.create_node_index(index_request)
-
-    async def _create_fulltext_index_for_vocab_term_scheme(self, term_scheme: VocabTermScheme) -> None:
-    
-        index_name = self.get_index_name(term_scheme.rdf_types, "FULLTEXT")
-        index_request = CreateIndexRequest(
-            name=index_name,
-            type="FULLTEXT",
-            entity_type="NODE",
-            on_label_or_type=term_scheme.rdf_types,
-            on_property=term_scheme.properties,
-        )
-        await self._neo4j_driver.create_node_index(index_request)

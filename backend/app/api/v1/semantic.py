@@ -30,7 +30,7 @@ async def import_vocabulary(
             description=vocab_scheme_info.description,
             vocab_term_schemes=[
                 VocabTermSchemeResponse(
-                    rdf_types=term_scheme.rdf_types,
+                    rdf_types=term_scheme.rdf_type,
                     properties=term_scheme.properties,
                     applicable_relationships=term_scheme.applicable_relationships,
                     count=term_scheme.count
@@ -89,7 +89,7 @@ async def get_vocabulary(
         description=vocab_scheme_info.description,
         vocab_term_schemes=[
             VocabTermSchemeResponse(
-                rdf_types=term_scheme.rdf_types,
+                rdf_types=term_scheme.rdf_type,
                 properties=term_scheme.properties,
                 applicable_relationships=term_scheme.applicable_relationships,
                 count=term_scheme.count

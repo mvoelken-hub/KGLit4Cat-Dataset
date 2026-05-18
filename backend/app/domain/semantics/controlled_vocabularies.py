@@ -44,7 +44,7 @@ class VocabResource(BaseModel):
 class VocabTermScheme(BaseModel):
     """Domain model for a vocabulary term type and its graph shape."""
 
-    rdf_types: list[str] = Field(...)
+    rdf_type: str = Field(...)
     properties: list[str] = Field(default_factory=list)
     applicable_relationships: list[str] = Field(default_factory=list)
     count: int = Field(...)

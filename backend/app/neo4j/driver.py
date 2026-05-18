@@ -137,7 +137,7 @@ class Neo4jDriver:
             ),
             {"indexConfig": index_config},
         )
-        
+
     async def list_indexes(self, db_name: str | None = None) -> list[VectorIndexInfo | FullTextIndexInfo]:
         query = "SHOW {index_type} INDEXES YIELD *"
         indexes = []
@@ -148,6 +148,17 @@ class Neo4jDriver:
                     BaseIndex.from_row(record).convert_to_dedicated_index()
                 )
         return indexes
+    
+    async def get_index_info(self, index_name: str, db_name: str | None = None) -> VectorIndexInfo | FullTextIndexInfo | None:
+        query = "SHOW {index_type} INDEXES YIELD * WHERE name = $index_name"
+        for index_type in SEMANTIC_INDEX_TYPES:
+            result = await self.query(query.format(index_type=index_type), parameters={"index_name": index_name}, db_name=db_name)
+            if result:
+                return BaseIndex.from_row(result[0]).convert_to_dedicated_index()
+        return None
+    
+    async def resample_index(self, index_name: str, db_name: str | None = None) -> None:
+        await self.query(f"CALL db.resampleIndex($index_name)", parameters={"index_name": index_name}, db_name=db_name)
     
     async def drop_index_by_name(self, index_name: str, db_name: str | None = None) -> None:
         await self.query(f"DROP INDEX $index_name IF EXISTS", parameters={"index_name": index_name}, db_name=db_name)

@@ -14,7 +14,8 @@ from app.domain.semantics.controlled_vocabularies import (
 
 from app.domain.semantics.ontologies import (
     META_PROPERTIES,
-    META_ONTOLOGY_TYPES
+    META_ONTOLOGY_TYPES,
+    RELEVANT_QUDT_TYPES,
 )
 
 __all__ = [

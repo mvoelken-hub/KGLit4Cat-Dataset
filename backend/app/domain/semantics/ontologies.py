@@ -15,6 +15,7 @@ VOCAB_DESC_TYPES = frozenset({
 
 META_ONTOLOGY_TYPES: frozenset[str] = frozenset({
     # OWL structural types
+    "owl__Ontology",
     "owl__Axiom",
     "owl__Restriction",
     "owl__AllDifferent",
@@ -39,11 +40,22 @@ META_ONTOLOGY_TYPES: frozenset[str] = frozenset({
     "skos__ConceptScheme",
     "schema__Organization",
     "schema__Person",
+    "vaem__CatalogEntry",
+    "vaem__GraphMetaData",
     # Any swrl types
     "swrl__",
     # Blank-node identifiers (internal RDF structure, not vocabulary content)
     "bnode__",
+    # QUDT meta-types that are not useful for indexing or embedding.
+    "qudt__",
+    # obo
+    "obo__",
+})
 
+RELEVANT_QUDT_TYPES = frozenset({
+    "qudt__QuantityKind",
+    "qudt__Unit",
+    "qudt__ConstantValue",
 })
 
 # Meta properties that are common in vocabularies but not useful for indexing or embedding.

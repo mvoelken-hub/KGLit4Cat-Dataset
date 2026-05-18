@@ -31,6 +31,10 @@ INITIAL_VOCABS = [
         identifier="http://qudt.org/vocab/unit",
     ),
     InitialVocab(
+        rdf_source=HttpUrl("https://qudt.org/vocab/constant"),
+        identifier="http://qudt.org/vocab/constant",
+    ),
+    InitialVocab(
         rdf_source=HttpUrl("https://raw.githubusercontent.com/rsc-ontologies/rsc-cmo/master/chmo.owl"),
         identifier="http://purl.obolibrary.org/obo/chmo.owl",
     ),
