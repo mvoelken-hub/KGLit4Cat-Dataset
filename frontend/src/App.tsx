@@ -10,6 +10,7 @@ import {
   getPatchReviewState,
   getProtectedFields,
   patchDraft,
+  resolvePatchReview,
   saveDraft,
   savePatchReviewState,
   setProtectedFields as apiSetProtectedFields,
@@ -17,9 +18,9 @@ import {
 import { listProfiles } from './api/profiles';
 import { JsonEditor, type JsonObject, type JsonPatchMarker, type JsonValue, setValueAtPath, extractPatchInnerValue, PatchValueEditor } from './components/JsonEditor';
 import type { ChunkRequestResponse, DataPackageResponse, InitialContext, ProfileManifestResponse } from './api/types';
-import type { PatchArtifacts, PatchProgress, PatchReviewState, PatchTaskStatus } from './api/extraction';
+import type { PatchArtifacts, PatchProgress, PatchReviewResolutionItem, PatchReviewState, PatchTaskStatus } from './api/extraction';
 
-type BusyKey = 'upload' | 'chunk' | 'context' | 'draft' | 'patch' | 'load';
+type BusyKey = 'upload' | 'chunk' | 'context' | 'draft' | 'patch' | 'resolve' | 'load';
 type ReviewTab = 'matched' | 'unmapped' | 'resolved';
 type ReviewItem = JsonPatchMarker & { kind: 'matched' | 'unmapped'; fact?: string; reason?: string };
 
@@ -169,6 +170,25 @@ function buildReviewItems(artifacts: PatchArtifacts | null, reviewState: PatchRe
   }
 
   return items;
+}
+
+function toResolutionItem(item: ReviewItem): PatchReviewResolutionItem {
+  const resolutionItem: PatchReviewResolutionItem = {
+    id: item.id,
+    kind: item.kind,
+    path: item.path,
+    detail: item.detail,
+    issues: item.issues || [],
+    evidence: item.evidence || [],
+    fact: item.fact,
+    reason: item.reason,
+    confidence: item.confidence,
+    file_name: item.fileName,
+  };
+  if (item.patch && typeof item.patch === 'object' && !Array.isArray(item.patch)) {
+    resolutionItem.patch = item.patch as Record<string, unknown>;
+  }
+  return resolutionItem;
 }
 
 function ReviewItemList({ items, onResolve, onApplyPatch }: { items: ReviewItem[]; onResolve: (itemId: string) => void; onApplyPatch?: (itemId: string, value: unknown) => void }) {
@@ -492,6 +512,32 @@ export function App() {
     await persistPatchReviewState({ ...patchReviewState, unmapped_assignments }, field ? 'Unmapped fact assigned to field.' : 'Unmapped fact assignment removed.');
   }
 
+  async function onDelegateReviewResolution() {
+    if (!selectedPackageId || !selectedProfile || !unresolvedReviewItems.length) return;
+    setBusy('resolve');
+    try {
+      const result = await resolvePatchReview({
+        data_package_id: selectedPackageId,
+        profile_identifier: selectedProfile,
+        review_items: unresolvedReviewItems.map(toResolutionItem),
+      });
+      setDraft(result.draft);
+      setPatchReviewState(result.review_state);
+      if (result.validation_errors.length > 0) {
+        setMessage('Review agent produced schema issues. No review items were resolved.');
+      } else if (result.unresolved_item_ids.length > 0) {
+        setMessage(`Review agent resolved ${result.resolved_count} item${result.resolved_count === 1 ? '' : 's'}; ${result.unresolved_item_ids.length} still need manual review.`);
+      } else {
+        setMessage(`Review agent resolved ${result.resolved_count} item${result.resolved_count === 1 ? '' : 's'}.`);
+      }
+      void onShowPatchArtifacts();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Review resolution agent failed.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function onSaveProtectedFields(fields: string[]) {
     if (!selectedPackageId) return;
     const previous = protectedFields;
@@ -696,6 +742,12 @@ export function App() {
               {patchArtifacts && (
                 <div className="artifact-panel">
                   <h3>Review</h3>
+                  <div className="review-toolbar">
+                    <span>{unresolvedReviewItems.length} unresolved item{unresolvedReviewItems.length === 1 ? '' : 's'}</span>
+                    <button onClick={() => void onDelegateReviewResolution()} disabled={!unresolvedReviewItems.length || !!busy}>
+                      {busy === 'resolve' ? 'Agent resolving...' : 'Delegate remaining to agent'}
+                    </button>
+                  </div>
                   <div className="artifact-tabs" role="tablist" aria-label="Patch review">
                     <button className={reviewTab === 'matched' ? 'active' : ''} onClick={() => setReviewTab('matched')}>Matched issues ({matchedReviewItems.length})</button>
                     <button className={reviewTab === 'unmapped' ? 'active' : ''} onClick={() => setReviewTab('unmapped')}>Unmapped ({unmappedReviewFacts.length})</button>

@@ -32,6 +32,28 @@ export type PatchReviewState = {
   resolved_at: Record<string, string>;
 };
 
+export type PatchReviewResolutionItem = {
+  id: string;
+  kind: 'matched' | 'unmapped';
+  path: string;
+  detail?: string;
+  issues?: string[];
+  evidence?: string[];
+  patch?: Record<string, unknown>;
+  fact?: string;
+  reason?: string;
+  confidence?: number;
+  file_name?: string;
+};
+
+export type PatchReviewResolutionResponse = {
+  draft: object;
+  review_state: PatchReviewState;
+  resolved_count: number;
+  unresolved_item_ids: string[];
+  validation_errors: string[];
+};
+
 export async function getExistingInitialContext(data_package_id: string): Promise<InitialContext | null> {
   const response = await fetch(apiBaseUrl + '/extraction/initial-context/' + encodeURIComponent(data_package_id));
   if (response.status === 404) return null;
@@ -137,6 +159,22 @@ export async function savePatchReviewState(data_package_id: string, reviewState:
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(reviewState),
+  });
+  return readJson(await response);
+}
+
+export async function resolvePatchReview(input: {
+  data_package_id: string;
+  profile_identifier: string;
+  review_items: PatchReviewResolutionItem[];
+}): Promise<PatchReviewResolutionResponse> {
+  const response = await fetch(apiBaseUrl + '/extraction/patch-draft/' + encodeURIComponent(input.data_package_id) + '/resolve-review', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      profile_identifier: input.profile_identifier,
+      review_items: input.review_items,
+    }),
   });
   return readJson(await response);
 }
