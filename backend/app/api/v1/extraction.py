@@ -94,6 +94,26 @@ def _raise_extraction_error(exc: Exception) -> None:
     _raise_profile_error(exc)
 
 
+@router.get("/initial-context/{data_package_id}")
+async def get_existing_initial_context(
+    data_package_id: str,
+    extraction_service: ExtractionService = Depends(get_extraction_service),
+) -> InitialContext | None:
+    return await extraction_service.get_existing_initial_context(
+        data_package_id=data_package_id,
+    )
+
+
+@router.get("/initial-draft/{data_package_id}")
+async def get_existing_initial_draft(
+    data_package_id: str,
+    extraction_service: ExtractionService = Depends(get_extraction_service),
+) -> dict[str, Any] | None:
+    return await extraction_service.get_existing_initial_draft(
+        data_package_id=data_package_id,
+    )
+
+
 @router.post("/initial-context", response_model=InitialContext)
 async def extract_initial_context(
     request: InitialContextRequest,

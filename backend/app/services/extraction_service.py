@@ -333,3 +333,27 @@ class ExtractionService:
     @staticmethod
     def _patch_draft_task_name(data_package_id: str) -> str:
         return f"patching:draft:{data_package_id}"
+
+    async def get_existing_initial_context(
+        self,
+        *,
+        data_package_id: str,
+    ) -> InitialContext | None:
+        if self.output_repository is None:
+            return None
+        try:
+            return self.output_repository.load_initial_context(data_package_id)
+        except FileNotFoundError:
+            return None
+
+    async def get_existing_initial_draft(
+        self,
+        *,
+        data_package_id: str,
+    ) -> dict[str, Any] | None:
+        if self.output_repository is None:
+            return None
+        try:
+            return self.output_repository.load_initial_draft(data_package_id)
+        except FileNotFoundError:
+            return None
