@@ -101,7 +101,8 @@ All styles in `frontend/src/styles.css`. Uses CSS custom properties:
 ### Start Backend (dev)
 ```powershell
 cd backend
-uv run --env-file ../.env.development uvicorn app.main:fastapi_app --host 127.0.0.1 --port 8000 --reload
+# Use the existing .env file (already configured for remote Neo4j/Ollama)
+uv run --env-file .env uvicorn app.main:fastapi_app --host 127.0.0.1 --port 8000 --reload
 ```
 
 ### Start Frontend (dev)
@@ -111,6 +112,14 @@ npm install
 npx vite --port 3000
 ```
 The Vite dev server proxies `/api/v1` to `http://127.0.0.1:8000`.
+
+#### Troubleshooting Frontend Startup
+- **Node.js not on PATH**: If `npx` or `npm` is not found, ensure Node.js is installed and on your PATH, or run Vite directly:
+  ```powershell
+  cd frontend
+  & "C:\Program Files\nodejs\node.exe" "node_modules\vite\bin\vite.js" --port 3000
+  ```
+- **PowerShell Execution Policy**: If `npm`/`npx` fails with a PSSecurityException, PowerShell script execution is disabled. Either run `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser` (requires admin), or use the direct `node.exe` command above.
 
 ### Start Full Stack (Docker)
 ```powershell
