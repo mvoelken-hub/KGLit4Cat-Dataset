@@ -29,7 +29,7 @@ if not exist .env.development (
     echo Created .env.development from .env.development.example
 )
 
-docker compose --env-file .env.development -f docker-compose.dev.yml -f docker-compose.gpu.yml up -d
+docker compose --env-file .env.development -f docker-compose.dev.yml -f docker-compose.gpu.yml up -d --build
 start "API" /D "%~dp0backend" powershell -NoExit -ExecutionPolicy Bypass -Command "uv run --env-file ../.env.development uvicorn app.main:fastapi_app --host 127.0.0.1 --port 8000"
 call :wait_for_api
 goto open_browser
@@ -50,6 +50,7 @@ exit /b 0
 
 :open_browser
 echo Opening browser...
+start "SIMONE Frontend" "http://127.0.0.1:3000/"
 start "Neo4j Browser" "http://127.0.0.1:7474/browser/"
 start "API Docs" "http://127.0.0.1:8000/docs"
 endlocal
