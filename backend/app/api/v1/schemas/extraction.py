@@ -2,6 +2,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.core.task_registry import TaskStatus
 from app.domain.extraction import (
     InitialContext,
 )
@@ -45,6 +46,11 @@ class PatchDraftRequest(BaseModel):
     )
 
 
+class PatchDraftResponse(BaseModel):
+    draft: dict[str, Any]
+    status: TaskStatus
+
+
 def _initial_context_response(initial_context: InitialContext) -> InitialContext:
     return initial_context
 
@@ -53,5 +59,8 @@ def _initial_draft_response(initial_draft: dict[str, Any]) -> dict[str, Any]:
     return initial_draft
 
 
-def _patch_draft_response(draft: dict[str, Any]) -> dict[str, Any]:
-    return draft
+def _patch_draft_response(
+    draft: dict[str, Any],
+    status: TaskStatus,
+) -> PatchDraftResponse:
+    return PatchDraftResponse(draft=draft, status=status)

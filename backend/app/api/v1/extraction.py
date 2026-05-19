@@ -6,6 +6,7 @@ from app.api.v1.schemas import (
     InitialContextRequest,
     InitialDraftRequest,
     PatchDraftRequest,
+    PatchDraftResponse,
     _initial_context_response,
     _initial_draft_response,
     _patch_draft_response,
@@ -124,17 +125,17 @@ async def extract_initial_draft(
         _raise_extraction_error(exc)
 
 
-@router.post("/patch-draft", response_model=dict[str, Any])
+@router.post("/patch-draft", response_model=PatchDraftResponse)
 async def patch_initial_draft(
     request: PatchDraftRequest,
     extraction_service: ExtractionService = Depends(get_extraction_service),
 ):
     try:
-        result = await extraction_service.patch_initial_draft(
+        draft, task_status = await extraction_service.patch_initial_draft(
             data_package_id=request.data_package_id,
             profile_identifier=request.profile_identifier,
             num_chunks_per_turn=request.num_chunks_per_turn,
         )
-        return _patch_draft_response(result)
+        return _patch_draft_response(draft, task_status)
     except Exception as exc:
         _raise_extraction_error(exc)

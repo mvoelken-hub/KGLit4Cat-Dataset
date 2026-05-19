@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from pydantic_ai.models.test import TestModel
 
 from app.api.v1.extraction import router
+from app.core.task_registry import TaskRegistry, TaskStatus
 from app.dependencies import get_extraction_service
 from app.domain.datasources import ContentChunk, DataPackage, DataPackageIdNotFoundError, FileEntry
 from app.domain.extraction import (
@@ -16,11 +17,23 @@ from app.domain.extraction import (
     InitialContextRequiredError,
     PatchDraftPrerequisiteError,
 )
+from app.domain.extraction.patch_quality import CandidateQualityRating, PatchQualityReport, UnmappedFact
 from app.domain.profiles import ProfileManifest
 from app.services.extraction_service import ExtractionService
 from infra.filesystem_extraction_output_repository import (
     FileSystemExtractionOutputRepository,
 )
+
+
+class FakeLogger:
+    def info(self, *args, **kwargs):
+        pass
+
+    def warning(self, *args, **kwargs):
+        pass
+
+    def exception(self, *args, **kwargs):
+        pass
 
 
 INITIAL_CONTEXT_OUTPUT = {
@@ -55,11 +68,23 @@ PATCHED_DRAFT_OUTPUT = {
     "keywords": ["gas chromatography", "sample-a", "chunk-keyword"],
 }
 
-MERGE_PATCH_OUTPUT = {
-    "patch": {
-        "description": "Updated with chunk evidence.",
-        "keywords": ["chunk-keyword"],
-    }
+FIELD_PATCH_OUTPUT = {
+    "candidates": [
+        {
+            "field_path": "description",
+            "patch": {"description": "Updated with chunk evidence."},
+            "confidence": 0.9,
+            "reasoning": "Chunk contains updated description.",
+            "source_evidence": ["Chunk says chunk-keyword."],
+        },
+        {
+            "field_path": "keywords",
+            "patch": {"keywords": ["chunk-keyword"]},
+            "confidence": 0.85,
+            "reasoning": "Chunk contains keyword evidence.",
+            "source_evidence": ["Chunk says chunk-keyword."],
+        },
+    ]
 }
 
 PROFILE_JSON_SCHEMA = {
@@ -158,7 +183,13 @@ class FakeOutputRepository:
         self.initial_context: InitialContext | None = None
         self.initial_draft: dict | None = None
         self.draft: dict | None = None
+        self.draft_saves: list[dict] = []
         self.patches: dict[str, dict] = {}
+        self.raw_patches: dict[str, dict] = {}
+        self.accepted_patches: dict[str, dict] = {}
+        self.candidates: dict[str, list] = {}
+        self.quality_reports: dict[str, PatchQualityReport] = {}
+        self.unmapped_facts: dict[str, list[UnmappedFact]] = {}
 
     def save_initial_context(
         self,
@@ -205,6 +236,7 @@ class FakeOutputRepository:
             "draft": draft,
         }
         self.draft = draft
+        self.draft_saves.append(json.loads(json.dumps(draft)))
 
     def load_draft(self, workflow_id: str) -> dict:
         if self.draft is None:
@@ -220,9 +252,54 @@ class FakeOutputRepository:
     ) -> None:
         self.patches[patch_file_name] = patch
 
+    def save_raw_patch(
+        self,
+        *,
+        workflow_id: str,
+        patch_file_name: str,
+        patch: dict,
+    ) -> None:
+        self.raw_patches[patch_file_name] = patch
+
+    def save_accepted_patch(
+        self,
+        *,
+        workflow_id: str,
+        patch_file_name: str,
+        patch: dict,
+    ) -> None:
+        self.accepted_patches[patch_file_name] = patch
+
+    def save_candidates(
+        self,
+        *,
+        workflow_id: str,
+        patch_file_name: str,
+        candidates: list,
+    ) -> None:
+        self.candidates[patch_file_name] = candidates
+
+    def save_quality_report(
+        self,
+        *,
+        workflow_id: str,
+        patch_file_name: str,
+        quality_report: PatchQualityReport,
+    ) -> None:
+        self.quality_reports[patch_file_name] = quality_report
+
+    def save_unmapped_facts(
+        self,
+        *,
+        workflow_id: str,
+        patch_file_name: str,
+        unmapped_facts: list[UnmappedFact],
+    ) -> None:
+        self.unmapped_facts[patch_file_name] = unmapped_facts
+
 
 class FakeExtractionService:
-    def __init__(self, result: InitialContext | dict | Exception):
+    def __init__(self, result: InitialContext | dict | tuple[dict, TaskStatus] | Exception):
         self.result = result
         self.request: dict | None = None
 
@@ -262,7 +339,7 @@ class FakeExtractionService:
         data_package_id: str,
         profile_identifier: str,
         num_chunks_per_turn: int | None = None,
-    ) -> dict:
+    ) -> tuple[dict, TaskStatus]:
         self.request = {
             "data_package_id": data_package_id,
             "profile_identifier": profile_identifier,
@@ -270,7 +347,9 @@ class FakeExtractionService:
         }
         if isinstance(self.result, Exception):
             raise self.result
-        return self.result  # type: ignore[return-value]
+        if isinstance(self.result, tuple):
+            return self.result
+        return self.result, TaskStatus.COMPLETED  # type: ignore[return-value]
 
 
 class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
@@ -343,12 +422,14 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
             )
 
     async def test_patch_initial_draft_requires_existing_artifacts_and_chunks(self):
+        task_registry = TaskRegistry(settings=None, logger=FakeLogger())  # type: ignore[arg-type]
         service = ExtractionService(
             FakeProfileRepository(),  # type: ignore[arg-type]
             settings=None,  # type: ignore[arg-type]
             datasource_service=FakeDataSourceService(make_data_package()),  # type: ignore[arg-type]
-            ollama_client=FakeOllamaClient(MERGE_PATCH_OUTPUT),  # type: ignore[arg-type]
+            ollama_client=FakeOllamaClient(FIELD_PATCH_OUTPUT),  # type: ignore[arg-type]
             output_repository=FakeOutputRepository(),
+            task_registry=task_registry,
         )
 
         with self.assertRaises(PatchDraftPrerequisiteError):
@@ -363,12 +444,14 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
             INITIAL_CONTEXT_OUTPUT
         )
         output_repository.initial_draft = INITIAL_DRAFT_OUTPUT
+        task_registry = TaskRegistry(settings=None, logger=FakeLogger())  # type: ignore[arg-type]
         service = ExtractionService(
             FakeProfileRepository(),  # type: ignore[arg-type]
             settings=None,  # type: ignore[arg-type]
             datasource_service=FakeDataSourceService(make_data_package()),  # type: ignore[arg-type]
-            ollama_client=FakeOllamaClient(MERGE_PATCH_OUTPUT),  # type: ignore[arg-type]
+            ollama_client=FakeOllamaClient(FIELD_PATCH_OUTPUT),  # type: ignore[arg-type]
             output_repository=output_repository,
+            task_registry=task_registry,
         )
 
         with self.assertRaises(ChunkingRequiredError):
@@ -378,6 +461,8 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
             )
 
     async def test_patch_initial_draft_persists_draft_and_patches(self):
+        from unittest import mock as unittest_mock
+
         datasource_service = FakeDataSourceService(make_data_package())
         datasource_service.chunks_by_file = [
             [
@@ -395,23 +480,56 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
             INITIAL_CONTEXT_OUTPUT
         )
         output_repository.initial_draft = INITIAL_DRAFT_OUTPUT
-        service = ExtractionService(
-            FakeProfileRepository(),  # type: ignore[arg-type]
-            settings=None,  # type: ignore[arg-type]
-            datasource_service=datasource_service,  # type: ignore[arg-type]
-            ollama_client=FakeOllamaClient(MERGE_PATCH_OUTPUT),  # type: ignore[arg-type]
-            output_repository=output_repository,
+
+        accept_report = PatchQualityReport(
+            overall_decision="accept",
+            candidate_ratings=[
+                CandidateQualityRating(
+                    field_path="description",
+                    decision="accept",
+                    issues=[],
+                ),
+                CandidateQualityRating(
+                    field_path="keywords",
+                    decision="accept",
+                    issues=[],
+                ),
+            ],
+            summary="All candidates accepted.",
         )
 
-        result = await service.patch_initial_draft(
-            data_package_id="package-id",
-            profile_identifier="test-profile",
-            num_chunks_per_turn=1,
-        )
+        with unittest_mock.patch(
+            "app.domain.extraction.patch_draft.review_patch_semantic_quality",
+            return_value=accept_report,
+        ):
+            task_registry = TaskRegistry(settings=None, logger=FakeLogger())  # type: ignore[arg-type]
+            service = ExtractionService(
+                FakeProfileRepository(),  # type: ignore[arg-type]
+                settings=None,  # type: ignore[arg-type]
+                datasource_service=datasource_service,  # type: ignore[arg-type]
+                ollama_client=FakeOllamaClient(FIELD_PATCH_OUTPUT),  # type: ignore[arg-type]
+                output_repository=output_repository,
+                task_registry=task_registry,
+            )
 
+            draft, status = await service.patch_initial_draft(
+                data_package_id="package-id",
+                profile_identifier="test-profile",
+                num_chunks_per_turn=1,
+            )
+            await task_registry.wait_for_task(
+                service._patch_draft_task_name("package-id"),
+                timeout=2.0,
+            )
+
+        result = output_repository.draft
+        self.assertEqual(status, TaskStatus.RUNNING)
+        self.assertEqual(draft, INITIAL_DRAFT_OUTPUT)
+        self.assertIsNotNone(result)
         self.assertEqual(result["description"], "Updated with chunk evidence.")
         self.assertEqual(output_repository.draft, result)
-        self.assertEqual(list(output_repository.patches.values())[0], MERGE_PATCH_OUTPUT["patch"])
+        self.assertEqual(output_repository.draft_saves[0], INITIAL_DRAFT_OUTPUT)
+        self.assertEqual(list(output_repository.patches.values())[0], {"description": "Updated with chunk evidence.", "keywords": ["chunk-keyword"]})
 
 
 class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
@@ -448,7 +566,7 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
             repository.save_patch(
                 workflow_id="package-id",
                 patch_file_name="patch_1.json",
-                patch=MERGE_PATCH_OUTPUT["patch"],
+                patch={"description": "Updated with chunk evidence.", "keywords": ["chunk-keyword"]},
             )
 
             loaded = repository.load_draft("package-id")
@@ -463,7 +581,7 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
 
         self.assertEqual(loaded, PATCHED_DRAFT_OUTPUT)
         self.assertTrue(patch_exists)
-        self.assertEqual(patch, MERGE_PATCH_OUTPUT["patch"])
+        self.assertEqual(patch, {"description": "Updated with chunk evidence.", "keywords": ["chunk-keyword"]})
 
     def test_missing_initial_context_raises_file_not_found(self):
         with TemporaryDirectory() as temporary_directory:
@@ -558,7 +676,7 @@ class InitialContextExtractionApiTests(unittest.TestCase):
         self.assertIn("/initial-context", response.json()["detail"])
 
     def test_patch_draft_endpoint_returns_draft(self):
-        service = FakeExtractionService(PATCHED_DRAFT_OUTPUT)
+        service = FakeExtractionService((PATCHED_DRAFT_OUTPUT, TaskStatus.RUNNING))
         client = self.make_client(service)
 
         response = client.post(
@@ -571,7 +689,8 @@ class InitialContextExtractionApiTests(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["description"], "Updated with chunk evidence.")
+        self.assertEqual(response.json()["draft"]["description"], "Updated with chunk evidence.")
+        self.assertEqual(response.json()["status"], "running")
         self.assertEqual(service.request["num_chunks_per_turn"], 2)  # type: ignore[index]
 
     def test_patch_draft_endpoint_maps_prerequisites_to_409(self):

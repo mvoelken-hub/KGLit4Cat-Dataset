@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -57,3 +59,42 @@ class InitialContext(BaseModel):
     metadata_sources: list[MetadataSource] = Field(default_factory=list)
     keywords: list[str] = Field(default_factory=list)
     summary: str
+
+
+class PatchCandidate(BaseModel):
+    """A field-level merge-patch candidate with provenance metadata."""
+
+    field_path: str = Field(
+        description=(
+            "Top-level Dataset property this candidate targets, "
+            "e.g. 'was_generated_by' or 'keyword'."
+        ),
+    )
+    patch: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Merge-patch scoped to this field. Must be a valid partial "
+            "update that can be merged at the top level of the draft."
+        ),
+    )
+    confidence: float = Field(
+        ge=0.0,
+        le=1.0,
+        description="Confidence that this patch is correct and relevant (0.0–1.0).",
+    )
+    reasoning: str = Field(
+        description="Brief justification for why this patch is warranted.",
+    )
+    source_evidence: list[str] = Field(
+        default_factory=list,
+        description="Relevant text snippets from the chunks supporting this patch.",
+    )
+
+
+class FieldPatchResult(BaseModel):
+    """Agent output: a list of field-level patch candidates."""
+
+    candidates: list[PatchCandidate] = Field(
+        default_factory=list,
+        description="Field-level patch candidates extracted from the chunk batch.",
+    )

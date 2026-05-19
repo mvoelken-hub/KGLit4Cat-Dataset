@@ -48,6 +48,7 @@ extraction_service = ExtractionService(
     datasource_service,
     ollama_client,
     extraction_output_repository,
+    task_registry,
 )
 
 def get_profile_service() -> ProfileService:

@@ -18,6 +18,7 @@ from app.domain.extraction import (
     create_initial_context_agent,
     create_initial_draft_agent,
     create_patch_draft_agent,
+    expand_schema_placeholders,
     extract_initial_context_from_data_package,
     initialize_draft_from_initial_context,
     list_initial_context_dataset_files,
@@ -28,7 +29,7 @@ from app.domain.extraction import (
     validate_json_output_against_schema,
     patch_draft_from_content_chunks,
 )
-from app.domain.profiles import ProfileManifest
+from app.domain.profiles import ProfileManifest, validate_document_against_profile
 
 
 OUTPUT_SCHEMA = {
@@ -61,17 +62,136 @@ PROFILE_JSON_SCHEMA = {
     },
 }
 
+RICH_PROFILE_JSON_SCHEMA = {
+    "$schema": "https://json-schema.org/draft/2019-09/schema",
+    "$defs": {
+        "Agent": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+                "type": {
+                    "anyOf": [
+                        {"$ref": "#/$defs/Concept"},
+                        {"type": "null"},
+                    ],
+                },
+            },
+            "required": ["name"],
+            "additionalProperties": False,
+        },
+        "Concept": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "label": {
+                    "type": ["string", "null"],
+                },
+            },
+            "required": ["id"],
+            "additionalProperties": False,
+        },
+        "Activity": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "title": {
+                    "type": ["array", "null"],
+                    "items": {"type": "string"},
+                },
+                "description": {
+                    "type": ["array", "null"],
+                    "items": {"type": "string"},
+                },
+                "agent": {
+                    "type": ["array", "null"],
+                    "items": {"$ref": "#/$defs/Agent"},
+                },
+                "related_activity": {
+                    "type": ["array", "null"],
+                    "items": {"$ref": "#/$defs/Activity"},
+                },
+            },
+            "required": ["id"],
+            "additionalProperties": False,
+        },
+        "Dataset": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "title": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+                "description": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+                "keyword": {
+                    "type": ["array", "null"],
+                    "items": {"type": "string"},
+                },
+                "publisher": {
+                    "anyOf": [
+                        {"$ref": "#/$defs/Agent"},
+                        {"type": "null"},
+                    ],
+                },
+                "was_generated_by": {
+                    "type": "array",
+                    "items": {"$ref": "#/$defs/Activity"},
+                },
+            },
+            "required": ["id", "title", "description", "was_generated_by"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+RICH_INITIAL_DRAFT_OUTPUT = {
+    "id": "dataset-sample-1",
+    "title": ["Mass spectrometry dataset for sample-1"],
+    "description": ["Initial draft for a mass spectrometry package."],
+    "was_generated_by": [
+        {
+            "id": "activity-ms",
+            "agent": [
+                {
+                    "name": ["Mass spectrometer"],
+                    "type": {
+                        "id": "instrument",
+                    },
+                }
+            ],
+        }
+    ],
+}
+
 INITIAL_DRAFT_OUTPUT = {
     "title": "Mass spectrometry dataset for sample-1",
     "description": "Initial draft for a mass spectrometry package.",
     "keywords": ["mass spectrometry", "sample-1"],
 }
 
-MERGE_PATCH_OUTPUT = {
-    "patch": {
-        "description": "Updated with chunk evidence.",
-        "keywords": ["chunk-keyword"],
-    }
+FIELD_PATCH_OUTPUT = {
+    "candidates": [
+        {
+            "field_path": "description",
+            "patch": {"description": "Updated with chunk evidence."},
+            "confidence": 0.9,
+            "reasoning": "Chunk contains updated description.",
+            "source_evidence": ["chunk text"],
+        },
+        {
+            "field_path": "keywords",
+            "patch": {"keywords": ["chunk-keyword"]},
+            "confidence": 0.85,
+            "reasoning": "Chunk contains keyword evidence.",
+            "source_evidence": ["chunk text"],
+        },
+    ]
 }
 
 
@@ -291,6 +411,100 @@ class ExtractionAgentHelperTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["title"], "Mass spectrometry dataset for sample-1")
         self.assertEqual(result["keywords"], ["mass spectrometry", "sample-1"])
 
+    def test_expand_schema_placeholders_adds_nullable_fields_and_preserves_values(self):
+        result = expand_schema_placeholders(
+            draft=RICH_INITIAL_DRAFT_OUTPUT,
+            profile_json_schema=RICH_PROFILE_JSON_SCHEMA,
+            target_class="Dataset",
+        )
+
+        self.assertEqual(result["id"], "dataset-sample-1")
+        self.assertEqual(result["keyword"], None)
+        self.assertEqual(result["publisher"], None)
+        self.assertEqual(result["was_generated_by"][0]["title"], None)
+        self.assertEqual(result["was_generated_by"][0]["description"], None)
+        self.assertEqual(result["was_generated_by"][0]["agent"][0]["name"], ["Mass spectrometer"])
+        self.assertEqual(result["was_generated_by"][0]["agent"][0]["type"]["id"], "instrument")
+        self.assertNotIn("label", result["was_generated_by"][0]["agent"][0]["type"])
+        self.assertNotIn("keyword", RICH_INITIAL_DRAFT_OUTPUT)
+        validation = validate_document_against_profile(
+            document=result,
+            json_schema=RICH_PROFILE_JSON_SCHEMA,
+            target_class="Dataset",
+        )
+        self.assertEqual(validation.errors, [])
+
+    def test_expand_schema_placeholders_limits_recursive_expansion_depth(self):
+        draft = {
+            "id": "dataset-sample-1",
+            "title": ["Mass spectrometry dataset for sample-1"],
+            "description": ["Initial draft for a mass spectrometry package."],
+            "was_generated_by": [
+                {
+                    "id": "activity-ms",
+                    "related_activity": [
+                        {
+                            "id": "activity-parent",
+                        }
+                    ],
+                }
+            ],
+        }
+
+        result = expand_schema_placeholders(
+            draft=draft,
+            profile_json_schema=RICH_PROFILE_JSON_SCHEMA,
+            target_class="Dataset",
+            max_depth=3,
+        )
+
+        activity = result["was_generated_by"][0]
+        related_activity = activity["related_activity"][0]
+        self.assertEqual(activity["title"], None)
+        self.assertEqual(related_activity["id"], "activity-parent")
+        self.assertEqual(related_activity["related_activity"], None)
+
+    def test_expand_schema_placeholders_resolves_anyof_object_refs(self):
+        draft = {
+            "id": "dataset-sample-1",
+            "title": ["Mass spectrometry dataset for sample-1"],
+            "description": ["Initial draft for a mass spectrometry package."],
+            "publisher": {
+                "name": ["Research Institute"],
+                "type": {
+                    "id": "organization",
+                },
+            },
+            "was_generated_by": [{"id": "activity-ms"}],
+        }
+
+        result = expand_schema_placeholders(
+            draft=draft,
+            profile_json_schema=RICH_PROFILE_JSON_SCHEMA,
+            target_class="Dataset",
+        )
+
+        self.assertEqual(result["publisher"]["name"], ["Research Institute"])
+        self.assertEqual(result["publisher"]["type"]["id"], "organization")
+        self.assertEqual(result["publisher"]["type"]["label"], None)
+
+    async def test_initialize_draft_from_initial_context_returns_expanded_skeleton(self):
+        result = await initialize_draft_from_initial_context(
+            initial_context=InitialContext.model_validate(INITIAL_CONTEXT_OUTPUT),
+            data_package=make_data_package(),
+            profile_manifest=make_profile_manifest(),
+            profile_json_schema=RICH_PROFILE_JSON_SCHEMA,
+            model=TestModel(
+                call_tools=[],
+                custom_output_text=json.dumps({"response": RICH_INITIAL_DRAFT_OUTPUT}),
+            ),
+        )
+
+        self.assertEqual(result["id"], "dataset-sample-1")
+        self.assertEqual(result["keyword"], None)
+        self.assertEqual(result["publisher"], None)
+        self.assertEqual(result["was_generated_by"][0]["agent"][0]["type"]["id"], "instrument")
+
     def test_initial_draft_deps_carry_context_and_profile(self):
         deps = InitialDraftDeps(
             initial_context=InitialContext.model_validate(INITIAL_CONTEXT_OUTPUT),
@@ -326,29 +540,64 @@ class ExtractionAgentHelperTests(unittest.IsolatedAsyncioTestCase):
         agent = create_patch_draft_agent(
             model=TestModel(
                 call_tools=[],
-                custom_output_text=json.dumps(MERGE_PATCH_OUTPUT),
+                custom_output_text=json.dumps(FIELD_PATCH_OUTPUT),
             ),
         )
 
         self.assertEqual(agent._max_output_retries, DEFAULT_OUTPUT_RETRIES)
 
     async def test_patch_draft_from_content_chunks_returns_updated_draft_and_patches(self):
-        result = await patch_draft_from_content_chunks(
-            initial_context=InitialContext.model_validate(INITIAL_CONTEXT_OUTPUT),
-            initial_draft=INITIAL_DRAFT_OUTPUT,
-            content_chunks_by_file=make_content_chunks(),
-            profile_manifest=make_profile_manifest(),
-            profile_json_schema=PROFILE_JSON_SCHEMA,
-            model=TestModel(
-                call_tools=[],
-                custom_output_text=json.dumps(MERGE_PATCH_OUTPUT),
-            ),
-            num_chunks_per_turn=1,
+        from unittest import mock as unittest_mock
+
+        from app.domain.extraction.patch_quality import (
+            CandidateQualityRating,
+            PatchQualityReport,
         )
+
+        accept_report = PatchQualityReport(
+            overall_decision="accept",
+            candidate_ratings=[
+                CandidateQualityRating(
+                    field_path="description",
+                    decision="accept",
+                    issues=[],
+                ),
+                CandidateQualityRating(
+                    field_path="keywords",
+                    decision="accept",
+                    issues=[],
+                ),
+            ],
+            summary="All candidates accepted.",
+        )
+        progress: list[tuple[dict, str]] = []
+
+        async def save_progress(draft: dict, patch_record) -> None:
+            progress.append((draft, patch_record.file_name))
+
+        with unittest_mock.patch(
+            "app.domain.extraction.patch_draft.review_patch_semantic_quality",
+            return_value=accept_report,
+        ):
+            result = await patch_draft_from_content_chunks(
+                initial_context=InitialContext.model_validate(INITIAL_CONTEXT_OUTPUT),
+                initial_draft=INITIAL_DRAFT_OUTPUT,
+                content_chunks_by_file=make_content_chunks(),
+                profile_manifest=make_profile_manifest(),
+                profile_json_schema=PROFILE_JSON_SCHEMA,
+                model=TestModel(
+                    call_tools=[],
+                    custom_output_text=json.dumps(FIELD_PATCH_OUTPUT),
+                ),
+                num_chunks_per_turn=1,
+                on_patch_processed=save_progress,
+            )
 
         self.assertEqual(result.draft["description"], "Updated with chunk evidence.")
         self.assertIn("chunk-keyword", result.draft["keywords"])
-        self.assertEqual(result.patches[0].patch, MERGE_PATCH_OUTPUT["patch"])
+        self.assertIn("description", result.patches[0].accepted_fields)
+        self.assertEqual(len(progress), 1)
+        self.assertEqual(progress[0][0]["description"], "Updated with chunk evidence.")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,8 @@
 from typing import Any, Protocol
 
 from app.domain.extraction import InitialContext
+from app.domain.extraction.artifacts import PatchCandidate
+from app.domain.extraction.patch_quality import PatchQualityReport, UnmappedFact
 
 
 class ExtractionOutputRepository(Protocol):
@@ -43,5 +45,50 @@ class ExtractionOutputRepository(Protocol):
         workflow_id: str,
         patch_file_name: str,
         patch: dict[str, Any],
+    ) -> None:
+        ...
+
+    def save_raw_patch(
+        self,
+        *,
+        workflow_id: str,
+        patch_file_name: str,
+        patch: dict[str, Any],
+    ) -> None:
+        ...
+
+    def save_accepted_patch(
+        self,
+        *,
+        workflow_id: str,
+        patch_file_name: str,
+        patch: dict[str, Any],
+    ) -> None:
+        ...
+
+    def save_candidates(
+        self,
+        *,
+        workflow_id: str,
+        patch_file_name: str,
+        candidates: list[PatchCandidate],
+    ) -> None:
+        ...
+
+    def save_quality_report(
+        self,
+        *,
+        workflow_id: str,
+        patch_file_name: str,
+        quality_report: PatchQualityReport,
+    ) -> None:
+        ...
+
+    def save_unmapped_facts(
+        self,
+        *,
+        workflow_id: str,
+        patch_file_name: str,
+        unmapped_facts: list[UnmappedFact],
     ) -> None:
         ...
