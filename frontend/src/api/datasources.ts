@@ -27,3 +27,7 @@ export async function chunkDataPackage(input: {
   });
   return readJson(await fetch(apiBaseUrl + '/datasources/chunk' + query, { method: 'POST' }));
 }
+
+export async function getChunkStatus(data_package_id: string): Promise<{ has_chunks: boolean; file_count: number }> {
+  return readJson(await fetch(apiBaseUrl + '/datasources/' + encodeURIComponent(data_package_id) + '/chunks/status'));
+}

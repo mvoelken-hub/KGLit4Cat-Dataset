@@ -1,11 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
-import { chunkDataPackage, listDataPackages, uploadDataPackage } from './api/datasources';
-import { extractInitialContext, extractInitialDraft, getExistingInitialContext, getExistingInitialDraft, patchDraft } from './api/extraction';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { chunkDataPackage, getChunkStatus, listDataPackages, uploadDataPackage } from './api/datasources';
+import { extractInitialContext, extractInitialDraft, getExistingInitialContext, getExistingInitialDraft, patchDraft, getProtectedFields, setProtectedFields as apiSetProtectedFields, getPatchProgress, getPatchArtifacts, saveDraft } from './api/extraction';
 import { listProfiles } from './api/profiles';
 import { JsonEditor } from './components/JsonEditor';
 import type { ChunkRequestResponse, DataPackageResponse, InitialContext, ProfileManifestResponse } from './api/types';
+import type { PatchArtifacts, PatchProgress, PatchTaskStatus } from './api/extraction';
 
 type BusyKey = 'upload' | 'chunk' | 'context' | 'draft' | 'patch' | 'load' | 'loadContext' | 'loadDraft';
+type ArtifactTab = 'patches' | 'quality_reports' | 'unmapped_facts';
+
+const TERMINAL_PATCH_STATUSES = new Set<PatchTaskStatus>(['unknown', 'completed', 'cancelled', 'crashed']);
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return bytes + ' B';
@@ -28,8 +32,14 @@ export function App() {
   const [selectedPackageId, setSelectedPackageId] = useState('');
   const [selectedProfile, setSelectedProfile] = useState('');
   const [chunkResult, setChunkResult] = useState<ChunkRequestResponse | null>(null);
+  const [hasChunks, setHasChunks] = useState(false);
   const [context, setContext] = useState<InitialContext | null>(null);
   const [draft, setDraft] = useState<object | null>(null);
+  const [protectedFields, setProtectedFields] = useState<string[]>([]);
+  const [patchStatus, setPatchStatus] = useState<PatchTaskStatus | null>(null);
+  const [patchProgress, setPatchProgress] = useState<PatchProgress | null>(null);
+  const [patchArtifacts, setPatchArtifacts] = useState<PatchArtifacts | null>(null);
+  const [artifactTab, setArtifactTab] = useState<ArtifactTab>('patches');
   const [busy, setBusy] = useState<BusyKey | null>('load');
   const [message, setMessage] = useState('Loading workspace.');
   const [railCollapsed, setRailCollapsed] = useState(false);
@@ -38,6 +48,13 @@ export function App() {
     () => packages.find((item) => item.id === selectedPackageId) || null,
     [packages, selectedPackageId],
   );
+  const isPatching = patchStatus === 'running';
+  const progressBatchNo = patchProgress?.batch_no ?? 0;
+  const progressTotalBatches = patchProgress?.total_batches ?? 0;
+  const progressPercent = progressTotalBatches > 0
+    ? Math.min(100, Math.round((progressBatchNo / progressTotalBatches) * 100))
+    : 0;
+  const visibleArtifacts = patchArtifacts?.[artifactTab] ?? [];
 
   async function refresh() {
     setBusy('load');
@@ -130,6 +147,10 @@ export function App() {
     try {
       const result = await extractInitialDraft({ data_package_id: selectedPackageId, profile_identifier: selectedProfile });
       setDraft(result);
+      setPatchArtifacts(null);
+      setPatchStatus(null);
+      setPatchProgress(null);
+      setProtectedFields([]);
       setMessage('Initial profile draft created.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Draft creation failed.');
@@ -156,19 +177,121 @@ export function App() {
     }
   }
 
+  const saveDraftTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  async function onDraftChange(updated: Record<string, unknown>) {
+    setDraft(updated);
+    if (!selectedPackageId) return;
+    if (saveDraftTimeoutRef.current) {
+      clearTimeout(saveDraftTimeoutRef.current);
+    }
+    saveDraftTimeoutRef.current = setTimeout(async () => {
+      try {
+        await saveDraft(selectedPackageId, updated);
+        setMessage('Draft saved.');
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : 'Failed to save draft.');
+      }
+    }, 800);
+  }
+
   async function onPatch() {
     if (!selectedPackageId || !selectedProfile) return;
     setBusy('patch');
     try {
+      setPatchArtifacts(null);
+      setPatchProgress(null);
       const result = await patchDraft({ data_package_id: selectedPackageId, profile_identifier: selectedProfile });
       setDraft(result.draft);
+      setPatchStatus(result.status);
       setMessage(result.status === 'completed' ? 'Draft patching completed.' : 'Draft patching is running. Repeat to refresh current draft.');
+      if (result.status === 'running') {
+        void pollPatchProgress();
+      } else if (result.status === 'completed' || result.status === 'crashed' || result.status === 'cancelled') {
+        const artifacts = await getPatchArtifacts(selectedPackageId);
+        setPatchArtifacts(artifacts);
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Patch step failed.');
     } finally {
       setBusy(null);
     }
   }
+
+  async function onLoadProtectedFields() {
+    if (!selectedPackageId) return;
+    try {
+      const fields = await getProtectedFields(selectedPackageId);
+      setProtectedFields(fields);
+    } catch {
+      // ignore
+    }
+  }
+
+  async function onSaveProtectedFields(fields: string[]) {
+    if (!selectedPackageId) return;
+    const previous = protectedFields;
+    setProtectedFields(fields);
+    try {
+      await apiSetProtectedFields(selectedPackageId, fields);
+      setMessage('Protected fields updated.');
+    } catch (error) {
+      setProtectedFields(previous);
+      setMessage(error instanceof Error ? error.message : 'Failed to save protected fields.');
+    }
+  }
+
+  async function pollPatchProgress() {
+    if (!selectedPackageId) return;
+    try {
+      const { status, progress } = await getPatchProgress(selectedPackageId);
+      setPatchStatus(status);
+      setPatchProgress(progress || null);
+      if (status === 'completed' || status === 'crashed' || status === 'cancelled') {
+        const artifacts = await getPatchArtifacts(selectedPackageId);
+        setPatchArtifacts(artifacts);
+      }
+    } catch {
+      // ignore polling errors
+    }
+  }
+
+  useEffect(() => {
+    if (!selectedPackageId) return;
+    setBusy('load');
+    void (async () => {
+      try {
+        const [ctx, draftResult, fields, { status, progress }, artifacts, chunkStatus] = await Promise.all([
+          getExistingInitialContext(selectedPackageId),
+          getExistingInitialDraft(selectedPackageId),
+          getProtectedFields(selectedPackageId),
+          getPatchProgress(selectedPackageId),
+          getPatchArtifacts(selectedPackageId),
+          getChunkStatus(selectedPackageId),
+        ]);
+        if (ctx) setContext(ctx);
+        if (draftResult) setDraft(draftResult);
+        setProtectedFields(fields);
+        setPatchStatus(status);
+        setPatchProgress(progress || null);
+        if (status === 'completed' || status === 'crashed' || status === 'cancelled') {
+          setPatchArtifacts(artifacts);
+        }
+        setHasChunks(chunkStatus.has_chunks);
+        setMessage('Workflow state loaded.');
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : 'Failed to load workflow state.');
+      } finally {
+        setBusy(null);
+      }
+    })();
+  }, [selectedPackageId]);
+
+  useEffect(() => {
+    if (!patchStatus || TERMINAL_PATCH_STATUSES.has(patchStatus)) return;
+    const interval = setInterval(() => void pollPatchProgress(), 2000);
+    return () => clearInterval(interval);
+  }, [patchStatus, selectedPackageId]);
 
   return (
     <main className="shell">
@@ -231,8 +354,7 @@ export function App() {
               <h2>Upload dataset and create chunks</h2>
               <p>The archive is stored as a data package. Chunking prepares the package for later patch and enrichment stages.</p>
               <div className="actions">
-                <button onClick={() => void onChunk(false)} disabled={!selectedPackageId || !!busy}>{busy === 'chunk' ? 'Checking…' : 'Create / refresh chunks'}</button>
-                <button className="ghost" onClick={() => void onChunk(true)} disabled={!selectedPackageId || !!busy}>Replace chunks</button>
+                <button onClick={() => void onChunk(hasChunks)} disabled={!selectedPackageId || !!busy}>{busy === 'chunk' ? 'Checking…' : hasChunks ? 'Re-create and remove old chunks' : 'Create new chunks'}</button>
               </div>
               {selectedPackage && (
                 <div className="file-list">
@@ -254,8 +376,7 @@ export function App() {
               <h2>Determine initial context</h2>
               <p>Extract high-level context, likely metadata sources, keywords, file relationships, and evidence from the package.</p>
               <div className="actions">
-                <button onClick={() => void onContext()} disabled={!selectedPackageId || !!busy}>{busy === 'context' ? 'Extracting…' : 'Extract context'}</button>
-                <button className="ghost" onClick={() => void onLoadContext()} disabled={!selectedPackageId || !!busy}>{busy === 'loadContext' ? 'Loading…' : 'Load existing'}</button>
+                <button onClick={() => void onContext()} disabled={!selectedPackageId || !!busy}>{busy === 'context' ? 'Extracting…' : context ? 'Re-extract and remove old context' : 'Extract new context'}</button>
               </div>
               {context && (
                 <div className="context-grid">
@@ -275,11 +396,65 @@ export function App() {
               <h2>Create DCAT profile draft</h2>
               <p>Generate the first schema-conforming dataset object, then validate it against the selected registered profile.</p>
               <div className="actions">
-                <button onClick={() => void onDraft()} disabled={!selectedPackageId || !selectedProfile || !!busy}>{busy === 'draft' ? 'Drafting…' : 'Create draft'}</button>
-                <button className="ghost" onClick={() => void onLoadDraft()} disabled={!selectedPackageId || !!busy}>{busy === 'loadDraft' ? 'Loading…' : 'Load existing'}</button>
-                <button className="ghost" onClick={() => void onPatch()} disabled={!draft || !selectedProfile || !!busy}>Start patching</button>
+                <button onClick={() => void onDraft()} disabled={!selectedPackageId || !selectedProfile || !!busy}>{busy === 'draft' ? 'Drafting…' : draft ? 'Re-create and remove old draft' : 'Create new draft'}</button>
               </div>
-              {draft && <JsonEditor value={draft as Record<string, unknown>} onChange={(updated) => setDraft(updated)} />}
+              {draft && (
+                <JsonEditor
+                  value={draft as Record<string, unknown>}
+                  onChange={(updated) => onDraftChange(updated)}
+                  protectedPaths={protectedFields}
+                  onProtectedPathsChange={(paths) => void onSaveProtectedFields(paths)}
+                />
+              )}
+            </div>
+          </article>
+
+          <article className="step-card">
+            <div className="step-index">04</div>
+            <div className="step-body">
+              <h2>Patch draft with content chunks</h2>
+              <p>Run the patch agent against chunked content. Review artifacts and apply human-in-the-loop decisions before accepting changes.</p>
+              <div className="actions">
+                <button onClick={() => void onPatch()} disabled={!draft || !selectedProfile || !!busy || isPatching}>{isPatching ? 'Patching…' : patchStatus || patchArtifacts ? 'Re-start and remove old patching' : 'Start new patching'}</button>
+              </div>
+              {patchStatus && (
+                <div className="patch-progress">
+                  <div className="patch-progress-header">
+                    <span>Status: <strong>{patchStatus}</strong></span>
+                    {progressTotalBatches > 0 && (
+                      <span>Patching batch {progressBatchNo} of {progressTotalBatches}</span>
+                    )}
+                  </div>
+                  <div className="patch-progress-track" aria-hidden="true">
+                    <div style={{ width: `${progressPercent}%` }} />
+                  </div>
+                  {patchProgress && (
+                    <pre>{JSON.stringify(patchProgress, null, 2)}</pre>
+                  )}
+                </div>
+              )}
+              {patchArtifacts && (
+                <div className="artifact-panel">
+                  <h3>Patch artifacts</h3>
+                  <div className="artifact-tabs" role="tablist" aria-label="Patch artifacts">
+                    <button className={artifactTab === 'patches' ? 'active' : ''} onClick={() => setArtifactTab('patches')}>Patches ({patchArtifacts.patches.length})</button>
+                    <button className={artifactTab === 'quality_reports' ? 'active' : ''} onClick={() => setArtifactTab('quality_reports')}>Quality ({patchArtifacts.quality_reports.length})</button>
+                    <button className={artifactTab === 'unmapped_facts' ? 'active' : ''} onClick={() => setArtifactTab('unmapped_facts')}>Unmapped ({patchArtifacts.unmapped_facts.length})</button>
+                  </div>
+                  {visibleArtifacts.length === 0 ? (
+                    <p className="muted">No artifacts in this category yet.</p>
+                  ) : (
+                    <ul>
+                      {visibleArtifacts.map((artifact, i) => (
+                        <li key={`${artifact.file_name || artifactTab}-${i}`}>
+                          <strong>{String(artifact.file_name || `Artifact ${i + 1}`)}</strong>
+                          <pre>{JSON.stringify(artifact, null, 2)}</pre>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
             </div>
           </article>
         </section>

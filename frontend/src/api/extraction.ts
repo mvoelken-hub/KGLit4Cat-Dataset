@@ -1,6 +1,30 @@
 import { apiBaseUrl, readJson } from './client';
 import type { InitialContext, PatchDraftResponse } from './types';
 
+export type PatchTaskStatus = 'unknown' | 'running' | 'completed' | 'cancelled' | 'crashed';
+
+export type PatchProgress = {
+  batch_no?: number;
+  total_batches?: number;
+  file_name?: string;
+  accepted_fields?: string[];
+  total_candidates?: number;
+  validation_errors?: string[];
+};
+
+export type PatchArtifact = {
+  file_name?: string;
+  artifact_type?: string;
+  content?: unknown;
+  [key: string]: unknown;
+};
+
+export type PatchArtifacts = {
+  patches: PatchArtifact[];
+  quality_reports: PatchArtifact[];
+  unmapped_facts: PatchArtifact[];
+};
+
 export async function getExistingInitialContext(data_package_id: string): Promise<InitialContext | null> {
   const response = await fetch(apiBaseUrl + '/extraction/initial-context/' + encodeURIComponent(data_package_id));
   if (response.status === 404) return null;
@@ -36,6 +60,14 @@ export async function extractInitialDraft(input: {
   }));
 }
 
+export async function saveDraft(data_package_id: string, draft: object): Promise<object> {
+  return readJson(await fetch(apiBaseUrl + '/extraction/initial-draft/' + encodeURIComponent(data_package_id), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data_package_id, draft }),
+  }));
+}
+
 export async function patchDraft(input: {
   data_package_id: string;
   profile_identifier: string;
@@ -46,4 +78,44 @@ export async function patchDraft(input: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   }));
+}
+
+export async function getProtectedFields(data_package_id: string): Promise<string[]> {
+  const response = await fetch(apiBaseUrl + '/extraction/initial-draft/' + encodeURIComponent(data_package_id) + '/protected-fields');
+  if (!response.ok) return [];
+  return readJson(await response);
+}
+
+export async function setProtectedFields(data_package_id: string, fields: string[]): Promise<string[]> {
+  const response = await fetch(apiBaseUrl + '/extraction/initial-draft/' + encodeURIComponent(data_package_id) + '/protected-fields', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields }),
+  });
+  return readJson(await response);
+}
+
+export async function getPatchProgress(data_package_id: string): Promise<{ status: PatchTaskStatus; progress?: PatchProgress | null }> {
+  const response = await fetch(apiBaseUrl + '/extraction/patch-draft/' + encodeURIComponent(data_package_id) + '/progress');
+  return readJson(await response);
+}
+
+export async function getPatchArtifacts(data_package_id: string): Promise<PatchArtifacts> {
+  const response = await fetch(apiBaseUrl + '/extraction/patch-draft/' + encodeURIComponent(data_package_id) + '/artifacts');
+  return readJson(await response);
+}
+
+export async function getPatchFiles(data_package_id: string): Promise<PatchArtifact[]> {
+  const response = await fetch(apiBaseUrl + '/extraction/patch-draft/' + encodeURIComponent(data_package_id) + '/patches');
+  return readJson(await response);
+}
+
+export async function getPatchQualityReports(data_package_id: string): Promise<PatchArtifact[]> {
+  const response = await fetch(apiBaseUrl + '/extraction/patch-draft/' + encodeURIComponent(data_package_id) + '/quality-reports');
+  return readJson(await response);
+}
+
+export async function getUnmappedFacts(data_package_id: string): Promise<PatchArtifact[]> {
+  const response = await fetch(apiBaseUrl + '/extraction/patch-draft/' + encodeURIComponent(data_package_id) + '/unmapped-facts');
+  return readJson(await response);
 }

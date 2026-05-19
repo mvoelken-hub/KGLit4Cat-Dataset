@@ -75,16 +75,19 @@ h2 { margin: 0; font-size: clamp(1.6rem, 3vw, 2.6rem); letter-spacing: -0.04em; 
 .json-editor { display: grid; grid-template-columns: 260px 1fr; gap: 0; margin-top: 18px; border: 1px solid var(--line); border-radius: 1rem; overflow: hidden; background: var(--panel); }
 .json-editor-sidebar { background: var(--panel); color: var(--ink); padding: 16px; overflow-y: auto; max-height: 520px; border-right: 1px solid var(--line); }
 .json-editor-tree ul { list-style: none; padding: 0; margin: 0; }
-.json-editor-tree li { padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 0.88rem; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.json-editor-tree li { display: flex; align-items: center; gap: 4px; padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 0.88rem; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .json-editor-tree li:hover, .json-editor-tree li.active { background: rgba(23, 20, 15, 0.08); }
 .json-editor-tree .tree-icon { display: inline-block; width: 16px; margin-right: 4px; font-size: 0.72rem; color: var(--muted); }
 .json-editor-main { padding: 20px; overflow-y: auto; max-height: 520px; }
 .json-editor-breadcrumb { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 .json-editor-panel { background: rgba(255, 255, 255, 0.6); border-radius: 1rem; padding: 18px; }
 .json-editor-field { margin-bottom: 14px; }
-.json-editor-field label { display: block; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 6px; }
+.json-editor-field label { display: block; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+.json-editor-field-label { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.json-editor-field.protected { border-left: 3px solid var(--accent); padding-left: 10px; }
 .json-editor-input { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 0.8rem; font-size: 0.92rem; background: rgba(255, 255, 255, 0.8); color: var(--ink); font-family: inherit; }
 .json-editor-input:focus { outline: none; border-color: var(--accent); }
+.json-editor-input:disabled { background: rgba(216, 208, 193, 0.42); color: var(--muted); }
 textarea.json-editor-input { resize: vertical; min-height: 80px; }
 .json-editor-null { color: var(--muted); font-style: italic; }
 .json-editor-array-info { color: var(--muted); font-size: 0.86rem; margin-bottom: 12px; }
@@ -95,6 +98,32 @@ textarea.json-editor-input { resize: vertical; min-height: 80px; }
 .json-editor-card small { color: var(--muted); font-size: 0.76rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
 .json-editor-actions { margin-top: 14px; }
 .json-editor-raw { margin-top: 14px; max-height: 300px; overflow: auto; padding: 14px; border-radius: 0.8rem; background: #191713; color: #f7efe0; font-family: 'Courier New', monospace; font-size: 0.78rem; line-height: 1.5; }
+
+/* Lock toggle in JsonEditor tree */
+.lock-toggle { margin-left: auto; padding: 0 4px; background: transparent; border: none; color: var(--muted); font-size: 0.8rem; cursor: pointer; border-radius: 4px; line-height: 1; opacity: 0.6; transition: opacity 140ms ease; }
+.lock-toggle:hover { opacity: 1; background: rgba(23, 20, 15, 0.08); }
+.lock-toggle.locked { opacity: 1; color: var(--accent); }
+.json-editor-tree li.protected { background: rgba(141, 63, 34, 0.08); }
+.json-editor-tree li.protected.active { background: rgba(141, 63, 34, 0.16); }
+
+/* Patch progress panel */
+.patch-progress { margin-top: 14px; padding: 14px; border: 1px solid var(--line); border-radius: 1rem; background: rgba(255, 255, 255, 0.5); }
+.patch-progress-header { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.patch-progress span { font-size: 0.86rem; color: var(--muted); }
+.patch-progress-track { height: 8px; margin-top: 10px; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; background: rgba(255, 255, 255, 0.72); }
+.patch-progress-track div { height: 100%; background: var(--accent); transition: width 160ms ease; }
+.patch-progress pre { margin-top: 8px; max-height: 200px; overflow: auto; padding: 10px; border-radius: 0.6rem; background: #191713; color: #f7efe0; font-family: 'Courier New', monospace; font-size: 0.76rem; line-height: 1.4; }
+
+/* Artifact review panel */
+.artifact-panel { margin-top: 18px; padding: 18px; border: 1px solid var(--line); border-radius: 1rem; background: rgba(255, 255, 255, 0.5); }
+.artifact-panel h3 { margin: 0 0 12px; font-size: 1rem; color: var(--accent-dark); }
+.artifact-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.artifact-tabs button { padding: 0.46rem 0.7rem; border-radius: 999px; background: transparent; color: var(--ink); border-color: var(--line); font-size: 0.82rem; }
+.artifact-tabs button.active { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.artifact-panel ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+.artifact-panel li { padding: 12px; border: 1px solid var(--line); border-radius: 0.8rem; background: rgba(255, 255, 255, 0.6); }
+.artifact-panel li strong { display: block; font-size: 0.9rem; margin-bottom: 8px; }
+.artifact-panel li pre { max-height: 240px; overflow: auto; padding: 10px; border-radius: 0.6rem; background: #191713; color: #f7efe0; font-family: 'Courier New', monospace; font-size: 0.76rem; line-height: 1.4; }
 
 @media (max-width: 860px) {
   .hero, .layout { grid-template-columns: 1fr; }

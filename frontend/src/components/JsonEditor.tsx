@@ -4,7 +4,7 @@ type JsonValue = string | number | boolean | null | JsonObject | JsonArray;
 type JsonObject = { [key: string]: JsonValue };
 type JsonArray = JsonValue[];
 
-function getValueAtPath(obj: JsonObject, path: string): JsonValue {
+function getValueAtPath(obj: JsonObject, path: string): JsonValue | undefined {
   if (!path) return obj;
   const parts = path.split('.');
   let current: JsonValue = obj;
@@ -39,17 +39,37 @@ function setValueAtPath(obj: JsonObject, path: string, value: JsonValue): JsonOb
   return result;
 }
 
+function isTopLevelPath(path: string): boolean {
+  return path.length > 0 && !path.includes('.');
+}
+
+function isPathProtected(path: string, protectedPaths: string[]): boolean {
+  if (!path) return false;
+  const topLevelPath = path.split('.', 1)[0];
+  return protectedPaths.includes(topLevelPath);
+}
+
+function formatPrimitivePreview(value: JsonValue): string {
+  if (value === null) return 'null';
+  const text = String(value);
+  return text.length > 34 ? text.slice(0, 31) + '...' : text;
+}
+
 function TreeNode({
   data,
   path,
   selectedPath,
   onSelect,
+  protectedPaths,
+  onToggleProtected,
   depth = 0,
 }: {
   data: JsonValue;
   path: string;
   selectedPath: string;
   onSelect: (path: string) => void;
+  protectedPaths: string[];
+  onToggleProtected: (path: string) => void;
   depth?: number;
 }) {
   if (data === null || data === undefined) return null;
@@ -58,22 +78,33 @@ function TreeNode({
   const isArray = Array.isArray(data);
   const label = path.split('.').pop() || 'root';
   const isSelected = path === selectedPath;
-
-  // Don't render primitives in the tree
-  if (isPrimitive) return null;
-
-  const childCount = isArray ? data.length : Object.keys(data).length;
-  const displayLabel = isArray ? `${label} [${childCount}]` : `${label} (${childCount})`;
+  const isLockable = isTopLevelPath(path);
+  const isProtected = isPathProtected(path, protectedPaths);
+  const childCount = isPrimitive ? 0 : isArray ? data.length : Object.keys(data).length;
+  const displayLabel = isPrimitive
+    ? `${label}: ${formatPrimitivePreview(data)}`
+    : isArray
+      ? `${label} [${childCount}]`
+      : `${label} (${childCount})`;
 
   return (
     <>
       <li
-        className={isSelected ? 'active' : ''}
+        className={`${isSelected ? 'active' : ''} ${isProtected ? 'protected' : ''}`}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
         onClick={(e) => { e.stopPropagation(); onSelect(path); }}
       >
-        <span className="tree-icon">{isArray ? '▸' : '▸'}</span>
+        <span className="tree-icon">{isPrimitive ? '•' : '▸'}</span>
         {displayLabel}
+        {isLockable && (
+          <button
+            className={`lock-toggle ${isProtected ? 'locked' : ''}`}
+            title={isProtected ? 'Unlock field' : 'Lock field'}
+            onClick={(e) => { e.stopPropagation(); onToggleProtected(path); }}
+          >
+            {isProtected ? '🔒' : '🔓'}
+          </button>
+        )}
       </li>
       {isArray && data.map((item, index) => {
         const itemPath = path ? `${path}.${index}` : `${index}`;
@@ -86,14 +117,15 @@ function TreeNode({
             path={itemPath}
             selectedPath={selectedPath}
             onSelect={onSelect}
+            protectedPaths={protectedPaths}
+            onToggleProtected={onToggleProtected}
             depth={depth + 1}
           />
         );
       })}
       {!isArray && Object.entries(data).map(([key, value]) => {
         const childPath = path ? `${path}.${key}` : key;
-        // Only recurse if the value is an object or array (not primitive)
-        if (typeof value !== 'object' || value === null) return null;
+        if (path && (typeof value !== 'object' || value === null)) return null;
         return (
           <TreeNode
             key={key}
@@ -101,6 +133,8 @@ function TreeNode({
             path={childPath}
             selectedPath={selectedPath}
             onSelect={onSelect}
+            protectedPaths={protectedPaths}
+            onToggleProtected={onToggleProtected}
             depth={depth + 1}
           />
         );
@@ -113,13 +147,39 @@ function ValueEditor({
   value,
   path,
   onChange,
+  protectedPaths,
+  onToggleProtected,
 }: {
   value: JsonValue;
   path: string;
   onChange: (path: string, newValue: JsonValue) => void;
+  protectedPaths: string[];
+  onToggleProtected: (path: string) => void;
 }) {
+  const isProtected = isPathProtected(path, protectedPaths);
+
   if (value === null || value === undefined) {
-    return <div className="json-editor-null">null</div>;
+    return (
+      <select
+        className="json-editor-input"
+        value="null"
+        onChange={(e) => {
+          const v = e.target.value;
+          if (v === 'null') onChange(path, null);
+          else if (v === 'true') onChange(path, true);
+          else if (v === 'false') onChange(path, false);
+          else if (v === '') onChange(path, '');
+          else if (!Number.isNaN(Number(v))) onChange(path, Number(v));
+          else onChange(path, v);
+        }}
+        disabled={isProtected}
+      >
+        <option value="null">null</option>
+        <option value="true">true</option>
+        <option value="false">false</option>
+        <option value="">empty string</option>
+      </select>
+    );
   }
 
   if (typeof value === 'string') {
@@ -129,6 +189,7 @@ function ValueEditor({
           className="json-editor-input"
           value={value}
           onChange={(e) => onChange(path, e.target.value)}
+          disabled={isProtected}
           rows={4}
         />
       );
@@ -139,6 +200,7 @@ function ValueEditor({
         className="json-editor-input"
         value={value}
         onChange={(e) => onChange(path, e.target.value)}
+        disabled={isProtected}
       />
     );
   }
@@ -150,6 +212,7 @@ function ValueEditor({
         className="json-editor-input"
         value={value}
         onChange={(e) => onChange(path, Number(e.target.value))}
+        disabled={isProtected}
       />
     );
   }
@@ -160,6 +223,7 @@ function ValueEditor({
         className="json-editor-input"
         value={String(value)}
         onChange={(e) => onChange(path, e.target.value === 'true')}
+        disabled={isProtected}
       >
         <option value="true">true</option>
         <option value="false">false</option>
@@ -182,6 +246,7 @@ function ValueEditor({
                 key={index}
                 className="json-editor-card"
                 onClick={() => onChange('__select__', itemPath)}
+                aria-disabled={isProtected}
               >
                 <strong>{itemLabel}</strong>
                 <small>{typeof item === 'object' ? 'Object' : typeof item}</small>
@@ -196,29 +261,72 @@ function ValueEditor({
   return (
     <div className="json-editor-object">
       {Object.entries(value).map(([key, val]) => (
-        <div key={key} className="json-editor-field">
-          <label>{key}</label>
-          <ValueEditor value={val} path={path ? `${path}.${key}` : key} onChange={onChange} />
+        <div
+          key={key}
+          className={`json-editor-field ${isPathProtected(path ? `${path}.${key}` : key, protectedPaths) ? 'protected' : ''}`}
+        >
+          <div className="json-editor-field-label">
+            <label>{key}</label>
+            {isTopLevelPath(path ? `${path}.${key}` : key) && (
+              <button
+                className={`lock-toggle ${isPathProtected(key, protectedPaths) ? 'locked' : ''}`}
+                title={isPathProtected(key, protectedPaths) ? 'Unlock field' : 'Lock field'}
+                onClick={() => onToggleProtected(key)}
+              >
+                {isPathProtected(key, protectedPaths) ? '🔒' : '🔓'}
+              </button>
+            )}
+          </div>
+          <ValueEditor
+            value={val}
+            path={path ? `${path}.${key}` : key}
+            onChange={onChange}
+            protectedPaths={protectedPaths}
+            onToggleProtected={onToggleProtected}
+          />
         </div>
       ))}
     </div>
   );
 }
 
-export function JsonEditor({ value, onChange }: { value: JsonObject; onChange?: (value: JsonObject) => void }) {
+export function JsonEditor({
+  value,
+  onChange,
+  protectedPaths,
+  onProtectedPathsChange,
+}: {
+  value: Record<string, unknown>;
+  onChange?: (value: Record<string, unknown>) => void;
+  protectedPaths?: string[];
+  onProtectedPathsChange?: (paths: string[]) => void;
+}) {
   const [selectedPath, setSelectedPath] = useState<string>('');
   const [showRaw, setShowRaw] = useState(false);
 
-  const currentValue = getValueAtPath(value, selectedPath);
+  const currentValue = getValueAtPath(value as JsonObject, selectedPath);
 
   const handleChange = (path: string, newValue: JsonValue) => {
     if (path === '__select__') {
       setSelectedPath(newValue as string);
       return;
     }
+    if (isPathProtected(path, protectedPaths || [])) {
+      return;
+    }
     if (onChange) {
-      const updated = setValueAtPath(value, path, newValue);
-      onChange(updated);
+      const updated = setValueAtPath(value as JsonObject, path, newValue);
+      onChange(updated as Record<string, unknown>);
+    }
+  };
+
+  const handleToggleProtected = (path: string) => {
+    if (!onProtectedPathsChange) return;
+    const current = protectedPaths || [];
+    if (current.includes(path)) {
+      onProtectedPathsChange(current.filter((p) => p !== path));
+    } else {
+      onProtectedPathsChange([...current, path]);
     }
   };
 
@@ -227,7 +335,14 @@ export function JsonEditor({ value, onChange }: { value: JsonObject; onChange?: 
       <div className="json-editor-sidebar">
         <div className="json-editor-tree">
           <ul>
-            <TreeNode data={value} path="" selectedPath={selectedPath} onSelect={setSelectedPath} />
+            <TreeNode
+              data={value as JsonObject}
+              path=""
+              selectedPath={selectedPath}
+              onSelect={setSelectedPath}
+              protectedPaths={protectedPaths || []}
+              onToggleProtected={handleToggleProtected}
+            />
           </ul>
         </div>
       </div>
@@ -235,7 +350,13 @@ export function JsonEditor({ value, onChange }: { value: JsonObject; onChange?: 
         <div className="json-editor-breadcrumb">{selectedPath || 'root'}</div>
         <div className="json-editor-panel">
           {currentValue !== undefined ? (
-            <ValueEditor value={currentValue} path={selectedPath} onChange={handleChange} />
+            <ValueEditor
+              value={currentValue}
+              path={selectedPath}
+              onChange={handleChange}
+              protectedPaths={protectedPaths || []}
+              onToggleProtected={handleToggleProtected}
+            />
           ) : (
             <p className="muted">Select a node from the tree to edit.</p>
           )}
