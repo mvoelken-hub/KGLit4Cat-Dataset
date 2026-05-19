@@ -78,6 +78,33 @@ class PatchReviewState(BaseModel):
     resolved_at: dict[str, str] = Field(default_factory=dict)
 
 
+class PatchReviewItemRequest(BaseModel):
+    id: str
+    kind: str
+    path: str
+    detail: str | None = None
+    issues: list[str] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)
+    patch: dict[str, Any] | None = None
+    fact: str | None = None
+    reason: str | None = None
+    confidence: float | None = None
+    file_name: str | None = None
+
+
+class PatchReviewResolutionRequest(BaseModel):
+    profile_identifier: str = Field(..., description="Identifier of the registered extraction profile.")
+    review_items: list[PatchReviewItemRequest] = Field(default_factory=list)
+
+
+class PatchReviewResolutionResponse(BaseModel):
+    draft: dict[str, Any]
+    review_state: PatchReviewState
+    resolved_count: int = 0
+    unresolved_item_ids: list[str] = Field(default_factory=list)
+    validation_errors: list[str] = Field(default_factory=list)
+
+
 def _initial_context_response(initial_context: InitialContext) -> InitialContext:
     return initial_context
 

@@ -54,8 +54,9 @@ PATCH_DRAFT_INSTRUCTIONS = (
     "entities, distributions, file roles, and qualitative or quantitative "
     "attributes extracted from the chunks. "
     "For objects in lists, include an id field with a stable local "
-    "identifier. Use ids from the current draft to update existing "
-    "objects. Do not use null to delete existing values; null values "
+    "identifier scoped to the dataset or experiment, for example "
+    "'1h-nmr-clean/activity/1h-nmr-acquisition'. Use ids from the current "
+    "draft to update existing objects. Do not use null to delete existing values; null values "
     "are ignored by the merge function. "
     "If a field is listed as protected, skip it entirely and do not "
     "produce a candidate for it. "
@@ -593,14 +594,14 @@ def _merge_list_of_dicts_by_id(
     dst_value: list[dict[str, Any]],
     patch_value: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    for item in dst_value:
-        item.setdefault("id", _new_patch_id())
-
-    dst_items_by_id = {item["id"]: item for item in dst_value}
+    dst_items_by_id = {
+        item["id"]: item
+        for item in dst_value
+        if isinstance(item.get("id"), str) and item.get("id")
+    }
     for item in patch_value:
-        item.setdefault("id", _new_patch_id())
-        item_id = item["id"]
-        if item_id in dst_items_by_id:
+        item_id = item.get("id")
+        if isinstance(item_id, str) and item_id in dst_items_by_id:
             deep_merge(dst_items_by_id[item_id], item)
         else:
             dst_value.append(item)

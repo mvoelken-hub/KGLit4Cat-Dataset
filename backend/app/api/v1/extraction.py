@@ -11,6 +11,8 @@ from app.api.v1.schemas import (
     PatchProgressResponse,
     PatchArtifactsResponse,
     PatchReviewState,
+    PatchReviewResolutionRequest,
+    PatchReviewResolutionResponse,
     SaveDraftRequest,
     _initial_context_response,
     _initial_draft_response,
@@ -206,6 +208,23 @@ async def save_patch_review_state(
         review_state=request.model_dump(mode="json"),
     )
     return PatchReviewState(**state)
+
+
+@router.post("/patch-draft/{data_package_id}/resolve-review")
+async def resolve_patch_review(
+    data_package_id: str,
+    request: PatchReviewResolutionRequest,
+    extraction_service: ExtractionService = Depends(get_extraction_service),
+) -> PatchReviewResolutionResponse:
+    try:
+        result = await extraction_service.resolve_patch_review_items(
+            data_package_id=data_package_id,
+            profile_identifier=request.profile_identifier,
+            review_items=[item.model_dump(mode="json") for item in request.review_items],
+        )
+        return PatchReviewResolutionResponse(**result)
+    except Exception as exc:
+        _raise_extraction_error(exc)
 
 
 @router.post("/initial-context", response_model=InitialContext)

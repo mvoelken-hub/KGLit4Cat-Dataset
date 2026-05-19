@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from app.core.task_registry import TaskInfo, TaskRegistry, TaskStatus, TaskType
@@ -11,10 +12,18 @@ from app.domain.extraction import (
     InitialContext,
     PatchDraftPrerequisiteError,
     PatchRecord,
+    apply_merge_patch,
     extract_initial_context_from_data_package,
     initialize_draft_from_initial_context,
     patch_draft_from_content_chunks,
 )
+from app.domain.extraction.review_resolution import (
+    PatchReviewItem,
+    resolve_patch_review_items,
+)
+from app.domain.extraction.sanitizers import sanitize_document_against_schema
+from app.domain.extraction.sanitizers import normalize_review_draft
+from app.domain.profiles import validate_document_against_profile
 from app.repositories.extraction_output_repository import ExtractionOutputRepository
 
 if TYPE_CHECKING:
@@ -460,6 +469,120 @@ class ExtractionService:
             review_state=normalized,
         )
         return normalized
+
+    async def resolve_patch_review_items(
+        self,
+        *,
+        data_package_id: str,
+        profile_identifier: str,
+        review_items: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        if self.ollama_client is None or self.output_repository is None:
+            raise RuntimeError(
+                "ExtractionService requires ollama_client and output_repository "
+                "to run the patch review resolution agent."
+            )
+
+        profile_manifest = self.profile_service.get_profile(profile_identifier)
+        profile_json_schema = self.profile_service.load_json_schema(profile_identifier)
+        try:
+            current_draft = self.output_repository.load_draft(data_package_id)
+        except FileNotFoundError:
+            current_draft = self.output_repository.load_initial_draft(data_package_id)
+        current_draft = sanitize_document_against_schema(
+            document=current_draft,
+            json_schema=profile_json_schema,
+            target_class=profile_manifest.target_class,
+        )
+        current_draft = normalize_review_draft(
+            current_draft,
+            dataset_id=str(current_draft.get("id") or data_package_id),
+        )
+
+        existing_state = self.output_repository.load_patch_review_state(data_package_id)
+        parsed_items = [PatchReviewItem.model_validate(item) for item in review_items]
+        resolution = await resolve_patch_review_items(
+            current_draft=current_draft,
+            review_items=parsed_items,
+            profile_manifest=profile_manifest,
+            profile_json_schema=profile_json_schema,
+            existing_review_state=existing_state,
+            model=self.ollama_client.agent_model,
+        )
+
+        next_draft = (
+            apply_merge_patch(current_draft, resolution.draft_patch)
+            if resolution.draft_patch
+            else current_draft
+        )
+        next_draft = sanitize_document_against_schema(
+            document=next_draft,
+            json_schema=profile_json_schema,
+            target_class=profile_manifest.target_class,
+        )
+        next_draft = normalize_review_draft(
+            next_draft,
+            dataset_id=str(next_draft.get("id") or data_package_id),
+        )
+        validation = validate_document_against_profile(
+            document=next_draft,
+            json_schema=profile_json_schema,
+            target_class=profile_manifest.target_class,
+        )
+        if not validation.valid:
+            return {
+                "draft": current_draft,
+                "review_state": existing_state,
+                "resolved_count": 0,
+                "unresolved_item_ids": [item.id for item in parsed_items],
+                "validation_errors": [
+                    f"{issue.path}: {issue.message}" for issue in validation.errors
+                ],
+            }
+
+        resolved_ids = list(dict.fromkeys([
+            *existing_state.get("resolved_item_ids", []),
+            *resolution.resolved_item_ids,
+        ]))
+        requested_item_ids = {item.id for item in parsed_items}
+        resolved_now = [
+            item_id for item_id in resolution.resolved_item_ids if item_id in requested_item_ids
+        ]
+        resolved_at = dict(existing_state.get("resolved_at", {}))
+        timestamp = datetime.now(UTC).isoformat()
+        for item_id in resolved_now:
+            resolved_at.setdefault(item_id, timestamp)
+        next_state = {
+            "resolved_item_ids": resolved_ids,
+            "unmapped_assignments": {
+                **dict(existing_state.get("unmapped_assignments", {})),
+                **resolution.unmapped_assignments,
+            },
+            "resolution_notes": {
+                **dict(existing_state.get("resolution_notes", {})),
+                **resolution.resolution_notes,
+            },
+            "resolved_at": resolved_at,
+        }
+        self.output_repository.save_draft(
+            workflow_id=data_package_id,
+            draft=next_draft,
+        )
+        self.output_repository.save_initial_draft(
+            workflow_id=data_package_id,
+            initial_draft=next_draft,
+        )
+        self.output_repository.save_patch_review_state(
+            workflow_id=data_package_id,
+            review_state=next_state,
+        )
+        return {
+            "draft": next_draft,
+            "review_state": next_state,
+            "resolved_count": len(resolved_now),
+            "unresolved_item_ids": resolution.unresolved_item_ids,
+            "validation_errors": [],
+        }
 
     async def get_patch_progress(
         self,

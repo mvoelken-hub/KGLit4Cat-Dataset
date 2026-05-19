@@ -29,6 +29,10 @@ from app.domain.extraction import (
     validate_json_output_against_schema,
     patch_draft_from_content_chunks,
 )
+from app.domain.extraction.sanitizers import (
+    normalize_review_draft,
+    sanitize_document_against_schema,
+)
 from app.domain.profiles import ProfileManifest, validate_document_against_profile
 
 
@@ -533,8 +537,110 @@ class ExtractionAgentHelperTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["keywords"], ["existing", "new"])
         self.assertEqual(result["items"][0]["label"], "new")
         self.assertEqual(result["items"][1]["label"], "added")
+        self.assertNotIn("id", result["items"][1])
         self.assertNotIn("ignored", result)
         self.assertNotIn("ignored", draft)
+
+    def test_sanitize_document_removes_optional_schema_invalid_values(self):
+        schema = {
+            "$schema": "https://json-schema.org/draft/2019-09/schema",
+            "$defs": {
+                "Dataset": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "dataset_distribution": {
+                            "type": "array",
+                            "items": {"$ref": "#/$defs/Distribution"},
+                        }
+                    },
+                },
+                "Distribution": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "title": {"type": "string"},
+                        "checksum": {
+                            "anyOf": [
+                                {"$ref": "#/$defs/Checksum"},
+                                {"type": "null"},
+                            ]
+                        },
+                    },
+                },
+                "Checksum": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["algorithm", "checksum_value"],
+                    "properties": {
+                        "algorithm": {"$ref": "#/$defs/ChecksumAlgorithm"},
+                        "checksum_value": {
+                            "type": "string",
+                            "pattern": "([0-9a-fA-F]{2})*",
+                        },
+                    },
+                },
+                "ChecksumAlgorithm": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {"title": {"type": "string"}},
+                },
+            },
+        }
+
+        result = sanitize_document_against_schema(
+            document={
+                "dataset_distribution": [
+                    {
+                        "id": "synthetic-id",
+                        "title": "data.dx",
+                        "checksum": {"algorithm": "md5", "checksum_value": "abcdef"},
+                    }
+                ]
+            },
+            json_schema=schema,
+            target_class="Dataset",
+        )
+
+        self.assertEqual(result, {"dataset_distribution": [{"title": "data.dx"}]})
+
+    def test_normalize_review_draft_replaces_redundant_descriptions_and_localizes_ids(self):
+        result = normalize_review_draft(
+            {
+                "id": "1H_NMR_clean",
+                "was_generated_by": [
+                    {
+                        "id": "https://w3id.org/nfdi-de/activity/1H_NMR_acquisition",
+                        "description": [
+                            "1H NMR spectral data acquisition using a Bruker NMR system.",
+                            "1H NMR spectral data acquisition using a Bruker NMR system with pulse sequence zg30.",
+                        ],
+                        "carried_out_by": [
+                            {
+                                "id": "agent-bruker_nmr_system",
+                                "title": "Bruker NMR",
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+
+        activity = result["was_generated_by"][0]
+        self.assertEqual(
+            activity["id"],
+            "1h-nmr-clean/activity/1h-nmr-acquisition",
+        )
+        self.assertEqual(
+            activity["description"],
+            [
+                "1H NMR spectral data acquisition using a Bruker NMR system with pulse sequence zg30."
+            ],
+        )
+        self.assertEqual(
+            activity["carried_out_by"][0]["id"],
+            "1h-nmr-clean/agent/bruker-nmr-system",
+        )
 
     def test_create_patch_draft_agent_uses_retry_budget(self):
         agent = create_patch_draft_agent(
