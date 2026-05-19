@@ -195,3 +195,6 @@ backups/
 # Frontend
 node_modules/
 frontend/package-lock.json
+frontend/*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
