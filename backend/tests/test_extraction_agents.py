@@ -570,10 +570,17 @@ class ExtractionAgentHelperTests(unittest.IsolatedAsyncioTestCase):
             ],
             summary="All candidates accepted.",
         )
-        progress: list[tuple[dict, str]] = []
+        progress: list[tuple[dict, str, int, int]] = []
 
-        async def save_progress(draft: dict, patch_record) -> None:
-            progress.append((draft, patch_record.file_name))
+        async def save_progress(
+            draft: dict,
+            patch_record,
+            batch_no: int,
+            total_batches: int,
+        ) -> None:
+            progress.append(
+                (draft, patch_record.file_name, batch_no, total_batches)
+            )
 
         with unittest_mock.patch(
             "app.domain.extraction.patch_draft.review_patch_semantic_quality",
@@ -598,6 +605,7 @@ class ExtractionAgentHelperTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("description", result.patches[0].accepted_fields)
         self.assertEqual(len(progress), 1)
         self.assertEqual(progress[0][0]["description"], "Updated with chunk evidence.")
+        self.assertEqual(progress[0][2:], (1, 1))
 
 
 if __name__ == "__main__":

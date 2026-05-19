@@ -51,6 +51,26 @@ class PatchDraftResponse(BaseModel):
     status: TaskStatus
 
 
+class SaveDraftRequest(BaseModel):
+    data_package_id: str = Field(..., description="ID of the uploaded data package.")
+    draft: dict[str, Any] = Field(..., description="Updated draft object to persist.")
+
+
+class ProtectedFieldsRequest(BaseModel):
+    fields: list[str] = Field(default_factory=list, description="Top-level field paths to protect from patching.")
+
+
+class PatchProgressResponse(BaseModel):
+    status: TaskStatus
+    progress: dict[str, Any] | None = None
+
+
+class PatchArtifactsResponse(BaseModel):
+    patches: list[dict[str, Any]] = Field(default_factory=list)
+    quality_reports: list[dict[str, Any]] = Field(default_factory=list)
+    unmapped_facts: list[dict[str, Any]] = Field(default_factory=list)
+
+
 def _initial_context_response(initial_context: InitialContext) -> InitialContext:
     return initial_context
 

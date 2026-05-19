@@ -18,6 +18,7 @@ from app.domain.extraction import (
     PatchDraftPrerequisiteError,
 )
 from app.domain.extraction.patch_quality import CandidateQualityRating, PatchQualityReport, UnmappedFact
+from app.domain.extraction.artifacts import PatchCandidate
 from app.domain.profiles import ProfileManifest
 from app.services.extraction_service import ExtractionService
 from infra.filesystem_extraction_output_repository import (
@@ -190,6 +191,7 @@ class FakeOutputRepository:
         self.candidates: dict[str, list] = {}
         self.quality_reports: dict[str, PatchQualityReport] = {}
         self.unmapped_facts: dict[str, list[UnmappedFact]] = {}
+        self.protected_fields: list[str] = []
 
     def save_initial_context(
         self,
@@ -297,6 +299,50 @@ class FakeOutputRepository:
     ) -> None:
         self.unmapped_facts[patch_file_name] = unmapped_facts
 
+    def save_protected_fields(
+        self,
+        *,
+        workflow_id: str,
+        protected_fields: list[str],
+    ) -> None:
+        self.protected_fields = protected_fields
+
+    def load_protected_fields(self, workflow_id: str) -> list[str]:
+        return self.protected_fields
+
+    def load_patch_files(self, workflow_id: str) -> list[dict]:
+        return [
+            {"file_name": file_name, "artifact_type": "patch", "content": patch}
+            for file_name, patch in sorted(self.patches.items())
+        ]
+
+    def load_patch_quality_reports(self, workflow_id: str) -> list[dict]:
+        return [
+            {
+                "file_name": file_name,
+                "content": report.model_dump(mode="json"),
+            }
+            for file_name, report in sorted(self.quality_reports.items())
+        ]
+
+    def load_unmapped_facts(self, workflow_id: str) -> list[dict]:
+        facts: list[dict] = []
+        for file_name, items in sorted(self.unmapped_facts.items()):
+            facts.extend(
+                {"file_name": file_name, **item.model_dump(mode="json")}
+                for item in items
+            )
+        return facts
+
+    def clear_patch_artifacts(self, workflow_id: str) -> None:
+        self.draft = None
+        self.patches = {}
+        self.raw_patches = {}
+        self.accepted_patches = {}
+        self.candidates = {}
+        self.quality_reports = {}
+        self.unmapped_facts = {}
+
 
 class FakeExtractionService:
     def __init__(self, result: InitialContext | dict | tuple[dict, TaskStatus] | Exception):
@@ -350,6 +396,29 @@ class FakeExtractionService:
         if isinstance(self.result, tuple):
             return self.result
         return self.result, TaskStatus.COMPLETED  # type: ignore[return-value]
+
+    async def get_patch_progress(
+        self,
+        data_package_id: str,
+    ) -> tuple[TaskStatus, dict | None]:
+        self.request = {"data_package_id": data_package_id}
+        return TaskStatus.UNKNOWN, None
+
+    async def get_patch_artifacts(self, data_package_id: str) -> dict:
+        self.request = {"data_package_id": data_package_id}
+        return {"patches": [], "quality_reports": [], "unmapped_facts": []}
+
+    async def get_patch_files(self, data_package_id: str) -> list[dict]:
+        self.request = {"data_package_id": data_package_id}
+        return []
+
+    async def get_patch_quality_reports(self, data_package_id: str) -> list[dict]:
+        self.request = {"data_package_id": data_package_id}
+        return []
+
+    async def get_unmapped_facts(self, data_package_id: str) -> list[dict]:
+        self.request = {"data_package_id": data_package_id}
+        return []
 
 
 class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
@@ -530,6 +599,157 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(output_repository.draft, result)
         self.assertEqual(output_repository.draft_saves[0], INITIAL_DRAFT_OUTPUT)
         self.assertEqual(list(output_repository.patches.values())[0], {"description": "Updated with chunk evidence.", "keywords": ["chunk-keyword"]})
+        task_info = task_registry.get_task_info(service._patch_draft_task_name("package-id"))
+        self.assertEqual(task_info.progress["batch_no"], 1)  # type: ignore[union-attr,index]
+        self.assertEqual(task_info.progress["total_batches"], 1)  # type: ignore[union-attr,index]
+
+    async def test_patch_initial_draft_does_not_merge_protected_fields(self):
+        from unittest import mock as unittest_mock
+
+        datasource_service = FakeDataSourceService(make_data_package())
+        datasource_service.chunks_by_file = [
+            [
+                ContentChunk(
+                    content="Chunk says chunk-keyword.",
+                    data_package_id="package-id",
+                    file_path="metadata.txt",
+                    start_idx=0,
+                    end_idx=0,
+                )
+            ]
+        ]
+        output_repository = FakeOutputRepository()
+        output_repository.initial_context = InitialContext.model_validate(
+            INITIAL_CONTEXT_OUTPUT
+        )
+        output_repository.initial_draft = INITIAL_DRAFT_OUTPUT
+        output_repository.protected_fields = ["description"]
+
+        accept_report = PatchQualityReport(
+            overall_decision="accept",
+            candidate_ratings=[
+                CandidateQualityRating(
+                    field_path="keywords",
+                    decision="accept",
+                    issues=[],
+                ),
+            ],
+            summary="Unprotected candidates accepted.",
+        )
+
+        with unittest_mock.patch(
+            "app.domain.extraction.patch_draft.review_patch_semantic_quality",
+            return_value=accept_report,
+        ):
+            task_registry = TaskRegistry(settings=None, logger=FakeLogger())  # type: ignore[arg-type]
+            service = ExtractionService(
+                FakeProfileRepository(),  # type: ignore[arg-type]
+                settings=None,  # type: ignore[arg-type]
+                datasource_service=datasource_service,  # type: ignore[arg-type]
+                ollama_client=FakeOllamaClient(FIELD_PATCH_OUTPUT),  # type: ignore[arg-type]
+                output_repository=output_repository,
+                task_registry=task_registry,
+            )
+
+            await service.patch_initial_draft(
+                data_package_id="package-id",
+                profile_identifier="test-profile",
+                num_chunks_per_turn=1,
+            )
+            await task_registry.wait_for_task(
+                service._patch_draft_task_name("package-id"),
+                timeout=2.0,
+            )
+
+        self.assertEqual(
+            output_repository.draft["description"],
+            INITIAL_DRAFT_OUTPUT["description"],
+        )
+        self.assertEqual(
+            output_repository.draft["keywords"],
+            ["gas chromatography", "sample-a", "chunk-keyword"],
+        )
+        self.assertEqual(
+            list(output_repository.patches.values())[0],
+            {"keywords": ["chunk-keyword"]},
+        )
+
+    async def test_patch_initial_draft_rejects_revisions_touching_protected_fields(self):
+        from unittest import mock as unittest_mock
+
+        datasource_service = FakeDataSourceService(make_data_package())
+        datasource_service.chunks_by_file = [
+            [
+                ContentChunk(
+                    content="Chunk says chunk-keyword.",
+                    data_package_id="package-id",
+                    file_path="metadata.txt",
+                    start_idx=0,
+                    end_idx=0,
+                )
+            ]
+        ]
+        output_repository = FakeOutputRepository()
+        output_repository.initial_context = InitialContext.model_validate(
+            INITIAL_CONTEXT_OUTPUT
+        )
+        output_repository.initial_draft = INITIAL_DRAFT_OUTPUT
+        output_repository.protected_fields = ["description"]
+
+        revise_report = PatchQualityReport(
+            overall_decision="revise",
+            candidate_ratings=[
+                CandidateQualityRating(
+                    field_path="keywords",
+                    decision="revise",
+                    issues=[],
+                    revised_patch={
+                        "description": "Should not be merged.",
+                        "keywords": ["chunk-keyword"],
+                    },
+                ),
+            ],
+            summary="Revision touches a protected field.",
+        )
+
+        with unittest_mock.patch(
+            "app.domain.extraction.patch_draft.review_patch_semantic_quality",
+            return_value=revise_report,
+        ):
+            task_registry = TaskRegistry(settings=None, logger=FakeLogger())  # type: ignore[arg-type]
+            service = ExtractionService(
+                FakeProfileRepository(),  # type: ignore[arg-type]
+                settings=None,  # type: ignore[arg-type]
+                datasource_service=datasource_service,  # type: ignore[arg-type]
+                ollama_client=FakeOllamaClient(
+                    {
+                        "candidates": [
+                            {
+                                "field_path": "keywords",
+                                "patch": {"keywords": ["chunk-keyword"]},
+                                "confidence": 0.85,
+                                "reasoning": "Chunk contains keyword evidence.",
+                                "source_evidence": ["Chunk says chunk-keyword."],
+                            },
+                        ]
+                    }
+                ),  # type: ignore[arg-type]
+                output_repository=output_repository,
+                task_registry=task_registry,
+            )
+
+            await service.patch_initial_draft(
+                data_package_id="package-id",
+                profile_identifier="test-profile",
+                num_chunks_per_turn=1,
+            )
+            await task_registry.wait_for_task(
+                service._patch_draft_task_name("package-id"),
+                timeout=2.0,
+            )
+
+        self.assertEqual(output_repository.draft, INITIAL_DRAFT_OUTPUT)
+        self.assertEqual(list(output_repository.patches.values())[0], {})
 
 
 class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
@@ -582,6 +802,73 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
         self.assertEqual(loaded, PATCHED_DRAFT_OUTPUT)
         self.assertTrue(patch_exists)
         self.assertEqual(patch, {"description": "Updated with chunk evidence.", "keywords": ["chunk-keyword"]})
+
+    def test_patch_artifact_loaders_return_saved_outputs(self):
+        quality_report = PatchQualityReport(
+            overall_decision="accept",
+            candidate_ratings=[],
+            summary="Accepted.",
+        )
+        candidate = PatchCandidate(
+            field_path="description",
+            patch={"description": "Updated with chunk evidence."},
+            confidence=0.9,
+            reasoning="Chunk contains an updated description.",
+            source_evidence=["Chunk says chunk-keyword."],
+        )
+        unmapped_fact = UnmappedFact(
+            fact="Temperature was 300 K.",
+            reason="No matching schema field.",
+        )
+
+        with TemporaryDirectory() as temporary_directory:
+            repository = FileSystemExtractionOutputRepository(Path(temporary_directory))
+            repository.save_patch(
+                workflow_id="package-id",
+                patch_file_name="patch_1.json",
+                patch={"description": "Updated with chunk evidence."},
+            )
+            repository.save_raw_patch(
+                workflow_id="package-id",
+                patch_file_name="patch_1.json",
+                patch={"description": "Raw update."},
+            )
+            repository.save_accepted_patch(
+                workflow_id="package-id",
+                patch_file_name="patch_1.json",
+                patch={"description": "Updated with chunk evidence."},
+            )
+            repository.save_candidates(
+                workflow_id="package-id",
+                patch_file_name="patch_1.json",
+                candidates=[candidate],
+            )
+            repository.save_quality_report(
+                workflow_id="package-id",
+                patch_file_name="patch_1.json",
+                quality_report=quality_report,
+            )
+            repository.save_unmapped_facts(
+                workflow_id="package-id",
+                patch_file_name="patch_1.json",
+                unmapped_facts=[unmapped_fact],
+            )
+
+            patches = repository.load_patch_files("package-id")
+            quality_reports = repository.load_patch_quality_reports("package-id")
+            unmapped_facts = repository.load_unmapped_facts("package-id")
+
+        self.assertEqual(
+            [artifact["artifact_type"] for artifact in patches],
+            ["accepted_patch", "candidates", "patch", "raw_patch"],
+        )
+        self.assertEqual(quality_reports[0]["file_name"], "patch_1.quality_report.json")
+        self.assertEqual(quality_reports[0]["content"]["summary"], "Accepted.")
+        self.assertEqual(
+            unmapped_facts[0]["file_name"],
+            "patch_1.unmapped_facts.json",
+        )
+        self.assertEqual(unmapped_facts[0]["fact"], "Temperature was 300 K.")
 
     def test_missing_initial_context_raises_file_not_found(self):
         with TemporaryDirectory() as temporary_directory:
@@ -707,6 +994,40 @@ class InitialContextExtractionApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.json()["detail"], "chunk first")
+
+    def test_patch_progress_endpoint_returns_unknown_when_task_is_missing(self):
+        service = FakeExtractionService(INITIAL_DRAFT_OUTPUT)
+        client = self.make_client(service)
+
+        response = client.get("/api/v1/extraction/patch-draft/package-id/progress")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"status": "unknown", "progress": None})
+
+    def test_patch_artifact_endpoints_return_lists(self):
+        service = FakeExtractionService(INITIAL_DRAFT_OUTPUT)
+        client = self.make_client(service)
+
+        aggregate = client.get("/api/v1/extraction/patch-draft/package-id/artifacts")
+        patches = client.get("/api/v1/extraction/patch-draft/package-id/patches")
+        quality_reports = client.get(
+            "/api/v1/extraction/patch-draft/package-id/quality-reports"
+        )
+        unmapped_facts = client.get(
+            "/api/v1/extraction/patch-draft/package-id/unmapped-facts"
+        )
+
+        self.assertEqual(aggregate.status_code, 200)
+        self.assertEqual(
+            aggregate.json(),
+            {"patches": [], "quality_reports": [], "unmapped_facts": []},
+        )
+        self.assertEqual(patches.status_code, 200)
+        self.assertEqual(patches.json(), [])
+        self.assertEqual(quality_reports.status_code, 200)
+        self.assertEqual(quality_reports.json(), [])
+        self.assertEqual(unmapped_facts.status_code, 200)
+        self.assertEqual(unmapped_facts.json(), [])
 
 
 if __name__ == "__main__":

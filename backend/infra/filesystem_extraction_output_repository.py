@@ -12,6 +12,7 @@ INITIAL_DRAFT_FILE = "initial_draft.json"
 DRAFT_FILE = "draft.json"
 PATCHES_DIR = "patches"
 UNMAPPED_FACTS_DIR = "unmapped_facts"
+PROTECTED_FIELDS_FILE = "protected_fields.json"
 
 
 class FileSystemExtractionOutputRepository:
@@ -174,6 +175,94 @@ class FileSystemExtractionOutputRepository:
             [fact.model_dump(mode="json") for fact in unmapped_facts],
         )
 
+    def save_protected_fields(
+        self,
+        *,
+        workflow_id: str,
+        protected_fields: list[str],
+    ) -> None:
+        self._write_json_file(
+            self._workflow_dir(workflow_id) / PROTECTED_FIELDS_FILE,
+            protected_fields,
+        )
+
+    def load_protected_fields(self, workflow_id: str) -> list[str]:
+        path = self._workflow_dir(workflow_id) / PROTECTED_FIELDS_FILE
+        if not path.exists():
+            return []
+        with open(path, "r", encoding="utf-8") as file:
+            return json.load(file)
+
+    def load_patch_files(self, workflow_id: str) -> list[dict[str, Any]]:
+        patch_dir = self._workflow_dir(workflow_id) / PATCHES_DIR
+        if not patch_dir.exists():
+            return []
+
+        artifacts: list[dict[str, Any]] = []
+        for path in sorted(patch_dir.glob("*.json"), key=lambda item: item.name):
+            if path.name.endswith(".quality_report.json"):
+                continue
+            artifacts.append(
+                {
+                    "file_name": path.name,
+                    "artifact_type": self._patch_artifact_type(path.name),
+                    "content": self._read_json_file(path),
+                }
+            )
+        return artifacts
+
+    def load_patch_quality_reports(self, workflow_id: str) -> list[dict[str, Any]]:
+        patch_dir = self._workflow_dir(workflow_id) / PATCHES_DIR
+        if not patch_dir.exists():
+            return []
+
+        return [
+            {
+                "file_name": path.name,
+                "content": self._read_json_file(path),
+            }
+            for path in sorted(
+                patch_dir.glob("*.quality_report.json"),
+                key=lambda item: item.name,
+            )
+        ]
+
+    def load_unmapped_facts(self, workflow_id: str) -> list[dict[str, Any]]:
+        facts_dir = self._workflow_dir(workflow_id) / UNMAPPED_FACTS_DIR
+        if not facts_dir.exists():
+            return []
+
+        facts: list[dict[str, Any]] = []
+        for path in sorted(
+            facts_dir.glob("*.unmapped_facts.json"),
+            key=lambda item: item.name,
+        ):
+            payload = self._read_json_file(path)
+            items = payload if isinstance(payload, list) else [payload]
+            for item in items:
+                if isinstance(item, dict):
+                    facts.append({"file_name": path.name, **item})
+                else:
+                    facts.append({"file_name": path.name, "fact": item})
+        return facts
+
+    def clear_patch_artifacts(self, workflow_id: str) -> None:
+        workflow_dir = self._workflow_dir(workflow_id)
+        draft_path = workflow_dir / DRAFT_FILE
+        if draft_path.exists():
+            draft_path.unlink()
+        patches_dir = workflow_dir / PATCHES_DIR
+        if patches_dir.exists():
+            import shutil
+            shutil.rmtree(patches_dir)
+        facts_dir = workflow_dir / UNMAPPED_FACTS_DIR
+        if facts_dir.exists():
+            import shutil
+            shutil.rmtree(facts_dir)
+        protected_fields_path = workflow_dir / PROTECTED_FIELDS_FILE
+        if protected_fields_path.exists():
+            protected_fields_path.unlink()
+
     @staticmethod
     def _with_suffix(file_name: str, suffix: str) -> str:
         """Replace the .json suffix of *file_name* with *suffix*.
@@ -194,7 +283,22 @@ class FileSystemExtractionOutputRepository:
         return workflow_dir
 
     @staticmethod
-    def _write_json_file(path: Path, content: dict[str, Any]) -> None:
+    def _patch_artifact_type(file_name: str) -> str:
+        if file_name.endswith(".raw.json"):
+            return "raw_patch"
+        if file_name.endswith(".accepted.json"):
+            return "accepted_patch"
+        if file_name.endswith(".candidates.json"):
+            return "candidates"
+        return "patch"
+
+    @staticmethod
+    def _read_json_file(path: Path) -> Any:
+        with open(path, "r", encoding="utf-8") as file:
+            return json.load(file)
+
+    @staticmethod
+    def _write_json_file(path: Path, content: Any) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding="utf-8") as file:
             json.dump(content, file, ensure_ascii=False, indent=2)

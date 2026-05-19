@@ -114,6 +114,18 @@ async def get_file_entry_content(
         _raise_datasource_error(exc)
 
 
+@router.get("/{id}/chunks/status")
+async def get_chunk_status(
+    id: str,
+    datasource_service: DataSourceService = Depends(get_datasource_service),
+):
+    try:
+        chunks = datasource_service.get_completed_content_chunks_by_file(id)
+        return {"has_chunks": bool(chunks), "file_count": len(chunks)}
+    except Exception as exc:
+        _raise_datasource_error(exc)
+
+
 @router.post("/chunk", response_model=ChunkRequestResponse)
 async def chunk_file_entries_in_data_package(
     chunking_request: Annotated[ChunkingRequest, Query(..., description="Chunking parameters")],

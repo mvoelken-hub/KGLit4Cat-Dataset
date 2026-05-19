@@ -106,6 +106,7 @@ class ExtractionService:
             workflow_id=data_package_id,
             initial_draft=initial_draft,
         )
+        self.output_repository.clear_patch_artifacts(workflow_id=data_package_id)
         return initial_draft
 
     async def patch_initial_draft(
@@ -229,14 +230,20 @@ class ExtractionService:
             draft=initial_draft,
         )
 
+        protected_fields = self.output_repository.load_protected_fields(data_package_id)
+
         async def save_progress(
             draft: dict[str, Any],
             patch_record: PatchRecord,
+            batch_no: int,
+            total_batches: int,
         ) -> None:
             self._save_patch_progress(
                 workflow_id=data_package_id,
                 draft=draft,
                 patch_record=patch_record,
+                batch_no=batch_no,
+                total_batches=total_batches,
             )
 
         result = await patch_draft_from_content_chunks(
@@ -252,6 +259,7 @@ class ExtractionService:
                 else self.settings.num_chunks_per_turn
             ),
             on_patch_processed=save_progress,
+            protected_fields=protected_fields,
         )
 
         self.output_repository.save_draft(
@@ -267,6 +275,8 @@ class ExtractionService:
         workflow_id: str,
         draft: dict[str, Any],
         patch_record: PatchRecord,
+        batch_no: int,
+        total_batches: int,
     ) -> None:
         if self.output_repository is None:
             raise RuntimeError("ExtractionService requires output_repository.")
@@ -275,6 +285,21 @@ class ExtractionService:
             workflow_id=workflow_id,
             draft=draft,
         )
+
+        # Update task registry progress
+        if self.task_registry is not None:
+            task_name = self._patch_draft_task_name(workflow_id)
+            self.task_registry.update_progress(
+                task_name,
+                {
+                    "batch_no": batch_no,
+                    "total_batches": total_batches,
+                    "file_name": patch_record.file_name,
+                    "accepted_fields": patch_record.accepted_fields,
+                    "total_candidates": len(patch_record.candidates),
+                    "validation_errors": patch_record.validation_errors or [],
+                },
+            )
 
         # Save the field-level candidates for revision agent support.
         if patch_record.candidates:
@@ -357,3 +382,88 @@ class ExtractionService:
             return self.output_repository.load_initial_draft(data_package_id)
         except FileNotFoundError:
             return None
+
+    async def save_initial_draft(
+        self,
+        *,
+        data_package_id: str,
+        draft: dict[str, Any],
+    ) -> None:
+        if self.output_repository is None:
+            raise RuntimeError(
+                "ExtractionService requires output_repository to save drafts."
+            )
+        self.output_repository.save_initial_draft(
+            workflow_id=data_package_id,
+            initial_draft=draft,
+        )
+
+    async def get_protected_fields(self, data_package_id: str) -> list[str]:
+        if self.output_repository is None:
+            return []
+        return self.output_repository.load_protected_fields(data_package_id)
+
+    async def set_protected_fields(
+        self,
+        *,
+        data_package_id: str,
+        protected_fields: list[str],
+    ) -> None:
+        if self.output_repository is None:
+            return
+        self.output_repository.save_protected_fields(
+            workflow_id=data_package_id,
+            protected_fields=protected_fields,
+        )
+
+    async def get_patch_progress(
+        self,
+        data_package_id: str,
+    ) -> tuple[TaskStatus, dict[str, Any] | None]:
+        if self.task_registry is None:
+            return TaskStatus.UNKNOWN, None
+        task_name = self._patch_draft_task_name(data_package_id)
+        task_info = self.task_registry.get_task_info(task_name)
+        if task_info is None:
+            return TaskStatus.UNKNOWN, None
+        return task_info.status, task_info.progress
+
+    async def get_patch_artifacts(
+        self,
+        data_package_id: str,
+    ) -> dict[str, Any]:
+        if self.output_repository is None:
+            return {"patches": [], "quality_reports": [], "unmapped_facts": []}
+        return {
+            "patches": self.output_repository.load_patch_files(data_package_id),
+            "quality_reports": self.output_repository.load_patch_quality_reports(
+                data_package_id,
+            ),
+            "unmapped_facts": self.output_repository.load_unmapped_facts(
+                data_package_id,
+            ),
+        }
+
+    async def get_patch_files(
+        self,
+        data_package_id: str,
+    ) -> list[dict[str, Any]]:
+        if self.output_repository is None:
+            return []
+        return self.output_repository.load_patch_files(data_package_id)
+
+    async def get_patch_quality_reports(
+        self,
+        data_package_id: str,
+    ) -> list[dict[str, Any]]:
+        if self.output_repository is None:
+            return []
+        return self.output_repository.load_patch_quality_reports(data_package_id)
+
+    async def get_unmapped_facts(
+        self,
+        data_package_id: str,
+    ) -> list[dict[str, Any]]:
+        if self.output_repository is None:
+            return []
+        return self.output_repository.load_unmapped_facts(data_package_id)

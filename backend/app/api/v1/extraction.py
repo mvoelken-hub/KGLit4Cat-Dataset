@@ -7,6 +7,10 @@ from app.api.v1.schemas import (
     InitialDraftRequest,
     PatchDraftRequest,
     PatchDraftResponse,
+    ProtectedFieldsRequest,
+    PatchProgressResponse,
+    PatchArtifactsResponse,
+    SaveDraftRequest,
     _initial_context_response,
     _initial_draft_response,
     _patch_draft_response,
@@ -114,6 +118,71 @@ async def get_existing_initial_draft(
     )
 
 
+@router.get("/initial-draft/{data_package_id}/protected-fields")
+async def get_protected_fields(
+    data_package_id: str,
+    extraction_service: ExtractionService = Depends(get_extraction_service),
+) -> list[str]:
+    return await extraction_service.get_protected_fields(data_package_id=data_package_id)
+
+
+@router.post("/initial-draft/{data_package_id}/protected-fields")
+async def set_protected_fields(
+    data_package_id: str,
+    request: ProtectedFieldsRequest,
+    extraction_service: ExtractionService = Depends(get_extraction_service),
+) -> list[str]:
+    await extraction_service.set_protected_fields(
+        data_package_id=data_package_id,
+        protected_fields=request.fields,
+    )
+    return request.fields
+
+
+@router.get("/patch-draft/{data_package_id}/progress")
+async def get_patch_progress(
+    data_package_id: str,
+    extraction_service: ExtractionService = Depends(get_extraction_service),
+) -> PatchProgressResponse:
+    status, progress = await extraction_service.get_patch_progress(data_package_id=data_package_id)
+    return PatchProgressResponse(status=status, progress=progress)
+
+
+@router.get("/patch-draft/{data_package_id}/artifacts")
+async def get_patch_artifacts(
+    data_package_id: str,
+    extraction_service: ExtractionService = Depends(get_extraction_service),
+) -> PatchArtifactsResponse:
+    artifacts = await extraction_service.get_patch_artifacts(data_package_id=data_package_id)
+    return PatchArtifactsResponse(**artifacts)
+
+
+@router.get("/patch-draft/{data_package_id}/patches")
+async def get_patch_files(
+    data_package_id: str,
+    extraction_service: ExtractionService = Depends(get_extraction_service),
+) -> list[dict[str, Any]]:
+    return await extraction_service.get_patch_files(data_package_id=data_package_id)
+
+
+@router.get("/patch-draft/{data_package_id}/quality-reports")
+async def get_patch_quality_reports(
+    data_package_id: str,
+    extraction_service: ExtractionService = Depends(get_extraction_service),
+) -> list[dict[str, Any]]:
+    return await extraction_service.get_patch_quality_reports(
+        data_package_id=data_package_id,
+    )
+
+
+@router.get("/patch-draft/{data_package_id}/unmapped-facts")
+async def get_unmapped_facts(
+    data_package_id: str,
+    extraction_service: ExtractionService = Depends(get_extraction_service),
+) -> list[dict[str, Any]]:
+    return await extraction_service.get_unmapped_facts(data_package_id=data_package_id)
+
+
 @router.post("/initial-context", response_model=InitialContext)
 async def extract_initial_context(
     request: InitialContextRequest,
@@ -141,6 +210,22 @@ async def extract_initial_draft(
             profile_identifier=request.profile_identifier,
         )
         return _initial_draft_response(result)
+    except Exception as exc:
+        _raise_extraction_error(exc)
+
+
+@router.put("/initial-draft/{data_package_id}", response_model=dict[str, Any])
+async def save_initial_draft(
+    data_package_id: str,
+    request: SaveDraftRequest,
+    extraction_service: ExtractionService = Depends(get_extraction_service),
+):
+    try:
+        await extraction_service.save_initial_draft(
+            data_package_id=data_package_id,
+            draft=request.draft,
+        )
+        return request.draft
     except Exception as exc:
         _raise_extraction_error(exc)
 
