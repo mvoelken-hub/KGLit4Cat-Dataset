@@ -191,3 +191,7 @@ backups/
 # runtime env files
 .env.development
 .env.production
+
+# Frontend
+node_modules/
+frontend/package-lock.json
