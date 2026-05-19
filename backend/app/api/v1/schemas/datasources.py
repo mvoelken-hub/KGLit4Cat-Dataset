@@ -29,6 +29,7 @@ class ChunkingRequest(BaseModel):
     buffer_window_size: int = Field(1, ge=0, description="Number of lines to include as buffer before and after each chunk")
     embedding_batch_size: int = Field(32, ge=1, description="Number of chunks to process in each embedding batch")
     semantic_chunking_threshold: float = Field(95.0, ge=0.0, le=100.0, description="Threshold for semantic chunking quality (0-100)")
+    replace_existing_chunks: bool = Field(False, description="Replace previously persisted chunks with a new chunking run")
 
 class ChunkResponse(BaseModel):
     content: str

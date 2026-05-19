@@ -75,6 +75,14 @@ class FileSystemDataSourceBlobRepository:
         with open(chunk_path, "w", encoding="utf-8") as f:
             json_chunks = [chunk.model_dump_json() for chunk in chunks]
             json.dump(json_chunks, f, ensure_ascii=False, indent=2)
+
+    def delete_content_chunks(self, data_package_id: str) -> None:
+        chunk_dir = self.base_path / data_package_id / "chunks"
+        if not chunk_dir.exists() or not chunk_dir.is_dir():
+            return
+
+        for chunk_file in chunk_dir.glob("*.json"):
+            chunk_file.unlink(missing_ok=True)
     
     def load_content_chunks_by_file_path(self, data_package_id: str, file_path: str) -> list[ContentChunk]:
         chunk_group_id = ContentChunk.get_chunk_group_id_from_file_path(file_path)

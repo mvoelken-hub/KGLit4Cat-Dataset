@@ -42,9 +42,15 @@ class DataSourceService:
     ) -> list[list[ContentChunk]]:
         task_name = f"chunking:file_entries:{data_package_id}"
         task_info = self.task_registry.get_task_info(task_name)
-        if task_info is None or task_info.status != TaskStatus.COMPLETED:
+        if task_info is not None and task_info.status != TaskStatus.COMPLETED:
             return []
 
+        return self._load_content_chunks_by_file(data_package_id)
+
+    def _load_content_chunks_by_file(
+        self,
+        data_package_id: str,
+    ) -> list[list[ContentChunk]]:
         data_package = self.get_data_package(data_package_id)
         content_chunks_by_file: list[list[ContentChunk]] = []
         for file_entry in data_package.files:
@@ -62,23 +68,49 @@ class DataSourceService:
         data_package_id: str,
         buffer_window_size: int,
         embedding_batch_size: int,
-        semantic_chunking_threshold: float
+        semantic_chunking_threshold: float,
+        replace_existing_chunks: bool = False,
     ) -> tuple[list[list[ContentChunk]], TaskStatus]:
         
         TASK_NAME = f"chunking:file_entries:{data_package_id}"
 
         task_info: TaskInfo | None = self.task_registry.get_task_info(TASK_NAME)
 
-        if not task_info or task_info.status == TaskStatus.CANCELLED:
-            await self.task_registry.create_task(
-                coro=self._run_chunking_task(
-                    data_package_id=data_package_id,
-                    buffer_window_size=buffer_window_size,
-                    embedding_batch_size=embedding_batch_size,
-                    semantic_chunking_threshold=semantic_chunking_threshold
-                ),
-                type=TaskType.CHUNKING,
-                name=TASK_NAME
+        if task_info is None:
+            if not replace_existing_chunks:
+                content_chunks_by_file = self._load_content_chunks_by_file(data_package_id)
+                if content_chunks_by_file:
+                    return content_chunks_by_file, TaskStatus.COMPLETED
+
+            await self._start_chunking_task(
+                task_name=TASK_NAME,
+                data_package_id=data_package_id,
+                buffer_window_size=buffer_window_size,
+                embedding_batch_size=embedding_batch_size,
+                semantic_chunking_threshold=semantic_chunking_threshold,
+                delete_existing_chunks=replace_existing_chunks,
+            )
+            return [], TaskStatus.RUNNING
+
+        if replace_existing_chunks and task_info.status != TaskStatus.RUNNING:
+            await self._start_chunking_task(
+                task_name=TASK_NAME,
+                data_package_id=data_package_id,
+                buffer_window_size=buffer_window_size,
+                embedding_batch_size=embedding_batch_size,
+                semantic_chunking_threshold=semantic_chunking_threshold,
+                delete_existing_chunks=True,
+            )
+            return [], TaskStatus.RUNNING
+
+        if task_info.status == TaskStatus.CANCELLED:
+            await self._start_chunking_task(
+                task_name=TASK_NAME,
+                data_package_id=data_package_id,
+                buffer_window_size=buffer_window_size,
+                embedding_batch_size=embedding_batch_size,
+                semantic_chunking_threshold=semantic_chunking_threshold,
+                delete_existing_chunks=False,
             )
             return [], TaskStatus.RUNNING        
         
@@ -106,6 +138,30 @@ class DataSourceService:
             content_chunks_by_file.append(content_chunks)
 
         return content_chunks_by_file, task_info.status
+
+    async def _start_chunking_task(
+        self,
+        *,
+        task_name: str,
+        data_package_id: str,
+        buffer_window_size: int,
+        embedding_batch_size: int,
+        semantic_chunking_threshold: float,
+        delete_existing_chunks: bool,
+    ) -> None:
+        if delete_existing_chunks:
+            self.blob_repository.delete_content_chunks(data_package_id)
+
+        await self.task_registry.create_task(
+            coro=self._run_chunking_task(
+                data_package_id=data_package_id,
+                buffer_window_size=buffer_window_size,
+                embedding_batch_size=embedding_batch_size,
+                semantic_chunking_threshold=semantic_chunking_threshold
+            ),
+            type=TaskType.CHUNKING,
+            name=task_name
+        )
 
     # Task runner
 

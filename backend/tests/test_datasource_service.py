@@ -1,0 +1,215 @@
+from types import SimpleNamespace
+import unittest
+
+from app.core.task_registry import TaskStatus
+from app.domain.datasources import ContentChunk, DataPackage, FileEntry
+from app.services.datasource_service import DataSourceService
+
+
+def make_data_package() -> DataPackage:
+    return DataPackage(
+        file_name="package",
+        files=[
+            FileEntry(
+                file_path="metadata.txt",
+                file_name="metadata.txt",
+                file_extension=".txt",
+                raw_content=b"Instrument: GC-42\n",
+            )
+        ],
+    )
+
+
+def make_chunk() -> ContentChunk:
+    return ContentChunk(
+        content="Instrument: GC-42\n",
+        data_package_id="package-id",
+        file_path="metadata.txt",
+        start_idx=0,
+        end_idx=0,
+    )
+
+
+class FakeBlobRepository:
+    def __init__(self, chunks_by_file_path: dict[str, list[ContentChunk]]):
+        self.data_package = make_data_package()
+        self.chunks_by_file_path = chunks_by_file_path
+        self.loaded_chunk_paths: list[str] = []
+        self.deleted_chunk_package_ids: list[str] = []
+
+    def load_data_package(self, id: str) -> DataPackage:
+        return self.data_package
+
+    def load_content_chunks_by_file_path(
+        self,
+        data_package_id: str,
+        file_path: str,
+    ) -> list[ContentChunk]:
+        self.loaded_chunk_paths.append(file_path)
+        return self.chunks_by_file_path.get(file_path, [])
+
+    def delete_content_chunks(self, data_package_id: str) -> None:
+        self.deleted_chunk_package_ids.append(data_package_id)
+        self.chunks_by_file_path.clear()
+
+
+class FakeTaskRegistry:
+    def __init__(self, status: TaskStatus | None):
+        self.status = status
+        self.requested_name: str | None = None
+        self.created_task_names: list[str] = []
+
+    def get_task_info(self, name: str):
+        self.requested_name = name
+        if self.status is None:
+            return None
+        return SimpleNamespace(status=self.status)
+
+    async def create_task(self, coro, type, name: str):
+        self.created_task_names.append(name)
+        coro.close()
+        return SimpleNamespace()
+
+
+class DataSourceServiceTests(unittest.IsolatedAsyncioTestCase):
+    def make_service(
+        self,
+        *,
+        chunks_by_file_path: dict[str, list[ContentChunk]],
+        task_status: TaskStatus | None,
+    ) -> tuple[DataSourceService, FakeBlobRepository, FakeTaskRegistry]:
+        blob_repository = FakeBlobRepository(chunks_by_file_path)
+        task_registry = FakeTaskRegistry(status=task_status)
+        service = DataSourceService(
+            blob_repository=blob_repository,  # type: ignore[arg-type]
+            settings=None,  # type: ignore[arg-type]
+            ollama_client=None,  # type: ignore[arg-type]
+            task_registry=task_registry,  # type: ignore[arg-type]
+        )
+        return service, blob_repository, task_registry
+
+    def test_completed_chunks_can_be_loaded_after_task_registry_restart(self):
+        chunk = make_chunk()
+        service, _, task_registry = self.make_service(
+            chunks_by_file_path={"metadata.txt": [chunk]},
+            task_status=None,
+        )
+
+        result = service.get_completed_content_chunks_by_file("package-id")
+
+        self.assertEqual(result, [[chunk]])
+        self.assertEqual(
+            task_registry.requested_name,
+            "chunking:file_entries:package-id",
+        )
+
+    def test_running_chunk_task_blocks_persisted_chunks(self):
+        chunk = make_chunk()
+        service, blob_repository, _ = self.make_service(
+            chunks_by_file_path={"metadata.txt": [chunk]},
+            task_status=TaskStatus.RUNNING,
+        )
+
+        result = service.get_completed_content_chunks_by_file("package-id")
+
+        self.assertEqual(result, [])
+        self.assertEqual(blob_repository.loaded_chunk_paths, [])
+
+    def test_completed_chunk_task_loads_persisted_chunks(self):
+        chunk = make_chunk()
+        service, _, _ = self.make_service(
+            chunks_by_file_path={"metadata.txt": [chunk]},
+            task_status=TaskStatus.COMPLETED,
+        )
+
+        result = service.get_completed_content_chunks_by_file("package-id")
+
+        self.assertEqual(result, [[chunk]])
+
+    async def test_chunk_request_returns_persisted_chunks_after_task_registry_restart(self):
+        chunk = make_chunk()
+        service, _, task_registry = self.make_service(
+            chunks_by_file_path={"metadata.txt": [chunk]},
+            task_status=None,
+        )
+
+        result, status = await service.chunk_file_entries_in_data_package(
+            data_package_id="package-id",
+            buffer_window_size=1,
+            embedding_batch_size=32,
+            semantic_chunking_threshold=95.0,
+        )
+
+        self.assertEqual(result, [[chunk]])
+        self.assertEqual(status, TaskStatus.COMPLETED)
+        self.assertEqual(task_registry.created_task_names, [])
+
+    async def test_chunk_request_starts_task_when_registry_missing_and_no_chunks(self):
+        service, _, task_registry = self.make_service(
+            chunks_by_file_path={},
+            task_status=None,
+        )
+
+        result, status = await service.chunk_file_entries_in_data_package(
+            data_package_id="package-id",
+            buffer_window_size=1,
+            embedding_batch_size=32,
+            semantic_chunking_threshold=95.0,
+        )
+
+        self.assertEqual(result, [])
+        self.assertEqual(status, TaskStatus.RUNNING)
+        self.assertEqual(
+            task_registry.created_task_names,
+            ["chunking:file_entries:package-id"],
+        )
+
+    async def test_chunk_request_replace_existing_starts_task_and_deletes_chunks(self):
+        chunk = make_chunk()
+        service, blob_repository, task_registry = self.make_service(
+            chunks_by_file_path={"metadata.txt": [chunk]},
+            task_status=None,
+        )
+
+        result, status = await service.chunk_file_entries_in_data_package(
+            data_package_id="package-id",
+            buffer_window_size=1,
+            embedding_batch_size=32,
+            semantic_chunking_threshold=95.0,
+            replace_existing_chunks=True,
+        )
+
+        self.assertEqual(result, [])
+        self.assertEqual(status, TaskStatus.RUNNING)
+        self.assertEqual(blob_repository.deleted_chunk_package_ids, ["package-id"])
+        self.assertEqual(
+            task_registry.created_task_names,
+            ["chunking:file_entries:package-id"],
+        )
+
+    async def test_chunk_request_replace_existing_restarts_completed_task(self):
+        chunk = make_chunk()
+        service, blob_repository, task_registry = self.make_service(
+            chunks_by_file_path={"metadata.txt": [chunk]},
+            task_status=TaskStatus.COMPLETED,
+        )
+
+        result, status = await service.chunk_file_entries_in_data_package(
+            data_package_id="package-id",
+            buffer_window_size=1,
+            embedding_batch_size=32,
+            semantic_chunking_threshold=95.0,
+            replace_existing_chunks=True,
+        )
+
+        self.assertEqual(result, [])
+        self.assertEqual(status, TaskStatus.RUNNING)
+        self.assertEqual(blob_repository.deleted_chunk_package_ids, ["package-id"])
+        self.assertEqual(
+            task_registry.created_task_names,
+            ["chunking:file_entries:package-id"],
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
