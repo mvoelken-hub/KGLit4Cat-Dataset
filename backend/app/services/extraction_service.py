@@ -139,7 +139,7 @@ class ExtractionService:
         task_name = self._patch_draft_task_name(data_package_id)
         task_info: TaskInfo | None = self.task_registry.get_task_info(task_name)
 
-        if task_info is None or task_info.status == TaskStatus.CANCELLED:
+        if task_info is None or task_info.status in {TaskStatus.CANCELLED, TaskStatus.CRASHED}:
             # Validate prerequisites before creating the background task so request
             # errors are still returned directly by this endpoint.
             try:
@@ -164,9 +164,13 @@ class ExtractionService:
                     "Run /api/v1/datasources/chunk until it returns completed chunks first."
                 )
 
+            current_draft = self._load_current_draft_or_initial(
+                data_package_id=data_package_id,
+                initial_draft=initial_draft,
+            )
             self.output_repository.save_draft(
                 workflow_id=data_package_id,
-                draft=initial_draft,
+                draft=current_draft,
             )
             await self.task_registry.create_task(
                 coro=self._run_patch_initial_draft(
@@ -225,12 +229,19 @@ class ExtractionService:
                 "Run /api/v1/datasources/chunk until it returns completed chunks first."
             )
 
+        current_draft = self._load_current_draft_or_initial(
+            data_package_id=data_package_id,
+            initial_draft=initial_draft,
+        )
         self.output_repository.save_draft(
             workflow_id=data_package_id,
-            draft=initial_draft,
+            draft=current_draft,
         )
 
         protected_fields = self.output_repository.load_protected_fields(data_package_id)
+
+        def load_protected_fields() -> list[str]:
+            return self.output_repository.load_protected_fields(data_package_id)
 
         async def save_progress(
             draft: dict[str, Any],
@@ -248,7 +259,7 @@ class ExtractionService:
 
         result = await patch_draft_from_content_chunks(
             initial_context=initial_context,
-            initial_draft=initial_draft,
+            initial_draft=current_draft,
             content_chunks_by_file=content_chunks_by_file,
             profile_manifest=profile_manifest,
             profile_json_schema=profile_json_schema,
@@ -260,6 +271,10 @@ class ExtractionService:
             ),
             on_patch_processed=save_progress,
             protected_fields=protected_fields,
+            protected_fields_loader=load_protected_fields,
+            completed_patch_file_names=self.output_repository.load_completed_patch_file_names(
+                data_package_id,
+            ),
         )
 
         self.output_repository.save_draft(
@@ -415,6 +430,36 @@ class ExtractionService:
             workflow_id=data_package_id,
             protected_fields=protected_fields,
         )
+
+    async def get_patch_review_state(self, data_package_id: str) -> dict[str, Any]:
+        if self.output_repository is None:
+            return {
+                "resolved_item_ids": [],
+                "unmapped_assignments": {},
+                "resolution_notes": {},
+                "resolved_at": {},
+            }
+        return self.output_repository.load_patch_review_state(data_package_id)
+
+    async def save_patch_review_state(
+        self,
+        *,
+        data_package_id: str,
+        review_state: dict[str, Any],
+    ) -> dict[str, Any]:
+        if self.output_repository is None:
+            return review_state
+        normalized = {
+            "resolved_item_ids": list(review_state.get("resolved_item_ids", [])),
+            "unmapped_assignments": dict(review_state.get("unmapped_assignments", {})),
+            "resolution_notes": dict(review_state.get("resolution_notes", {})),
+            "resolved_at": dict(review_state.get("resolved_at", {})),
+        }
+        self.output_repository.save_patch_review_state(
+            workflow_id=data_package_id,
+            review_state=normalized,
+        )
+        return normalized
 
     async def get_patch_progress(
         self,

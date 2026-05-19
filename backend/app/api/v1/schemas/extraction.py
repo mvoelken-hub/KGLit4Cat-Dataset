@@ -71,6 +71,13 @@ class PatchArtifactsResponse(BaseModel):
     unmapped_facts: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class PatchReviewState(BaseModel):
+    resolved_item_ids: list[str] = Field(default_factory=list)
+    unmapped_assignments: dict[str, str] = Field(default_factory=dict)
+    resolution_notes: dict[str, str] = Field(default_factory=dict)
+    resolved_at: dict[str, str] = Field(default_factory=dict)
+
+
 def _initial_context_response(initial_context: InitialContext) -> InitialContext:
     return initial_context
 

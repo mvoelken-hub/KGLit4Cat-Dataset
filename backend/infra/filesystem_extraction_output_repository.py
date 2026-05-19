@@ -13,6 +13,7 @@ DRAFT_FILE = "draft.json"
 PATCHES_DIR = "patches"
 UNMAPPED_FACTS_DIR = "unmapped_facts"
 PROTECTED_FIELDS_FILE = "protected_fields.json"
+PATCH_REVIEW_STATE_FILE = "patch_review_state.json"
 
 
 class FileSystemExtractionOutputRepository:
@@ -193,6 +194,35 @@ class FileSystemExtractionOutputRepository:
         with open(path, "r", encoding="utf-8") as file:
             return json.load(file)
 
+    def save_patch_review_state(
+        self,
+        *,
+        workflow_id: str,
+        review_state: dict[str, Any],
+    ) -> None:
+        self._write_json_file(
+            self._workflow_dir(workflow_id) / PATCH_REVIEW_STATE_FILE,
+            review_state,
+        )
+
+    def load_patch_review_state(self, workflow_id: str) -> dict[str, Any]:
+        path = self._workflow_dir(workflow_id) / PATCH_REVIEW_STATE_FILE
+        if not path.exists():
+            return {
+                "resolved_item_ids": [],
+                "unmapped_assignments": {},
+                "resolution_notes": {},
+                "resolved_at": {},
+            }
+        with open(path, "r", encoding="utf-8") as file:
+            payload = json.load(file)
+        return {
+            "resolved_item_ids": list(payload.get("resolved_item_ids", [])),
+            "unmapped_assignments": dict(payload.get("unmapped_assignments", {})),
+            "resolution_notes": dict(payload.get("resolution_notes", {})),
+            "resolved_at": dict(payload.get("resolved_at", {})),
+        }
+
     def load_patch_files(self, workflow_id: str) -> list[dict[str, Any]]:
         patch_dir = self._workflow_dir(workflow_id) / PATCHES_DIR
         if not patch_dir.exists():
@@ -210,6 +240,17 @@ class FileSystemExtractionOutputRepository:
                 }
             )
         return artifacts
+
+    def load_completed_patch_file_names(self, workflow_id: str) -> set[str]:
+        patch_dir = self._workflow_dir(workflow_id) / PATCHES_DIR
+        if not patch_dir.exists():
+            return set()
+
+        return {
+            path.name
+            for path in patch_dir.glob("*.json")
+            if self._patch_artifact_type(path.name) == "patch"
+        }
 
     def load_patch_quality_reports(self, workflow_id: str) -> list[dict[str, Any]]:
         patch_dir = self._workflow_dir(workflow_id) / PATCHES_DIR
@@ -262,6 +303,9 @@ class FileSystemExtractionOutputRepository:
         protected_fields_path = workflow_dir / PROTECTED_FIELDS_FILE
         if protected_fields_path.exists():
             protected_fields_path.unlink()
+        review_state_path = workflow_dir / PATCH_REVIEW_STATE_FILE
+        if review_state_path.exists():
+            review_state_path.unlink()
 
     @staticmethod
     def _with_suffix(file_name: str, suffix: str) -> str:

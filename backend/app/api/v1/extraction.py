@@ -10,6 +10,7 @@ from app.api.v1.schemas import (
     ProtectedFieldsRequest,
     PatchProgressResponse,
     PatchArtifactsResponse,
+    PatchReviewState,
     SaveDraftRequest,
     _initial_context_response,
     _initial_draft_response,
@@ -181,6 +182,30 @@ async def get_unmapped_facts(
     extraction_service: ExtractionService = Depends(get_extraction_service),
 ) -> list[dict[str, Any]]:
     return await extraction_service.get_unmapped_facts(data_package_id=data_package_id)
+
+
+@router.get("/patch-draft/{data_package_id}/review-state")
+async def get_patch_review_state(
+    data_package_id: str,
+    extraction_service: ExtractionService = Depends(get_extraction_service),
+) -> PatchReviewState:
+    state = await extraction_service.get_patch_review_state(
+        data_package_id=data_package_id,
+    )
+    return PatchReviewState(**state)
+
+
+@router.put("/patch-draft/{data_package_id}/review-state")
+async def save_patch_review_state(
+    data_package_id: str,
+    request: PatchReviewState,
+    extraction_service: ExtractionService = Depends(get_extraction_service),
+) -> PatchReviewState:
+    state = await extraction_service.save_patch_review_state(
+        data_package_id=data_package_id,
+        review_state=request.model_dump(mode="json"),
+    )
+    return PatchReviewState(**state)
 
 
 @router.post("/initial-context", response_model=InitialContext)

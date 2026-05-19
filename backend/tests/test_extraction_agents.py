@@ -607,6 +607,120 @@ class ExtractionAgentHelperTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(progress[0][0]["description"], "Updated with chunk evidence.")
         self.assertEqual(progress[0][2:], (1, 1))
 
+    async def test_patch_draft_from_content_chunks_skips_completed_checkpoint(self):
+        chunks = make_content_chunks()
+        patch_file_name = (
+            "1_"
+            + ContentChunk.get_chunk_group_id_from_file_path(chunks[0][0].file_path)
+            + "_patch_1_1.json"
+        )
+        current_draft = {
+            "title": "Mass spectrometry dataset for sample-1",
+            "description": "Already patched.",
+            "keywords": ["mass spectrometry", "sample-1", "checkpoint"],
+        }
+        progress: list[tuple[dict, str, int, int]] = []
+
+        async def save_progress(
+            draft: dict,
+            patch_record,
+            batch_no: int,
+            total_batches: int,
+        ) -> None:
+            progress.append((draft, patch_record.file_name, batch_no, total_batches))
+
+        result = await patch_draft_from_content_chunks(
+            initial_context=InitialContext.model_validate(INITIAL_CONTEXT_OUTPUT),
+            initial_draft=current_draft,
+            content_chunks_by_file=chunks,
+            profile_manifest=make_profile_manifest(),
+            profile_json_schema=PROFILE_JSON_SCHEMA,
+            model=TestModel(
+                call_tools=[],
+                custom_output_text=json.dumps(FIELD_PATCH_OUTPUT),
+            ),
+            num_chunks_per_turn=1,
+            on_patch_processed=save_progress,
+            completed_patch_file_names={patch_file_name},
+        )
+
+        self.assertEqual(result.draft, current_draft)
+        self.assertEqual(result.patches, [])
+        self.assertEqual(progress, [])
+
+    async def test_patch_draft_from_content_chunks_reloads_protected_fields_per_batch(self):
+        from unittest import mock as unittest_mock
+
+        from app.domain.extraction.patch_quality import (
+            CandidateQualityRating,
+            PatchQualityReport,
+        )
+
+        accept_report = PatchQualityReport(
+            overall_decision="accept",
+            candidate_ratings=[
+                CandidateQualityRating(
+                    field_path="description",
+                    decision="accept",
+                    issues=[],
+                ),
+                CandidateQualityRating(
+                    field_path="keywords",
+                    decision="accept",
+                    issues=[],
+                ),
+            ],
+            summary="All candidates accepted.",
+        )
+        chunks = [
+            [
+                ContentChunk(
+                    content="Batch 1",
+                    data_package_id="package-id",
+                    file_path="README.txt",
+                    start_idx=0,
+                    end_idx=0,
+                ),
+                ContentChunk(
+                    content="Batch 2",
+                    data_package_id="package-id",
+                    file_path="README.txt",
+                    start_idx=1,
+                    end_idx=1,
+                ),
+            ]
+        ]
+        protected_calls = 0
+
+        def load_protected_fields() -> list[str]:
+            nonlocal protected_calls
+            protected_calls += 1
+            return [] if protected_calls == 1 else ["description", "keywords"]
+
+        with unittest_mock.patch(
+            "app.domain.extraction.patch_draft.review_patch_semantic_quality",
+            return_value=accept_report,
+        ):
+            result = await patch_draft_from_content_chunks(
+                initial_context=InitialContext.model_validate(INITIAL_CONTEXT_OUTPUT),
+                initial_draft=INITIAL_DRAFT_OUTPUT,
+                content_chunks_by_file=chunks,
+                profile_manifest=make_profile_manifest(),
+                profile_json_schema=PROFILE_JSON_SCHEMA,
+                model=TestModel(
+                    call_tools=[],
+                    custom_output_text=json.dumps(FIELD_PATCH_OUTPUT),
+                ),
+                num_chunks_per_turn=1,
+                protected_fields_loader=load_protected_fields,
+            )
+
+        self.assertEqual(protected_calls, 2)
+        self.assertEqual(result.draft["description"], "Updated with chunk evidence.")
+        self.assertIn("chunk-keyword", result.draft["keywords"])
+        self.assertEqual(result.patches[0].accepted_fields, ["description", "keywords"])
+        self.assertEqual(result.patches[1].accepted_fields, [])
+
 
 if __name__ == "__main__":
     unittest.main()

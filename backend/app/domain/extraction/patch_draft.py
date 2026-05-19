@@ -243,10 +243,12 @@ async def patch_draft_from_content_chunks(
     num_chunks_per_turn: int,
     on_patch_processed: PatchProgressCallback | None = None,
     protected_fields: list[str] | None = None,
+    protected_fields_loader: Callable[[], list[str]] | None = None,
+    completed_patch_file_names: set[str] | None = None,
 ) -> PatchDraftResult:
     draft = copy.deepcopy(initial_draft)
     patches: list[PatchRecord] = []
-    protected_top_level_fields = _normalise_protected_fields(protected_fields)
+    completed_patch_file_names = completed_patch_file_names or set()
     progress_batch_no = 0
     progress_total_batches = _count_progress_batches(
         content_chunks_by_file=content_chunks_by_file,
@@ -275,6 +277,18 @@ async def patch_draft_from_content_chunks(
                 f"{document_index}_{ContentChunk.get_chunk_group_id_from_file_path(document_file_path)}"
                 f"_patch_{batch_index}_{total_batches}.json"
             )
+            if patch_file_name in completed_patch_file_names:
+                progress_batch_no += 1
+                continue
+
+            current_protected_fields = (
+                protected_fields_loader()
+                if protected_fields_loader is not None
+                else protected_fields
+            )
+            protected_top_level_fields = _normalise_protected_fields(
+                current_protected_fields,
+            )
 
             # Step 1: Extract field-level patch candidates from the LLM agent.
             candidates = await extract_field_patch_candidates(
@@ -288,7 +302,7 @@ async def patch_draft_from_content_chunks(
                 profile_json_schema=profile_json_schema,
                 top_level_fields=top_level_fields,
                 model=model,
-                protected_fields=protected_fields,
+                protected_fields=current_protected_fields,
             )
             candidates = [
                 candidate

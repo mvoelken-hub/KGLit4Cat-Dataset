@@ -192,6 +192,12 @@ class FakeOutputRepository:
         self.quality_reports: dict[str, PatchQualityReport] = {}
         self.unmapped_facts: dict[str, list[UnmappedFact]] = {}
         self.protected_fields: list[str] = []
+        self.review_state: dict = {
+            "resolved_item_ids": [],
+            "unmapped_assignments": {},
+            "resolution_notes": {},
+            "resolved_at": {},
+        }
 
     def save_initial_context(
         self,
@@ -310,6 +316,17 @@ class FakeOutputRepository:
     def load_protected_fields(self, workflow_id: str) -> list[str]:
         return self.protected_fields
 
+    def save_patch_review_state(
+        self,
+        *,
+        workflow_id: str,
+        review_state: dict,
+    ) -> None:
+        self.review_state = review_state
+
+    def load_patch_review_state(self, workflow_id: str) -> dict:
+        return self.review_state
+
     def load_patch_files(self, workflow_id: str) -> list[dict]:
         return [
             {"file_name": file_name, "artifact_type": "patch", "content": patch}
@@ -333,6 +350,9 @@ class FakeOutputRepository:
                 for item in items
             )
         return facts
+
+    def load_completed_patch_file_names(self, workflow_id: str) -> set[str]:
+        return set(self.patches)
 
     def clear_patch_artifacts(self, workflow_id: str) -> None:
         self.draft = None
@@ -419,6 +439,27 @@ class FakeExtractionService:
     async def get_unmapped_facts(self, data_package_id: str) -> list[dict]:
         self.request = {"data_package_id": data_package_id}
         return []
+
+    async def get_patch_review_state(self, data_package_id: str) -> dict:
+        self.request = {"data_package_id": data_package_id}
+        return {
+            "resolved_item_ids": [],
+            "unmapped_assignments": {},
+            "resolution_notes": {},
+            "resolved_at": {},
+        }
+
+    async def save_patch_review_state(
+        self,
+        *,
+        data_package_id: str,
+        review_state: dict,
+    ) -> dict:
+        self.request = {
+            "data_package_id": data_package_id,
+            "review_state": review_state,
+        }
+        return review_state
 
 
 class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
@@ -870,6 +911,24 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
         )
         self.assertEqual(unmapped_facts[0]["fact"], "Temperature was 300 K.")
 
+    def test_patch_review_state_round_trip(self):
+        state = {
+            "resolved_item_ids": ["patch:description:0"],
+            "unmapped_assignments": {"unmapped:1": "description"},
+            "resolution_notes": {"patch:description:0": "Reviewed manually."},
+            "resolved_at": {"patch:description:0": "2026-05-19T12:00:00.000Z"},
+        }
+        with TemporaryDirectory() as temporary_directory:
+            repository = FileSystemExtractionOutputRepository(Path(temporary_directory))
+
+            repository.save_patch_review_state(
+                workflow_id="package-id",
+                review_state=state,
+            )
+            loaded = repository.load_patch_review_state("package-id")
+
+        self.assertEqual(loaded, state)
+
     def test_missing_initial_context_raises_file_not_found(self):
         with TemporaryDirectory() as temporary_directory:
             repository = FileSystemExtractionOutputRepository(Path(temporary_directory))
@@ -1028,6 +1087,37 @@ class InitialContextExtractionApiTests(unittest.TestCase):
         self.assertEqual(quality_reports.json(), [])
         self.assertEqual(unmapped_facts.status_code, 200)
         self.assertEqual(unmapped_facts.json(), [])
+
+    def test_patch_review_state_endpoints_round_trip_shape(self):
+        service = FakeExtractionService(INITIAL_DRAFT_OUTPUT)
+        client = self.make_client(service)
+        state = {
+            "resolved_item_ids": ["patch:description:0"],
+            "unmapped_assignments": {"unmapped:1": "description"},
+            "resolution_notes": {"patch:description:0": "Reviewed manually."},
+            "resolved_at": {"patch:description:0": "2026-05-19T12:00:00.000Z"},
+        }
+
+        saved = client.put(
+            "/api/v1/extraction/patch-draft/package-id/review-state",
+            json=state,
+        )
+        loaded = client.get(
+            "/api/v1/extraction/patch-draft/package-id/review-state",
+        )
+
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(saved.json(), state)
+        self.assertEqual(loaded.status_code, 200)
+        self.assertEqual(
+            loaded.json(),
+            {
+                "resolved_item_ids": [],
+                "unmapped_assignments": {},
+                "resolution_notes": {},
+                "resolved_at": {},
+            },
+        )
 
 
 if __name__ == "__main__":
