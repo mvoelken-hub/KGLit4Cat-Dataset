@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { chunkDataPackage, listDataPackages, uploadDataPackage } from './api/datasources';
-import { extractInitialContext, extractInitialDraft, patchDraft } from './api/extraction';
+import { extractInitialContext, extractInitialDraft, getExistingInitialContext, getExistingInitialDraft, patchDraft } from './api/extraction';
 import { listProfiles, validateProfileDocument } from './api/profiles';
 import type { ChunkRequestResponse, DataPackageResponse, InitialContext, ProfileManifestResponse } from './api/types';
 
-type BusyKey = 'upload' | 'chunk' | 'context' | 'draft' | 'patch' | 'validate' | 'load';
+type BusyKey = 'upload' | 'chunk' | 'context' | 'draft' | 'patch' | 'validate' | 'load' | 'loadContext' | 'loadDraft';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return bytes + ' B';
@@ -110,6 +110,24 @@ export function App() {
     }
   }
 
+  async function onLoadContext() {
+    if (!selectedPackageId) return;
+    setBusy('loadContext');
+    try {
+      const result = await getExistingInitialContext(selectedPackageId);
+      if (result) {
+        setContext(result);
+        setMessage('Loaded existing initial context.');
+      } else {
+        setMessage('No existing initial context found for this package.');
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Failed to load existing context.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function onDraft() {
     if (!selectedPackageId || !selectedProfile) return;
     setBusy('draft');
@@ -120,6 +138,25 @@ export function App() {
       setMessage('Initial profile draft created.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Draft creation failed.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function onLoadDraft() {
+    if (!selectedPackageId) return;
+    setBusy('loadDraft');
+    try {
+      const result = await getExistingInitialDraft(selectedPackageId);
+      if (result) {
+        setDraft(result);
+        setValidation(null);
+        setMessage('Loaded existing initial draft.');
+      } else {
+        setMessage('No existing initial draft found for this package.');
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Failed to load existing draft.');
     } finally {
       setBusy(null);
     }
@@ -227,6 +264,7 @@ export function App() {
               <p>Extract high-level context, likely metadata sources, keywords, file relationships, and evidence from the package.</p>
               <div className="actions">
                 <button onClick={() => void onContext()} disabled={!selectedPackageId || !!busy}>{busy === 'context' ? 'Extracting…' : 'Extract context'}</button>
+                <button className="ghost" onClick={() => void onLoadContext()} disabled={!selectedPackageId || !!busy}>{busy === 'loadContext' ? 'Loading…' : 'Load existing'}</button>
               </div>
               {context && (
                 <div className="context-grid">
@@ -247,6 +285,7 @@ export function App() {
               <p>Generate the first schema-conforming dataset object, then validate it against the selected registered profile.</p>
               <div className="actions">
                 <button onClick={() => void onDraft()} disabled={!selectedPackageId || !selectedProfile || !!busy}>{busy === 'draft' ? 'Drafting…' : 'Create draft'}</button>
+                <button className="ghost" onClick={() => void onLoadDraft()} disabled={!selectedPackageId || !!busy}>{busy === 'loadDraft' ? 'Loading…' : 'Load existing'}</button>
                 <button className="ghost" onClick={() => void onValidate()} disabled={!draft || !selectedProfile || !!busy}>Validate</button>
                 <button className="ghost" onClick={() => void onPatch()} disabled={!draft || !selectedProfile || !!busy}>Start patching</button>
               </div>

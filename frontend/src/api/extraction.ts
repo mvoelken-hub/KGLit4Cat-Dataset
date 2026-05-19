@@ -1,6 +1,18 @@
 import { apiBaseUrl, readJson } from './client';
 import type { InitialContext, PatchDraftResponse } from './types';
 
+export async function getExistingInitialContext(data_package_id: string): Promise<InitialContext | null> {
+  const response = await fetch(apiBaseUrl + '/extraction/initial-context/' + encodeURIComponent(data_package_id));
+  if (response.status === 404) return null;
+  return readJson(await response);
+}
+
+export async function getExistingInitialDraft(data_package_id: string): Promise<object | null> {
+  const response = await fetch(apiBaseUrl + '/extraction/initial-draft/' + encodeURIComponent(data_package_id));
+  if (response.status === 404) return null;
+  return readJson(await response);
+}
+
 export async function extractInitialContext(input: {
   data_package_id: string;
   max_files_to_read?: number;
