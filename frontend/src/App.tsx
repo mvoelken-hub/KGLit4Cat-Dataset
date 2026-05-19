@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { chunkDataPackage, listDataPackages, uploadDataPackage } from './api/datasources';
 import { extractInitialContext, extractInitialDraft, getExistingInitialContext, getExistingInitialDraft, patchDraft } from './api/extraction';
 import { listProfiles } from './api/profiles';
+import { JsonEditor } from './components/JsonEditor';
 import type { ChunkRequestResponse, DataPackageResponse, InitialContext, ProfileManifestResponse } from './api/types';
 
 type BusyKey = 'upload' | 'chunk' | 'context' | 'draft' | 'patch' | 'load' | 'loadContext' | 'loadDraft';
@@ -21,10 +22,6 @@ function Field({ label, value }: { label: string; value?: string | number | null
   );
 }
 
-function JsonPanel({ value }: { value: unknown }) {
-  return <pre className="json-panel">{JSON.stringify(value, null, 2)}</pre>;
-}
-
 export function App() {
   const [packages, setPackages] = useState<DataPackageResponse[]>([]);
   const [profiles, setProfiles] = useState<ProfileManifestResponse[]>([]);
@@ -35,6 +32,7 @@ export function App() {
   const [draft, setDraft] = useState<object | null>(null);
   const [busy, setBusy] = useState<BusyKey | null>('load');
   const [message, setMessage] = useState('Loading workspace.');
+  const [railCollapsed, setRailCollapsed] = useState(false);
 
   const selectedPackage = useMemo(
     () => packages.find((item) => item.id === selectedPackageId) || null,
@@ -187,32 +185,43 @@ export function App() {
         </aside>
       </section>
 
-      <section className="layout">
+      <section className={railCollapsed ? 'layout rail-collapsed' : 'layout'}>
         <aside className="rail">
-          <label className="upload-box">
-            <input type="file" accept=".zip" onChange={(event) => void onUpload(event.target.files?.[0])} />
-            <span>Upload dataset ZIP</span>
-            <strong>{busy === 'upload' ? 'Uploading…' : 'Choose archive'}</strong>
-          </label>
+          <button
+            className="rail-toggle"
+            onClick={() => setRailCollapsed(!railCollapsed)}
+            title={railCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {railCollapsed ? '→' : '←'}
+          </button>
+          {!railCollapsed && (
+            <>
+              <label className="upload-box">
+                <input type="file" accept=".zip" onChange={(event) => void onUpload(event.target.files?.[0])} />
+                <span>Upload dataset ZIP</span>
+                <strong>{busy === 'upload' ? 'Uploading…' : 'Choose archive'}</strong>
+              </label>
 
-          <div className="panel compact">
-            <div className="panel-heading">
-              <span>Packages</span>
-              <button onClick={() => void refresh()} disabled={!!busy}>Refresh</button>
-            </div>
-            <select value={selectedPackageId} onChange={(event) => setSelectedPackageId(event.target.value)}>
-              <option value="">No package selected</option>
-              {packages.map((item) => <option key={item.id} value={item.id}>{item.file_name}</option>)}
-            </select>
-          </div>
+              <div className="panel compact">
+                <div className="panel-heading">
+                  <span>Packages</span>
+                  <button onClick={() => void refresh()} disabled={!!busy}>Refresh</button>
+                </div>
+                <select value={selectedPackageId} onChange={(event) => setSelectedPackageId(event.target.value)}>
+                  <option value="">No package selected</option>
+                  {packages.map((item) => <option key={item.id} value={item.id}>{item.file_name}</option>)}
+                </select>
+              </div>
 
-          <div className="panel compact">
-            <div className="panel-heading"><span>Profile</span></div>
-            <select value={selectedProfile} onChange={(event) => setSelectedProfile(event.target.value)}>
-              <option value="">No profile selected</option>
-              {profiles.map((profile) => <option key={profile.identifier} value={profile.identifier}>{profile.identifier}</option>)}
-            </select>
-          </div>
+              <div className="panel compact">
+                <div className="panel-heading"><span>Profile</span></div>
+                <select value={selectedProfile} onChange={(event) => setSelectedProfile(event.target.value)}>
+                  <option value="">No profile selected</option>
+                  {profiles.map((profile) => <option key={profile.identifier} value={profile.identifier}>{profile.identifier}</option>)}
+                </select>
+              </div>
+            </>
+          )}
         </aside>
 
         <section className="workflow">
@@ -270,7 +279,7 @@ export function App() {
                 <button className="ghost" onClick={() => void onLoadDraft()} disabled={!selectedPackageId || !!busy}>{busy === 'loadDraft' ? 'Loading…' : 'Load existing'}</button>
                 <button className="ghost" onClick={() => void onPatch()} disabled={!draft || !selectedProfile || !!busy}>Start patching</button>
               </div>
-              {draft && <JsonPanel value={draft} />}
+              {draft && <JsonEditor value={draft as Record<string, unknown>} onChange={(updated) => setDraft(updated)} />}
             </div>
           </article>
         </section>

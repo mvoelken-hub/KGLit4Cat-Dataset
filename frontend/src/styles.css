@@ -35,7 +35,10 @@ h1 { margin: 0; font-size: clamp(3rem, 9vw, 7.5rem); line-height: 0.88; letter-s
 .status-card p { color: var(--muted); line-height: 1.5; }
 
 .layout { display: grid; grid-template-columns: 300px 1fr; gap: 24px; margin-top: 28px; }
+.layout.rail-collapsed { grid-template-columns: 40px 1fr; }
 .rail { display: grid; gap: 14px; align-content: start; position: sticky; top: 24px; }
+.rail-toggle { width: 36px; height: 36px; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 50%; font-size: 1.1rem; line-height: 1; background: var(--panel); border: 1px solid var(--line); color: var(--ink); cursor: pointer; transition: all 140ms ease; }
+.rail-toggle:hover { background: var(--accent); color: var(--paper); border-color: var(--accent); }
 .upload-box { display: grid; gap: 10px; padding: 24px; min-height: 168px; border: 1px dashed var(--accent); border-radius: 1.4rem; background: rgba(255, 248, 234, 0.68); cursor: pointer; }
 .upload-box input { display: none; }
 .upload-box span { color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; font-size: 0.76rem; }
@@ -68,10 +71,37 @@ h2 { margin: 0; font-size: clamp(1.6rem, 3vw, 2.6rem); letter-spacing: -0.04em; 
 .ok { color: var(--ok) !important; }
 .warning { color: var(--warn) !important; }
 
+/* JsonEditor */
+.json-editor { display: grid; grid-template-columns: 260px 1fr; gap: 0; margin-top: 18px; border: 1px solid var(--line); border-radius: 1rem; overflow: hidden; background: var(--panel); }
+.json-editor-sidebar { background: var(--panel); color: var(--ink); padding: 16px; overflow-y: auto; max-height: 520px; border-right: 1px solid var(--line); }
+.json-editor-tree ul { list-style: none; padding: 0; margin: 0; }
+.json-editor-tree li { padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 0.88rem; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.json-editor-tree li:hover, .json-editor-tree li.active { background: rgba(23, 20, 15, 0.08); }
+.json-editor-tree .tree-icon { display: inline-block; width: 16px; margin-right: 4px; font-size: 0.72rem; color: var(--muted); }
+.json-editor-main { padding: 20px; overflow-y: auto; max-height: 520px; }
+.json-editor-breadcrumb { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.json-editor-panel { background: rgba(255, 255, 255, 0.6); border-radius: 1rem; padding: 18px; }
+.json-editor-field { margin-bottom: 14px; }
+.json-editor-field label { display: block; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 6px; }
+.json-editor-input { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 0.8rem; font-size: 0.92rem; background: rgba(255, 255, 255, 0.8); color: var(--ink); font-family: inherit; }
+.json-editor-input:focus { outline: none; border-color: var(--accent); }
+textarea.json-editor-input { resize: vertical; min-height: 80px; }
+.json-editor-null { color: var(--muted); font-style: italic; }
+.json-editor-array-info { color: var(--muted); font-size: 0.86rem; margin-bottom: 12px; }
+.json-editor-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+.json-editor-card { border: 1px solid var(--line); border-radius: 0.8rem; padding: 12px; background: rgba(255, 255, 255, 0.5); cursor: pointer; transition: all 140ms ease; }
+.json-editor-card:hover { border-color: var(--accent); background: rgba(255, 248, 234, 0.8); }
+.json-editor-card strong { display: block; font-size: 0.9rem; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.json-editor-card small { color: var(--muted); font-size: 0.76rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+.json-editor-actions { margin-top: 14px; }
+.json-editor-raw { margin-top: 14px; max-height: 300px; overflow: auto; padding: 14px; border-radius: 0.8rem; background: #191713; color: #f7efe0; font-family: 'Courier New', monospace; font-size: 0.78rem; line-height: 1.5; }
+
 @media (max-width: 860px) {
   .hero, .layout { grid-template-columns: 1fr; }
   .rail { position: static; }
   .context-grid { grid-template-columns: 1fr; }
   .step-card { grid-template-columns: 1fr; }
   .step-index { border-right: 0; border-bottom: 1px solid var(--line); padding: 14px 24px; }
+  .json-editor { grid-template-columns: 1fr; }
+  .json-editor-sidebar { max-height: 200px; }
 }
