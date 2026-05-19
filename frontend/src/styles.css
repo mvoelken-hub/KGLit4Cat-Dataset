@@ -64,7 +64,7 @@ h2 { margin: 0; font-size: clamp(1.6rem, 3vw, 2.6rem); letter-spacing: -0.04em; 
 .summary-box, .chips { grid-column: 1 / -1; color: var(--muted); line-height: 1.6; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chips span { border: 1px solid var(--line); border-radius: 999px; padding: 0.36rem 0.66rem; color: var(--accent-dark); background: #fffaf0; }
-.json-panel { max-height: 520px; overflow: auto; padding: 18px; border: 1px solid var(--line); border-radius: 1rem; background: #191713; color: #f7efe0; font-family: 'Courier New', monospace; font-size: 0.86rem; line-height: 1.5; }
+.json-panel { max-height: 520px; max-width: 100%; overflow: auto; padding: 18px; border: 1px solid var(--line); border-radius: 1rem; background: #191713; color: #f7efe0; font-family: 'Courier New', monospace; font-size: 0.86rem; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
 .ok { color: var(--ok) !important; }
 .warning { color: var(--warn) !important; }
 
