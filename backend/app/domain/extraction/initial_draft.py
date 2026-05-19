@@ -12,7 +12,7 @@ from app.domain.extraction.agents import (
     create_schema_validated_agent,
 )
 from app.domain.extraction.artifacts import InitialContext
-from app.domain.extraction.profiles import ProfileManifest, validation_schema_for_target_class
+from app.domain.profiles import ProfileManifest, validation_schema_for_target_class
 
 
 INITIAL_DRAFT_INSTRUCTIONS = (

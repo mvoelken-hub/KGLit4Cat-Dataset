@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from app.domain.extraction import (
+from app.domain.profiles import (
     GeneratedProfileArtifacts,
     ProfileManifest,
     ProfileNotFoundError,
@@ -17,7 +17,7 @@ JSON_SCHEMA_FILE = "json_schema.json"
 JSONLD_CONTEXT_FILE = "jsonld_context.json"
 
 
-class FileSystemExtractionProfileRepository:
+class FileSystemProfileRepository:
     def __init__(self, base_path: Path):
         self.base_path = base_path
 

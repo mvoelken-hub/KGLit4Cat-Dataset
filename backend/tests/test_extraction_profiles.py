@@ -5,17 +5,17 @@ import unittest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.api.v1.extraction import router
-from app.dependencies import get_extraction_service
-from app.domain.extraction import (
+from app.api.v1.profiles import router
+from app.dependencies import get_profile_service
+from app.domain.profiles import (
     InvalidProfileIdentifierError,
     ProfileCompatibilityError,
     detect_enrichable_fields,
     generate_profile_artifacts,
     validate_profile_identifier,
 )
-from app.services.extraction_service import ExtractionService
-from infra.filesystem_extraction_profile_repository import FileSystemExtractionProfileRepository
+from app.services.profile_service import ProfileService
+from infra.filesystem_profile_repository import FileSystemProfileRepository
 
 
 TINY_PROFILE_SCHEMA = """
@@ -91,10 +91,10 @@ class ExtractionProfileDomainTests(unittest.TestCase):
         )
 
 
-class FileSystemExtractionProfileRepositoryTests(unittest.TestCase):
+class FileSystemProfileRepositoryTests(unittest.TestCase):
     def test_profile_artifacts_round_trip(self):
         with TemporaryDirectory() as temporary_directory:
-            repository = FileSystemExtractionProfileRepository(Path(temporary_directory))
+            repository = FileSystemProfileRepository(Path(temporary_directory))
             saved_manifest = repository.save_profile(make_artifacts())
 
             loaded_manifest = repository.get_profile_manifest(saved_manifest.identifier)
@@ -113,30 +113,27 @@ class ExtractionProfileApiTests(unittest.TestCase):
     def make_client(self, temporary_directory: str) -> TestClient:
         app = FastAPI()
         app.include_router(router, prefix="/api/v1")
-        service = ExtractionService(
-            FileSystemExtractionProfileRepository(Path(temporary_directory)),
-            settings=None,  # type: ignore[arg-type]
-        )
-        app.dependency_overrides[get_extraction_service] = lambda: service
+        service = ProfileService(FileSystemProfileRepository(Path(temporary_directory)))
+        app.dependency_overrides[get_profile_service] = lambda: service
         return TestClient(app)
 
     def test_github_blob_schema_urls_are_normalized_to_raw_urls(self):
         self.assertEqual(
-            ExtractionService._normalize_schema_url(
+            ProfileService._normalize_schema_url(
                 "https://github.com/nfdi-de/chem-dcat-ap/blob/main/src/chem_dcat_ap/schema/chem_dcat_ap.yaml"
             ),
             "https://raw.githubusercontent.com/nfdi-de/chem-dcat-ap/main/src/chem_dcat_ap/schema/chem_dcat_ap.yaml",
         )
 
     def test_blank_enrichable_fields_are_treated_as_omitted(self):
-        self.assertIsNone(ExtractionService._normalize_enrichable_fields([""]))
+        self.assertIsNone(ProfileService._normalize_enrichable_fields([""]))
 
     def test_profile_registration_validation_and_jsonld_export(self):
         with TemporaryDirectory() as temporary_directory:
             client = self.make_client(temporary_directory)
 
             register_response = client.post(
-                "/api/v1/extraction/profiles",
+                "/api/v1/profiles",
                 data={
                     "identifier": "test-profile",
                     "target_class": "Dataset",
@@ -156,38 +153,38 @@ class ExtractionProfileApiTests(unittest.TestCase):
             self.assertEqual(registered["identifier"], "test-profile")
             self.assertEqual(registered["enrichable_fields"], ["type", "unit"])
 
-            list_response = client.get("/api/v1/extraction/profiles")
+            list_response = client.get("/api/v1/profiles")
             self.assertEqual(list_response.status_code, 200)
             self.assertEqual(list_response.json()[0]["identifier"], "test-profile")
 
             schema_response = client.get(
-                "/api/v1/extraction/profiles/test-profile/json-schema"
+                "/api/v1/profiles/test-profile/json-schema"
             )
             self.assertEqual(schema_response.status_code, 200)
             self.assertIn("Dataset", schema_response.json()["$defs"])
 
             context_response = client.get(
-                "/api/v1/extraction/profiles/test-profile/jsonld-context"
+                "/api/v1/profiles/test-profile/jsonld-context"
             )
             self.assertEqual(context_response.status_code, 200)
             self.assertIn("@context", context_response.json())
 
             valid_response = client.post(
-                "/api/v1/extraction/profiles/test-profile/validate",
+                "/api/v1/profiles/test-profile/validate",
                 json={"document": {"title": "Catalyst dataset", "type": "Dataset"}},
             )
             self.assertEqual(valid_response.status_code, 200)
             self.assertTrue(valid_response.json()["valid"])
 
             invalid_response = client.post(
-                "/api/v1/extraction/profiles/test-profile/validate",
+                "/api/v1/profiles/test-profile/validate",
                 json={"document": {"description": "Missing title", "extra": "nope"}},
             )
             self.assertEqual(invalid_response.status_code, 200)
             self.assertFalse(invalid_response.json()["valid"])
 
             jsonld_response = client.post(
-                "/api/v1/extraction/profiles/test-profile/jsonld",
+                "/api/v1/profiles/test-profile/jsonld",
                 json={
                     "document": {
                         "title": "Catalyst dataset",

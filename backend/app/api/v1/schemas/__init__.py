@@ -27,16 +27,18 @@ from app.api.v1.schemas.semantic import (
 from app.api.v1.schemas.extraction import (
     InitialContextRequest,
     InitialDraftRequest,
-    JsonLdExportResponse,
     PatchDraftRequest,
+    _initial_context_response,
+    _initial_draft_response,
+    _patch_draft_response,
+)
+from app.api.v1.schemas.profiles import (
+    JsonLdExportResponse,
     ProfileDocumentRequest,
     ProfileManifestResponse,
     ProfileValidationIssueResponse,
     ProfileValidationResponse,
-    _initial_context_response,
-    _initial_draft_response,
     _jsonld_export_response,
-    _patch_draft_response,
     _profile_manifest_response,
     _profile_validation_response,
 )

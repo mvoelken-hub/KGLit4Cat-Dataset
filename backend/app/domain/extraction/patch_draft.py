@@ -12,7 +12,7 @@ from pydantic_ai import Agent, RunContext
 from app.domain.datasources import ContentChunk
 from app.domain.extraction.agents import DEFAULT_OUTPUT_RETRIES, prompted_json_output
 from app.domain.extraction.artifacts import InitialContext
-from app.domain.extraction.profiles import ProfileManifest
+from app.domain.profiles import ProfileManifest
 
 
 PATCH_DRAFT_INSTRUCTIONS = (

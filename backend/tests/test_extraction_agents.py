@@ -14,7 +14,6 @@ from app.domain.extraction import (
     InitialContext,
     InitialContextDeps,
     InitialDraftDeps,
-    ProfileManifest,
     apply_merge_patch,
     create_initial_context_agent,
     create_initial_draft_agent,
@@ -29,6 +28,7 @@ from app.domain.extraction import (
     validate_json_output_against_schema,
     patch_draft_from_content_chunks,
 )
+from app.domain.profiles import ProfileManifest
 
 
 OUTPUT_SCHEMA = {

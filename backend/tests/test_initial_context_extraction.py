@@ -15,8 +15,8 @@ from app.domain.extraction import (
     InitialContext,
     InitialContextRequiredError,
     PatchDraftPrerequisiteError,
-    ProfileManifest,
 )
+from app.domain.profiles import ProfileManifest
 from app.services.extraction_service import ExtractionService
 from infra.filesystem_extraction_output_repository import (
     FileSystemExtractionOutputRepository,
@@ -114,6 +114,12 @@ class FakeProfileRepository:
         if identifier != self.manifest.identifier:
             return None
         return self.manifest
+
+    def get_profile(self, identifier: str) -> ProfileManifest:
+        manifest = self.get_profile_manifest(identifier)
+        if manifest is None:
+            raise AssertionError(f"Unexpected profile identifier: {identifier}")
+        return manifest
 
     def load_json_schema(self, identifier: str) -> dict:
         self.requested_schema_identifier = identifier

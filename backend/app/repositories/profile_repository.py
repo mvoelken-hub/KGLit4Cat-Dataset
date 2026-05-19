@@ -1,9 +1,9 @@
 from typing import Any, Protocol
 
-from app.domain.extraction import GeneratedProfileArtifacts, ProfileManifest
+from app.domain.profiles import GeneratedProfileArtifacts, ProfileManifest
 
 
-class ExtractionProfileRepository(Protocol):
+class ProfileRepository(Protocol):
     def save_profile(self, artifacts: GeneratedProfileArtifacts) -> ProfileManifest:
         ...
 
