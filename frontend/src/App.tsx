@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { chunkDataPackage, listDataPackages, uploadDataPackage } from './api/datasources';
 import { extractInitialContext, extractInitialDraft, getExistingInitialContext, getExistingInitialDraft, patchDraft } from './api/extraction';
-import { listProfiles, validateProfileDocument } from './api/profiles';
+import { listProfiles } from './api/profiles';
 import type { ChunkRequestResponse, DataPackageResponse, InitialContext, ProfileManifestResponse } from './api/types';
 
-type BusyKey = 'upload' | 'chunk' | 'context' | 'draft' | 'patch' | 'validate' | 'load' | 'loadContext' | 'loadDraft';
+type BusyKey = 'upload' | 'chunk' | 'context' | 'draft' | 'patch' | 'load' | 'loadContext' | 'loadDraft';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return bytes + ' B';
@@ -33,7 +33,6 @@ export function App() {
   const [chunkResult, setChunkResult] = useState<ChunkRequestResponse | null>(null);
   const [context, setContext] = useState<InitialContext | null>(null);
   const [draft, setDraft] = useState<object | null>(null);
-  const [validation, setValidation] = useState<{ valid: boolean; errors: Array<{ path: string; message: string }> } | null>(null);
   const [busy, setBusy] = useState<BusyKey | null>('load');
   const [message, setMessage] = useState('Loading workspace.');
 
@@ -73,7 +72,6 @@ export function App() {
       setChunkResult(null);
       setContext(null);
       setDraft(null);
-      setValidation(null);
       setMessage('Dataset uploaded. Create chunks next.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Upload failed.');
@@ -134,7 +132,6 @@ export function App() {
     try {
       const result = await extractInitialDraft({ data_package_id: selectedPackageId, profile_identifier: selectedProfile });
       setDraft(result);
-      setValidation(null);
       setMessage('Initial profile draft created.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Draft creation failed.');
@@ -150,7 +147,6 @@ export function App() {
       const result = await getExistingInitialDraft(selectedPackageId);
       if (result) {
         setDraft(result);
-        setValidation(null);
         setMessage('Loaded existing initial draft.');
       } else {
         setMessage('No existing initial draft found for this package.');
@@ -171,20 +167,6 @@ export function App() {
       setMessage(result.status === 'completed' ? 'Draft patching completed.' : 'Draft patching is running. Repeat to refresh current draft.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Patch step failed.');
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function onValidate() {
-    if (!draft || !selectedProfile) return;
-    setBusy('validate');
-    try {
-      const result = await validateProfileDocument(selectedProfile, draft);
-      setValidation(result);
-      setMessage(result.valid ? 'Draft validates against the selected profile.' : 'Draft has validation issues.');
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Validation failed.');
     } finally {
       setBusy(null);
     }
@@ -286,10 +268,8 @@ export function App() {
               <div className="actions">
                 <button onClick={() => void onDraft()} disabled={!selectedPackageId || !selectedProfile || !!busy}>{busy === 'draft' ? 'Drafting…' : 'Create draft'}</button>
                 <button className="ghost" onClick={() => void onLoadDraft()} disabled={!selectedPackageId || !!busy}>{busy === 'loadDraft' ? 'Loading…' : 'Load existing'}</button>
-                <button className="ghost" onClick={() => void onValidate()} disabled={!draft || !selectedProfile || !!busy}>Validate</button>
                 <button className="ghost" onClick={() => void onPatch()} disabled={!draft || !selectedProfile || !!busy}>Start patching</button>
               </div>
-              {validation && <p className={validation.valid ? 'ok' : 'warning'}>{validation.valid ? 'Valid profile document.' : `${validation.errors.length} validation issue(s).`}</p>}
               {draft && <JsonPanel value={draft} />}
             </div>
           </article>
