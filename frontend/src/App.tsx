@@ -15,7 +15,7 @@ import {
   setProtectedFields as apiSetProtectedFields,
 } from './api/extraction';
 import { listProfiles } from './api/profiles';
-import { JsonEditor, type JsonPatchMarker } from './components/JsonEditor';
+import { JsonEditor, type JsonObject, type JsonPatchMarker, type JsonValue, setValueAtPath, extractPatchInnerValue, PatchValueEditor } from './components/JsonEditor';
 import type { ChunkRequestResponse, DataPackageResponse, InitialContext, ProfileManifestResponse } from './api/types';
 import type { PatchArtifacts, PatchProgress, PatchReviewState, PatchTaskStatus } from './api/extraction';
 
@@ -171,8 +171,23 @@ function buildReviewItems(artifacts: PatchArtifacts | null, reviewState: PatchRe
   return items;
 }
 
-function ReviewItemList({ items, onResolve }: { items: ReviewItem[]; onResolve: (itemId: string) => void }) {
+function ReviewItemList({ items, onResolve, onApplyPatch }: { items: ReviewItem[]; onResolve: (itemId: string) => void; onApplyPatch?: (itemId: string, value: unknown) => void }) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editedValue, setEditedValue] = useState<unknown>(null);
+
   if (!items.length) return <p className="muted">No review items in this category.</p>;
+
+  const startEditing = (item: ReviewItem) => {
+    const innerValue = extractPatchInnerValue(item.patch);
+    setEditingId(item.id);
+    setEditedValue(innerValue);
+  };
+
+  const cancelEditing = () => {
+    setEditingId(null);
+    setEditedValue(null);
+  };
+
   return (
     <ul className="artifact-list">
       {items.map((item) => (
@@ -194,7 +209,27 @@ function ReviewItemList({ items, onResolve }: { items: ReviewItem[]; onResolve: 
               <ul>{item.evidence.map((evidence, index) => <li key={`${item.id}-evidence-${index}`}>{evidence}</li>)}</ul>
             </div>
           )}
-          {item.patch !== undefined && <pre className="review-item-patch">{JSON.stringify(item.patch, null, 2)}</pre>}
+          {item.patch !== undefined && (
+            <div className="review-item-section">
+              <span>Proposed change</span>
+              {editingId === item.id ? (
+                <>
+                  <PatchValueEditor value={editedValue} onChange={setEditedValue} />
+                  <div className="patch-edit-actions">
+                    <button className="ghost" onClick={cancelEditing}>Cancel</button>
+                    <button onClick={() => { onApplyPatch?.(item.id, editedValue); cancelEditing(); }}>Apply patch</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <pre className="review-item-patch">{JSON.stringify(item.patch, null, 2)}</pre>
+                  {!item.resolved && onApplyPatch && (
+                    <button className="ghost" onClick={() => startEditing(item)}>Edit patch</button>
+                  )}
+                </>
+              )}
+            </div>
+          )}
           {!item.resolved && <button className="ghost" onClick={() => onResolve(item.id)}>Mark resolved</button>}
         </li>
       ))}
@@ -405,6 +440,36 @@ export function App() {
     } catch (error) {
       setPatchReviewState(previous);
       setMessage(error instanceof Error ? error.message : 'Failed to save review state.');
+    }
+  }
+
+  async function onApplyPatch(itemId: string, editedValue: unknown) {
+    if (!selectedPackageId || !draft) return;
+    const item = reviewItems.find((ri) => ri.id === itemId);
+    if (!item) return;
+
+    const previousDraft = draft;
+    const updatedDraft = setValueAtPath(draft as JsonObject, item.path, editedValue as JsonValue);
+    setDraft(updatedDraft as Record<string, unknown>);
+
+    const previousReviewState = patchReviewState;
+    const nextReviewState: PatchReviewState = {
+      ...patchReviewState,
+      resolved_item_ids: [...patchReviewState.resolved_item_ids, itemId],
+      resolved_at: { ...patchReviewState.resolved_at, [itemId]: new Date().toISOString() },
+    };
+    setPatchReviewState(nextReviewState);
+
+    try {
+      await Promise.all([
+        saveDraft(selectedPackageId, updatedDraft as Record<string, unknown>),
+        savePatchReviewState(selectedPackageId, nextReviewState),
+      ]);
+      setMessage('Patch applied and marked resolved.');
+    } catch (error) {
+      setDraft(previousDraft);
+      setPatchReviewState(previousReviewState);
+      setMessage(error instanceof Error ? error.message : 'Failed to apply patch.');
     }
   }
 
@@ -625,6 +690,7 @@ export function App() {
                   protectedPaths={protectedFields}
                   onProtectedPathsChange={(paths) => void onSaveProtectedFields(paths)}
                   patchMarkers={patchMarkers}
+                  onApplyPatch={(itemId, value) => void onApplyPatch(itemId, value)}
                 />
               )}
               {patchArtifacts && (
@@ -635,7 +701,7 @@ export function App() {
                     <button className={reviewTab === 'unmapped' ? 'active' : ''} onClick={() => setReviewTab('unmapped')}>Unmapped ({unmappedReviewFacts.length})</button>
                     <button className={reviewTab === 'resolved' ? 'active' : ''} onClick={() => setReviewTab('resolved')}>Resolved ({resolvedReviewItems.length})</button>
                   </div>
-                  {reviewTab === 'matched' && <ReviewItemList items={matchedReviewItems} onResolve={(itemId) => void onResolveReviewItem(itemId)} />}
+                  {reviewTab === 'matched' && <ReviewItemList items={matchedReviewItems} onResolve={(itemId) => void onResolveReviewItem(itemId)} onApplyPatch={(itemId, value) => void onApplyPatch(itemId, value)} />}
                   {reviewTab === 'unmapped' && (
                     <UnmappedFactList
                       facts={unmappedReviewFacts}

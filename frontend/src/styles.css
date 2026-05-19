@@ -170,6 +170,14 @@ textarea.json-editor-input { resize: vertical; min-height: 80px; }
 .review-item-section li { margin: 4px 0; line-height: 1.4; overflow-wrap: anywhere; }
 .review-item-patch { margin: 0; max-height: 220px; overflow: auto; padding: 10px; border-radius: 8px; background: #191713; color: #f7efe0; font-family: 'Courier New', monospace; font-size: 0.76rem; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
 
+/* Patch editing UI */
+.patch-array-editor { display: grid; gap: 8px; }
+.patch-array-item { display: flex; align-items: center; gap: 8px; }
+.patch-array-item .json-editor-input { flex: 1; }
+.patch-array-item button { padding: 0.4rem 0.6rem; font-size: 0.78rem; }
+.patch-edit-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.patch-edit-actions button { padding: 0.5rem 0.8rem; font-size: 0.82rem; }
+
 @media (max-width: 860px) {
   .hero, .layout { grid-template-columns: 1fr; }
   .rail { position: static; }

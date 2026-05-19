@@ -1,8 +1,8 @@
 import { useState } from 'react';
 
-type JsonValue = string | number | boolean | null | JsonObject | JsonArray;
-type JsonObject = { [key: string]: JsonValue };
-type JsonArray = JsonValue[];
+export type JsonValue = string | number | boolean | null | JsonObject | JsonArray;
+export type JsonObject = { [key: string]: JsonValue };
+export type JsonArray = JsonValue[];
 
 export type JsonPatchMarker = {
   id: string;
@@ -18,7 +18,7 @@ export type JsonPatchMarker = {
   resolved?: boolean;
 };
 
-function getValueAtPath(obj: JsonObject, path: string): JsonValue | undefined {
+export function getValueAtPath(obj: JsonObject, path: string): JsonValue | undefined {
   if (!path) return obj;
   const parts = path.split('.');
   let current: JsonValue = obj;
@@ -34,7 +34,7 @@ function getValueAtPath(obj: JsonObject, path: string): JsonValue | undefined {
   return current;
 }
 
-function setValueAtPath(obj: JsonObject, path: string, value: JsonValue): JsonObject {
+export function setValueAtPath(obj: JsonObject, path: string, value: JsonValue): JsonObject {
   if (!path) return value as JsonObject;
   const result: JsonObject = JSON.parse(JSON.stringify(obj));
   const parts = path.split('.');
@@ -174,6 +174,7 @@ function ValueEditor({
   protectedPaths,
   onToggleProtected,
   patchMarkers,
+  onApplyPatch,
 }: {
   value: JsonValue;
   path: string;
@@ -181,6 +182,7 @@ function ValueEditor({
   protectedPaths: string[];
   onToggleProtected: (path: string) => void;
   patchMarkers: JsonPatchMarker[];
+  onApplyPatch?: (itemId: string, value: unknown) => void;
 }) {
   const isProtected = isPathProtected(path, protectedPaths);
 
@@ -307,7 +309,7 @@ function ValueEditor({
               </button>
             )}
           </div>
-          <SelectedPatchMarkerReview markers={childMarkers} compact />
+          <SelectedPatchMarkerReview markers={childMarkers} compact onApplyPatch={onApplyPatch} />
           <ValueEditor
             value={val}
             path={childPath}
@@ -315,6 +317,7 @@ function ValueEditor({
             protectedPaths={protectedPaths}
             onToggleProtected={onToggleProtected}
             patchMarkers={patchMarkers}
+            onApplyPatch={onApplyPatch}
           />
         </div>
         );
@@ -331,6 +334,158 @@ function formatPatchValue(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+export function extractPatchInnerValue(patch: unknown): unknown {
+  if (patch && typeof patch === 'object' && !Array.isArray(patch)) {
+    const values = Object.values(patch as Record<string, unknown>);
+    if (values.length === 1) return values[0];
+  }
+  return patch;
+}
+
+export function PatchValueEditor({ value, onChange }: { value: unknown; onChange: (value: unknown) => void }) {
+  if (value === null || value === undefined) {
+    return (
+      <select
+        className="json-editor-input"
+        value={value === null ? 'null' : 'undefined'}
+        onChange={(e) => {
+          const v = e.target.value;
+          if (v === 'null') onChange(null);
+          else if (v === 'true') onChange(true);
+          else if (v === 'false') onChange(false);
+          else if (v === '') onChange('');
+          else if (!Number.isNaN(Number(v))) onChange(Number(v));
+          else onChange(v);
+        }}
+      >
+        <option value="null">null</option>
+        <option value="true">true</option>
+        <option value="false">false</option>
+        <option value="">empty string</option>
+      </select>
+    );
+  }
+
+  if (typeof value === 'string') {
+    if (value.length > 80) {
+      return (
+        <textarea
+          className="json-editor-input"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          rows={4}
+        />
+      );
+    }
+    return (
+      <input
+        type="text"
+        className="json-editor-input"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    );
+  }
+
+  if (typeof value === 'number') {
+    return (
+      <input
+        type="number"
+        className="json-editor-input"
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+      />
+    );
+  }
+
+  if (typeof value === 'boolean') {
+    return (
+      <select
+        className="json-editor-input"
+        value={String(value)}
+        onChange={(e) => onChange(e.target.value === 'true')}
+      >
+        <option value="true">true</option>
+        <option value="false">false</option>
+      </select>
+    );
+  }
+
+  if (Array.isArray(value)) {
+    const isPrimitiveArray = value.every((item) =>
+      item === null ||
+      ['string', 'number', 'boolean'].includes(typeof item)
+    );
+
+    if (isPrimitiveArray) {
+      return (
+        <div className="patch-array-editor">
+          {value.map((item, index) => (
+            <div key={index} className="patch-array-item">
+              <PatchValueEditor
+                value={item}
+                onChange={(newItem) => {
+                  const next = [...value];
+                  next[index] = newItem;
+                  onChange(next);
+                }}
+              />
+              <button
+                className="ghost"
+                onClick={() => {
+                  const next = value.filter((_, i) => i !== index);
+                  onChange(next);
+                }}
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+          <button
+            className="ghost"
+            onClick={() => {
+              const first = value[0];
+              let newItem: unknown = '';
+              if (typeof first === 'number') newItem = 0;
+              else if (typeof first === 'boolean') newItem = false;
+              else if (first === null) newItem = null;
+              onChange([...value, newItem]);
+            }}
+          >
+            Add item
+          </button>
+        </div>
+      );
+    }
+  }
+
+  // Fallback: raw JSON textarea for objects and mixed arrays
+  const [jsonText, setJsonText] = useState(() => JSON.stringify(value, null, 2));
+  const [jsonError, setJsonError] = useState<string | null>(null);
+
+  return (
+    <div>
+      <textarea
+        className="json-editor-input"
+        style={{ fontFamily: "'Courier New', monospace", minHeight: '120px' }}
+        value={jsonText}
+        onChange={(e) => {
+          setJsonText(e.target.value);
+          try {
+            const parsed = JSON.parse(e.target.value);
+            setJsonError(null);
+            onChange(parsed);
+          } catch (err) {
+            setJsonError(err instanceof Error ? err.message : 'Invalid JSON');
+          }
+        }}
+        rows={6}
+      />
+      {jsonError && <small className="warning" style={{ display: 'block', marginTop: '6px' }}>{jsonError}</small>}
+    </div>
+  );
 }
 
 function PatchMarkerBadges({ markers }: { markers: JsonPatchMarker[] }) {
@@ -352,8 +507,22 @@ function PatchMarkerBadges({ markers }: { markers: JsonPatchMarker[] }) {
   );
 }
 
-function SelectedPatchMarkerReview({ markers, compact = false }: { markers: JsonPatchMarker[]; compact?: boolean }) {
+function SelectedPatchMarkerReview({ markers, compact = false, onApplyPatch }: { markers: JsonPatchMarker[]; compact?: boolean; onApplyPatch?: (itemId: string, value: unknown) => void }) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editedValue, setEditedValue] = useState<unknown>(null);
+
   if (!markers.length) return null;
+
+  const startEditing = (marker: JsonPatchMarker) => {
+    const innerValue = extractPatchInnerValue(marker.patch);
+    setEditingId(marker.id);
+    setEditedValue(innerValue);
+  };
+
+  const cancelEditing = () => {
+    setEditingId(null);
+    setEditedValue(null);
+  };
 
   return (
     <div className={compact ? 'selected-patch-review compact' : 'selected-patch-review'}>
@@ -361,8 +530,8 @@ function SelectedPatchMarkerReview({ markers, compact = false }: { markers: Json
         <strong>Patch review</strong>
         <span>{markers.length} marker{markers.length === 1 ? '' : 's'}</span>
       </div>
-      {markers.map((marker, index) => (
-        <article key={`${marker.path}-${marker.status}-${index}`} className={`selected-patch-card ${marker.status}`}>
+      {markers.map((marker) => (
+        <article key={marker.id} className={`selected-patch-card ${marker.status}`}>
           <div className="selected-patch-card-heading">
             <span className={`patch-marker-badge ${marker.status}`}>{marker.label}</span>
             {marker.confidence !== undefined && <small>{Math.round(marker.confidence * 100)}% confidence</small>}
@@ -388,7 +557,22 @@ function SelectedPatchMarkerReview({ markers, compact = false }: { markers: Json
           {marker.patch !== undefined && (
             <div className="selected-patch-section">
               <span>Proposed change</span>
-              <pre>{formatPatchValue(marker.patch)}</pre>
+              {editingId === marker.id ? (
+                <>
+                  <PatchValueEditor value={editedValue} onChange={setEditedValue} />
+                  <div className="patch-edit-actions">
+                    <button className="ghost" onClick={cancelEditing}>Cancel</button>
+                    <button onClick={() => { onApplyPatch?.(marker.id, editedValue); cancelEditing(); }}>Apply patch</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <pre>{formatPatchValue(marker.patch)}</pre>
+                  {onApplyPatch && (
+                    <button className="ghost" onClick={() => startEditing(marker)}>Edit patch</button>
+                  )}
+                </>
+              )}
             </div>
           )}
         </article>
@@ -403,12 +587,14 @@ export function JsonEditor({
   protectedPaths,
   onProtectedPathsChange,
   patchMarkers,
+  onApplyPatch,
 }: {
   value: Record<string, unknown>;
   onChange?: (value: Record<string, unknown>) => void;
   protectedPaths?: string[];
   onProtectedPathsChange?: (paths: string[]) => void;
   patchMarkers?: JsonPatchMarker[];
+  onApplyPatch?: (itemId: string, value: unknown) => void;
 }) {
   const [selectedPath, setSelectedPath] = useState<string>('');
   const [showRaw, setShowRaw] = useState(false);
@@ -460,7 +646,7 @@ export function JsonEditor({
       <div className="json-editor-main">
         <div className="json-editor-breadcrumb">{selectedPath || 'root'}</div>
         <div className="json-editor-panel">
-          <SelectedPatchMarkerReview markers={selectedPatchMarkers} />
+          <SelectedPatchMarkerReview markers={selectedPatchMarkers} onApplyPatch={onApplyPatch} />
           {currentValue !== undefined ? (
             <ValueEditor
               value={currentValue}
@@ -469,6 +655,7 @@ export function JsonEditor({
               protectedPaths={protectedPaths || []}
               onToggleProtected={handleToggleProtected}
               patchMarkers={patchMarkers || []}
+              onApplyPatch={onApplyPatch}
             />
           ) : (
             <p className="muted">Select a node from the tree to edit.</p>
