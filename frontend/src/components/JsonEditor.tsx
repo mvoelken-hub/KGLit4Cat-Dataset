@@ -4,6 +4,20 @@ type JsonValue = string | number | boolean | null | JsonObject | JsonArray;
 type JsonObject = { [key: string]: JsonValue };
 type JsonArray = JsonValue[];
 
+export type JsonPatchMarker = {
+  id: string;
+  path: string;
+  status: 'accepted' | 'needs_review' | 'unmapped';
+  label: string;
+  detail?: string;
+  confidence?: number;
+  fileName?: string;
+  patch?: unknown;
+  evidence?: string[];
+  issues?: string[];
+  resolved?: boolean;
+};
+
 function getValueAtPath(obj: JsonObject, path: string): JsonValue | undefined {
   if (!path) return obj;
   const parts = path.split('.');
@@ -62,6 +76,7 @@ function TreeNode({
   onSelect,
   protectedPaths,
   onToggleProtected,
+  patchMarkers,
   depth = 0,
 }: {
   data: JsonValue;
@@ -70,6 +85,7 @@ function TreeNode({
   onSelect: (path: string) => void;
   protectedPaths: string[];
   onToggleProtected: (path: string) => void;
+  patchMarkers: JsonPatchMarker[];
   depth?: number;
 }) {
   if (data === null || data === undefined) return null;
@@ -80,6 +96,7 @@ function TreeNode({
   const isSelected = path === selectedPath;
   const isLockable = isTopLevelPath(path);
   const isProtected = isPathProtected(path, protectedPaths);
+  const fieldMarkers = patchMarkers.filter((marker) => marker.path === path);
   const childCount = isPrimitive ? 0 : isArray ? data.length : Object.keys(data).length;
   const displayLabel = isPrimitive
     ? `${label}: ${formatPrimitivePreview(data)}`
@@ -96,6 +113,11 @@ function TreeNode({
       >
         <span className="tree-icon">{isPrimitive ? '•' : '▸'}</span>
         {displayLabel}
+        {fieldMarkers.length > 0 && (
+          <span className="patch-marker-count" title="Patch markers on this field">
+            {fieldMarkers.length}
+          </span>
+        )}
         {isLockable && (
           <button
             className={`lock-toggle ${isProtected ? 'locked' : ''}`}
@@ -119,6 +141,7 @@ function TreeNode({
             onSelect={onSelect}
             protectedPaths={protectedPaths}
             onToggleProtected={onToggleProtected}
+            patchMarkers={patchMarkers}
             depth={depth + 1}
           />
         );
@@ -135,6 +158,7 @@ function TreeNode({
             onSelect={onSelect}
             protectedPaths={protectedPaths}
             onToggleProtected={onToggleProtected}
+            patchMarkers={patchMarkers}
             depth={depth + 1}
           />
         );
@@ -149,12 +173,14 @@ function ValueEditor({
   onChange,
   protectedPaths,
   onToggleProtected,
+  patchMarkers,
 }: {
   value: JsonValue;
   path: string;
   onChange: (path: string, newValue: JsonValue) => void;
   protectedPaths: string[];
   onToggleProtected: (path: string) => void;
+  patchMarkers: JsonPatchMarker[];
 }) {
   const isProtected = isPathProtected(path, protectedPaths);
 
@@ -260,14 +286,18 @@ function ValueEditor({
 
   return (
     <div className="json-editor-object">
-      {Object.entries(value).map(([key, val]) => (
+      {Object.entries(value).map(([key, val]) => {
+        const childPath = path ? `${path}.${key}` : key;
+        const childMarkers = patchMarkers.filter((marker) => marker.path === childPath);
+        return (
         <div
           key={key}
-          className={`json-editor-field ${isPathProtected(path ? `${path}.${key}` : key, protectedPaths) ? 'protected' : ''}`}
+          className={`json-editor-field ${isPathProtected(childPath, protectedPaths) ? 'protected' : ''}`}
         >
           <div className="json-editor-field-label">
             <label>{key}</label>
-            {isTopLevelPath(path ? `${path}.${key}` : key) && (
+            <PatchMarkerBadges markers={childMarkers} />
+            {isTopLevelPath(childPath) && (
               <button
                 className={`lock-toggle ${isPathProtected(key, protectedPaths) ? 'locked' : ''}`}
                 title={isPathProtected(key, protectedPaths) ? 'Unlock field' : 'Lock field'}
@@ -277,14 +307,91 @@ function ValueEditor({
               </button>
             )}
           </div>
+          <SelectedPatchMarkerReview markers={childMarkers} compact />
           <ValueEditor
             value={val}
-            path={path ? `${path}.${key}` : key}
+            path={childPath}
             onChange={onChange}
             protectedPaths={protectedPaths}
             onToggleProtected={onToggleProtected}
+            patchMarkers={patchMarkers}
           />
         </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function formatPatchValue(value: unknown): string {
+  if (value === undefined) return '';
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function PatchMarkerBadges({ markers }: { markers: JsonPatchMarker[] }) {
+  if (!markers.length) return null;
+  return (
+    <div className="patch-marker-badges">
+      {markers.map((marker, index) => (
+        <span
+          key={`${marker.path}-${marker.status}-${index}`}
+          className={`patch-marker-badge ${marker.status}`}
+          title={[marker.detail, marker.confidence !== undefined ? `Confidence ${Math.round(marker.confidence * 100)}%` : '']
+            .filter(Boolean)
+            .join(' - ')}
+        >
+          {marker.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function SelectedPatchMarkerReview({ markers, compact = false }: { markers: JsonPatchMarker[]; compact?: boolean }) {
+  if (!markers.length) return null;
+
+  return (
+    <div className={compact ? 'selected-patch-review compact' : 'selected-patch-review'}>
+      <div className="selected-patch-review-heading">
+        <strong>Patch review</strong>
+        <span>{markers.length} marker{markers.length === 1 ? '' : 's'}</span>
+      </div>
+      {markers.map((marker, index) => (
+        <article key={`${marker.path}-${marker.status}-${index}`} className={`selected-patch-card ${marker.status}`}>
+          <div className="selected-patch-card-heading">
+            <span className={`patch-marker-badge ${marker.status}`}>{marker.label}</span>
+            {marker.confidence !== undefined && <small>{Math.round(marker.confidence * 100)}% confidence</small>}
+            {marker.fileName && <small>{marker.fileName}</small>}
+          </div>
+          {marker.detail && <p>{marker.detail}</p>}
+          {marker.issues && marker.issues.length > 0 && (
+            <div className="selected-patch-section">
+              <span>Issues</span>
+              <ul>
+                {marker.issues.map((issue, issueIndex) => <li key={`${issue}-${issueIndex}`}>{issue}</li>)}
+              </ul>
+            </div>
+          )}
+          {marker.evidence && marker.evidence.length > 0 && (
+            <div className="selected-patch-section">
+              <span>Evidence</span>
+              <ul>
+                {marker.evidence.map((evidence, evidenceIndex) => <li key={`${evidence}-${evidenceIndex}`}>{evidence}</li>)}
+              </ul>
+            </div>
+          )}
+          {marker.patch !== undefined && (
+            <div className="selected-patch-section">
+              <span>Proposed change</span>
+              <pre>{formatPatchValue(marker.patch)}</pre>
+            </div>
+          )}
+        </article>
       ))}
     </div>
   );
@@ -295,16 +402,19 @@ export function JsonEditor({
   onChange,
   protectedPaths,
   onProtectedPathsChange,
+  patchMarkers,
 }: {
   value: Record<string, unknown>;
   onChange?: (value: Record<string, unknown>) => void;
   protectedPaths?: string[];
   onProtectedPathsChange?: (paths: string[]) => void;
+  patchMarkers?: JsonPatchMarker[];
 }) {
   const [selectedPath, setSelectedPath] = useState<string>('');
   const [showRaw, setShowRaw] = useState(false);
 
   const currentValue = getValueAtPath(value as JsonObject, selectedPath);
+  const selectedPatchMarkers = (patchMarkers || []).filter((marker) => marker.path === selectedPath);
 
   const handleChange = (path: string, newValue: JsonValue) => {
     if (path === '__select__') {
@@ -342,6 +452,7 @@ export function JsonEditor({
               onSelect={setSelectedPath}
               protectedPaths={protectedPaths || []}
               onToggleProtected={handleToggleProtected}
+              patchMarkers={patchMarkers || []}
             />
           </ul>
         </div>
@@ -349,6 +460,7 @@ export function JsonEditor({
       <div className="json-editor-main">
         <div className="json-editor-breadcrumb">{selectedPath || 'root'}</div>
         <div className="json-editor-panel">
+          <SelectedPatchMarkerReview markers={selectedPatchMarkers} />
           {currentValue !== undefined ? (
             <ValueEditor
               value={currentValue}
@@ -356,6 +468,7 @@ export function JsonEditor({
               onChange={handleChange}
               protectedPaths={protectedPaths || []}
               onToggleProtected={handleToggleProtected}
+              patchMarkers={patchMarkers || []}
             />
           ) : (
             <p className="muted">Select a node from the tree to edit.</p>

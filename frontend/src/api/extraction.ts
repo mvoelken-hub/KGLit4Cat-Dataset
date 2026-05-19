@@ -25,6 +25,13 @@ export type PatchArtifacts = {
   unmapped_facts: PatchArtifact[];
 };
 
+export type PatchReviewState = {
+  resolved_item_ids: string[];
+  unmapped_assignments: Record<string, string>;
+  resolution_notes: Record<string, string>;
+  resolved_at: Record<string, string>;
+};
+
 export async function getExistingInitialContext(data_package_id: string): Promise<InitialContext | null> {
   const response = await fetch(apiBaseUrl + '/extraction/initial-context/' + encodeURIComponent(data_package_id));
   if (response.status === 404) return null;
@@ -117,5 +124,19 @@ export async function getPatchQualityReports(data_package_id: string): Promise<P
 
 export async function getUnmappedFacts(data_package_id: string): Promise<PatchArtifact[]> {
   const response = await fetch(apiBaseUrl + '/extraction/patch-draft/' + encodeURIComponent(data_package_id) + '/unmapped-facts');
+  return readJson(await response);
+}
+
+export async function getPatchReviewState(data_package_id: string): Promise<PatchReviewState> {
+  const response = await fetch(apiBaseUrl + '/extraction/patch-draft/' + encodeURIComponent(data_package_id) + '/review-state');
+  return readJson(await response);
+}
+
+export async function savePatchReviewState(data_package_id: string, reviewState: PatchReviewState): Promise<PatchReviewState> {
+  const response = await fetch(apiBaseUrl + '/extraction/patch-draft/' + encodeURIComponent(data_package_id) + '/review-state', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(reviewState),
+  });
   return readJson(await response);
 }

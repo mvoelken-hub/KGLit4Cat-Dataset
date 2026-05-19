@@ -1,15 +1,35 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { chunkDataPackage, getChunkStatus, listDataPackages, uploadDataPackage } from './api/datasources';
-import { extractInitialContext, extractInitialDraft, getExistingInitialContext, getExistingInitialDraft, patchDraft, getProtectedFields, setProtectedFields as apiSetProtectedFields, getPatchProgress, getPatchArtifacts, saveDraft } from './api/extraction';
+import {
+  extractInitialContext,
+  extractInitialDraft,
+  getExistingInitialContext,
+  getExistingInitialDraft,
+  getPatchArtifacts,
+  getPatchProgress,
+  getPatchReviewState,
+  getProtectedFields,
+  patchDraft,
+  saveDraft,
+  savePatchReviewState,
+  setProtectedFields as apiSetProtectedFields,
+} from './api/extraction';
 import { listProfiles } from './api/profiles';
-import { JsonEditor } from './components/JsonEditor';
+import { JsonEditor, type JsonPatchMarker } from './components/JsonEditor';
 import type { ChunkRequestResponse, DataPackageResponse, InitialContext, ProfileManifestResponse } from './api/types';
-import type { PatchArtifacts, PatchProgress, PatchTaskStatus } from './api/extraction';
+import type { PatchArtifacts, PatchProgress, PatchReviewState, PatchTaskStatus } from './api/extraction';
 
-type BusyKey = 'upload' | 'chunk' | 'context' | 'draft' | 'patch' | 'load' | 'loadContext' | 'loadDraft';
-type ArtifactTab = 'patches' | 'quality_reports' | 'unmapped_facts';
+type BusyKey = 'upload' | 'chunk' | 'context' | 'draft' | 'patch' | 'load';
+type ReviewTab = 'matched' | 'unmapped' | 'resolved';
+type ReviewItem = JsonPatchMarker & { kind: 'matched' | 'unmapped'; fact?: string; reason?: string };
 
 const TERMINAL_PATCH_STATUSES = new Set<PatchTaskStatus>(['unknown', 'completed', 'cancelled', 'crashed']);
+const emptyReviewState: PatchReviewState = {
+  resolved_item_ids: [],
+  unmapped_assignments: {},
+  resolution_notes: {},
+  resolved_at: {},
+};
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return bytes + ' B';
@@ -21,8 +41,191 @@ function Field({ label, value }: { label: string; value?: string | number | null
   return (
     <div className="field">
       <span>{label}</span>
-      <strong>{value || '—'}</strong>
+      <strong>{value || '-'}</strong>
     </div>
+  );
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function asRecordArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.map(asRecord).filter((item): item is Record<string, unknown> => Boolean(item)) : [];
+}
+
+function topLevelFields(draft: object | null): string[] {
+  return draft && typeof draft === 'object' ? Object.keys(draft).sort() : [];
+}
+
+function hasPatchArtifacts(artifacts: PatchArtifacts): boolean {
+  return artifacts.patches.length > 0 || artifacts.quality_reports.length > 0 || artifacts.unmapped_facts.length > 0;
+}
+
+function patchArtifactBaseName(fileName?: string): string {
+  return (fileName || '')
+    .replace(/\.quality_report\.json$/, '.json')
+    .replace(/\.candidates\.json$/, '.json')
+    .replace(/\.accepted\.json$/, '.json')
+    .replace(/\.raw\.json$/, '.json')
+    .replace(/\.unmapped_facts\.json$/, '.json');
+}
+
+function confidenceLabel(confidence?: number): string {
+  return confidence === undefined ? 'unknown confidence' : `${Math.round(confidence * 100)}% confidence`;
+}
+
+function textList(value: unknown): string[] {
+  return Array.isArray(value) ? value.map((item) => String(item)).filter(Boolean) : [];
+}
+
+function issueList(issues: Record<string, unknown>[]): string[] {
+  return issues.map((issue) => [
+    issue.issue_type ? String(issue.issue_type) : '',
+    issue.severity ? `(${String(issue.severity)})` : '',
+    issue.explanation ? String(issue.explanation) : '',
+    issue.suggested_target_path ? `Suggested field: ${String(issue.suggested_target_path)}` : '',
+  ].filter(Boolean).join(' '));
+}
+
+function unmappedFactKey(fact: Record<string, unknown>): string {
+  return [fact.file_name, fact.fact, fact.reason, fact.source_hint].map((item) => String(item || '')).join('|');
+}
+
+function matchedReviewItemId(baseName: string, path: string, index: number): string {
+  return `matched:${baseName}:${path}:${index}`;
+}
+
+function unmappedReviewItemId(fact: Record<string, unknown>): string {
+  return `unmapped:${unmappedFactKey(fact)}`;
+}
+
+function buildReviewItems(artifacts: PatchArtifacts | null, reviewState: PatchReviewState): ReviewItem[] {
+  if (!artifacts) return [];
+  const resolvedIds = new Set(reviewState.resolved_item_ids);
+  const ratingByPatchAndField = new Map<string, Record<string, unknown>>();
+
+  for (const report of artifacts.quality_reports) {
+    const baseName = patchArtifactBaseName(report.file_name);
+    const reportContent = asRecord(report.content);
+    for (const rating of asRecordArray(reportContent?.candidate_ratings)) {
+      const fieldPath = String(rating.field_path || '');
+      if (fieldPath) ratingByPatchAndField.set(`${baseName}:${fieldPath}`, rating);
+    }
+  }
+
+  const items: ReviewItem[] = [];
+  for (const artifact of artifacts.patches) {
+    if (artifact.artifact_type !== 'candidates') continue;
+    const baseName = patchArtifactBaseName(artifact.file_name);
+    asRecordArray(artifact.content).forEach((candidate, candidateIndex) => {
+      const path = String(candidate.field_path || '');
+      if (!path) return;
+      const confidence = typeof candidate.confidence === 'number' ? candidate.confidence : undefined;
+      const rating = ratingByPatchAndField.get(`${baseName}:${path}`);
+      const decision = String(rating?.decision || '');
+      const issues = asRecordArray(rating?.issues);
+      const needsReview = confidence === undefined || confidence < 0.8 || decision !== 'accept' || issues.length > 0;
+      const id = matchedReviewItemId(baseName, path, candidateIndex);
+      items.push({
+        id,
+        kind: 'matched',
+        path,
+        status: needsReview ? 'needs_review' : 'accepted',
+        label: needsReview ? 'Review' : 'Patch',
+        resolved: resolvedIds.has(id),
+        confidence,
+        fileName: String(artifact.file_name || ''),
+        patch: candidate.patch,
+        evidence: textList(candidate.source_evidence),
+        issues: issueList(issues),
+        detail: [
+          confidenceLabel(confidence),
+          decision ? `Decision: ${decision}` : '',
+          issues.length ? `${issues.length} issue${issues.length === 1 ? '' : 's'}` : '',
+          String(candidate.reasoning || ''),
+        ].filter(Boolean).join(' - '),
+      });
+    });
+  }
+
+  for (const fact of artifacts.unmapped_facts) {
+    const id = unmappedReviewItemId(fact);
+    const path = reviewState.unmapped_assignments[id];
+    if (!path) continue;
+    items.push({
+      id,
+      kind: 'unmapped',
+      path,
+      status: 'unmapped',
+      label: 'Unmapped',
+      resolved: resolvedIds.has(id),
+      fileName: String(fact.file_name || ''),
+      evidence: fact.source_hint ? [String(fact.source_hint)] : [],
+      detail: String(fact.fact || fact.reason || 'Unmapped source fact'),
+      fact: String(fact.fact || ''),
+      reason: String(fact.reason || ''),
+    });
+  }
+
+  return items;
+}
+
+function ReviewItemList({ items, onResolve }: { items: ReviewItem[]; onResolve: (itemId: string) => void }) {
+  if (!items.length) return <p className="muted">No review items in this category.</p>;
+  return (
+    <ul className="artifact-list">
+      {items.map((item) => (
+        <li key={item.id} className="review-item">
+          <div className="review-item-heading">
+            <strong>{item.path}</strong>
+            <span className={`patch-marker-badge ${item.status}`}>{item.resolved ? 'Resolved' : item.label}</span>
+          </div>
+          {item.detail && <p>{item.detail}</p>}
+          {item.issues && item.issues.length > 0 && (
+            <div className="review-item-section">
+              <span>Issues</span>
+              <ul>{item.issues.map((issue, index) => <li key={`${item.id}-issue-${index}`}>{issue}</li>)}</ul>
+            </div>
+          )}
+          {item.evidence && item.evidence.length > 0 && (
+            <div className="review-item-section">
+              <span>Evidence</span>
+              <ul>{item.evidence.map((evidence, index) => <li key={`${item.id}-evidence-${index}`}>{evidence}</li>)}</ul>
+            </div>
+          )}
+          {item.patch !== undefined && <pre className="review-item-patch">{JSON.stringify(item.patch, null, 2)}</pre>}
+          {!item.resolved && <button className="ghost" onClick={() => onResolve(item.id)}>Mark resolved</button>}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function UnmappedFactList({ facts, fields, reviewState, onAssign }: {
+  facts: Record<string, unknown>[];
+  fields: string[];
+  reviewState: PatchReviewState;
+  onAssign: (key: string, field: string) => void;
+}) {
+  if (!facts.length) return <p className="muted">No unmapped facts yet.</p>;
+  return (
+    <ul className="artifact-list">
+      {facts.map((fact, index) => {
+        const key = unmappedReviewItemId(fact);
+        return (
+          <li key={`${key}-${index}`} className="unmapped-fact">
+            <strong>{String(fact.fact || 'Unmapped fact')}</strong>
+            <p>{String(fact.reason || 'No mapping reason provided.')}</p>
+            {Boolean(fact.source_hint) && <small>{String(fact.source_hint)}</small>}
+            <select value={reviewState.unmapped_assignments[key] || ''} onChange={(event) => onAssign(key, event.target.value)}>
+              <option value="">Select matching field</option>
+              {fields.map((field) => <option key={field} value={field}>{field}</option>)}
+            </select>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -39,22 +242,26 @@ export function App() {
   const [patchStatus, setPatchStatus] = useState<PatchTaskStatus | null>(null);
   const [patchProgress, setPatchProgress] = useState<PatchProgress | null>(null);
   const [patchArtifacts, setPatchArtifacts] = useState<PatchArtifacts | null>(null);
-  const [artifactTab, setArtifactTab] = useState<ArtifactTab>('patches');
+  const [reviewTab, setReviewTab] = useState<ReviewTab>('matched');
+  const [patchReviewState, setPatchReviewState] = useState<PatchReviewState>(emptyReviewState);
   const [busy, setBusy] = useState<BusyKey | null>('load');
   const [message, setMessage] = useState('Loading workspace.');
   const [railCollapsed, setRailCollapsed] = useState(false);
+  const saveDraftTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const selectedPackage = useMemo(
-    () => packages.find((item) => item.id === selectedPackageId) || null,
-    [packages, selectedPackageId],
-  );
+  const selectedPackage = useMemo(() => packages.find((item) => item.id === selectedPackageId) || null, [packages, selectedPackageId]);
   const isPatching = patchStatus === 'running';
   const progressBatchNo = patchProgress?.batch_no ?? 0;
   const progressTotalBatches = patchProgress?.total_batches ?? 0;
-  const progressPercent = progressTotalBatches > 0
-    ? Math.min(100, Math.round((progressBatchNo / progressTotalBatches) * 100))
-    : 0;
-  const visibleArtifacts = patchArtifacts?.[artifactTab] ?? [];
+  const progressPercent = progressTotalBatches > 0 ? Math.min(100, Math.round((progressBatchNo / progressTotalBatches) * 100)) : 0;
+  const draftFields = useMemo(() => topLevelFields(draft), [draft]);
+  const reviewItems = useMemo(() => buildReviewItems(patchArtifacts, patchReviewState), [patchArtifacts, patchReviewState]);
+  const unresolvedReviewItems = reviewItems.filter((item) => !item.resolved);
+  const patchMarkers = unresolvedReviewItems;
+  const reviewMarkers = unresolvedReviewItems.filter((marker) => marker.status === 'needs_review' || marker.status === 'unmapped');
+  const matchedReviewItems = reviewItems.filter((item) => item.kind === 'matched' && !item.resolved);
+  const unmappedReviewFacts = patchArtifacts?.unmapped_facts ?? [];
+  const resolvedReviewItems = reviewItems.filter((item) => item.resolved);
 
   async function refresh() {
     setBusy('load');
@@ -87,6 +294,8 @@ export function App() {
       setChunkResult(null);
       setContext(null);
       setDraft(null);
+      setPatchArtifacts(null);
+      setPatchReviewState(emptyReviewState);
       setMessage('Dataset uploaded. Create chunks next.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Upload failed.');
@@ -123,24 +332,6 @@ export function App() {
     }
   }
 
-  async function onLoadContext() {
-    if (!selectedPackageId) return;
-    setBusy('loadContext');
-    try {
-      const result = await getExistingInitialContext(selectedPackageId);
-      if (result) {
-        setContext(result);
-        setMessage('Loaded existing initial context.');
-      } else {
-        setMessage('No existing initial context found for this package.');
-      }
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Failed to load existing context.');
-    } finally {
-      setBusy(null);
-    }
-  }
-
   async function onDraft() {
     if (!selectedPackageId || !selectedProfile) return;
     setBusy('draft');
@@ -150,6 +341,7 @@ export function App() {
       setPatchArtifacts(null);
       setPatchStatus(null);
       setPatchProgress(null);
+      setPatchReviewState(emptyReviewState);
       setProtectedFields([]);
       setMessage('Initial profile draft created.');
     } catch (error) {
@@ -159,32 +351,10 @@ export function App() {
     }
   }
 
-  async function onLoadDraft() {
-    if (!selectedPackageId) return;
-    setBusy('loadDraft');
-    try {
-      const result = await getExistingInitialDraft(selectedPackageId);
-      if (result) {
-        setDraft(result);
-        setMessage('Loaded existing initial draft.');
-      } else {
-        setMessage('No existing initial draft found for this package.');
-      }
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Failed to load existing draft.');
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  const saveDraftTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   async function onDraftChange(updated: Record<string, unknown>) {
     setDraft(updated);
     if (!selectedPackageId) return;
-    if (saveDraftTimeoutRef.current) {
-      clearTimeout(saveDraftTimeoutRef.current);
-    }
+    if (saveDraftTimeoutRef.current) clearTimeout(saveDraftTimeoutRef.current);
     saveDraftTimeoutRef.current = setTimeout(async () => {
       try {
         await saveDraft(selectedPackageId, updated);
@@ -199,18 +369,12 @@ export function App() {
     if (!selectedPackageId || !selectedProfile) return;
     setBusy('patch');
     try {
-      setPatchArtifacts(null);
       setPatchProgress(null);
       const result = await patchDraft({ data_package_id: selectedPackageId, profile_identifier: selectedProfile });
       setDraft(result.draft);
       setPatchStatus(result.status);
-      setMessage(result.status === 'completed' ? 'Draft patching completed.' : 'Draft patching is running. Repeat to refresh current draft.');
-      if (result.status === 'running') {
-        void pollPatchProgress();
-      } else if (result.status === 'completed' || result.status === 'crashed' || result.status === 'cancelled') {
-        const artifacts = await getPatchArtifacts(selectedPackageId);
-        setPatchArtifacts(artifacts);
-      }
+      setMessage(result.status === 'completed' ? 'Draft patching completed.' : 'Draft patching is running. You can keep editing and reviewing.');
+      void pollPatchProgress();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Patch step failed.');
     } finally {
@@ -218,14 +382,49 @@ export function App() {
     }
   }
 
-  async function onLoadProtectedFields() {
+  async function onShowPatchArtifacts() {
     if (!selectedPackageId) return;
     try {
-      const fields = await getProtectedFields(selectedPackageId);
-      setProtectedFields(fields);
-    } catch {
-      // ignore
+      const [artifacts, reviewState] = await Promise.all([getPatchArtifacts(selectedPackageId), getPatchReviewState(selectedPackageId)]);
+      setPatchArtifacts(artifacts);
+      setPatchReviewState(reviewState);
+      setMessage(hasPatchArtifacts(artifacts) ? 'Loaded existing patch artifacts.' : 'No existing patch artifacts found.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Failed to load patch artifacts.');
     }
+  }
+
+  async function persistPatchReviewState(nextState: PatchReviewState, successMessage: string) {
+    if (!selectedPackageId) return;
+    const previous = patchReviewState;
+    setPatchReviewState(nextState);
+    try {
+      const saved = await savePatchReviewState(selectedPackageId, nextState);
+      setPatchReviewState(saved);
+      setMessage(successMessage);
+    } catch (error) {
+      setPatchReviewState(previous);
+      setMessage(error instanceof Error ? error.message : 'Failed to save review state.');
+    }
+  }
+
+  async function onResolveReviewItem(itemId: string) {
+    if (patchReviewState.resolved_item_ids.includes(itemId)) return;
+    await persistPatchReviewState(
+      {
+        ...patchReviewState,
+        resolved_item_ids: [...patchReviewState.resolved_item_ids, itemId],
+        resolved_at: { ...patchReviewState.resolved_at, [itemId]: new Date().toISOString() },
+      },
+      'Review item marked resolved.',
+    );
+  }
+
+  async function onAssignUnmappedFact(itemId: string, field: string) {
+    const unmapped_assignments = { ...patchReviewState.unmapped_assignments };
+    if (field) unmapped_assignments[itemId] = field;
+    else delete unmapped_assignments[itemId];
+    await persistPatchReviewState({ ...patchReviewState, unmapped_assignments }, field ? 'Unmapped fact assigned to field.' : 'Unmapped fact assignment removed.');
   }
 
   async function onSaveProtectedFields(fields: string[]) {
@@ -244,13 +443,15 @@ export function App() {
   async function pollPatchProgress() {
     if (!selectedPackageId) return;
     try {
-      const { status, progress } = await getPatchProgress(selectedPackageId);
+      const [{ status, progress }, artifacts, reviewState] = await Promise.all([
+        getPatchProgress(selectedPackageId),
+        getPatchArtifacts(selectedPackageId),
+        getPatchReviewState(selectedPackageId),
+      ]);
       setPatchStatus(status);
       setPatchProgress(progress || null);
-      if (status === 'completed' || status === 'crashed' || status === 'cancelled') {
-        const artifacts = await getPatchArtifacts(selectedPackageId);
-        setPatchArtifacts(artifacts);
-      }
+      if (hasPatchArtifacts(artifacts)) setPatchArtifacts(artifacts);
+      setPatchReviewState(reviewState);
     } catch {
       // ignore polling errors
     }
@@ -261,12 +462,13 @@ export function App() {
     setBusy('load');
     void (async () => {
       try {
-        const [ctx, draftResult, fields, { status, progress }, artifacts, chunkStatus] = await Promise.all([
+        const [ctx, draftResult, fields, { status, progress }, artifacts, reviewState, chunkStatus] = await Promise.all([
           getExistingInitialContext(selectedPackageId),
           getExistingInitialDraft(selectedPackageId),
           getProtectedFields(selectedPackageId),
           getPatchProgress(selectedPackageId),
           getPatchArtifacts(selectedPackageId),
+          getPatchReviewState(selectedPackageId),
           getChunkStatus(selectedPackageId),
         ]);
         if (ctx) setContext(ctx);
@@ -274,9 +476,8 @@ export function App() {
         setProtectedFields(fields);
         setPatchStatus(status);
         setPatchProgress(progress || null);
-        if (status === 'completed' || status === 'crashed' || status === 'cancelled') {
-          setPatchArtifacts(artifacts);
-        }
+        if (status === 'completed' || status === 'crashed' || status === 'cancelled' || hasPatchArtifacts(artifacts)) setPatchArtifacts(artifacts);
+        setPatchReviewState(reviewState);
         setHasChunks(chunkStatus.has_chunks);
         setMessage('Workflow state loaded.');
       } catch (error) {
@@ -297,7 +498,7 @@ export function App() {
     <main className="shell">
       <section className="hero">
         <div>
-          <p className="eyebrow">SIMONE · DCAT metadata extraction</p>
+          <p className="eyebrow">SIMONE - DCAT metadata extraction</p>
           <h1>Dataset in. Profile draft out.</h1>
           <p className="intro">A restrained workflow for extracting dataset metadata, grounding it in a registered DCAT-AP profile, and preparing later vocabulary-backed enrichment.</p>
         </div>
@@ -310,21 +511,16 @@ export function App() {
 
       <section className={railCollapsed ? 'layout rail-collapsed' : 'layout'}>
         <aside className="rail">
-          <button
-            className="rail-toggle"
-            onClick={() => setRailCollapsed(!railCollapsed)}
-            title={railCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            {railCollapsed ? '→' : '←'}
+          <button className="rail-toggle" onClick={() => setRailCollapsed(!railCollapsed)} title={railCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
+            {railCollapsed ? '->' : '<-'}
           </button>
           {!railCollapsed && (
             <>
               <label className="upload-box">
                 <input type="file" accept=".zip" onChange={(event) => void onUpload(event.target.files?.[0])} />
                 <span>Upload dataset ZIP</span>
-                <strong>{busy === 'upload' ? 'Uploading…' : 'Choose archive'}</strong>
+                <strong>{busy === 'upload' ? 'Uploading...' : 'Choose archive'}</strong>
               </label>
-
               <div className="panel compact">
                 <div className="panel-heading">
                   <span>Packages</span>
@@ -335,7 +531,6 @@ export function App() {
                   {packages.map((item) => <option key={item.id} value={item.id}>{item.file_name}</option>)}
                 </select>
               </div>
-
               <div className="panel compact">
                 <div className="panel-heading"><span>Profile</span></div>
                 <select value={selectedProfile} onChange={(event) => setSelectedProfile(event.target.value)}>
@@ -354,7 +549,7 @@ export function App() {
               <h2>Upload dataset and create chunks</h2>
               <p>The archive is stored as a data package. Chunking prepares the package for later patch and enrichment stages.</p>
               <div className="actions">
-                <button onClick={() => void onChunk(hasChunks)} disabled={!selectedPackageId || !!busy}>{busy === 'chunk' ? 'Checking…' : hasChunks ? 'Re-create and remove old chunks' : 'Create new chunks'}</button>
+                <button onClick={() => void onChunk(hasChunks)} disabled={!selectedPackageId || !!busy}>{busy === 'chunk' ? 'Checking...' : hasChunks ? 'Re-create and remove old chunks' : 'Create new chunks'}</button>
               </div>
               {selectedPackage && (
                 <div className="file-list">
@@ -366,7 +561,7 @@ export function App() {
                   ))}
                 </div>
               )}
-              {chunkResult && <p className="muted">Chunk status: <strong>{chunkResult.status}</strong> · {chunkResult.chunks.flat().length} chunks visible</p>}
+              {chunkResult && <p className="muted">Chunk status: <strong>{chunkResult.status}</strong> - {chunkResult.chunks.flat().length} chunks visible</p>}
             </div>
           </article>
 
@@ -376,7 +571,7 @@ export function App() {
               <h2>Determine initial context</h2>
               <p>Extract high-level context, likely metadata sources, keywords, file relationships, and evidence from the package.</p>
               <div className="actions">
-                <button onClick={() => void onContext()} disabled={!selectedPackageId || !!busy}>{busy === 'context' ? 'Extracting…' : context ? 'Re-extract and remove old context' : 'Extract new context'}</button>
+                <button onClick={() => void onContext()} disabled={!selectedPackageId || !!busy}>{busy === 'context' ? 'Extracting...' : context ? 'Re-extract and remove old context' : 'Extract new context'}</button>
               </div>
               {context && (
                 <div className="context-grid">
@@ -393,66 +588,63 @@ export function App() {
           <article className="step-card">
             <div className="step-index">03</div>
             <div className="step-body">
-              <h2>Create DCAT profile draft</h2>
-              <p>Generate the first schema-conforming dataset object, then validate it against the selected registered profile.</p>
+              <h2>Draft workspace</h2>
+              <p>Create the initial profile draft, edit and lock fields, then patch the draft with chunk evidence while reviewing issues as they appear.</p>
               <div className="actions">
-                <button onClick={() => void onDraft()} disabled={!selectedPackageId || !selectedProfile || !!busy}>{busy === 'draft' ? 'Drafting…' : draft ? 'Re-create and remove old draft' : 'Create new draft'}</button>
+                <button onClick={() => void onDraft()} disabled={!selectedPackageId || !selectedProfile || !!busy}>{busy === 'draft' ? 'Drafting...' : draft ? 'Re-create and remove old draft' : 'Create new draft'}</button>
+                <button onClick={() => void onPatch()} disabled={!draft || !selectedProfile || !!busy || isPatching}>{isPatching ? 'Patching...' : patchStatus || patchArtifacts ? 'Resume patching from checkpoint' : 'Start new patching'}</button>
+                <button className="ghost" onClick={() => void onShowPatchArtifacts()} disabled={!selectedPackageId || busy === 'load'}>Show/refresh artifacts</button>
               </div>
+              {patchStatus && (
+                <div className="patch-progress">
+                  <div className="patch-progress-header">
+                    <span>Status: <strong>{patchStatus}</strong></span>
+                    {progressTotalBatches > 0 && <span>Patching batch {progressBatchNo} of {progressTotalBatches}</span>}
+                  </div>
+                  <div className="patch-progress-track" aria-hidden="true"><div style={{ width: `${progressPercent}%` }} /></div>
+                  {patchProgress && (
+                    <div className="patch-progress-summary">
+                      {patchProgress.file_name && <span>Current patch <strong>{patchProgress.file_name}</strong></span>}
+                      <span>{patchProgress.accepted_fields?.length || 0} accepted field changes</span>
+                      <span>{patchProgress.total_candidates || 0} candidates reviewed</span>
+                      {(patchProgress.validation_errors?.length || 0) > 0 && <span className="warning">Schema review required</span>}
+                    </div>
+                  )}
+                </div>
+              )}
+              {reviewMarkers.length > 0 && (
+                <div className="review-strip">
+                  <strong>{reviewMarkers.length} unresolved review item{reviewMarkers.length === 1 ? '' : 's'}</strong>
+                  <div>{reviewMarkers.slice(0, 8).map((marker, index) => <span key={`${marker.path}-${index}`}>{marker.path}</span>)}</div>
+                </div>
+              )}
               {draft && (
                 <JsonEditor
                   value={draft as Record<string, unknown>}
                   onChange={(updated) => onDraftChange(updated)}
                   protectedPaths={protectedFields}
                   onProtectedPathsChange={(paths) => void onSaveProtectedFields(paths)}
+                  patchMarkers={patchMarkers}
                 />
-              )}
-            </div>
-          </article>
-
-          <article className="step-card">
-            <div className="step-index">04</div>
-            <div className="step-body">
-              <h2>Patch draft with content chunks</h2>
-              <p>Run the patch agent against chunked content. Review artifacts and apply human-in-the-loop decisions before accepting changes.</p>
-              <div className="actions">
-                <button onClick={() => void onPatch()} disabled={!draft || !selectedProfile || !!busy || isPatching}>{isPatching ? 'Patching…' : patchStatus || patchArtifacts ? 'Re-start and remove old patching' : 'Start new patching'}</button>
-              </div>
-              {patchStatus && (
-                <div className="patch-progress">
-                  <div className="patch-progress-header">
-                    <span>Status: <strong>{patchStatus}</strong></span>
-                    {progressTotalBatches > 0 && (
-                      <span>Patching batch {progressBatchNo} of {progressTotalBatches}</span>
-                    )}
-                  </div>
-                  <div className="patch-progress-track" aria-hidden="true">
-                    <div style={{ width: `${progressPercent}%` }} />
-                  </div>
-                  {patchProgress && (
-                    <pre>{JSON.stringify(patchProgress, null, 2)}</pre>
-                  )}
-                </div>
               )}
               {patchArtifacts && (
                 <div className="artifact-panel">
-                  <h3>Patch artifacts</h3>
-                  <div className="artifact-tabs" role="tablist" aria-label="Patch artifacts">
-                    <button className={artifactTab === 'patches' ? 'active' : ''} onClick={() => setArtifactTab('patches')}>Patches ({patchArtifacts.patches.length})</button>
-                    <button className={artifactTab === 'quality_reports' ? 'active' : ''} onClick={() => setArtifactTab('quality_reports')}>Quality ({patchArtifacts.quality_reports.length})</button>
-                    <button className={artifactTab === 'unmapped_facts' ? 'active' : ''} onClick={() => setArtifactTab('unmapped_facts')}>Unmapped ({patchArtifacts.unmapped_facts.length})</button>
+                  <h3>Review</h3>
+                  <div className="artifact-tabs" role="tablist" aria-label="Patch review">
+                    <button className={reviewTab === 'matched' ? 'active' : ''} onClick={() => setReviewTab('matched')}>Matched issues ({matchedReviewItems.length})</button>
+                    <button className={reviewTab === 'unmapped' ? 'active' : ''} onClick={() => setReviewTab('unmapped')}>Unmapped ({unmappedReviewFacts.length})</button>
+                    <button className={reviewTab === 'resolved' ? 'active' : ''} onClick={() => setReviewTab('resolved')}>Resolved ({resolvedReviewItems.length})</button>
                   </div>
-                  {visibleArtifacts.length === 0 ? (
-                    <p className="muted">No artifacts in this category yet.</p>
-                  ) : (
-                    <ul>
-                      {visibleArtifacts.map((artifact, i) => (
-                        <li key={`${artifact.file_name || artifactTab}-${i}`}>
-                          <strong>{String(artifact.file_name || `Artifact ${i + 1}`)}</strong>
-                          <pre>{JSON.stringify(artifact, null, 2)}</pre>
-                        </li>
-                      ))}
-                    </ul>
+                  {reviewTab === 'matched' && <ReviewItemList items={matchedReviewItems} onResolve={(itemId) => void onResolveReviewItem(itemId)} />}
+                  {reviewTab === 'unmapped' && (
+                    <UnmappedFactList
+                      facts={unmappedReviewFacts}
+                      fields={draftFields}
+                      reviewState={patchReviewState}
+                      onAssign={(key, field) => void onAssignUnmappedFact(key, field)}
+                    />
                   )}
+                  {reviewTab === 'resolved' && <ReviewItemList items={resolvedReviewItems} onResolve={(itemId) => void onResolveReviewItem(itemId)} />}
                 </div>
               )}
             </div>
