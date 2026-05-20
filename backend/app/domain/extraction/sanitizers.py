@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import json
 import re
-from typing import Any
+from typing import Any, Callable
 
 from jsonschema import Draft201909Validator
 
@@ -24,12 +25,18 @@ def normalize_review_draft(
     document: dict[str, Any],
     *,
     dataset_id: str | None = None,
+    semantic_deduper: Callable[[list[Any], str | None], list[Any]] | None = None,
 ) -> dict[str, Any]:
     """Curate resolver output for stable draft shape and local identifiers."""
 
     normalized = deepcopy(document)
     scope = _slugify(dataset_id or str(normalized.get("id") or "dataset"))
-    return _normalize_review_value(normalized, scope=scope, parent_key=None)
+    return _normalize_review_value(
+        normalized,
+        scope=scope,
+        parent_key=None,
+        semantic_deduper=semantic_deduper,
+    )
 
 
 def sanitize_document_against_schema(
@@ -54,26 +61,41 @@ def sanitize_document_against_schema(
     return sanitized if isinstance(sanitized, dict) else deepcopy(document)
 
 
-def _normalize_review_value(value: Any, *, scope: str, parent_key: str | None) -> Any:
+def _normalize_review_value(
+    value: Any,
+    *,
+    scope: str,
+    parent_key: str | None,
+    semantic_deduper: Callable[[list[Any], str | None], list[Any]] | None,
+) -> Any:
     if isinstance(value, dict):
         normalized: dict[str, Any] = {}
         for key, item in value.items():
             if key == "id" and isinstance(item, str):
                 normalized[key] = _normalize_identifier(item, scope=scope)
             else:
-                normalized[key] = _normalize_review_value(item, scope=scope, parent_key=key)
+                normalized[key] = _normalize_review_value(
+                    item,
+                    scope=scope,
+                    parent_key=key,
+                    semantic_deduper=semantic_deduper,
+                )
         return normalized
 
     if isinstance(value, list):
         normalized_items = [
-            _normalize_review_value(item, scope=scope, parent_key=parent_key)
+            _normalize_review_value(
+                item,
+                scope=scope,
+                parent_key=parent_key,
+                semantic_deduper=semantic_deduper,
+            )
             for item in value
         ]
-        if parent_key == "description" and all(
-            isinstance(item, str) for item in normalized_items
-        ):
-            return _curate_description_list(normalized_items)
-        return normalized_items
+        deduped_items = _dedupe_list(normalized_items, parent_key=parent_key)
+        if semantic_deduper is not None:
+            return semantic_deduper(deduped_items, parent_key)
+        return deduped_items
 
     return value
 
@@ -110,6 +132,172 @@ def _curate_description_list(values: list[str]) -> list[str]:
         else:
             result[replacement_index] = value
     return result
+
+
+def _dedupe_list(values: list[Any], *, parent_key: str | None) -> list[Any]:
+    if all(isinstance(item, str) for item in values):
+        if parent_key == "description":
+            return _curate_description_list(values)
+        if parent_key == "title":
+            return _curate_title_list(values)
+        return _dedupe_exact_values(values)
+
+    deduped: list[Any] = []
+    object_indexes_by_key: dict[tuple[str, str], int] = {}
+    primitive_keys: set[tuple[str, str]] = set()
+
+    for item in values:
+        if isinstance(item, dict):
+            key = _object_dedupe_key(item)
+            existing_index = object_indexes_by_key.get(key)
+            if existing_index is None:
+                object_indexes_by_key[key] = len(deduped)
+                deduped.append(item)
+            else:
+                deduped[existing_index] = _merge_normalized_objects(
+                    deduped[existing_index],
+                    item,
+                )
+            continue
+
+        key = _primitive_dedupe_key(item)
+        if key in primitive_keys:
+            continue
+        primitive_keys.add(key)
+        deduped.append(item)
+
+    return deduped
+
+
+def _dedupe_exact_values(values: list[Any]) -> list[Any]:
+    deduped: list[Any] = []
+    seen: set[tuple[str, str]] = set()
+    for item in values:
+        key = _primitive_dedupe_key(item)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    return deduped
+
+
+def _object_dedupe_key(value: dict[str, Any]) -> tuple[str, str]:
+    item_id = value.get("id")
+    if isinstance(item_id, str) and item_id:
+        return ("id", item_id)
+    return ("fingerprint", _canonical_json(_drop_empty_values(value)))
+
+
+def _primitive_dedupe_key(value: Any) -> tuple[str, str]:
+    return (type(value).__name__, _canonical_json(value))
+
+
+def _merge_normalized_objects(
+    left: dict[str, Any],
+    right: dict[str, Any],
+) -> dict[str, Any]:
+    merged = deepcopy(left)
+    for key, right_value in right.items():
+        left_value = merged.get(key)
+        if _is_empty_value(right_value):
+            continue
+        if key not in merged or _is_empty_value(left_value):
+            merged[key] = deepcopy(right_value)
+        elif isinstance(left_value, dict) and isinstance(right_value, dict):
+            merged[key] = _merge_normalized_objects(left_value, right_value)
+        elif isinstance(left_value, list) and isinstance(right_value, list):
+            merged[key] = _dedupe_list(
+                [*left_value, *right_value],
+                parent_key=key,
+            )
+        elif left_value == right_value:
+            merged[key] = left_value
+        else:
+            merged[key] = left_value
+    return merged
+
+
+def _drop_empty_values(value: Any) -> Any:
+    if isinstance(value, dict):
+        cleaned = {
+            key: _drop_empty_values(item)
+            for key, item in value.items()
+            if not _is_empty_value(item)
+        }
+        return {
+            key: item
+            for key, item in cleaned.items()
+            if not _is_empty_value(item)
+        }
+    if isinstance(value, list):
+        return [
+            item
+            for item in (_drop_empty_values(item) for item in value)
+            if not _is_empty_value(item)
+        ]
+    return value
+
+
+def _is_empty_value(value: Any) -> bool:
+    return value is None or value == [] or value == {}
+
+
+def _canonical_json(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _curate_title_list(values: list[str]) -> list[str]:
+    cleaned = [value.strip() for value in values if value.strip()]
+    if not cleaned:
+        return []
+
+    result: list[str] = []
+    for value in cleaned:
+        replacement_index = _find_title_replacement_index(result, value)
+        if replacement_index is None:
+            if value not in result:
+                result.append(value)
+        else:
+            result[replacement_index] = _preferred_title(result[replacement_index], value)
+    return result
+
+
+def _find_title_replacement_index(
+    existing_values: list[str],
+    candidate: str,
+) -> int | None:
+    candidate_key = _title_similarity_key(candidate)
+    if not candidate_key:
+        return None
+
+    for index, existing in enumerate(existing_values):
+        existing_key = _title_similarity_key(existing)
+        if existing_key and existing_key == candidate_key:
+            return index
+    return None
+
+
+def _preferred_title(left: str, right: str) -> str:
+    return min((left, right), key=_title_penalty)
+
+
+def _title_similarity_key(value: str) -> tuple[str, ...]:
+    tokens = re.findall(r"[a-zA-Z0-9]+", value.lower())
+    result: list[str] = []
+    for token in tokens:
+        if token not in result:
+            result.append(token)
+    return tuple(result)
+
+
+def _title_penalty(value: str) -> tuple[int, int, int, str]:
+    separator_penalty = len(re.findall(r"[_/\\]+| - |- ", value))
+    repeated_token_count = len(_title_tokens(value)) - len(set(_title_tokens(value)))
+    return (separator_penalty, repeated_token_count, len(value), value.lower())
+
+
+def _title_tokens(value: str) -> list[str]:
+    return re.findall(r"[a-zA-Z0-9]+", value.lower())
 
 
 def _find_description_replacement_index(
