@@ -260,6 +260,32 @@ function ValueEditor({
   }
 
   if (Array.isArray(value)) {
+    const fieldName = path.split('.').pop();
+    const isStringArray = value.length > 0 && value.every((item) => typeof item === 'string');
+    if ((fieldName === 'title' || fieldName === 'description') && isStringArray) {
+      const firstValue = value[0] as string;
+      if (firstValue.length > 80) {
+        return (
+          <textarea
+            className="json-editor-input"
+            value={firstValue}
+            onChange={(e) => onChange(path, [e.target.value])}
+            disabled={isProtected}
+            rows={4}
+          />
+        );
+      }
+      return (
+        <input
+          type="text"
+          className="json-editor-input"
+          value={firstValue}
+          onChange={(e) => onChange(path, [e.target.value])}
+          disabled={isProtected}
+        />
+      );
+    }
+
     return (
       <div className="json-editor-array">
         <p className="json-editor-array-info">Array with {value.length} items</p>
