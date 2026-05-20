@@ -146,8 +146,13 @@ textarea.json-editor-input { resize: vertical; min-height: 80px; }
 
 /* Artifact review panel */
 .artifact-panel { margin-top: 18px; padding: 18px; border: 1px solid var(--line); border-radius: 1rem; background: rgba(255, 255, 255, 0.5); }
+.artifact-panel.collapsed { padding-bottom: 12px; }
+.artifact-panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .artifact-panel h3 { margin: 0 0 12px; font-size: 1rem; color: var(--accent-dark); }
+.artifact-panel-heading h3 { margin: 0; }
+.artifact-panel-heading button { padding: 0.42rem 0.7rem; }
 .review-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, 0.6); }
+.artifact-panel.collapsed .review-toolbar { margin-bottom: 0; }
 .review-toolbar span { color: var(--muted); font-size: 0.9rem; }
 .artifact-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .artifact-tabs button { padding: 0.46rem 0.7rem; border-radius: 999px; background: transparent; color: var(--ink); border-color: var(--line); font-size: 0.82rem; }

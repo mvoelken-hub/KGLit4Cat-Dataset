@@ -390,6 +390,7 @@ export function App() {
   const [busy, setBusy] = useState<BusyKey | null>('load');
   const [message, setMessage] = useState('Loading workspace.');
   const [railCollapsed, setRailCollapsed] = useState(false);
+  const [reviewPanelCollapsed, setReviewPanelCollapsed] = useState(false);
   const saveDraftTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const selectedPackage = useMemo(() => packages.find((item) => item.id === selectedPackageId) || null, [packages, selectedPackageId]);
@@ -836,29 +837,38 @@ export function App() {
                 />
               )}
               {patchArtifacts && (
-                <div className="artifact-panel">
-                  <h3>Review</h3>
+                <div className={`artifact-panel ${reviewPanelCollapsed ? 'collapsed' : ''}`}>
+                  <div className="artifact-panel-heading">
+                    <h3>Review</h3>
+                    <button className="ghost" onClick={() => setReviewPanelCollapsed((current) => !current)}>
+                      {reviewPanelCollapsed ? '↓' : '↑'}
+                    </button>
+                  </div>
                   <div className="review-toolbar">
                     <span>{unresolvedReviewItems.length} unresolved item{unresolvedReviewItems.length === 1 ? '' : 's'}</span>
                     <button onClick={() => void onDelegateReviewResolution()} disabled={!unresolvedReviewItems.length || !!busy}>
                       {busy === 'resolve' ? 'Agent resolving...' : 'Delegate remaining to agent'}
                     </button>
                   </div>
-                  <div className="artifact-tabs" role="tablist" aria-label="Patch review">
-                    <button className={reviewTab === 'matched' ? 'active' : ''} onClick={() => setReviewTab('matched')}>Matched issues ({matchedReviewItems.length})</button>
-                    <button className={reviewTab === 'unmapped' ? 'active' : ''} onClick={() => setReviewTab('unmapped')}>Unmapped ({unmappedReviewFacts.length})</button>
-                    <button className={reviewTab === 'resolved' ? 'active' : ''} onClick={() => setReviewTab('resolved')}>Resolved ({resolvedReviewItems.length})</button>
-                  </div>
-                  {reviewTab === 'matched' && <ReviewItemList items={matchedReviewItems} draft={draft} onResolve={(itemId) => void onResolveReviewItem(itemId)} onApplyPatch={(itemId, value) => void onApplyPatch(itemId, value)} />}
-                  {reviewTab === 'unmapped' && (
-                    <UnmappedFactList
-                      facts={unmappedReviewFacts}
-                      fields={draftFields}
-                      reviewState={patchReviewState}
-                      onAssign={(key, field) => void onAssignUnmappedFact(key, field)}
-                    />
+                  {!reviewPanelCollapsed && (
+                    <>
+                      <div className="artifact-tabs" role="tablist" aria-label="Patch review">
+                        <button className={reviewTab === 'matched' ? 'active' : ''} onClick={() => setReviewTab('matched')}>Matched issues ({matchedReviewItems.length})</button>
+                        <button className={reviewTab === 'unmapped' ? 'active' : ''} onClick={() => setReviewTab('unmapped')}>Unmapped ({unmappedReviewFacts.length})</button>
+                        <button className={reviewTab === 'resolved' ? 'active' : ''} onClick={() => setReviewTab('resolved')}>Resolved ({resolvedReviewItems.length})</button>
+                      </div>
+                      {reviewTab === 'matched' && <ReviewItemList items={matchedReviewItems} draft={draft} onResolve={(itemId) => void onResolveReviewItem(itemId)} onApplyPatch={(itemId, value) => void onApplyPatch(itemId, value)} />}
+                      {reviewTab === 'unmapped' && (
+                        <UnmappedFactList
+                          facts={unmappedReviewFacts}
+                          fields={draftFields}
+                          reviewState={patchReviewState}
+                          onAssign={(key, field) => void onAssignUnmappedFact(key, field)}
+                        />
+                      )}
+                      {reviewTab === 'resolved' && <ReviewItemList items={resolvedReviewItems} draft={draft} onResolve={(itemId) => void onResolveReviewItem(itemId)} />}
+                    </>
                   )}
-                  {reviewTab === 'resolved' && <ReviewItemList items={resolvedReviewItems} draft={draft} onResolve={(itemId) => void onResolveReviewItem(itemId)} />}
                 </div>
               )}
             </div>
