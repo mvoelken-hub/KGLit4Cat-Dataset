@@ -12,7 +12,7 @@ from app.core.task_registry import task_registry
 
 from app.dependencies import get_semantic_service
 
-from app.setup import start_setup
+from backend.app.bootstrap import start_setup
 
 # Import API routers
 from app.api.v1.datasources import router as datasources_router
