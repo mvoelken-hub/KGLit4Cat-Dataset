@@ -18,6 +18,7 @@ from app.domain.extraction import (
     patch_draft_from_content_chunks,
 )
 from app.domain.extraction.review_resolution import (
+    PatchReviewDecision,
     PatchReviewItem,
     resolve_patch_review_items,
 )
@@ -111,11 +112,19 @@ class ExtractionService:
             profile_json_schema=profile_json_schema,
             model=self.ollama_client.agent_model,
         )
+        initial_draft = normalize_review_draft(
+            initial_draft,
+            dataset_id=str(initial_draft.get("id") or data_package_id),
+        )
         self.output_repository.save_initial_draft(
             workflow_id=data_package_id,
             initial_draft=initial_draft,
         )
         self.output_repository.clear_patch_artifacts(workflow_id=data_package_id)
+        if self.task_registry is not None:
+            await self.task_registry.remove_task(
+                self._patch_draft_task_name(data_package_id),
+            )
         return initial_draft
 
     async def patch_initial_draft(
@@ -148,7 +157,11 @@ class ExtractionService:
         task_name = self._patch_draft_task_name(data_package_id)
         task_info: TaskInfo | None = self.task_registry.get_task_info(task_name)
 
-        if task_info is None or task_info.status in {TaskStatus.CANCELLED, TaskStatus.CRASHED}:
+        if (
+            task_info is None
+            or task_info.status in {TaskStatus.CANCELLED, TaskStatus.CRASHED}
+            or self._is_stale_completed_patch_task(data_package_id, task_info)
+        ):
             # Validate prerequisites before creating the background task so request
             # errors are still returned directly by this endpoint.
             try:
@@ -285,13 +298,17 @@ class ExtractionService:
                 data_package_id,
             ),
         )
+        next_draft = normalize_review_draft(
+            result.draft,
+            dataset_id=str(result.draft.get("id") or data_package_id),
+        )
 
         self.output_repository.save_draft(
             workflow_id=data_package_id,
-            draft=result.draft,
+            draft=next_draft,
         )
 
-        return result.draft
+        return next_draft
 
     def _save_patch_progress(
         self,
@@ -307,7 +324,10 @@ class ExtractionService:
 
         self.output_repository.save_draft(
             workflow_id=workflow_id,
-            draft=draft,
+            draft=normalize_review_draft(
+                draft,
+                dataset_id=str(draft.get("id") or workflow_id),
+            ),
         )
 
         # Update task registry progress
@@ -383,6 +403,19 @@ class ExtractionService:
     def _patch_draft_task_name(data_package_id: str) -> str:
         return f"patching:draft:{data_package_id}"
 
+    def _is_stale_completed_patch_task(
+        self,
+        data_package_id: str,
+        task_info: TaskInfo | None,
+    ) -> bool:
+        if (
+            task_info is None
+            or task_info.status != TaskStatus.COMPLETED
+            or self.output_repository is None
+        ):
+            return False
+        return not self.output_repository.load_completed_patch_file_names(data_package_id)
+
     async def get_existing_initial_context(
         self,
         *,
@@ -419,7 +452,10 @@ class ExtractionService:
             )
         self.output_repository.save_initial_draft(
             workflow_id=data_package_id,
-            initial_draft=draft,
+            initial_draft=normalize_review_draft(
+                draft,
+                dataset_id=str(draft.get("id") or data_package_id),
+            ),
         )
 
     async def get_protected_fields(self, data_package_id: str) -> list[str]:
@@ -510,20 +546,7 @@ class ExtractionService:
             model=self.ollama_client.agent_model,
         )
 
-        next_draft = (
-            apply_merge_patch(current_draft, resolution.draft_patch)
-            if resolution.draft_patch
-            else current_draft
-        )
-        next_draft = sanitize_document_against_schema(
-            document=next_draft,
-            json_schema=profile_json_schema,
-            target_class=profile_manifest.target_class,
-        )
-        next_draft = normalize_review_draft(
-            next_draft,
-            dataset_id=str(next_draft.get("id") or data_package_id),
-        )
+        next_draft = resolution.final_draft or current_draft
         validation = validate_document_against_profile(
             document=next_draft,
             json_schema=profile_json_schema,
@@ -538,15 +561,26 @@ class ExtractionService:
                 "validation_errors": [
                     f"{issue.path}: {issue.message}" for issue in validation.errors
                 ],
+                "resolution_decisions": [],
             }
 
+        requested_item_ids = {item.id for item in parsed_items}
+        decisions_by_id = self._review_decisions_by_id(
+            resolution.item_decisions,
+            requested_item_ids,
+        )
+        resolved_now = [
+            item_id
+            for item_id, decision in decisions_by_id.items()
+            if decision.outcome in {"included", "already_present", "excluded"}
+        ]
         resolved_ids = list(dict.fromkeys([
             *existing_state.get("resolved_item_ids", []),
-            *resolution.resolved_item_ids,
+            *resolved_now,
         ]))
-        requested_item_ids = {item.id for item in parsed_items}
-        resolved_now = [
-            item_id for item_id in resolution.resolved_item_ids if item_id in requested_item_ids
+        resolved_id_set = set(resolved_ids)
+        remaining_unresolved_ids = [
+            item.id for item in parsed_items if item.id not in resolved_id_set
         ]
         resolved_at = dict(existing_state.get("resolved_at", {}))
         timestamp = datetime.now(UTC).isoformat()
@@ -560,7 +594,11 @@ class ExtractionService:
             },
             "resolution_notes": {
                 **dict(existing_state.get("resolution_notes", {})),
-                **resolution.resolution_notes,
+                **{
+                    item_id: self._format_review_decision_note(decision)
+                    for item_id, decision in decisions_by_id.items()
+                    if decision.outcome in {"included", "already_present", "excluded"}
+                },
             },
             "resolved_at": resolved_at,
         }
@@ -580,9 +618,29 @@ class ExtractionService:
             "draft": next_draft,
             "review_state": next_state,
             "resolved_count": len(resolved_now),
-            "unresolved_item_ids": resolution.unresolved_item_ids,
+            "unresolved_item_ids": remaining_unresolved_ids,
             "validation_errors": [],
+            "resolution_decisions": [
+                decision.model_dump(mode="json")
+                for decision in decisions_by_id.values()
+            ],
         }
+
+    @staticmethod
+    def _review_decisions_by_id(
+        decisions: list[PatchReviewDecision],
+        requested_item_ids: set[str],
+    ) -> dict[str, PatchReviewDecision]:
+        result: dict[str, PatchReviewDecision] = {}
+        for decision in decisions:
+            if decision.id in requested_item_ids and decision.id not in result:
+                result[decision.id] = decision
+        return result
+
+    @staticmethod
+    def _format_review_decision_note(decision: PatchReviewDecision) -> str:
+        target = f" Target: {decision.target_path}." if decision.target_path else ""
+        return f"{decision.outcome}: {decision.note}{target}"
 
     async def get_patch_progress(
         self,
@@ -593,6 +651,8 @@ class ExtractionService:
         task_name = self._patch_draft_task_name(data_package_id)
         task_info = self.task_registry.get_task_info(task_name)
         if task_info is None:
+            return TaskStatus.UNKNOWN, None
+        if self._is_stale_completed_patch_task(data_package_id, task_info):
             return TaskStatus.UNKNOWN, None
         return task_info.status, task_info.progress
 
