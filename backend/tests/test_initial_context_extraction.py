@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from pydantic_ai.models.test import TestModel
 
 from app.api.v1.extraction import router
-from app.core.task_registry import TaskRegistry, TaskStatus
+from app.core.task_registry import TaskRegistry, TaskStatus, TaskType
 from app.dependencies import get_extraction_service
 from app.domain.datasources import ContentChunk, DataPackage, DataPackageIdNotFoundError, FileEntry
 from app.domain.extraction import (
@@ -18,6 +18,7 @@ from app.domain.extraction import (
     PatchDraftPrerequisiteError,
 )
 from app.domain.extraction.patch_quality import CandidateQualityRating, PatchQualityReport, UnmappedFact
+from app.domain.extraction.review_resolution import PatchReviewResolution
 from app.domain.extraction.artifacts import PatchCandidate
 from app.domain.profiles import ProfileManifest
 from app.services.extraction_service import ExtractionService
@@ -35,6 +36,10 @@ class FakeLogger:
 
     def exception(self, *args, **kwargs):
         pass
+
+
+async def _completed_task() -> None:
+    return None
 
 
 INITIAL_CONTEXT_OUTPUT = {
@@ -123,9 +128,10 @@ def make_data_package() -> DataPackage:
 
 
 class FakeProfileRepository:
-    def __init__(self):
+    def __init__(self, json_schema: dict | None = None):
         self.requested_manifest_identifier: str | None = None
         self.requested_schema_identifier: str | None = None
+        self.json_schema = json_schema or PROFILE_JSON_SCHEMA
         self.manifest = ProfileManifest(
             identifier="test-profile",
             source="profile.yaml",
@@ -149,7 +155,7 @@ class FakeProfileRepository:
 
     def load_json_schema(self, identifier: str) -> dict:
         self.requested_schema_identifier = identifier
-        return PROFILE_JSON_SCHEMA
+        return self.json_schema
 
 
 class FakeDataSourceService:
@@ -495,6 +501,7 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
         output_repository.initial_context = InitialContext.model_validate(
             INITIAL_CONTEXT_OUTPUT
         )
+        task_registry = TaskRegistry(settings=None, logger=FakeLogger())  # type: ignore[arg-type]
         profile_repository = FakeProfileRepository()
         service = ExtractionService(
             profile_repository,  # type: ignore[arg-type]
@@ -502,7 +509,15 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
             datasource_service=datasource_service,  # type: ignore[arg-type]
             ollama_client=FakeOllamaClient(INITIAL_DRAFT_OUTPUT),  # type: ignore[arg-type]
             output_repository=output_repository,
+            task_registry=task_registry,
         )
+        task_name = service._patch_draft_task_name("package-id")
+        await task_registry.create_task(
+            coro=_completed_task(),
+            type=TaskType.WORKFLOW,
+            name=task_name,
+        )
+        await task_registry.wait_for_task(task_name, timeout=1.0)
 
         result = await service.extract_initial_draft(
             data_package_id="package-id",
@@ -514,6 +529,7 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(profile_repository.requested_schema_identifier, "test-profile")
         self.assertEqual(result["title"], "Gas chromatography dataset for sample-a")
         self.assertEqual(output_repository.initial_draft, INITIAL_DRAFT_OUTPUT)
+        self.assertIsNone(task_registry.get_task_info(task_name))
 
     async def test_extract_initial_draft_requires_existing_initial_context(self):
         output_repository = FakeOutputRepository()
@@ -569,6 +585,78 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
                 data_package_id="package-id",
                 profile_identifier="test-profile",
             )
+
+    async def test_patch_initial_draft_restarts_stale_completed_task_without_artifacts(self):
+        from unittest import mock as unittest_mock
+
+        datasource_service = FakeDataSourceService(make_data_package())
+        datasource_service.chunks_by_file = [
+            [
+                ContentChunk(
+                    content="Chunk says chunk-keyword.",
+                    data_package_id="package-id",
+                    file_path="metadata.txt",
+                    start_idx=0,
+                    end_idx=0,
+                )
+            ]
+        ]
+        output_repository = FakeOutputRepository()
+        output_repository.initial_context = InitialContext.model_validate(
+            INITIAL_CONTEXT_OUTPUT
+        )
+        output_repository.initial_draft = INITIAL_DRAFT_OUTPUT
+        task_registry = TaskRegistry(settings=None, logger=FakeLogger())  # type: ignore[arg-type]
+        accept_report = PatchQualityReport(
+            overall_decision="accept",
+            candidate_ratings=[
+                CandidateQualityRating(
+                    field_path="description",
+                    decision="accept",
+                    issues=[],
+                ),
+                CandidateQualityRating(
+                    field_path="keywords",
+                    decision="accept",
+                    issues=[],
+                ),
+            ],
+            summary="All candidates accepted.",
+        )
+        service = ExtractionService(
+            FakeProfileRepository(),  # type: ignore[arg-type]
+            settings=None,  # type: ignore[arg-type]
+            datasource_service=datasource_service,  # type: ignore[arg-type]
+            ollama_client=FakeOllamaClient(FIELD_PATCH_OUTPUT),  # type: ignore[arg-type]
+            output_repository=output_repository,
+            task_registry=task_registry,
+        )
+        task_name = service._patch_draft_task_name("package-id")
+        await task_registry.create_task(
+            coro=_completed_task(),
+            type=TaskType.WORKFLOW,
+            name=task_name,
+        )
+        await task_registry.wait_for_task(task_name, timeout=1.0)
+        self.assertEqual(
+            await service.get_patch_progress("package-id"),
+            (TaskStatus.UNKNOWN, None),
+        )
+
+        with unittest_mock.patch(
+            "app.domain.extraction.patch_draft.review_patch_semantic_quality",
+            return_value=accept_report,
+        ):
+            draft, status = await service.patch_initial_draft(
+                data_package_id="package-id",
+                profile_identifier="test-profile",
+                num_chunks_per_turn=1,
+            )
+            await task_registry.wait_for_task(task_name, timeout=2.0)
+
+        self.assertEqual(status, TaskStatus.RUNNING)
+        self.assertEqual(draft, INITIAL_DRAFT_OUTPUT)
+        self.assertTrue(output_repository.patches)
 
     async def test_patch_initial_draft_persists_draft_and_patches(self):
         from unittest import mock as unittest_mock
@@ -643,6 +731,161 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
         task_info = task_registry.get_task_info(service._patch_draft_task_name("package-id"))
         self.assertEqual(task_info.progress["batch_no"], 1)  # type: ignore[union-attr,index]
         self.assertEqual(task_info.progress["total_batches"], 1)  # type: ignore[union-attr,index]
+
+    async def test_patch_initial_draft_normalizes_duplicate_object_arrays_before_saving(self):
+        from unittest import mock as unittest_mock
+
+        rich_schema = {
+            "$schema": "https://json-schema.org/draft/2019-09/schema",
+            "$defs": {
+                "Attribute": {
+                    "type": "object",
+                    "properties": {
+                        "has_quantity_type": {"type": "string"},
+                        "unit": {"type": "string"},
+                        "value": {"type": "number"},
+                        "title": {"type": "string"},
+                    },
+                    "additionalProperties": False,
+                },
+                "Activity": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "has_quantitative_attribute": {
+                            "type": "array",
+                            "items": {"$ref": "#/$defs/Attribute"},
+                        },
+                    },
+                    "required": ["id"],
+                    "additionalProperties": False,
+                },
+                "Dataset": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "was_generated_by": {
+                            "type": "array",
+                            "items": {"$ref": "#/$defs/Activity"},
+                        },
+                    },
+                    "required": ["id", "was_generated_by"],
+                    "additionalProperties": False,
+                },
+            },
+        }
+        initial_draft = {
+            "id": "dataset",
+            "was_generated_by": [
+                {
+                    "id": "activity-nmr",
+                    "has_quantitative_attribute": [
+                        {
+                            "has_quantity_type": "frequency",
+                            "unit": "MHz",
+                            "value": 400.0,
+                            "title": "Magnetic Field Strength",
+                        }
+                    ],
+                }
+            ],
+        }
+        patch_output = {
+            "candidates": [
+                {
+                    "field_path": "was_generated_by",
+                    "patch": {
+                        "was_generated_by": [
+                            {
+                                "id": "activity-nmr",
+                                "has_quantitative_attribute": [
+                                    {
+                                        "has_quantity_type": "frequency",
+                                        "unit": "MHz",
+                                        "value": 400.0,
+                                        "title": "Magnetic Field Strength",
+                                    },
+                                    {
+                                        "has_quantity_type": "frequency",
+                                        "unit": "MHz",
+                                        "value": 400.0,
+                                        "title": "Magnetic Field Strength",
+                                    },
+                                ],
+                            }
+                        ]
+                    },
+                    "confidence": 0.95,
+                    "reasoning": "Chunk repeats the field strength.",
+                    "source_evidence": ["400 MHz"],
+                }
+            ]
+        }
+        datasource_service = FakeDataSourceService(make_data_package())
+        datasource_service.chunks_by_file = [
+            [
+                ContentChunk(
+                    content="400 MHz",
+                    data_package_id="package-id",
+                    file_path="metadata.txt",
+                    start_idx=0,
+                    end_idx=0,
+                )
+            ]
+        ]
+        output_repository = FakeOutputRepository()
+        output_repository.initial_context = InitialContext.model_validate(
+            INITIAL_CONTEXT_OUTPUT
+        )
+        output_repository.initial_draft = initial_draft
+        accept_report = PatchQualityReport(
+            overall_decision="accept",
+            candidate_ratings=[
+                CandidateQualityRating(
+                    field_path="was_generated_by",
+                    decision="accept",
+                    issues=[],
+                ),
+            ],
+            summary="Accepted.",
+        )
+
+        with unittest_mock.patch(
+            "app.domain.extraction.patch_draft.review_patch_semantic_quality",
+            return_value=accept_report,
+        ):
+            task_registry = TaskRegistry(settings=None, logger=FakeLogger())  # type: ignore[arg-type]
+            service = ExtractionService(
+                FakeProfileRepository(rich_schema),  # type: ignore[arg-type]
+                settings=None,  # type: ignore[arg-type]
+                datasource_service=datasource_service,  # type: ignore[arg-type]
+                ollama_client=FakeOllamaClient(patch_output),  # type: ignore[arg-type]
+                output_repository=output_repository,
+                task_registry=task_registry,
+            )
+
+            await service.patch_initial_draft(
+                data_package_id="package-id",
+                profile_identifier="test-profile",
+                num_chunks_per_turn=1,
+            )
+            await task_registry.wait_for_task(
+                service._patch_draft_task_name("package-id"),
+                timeout=2.0,
+            )
+
+        activity = output_repository.draft["was_generated_by"][0]
+        self.assertEqual(
+            activity["has_quantitative_attribute"],
+            [
+                {
+                    "has_quantity_type": "frequency",
+                    "unit": "MHz",
+                    "value": 400.0,
+                    "title": "Magnetic Field Strength",
+                }
+            ],
+        )
 
     async def test_patch_initial_draft_does_not_merge_protected_fields(self):
         from unittest import mock as unittest_mock
@@ -791,6 +1034,317 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(output_repository.draft, INITIAL_DRAFT_OUTPUT)
         self.assertEqual(list(output_repository.patches.values())[0], {})
+
+    async def test_resolve_patch_review_includes_full_draft_change(self):
+        from unittest import mock as unittest_mock
+
+        output_repository = FakeOutputRepository()
+        output_repository.initial_draft = INITIAL_DRAFT_OUTPUT
+        final_draft = {
+            **INITIAL_DRAFT_OUTPUT,
+            "description": "Resolved with source evidence.",
+        }
+        resolution = PatchReviewResolution(
+            final_draft=final_draft,
+            item_decisions=[
+                {
+                    "id": "matched:patch:description:0",
+                    "outcome": "included",
+                    "note": "Added the sourced description.",
+                    "target_path": "description",
+                },
+                {
+                    "id": "unmapped:temperature",
+                    "outcome": "unresolved",
+                    "note": "No confident target field.",
+                },
+            ],
+        )
+        service = ExtractionService(
+            FakeProfileRepository(),  # type: ignore[arg-type]
+            settings=None,  # type: ignore[arg-type]
+            datasource_service=FakeDataSourceService(make_data_package()),  # type: ignore[arg-type]
+            ollama_client=FakeOllamaClient({}),  # type: ignore[arg-type]
+            output_repository=output_repository,
+        )
+
+        with unittest_mock.patch(
+            "app.services.extraction_service.resolve_patch_review_items",
+            return_value=resolution,
+        ):
+            result = await service.resolve_patch_review_items(
+                data_package_id="package-id",
+                profile_identifier="test-profile",
+                review_items=[
+                    {
+                        "id": "matched:patch:description:0",
+                        "kind": "matched",
+                        "path": "description",
+                    },
+                    {
+                        "id": "unmapped:temperature",
+                        "kind": "unmapped",
+                        "path": "",
+                        "fact": "Temperature was 300 K.",
+                    },
+                ],
+            )
+
+        self.assertEqual(result["resolved_count"], 1)
+        self.assertEqual(result["unresolved_item_ids"], ["unmapped:temperature"])
+        self.assertEqual(result["draft"], final_draft)
+        self.assertEqual(output_repository.draft, final_draft)
+        self.assertEqual(
+            output_repository.review_state["resolved_item_ids"],
+            ["matched:patch:description:0"],
+        )
+        self.assertEqual(
+            output_repository.review_state["resolution_notes"]["matched:patch:description:0"],
+            "included: Added the sourced description. Target: description.",
+        )
+
+    async def test_resolve_patch_review_excludes_without_changing_draft(self):
+        from unittest import mock as unittest_mock
+
+        output_repository = FakeOutputRepository()
+        output_repository.initial_draft = INITIAL_DRAFT_OUTPUT
+        resolution = PatchReviewResolution(
+            final_draft=INITIAL_DRAFT_OUTPUT,
+            item_decisions=[
+                {
+                    "id": "matched:patch:instrument:0",
+                    "outcome": "excluded",
+                    "note": "Source instrument conflicts with the NMR context.",
+                    "target_path": "was_generated_by",
+                }
+            ],
+        )
+        service = ExtractionService(
+            FakeProfileRepository(),  # type: ignore[arg-type]
+            settings=None,  # type: ignore[arg-type]
+            datasource_service=FakeDataSourceService(make_data_package()),  # type: ignore[arg-type]
+            ollama_client=FakeOllamaClient({}),  # type: ignore[arg-type]
+            output_repository=output_repository,
+        )
+
+        with unittest_mock.patch(
+            "app.services.extraction_service.resolve_patch_review_items",
+            return_value=resolution,
+        ):
+            result = await service.resolve_patch_review_items(
+                data_package_id="package-id",
+                profile_identifier="test-profile",
+                review_items=[
+                    {
+                        "id": "matched:patch:instrument:0",
+                        "kind": "matched",
+                        "path": "was_generated_by",
+                    },
+                ],
+            )
+
+        self.assertEqual(result["resolved_count"], 1)
+        self.assertEqual(result["unresolved_item_ids"], [])
+        self.assertEqual(output_repository.draft, INITIAL_DRAFT_OUTPUT)
+        self.assertEqual(
+            output_repository.review_state["resolution_notes"]["matched:patch:instrument:0"],
+            "excluded: Source instrument conflicts with the NMR context. Target: was_generated_by.",
+        )
+
+    async def test_resolve_patch_review_rejects_invalid_full_draft(self):
+        from unittest import mock as unittest_mock
+
+        output_repository = FakeOutputRepository()
+        output_repository.initial_draft = INITIAL_DRAFT_OUTPUT
+        resolution = PatchReviewResolution(
+            final_draft={
+                **INITIAL_DRAFT_OUTPUT,
+                "unknown_field": "Invalid extra field.",
+            },
+            item_decisions=[
+                {
+                    "id": "matched:patch:description:0",
+                    "outcome": "included",
+                    "note": "Added extra field.",
+                }
+            ],
+        )
+        service = ExtractionService(
+            FakeProfileRepository(),  # type: ignore[arg-type]
+            settings=None,  # type: ignore[arg-type]
+            datasource_service=FakeDataSourceService(make_data_package()),  # type: ignore[arg-type]
+            ollama_client=FakeOllamaClient({}),  # type: ignore[arg-type]
+            output_repository=output_repository,
+        )
+
+        with unittest_mock.patch(
+            "app.services.extraction_service.resolve_patch_review_items",
+            return_value=resolution,
+        ):
+            result = await service.resolve_patch_review_items(
+                data_package_id="package-id",
+                profile_identifier="test-profile",
+                review_items=[
+                    {
+                        "id": "matched:patch:description:0",
+                        "kind": "matched",
+                        "path": "description",
+                    },
+                ],
+            )
+
+        self.assertEqual(result["resolved_count"], 0)
+        self.assertEqual(result["unresolved_item_ids"], ["matched:patch:description:0"])
+        self.assertTrue(result["validation_errors"])
+        self.assertIsNone(output_repository.draft)
+        self.assertEqual(output_repository.review_state["resolved_item_ids"], [])
+
+    async def test_resolve_patch_review_requires_schema_valid_checksum_distribution(self):
+        from unittest import mock as unittest_mock
+
+        checksum_schema = {
+            "$schema": "https://json-schema.org/draft/2019-09/schema",
+            "$defs": {
+                "Dataset": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string"},
+                        "dataset_distribution": {
+                            "type": ["array", "null"],
+                            "items": {"$ref": "#/$defs/Distribution"},
+                        },
+                    },
+                    "required": ["title"],
+                    "additionalProperties": False,
+                },
+                "Distribution": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": ["array", "null"], "items": {"type": "string"}},
+                        "access_URL": {
+                            "type": "array",
+                            "items": {"$ref": "#/$defs/Resource"},
+                        },
+                        "checksum": {
+                            "anyOf": [
+                                {"$ref": "#/$defs/Checksum"},
+                                {"type": "null"},
+                            ]
+                        },
+                    },
+                    "required": ["access_URL"],
+                    "additionalProperties": False,
+                },
+                "Resource": {
+                    "type": "object",
+                    "properties": {"id": {"type": "string"}},
+                    "required": ["id"],
+                    "additionalProperties": False,
+                },
+                "Checksum": {
+                    "type": "object",
+                    "properties": {
+                        "algorithm": {"$ref": "#/$defs/ChecksumAlgorithm"},
+                        "checksum_value": {
+                            "type": "string",
+                            "pattern": "([0-9a-fA-F]{2})*",
+                        },
+                    },
+                    "required": ["algorithm", "checksum_value"],
+                    "additionalProperties": False,
+                },
+                "ChecksumAlgorithm": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": ["string", "null"]},
+                        "description": {"type": ["string", "null"]},
+                    },
+                    "additionalProperties": False,
+                },
+            },
+        }
+        initial_draft = {"title": "NMR dataset"}
+        invalid_draft = {
+            "title": "NMR dataset",
+            "dataset_distribution": [
+                {
+                    "title": ["Peak list data"],
+                    "access_URL": [{"id": "resource/peak-jdx"}],
+                    "checksum": {
+                        "algorithm": {"id": "term/sha1", "title": "SHA-1"},
+                        "checksum_value": "454a83afceb23229e0bd94b4a91cedbd",
+                    },
+                }
+            ],
+        }
+        valid_draft = {
+            "title": "NMR dataset",
+            "dataset_distribution": [
+                {
+                    "title": ["Peak list data"],
+                    "access_URL": [{"id": "resource/peak-jdx"}],
+                    "checksum": {
+                        "algorithm": {"title": "SHA-1"},
+                        "checksum_value": "454a83afceb23229e0bd94b4a91cedbd",
+                    },
+                }
+            ],
+        }
+
+        async def run_resolution(final_draft: dict) -> tuple[dict, FakeOutputRepository]:
+            output_repository = FakeOutputRepository()
+            output_repository.initial_draft = initial_draft
+            service = ExtractionService(
+                FakeProfileRepository(checksum_schema),  # type: ignore[arg-type]
+                settings=None,  # type: ignore[arg-type]
+                datasource_service=FakeDataSourceService(make_data_package()),  # type: ignore[arg-type]
+                ollama_client=FakeOllamaClient({}),  # type: ignore[arg-type]
+                output_repository=output_repository,
+            )
+            resolution = PatchReviewResolution(
+                final_draft=final_draft,
+                item_decisions=[
+                    {
+                        "id": "matched:patch:distribution:0",
+                        "outcome": "included",
+                        "note": "Added checksum distribution.",
+                        "target_path": "dataset_distribution",
+                    }
+                ],
+            )
+            with unittest_mock.patch(
+                "app.services.extraction_service.resolve_patch_review_items",
+                return_value=resolution,
+            ):
+                result = await service.resolve_patch_review_items(
+                    data_package_id="package-id",
+                    profile_identifier="test-profile",
+                    review_items=[
+                        {
+                            "id": "matched:patch:distribution:0",
+                            "kind": "matched",
+                            "path": "dataset_distribution",
+                        },
+                    ],
+                )
+            return result, output_repository
+
+        invalid_result, invalid_repository = await run_resolution(invalid_draft)
+        self.assertEqual(invalid_result["resolved_count"], 0)
+        self.assertEqual(
+            invalid_result["unresolved_item_ids"],
+            ["matched:patch:distribution:0"],
+        )
+        self.assertIsNone(invalid_repository.draft)
+
+        valid_result, valid_repository = await run_resolution(valid_draft)
+        self.assertEqual(valid_result["resolved_count"], 1)
+        self.assertEqual(valid_result["unresolved_item_ids"], [])
+        self.assertEqual(valid_repository.draft, valid_draft)
+        self.assertEqual(
+            valid_repository.draft["dataset_distribution"][0]["checksum"]["algorithm"],
+            {"title": "SHA-1"},
+        )
 
 
 class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):

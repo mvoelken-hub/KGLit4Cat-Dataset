@@ -608,6 +608,10 @@ class ExtractionAgentHelperTests(unittest.IsolatedAsyncioTestCase):
         result = normalize_review_draft(
             {
                 "id": "1H_NMR_clean",
+                "title": [
+                    "1H_NMR_-1H_NMR_clean",
+                    "1H NMR clean",
+                ],
                 "was_generated_by": [
                     {
                         "id": "https://w3id.org/nfdi-de/activity/1H_NMR_acquisition",
@@ -627,6 +631,7 @@ class ExtractionAgentHelperTests(unittest.IsolatedAsyncioTestCase):
         )
 
         activity = result["was_generated_by"][0]
+        self.assertEqual(result["title"], ["1H NMR clean"])
         self.assertEqual(
             activity["id"],
             "1h-nmr-clean/activity/1h-nmr-acquisition",
@@ -640,6 +645,142 @@ class ExtractionAgentHelperTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             activity["carried_out_by"][0]["id"],
             "1h-nmr-clean/agent/bruker-nmr-system",
+        )
+
+    def test_normalize_review_draft_deduplicates_attribute_objects(self):
+        result = normalize_review_draft(
+            {
+                "id": "1H_NMR_clean",
+                "is_about_entity": [
+                    {
+                        "id": "entity-sample",
+                        "has_qualitative_attribute": [
+                            {"value": "CDCl3", "title": "Solvent"},
+                            {"value": "CDCl3", "title": "Solvent"},
+                            {"value": "DMSO", "title": "Solvent"},
+                        ],
+                    }
+                ],
+                "was_generated_by": [
+                    {
+                        "id": "activity-nmr",
+                        "has_quantitative_attribute": [
+                            {
+                                "has_quantity_type": "frequency",
+                                "unit": "MHz",
+                                "value": 400.0,
+                                "title": "Magnetic Field Strength",
+                            },
+                            {
+                                "has_quantity_type": "frequency",
+                                "unit": "MHz",
+                                "value": 400.0,
+                                "title": "Magnetic Field Strength",
+                            },
+                            {
+                                "has_quantity_type": "frequency",
+                                "unit": "MHz",
+                                "value": 500.0,
+                                "title": "Magnetic Field Strength",
+                            },
+                        ],
+                    }
+                ],
+            }
+        )
+
+        entity = result["is_about_entity"][0]
+        activity = result["was_generated_by"][0]
+        self.assertEqual(
+            entity["has_qualitative_attribute"],
+            [
+                {"value": "CDCl3", "title": "Solvent"},
+                {"value": "DMSO", "title": "Solvent"},
+            ],
+        )
+        self.assertEqual(
+            activity["has_quantitative_attribute"],
+            [
+                {
+                    "has_quantity_type": "frequency",
+                    "unit": "MHz",
+                    "value": 400.0,
+                    "title": "Magnetic Field Strength",
+                },
+                {
+                    "has_quantity_type": "frequency",
+                    "unit": "MHz",
+                    "value": 500.0,
+                    "title": "Magnetic Field Strength",
+                },
+            ],
+        )
+
+    def test_normalize_review_draft_merges_same_id_objects_and_nested_lists(self):
+        result = normalize_review_draft(
+            {
+                "id": "dataset",
+                "was_generated_by": [
+                    {
+                        "id": "activity-nmr",
+                        "title": ["1H_NMR_Acquisition", "1H NMR Acquisition"],
+                        "has_qualitative_attribute": [
+                            {"value": "zg30", "title": "Pulse Sequence"},
+                        ],
+                    },
+                    {
+                        "id": "activity-nmr",
+                        "description": ["Acquired with Bruker NMR."],
+                        "has_qualitative_attribute": [
+                            {"value": "zg30", "title": "Pulse Sequence"},
+                            {"value": "zg30", "title": "Pulse Sequence"},
+                        ],
+                    },
+                ],
+            }
+        )
+
+        self.assertEqual(
+            result["was_generated_by"],
+            [
+                {
+                    "id": "dataset/activity/nmr",
+                    "title": ["1H NMR Acquisition"],
+                    "has_qualitative_attribute": [
+                        {"value": "zg30", "title": "Pulse Sequence"},
+                    ],
+                    "description": ["Acquired with Bruker NMR."],
+                }
+            ],
+        )
+
+    def test_normalize_review_draft_deduplicates_mixed_arrays_without_merging_distinct_objects(self):
+        result = normalize_review_draft(
+            {
+                "id": "dataset",
+                "mixed": [
+                    "alpha",
+                    "alpha",
+                    1,
+                    1,
+                    True,
+                    True,
+                    {"title": "Solvent", "value": "CDCl3", "ignored": None},
+                    {"title": "Solvent", "value": "CDCl3"},
+                    {"title": "Solvent", "value": "DMSO"},
+                ],
+            }
+        )
+
+        self.assertEqual(
+            result["mixed"],
+            [
+                "alpha",
+                1,
+                True,
+                {"title": "Solvent", "value": "CDCl3", "ignored": None},
+                {"title": "Solvent", "value": "DMSO"},
+            ],
         )
 
     def test_create_patch_draft_agent_uses_retry_budget(self):
