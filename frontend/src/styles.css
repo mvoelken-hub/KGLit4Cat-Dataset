@@ -171,6 +171,12 @@ textarea.json-editor-input { resize: vertical; min-height: 80px; }
 .review-item-section ul { margin: 0; padding-left: 18px; }
 .review-item-section li { margin: 4px 0; line-height: 1.4; overflow-wrap: anywhere; }
 .review-item-patch { margin: 0; max-height: 220px; overflow: auto; padding: 10px; border-radius: 8px; background: #191713; color: #f7efe0; font-family: 'Courier New', monospace; font-size: 0.76rem; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
+.review-resolution { display: grid; gap: 8px; padding: 10px; border: 1px solid rgba(53, 107, 69, 0.24); border-radius: 8px; background: rgba(246, 250, 244, 0.82); }
+.review-resolution div { display: grid; gap: 3px; }
+.review-resolution span { color: var(--muted); font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; }
+.review-resolution strong { margin: 0; color: var(--ok); font-size: 0.84rem; }
+.review-resolution code { width: fit-content; max-width: 100%; padding: 4px 6px; border-radius: 6px; background: rgba(255, 255, 255, 0.72); color: var(--ink); overflow-wrap: anywhere; }
+.review-item-value { margin: 0; max-height: 180px; overflow: auto; padding: 8px; border-radius: 8px; background: rgba(255, 255, 255, 0.72); color: var(--ink); font-family: 'Courier New', monospace; font-size: 0.74rem; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* Patch editing UI */
 .patch-array-editor { display: grid; gap: 8px; }

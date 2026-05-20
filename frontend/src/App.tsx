@@ -16,13 +16,13 @@ import {
   setProtectedFields as apiSetProtectedFields,
 } from './api/extraction';
 import { listProfiles } from './api/profiles';
-import { JsonEditor, type JsonObject, type JsonPatchMarker, type JsonValue, setValueAtPath, extractPatchInnerValue, PatchValueEditor } from './components/JsonEditor';
+import { JsonEditor, type JsonObject, type JsonPatchMarker, type JsonValue, setValueAtPath, getValueAtPath, extractPatchInnerValue, PatchValueEditor } from './components/JsonEditor';
 import type { ChunkRequestResponse, DataPackageResponse, InitialContext, ProfileManifestResponse } from './api/types';
 import type { PatchArtifacts, PatchProgress, PatchReviewResolutionItem, PatchReviewState, PatchTaskStatus } from './api/extraction';
 
 type BusyKey = 'upload' | 'chunk' | 'context' | 'draft' | 'patch' | 'resolve' | 'load';
 type ReviewTab = 'matched' | 'unmapped' | 'resolved';
-type ReviewItem = JsonPatchMarker & { kind: 'matched' | 'unmapped'; fact?: string; reason?: string };
+type ReviewItem = JsonPatchMarker & { kind: 'matched' | 'unmapped'; targetPath?: string; fact?: string; reason?: string; outcome?: string; resolutionNote?: string };
 
 const TERMINAL_PATCH_STATUSES = new Set<PatchTaskStatus>(['unknown', 'completed', 'cancelled', 'crashed']);
 const emptyReviewState: PatchReviewState = {
@@ -101,6 +101,57 @@ function unmappedReviewItemId(fact: Record<string, unknown>): string {
   return `unmapped:${unmappedFactKey(fact)}`;
 }
 
+function reviewOutcomeFromNote(note?: string): string | undefined {
+  const match = note?.match(/^(included|already_present|excluded|unresolved):/);
+  return match?.[1];
+}
+
+function reviewOutcomeLabel(outcome?: string): string {
+  if (outcome === 'included') return 'Included';
+  if (outcome === 'already_present') return 'Already present';
+  if (outcome === 'excluded') return 'Excluded';
+  if (outcome === 'unresolved') return 'Unresolved';
+  return 'Resolved';
+}
+
+function reviewActionLabel(outcome?: string): string {
+  if (outcome === 'included') return 'Accepted into draft';
+  if (outcome === 'already_present') return 'Already present in draft';
+  if (outcome === 'excluded') return 'Kept out of draft';
+  if (outcome === 'unresolved') return 'Still needs review';
+  return 'Marked resolved';
+}
+
+function resolutionTargetPath(item: ReviewItem): string {
+  const noteTarget = item.resolutionNote?.match(/Target: ([^.]+(?:\.[^.]+)*)\./)?.[1];
+  if (noteTarget) return noteTarget;
+  if (item.targetPath) return item.targetPath;
+  return item.path === 'Unassigned' ? '' : item.path;
+}
+
+function formatDraftValue(value: unknown): string {
+  if (value === undefined) return 'No value found at this path.';
+  if (typeof value === 'string') return value;
+  return JSON.stringify(value, null, 2);
+}
+
+function resolutionSummaryMessage(resolvedCount: number, unresolvedCount: number, decisions: { outcome: string }[]): string {
+  const included = decisions.filter((decision) => decision.outcome === 'included' || decision.outcome === 'already_present').length;
+  const excluded = decisions.filter((decision) => decision.outcome === 'excluded').length;
+  if (decisions.length > 0) {
+    const parts = [
+      `Included ${included}`,
+      `excluded ${excluded}`,
+      `${unresolvedCount} still need review`,
+    ];
+    return parts.join(', ') + '.';
+  }
+  if (unresolvedCount > 0) {
+    return `Review agent resolved ${resolvedCount} item${resolvedCount === 1 ? '' : 's'}; ${unresolvedCount} still need manual review.`;
+  }
+  return `Review agent resolved ${resolvedCount} item${resolvedCount === 1 ? '' : 's'}.`;
+}
+
 function buildReviewItems(artifacts: PatchArtifacts | null, reviewState: PatchReviewState): ReviewItem[] {
   if (!artifacts) return [];
   const resolvedIds = new Set(reviewState.resolved_item_ids);
@@ -128,6 +179,7 @@ function buildReviewItems(artifacts: PatchArtifacts | null, reviewState: PatchRe
       const issues = asRecordArray(rating?.issues);
       const needsReview = confidence === undefined || confidence < 0.8 || decision !== 'accept' || issues.length > 0;
       const id = matchedReviewItemId(baseName, path, candidateIndex);
+      const resolutionNote = reviewState.resolution_notes[id];
       items.push({
         id,
         kind: 'matched',
@@ -135,6 +187,8 @@ function buildReviewItems(artifacts: PatchArtifacts | null, reviewState: PatchRe
         status: needsReview ? 'needs_review' : 'accepted',
         label: needsReview ? 'Review' : 'Patch',
         resolved: resolvedIds.has(id),
+        outcome: reviewOutcomeFromNote(resolutionNote),
+        resolutionNote,
         confidence,
         fileName: String(artifact.file_name || ''),
         patch: candidate.patch,
@@ -152,15 +206,18 @@ function buildReviewItems(artifacts: PatchArtifacts | null, reviewState: PatchRe
 
   for (const fact of artifacts.unmapped_facts) {
     const id = unmappedReviewItemId(fact);
-    const path = reviewState.unmapped_assignments[id];
-    if (!path) continue;
+    const assignedPath = reviewState.unmapped_assignments[id] || '';
+    const resolutionNote = reviewState.resolution_notes[id];
     items.push({
       id,
       kind: 'unmapped',
-      path,
+      path: assignedPath || 'Unassigned',
+      targetPath: assignedPath,
       status: 'unmapped',
       label: 'Unmapped',
       resolved: resolvedIds.has(id),
+      outcome: reviewOutcomeFromNote(resolutionNote),
+      resolutionNote,
       fileName: String(fact.file_name || ''),
       evidence: fact.source_hint ? [String(fact.source_hint)] : [],
       detail: String(fact.fact || fact.reason || 'Unmapped source fact'),
@@ -176,7 +233,7 @@ function toResolutionItem(item: ReviewItem): PatchReviewResolutionItem {
   const resolutionItem: PatchReviewResolutionItem = {
     id: item.id,
     kind: item.kind,
-    path: item.path,
+    path: item.targetPath ?? item.path,
     detail: item.detail,
     issues: item.issues || [],
     evidence: item.evidence || [],
@@ -191,7 +248,7 @@ function toResolutionItem(item: ReviewItem): PatchReviewResolutionItem {
   return resolutionItem;
 }
 
-function ReviewItemList({ items, onResolve, onApplyPatch }: { items: ReviewItem[]; onResolve: (itemId: string) => void; onApplyPatch?: (itemId: string, value: unknown) => void }) {
+function ReviewItemList({ items, draft, onResolve, onApplyPatch }: { items: ReviewItem[]; draft?: object | null; onResolve: (itemId: string) => void; onApplyPatch?: (itemId: string, value: unknown) => void }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editedValue, setEditedValue] = useState<unknown>(null);
 
@@ -210,13 +267,43 @@ function ReviewItemList({ items, onResolve, onApplyPatch }: { items: ReviewItem[
 
   return (
     <ul className="artifact-list">
-      {items.map((item) => (
+      {items.map((item) => {
+        const targetPath = resolutionTargetPath(item);
+        const draftValue = draft && targetPath ? getValueAtPath(draft as JsonObject, targetPath) : undefined;
+        const shouldShowDraftValue = item.resolved && item.outcome !== 'excluded' && Boolean(targetPath);
+        return (
         <li key={item.id} className="review-item">
           <div className="review-item-heading">
             <strong>{item.path}</strong>
-            <span className={`patch-marker-badge ${item.status}`}>{item.resolved ? 'Resolved' : item.label}</span>
+            <span className={`patch-marker-badge ${item.status}`}>{item.resolved ? reviewOutcomeLabel(item.outcome) : item.label}</span>
           </div>
           {item.detail && <p>{item.detail}</p>}
+          {item.resolved && (
+            <div className="review-resolution">
+              <div>
+                <span>Action</span>
+                <strong>{reviewActionLabel(item.outcome)}</strong>
+              </div>
+              {targetPath && (
+                <div>
+                  <span>Draft location</span>
+                  <code>{targetPath}</code>
+                </div>
+              )}
+              {item.resolutionNote && (
+                <div>
+                  <span>Reason</span>
+                  <p>{item.resolutionNote.replace(/^(included|already_present|excluded|unresolved):\s*/, '')}</p>
+                </div>
+              )}
+              {shouldShowDraftValue && (
+                <div>
+                  <span>Current draft value</span>
+                  <pre className="review-item-value">{formatDraftValue(draftValue)}</pre>
+                </div>
+              )}
+            </div>
+          )}
           {item.issues && item.issues.length > 0 && (
             <div className="review-item-section">
               <span>Issues</span>
@@ -252,7 +339,8 @@ function ReviewItemList({ items, onResolve, onApplyPatch }: { items: ReviewItem[
           )}
           {!item.resolved && <button className="ghost" onClick={() => onResolve(item.id)}>Mark resolved</button>}
         </li>
-      ))}
+        );
+      })}
     </ul>
   );
 }
@@ -306,6 +394,8 @@ export function App() {
 
   const selectedPackage = useMemo(() => packages.find((item) => item.id === selectedPackageId) || null, [packages, selectedPackageId]);
   const isPatching = patchStatus === 'running';
+  const hasVisiblePatchArtifacts = Boolean(patchArtifacts && hasPatchArtifacts(patchArtifacts));
+  const patchButtonLabel = isPatching ? 'Patching...' : hasVisiblePatchArtifacts ? 'Resume patching from checkpoint' : 'Start new patching';
   const progressBatchNo = patchProgress?.batch_no ?? 0;
   const progressTotalBatches = patchProgress?.total_batches ?? 0;
   const progressPercent = progressTotalBatches > 0 ? Math.min(100, Math.round((progressBatchNo / progressTotalBatches) * 100)) : 0;
@@ -428,8 +518,16 @@ export function App() {
       const result = await patchDraft({ data_package_id: selectedPackageId, profile_identifier: selectedProfile });
       setDraft(result.draft);
       setPatchStatus(result.status);
-      setMessage(result.status === 'completed' ? 'Draft patching completed.' : 'Draft patching is running. You can keep editing and reviewing.');
-      void pollPatchProgress();
+      const [artifacts, reviewState] = await Promise.all([getPatchArtifacts(selectedPackageId), getPatchReviewState(selectedPackageId)]);
+      setPatchArtifacts(artifacts);
+      setPatchReviewState(reviewState);
+      if (result.status === 'completed' && !hasPatchArtifacts(artifacts)) {
+        setPatchStatus('unknown');
+        setMessage('No patch artifacts found. Start patching to create a new checkpoint.');
+      } else {
+        setMessage(result.status === 'completed' ? 'Draft patching completed.' : 'Draft patching is running. You can keep editing and reviewing.');
+        void pollPatchProgress();
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Patch step failed.');
     } finally {
@@ -525,10 +623,8 @@ export function App() {
       setPatchReviewState(result.review_state);
       if (result.validation_errors.length > 0) {
         setMessage('Review agent produced schema issues. No review items were resolved.');
-      } else if (result.unresolved_item_ids.length > 0) {
-        setMessage(`Review agent resolved ${result.resolved_count} item${result.resolved_count === 1 ? '' : 's'}; ${result.unresolved_item_ids.length} still need manual review.`);
       } else {
-        setMessage(`Review agent resolved ${result.resolved_count} item${result.resolved_count === 1 ? '' : 's'}.`);
+        setMessage(resolutionSummaryMessage(result.resolved_count, result.unresolved_item_ids.length, result.resolution_decisions || []));
       }
       void onShowPatchArtifacts();
     } catch (error) {
@@ -561,7 +657,7 @@ export function App() {
       ]);
       setPatchStatus(status);
       setPatchProgress(progress || null);
-      if (hasPatchArtifacts(artifacts)) setPatchArtifacts(artifacts);
+      setPatchArtifacts(artifacts);
       setPatchReviewState(reviewState);
     } catch {
       // ignore polling errors
@@ -703,7 +799,7 @@ export function App() {
               <p>Create the initial profile draft, edit and lock fields, then patch the draft with chunk evidence while reviewing issues as they appear.</p>
               <div className="actions">
                 <button onClick={() => void onDraft()} disabled={!selectedPackageId || !selectedProfile || !!busy}>{busy === 'draft' ? 'Drafting...' : draft ? 'Re-create and remove old draft' : 'Create new draft'}</button>
-                <button onClick={() => void onPatch()} disabled={!draft || !selectedProfile || !!busy || isPatching}>{isPatching ? 'Patching...' : patchStatus || patchArtifacts ? 'Resume patching from checkpoint' : 'Start new patching'}</button>
+                <button onClick={() => void onPatch()} disabled={!draft || !selectedProfile || !!busy || isPatching}>{patchButtonLabel}</button>
                 <button className="ghost" onClick={() => void onShowPatchArtifacts()} disabled={!selectedPackageId || busy === 'load'}>Show/refresh artifacts</button>
               </div>
               {patchStatus && (
@@ -753,7 +849,7 @@ export function App() {
                     <button className={reviewTab === 'unmapped' ? 'active' : ''} onClick={() => setReviewTab('unmapped')}>Unmapped ({unmappedReviewFacts.length})</button>
                     <button className={reviewTab === 'resolved' ? 'active' : ''} onClick={() => setReviewTab('resolved')}>Resolved ({resolvedReviewItems.length})</button>
                   </div>
-                  {reviewTab === 'matched' && <ReviewItemList items={matchedReviewItems} onResolve={(itemId) => void onResolveReviewItem(itemId)} onApplyPatch={(itemId, value) => void onApplyPatch(itemId, value)} />}
+                  {reviewTab === 'matched' && <ReviewItemList items={matchedReviewItems} draft={draft} onResolve={(itemId) => void onResolveReviewItem(itemId)} onApplyPatch={(itemId, value) => void onApplyPatch(itemId, value)} />}
                   {reviewTab === 'unmapped' && (
                     <UnmappedFactList
                       facts={unmappedReviewFacts}
@@ -762,7 +858,7 @@ export function App() {
                       onAssign={(key, field) => void onAssignUnmappedFact(key, field)}
                     />
                   )}
-                  {reviewTab === 'resolved' && <ReviewItemList items={resolvedReviewItems} onResolve={(itemId) => void onResolveReviewItem(itemId)} />}
+                  {reviewTab === 'resolved' && <ReviewItemList items={resolvedReviewItems} draft={draft} onResolve={(itemId) => void onResolveReviewItem(itemId)} />}
                 </div>
               )}
             </div>

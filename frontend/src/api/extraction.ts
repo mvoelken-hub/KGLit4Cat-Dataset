@@ -46,12 +46,20 @@ export type PatchReviewResolutionItem = {
   file_name?: string;
 };
 
+export type PatchReviewDecision = {
+  id: string;
+  outcome: 'included' | 'already_present' | 'excluded' | 'unresolved' | string;
+  note: string;
+  target_path?: string | null;
+};
+
 export type PatchReviewResolutionResponse = {
   draft: object;
   review_state: PatchReviewState;
   resolved_count: number;
   unresolved_item_ids: string[];
   validation_errors: string[];
+  resolution_decisions: PatchReviewDecision[];
 };
 
 export async function getExistingInitialContext(data_package_id: string): Promise<InitialContext | null> {
