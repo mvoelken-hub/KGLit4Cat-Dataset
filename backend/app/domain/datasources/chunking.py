@@ -11,6 +11,7 @@ from app.domain.datasources.datasource import (
 )
 
 from app.domain.datasources.text_quality import (
+    TextQualityConfig,
     TextQualityDecision,
     DecisionKind,
     classify_text_line
@@ -40,6 +41,7 @@ class ContentChunk(BaseModel):
     file_path: str
     start_idx: int = Field(..., ge=0, description="Start line index of the chunk in the original file")
     end_idx: int = Field(..., ge=0, description="End line index of the chunk in the original file")
+    filtered_line_indices: list[int] = Field(default_factory=list, description="Original line indices that passed the text quality filter and are included in this chunk")
     summary: str | None = None
     embedding: list[float] | None = None
 
@@ -59,15 +61,32 @@ class ContentChunk(BaseModel):
         buffer_window_size: int = 1,
         embedding_batch_size: int = 32,
         semantic_chunking_threshold: float = 95.0,
+        protected_line_indices: list[int] | None = None,
     ) -> list["ContentChunk"]:
         
         chunk_list: list[ContentChunk] = []
         
         lines: list[str] = file_entry.get_extracted_content().splitlines(keepends=True)
+
         filtered_lines: list[FilteredLine] = [
             FilteredLine(text=line, line_idx=i) for i, line in enumerate(lines)
             if text_classification_func(line).kind == DecisionKind.KEEP
         ]
+
+        # Ensure explicitly protected lines are always present, even if the
+        # classifier would have dropped them.  They are inserted in original
+        # order and deduplicated by line_idx.
+        if protected_line_indices:
+            protected = {
+                line.line_idx: line
+                for line in filtered_lines
+            }
+            for i in protected_line_indices:
+                if 0 <= i < len(lines) and i not in protected:
+                    protected[i] = FilteredLine(text=lines[i], line_idx=i)
+            filtered_lines = [
+                protected[i] for i in sorted(protected)
+            ]
 
         if not filtered_lines:
             return []
@@ -78,7 +97,8 @@ class ContentChunk(BaseModel):
                 data_package_id=data_package_id,
                 file_path=file_entry.file_path,
                 start_idx=filtered_lines[0].line_idx,
-                end_idx=filtered_lines[-1].line_idx
+                end_idx=filtered_lines[-1].line_idx,
+                filtered_line_indices=[line.line_idx for line in filtered_lines]
             )]
         
         combined_lines = combine_lines(
@@ -118,7 +138,8 @@ class ContentChunk(BaseModel):
                 data_package_id=data_package_id,
                 file_path=file_entry.file_path,
                 start_idx=group[0].line.line_idx,
-                end_idx=group[-1].line.line_idx
+                end_idx=group[-1].line.line_idx,
+                filtered_line_indices=[item.line.line_idx for item in group]
             ))
 
         return chunk_list

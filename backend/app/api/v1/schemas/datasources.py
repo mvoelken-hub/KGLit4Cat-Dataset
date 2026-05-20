@@ -1,6 +1,7 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.domain.datasources import DataPackage
+from app.domain.datasources.text_quality import TextQualityConfig
 
 from app.core.task_registry import TaskStatus
 
@@ -30,6 +31,22 @@ class ChunkingRequest(BaseModel):
     embedding_batch_size: int = Field(32, ge=1, description="Number of chunks to process in each embedding batch")
     semantic_chunking_threshold: float = Field(95.0, ge=0.0, le=100.0, description="Threshold for semantic chunking quality (0-100)")
     replace_existing_chunks: bool = Field(False, description="Replace previously persisted chunks with a new chunking run")
+    protected_line_indices: dict[str, list[int]] = Field(default_factory=dict, description="Map of file_path -> list of 0-based line indices to always keep regardless of text quality filter")
+    text_quality_config: TextQualityConfig | None = Field(None, description="Optional per-request tuning of the text-quality classifier")
+
+    @model_validator(mode='before')
+    @classmethod
+    def _parse_json_strings(cls, data: dict) -> dict:
+        """Allow these nested fields to arrive as JSON strings from query params."""
+        import json
+        for key in ('protected_line_indices', 'text_quality_config'):
+            value = data.get(key)
+            if isinstance(value, str):
+                try:
+                    data[key] = json.loads(value)
+                except json.JSONDecodeError:
+                    data[key] = {} if key == 'protected_line_indices' else None
+        return data
 
 class ChunkResponse(BaseModel):
     content: str
@@ -37,6 +54,7 @@ class ChunkResponse(BaseModel):
     file_path: str
     start_idx: int
     end_idx: int
+    filtered_line_indices: list[int] = []
     summary: str | None = None
 
 class ChunkRequestResponse(BaseModel):

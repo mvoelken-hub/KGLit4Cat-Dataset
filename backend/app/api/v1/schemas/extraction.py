@@ -51,6 +51,68 @@ class PatchDraftResponse(BaseModel):
     status: TaskStatus
 
 
+class SaveDraftRequest(BaseModel):
+    data_package_id: str = Field(..., description="ID of the uploaded data package.")
+    draft: dict[str, Any] = Field(..., description="Updated draft object to persist.")
+
+
+class ProtectedFieldsRequest(BaseModel):
+    fields: list[str] = Field(default_factory=list, description="Top-level field paths to protect from patching.")
+
+
+class PatchProgressResponse(BaseModel):
+    status: TaskStatus
+    progress: dict[str, Any] | None = None
+
+
+class PatchArtifactsResponse(BaseModel):
+    patches: list[dict[str, Any]] = Field(default_factory=list)
+    quality_reports: list[dict[str, Any]] = Field(default_factory=list)
+    unmapped_facts: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class PatchReviewState(BaseModel):
+    resolved_item_ids: list[str] = Field(default_factory=list)
+    unmapped_assignments: dict[str, str] = Field(default_factory=dict)
+    resolution_notes: dict[str, str] = Field(default_factory=dict)
+    resolved_at: dict[str, str] = Field(default_factory=dict)
+
+
+class PatchReviewItemRequest(BaseModel):
+    id: str
+    kind: str
+    path: str
+    detail: str | None = None
+    issues: list[str] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)
+    patch: dict[str, Any] | None = None
+    fact: str | None = None
+    reason: str | None = None
+    confidence: float | None = None
+    file_name: str | None = None
+
+
+class PatchReviewResolutionRequest(BaseModel):
+    profile_identifier: str = Field(..., description="Identifier of the registered extraction profile.")
+    review_items: list[PatchReviewItemRequest] = Field(default_factory=list)
+
+
+class PatchReviewDecisionResponse(BaseModel):
+    id: str
+    outcome: str
+    note: str
+    target_path: str | None = None
+
+
+class PatchReviewResolutionResponse(BaseModel):
+    draft: dict[str, Any]
+    review_state: PatchReviewState
+    resolved_count: int = 0
+    unresolved_item_ids: list[str] = Field(default_factory=list)
+    validation_errors: list[str] = Field(default_factory=list)
+    resolution_decisions: list[PatchReviewDecisionResponse] = Field(default_factory=list)
+
+
 def _initial_context_response(initial_context: InitialContext) -> InitialContext:
     return initial_context
 

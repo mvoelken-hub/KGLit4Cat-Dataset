@@ -24,6 +24,19 @@ class TextQualityDecision:
     reason: str
 
 
+@dataclass
+class TextQualityConfig:
+    """Tunable thresholds for the text-quality classifier.
+
+    All defaults mirror the original hard-coded behaviour so that omitting
+    the config does not change results.
+    """
+    symbol_ratio_threshold: float = 0.45
+    digit_ratio_threshold: float = 0.45
+    keep_score_threshold: float = 0.45
+    maybe_score_threshold: float = 0.30
+    structured_text_bonus: float = 0.15
+
 
 WORD_RE = re.compile(r"[^\W\d_][^\W\d_'\-]{1,}", re.UNICODE)
 LONG_DENSE_TOKEN_RE = re.compile(r"\S{80,}")
@@ -35,7 +48,12 @@ MOSTLY_NUMERIC_RE = re.compile(
 BASE64ISH_RE = re.compile(r"^[A-Za-z0-9+/=_-]{80,}$")
 REPEATED_CHAR_RE = re.compile(r"(.)\1{20,}")
 
-def classify_text_line(line: str) -> TextQualityDecision:
+
+def classify_text_line(
+    line: str,
+    config: TextQualityConfig | None = None,
+) -> TextQualityDecision:
+    cfg = config or TextQualityConfig()
     s = line.strip()
     if not s:
         return TextQualityDecision(DecisionKind.DROP, 0.0, "empty")
@@ -65,13 +83,13 @@ def classify_text_line(line: str) -> TextQualityDecision:
         score += 0.10
         reasons.append("reasonable_word_length")
     if _looks_like_structured_text(s):
-        score += 0.15
+        score += cfg.structured_text_bonus
         reasons.append("structured_text")
     # Negative Signals
-    if features["digit_ratio"] >= 0.45:
+    if features["digit_ratio"] >= cfg.digit_ratio_threshold:
         score -= 0.25
         reasons.append("too_many_digits")
-    if features["symbol_ratio"] >= 0.45:
+    if features["symbol_ratio"] >= cfg.symbol_ratio_threshold:
         score -= 0.25
         reasons.append("too_many_symbols")
     if features["space_ratio"] < 0.02 and length > 60:
@@ -90,9 +108,9 @@ def classify_text_line(line: str) -> TextQualityDecision:
         score -= 0.20
         reasons.append("high_entropy_dense_text")
     score = max(0.0, min(1.0, score))
-    if score >= 0.45:
+    if score >= cfg.keep_score_threshold:
         return TextQualityDecision(DecisionKind.KEEP, score, ", ".join(reasons))
-    if score >= 0.30:
+    if score >= cfg.maybe_score_threshold:
         return TextQualityDecision(DecisionKind.MAYBE, score, ", ".join(reasons))
     return TextQualityDecision(DecisionKind.DROP, score, ", ".join(reasons))
 
@@ -153,7 +171,7 @@ def _looks_like_structured_text(s: str) -> bool:
     structured_patterns = [
         r"^\s*[-*•]\s+\S+",
         r"^\s*#{1,6}\s+\S+",
-        r"^\s*[A-Za-z0-9_.\- ]{2,80}\s*[:=]\s*\S+",
-        r"^\s*\"?[A-Za-z0-9_.\- ]+\"?\s*:\s*",
+        r"^\s*[A-Za-z0-9_#.\-$ ]{2,80}\s*[:=]\s*\S+",
+        r"^\s*\"?[A-Za-z0-9_#.\-$ ]+\"?\s*:\s*",
     ]
     return any(re.search(pattern, s) for pattern in structured_patterns)

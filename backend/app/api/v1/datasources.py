@@ -114,6 +114,30 @@ async def get_file_entry_content(
         _raise_datasource_error(exc)
 
 
+@router.get("/{id}/chunks/status")
+async def get_chunk_status(
+    id: str,
+    datasource_service: DataSourceService = Depends(get_datasource_service),
+):
+    try:
+        chunks = datasource_service.get_completed_content_chunks_by_file(id)
+        return {"has_chunks": bool(chunks), "file_count": len(chunks)}
+    except Exception as exc:
+        _raise_datasource_error(exc)
+
+
+@router.get("/{id}/chunks", response_model=list[list[ChunkResponse]])
+async def get_data_package_chunks(
+    id: str,
+    datasource_service: DataSourceService = Depends(get_datasource_service),
+):
+    try:
+        chunks_by_file = datasource_service.get_content_chunks_by_file(id)
+        return [[ChunkResponse(**chunk.model_dump()) for chunk in chunks] for chunks in chunks_by_file]
+    except Exception as exc:
+        _raise_datasource_error(exc)
+
+
 @router.post("/chunk", response_model=ChunkRequestResponse)
 async def chunk_file_entries_in_data_package(
     chunking_request: Annotated[ChunkingRequest, Query(..., description="Chunking parameters")],
@@ -125,7 +149,9 @@ async def chunk_file_entries_in_data_package(
             buffer_window_size=chunking_request.buffer_window_size,
             embedding_batch_size=chunking_request.embedding_batch_size,
             semantic_chunking_threshold=chunking_request.semantic_chunking_threshold,
-            replace_existing_chunks=chunking_request.replace_existing_chunks
+            replace_existing_chunks=chunking_request.replace_existing_chunks,
+            protected_line_indices=chunking_request.protected_line_indices,
+            text_quality_config=chunking_request.text_quality_config,
         )
         return ChunkRequestResponse(
             chunks=[[ChunkResponse(**chunk.model_dump()) for chunk in chunks] for chunks in chunks_by_file],

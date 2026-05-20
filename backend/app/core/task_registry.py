@@ -13,6 +13,7 @@ class TaskStillRunningError(Exception):
     """Raised when trying to create a task with a name that is already running."""
 
 class TaskStatus(Enum):
+    UNKNOWN = "unknown"
     RUNNING = "running"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
@@ -32,6 +33,7 @@ class TaskInfo:
     task: asyncio.Task
     status: TaskStatus
     type: TaskType
+    progress: dict[str, Any] | None = None
 
 class TaskRegistry:
     """
@@ -83,7 +85,12 @@ class TaskRegistry:
 
     def get_task_info(self, name: str) -> TaskInfo | None:
         return self.tasks.get(name)
-    
+
+    def update_progress(self, name: str, progress: dict[str, Any]) -> None:
+        task_info = self.get_task_info(name)
+        if task_info:
+            task_info.progress = progress
+
     async def cancel_task(self, name: str):
         task_info = self.get_task_info(name)
 

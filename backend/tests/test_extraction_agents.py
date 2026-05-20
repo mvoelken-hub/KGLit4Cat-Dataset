@@ -29,6 +29,10 @@ from app.domain.extraction import (
     validate_json_output_against_schema,
     patch_draft_from_content_chunks,
 )
+from app.domain.extraction.sanitizers import (
+    normalize_review_draft,
+    sanitize_document_against_schema,
+)
 from app.domain.profiles import ProfileManifest, validate_document_against_profile
 
 
@@ -533,8 +537,251 @@ class ExtractionAgentHelperTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["keywords"], ["existing", "new"])
         self.assertEqual(result["items"][0]["label"], "new")
         self.assertEqual(result["items"][1]["label"], "added")
+        self.assertNotIn("id", result["items"][1])
         self.assertNotIn("ignored", result)
         self.assertNotIn("ignored", draft)
+
+    def test_sanitize_document_removes_optional_schema_invalid_values(self):
+        schema = {
+            "$schema": "https://json-schema.org/draft/2019-09/schema",
+            "$defs": {
+                "Dataset": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "dataset_distribution": {
+                            "type": "array",
+                            "items": {"$ref": "#/$defs/Distribution"},
+                        }
+                    },
+                },
+                "Distribution": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "title": {"type": "string"},
+                        "checksum": {
+                            "anyOf": [
+                                {"$ref": "#/$defs/Checksum"},
+                                {"type": "null"},
+                            ]
+                        },
+                    },
+                },
+                "Checksum": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["algorithm", "checksum_value"],
+                    "properties": {
+                        "algorithm": {"$ref": "#/$defs/ChecksumAlgorithm"},
+                        "checksum_value": {
+                            "type": "string",
+                            "pattern": "([0-9a-fA-F]{2})*",
+                        },
+                    },
+                },
+                "ChecksumAlgorithm": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {"title": {"type": "string"}},
+                },
+            },
+        }
+
+        result = sanitize_document_against_schema(
+            document={
+                "dataset_distribution": [
+                    {
+                        "id": "synthetic-id",
+                        "title": "data.dx",
+                        "checksum": {"algorithm": "md5", "checksum_value": "abcdef"},
+                    }
+                ]
+            },
+            json_schema=schema,
+            target_class="Dataset",
+        )
+
+        self.assertEqual(result, {"dataset_distribution": [{"title": "data.dx"}]})
+
+    def test_normalize_review_draft_replaces_redundant_descriptions_and_localizes_ids(self):
+        result = normalize_review_draft(
+            {
+                "id": "1H_NMR_clean",
+                "title": [
+                    "1H_NMR_-1H_NMR_clean",
+                    "1H NMR clean",
+                ],
+                "was_generated_by": [
+                    {
+                        "id": "https://w3id.org/nfdi-de/activity/1H_NMR_acquisition",
+                        "description": [
+                            "1H NMR spectral data acquisition using a Bruker NMR system.",
+                            "1H NMR spectral data acquisition using a Bruker NMR system with pulse sequence zg30.",
+                        ],
+                        "carried_out_by": [
+                            {
+                                "id": "agent-bruker_nmr_system",
+                                "title": "Bruker NMR",
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+
+        activity = result["was_generated_by"][0]
+        self.assertEqual(result["title"], ["1H NMR clean"])
+        self.assertEqual(
+            activity["id"],
+            "1h-nmr-clean/activity/1h-nmr-acquisition",
+        )
+        self.assertEqual(
+            activity["description"],
+            [
+                "1H NMR spectral data acquisition using a Bruker NMR system with pulse sequence zg30."
+            ],
+        )
+        self.assertEqual(
+            activity["carried_out_by"][0]["id"],
+            "1h-nmr-clean/agent/bruker-nmr-system",
+        )
+
+    def test_normalize_review_draft_deduplicates_attribute_objects(self):
+        result = normalize_review_draft(
+            {
+                "id": "1H_NMR_clean",
+                "is_about_entity": [
+                    {
+                        "id": "entity-sample",
+                        "has_qualitative_attribute": [
+                            {"value": "CDCl3", "title": "Solvent"},
+                            {"value": "CDCl3", "title": "Solvent"},
+                            {"value": "DMSO", "title": "Solvent"},
+                        ],
+                    }
+                ],
+                "was_generated_by": [
+                    {
+                        "id": "activity-nmr",
+                        "has_quantitative_attribute": [
+                            {
+                                "has_quantity_type": "frequency",
+                                "unit": "MHz",
+                                "value": 400.0,
+                                "title": "Magnetic Field Strength",
+                            },
+                            {
+                                "has_quantity_type": "frequency",
+                                "unit": "MHz",
+                                "value": 400.0,
+                                "title": "Magnetic Field Strength",
+                            },
+                            {
+                                "has_quantity_type": "frequency",
+                                "unit": "MHz",
+                                "value": 500.0,
+                                "title": "Magnetic Field Strength",
+                            },
+                        ],
+                    }
+                ],
+            }
+        )
+
+        entity = result["is_about_entity"][0]
+        activity = result["was_generated_by"][0]
+        self.assertEqual(
+            entity["has_qualitative_attribute"],
+            [
+                {"value": "CDCl3", "title": "Solvent"},
+                {"value": "DMSO", "title": "Solvent"},
+            ],
+        )
+        self.assertEqual(
+            activity["has_quantitative_attribute"],
+            [
+                {
+                    "has_quantity_type": "frequency",
+                    "unit": "MHz",
+                    "value": 400.0,
+                    "title": "Magnetic Field Strength",
+                },
+                {
+                    "has_quantity_type": "frequency",
+                    "unit": "MHz",
+                    "value": 500.0,
+                    "title": "Magnetic Field Strength",
+                },
+            ],
+        )
+
+    def test_normalize_review_draft_merges_same_id_objects_and_nested_lists(self):
+        result = normalize_review_draft(
+            {
+                "id": "dataset",
+                "was_generated_by": [
+                    {
+                        "id": "activity-nmr",
+                        "title": ["1H_NMR_Acquisition", "1H NMR Acquisition"],
+                        "has_qualitative_attribute": [
+                            {"value": "zg30", "title": "Pulse Sequence"},
+                        ],
+                    },
+                    {
+                        "id": "activity-nmr",
+                        "description": ["Acquired with Bruker NMR."],
+                        "has_qualitative_attribute": [
+                            {"value": "zg30", "title": "Pulse Sequence"},
+                            {"value": "zg30", "title": "Pulse Sequence"},
+                        ],
+                    },
+                ],
+            }
+        )
+
+        self.assertEqual(
+            result["was_generated_by"],
+            [
+                {
+                    "id": "dataset/activity/nmr",
+                    "title": ["1H NMR Acquisition"],
+                    "has_qualitative_attribute": [
+                        {"value": "zg30", "title": "Pulse Sequence"},
+                    ],
+                    "description": ["Acquired with Bruker NMR."],
+                }
+            ],
+        )
+
+    def test_normalize_review_draft_deduplicates_mixed_arrays_without_merging_distinct_objects(self):
+        result = normalize_review_draft(
+            {
+                "id": "dataset",
+                "mixed": [
+                    "alpha",
+                    "alpha",
+                    1,
+                    1,
+                    True,
+                    True,
+                    {"title": "Solvent", "value": "CDCl3", "ignored": None},
+                    {"title": "Solvent", "value": "CDCl3"},
+                    {"title": "Solvent", "value": "DMSO"},
+                ],
+            }
+        )
+
+        self.assertEqual(
+            result["mixed"],
+            [
+                "alpha",
+                1,
+                True,
+                {"title": "Solvent", "value": "CDCl3", "ignored": None},
+                {"title": "Solvent", "value": "DMSO"},
+            ],
+        )
 
     def test_create_patch_draft_agent_uses_retry_budget(self):
         agent = create_patch_draft_agent(
@@ -570,10 +817,17 @@ class ExtractionAgentHelperTests(unittest.IsolatedAsyncioTestCase):
             ],
             summary="All candidates accepted.",
         )
-        progress: list[tuple[dict, str]] = []
+        progress: list[tuple[dict, str, int, int]] = []
 
-        async def save_progress(draft: dict, patch_record) -> None:
-            progress.append((draft, patch_record.file_name))
+        async def save_progress(
+            draft: dict,
+            patch_record,
+            batch_no: int,
+            total_batches: int,
+        ) -> None:
+            progress.append(
+                (draft, patch_record.file_name, batch_no, total_batches)
+            )
 
         with unittest_mock.patch(
             "app.domain.extraction.patch_draft.review_patch_semantic_quality",
@@ -598,6 +852,121 @@ class ExtractionAgentHelperTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("description", result.patches[0].accepted_fields)
         self.assertEqual(len(progress), 1)
         self.assertEqual(progress[0][0]["description"], "Updated with chunk evidence.")
+        self.assertEqual(progress[0][2:], (1, 1))
+
+    async def test_patch_draft_from_content_chunks_skips_completed_checkpoint(self):
+        chunks = make_content_chunks()
+        patch_file_name = (
+            "1_"
+            + ContentChunk.get_chunk_group_id_from_file_path(chunks[0][0].file_path)
+            + "_patch_1_1.json"
+        )
+        current_draft = {
+            "title": "Mass spectrometry dataset for sample-1",
+            "description": "Already patched.",
+            "keywords": ["mass spectrometry", "sample-1", "checkpoint"],
+        }
+        progress: list[tuple[dict, str, int, int]] = []
+
+        async def save_progress(
+            draft: dict,
+            patch_record,
+            batch_no: int,
+            total_batches: int,
+        ) -> None:
+            progress.append((draft, patch_record.file_name, batch_no, total_batches))
+
+        result = await patch_draft_from_content_chunks(
+            initial_context=InitialContext.model_validate(INITIAL_CONTEXT_OUTPUT),
+            initial_draft=current_draft,
+            content_chunks_by_file=chunks,
+            profile_manifest=make_profile_manifest(),
+            profile_json_schema=PROFILE_JSON_SCHEMA,
+            model=TestModel(
+                call_tools=[],
+                custom_output_text=json.dumps(FIELD_PATCH_OUTPUT),
+            ),
+            num_chunks_per_turn=1,
+            on_patch_processed=save_progress,
+            completed_patch_file_names={patch_file_name},
+        )
+
+        self.assertEqual(result.draft, current_draft)
+        self.assertEqual(result.patches, [])
+        self.assertEqual(progress, [])
+
+    async def test_patch_draft_from_content_chunks_reloads_protected_fields_per_batch(self):
+        from unittest import mock as unittest_mock
+
+        from app.domain.extraction.patch_quality import (
+            CandidateQualityRating,
+            PatchQualityReport,
+        )
+
+        accept_report = PatchQualityReport(
+            overall_decision="accept",
+            candidate_ratings=[
+                CandidateQualityRating(
+                    field_path="description",
+                    decision="accept",
+                    issues=[],
+                ),
+                CandidateQualityRating(
+                    field_path="keywords",
+                    decision="accept",
+                    issues=[],
+                ),
+            ],
+            summary="All candidates accepted.",
+        )
+        chunks = [
+            [
+                ContentChunk(
+                    content="Batch 1",
+                    data_package_id="package-id",
+                    file_path="README.txt",
+                    start_idx=0,
+                    end_idx=0,
+                ),
+                ContentChunk(
+                    content="Batch 2",
+                    data_package_id="package-id",
+                    file_path="README.txt",
+                    start_idx=1,
+                    end_idx=1,
+                ),
+            ]
+        ]
+        protected_calls = 0
+
+        def load_protected_fields() -> list[str]:
+            nonlocal protected_calls
+            protected_calls += 1
+            return [] if protected_calls == 1 else ["description", "keywords"]
+
+        with unittest_mock.patch(
+            "app.domain.extraction.patch_draft.review_patch_semantic_quality",
+            return_value=accept_report,
+        ):
+            result = await patch_draft_from_content_chunks(
+                initial_context=InitialContext.model_validate(INITIAL_CONTEXT_OUTPUT),
+                initial_draft=INITIAL_DRAFT_OUTPUT,
+                content_chunks_by_file=chunks,
+                profile_manifest=make_profile_manifest(),
+                profile_json_schema=PROFILE_JSON_SCHEMA,
+                model=TestModel(
+                    call_tools=[],
+                    custom_output_text=json.dumps(FIELD_PATCH_OUTPUT),
+                ),
+                num_chunks_per_turn=1,
+                protected_fields_loader=load_protected_fields,
+            )
+
+        self.assertEqual(protected_calls, 2)
+        self.assertEqual(result.draft["description"], "Updated with chunk evidence.")
+        self.assertIn("chunk-keyword", result.draft["keywords"])
+        self.assertEqual(result.patches[0].accepted_fields, ["description", "keywords"])
+        self.assertEqual(result.patches[1].accepted_fields, [])
 
 
 if __name__ == "__main__":

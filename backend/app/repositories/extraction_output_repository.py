@@ -92,3 +92,40 @@ class ExtractionOutputRepository(Protocol):
         unmapped_facts: list[UnmappedFact],
     ) -> None:
         ...
+
+    def save_protected_fields(
+        self,
+        *,
+        workflow_id: str,
+        protected_fields: list[str],
+    ) -> None:
+        ...
+
+    def load_protected_fields(self, workflow_id: str) -> list[str]:
+        ...
+
+    def save_patch_review_state(
+        self,
+        *,
+        workflow_id: str,
+        review_state: dict[str, Any],
+    ) -> None:
+        ...
+
+    def load_patch_review_state(self, workflow_id: str) -> dict[str, Any]:
+        ...
+
+    def load_patch_files(self, workflow_id: str) -> list[dict[str, Any]]:
+        ...
+
+    def load_completed_patch_file_names(self, workflow_id: str) -> set[str]:
+        ...
+
+    def load_patch_quality_reports(self, workflow_id: str) -> list[dict[str, Any]]:
+        ...
+
+    def load_unmapped_facts(self, workflow_id: str) -> list[dict[str, Any]]:
+        ...
+
+    def clear_patch_artifacts(self, workflow_id: str) -> None:
+        ...

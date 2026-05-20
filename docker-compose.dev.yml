@@ -27,3 +27,13 @@ services:
       - "127.0.0.1:11433:11433"
     volumes:
       - ./data/docker/ollama/data:/root/.ollama
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: http://127.0.0.1:8000/api/v1
+    ports:
+      - "127.0.0.1:3000:80"
+    restart: unless-stopped

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 from uuid import uuid4
 
@@ -54,9 +54,12 @@ PATCH_DRAFT_INSTRUCTIONS = (
     "entities, distributions, file roles, and qualitative or quantitative "
     "attributes extracted from the chunks. "
     "For objects in lists, include an id field with a stable local "
-    "identifier. Use ids from the current draft to update existing "
-    "objects. Do not use null to delete existing values; null values "
+    "identifier scoped to the dataset or experiment, for example "
+    "'1h-nmr-clean/activity/1h-nmr-acquisition'. Use ids from the current "
+    "draft to update existing objects. Do not use null to delete existing values; null values "
     "are ignored by the merge function. "
+    "If a field is listed as protected, skip it entirely and do not "
+    "produce a candidate for it. "
     + URI_POLICY_INSTRUCTIONS
 )
 
@@ -90,6 +93,7 @@ class PatchDraftDeps:
     profile_manifest: ProfileManifest
     profile_json_schema: dict[str, Any]
     top_level_fields: list[FieldInfo]
+    protected_fields: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -108,7 +112,7 @@ class PatchDraftResult:
     patches: list[PatchRecord]
 
 
-PatchProgressCallback = Callable[[dict[str, Any], PatchRecord], Awaitable[None]]
+PatchProgressCallback = Callable[[dict[str, Any], PatchRecord, int, int], Awaitable[None]]
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +158,14 @@ def create_patch_draft_agent(
             for field in ctx.deps.top_level_fields
         )
 
+        protected_note = ""
+        if ctx.deps.protected_fields:
+            protected_note = (
+                "\n\nProtected fields (DO NOT modify these):\n"
+                + "\n".join(f"- {f}" for f in ctx.deps.protected_fields)
+                + "\n"
+            )
+
         return (
             f"DCAT schema profile:\n{ctx.deps.profile_manifest.identifier}\n\n"
             f"Target class:\n{ctx.deps.profile_manifest.target_class}\n\n"
@@ -171,6 +183,7 @@ def create_patch_draft_agent(
             "Return a JSON object like {\"candidates\": [...]} where each "
             "candidate targets one top-level field. Omit fields with no "
             "relevant information in this chunk batch."
+            f"{protected_note}"
         )
 
     return agent
@@ -188,6 +201,7 @@ async def extract_field_patch_candidates(
     profile_json_schema: dict[str, Any],
     top_level_fields: list[FieldInfo],
     model: Any,
+    protected_fields: list[str] | None = None,
 ) -> list[PatchCandidate]:
     """Extract field-level patch candidates from a chunk batch."""
     agent = create_patch_draft_agent(model=model)
@@ -201,6 +215,7 @@ async def extract_field_patch_candidates(
         profile_manifest=profile_manifest,
         profile_json_schema=profile_json_schema,
         top_level_fields=top_level_fields,
+        protected_fields=protected_fields or [],
     )
     result = await agent.run(
         (
@@ -228,9 +243,18 @@ async def patch_draft_from_content_chunks(
     model: Any,
     num_chunks_per_turn: int,
     on_patch_processed: PatchProgressCallback | None = None,
+    protected_fields: list[str] | None = None,
+    protected_fields_loader: Callable[[], list[str]] | None = None,
+    completed_patch_file_names: set[str] | None = None,
 ) -> PatchDraftResult:
     draft = copy.deepcopy(initial_draft)
     patches: list[PatchRecord] = []
+    completed_patch_file_names = completed_patch_file_names or set()
+    progress_batch_no = 0
+    progress_total_batches = _count_progress_batches(
+        content_chunks_by_file=content_chunks_by_file,
+        num_chunks_per_turn=num_chunks_per_turn,
+    )
 
     top_level_fields = get_top_level_fields(
         profile_json_schema=profile_json_schema,
@@ -254,6 +278,18 @@ async def patch_draft_from_content_chunks(
                 f"{document_index}_{ContentChunk.get_chunk_group_id_from_file_path(document_file_path)}"
                 f"_patch_{batch_index}_{total_batches}.json"
             )
+            if patch_file_name in completed_patch_file_names:
+                progress_batch_no += 1
+                continue
+
+            current_protected_fields = (
+                protected_fields_loader()
+                if protected_fields_loader is not None
+                else protected_fields
+            )
+            protected_top_level_fields = _normalise_protected_fields(
+                current_protected_fields,
+            )
 
             # Step 1: Extract field-level patch candidates from the LLM agent.
             candidates = await extract_field_patch_candidates(
@@ -267,7 +303,16 @@ async def patch_draft_from_content_chunks(
                 profile_json_schema=profile_json_schema,
                 top_level_fields=top_level_fields,
                 model=model,
+                protected_fields=current_protected_fields,
             )
+            candidates = [
+                candidate
+                for candidate in candidates
+                if not _candidate_touches_protected_field(
+                    candidate,
+                    protected_top_level_fields,
+                )
+            ]
 
             # Step 2: Merge accepted candidates into a single proposed patch.
             proposed_patch = _merge_candidates_into_patch(candidates)
@@ -313,6 +358,11 @@ async def patch_draft_from_content_chunks(
                         merged_accepted_patch, candidate_obj.patch,
                     )
                 elif rating.decision == "revise" and rating.revised_patch:
+                    if _patch_touches_protected_field(
+                        rating.revised_patch,
+                        protected_top_level_fields,
+                    ):
+                        continue
                     revised_candidate = apply_merge_patch(
                         draft, rating.revised_patch,
                     )
@@ -347,8 +397,13 @@ async def patch_draft_from_content_chunks(
                         validation_errors=merged_errors,
                     )
                     patches.append(patch_record)
+                    progress_batch_no += 1
                     await _notify_patch_progress(
-                        on_patch_processed, draft, patch_record,
+                        on_patch_processed,
+                        draft,
+                        patch_record,
+                        progress_batch_no,
+                        progress_total_batches,
                     )
                     continue
 
@@ -362,8 +417,13 @@ async def patch_draft_from_content_chunks(
                     validation_errors=[],
                 )
                 patches.append(patch_record)
+                progress_batch_no += 1
                 await _notify_patch_progress(
-                    on_patch_processed, draft, patch_record,
+                    on_patch_processed,
+                    draft,
+                    patch_record,
+                    progress_batch_no,
+                    progress_total_batches,
                 )
             else:
                 # No candidates accepted — record as empty batch.
@@ -376,8 +436,13 @@ async def patch_draft_from_content_chunks(
                     validation_errors=schema_errors or [],
                 )
                 patches.append(patch_record)
+                progress_batch_no += 1
                 await _notify_patch_progress(
-                    on_patch_processed, draft, patch_record,
+                    on_patch_processed,
+                    draft,
+                    patch_record,
+                    progress_batch_no,
+                    progress_total_batches,
                 )
 
     return PatchDraftResult(draft=draft, patches=patches)
@@ -404,6 +469,58 @@ def _merge_candidates_into_patch(
     return result
 
 
+def _count_progress_batches(
+    *,
+    content_chunks_by_file: list[list[ContentChunk]],
+    num_chunks_per_turn: int,
+) -> int:
+    total = 0
+    for chunks in content_chunks_by_file:
+        if not chunks:
+            continue
+        effective_batch_size = max(1, min(num_chunks_per_turn, len(chunks)))
+        total += (len(chunks) + effective_batch_size - 1) // effective_batch_size
+    return total
+
+
+def _normalise_protected_fields(
+    protected_fields: list[str] | None,
+) -> set[str]:
+    return {
+        field.split(".", 1)[0]
+        for field in protected_fields or []
+        if field and field.split(".", 1)[0]
+    }
+
+
+def _candidate_touches_protected_field(
+    candidate: PatchCandidate,
+    protected_fields: set[str],
+) -> bool:
+    return (
+        _field_path_is_protected(candidate.field_path, protected_fields)
+        or _patch_touches_protected_field(candidate.patch, protected_fields)
+    )
+
+
+def _field_path_is_protected(
+    field_path: str,
+    protected_fields: set[str],
+) -> bool:
+    if not protected_fields:
+        return False
+    return field_path.split(".", 1)[0] in protected_fields
+
+
+def _patch_touches_protected_field(
+    patch: dict[str, Any],
+    protected_fields: set[str],
+) -> bool:
+    if not protected_fields:
+        return False
+    return any(key.split(".", 1)[0] in protected_fields for key in patch)
+
+
 # ---------------------------------------------------------------------------
 # Progress notification
 # ---------------------------------------------------------------------------
@@ -412,10 +529,17 @@ async def _notify_patch_progress(
     on_patch_processed: PatchProgressCallback | None,
     draft: dict[str, Any],
     patch_record: PatchRecord,
+    batch_no: int,
+    total_batches: int,
 ) -> None:
     if on_patch_processed is None:
         return
-    await on_patch_processed(copy.deepcopy(draft), patch_record)
+    await on_patch_processed(
+        copy.deepcopy(draft),
+        patch_record,
+        batch_no,
+        total_batches,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -470,14 +594,14 @@ def _merge_list_of_dicts_by_id(
     dst_value: list[dict[str, Any]],
     patch_value: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    for item in dst_value:
-        item.setdefault("id", _new_patch_id())
-
-    dst_items_by_id = {item["id"]: item for item in dst_value}
+    dst_items_by_id = {
+        item["id"]: item
+        for item in dst_value
+        if isinstance(item.get("id"), str) and item.get("id")
+    }
     for item in patch_value:
-        item.setdefault("id", _new_patch_id())
-        item_id = item["id"]
-        if item_id in dst_items_by_id:
+        item_id = item.get("id")
+        if isinstance(item_id, str) and item_id in dst_items_by_id:
             deep_merge(dst_items_by_id[item_id], item)
         else:
             dst_value.append(item)
