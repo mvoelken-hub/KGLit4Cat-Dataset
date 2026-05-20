@@ -97,12 +97,20 @@ class PatchReviewResolutionRequest(BaseModel):
     review_items: list[PatchReviewItemRequest] = Field(default_factory=list)
 
 
+class PatchReviewDecisionResponse(BaseModel):
+    id: str
+    outcome: str
+    note: str
+    target_path: str | None = None
+
+
 class PatchReviewResolutionResponse(BaseModel):
     draft: dict[str, Any]
     review_state: PatchReviewState
     resolved_count: int = 0
     unresolved_item_ids: list[str] = Field(default_factory=list)
     validation_errors: list[str] = Field(default_factory=list)
+    resolution_decisions: list[PatchReviewDecisionResponse] = Field(default_factory=list)
 
 
 def _initial_context_response(initial_context: InitialContext) -> InitialContext:
