@@ -2,27 +2,16 @@
 
 A minimal React/Vite workflow UI for the SIMONE metadata extraction pipeline.
 
-## Run with Docker Compose
+## Quick Start
 
-From the repository root:
-
-```bash
-docker compose --env-file .env.production up -d --build frontend
-```
-
-The app is served at:
-
-```text
-http://127.0.0.1:3000/
-```
-
-The production compose file also starts the full stack when run without a service name:
+Use the `simone` CLI from the repository root:
 
 ```bash
-docker compose --env-file .env.production up -d --build
+simone up      # Production mode (frontend served via nginx in Docker)
+simone dev     # Development mode (frontend runs locally with Vite hot reload)
 ```
 
-For development mode, the `docker-compose.dev.yml` file now includes the frontend service while the API still runs locally through the existing startup script.
+See the root [`README.md`](../README.md) for full setup instructions and prerequisites.
 
 ## Run locally without Docker
 

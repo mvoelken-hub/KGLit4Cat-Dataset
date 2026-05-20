@@ -12,7 +12,7 @@ from app.core.task_registry import task_registry
 
 from app.dependencies import get_semantic_service
 
-from app.setup import start_setup
+from backend.app.bootstrap import start_setup
 
 # Import API routers
 from app.api.v1.datasources import router as datasources_router
@@ -57,7 +57,7 @@ async def lifespan(app: FastAPI):
 # ---------------------------------------------------------------------------
 
 # Create FastAPI app with lifespan management for startup and shutdown actions
-fastapi_app = FastAPI(title="voc4cat-extraction API", lifespan=lifespan)
+fastapi_app = FastAPI(title="Semantic Metadata Extraction API", lifespan=lifespan)
 
 # Configure CORS middleware to allow requests from the frontend application
 fastapi_app.add_middleware(
