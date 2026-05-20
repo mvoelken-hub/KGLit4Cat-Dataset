@@ -19,4 +19,14 @@ dependencies = [
     "rdflib>=7.6.0",
     "rdflib-neo4j>=1.1",
     "scikit-learn>=1.8.0",
+    "typer>=0.15.0",
 ]
+
+[project.scripts]
+simone = "app.cli:app"
+
+[tool.uv]
+package = true
+
+[tool.setuptools]
+packages = ["app"]

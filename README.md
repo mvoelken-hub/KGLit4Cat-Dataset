@@ -15,12 +15,78 @@ In short, the repository serves as an experimental implementation of an LLM-supp
 
 ## Running the Full Stack App
 
-Use the helper scripts in the repository root to start the app:
+### Quick Start
 
-- `up-cpu.bat` starts the CPU setup.
-- `up-gpu.bat` starts the GPU setup.
+After cloning the repository, run the setup assistant from the repo root:
 
-Both scripts let you choose between a production-style Docker setup and a development setup where Neo4j and Ollama run in Docker while the API runs locally.
+```bash
+python setup.py
+```
+
+This script will:
+1. Check if Docker Desktop is installed — if not, it gives you the download link.
+2. Check if `uv` is installed — if not, it gives you the install command.
+3. Check if Node.js is installed (optional, only needed for dev mode).
+4. Run `uv sync` to install Python dependencies.
+5. Print the commands to start the app.
+
+---
+
+### Manual Prerequisites
+
+If you prefer to install manually:
+
+| Tool | Required for | Download |
+|---|---|---|
+| **Docker Desktop** | All modes | [docker.com/get-started](https://www.docker.com/get-started/) |
+| **uv** | All modes | [astral.sh/uv](https://docs.astral.sh/uv/getting-started/installation/) |
+| **Node.js + npm** | `simone dev` only | [nodejs.org](https://nodejs.org/) |
+
+---
+
+### Start the App
+
+**Production mode** (all services in Docker — no Node.js needed):
+
+```bash
+uv run simone up
+```
+
+**Development mode** (Neo4j + Ollama in Docker; API + frontend locally with hot reload):
+
+```bash
+uv run simone dev
+```
+
+**With GPU support** (append `--gpu` to either command):
+
+```bash
+uv run simone up --gpu
+uv run simone dev --gpu
+```
+
+---
+
+### Access the Services
+
+Once started, the services are available at:
+
+| Service | URL |
+|---|---|
+| Frontend | http://127.0.0.1:3000 |
+| API Docs | http://127.0.0.1:8000/docs |
+| Neo4j Browser | http://127.0.0.1:7474/browser/ |
+
+---
+
+### Stop and Status
+
+```bash
+uv run simone down     # Stop all services
+uv run simone status   # Check what's running
+```
+
+---
 
 ### First-Time Ollama Cloud Sign-In
 

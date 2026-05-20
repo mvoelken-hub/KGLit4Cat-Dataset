@@ -2231,7 +2231,7 @@ wheels = [
 [[package]]
 name = "simone"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "charset-normalizer" },
     { name = "fastapi", extra = ["standard"] },
@@ -2247,6 +2247,7 @@ dependencies = [
     { name = "rdflib" },
     { name = "rdflib-neo4j" },
     { name = "scikit-learn" },
+    { name = "typer" },
 ]
 
 [package.metadata]
@@ -2265,6 +2266,7 @@ requires-dist = [
     { name = "rdflib", specifier = ">=7.6.0" },
     { name = "rdflib-neo4j", specifier = ">=1.1" },
     { name = "scikit-learn", specifier = ">=1.8.0" },
+    { name = "typer", specifier = ">=0.15.0" },
 ]
 
 [[package]]

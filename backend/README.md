@@ -1,5 +1,6 @@
-#
+# SIMONE Backend
 
+See the root [`README.md`](../README.md) for instructions on starting the full stack with the `simone` CLI.
 
 ## Vocab Query flow
 **Vocab Query Flow Handout**
