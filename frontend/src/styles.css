@@ -206,9 +206,34 @@ textarea.json-editor-input { resize: vertical; min-height: 80px; }
 .file-viewer-line.chunk-highlight .line-number { font-weight: 700; }
 .line-number { color: var(--muted); min-width: 44px; text-align: right; user-select: none; flex-shrink: 0; }
 .line-content { color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; flex: 1; }
-.file-viewer-footer { padding: 10px 20px; border-top: 1px solid var(--line); font-size: 0.82rem; color: var(--muted); }
+.file-viewer-footer { padding: 10px 20px; border-top: 1px solid var(--line); font-size: 0.82rem; color: var(--muted); max-height: 160px; overflow-y: auto; }
 .chunk-legend { display: flex; flex-wrap: wrap; gap: 8px; }
-.chunk-legend-item { border-radius: 999px; padding: 0.3rem 0.6rem; font-size: 0.76rem; color: var(--ink); border: 1px solid var(--line); }
+.chunk-legend-item { border-radius: 999px; padding: 0.3rem 0.6rem; font-size: 0.76rem; color: var(--ink); border: 1px solid var(--line); flex-shrink: 0; }
+
+/* Chunking dialog */
+.chunking-dialog-overlay { position: fixed; inset: 0; z-index: 10000; background: rgba(26, 26, 26, 0.55); display: flex; align-items: center; justify-content: center; padding: 24px; }
+.chunking-dialog { background: var(--panel); border: 1px solid var(--line); border-radius: 1.2rem; box-shadow: 0 30px 90px rgba(26, 26, 26, 0.18); width: min(1100px, calc(100vw - 48px)); max-height: calc(100vh - 48px); display: grid; grid-template-rows: auto 1fr auto; overflow: hidden; }
+.chunking-dialog-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+.chunking-dialog-header h3 { margin: 0; font-size: 1.1rem; }
+.chunking-dialog-body { overflow: auto; padding: 16px 20px; display: grid; grid-template-columns: 320px 1fr; gap: 20px; }
+.chunking-dialog-footer { display: flex; justify-content: flex-end; gap: 12px; padding: 12px 20px; border-top: 1px solid var(--line); }
+.chunking-form { display: grid; gap: 10px; align-content: start; }
+.form-row { display: grid; grid-template-columns: 1fr 80px; align-items: center; gap: 8px; font-size: 0.88rem; }
+.form-row.checkbox { grid-template-columns: auto 1fr; }
+.form-row input[type="number"] { width: 100%; border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.4rem; background: rgba(255,255,255,0.6); }
+.form-row input[type="checkbox"] { width: 18px; height: 18px; }
+.advanced-panel { display: grid; gap: 8px; padding: 10px; border: 1px dashed var(--line); border-radius: 0.8rem; background: rgba(255,255,255,0.5); }
+.chunking-file-panel { display: grid; gap: 10px; align-content: start; }
+.file-picker { display: grid; gap: 6px; }
+.panel-label { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; }
+.dialog-viewer { max-height: 420px; overflow: auto; border: 1px solid var(--line); border-radius: 0.6rem; background: rgba(255,255,255,0.7); padding: 8px 0; }
+.dialog-viewer .file-viewer-line { user-select: text; }
+.dialog-viewer .line-content { user-select: text; }
+.dialog-viewer ::selection { background: rgba(99, 154, 0, 0.35); }
+.file-viewer-line { cursor: pointer; position: relative; }
+.file-viewer-line.line-protected { outline: 2px solid var(--accent); outline-offset: -2px; }
+.protect-badge { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); color: var(--accent); font-size: 0.9rem; pointer-events: none; }
+button.small { padding: 0.4rem 0.7rem; font-size: 0.78rem; }
 
 @media (max-width: 860px) {
   .hero, .layout { grid-template-columns: 1fr; }

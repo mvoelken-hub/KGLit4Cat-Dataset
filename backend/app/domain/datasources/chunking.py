@@ -11,6 +11,7 @@ from app.domain.datasources.datasource import (
 )
 
 from app.domain.datasources.text_quality import (
+    TextQualityConfig,
     TextQualityDecision,
     DecisionKind,
     classify_text_line
@@ -60,15 +61,32 @@ class ContentChunk(BaseModel):
         buffer_window_size: int = 1,
         embedding_batch_size: int = 32,
         semantic_chunking_threshold: float = 95.0,
+        protected_line_indices: list[int] | None = None,
     ) -> list["ContentChunk"]:
         
         chunk_list: list[ContentChunk] = []
         
         lines: list[str] = file_entry.get_extracted_content().splitlines(keepends=True)
+
         filtered_lines: list[FilteredLine] = [
             FilteredLine(text=line, line_idx=i) for i, line in enumerate(lines)
             if text_classification_func(line).kind == DecisionKind.KEEP
         ]
+
+        # Ensure explicitly protected lines are always present, even if the
+        # classifier would have dropped them.  They are inserted in original
+        # order and deduplicated by line_idx.
+        if protected_line_indices:
+            protected = {
+                line.line_idx: line
+                for line in filtered_lines
+            }
+            for i in protected_line_indices:
+                if 0 <= i < len(lines) and i not in protected:
+                    protected[i] = FilteredLine(text=lines[i], line_idx=i)
+            filtered_lines = [
+                protected[i] for i in sorted(protected)
+            ]
 
         if not filtered_lines:
             return []

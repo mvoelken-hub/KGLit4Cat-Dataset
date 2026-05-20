@@ -1,3 +1,4 @@
+from functools import partial
 from io import BytesIO
 
 from app.core.config import Settings
@@ -5,6 +6,7 @@ from app.ollama.client import OllamaClientWrapper
 from app.core.task_registry import TaskRegistry, TaskInfo, TaskType, TaskStatus
 
 from app.domain.datasources import DataPackage, FileEntry, ContentChunk, FileEntryNotFoundError
+from app.domain.datasources.text_quality import TextQualityConfig, classify_text_line
 from app.repositories.datasource_blob_repository import DataSourceBlobRepository
 
 class DataSourceService:
@@ -76,6 +78,8 @@ class DataSourceService:
         embedding_batch_size: int,
         semantic_chunking_threshold: float,
         replace_existing_chunks: bool = False,
+        protected_line_indices: dict[str, list[int]] | None = None,
+        text_quality_config: TextQualityConfig | None = None,
     ) -> tuple[list[list[ContentChunk]], TaskStatus]:
         
         TASK_NAME = f"chunking:file_entries:{data_package_id}"
@@ -95,6 +99,8 @@ class DataSourceService:
                 embedding_batch_size=embedding_batch_size,
                 semantic_chunking_threshold=semantic_chunking_threshold,
                 delete_existing_chunks=replace_existing_chunks,
+                protected_line_indices=protected_line_indices,
+                text_quality_config=text_quality_config,
             )
             return [], TaskStatus.RUNNING
 
@@ -106,6 +112,8 @@ class DataSourceService:
                 embedding_batch_size=embedding_batch_size,
                 semantic_chunking_threshold=semantic_chunking_threshold,
                 delete_existing_chunks=True,
+                protected_line_indices=protected_line_indices,
+                text_quality_config=text_quality_config,
             )
             return [], TaskStatus.RUNNING
 
@@ -117,6 +125,8 @@ class DataSourceService:
                 embedding_batch_size=embedding_batch_size,
                 semantic_chunking_threshold=semantic_chunking_threshold,
                 delete_existing_chunks=False,
+                protected_line_indices=protected_line_indices,
+                text_quality_config=text_quality_config,
             )
             return [], TaskStatus.RUNNING        
         
@@ -154,6 +164,8 @@ class DataSourceService:
         embedding_batch_size: int,
         semantic_chunking_threshold: float,
         delete_existing_chunks: bool,
+        protected_line_indices: dict[str, list[int]] | None = None,
+        text_quality_config: TextQualityConfig | None = None,
     ) -> None:
         if delete_existing_chunks:
             self.blob_repository.delete_content_chunks(data_package_id)
@@ -163,7 +175,9 @@ class DataSourceService:
                 data_package_id=data_package_id,
                 buffer_window_size=buffer_window_size,
                 embedding_batch_size=embedding_batch_size,
-                semantic_chunking_threshold=semantic_chunking_threshold
+                semantic_chunking_threshold=semantic_chunking_threshold,
+                protected_line_indices=protected_line_indices,
+                text_quality_config=text_quality_config,
             ),
             type=TaskType.CHUNKING,
             name=task_name
@@ -171,20 +185,38 @@ class DataSourceService:
 
     # Task runner
 
-    async def _run_chunking_task(self, data_package_id: str, buffer_window_size: int, embedding_batch_size: int, semantic_chunking_threshold: float):
+    async def _run_chunking_task(
+        self,
+        data_package_id: str,
+        buffer_window_size: int,
+        embedding_batch_size: int,
+        semantic_chunking_threshold: float,
+        protected_line_indices: dict[str, list[int]] | None = None,
+        text_quality_config: TextQualityConfig | None = None,
+    ):
         data_package = self.get_data_package(data_package_id)
         files = data_package.files
 
         if not files:
             raise FileEntryNotFoundError("No file entries found in the data package.")
+
+        # Bake the config into the classification function so the chunking
+        # domain layer stays free of config-awareness.
+        if text_quality_config is not None:
+            classification_func = partial(classify_text_line, config=text_quality_config)
+        else:
+            classification_func = classify_text_line
         
         for file_entry in files:
+            file_protected = protected_line_indices.get(file_entry.file_path) if protected_line_indices else None
             content_chunks = await ContentChunk.create_chunks_for_file_entry(
                 data_package_id=data_package_id,
                 file_entry=file_entry,
                 embedding_func=self.ollama_client.get_embeddings,
+                text_classification_func=classification_func,
                 buffer_window_size=buffer_window_size,
                 embedding_batch_size=embedding_batch_size,
                 semantic_chunking_threshold=semantic_chunking_threshold,
+                protected_line_indices=file_protected,
             )
             self.blob_repository.save_content_chunks(content_chunks)

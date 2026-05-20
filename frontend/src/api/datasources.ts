@@ -1,5 +1,5 @@
 import { apiBaseUrl, buildQuery, readJson } from './client';
-import type { ChunkRequestResponse, ChunkResponse, DataPackageResponse } from './types';
+import type { ChunkRequestResponse, ChunkResponse, DataPackageResponse, TextQualityConfig } from './types';
 
 export async function listDataPackages(): Promise<DataPackageResponse[]> {
   return readJson(await fetch(apiBaseUrl + '/datasources'));
@@ -17,6 +17,8 @@ export async function chunkDataPackage(input: {
   embedding_batch_size?: number;
   semantic_chunking_threshold?: number;
   replace_existing_chunks?: boolean;
+  protected_line_indices?: Record<string, number[]>;
+  text_quality_config?: TextQualityConfig;
 }): Promise<ChunkRequestResponse> {
   const query = buildQuery({
     id: input.id,
@@ -24,6 +26,8 @@ export async function chunkDataPackage(input: {
     embedding_batch_size: input.embedding_batch_size ?? 32,
     semantic_chunking_threshold: input.semantic_chunking_threshold ?? 95,
     replace_existing_chunks: input.replace_existing_chunks ?? false,
+    protected_line_indices: input.protected_line_indices ? JSON.stringify(input.protected_line_indices) : undefined,
+    text_quality_config: input.text_quality_config ? JSON.stringify(input.text_quality_config) : undefined,
   });
   return readJson(await fetch(apiBaseUrl + '/datasources/chunk' + query, { method: 'POST' }));
 }

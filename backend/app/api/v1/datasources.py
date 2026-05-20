@@ -149,7 +149,9 @@ async def chunk_file_entries_in_data_package(
             buffer_window_size=chunking_request.buffer_window_size,
             embedding_batch_size=chunking_request.embedding_batch_size,
             semantic_chunking_threshold=chunking_request.semantic_chunking_threshold,
-            replace_existing_chunks=chunking_request.replace_existing_chunks
+            replace_existing_chunks=chunking_request.replace_existing_chunks,
+            protected_line_indices=chunking_request.protected_line_indices,
+            text_quality_config=chunking_request.text_quality_config,
         )
         return ChunkRequestResponse(
             chunks=[[ChunkResponse(**chunk.model_dump()) for chunk in chunks] for chunks in chunks_by_file],

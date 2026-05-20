@@ -18,7 +18,8 @@ import {
 } from './api/extraction';
 import { listProfiles } from './api/profiles';
 import { JsonEditor, type JsonObject, type JsonPatchMarker, type JsonValue, setValueAtPath, getValueAtPath, extractPatchInnerValue, PatchValueEditor } from './components/JsonEditor';
-import type { ChunkRequestResponse, ChunkResponse, DataPackageResponse, FileEntryResponse, InitialContext, ProfileManifestResponse } from './api/types';
+import { ChunkingDialog } from './components/ChunkingDialog';
+import type { ChunkRequestResponse, ChunkResponse, DataPackageResponse, FileEntryResponse, InitialContext, ProfileManifestResponse, TextQualityConfig } from './api/types';
 import type { PatchArtifacts, PatchProgress, PatchReviewResolutionItem, PatchReviewState, PatchTaskStatus } from './api/extraction';
 
 type BusyKey = 'upload' | 'chunk' | 'context' | 'draft' | 'patch' | 'resolve' | 'load';
@@ -469,6 +470,7 @@ export function App() {
   const [message, setMessage] = useState('Loading workspace.');
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [reviewPanelCollapsed, setReviewPanelCollapsed] = useState(false);
+  const [chunkingDialogOpen, setChunkingDialogOpen] = useState(false);
   const saveDraftTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const selectedPackage = useMemo(() => packages.find((item) => item.id === selectedPackageId) || null, [packages, selectedPackageId]);
@@ -528,11 +530,19 @@ export function App() {
     }
   }
 
-  async function onChunk(replace = false) {
+  async function onChunk(params?: { replace_existing_chunks: boolean; buffer_window_size: number; embedding_batch_size: number; semantic_chunking_threshold: number; protected_line_indices: Record<string, number[]>; text_quality_config: TextQualityConfig }) {
     if (!selectedPackageId) return;
     setBusy('chunk');
     try {
-      const result = await chunkDataPackage({ id: selectedPackageId, replace_existing_chunks: replace });
+      const result = await chunkDataPackage({
+        id: selectedPackageId,
+        replace_existing_chunks: params?.replace_existing_chunks ?? false,
+        buffer_window_size: params?.buffer_window_size,
+        embedding_batch_size: params?.embedding_batch_size,
+        semantic_chunking_threshold: params?.semantic_chunking_threshold,
+        protected_line_indices: params?.protected_line_indices,
+        text_quality_config: params?.text_quality_config,
+      });
       setChunkResult(result);
       setHasChunks(result.status === 'completed');
       setMessage(result.status === 'completed' ? 'Chunks are ready.' : 'Chunking is running...');
@@ -890,7 +900,7 @@ export function App() {
               <h2>Upload dataset and create chunks</h2>
               <p>The archive is stored as a data package. Chunking prepares the package for later patch and enrichment stages.</p>
               <div className="actions">
-                <button onClick={() => void onChunk(hasChunks)} disabled={!selectedPackageId || !!busy}>{busy === 'chunk' ? 'Checking...' : hasChunks ? 'Re-create and remove old chunks' : 'Create new chunks'}</button>
+                <button onClick={() => setChunkingDialogOpen(true)} disabled={!selectedPackageId || !!busy}>{busy === 'chunk' ? 'Checking...' : hasChunks ? 'Re-create and remove old chunks' : 'Create new chunks'}</button>
               </div>
               {selectedPackage && (
                 <div className="file-list">
@@ -918,6 +928,17 @@ export function App() {
                   onClose={closeFileViewer}
                 />
               )}
+              <ChunkingDialog
+                isOpen={chunkingDialogOpen}
+                packageId={selectedPackageId}
+                dataPackage={selectedPackage}
+                chunksByFile={chunksByFile}
+                onClose={() => setChunkingDialogOpen(false)}
+                onSubmit={(params) => {
+                  setChunkingDialogOpen(false);
+                  void onChunk(params);
+                }}
+              />
             </div>
           </article>
 
