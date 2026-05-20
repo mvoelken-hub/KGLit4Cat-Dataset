@@ -239,14 +239,24 @@ def print_next_steps(has_node: bool) -> None:
     print("=" * 60)
     print("")
     print("Start the application:")
-    print(f"  {Colors.BOLD}uv run simone up{Colors.END}       # Production mode (all services in Docker)")
-    if has_node:
-        print(f"  {Colors.BOLD}uv run simone dev{Colors.END}      # Development mode (local API + frontend with hot reload)")
-    print(f"  {Colors.BOLD}uv run simone up --gpu{Colors.END}   # Production mode with GPU support")
-    print("")
-    print("Other useful commands:")
-    print(f"  {Colors.BOLD}uv run simone down{Colors.END}     # Stop all services")
-    print(f"  {Colors.BOLD}uv run simone status{Colors.END}   # Check what's running")
+    if sys.platform == "win32":
+        print(f"  {Colors.BOLD}simone.bat up{Colors.END}       # Production mode (all services in Docker)")
+        if has_node:
+            print(f"  {Colors.BOLD}simone.bat dev{Colors.END}      # Development mode (local API + frontend with hot reload)")
+        print(f"  {Colors.BOLD}simone.bat up --gpu{Colors.END}   # Production mode with GPU support")
+        print("")
+        print("Other useful commands:")
+        print(f"  {Colors.BOLD}simone.bat down{Colors.END}     # Stop all services")
+        print(f"  {Colors.BOLD}simone.bat status{Colors.END}   # Check what's running")
+    else:
+        print(f"  {Colors.BOLD}./simone up{Colors.END}       # Production mode (all services in Docker)")
+        if has_node:
+            print(f"  {Colors.BOLD}./simone dev{Colors.END}      # Development mode (local API + frontend with hot reload)")
+        print(f"  {Colors.BOLD}./simone up --gpu{Colors.END}   # Production mode with GPU support")
+        print("")
+        print("Other useful commands:")
+        print(f"  {Colors.BOLD}./simone down{Colors.END}     # Stop all services")
+        print(f"  {Colors.BOLD}./simone status{Colors.END}   # Check what's running")
     print("")
     print("Service URLs once started:")
     print("  Frontend:    http://127.0.0.1:3000")

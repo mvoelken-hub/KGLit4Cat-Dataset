@@ -49,20 +49,33 @@ If you prefer to install manually:
 **Production mode** (all services in Docker — no Node.js needed):
 
 ```bash
-uv run simone up
+# Windows
+simone.bat up
+
+# macOS / Linux
+./simone up
 ```
 
 **Development mode** (Neo4j + Ollama in Docker; API + frontend locally with hot reload):
 
 ```bash
-uv run simone dev
+# Windows
+simone.bat dev
+
+# macOS / Linux
+./simone dev
 ```
 
 **With GPU support** (append `--gpu` to either command):
 
 ```bash
-uv run simone up --gpu
-uv run simone dev --gpu
+# Windows
+simone.bat up --gpu
+simone.bat dev --gpu
+
+# macOS / Linux
+./simone up --gpu
+./simone dev --gpu
 ```
 
 ---
@@ -82,8 +95,13 @@ Once started, the services are available at:
 ### Stop and Status
 
 ```bash
-uv run simone down     # Stop all services
-uv run simone status   # Check what's running
+# Windows
+simone.bat down     # Stop all services
+simone.bat status   # Check what's running
+
+# macOS / Linux
+./simone down
+./simone status
 ```
 
 ---
