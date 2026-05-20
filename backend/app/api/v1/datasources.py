@@ -126,6 +126,18 @@ async def get_chunk_status(
         _raise_datasource_error(exc)
 
 
+@router.get("/{id}/chunks", response_model=list[list[ChunkResponse]])
+async def get_data_package_chunks(
+    id: str,
+    datasource_service: DataSourceService = Depends(get_datasource_service),
+):
+    try:
+        chunks_by_file = datasource_service.get_content_chunks_by_file(id)
+        return [[ChunkResponse(**chunk.model_dump()) for chunk in chunks] for chunks in chunks_by_file]
+    except Exception as exc:
+        _raise_datasource_error(exc)
+
+
 @router.post("/chunk", response_model=ChunkRequestResponse)
 async def chunk_file_entries_in_data_package(
     chunking_request: Annotated[ChunkingRequest, Query(..., description="Chunking parameters")],

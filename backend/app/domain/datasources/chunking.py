@@ -40,6 +40,7 @@ class ContentChunk(BaseModel):
     file_path: str
     start_idx: int = Field(..., ge=0, description="Start line index of the chunk in the original file")
     end_idx: int = Field(..., ge=0, description="End line index of the chunk in the original file")
+    filtered_line_indices: list[int] = Field(default_factory=list, description="Original line indices that passed the text quality filter and are included in this chunk")
     summary: str | None = None
     embedding: list[float] | None = None
 
@@ -78,7 +79,8 @@ class ContentChunk(BaseModel):
                 data_package_id=data_package_id,
                 file_path=file_entry.file_path,
                 start_idx=filtered_lines[0].line_idx,
-                end_idx=filtered_lines[-1].line_idx
+                end_idx=filtered_lines[-1].line_idx,
+                filtered_line_indices=[line.line_idx for line in filtered_lines]
             )]
         
         combined_lines = combine_lines(
@@ -118,7 +120,8 @@ class ContentChunk(BaseModel):
                 data_package_id=data_package_id,
                 file_path=file_entry.file_path,
                 start_idx=group[0].line.line_idx,
-                end_idx=group[-1].line.line_idx
+                end_idx=group[-1].line.line_idx,
+                filtered_line_indices=[item.line.line_idx for item in group]
             ))
 
         return chunk_list

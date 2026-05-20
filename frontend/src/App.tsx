@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { chunkDataPackage, getChunkStatus, listDataPackages, uploadDataPackage } from './api/datasources';
+import { createPortal } from 'react-dom';
+import { chunkDataPackage, getChunkStatus, getDataPackageChunks, getFileEntryContent, listDataPackages, uploadDataPackage } from './api/datasources';
 import {
   extractInitialContext,
   extractInitialDraft,
@@ -17,7 +18,7 @@ import {
 } from './api/extraction';
 import { listProfiles } from './api/profiles';
 import { JsonEditor, type JsonObject, type JsonPatchMarker, type JsonValue, setValueAtPath, getValueAtPath, extractPatchInnerValue, PatchValueEditor } from './components/JsonEditor';
-import type { ChunkRequestResponse, DataPackageResponse, InitialContext, ProfileManifestResponse } from './api/types';
+import type { ChunkRequestResponse, ChunkResponse, DataPackageResponse, FileEntryResponse, InitialContext, ProfileManifestResponse } from './api/types';
 import type { PatchArtifacts, PatchProgress, PatchReviewResolutionItem, PatchReviewState, PatchTaskStatus } from './api/extraction';
 
 type BusyKey = 'upload' | 'chunk' | 'context' | 'draft' | 'patch' | 'resolve' | 'load';
@@ -372,6 +373,80 @@ function UnmappedFactList({ facts, fields, reviewState, onAssign }: {
   );
 }
 
+function FileViewer({ file, content, chunksByFile, onClose }: {
+  file: FileEntryResponse;
+  content: string;
+  chunksByFile: ChunkResponse[][];
+  onClose: () => void;
+}) {
+  const lines = content.split('\n');
+  const fileChunks = chunksByFile.find((group) => group[0]?.file_path === file.file_path) ?? [];
+
+  const chunkColors = [
+    'rgba(99, 154, 0, 0.22)',
+    'rgba(0, 120, 180, 0.18)',
+    'rgba(180, 90, 0, 0.18)',
+    'rgba(140, 60, 180, 0.18)',
+    'rgba(200, 50, 80, 0.18)',
+    'rgba(0, 160, 140, 0.18)',
+  ];
+
+  const getChunkInfo = (lineIndex: number): { inChunk: boolean; color: string; chunkIndex: number } => {
+    for (let i = 0; i < fileChunks.length; i++) {
+      const chunk = fileChunks[i];
+      const indices = chunk.filtered_line_indices;
+      if (indices && indices.length > 0) {
+        if (indices.includes(lineIndex)) {
+          return { inChunk: true, color: chunkColors[i % chunkColors.length], chunkIndex: i };
+        }
+      } else if (lineIndex >= chunk.start_idx && lineIndex <= chunk.end_idx) {
+        return { inChunk: true, color: chunkColors[i % chunkColors.length], chunkIndex: i };
+      }
+    }
+    return { inChunk: false, color: '', chunkIndex: -1 };
+  };
+
+  const viewer = (
+    <div className="file-viewer-overlay" onClick={onClose}>
+      <div className="file-viewer" onClick={(e) => e.stopPropagation()}>
+        <div className="file-viewer-header">
+          <strong>{file.file_path}</strong>
+          <button className="ghost" onClick={onClose}>Close</button>
+        </div>
+        <div className="file-viewer-body">
+          {lines.map((line, index) => {
+            const info = getChunkInfo(index);
+            return (
+              <div
+                key={index}
+                className={`file-viewer-line ${info.inChunk ? 'chunk-highlight' : ''}`}
+                style={info.inChunk ? { background: info.color } : undefined}
+                title={info.inChunk ? `Chunk ${info.chunkIndex + 1}` : undefined}
+              >
+                <span className="line-number">{index + 1}</span>
+                <span className="line-content">{line || ' '}</span>
+              </div>
+            );
+          })}
+        </div>
+        {fileChunks.length > 0 && (
+          <div className="file-viewer-footer">
+            <div className="chunk-legend">
+              {fileChunks.map((chunk, i) => (
+                <span key={i} className="chunk-legend-item" style={{ background: chunkColors[i % chunkColors.length] }}>
+                  Chunk {i + 1}: {(chunk.filtered_line_indices?.length ?? 0) > 0 ? chunk.filtered_line_indices!.length : chunk.end_idx - chunk.start_idx + 1} lines
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  return createPortal(viewer, document.body);
+}
+
 export function App() {
   const [packages, setPackages] = useState<DataPackageResponse[]>([]);
   const [profiles, setProfiles] = useState<ProfileManifestResponse[]>([]);
@@ -379,6 +454,9 @@ export function App() {
   const [selectedProfile, setSelectedProfile] = useState('');
   const [chunkResult, setChunkResult] = useState<ChunkRequestResponse | null>(null);
   const [hasChunks, setHasChunks] = useState(false);
+  const [chunksByFile, setChunksByFile] = useState<ChunkResponse[][]>([]);
+  const [viewingFile, setViewingFile] = useState<FileEntryResponse | null>(null);
+  const [fileContent, setFileContent] = useState<string | null>(null);
   const [context, setContext] = useState<InitialContext | null>(null);
   const [draft, setDraft] = useState<object | null>(null);
   const [protectedFields, setProtectedFields] = useState<string[]>([]);
@@ -456,12 +534,61 @@ export function App() {
     try {
       const result = await chunkDataPackage({ id: selectedPackageId, replace_existing_chunks: replace });
       setChunkResult(result);
-      setMessage(result.status === 'completed' ? 'Chunks are ready.' : 'Chunking is running. Run this step again to refresh status.');
+      setHasChunks(result.status === 'completed');
+      setMessage(result.status === 'completed' ? 'Chunks are ready.' : 'Chunking is running...');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Chunking failed.');
     } finally {
       setBusy(null);
     }
+  }
+
+  async function pollChunkProgress() {
+    if (!selectedPackageId || !chunkResult) return;
+    try {
+      const [status, chunks] = await Promise.all([
+        getChunkStatus(selectedPackageId),
+        getDataPackageChunks(selectedPackageId),
+      ]);
+      setHasChunks(status.has_chunks);
+      if (status.has_chunks) {
+        setChunkResult((prev) => prev ? { ...prev, status: 'completed', chunks } : prev);
+        setMessage(`Chunking completed — ${chunks.flat().length} chunks created.`);
+      } else {
+        setChunkResult((prev) => prev ? { ...prev, chunks } : prev);
+        const chunkCount = chunks.flat().length;
+        if (chunkCount > 0) {
+          setMessage(`Chunking in progress — ${chunkCount} chunks created so far...`);
+        }
+      }
+    } catch {
+      // ignore polling errors
+    }
+  }
+
+  async function onViewFile(file: FileEntryResponse) {
+    if (!selectedPackageId) return;
+    setBusy('load');
+    try {
+      const [content, chunks] = await Promise.all([
+        getFileEntryContent(selectedPackageId, file.file_path),
+        hasChunks ? getDataPackageChunks(selectedPackageId) : Promise.resolve([]),
+      ]);
+      setViewingFile(file);
+      setFileContent(content.content);
+      setChunksByFile(chunks);
+      setMessage(`Viewing ${file.file_path}`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Failed to load file content.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function closeFileViewer() {
+    setViewingFile(null);
+    setFileContent(null);
+    setChunksByFile([]);
   }
 
   async function onContext() {
@@ -702,6 +829,12 @@ export function App() {
     return () => clearInterval(interval);
   }, [patchStatus, selectedPackageId]);
 
+  useEffect(() => {
+    if (!chunkResult || chunkResult.status === 'completed' || chunkResult.status === 'cancelled' || chunkResult.status === 'crashed') return;
+    const interval = setInterval(() => void pollChunkProgress(), 3000);
+    return () => clearInterval(interval);
+  }, [chunkResult, selectedPackageId]);
+
   return (
     <main className="shell">
       <section className="hero">
@@ -761,15 +894,30 @@ export function App() {
               </div>
               {selectedPackage && (
                 <div className="file-list">
-                  {selectedPackage.files.slice(0, 8).map((file) => (
-                    <div key={file.file_path} className="file-row">
-                      <span>{file.file_path}</span>
-                      <small>{formatBytes(file.byte_size)}</small>
-                    </div>
-                  ))}
+                  {selectedPackage.files.slice(0, 8).map((file) => {
+                    const fileChunks = chunkResult?.chunks.find((group) => group[0]?.file_path === file.file_path);
+                    const chunkCount = fileChunks?.length ?? 0;
+                    return (
+                      <div key={file.file_path} className="file-row" onClick={() => void onViewFile(file)} title="Click to view file content">
+                        <span>{file.file_path}</span>
+                        <div className="file-meta">
+                          {chunkCount > 0 && <span className="chunk-badge">{chunkCount} chunk{chunkCount === 1 ? '' : 's'}</span>}
+                          <small>{formatBytes(file.byte_size)}</small>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
               {chunkResult && <p className="muted">Chunk status: <strong>{chunkResult.status}</strong> - {chunkResult.chunks.flat().length} chunks visible</p>}
+              {viewingFile && fileContent !== null && (
+                <FileViewer
+                  file={viewingFile}
+                  content={fileContent}
+                  chunksByFile={chunksByFile}
+                  onClose={closeFileViewer}
+                />
+              )}
             </div>
           </article>
 

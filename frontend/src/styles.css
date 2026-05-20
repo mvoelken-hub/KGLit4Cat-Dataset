@@ -57,9 +57,12 @@ h2 { margin: 0; font-size: clamp(1.6rem, 3vw, 2.6rem); letter-spacing: -0.04em; 
 .step-body p { color: var(--muted); line-height: 1.65; }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0; }
 .file-list { display: grid; border-top: 1px solid var(--line); margin-top: 18px; }
-.file-row { display: flex; justify-content: space-between; gap: 18px; padding: 10px 0; border-bottom: 1px solid var(--line); color: var(--muted); }
+.file-row { cursor: pointer; transition: background 140ms ease; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); color: var(--muted); }
+.file-row:hover { background: rgba(99, 154, 0, 0.08); }
 .file-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-row small { color: var(--ink); white-space: nowrap; }
+.file-meta { display: flex; align-items: center; gap: 10px; }
+.chunk-badge { border: 1px solid var(--accent); border-radius: 999px; padding: 0.2rem 0.5rem; font-size: 0.72rem; color: var(--accent); background: rgba(99, 154, 0, 0.1); white-space: nowrap; }
 .muted { color: var(--muted); }
 
 .context-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; }
@@ -191,6 +194,21 @@ textarea.json-editor-input { resize: vertical; min-height: 80px; }
 .patch-array-item button { padding: 0.4rem 0.6rem; font-size: 0.78rem; }
 .patch-edit-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
 .patch-edit-actions button { padding: 0.5rem 0.8rem; font-size: 0.82rem; }
+
+/* File viewer overlay */
+.file-viewer-overlay { position: fixed; inset: 0; z-index: 9999; background: rgba(26, 26, 26, 0.55); display: flex; align-items: center; justify-content: center; padding: 24px; }
+.file-viewer { background: var(--panel); border: 1px solid var(--line); border-radius: 1.2rem; box-shadow: 0 30px 90px rgba(26, 26, 26, 0.18); width: min(900px, calc(100vw - 48px)); max-height: calc(100vh - 48px); display: grid; grid-template-rows: auto 1fr auto; overflow: hidden; }
+.file-viewer-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+.file-viewer-header strong { font-size: 1rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-viewer-body { overflow: auto; padding: 12px 0; font-family: 'Courier New', monospace; font-size: 0.82rem; line-height: 1.5; }
+.file-viewer-line { display: flex; gap: 12px; padding: 1px 20px; }
+.file-viewer-line:hover { background: rgba(26, 26, 26, 0.04); }
+.file-viewer-line.chunk-highlight .line-number { font-weight: 700; }
+.line-number { color: var(--muted); min-width: 44px; text-align: right; user-select: none; flex-shrink: 0; }
+.line-content { color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; flex: 1; }
+.file-viewer-footer { padding: 10px 20px; border-top: 1px solid var(--line); font-size: 0.82rem; color: var(--muted); }
+.chunk-legend { display: flex; flex-wrap: wrap; gap: 8px; }
+.chunk-legend-item { border-radius: 999px; padding: 0.3rem 0.6rem; font-size: 0.76rem; color: var(--ink); border: 1px solid var(--line); }
 
 @media (max-width: 860px) {
   .hero, .layout { grid-template-columns: 1fr; }

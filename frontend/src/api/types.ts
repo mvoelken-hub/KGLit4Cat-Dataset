@@ -19,6 +19,7 @@ export interface ChunkResponse {
   file_path: string;
   start_idx: number;
   end_idx: number;
+  filtered_line_indices?: number[];
   summary?: string | null;
 }
 

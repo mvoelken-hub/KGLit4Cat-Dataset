@@ -37,6 +37,7 @@ class ChunkResponse(BaseModel):
     file_path: str
     start_idx: int
     end_idx: int
+    filtered_line_indices: list[int] = []
     summary: str | None = None
 
 class ChunkRequestResponse(BaseModel):

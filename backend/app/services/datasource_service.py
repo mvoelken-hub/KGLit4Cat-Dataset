@@ -36,6 +36,12 @@ class DataSourceService:
         data_package = self.get_data_package(id)
         return data_package.get_file_entry(file_path)
 
+    def get_content_chunks_by_file(
+        self,
+        data_package_id: str,
+    ) -> list[list[ContentChunk]]:
+        return self._load_content_chunks_by_file(data_package_id)
+
     def get_completed_content_chunks_by_file(
         self,
         data_package_id: str,
