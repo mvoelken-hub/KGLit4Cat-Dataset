@@ -17,6 +17,11 @@ In short, the repository serves as an experimental implementation of an LLM-supp
 
 ### Quick Start
 
+Clone the repo:
+```bash
+git clone https://github.com/smnclmns/Semantic-Inference-Module-for-Ontology-driven-Node-Extraction-SIMONE-.git
+```
+
 After cloning the repository, run the setup assistant from the repo root:
 
 ```bash
