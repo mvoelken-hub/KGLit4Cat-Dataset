@@ -92,7 +92,8 @@ function TreeNode({
 
   const isPrimitive = typeof data !== 'object';
   const isArray = Array.isArray(data);
-  const label = path.split('.').pop() || 'root';
+  const rawLabel = path.split('.').pop() || 'root';
+  const label = /^\d+$/.test(rawLabel) ? String(Number(rawLabel) + 1) : rawLabel;
   const isSelected = path === selectedPath;
   const isLockable = isTopLevelPath(path);
   const isProtected = isPathProtected(path, protectedPaths);

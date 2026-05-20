@@ -705,9 +705,9 @@ export function App() {
   return (
     <main className="shell">
       <section className="hero">
-        <div>
-          <p className="eyebrow">SIMONE - DCAT metadata extraction</p>
-          <h1>Dataset in. Profile draft out.</h1>
+        <div className="hero-main">
+          <p className="eyebrow">Semantic Inference Module for Ontology-driven Node Extraction (SIMONE)</p>
+          <h1><span>---&gt; Data archive in</span><span>FAIR data out ---&gt;</span></h1>
           <p className="intro">A restrained workflow for extracting dataset metadata, grounding it in a registered DCAT-AP profile, and preparing later vocabulary-backed enrichment.</p>
         </div>
         <aside className="status-card">
