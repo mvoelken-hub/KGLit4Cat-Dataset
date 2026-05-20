@@ -12,6 +12,7 @@ from app.domain.profiles import ProfileManifest
 
 
 ReviewItemKind = Literal["matched", "unmapped"]
+ReviewItemOutcome = Literal["included", "already_present", "excluded", "unresolved"]
 
 
 class PatchReviewItem(BaseModel):
@@ -28,29 +29,38 @@ class PatchReviewItem(BaseModel):
     file_name: str | None = None
 
 
-class PatchReviewResolution(BaseModel):
-    draft_patch: dict[str, Any] = Field(
-        default_factory=dict,
+class PatchReviewDecision(BaseModel):
+    id: str = Field(description="Review item ID this decision applies to.")
+    outcome: ReviewItemOutcome = Field(
         description=(
-            "JSON merge patch to apply to the current draft. Use only fields "
-            "allowed by the profile schema. Leave empty when no draft edit is needed."
+            "included when the final draft now represents the information; "
+            "already_present when the current draft already represented it; "
+            "excluded when it was intentionally kept out; unresolved when no "
+            "confident decision could be made."
         ),
     )
-    resolved_item_ids: list[str] = Field(
+    note: str = Field(description="Short explanation of the decision.")
+    target_path: str | None = Field(
+        default=None,
+        description="Draft path where the item was handled, when applicable.",
+    )
+
+
+class PatchReviewResolution(BaseModel):
+    final_draft: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Complete schema-valid Dataset draft after resolving review items. "
+            "Preserve valid current draft content unless a review item supports a correction."
+        ),
+    )
+    item_decisions: list[PatchReviewDecision] = Field(
         default_factory=list,
-        description="Review item IDs that are resolved by the draft_patch or already-resolved draft content.",
+        description="Explicit outcome for each submitted review item.",
     )
     unmapped_assignments: dict[str, str] = Field(
         default_factory=dict,
         description="Assignments for unmapped review item IDs to existing top-level draft fields.",
-    )
-    resolution_notes: dict[str, str] = Field(
-        default_factory=dict,
-        description="Short note for each resolved item explaining what was done.",
-    )
-    unresolved_item_ids: list[str] = Field(
-        default_factory=list,
-        description="Review item IDs the agent could not resolve safely.",
     )
 
 
@@ -70,23 +80,30 @@ You receive the current DCAT-style metadata draft, unresolved review items, the
 profile JSON Schema, and the existing review state.
 
 Your task:
-- Resolve as many review items as possible by producing a schema-valid draft_patch.
+- Resolve as many review items as possible by producing a complete schema-valid
+  final_draft rooted at the Dataset object.
+- Preserve all valid current draft content unless a review item supports a correction.
 - For matched items, inspect the proposed patch, issues, evidence, and current draft.
 - When a proposed patch adds a refined description next to an older generic
   description, replace the older description with the refined one. Do not
   accumulate long lists of near-duplicate descriptions.
 - For unmapped items, assign each fact to the best existing top-level draft field
-  in unmapped_assignments and add any necessary schema-valid draft_patch content.
-- Only mark a review item resolved when the current draft already handles it or
-  your draft_patch handles it.
-- If an item cannot be resolved without inventing facts, inventing schema fields,
-  or making a low-confidence semantic choice, put its ID in unresolved_item_ids.
+  in unmapped_assignments when it can be represented safely.
+- For every submitted review item, add exactly one item_decisions entry.
+- Use outcome "included" only when final_draft contains the information.
+- Use outcome "already_present" only when the current draft already contains it.
+- Use outcome "excluded" when the source fact or patch is invalid, semantically
+  wrong, schema-incompatible, or cannot be confidently attached to the draft, and
+  you intentionally keep it out.
+- Use outcome "unresolved" when you cannot make a confident include/exclude
+  decision.
 - Do not use description, title, or keyword as dumping grounds for structured facts.
 - Never invent source facts, URIs, schema fields, files, instruments, or values.
 - Never create namespace-looking identifiers such as https://w3id.org/... .
   Use ids that are scoped to the dataset or experiment, for example
   "1h-nmr-clean/activity/1h-nmr-acquisition" or "sample-a/agent/bruker-nmr".
-- draft_patch must be a JSON merge patch object rooted at the Dataset draft.
+- For ChecksumAlgorithm, follow the schema exactly. If the schema only allows
+  title/description, do not add an id field to the algorithm object.
 - Return only the PatchReviewResolution JSON object.
 """
 
@@ -126,7 +143,7 @@ def create_patch_review_resolution_agent(
                 f"{json.dumps(ctx.deps.existing_review_state, indent=2, ensure_ascii=False)}\n\n",
                 "Unresolved review items JSON:\n"
                 f"{json.dumps([item.model_dump(mode='json') for item in ctx.deps.review_items], indent=2, ensure_ascii=False)}\n\n",
-                "Resolve the review items with a schema-valid draft patch and review-state updates.",
+                "Resolve the review items with a complete schema-valid final draft and per-item decisions.",
             ]
         )
 
@@ -151,8 +168,9 @@ async def resolve_patch_review_items(
         existing_review_state=existing_review_state,
     )
     result = await agent.run(
-        "Resolve the unresolved patch review items. Update the draft only where "
-        "the source evidence and profile schema support the change.",
+        "Resolve the unresolved patch review items. Return the complete final "
+        "draft and update it only where the source evidence and profile schema "
+        "support the change.",
         deps=deps,
     )
     return result.output
