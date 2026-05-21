@@ -12,7 +12,6 @@ Within the thesis context, this prototype explores whether large language models
 
 The prototype aims to turn an uploaded dataset archive into a progressively refined metadata representation. It does this by extracting document content, deriving artifact context from the source material, generating an initial metadata draft, refining that draft iteratively, and enriching selected fields with vocabulary-backed semantic references.
 
-In short, the repository serves as an experimental implementation of an LLM-supported semantic metadata extraction pipeline for catalytic experiment resources.
 
 ## Running the App
 
@@ -20,15 +19,9 @@ In short, the repository serves as an experimental implementation of an LLM-supp
 
 | Tool | Required for | Notes |
 |---|---|---|
-| Docker Desktop | All modes | Provides Docker Compose and runs Neo4j, Ollama, API, and frontend containers. |
-| uv | All modes | Used by the `simone` CLI wrapper and the local development API. |
-| Node.js + npm | Optional | Only needed if you want to run the frontend locally with hot reload. Without npm, `simone dev` falls back to the Docker frontend. |
-
-Install links:
-
-- Docker Desktop: https://www.docker.com/get-started/
-- uv: https://docs.astral.sh/uv/getting-started/installation/
-- Node.js: https://nodejs.org/
+| [Docker Desktop](https://www.docker.com/get-started/) | All modes | Provides Docker Compose and runs Neo4j, Ollama, API, and frontend containers. |
+| [uv](https://docs.astral.sh/uv/getting-started/installation/) | All modes | Used by the `simone` CLI wrapper and the local development API. |
+| [Node.js + npm](https://nodejs.org/) | Optional | Only needed if you want to run the frontend locally with hot reload. Without npm, `simone dev` falls back to the Docker frontend. |
 
 ### Clone and Prepare
 
@@ -37,29 +30,32 @@ git clone https://github.com/smnclmns/Semantic-Inference-Module-for-Ontology-dri
 cd Semantic-Inference-Module-for-Ontology-driven-Node-Extraction-SIMONE-
 ```
 
-The CLI creates `.env` from `.env.example` on first use.
 
 ### Environment Variables
 
-SIMONE uses one `.env` file. The CLI sets `APP_ENV` automatically: `simone up` runs in production mode and `simone dev` runs in development mode.
+The CLI creates one `.env` file from `.env.example` and sets `APP_ENV` automatically: `simone up` runs in production mode and `simone dev` runs in development mode.
 
 | Variable | Production default | Development default | Purpose |
 |---|---|---|---|
 | `NEO4J_HOSTNAME` | empty | empty | Optional Neo4j host override. Empty, `localhost`, or `127.0.0.1` means the CLI manages the local Neo4j Docker service. Remote values are used directly and the local service is skipped. |
 | `NEO4J_PORT` | `7687` | `7687` | Neo4j Bolt port. The API derives the full Bolt URI automatically. |
 | `NEO4J_USER` | `neo4j` | `neo4j` | Neo4j username. |
-| `NEO4J_PASSWORD` | `12345678` | `12345678` | Neo4j password used by the API and container initialization. |
+| `NEO4J_PASSWORD` | `12345678` | `12345678` | Neo4j password used by the API and container initialization.\* |
 | `OLLAMA_HOSTNAME` | empty | empty | Optional Ollama host override. Empty, `localhost`, or `127.0.0.1` means the CLI manages the local Ollama Docker service. Remote values are used directly and the local service is skipped. |
 | `OLLAMA_PORT` | `11433` | `11433` | Ollama API port. The API derives the base URL automatically. |
 | `OLLAMA_EMBED_MODEL` | `qwen3-embedding:0.6b` | `qwen3-embedding:0.6b` | Embedding model used for semantic search and vocabulary grounding. |
 | `OLLAMA_CHAT_MODEL` | `gemma4:31b-cloud` | `gemma4:31b-cloud` | Chat model used by extraction agents. The default is an Ollama Cloud model and may require sign-in. |
 | `FRONTEND_PORT` | `3000` | `3000` | Frontend browser port. The API automatically allows `localhost` and `127.0.0.1` origins for this port. |
+| `SKIP_INITIAL_VOCAB_IMPORT` | `false` | `true` | Override: skip importing initial vocabularies on startup. |
+| `SKIP_MODEL_PULL` | `false` | `true` | Override: skip pulling configured Ollama models on startup. |
+| `GENERATE_MISSING_EMBEDDINGS_ON_STARTUP` | `true` | `false` | Override: generate missing vocabulary embeddings on startup. |
 
-Neo4j applies `NEO4J_PASSWORD` only when `data/docker/neo4j/data` is initialized for the first time. If you change the password later, either update the `.env` file to match the persisted database password or run `simone reset-neo4j`.
+\*Neo4j applies `NEO4J_PASSWORD` only when `data/docker/neo4j/data` is initialized for the first time. If you change the password later, either update the `.env` file to match the persisted database password or run `simone reset-neo4j`.
 
-Startup behavior is mode-specific by default. Production imports initial vocabularies, pulls configured models, and generates missing embeddings. Development skips those startup-heavy tasks. Advanced users can override this by adding `SKIP_INITIAL_VOCAB_IMPORT`, `SKIP_MODEL_PULL`, or `GENERATE_MISSING_EMBEDDINGS_ON_STARTUP` to `.env`.
+Startup behavior is mode-specific by default. Production **pulls configured models**, **imports initial vocabularies**, and **generates missing embeddings**.
 
-Ollama listens on `0.0.0.0` inside its container so other containers can reach it. The host port is bound to `127.0.0.1`, so it is only exposed locally on your machine.
+Development skips those startup-heavy tasks. Advanced users can override this by adding `SKIP_INITIAL_VOCAB_IMPORT`, `SKIP_MODEL_PULL`, or `GENERATE_MISSING_EMBEDDINGS_ON_STARTUP` to `.env`.
+
 
 ### CLI Wrappers
 
@@ -105,24 +101,6 @@ You can choose Docker frontend mode directly:
 simone dev --no-npm
 ```
 
-If Neo4j and Ollama run on another machine, for example on your Tailscale network, configure `.env` with the remote service addresses. The CLI will detect the remote hosts and skip the local Neo4j/Ollama containers automatically:
-
-```env
-NEO4J_HOSTNAME=my-gpu-box.tailnet-name.ts.net
-NEO4J_PORT=7687
-OLLAMA_HOSTNAME=my-gpu-box.tailnet-name.ts.net
-OLLAMA_PORT=11433
-```
-
-```bash
-simone dev
-```
-
-Use `--no-npm` if the frontend should still run in Docker on your laptop:
-
-```bash
-simone dev --no-npm
-```
 
 ### Infrastructure Mode
 
@@ -139,17 +117,14 @@ simone host --neo4j
 
 # Start only Ollama
 simone host --ollama
-
-# Start both explicitly
-simone host --neo4j --ollama
 ```
 
 The command prints the `.env` values that other machines should use to connect. For example, on a Tailscale network:
 
 ```env
-NEO4J_HOSTNAME=my-gpu-box.tailnet-name.ts.net
+NEO4J_HOSTNAME=<my-gpu-box>
 NEO4J_PORT=7687
-OLLAMA_HOSTNAME=my-gpu-box.tailnet-name.ts.net
+OLLAMA_HOSTNAME=<my-gpu-box>
 OLLAMA_PORT=11433
 ```
 
@@ -201,12 +176,6 @@ Reset local Neo4j data:
 simone reset-neo4j
 ```
 
-The reset command asks whether to create a backup before deleting the data. Non-interactive variants are available:
-
-```bash
-simone reset-neo4j --backup
-simone reset-neo4j --yes
-```
 
 Restore a backup:
 
