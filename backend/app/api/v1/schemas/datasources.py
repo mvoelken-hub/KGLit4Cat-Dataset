@@ -28,7 +28,6 @@ def _data_package_response(data_package: DataPackage) -> DataPackageResponse:
 class ChunkingRequest(BaseModel):
     id: str = Field(..., description="ID of the data package")
     buffer_window_size: int = Field(1, ge=0, description="Number of lines to include as buffer before and after each chunk")
-    embedding_batch_size: int = Field(32, ge=1, description="Number of chunks to process in each embedding batch")
     semantic_chunking_threshold: float = Field(95.0, ge=0.0, le=100.0, description="Threshold for semantic chunking quality (0-100)")
     replace_existing_chunks: bool = Field(False, description="Replace previously persisted chunks with a new chunking run")
     protected_line_indices: dict[str, list[int]] = Field(default_factory=dict, description="Map of file_path -> list of 0-based line indices to always keep regardless of text quality filter")

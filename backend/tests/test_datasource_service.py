@@ -71,6 +71,10 @@ class FakeTaskRegistry:
         return SimpleNamespace()
 
 
+class FakeSettings:
+    embedding_batch_size = 32
+
+
 class DataSourceServiceTests(unittest.IsolatedAsyncioTestCase):
     def make_service(
         self,
@@ -82,7 +86,7 @@ class DataSourceServiceTests(unittest.IsolatedAsyncioTestCase):
         task_registry = FakeTaskRegistry(status=task_status)
         service = DataSourceService(
             blob_repository=blob_repository,  # type: ignore[arg-type]
-            settings=None,  # type: ignore[arg-type]
+            settings=FakeSettings(),  # type: ignore[arg-type]
             ollama_client=None,  # type: ignore[arg-type]
             task_registry=task_registry,  # type: ignore[arg-type]
         )
@@ -136,7 +140,6 @@ class DataSourceServiceTests(unittest.IsolatedAsyncioTestCase):
         result, status = await service.chunk_file_entries_in_data_package(
             data_package_id="package-id",
             buffer_window_size=1,
-            embedding_batch_size=32,
             semantic_chunking_threshold=95.0,
         )
 
@@ -153,7 +156,6 @@ class DataSourceServiceTests(unittest.IsolatedAsyncioTestCase):
         result, status = await service.chunk_file_entries_in_data_package(
             data_package_id="package-id",
             buffer_window_size=1,
-            embedding_batch_size=32,
             semantic_chunking_threshold=95.0,
         )
 
@@ -174,7 +176,6 @@ class DataSourceServiceTests(unittest.IsolatedAsyncioTestCase):
         result, status = await service.chunk_file_entries_in_data_package(
             data_package_id="package-id",
             buffer_window_size=1,
-            embedding_batch_size=32,
             semantic_chunking_threshold=95.0,
             replace_existing_chunks=True,
         )
@@ -197,7 +198,6 @@ class DataSourceServiceTests(unittest.IsolatedAsyncioTestCase):
         result, status = await service.chunk_file_entries_in_data_package(
             data_package_id="package-id",
             buffer_window_size=1,
-            embedding_batch_size=32,
             semantic_chunking_threshold=95.0,
             replace_existing_chunks=True,
         )

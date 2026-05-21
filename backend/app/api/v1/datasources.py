@@ -147,7 +147,6 @@ async def chunk_file_entries_in_data_package(
         chunks_by_file, status = await datasource_service.chunk_file_entries_in_data_package(
             data_package_id=chunking_request.id,
             buffer_window_size=chunking_request.buffer_window_size,
-            embedding_batch_size=chunking_request.embedding_batch_size,
             semantic_chunking_threshold=chunking_request.semantic_chunking_threshold,
             replace_existing_chunks=chunking_request.replace_existing_chunks,
             protected_line_indices=chunking_request.protected_line_indices,

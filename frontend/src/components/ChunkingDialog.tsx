@@ -12,7 +12,6 @@ export interface ChunkingDialogProps {
   onSubmit: (params: {
     replace_existing_chunks: boolean;
     buffer_window_size: number;
-    embedding_batch_size: number;
     semantic_chunking_threshold: number;
     protected_line_indices: Record<string, number[]>;
     text_quality_config: TextQualityConfig;
@@ -45,9 +44,7 @@ function getChunkInfo(fileChunks: ChunkResponse[], lineIndex: number) {
 
 export function ChunkingDialog({ isOpen, packageId, dataPackage, chunksByFile, onClose, onSubmit }: ChunkingDialogProps) {
   const [bufferWindowSize, setBufferWindowSize] = useState(1);
-  const [embeddingBatchSize, setEmbeddingBatchSize] = useState(32);
   const [semanticThreshold, setSemanticThreshold] = useState(95);
-  const [replaceExisting, setReplaceExisting] = useState(true);
 
   const [symbolThreshold, setSymbolThreshold] = useState(0.45);
   const [digitThreshold, setDigitThreshold] = useState(0.45);
@@ -75,9 +72,7 @@ export function ChunkingDialog({ isOpen, packageId, dataPackage, chunksByFile, o
   useEffect(() => {
     if (!isOpen) return;
     setBufferWindowSize(1);
-    setEmbeddingBatchSize(32);
     setSemanticThreshold(95);
-    setReplaceExisting(true);
     setSymbolThreshold(0.45);
     setDigitThreshold(0.45);
     setKeepThreshold(0.45);
@@ -152,9 +147,8 @@ export function ChunkingDialog({ isOpen, packageId, dataPackage, chunksByFile, o
       if (arr.length) protected_line_indices[path] = arr;
     }
     onSubmit({
-      replace_existing_chunks: replaceExisting,
+      replace_existing_chunks: true,
       buffer_window_size: bufferWindowSize,
-      embedding_batch_size: embeddingBatchSize,
       semantic_chunking_threshold: semanticThreshold,
       protected_line_indices,
       text_quality_config: {
@@ -186,16 +180,8 @@ export function ChunkingDialog({ isOpen, packageId, dataPackage, chunksByFile, o
               <input type="number" min={0} max={10} value={bufferWindowSize} onChange={(e) => setBufferWindowSize(Number(e.target.value))} />
             </label>
             <label className="form-row">
-              <span>Embedding batch size</span>
-              <input type="number" min={1} max={256} value={embeddingBatchSize} onChange={(e) => setEmbeddingBatchSize(Number(e.target.value))} />
-            </label>
-            <label className="form-row">
               <span>Semantic threshold (%)</span>
               <input type="number" min={0} max={100} value={semanticThreshold} onChange={(e) => setSemanticThreshold(Number(e.target.value))} />
-            </label>
-            <label className="form-row checkbox">
-              <input type="checkbox" checked={replaceExisting} onChange={(e) => setReplaceExisting(e.target.checked)} />
-              <span>Replace existing chunks</span>
             </label>
 
             <button className="ghost small" onClick={() => setShowAdvanced((s) => !s)}>

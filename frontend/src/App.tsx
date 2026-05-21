@@ -530,7 +530,7 @@ export function App() {
     }
   }
 
-  async function onChunk(params?: { replace_existing_chunks: boolean; buffer_window_size: number; embedding_batch_size: number; semantic_chunking_threshold: number; protected_line_indices: Record<string, number[]>; text_quality_config: TextQualityConfig }) {
+  async function onChunk(params?: { replace_existing_chunks: boolean; buffer_window_size: number; semantic_chunking_threshold: number; protected_line_indices: Record<string, number[]>; text_quality_config: TextQualityConfig }) {
     if (!selectedPackageId) return;
     setBusy('chunk');
     try {
@@ -538,7 +538,6 @@ export function App() {
         id: selectedPackageId,
         replace_existing_chunks: params?.replace_existing_chunks ?? false,
         buffer_window_size: params?.buffer_window_size,
-        embedding_batch_size: params?.embedding_batch_size,
         semantic_chunking_threshold: params?.semantic_chunking_threshold,
         protected_line_indices: params?.protected_line_indices,
         text_quality_config: params?.text_quality_config,

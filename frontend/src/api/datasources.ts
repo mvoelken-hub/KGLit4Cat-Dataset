@@ -14,7 +14,6 @@ export async function uploadDataPackage(file: File): Promise<DataPackageResponse
 export async function chunkDataPackage(input: {
   id: string;
   buffer_window_size?: number;
-  embedding_batch_size?: number;
   semantic_chunking_threshold?: number;
   replace_existing_chunks?: boolean;
   protected_line_indices?: Record<string, number[]>;
@@ -23,7 +22,6 @@ export async function chunkDataPackage(input: {
   const query = buildQuery({
     id: input.id,
     buffer_window_size: input.buffer_window_size ?? 1,
-    embedding_batch_size: input.embedding_batch_size ?? 32,
     semantic_chunking_threshold: input.semantic_chunking_threshold ?? 95,
     replace_existing_chunks: input.replace_existing_chunks ?? false,
     protected_line_indices: input.protected_line_indices ? JSON.stringify(input.protected_line_indices) : undefined,
