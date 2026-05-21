@@ -1,9 +1,8 @@
 import asyncio
+from enum import Enum
 from logging import Logger
-from typing import Literal
 
-from pydantic import BaseModel, Field, HttpUrl
-
+from app.core.initial_vocabs import INITIAL_VOCABS
 from app.neo4j.driver import Neo4jDriver
 from app.ollama.client import OllamaClientWrapper
 
@@ -13,38 +12,9 @@ from app.core.task_registry import TaskRegistry, TaskType, TaskStatus
 from app.services.semantic_service import SemanticService
 from app.domain.semantics import VocabAlreadyExistsError
 
-class InitialVocab(BaseModel):
-    rdf_source: HttpUrl = Field(..., description="The URL of the RDF source to import.")
-    identifier: str = Field(..., description="A unique identifier for the vocab, used for referencing it in the system.")
-
-
-INITIAL_VOCABS = [
-    InitialVocab(
-        rdf_source=HttpUrl("https://nfdi4cat.github.io/voc4cat/v2026-02-24/voc4cat.ttl"),
-        identifier="https://w3id.org/nfdi4cat/voc4cat",
-    ),
-    InitialVocab(
-        rdf_source=HttpUrl("https://qudt.org/vocab/quantitykind/"),
-        identifier="http://qudt.org/vocab/quantitykind",
-    ),
-    InitialVocab(
-        rdf_source=HttpUrl("https://qudt.org/vocab/unit/"),
-        identifier="http://qudt.org/vocab/unit",
-    ),
-    InitialVocab(
-        rdf_source=HttpUrl("https://qudt.org/vocab/constant"),
-        identifier="http://qudt.org/vocab/constant",
-    ),
-    InitialVocab(
-        rdf_source=HttpUrl("https://raw.githubusercontent.com/rsc-ontologies/rsc-cmo/master/chmo.owl"),
-        identifier="http://purl.obolibrary.org/obo/chmo.owl",
-    ),
-    InitialVocab(
-        rdf_source=HttpUrl("http://nmrML.org/nmrCV.owl"),
-        identifier="http://nmrML.org/nmrCV",
-    ),
-]
-
+class InitialTasks(Enum):
+    PULL_OLLAMA_MODEL = "startup:pull_ollama_models:01"
+    BOOTSTRAP_INITIAL_VOCABS = "startup:import_initial_vocabs:01"
 
 
 async def pull_ollama_models(ollama_client: OllamaClientWrapper, settings: Settings):
@@ -53,32 +23,25 @@ async def pull_ollama_models(ollama_client: OllamaClientWrapper, settings: Setti
         settings.ollama_chat_model,
     ])
 
-async def load_ollama_models(ollama_client: OllamaClientWrapper, task_registry: TaskRegistry, model: Literal["embedding", "chat", "both", "none"] = "none"):
 
-    pull_models_task = task_registry.get_task_info("startup:pull_ollama_models:01")
-    if pull_models_task and pull_models_task.status != TaskStatus.COMPLETED:
-        await task_registry.wait_for_task("startup:pull_ollama_models:01")
-    
-    if model in ("embedding", "both"):
-        await ollama_client.verify_embedding()
-    if model in ("chat", "both"):
-        await ollama_client.verify_chat()
-
-async def import_initial_vocab(semantic_service: SemanticService, generate_embeddings_on_import: bool):    
+async def import_initial_vocab(semantic_service: SemanticService, logger: Logger | None = None):
     for vocab in INITIAL_VOCABS:
+        if logger:
+            logger.info("Importing initial vocabulary %s from %s", vocab.identifier, vocab.rdf_source)
         try:
             await semantic_service.import_vocabulary(rdf_source=vocab.rdf_source, identifier=vocab.identifier)
         except VocabAlreadyExistsError:
-            pass
+            if logger:
+                logger.info("Initial vocabulary already exists: %s", vocab.identifier)
 
-    if not generate_embeddings_on_import:
-        return
-    
-    for vocab in INITIAL_VOCABS:
         pending_updates, status = await semantic_service.generate_embeddings_for_vocabulary(vocab.identifier)
         while status == TaskStatus.RUNNING:
+            if logger:
+                logger.info("Generating embeddings for %s. Pending updates: %s", vocab.identifier, pending_updates)
             await asyncio.sleep(10)
             pending_updates, status = await semantic_service.generate_embeddings_for_vocabulary(vocab.identifier)
+        if logger:
+            logger.info("Finished initial vocabulary %s with embedding status %s", vocab.identifier, status.value)
             
 
 
@@ -91,18 +54,60 @@ async def start_setup(
     semantic_service: SemanticService
 ) -> None:
 
-    # Ollama bootstrap: Pull models
+    # Pull Ollama models
 
     if settings.skip_model_pull:
         logger.info("Skipping Ollama model pull because skip_model_pull is enabled.")
     else:
-        await task_registry.create_task(pull_ollama_models(ollama_client=ollama_client, settings=settings), name="startup:pull_ollama_models:01", type=TaskType.STARTUP)
+        await task_registry.create_task(
+            pull_ollama_models(ollama_client=ollama_client, settings=settings),
+            name=InitialTasks.PULL_OLLAMA_MODEL.value,
+            type=TaskType.STARTUP
+        )
 
-    # Neo4j connection and bootstrap
+    # Neo4j connection and Graph bootstrap
 
     await neo4j_driver.wait_for_connection(60.0, 5.0)
 
     if settings.skip_initial_vocab_import:
         logger.info("Skipping initial vocabulary import because skip_initial_vocab_import is enabled.")
     else:
-        await task_registry.create_task(import_initial_vocab(semantic_service, settings.generate_missing_embeddings_on_startup), name="startup:import_initial_vocabs:01", type=TaskType.STARTUP)
+        await task_registry.create_task(
+            import_initial_vocab(semantic_service, logger=logger),
+            name=InitialTasks.BOOTSTRAP_INITIAL_VOCABS.value,
+            type=TaskType.STARTUP
+        )
+
+
+async def run_initial_vocab_bootstrap() -> None:
+    from app.core.config import settings
+    from app.core.logging import logger, setup_logging
+    from app.core.task_registry import task_registry
+    from app.dependencies import get_semantic_service
+    from app.neo4j.driver import neo4j_driver
+    from app.ollama.client import ollama_client
+
+    setup_logging(runtime_dir=settings.runtime_dir)
+    logger.info("Starting initial vocabulary bootstrap.")
+    try:
+        await neo4j_driver.wait_for_connection(60.0, 5.0)
+        await import_initial_vocab(get_semantic_service(), logger=logger)
+        logger.info("Initial vocabulary bootstrap completed.")
+    finally:
+        await task_registry.cancel_all_tasks()
+        await neo4j_driver.close()
+        await ollama_client.close()
+
+
+def main() -> None:
+    import sys
+
+    if len(sys.argv) == 2 and sys.argv[1] == "initial-vocabs":
+        asyncio.run(run_initial_vocab_bootstrap())
+        return
+
+    raise SystemExit("Usage: python -m app.bootstrap initial-vocabs")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import shutil
@@ -33,6 +34,8 @@ HEALTH_URL = "http://127.0.0.1:8000/api/v1/health"
 NEO4J_BROWSER_URL = "http://127.0.0.1:7474/browser/"
 NEO4J_DATA_DIR = REPO_ROOT / "data" / "docker" / "neo4j" / "data"
 NEO4J_BACKUP_DIR = REPO_ROOT / ".backups" / "neo4j"
+BOOTSTRAP_VOCABS_LOG = REPO_ROOT / ".runtime" / "bootstrap-vocabs.log"
+BOOTSTRAP_VOCABS_PID = REPO_ROOT / ".runtime" / "bootstrap-vocabs.pid"
 
 
 def _run(
@@ -53,6 +56,107 @@ def _check_command(name: str) -> bool:
     """Check if a command is available on PATH."""
     result = subprocess.run(["where", name] if sys.platform == "win32" else ["which", name], capture_output=True)
     return result.returncode == 0
+
+
+def _pid_is_running(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if sys.platform == "win32":
+        result = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                f"if (Get-Process -Id {pid} -ErrorAction SilentlyContinue) {{ exit 0 }} else {{ exit 1 }}",
+            ],
+            capture_output=True,
+        )
+        return result.returncode == 0
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def _running_bootstrap_vocab_pids() -> list[int]:
+    if sys.platform == "win32":
+        try:
+            result = subprocess.run(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-Command",
+                    (
+                        "Get-CimInstance Win32_Process | "
+                        "Where-Object { $_.Name -like 'python*' -and $_.CommandLine -like '*-m app.bootstrap initial-vocabs*' } | "
+                        "Select-Object ProcessId | ConvertTo-Json -Compress"
+                    ),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0 or not result.stdout.strip():
+                return []
+            processes = json.loads(result.stdout)
+            if isinstance(processes, dict):
+                processes = [processes]
+            return [int(process["ProcessId"]) for process in processes]
+        except Exception:
+            return []
+
+    result = subprocess.run(["ps", "-eo", "pid=,args="], capture_output=True, text=True)
+    if result.returncode != 0:
+        return []
+    pids = []
+    for line in result.stdout.splitlines():
+        if "-m app.bootstrap initial-vocabs" not in line:
+            continue
+        pid_text = line.strip().split(maxsplit=1)[0]
+        try:
+            pids.append(int(pid_text))
+        except ValueError:
+            pass
+    return pids
+
+
+def _write_bootstrap_vocab_lock(pid: int) -> None:
+    BOOTSTRAP_VOCABS_PID.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"pid": pid, "started_at": datetime.now().isoformat(timespec="seconds")}
+    BOOTSTRAP_VOCABS_PID.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _remove_bootstrap_vocab_lock(pid: int) -> None:
+    if not BOOTSTRAP_VOCABS_PID.exists():
+        return
+    try:
+        payload = json.loads(BOOTSTRAP_VOCABS_PID.read_text(encoding="utf-8"))
+    except Exception:
+        BOOTSTRAP_VOCABS_PID.unlink(missing_ok=True)
+        return
+    if payload.get("pid") == pid:
+        BOOTSTRAP_VOCABS_PID.unlink(missing_ok=True)
+
+
+def _ensure_no_bootstrap_vocab_job() -> None:
+    if BOOTSTRAP_VOCABS_PID.exists():
+        try:
+            payload = json.loads(BOOTSTRAP_VOCABS_PID.read_text(encoding="utf-8"))
+            pid = int(payload.get("pid", 0))
+        except Exception:
+            BOOTSTRAP_VOCABS_PID.unlink(missing_ok=True)
+        else:
+            if _pid_is_running(pid):
+                typer.echo(f"Initial vocabulary bootstrap is already running (PID {pid}).", err=True)
+                typer.echo(f"Log file: {BOOTSTRAP_VOCABS_LOG.relative_to(REPO_ROOT)}", err=True)
+                raise typer.Exit(1)
+            BOOTSTRAP_VOCABS_PID.unlink(missing_ok=True)
+
+    running_pids = [pid for pid in _running_bootstrap_vocab_pids() if pid != os.getpid()]
+    if running_pids:
+        typer.echo(f"Initial vocabulary bootstrap is already running (PID {', '.join(map(str, running_pids))}).", err=True)
+        typer.echo(f"Log file: {BOOTSTRAP_VOCABS_LOG.relative_to(REPO_ROOT)}", err=True)
+        raise typer.Exit(1)
 
 
 def _docker_available() -> bool:
@@ -532,6 +636,14 @@ def _kill_pids(pids: list[int]) -> None:
             pass
 
 
+def _stop_bootstrap_vocab_job() -> list[int]:
+    pids = sorted(set(_running_bootstrap_vocab_pids()))
+    if pids:
+        _kill_pids(pids)
+    BOOTSTRAP_VOCABS_PID.unlink(missing_ok=True)
+    return pids
+
+
 def _find_pids_by_window_title(title: str) -> list[int]:
     if sys.platform != "win32":
         return []
@@ -832,10 +944,197 @@ def host(
         typer.echo(f"  OLLAMA_PORT={env_values.get('OLLAMA_PORT', '11433')}")
 
 
+@app.command("vocabs")
+def vocabs(
+    ctx: typer.Context,
+    info: bool = typer.Option(False, "--info", help="Print the configured initial vocabularies as JSON"),
+    bootstrap: bool = typer.Option(False, "--bootstrap", help="Import configured vocabularies into Neo4j and generate embeddings"),
+    foreground: bool = typer.Option(False, "--foreground", help="Run bootstrap in the current terminal instead of in the background"),
+    start_services: bool = typer.Option(True, "--start-services/--no-start-services", help="Start local Neo4j/Ollama containers before bootstrapping"),
+) -> None:
+    """Inspect or bootstrap the configured initial vocabularies."""
+    if info and bootstrap:
+        typer.echo("Error: choose either --info or --bootstrap, not both.", err=True)
+        raise typer.Exit(1)
+
+    if not info and not bootstrap:
+        typer.echo(ctx.get_help())
+        raise typer.Exit(0)
+
+    if info:
+        _print_initial_vocab_info()
+        return
+
+    _bootstrap_vocabs(foreground=foreground, start_services=start_services)
+
+
+def _print_initial_vocab_info() -> None:
+    from app.core.initial_vocabs import INITIAL_VOCABS
+
+    payload = [vocab.model_dump(mode="json") for vocab in INITIAL_VOCABS]
+    typer.echo(json.dumps(payload, indent=2))
+
+
+@app.command("models")
+def models(
+    ctx: typer.Context,
+    info: bool = typer.Option(False, "--info", help="Print the configured Ollama models as JSON"),
+    pull: bool = typer.Option(False, "--pull", help="Pull the configured Ollama embedding and chat models"),
+    start_services: bool = typer.Option(True, "--start-services/--no-start-services", help="Start local Ollama before pulling models"),
+) -> None:
+    """Inspect or pull the configured Ollama models."""
+    if info and pull:
+        typer.echo("Error: choose either --info or --pull, not both.", err=True)
+        raise typer.Exit(1)
+
+    if not info and not pull:
+        typer.echo(ctx.get_help())
+        raise typer.Exit(0)
+
+    os.environ["APP_ENV"] = "development"
+    _ensure_env_file(ENV_FILE, ENV_EXAMPLE)
+    env_values = _read_env_file(ENV_FILE)
+    os.environ.update(env_values)
+    os.environ["APP_ENV"] = "development"
+
+    if info:
+        _print_ollama_model_info()
+        return
+
+    _pull_ollama_models(start_services=start_services, env_values=env_values)
+
+
+def _print_ollama_model_info() -> None:
+    from app.core.config import Settings
+
+    model_settings = Settings()
+    payload = {
+        "ollama_base_url": model_settings.ollama_base_url,
+        "embedding_model": model_settings.ollama_embed_model,
+        "chat_model": model_settings.ollama_chat_model,
+    }
+    typer.echo(json.dumps(payload, indent=2))
+
+
+def _pull_ollama_models(start_services: bool, env_values: dict[str, str]) -> None:
+    from app.core.config import Settings
+    from app.ollama.client import OllamaClientWrapper
+    from app.core.logging import logger
+
+    model_settings = Settings()
+    local_ollama = _is_local_host(env_values.get("OLLAMA_HOSTNAME"))
+
+    if start_services and local_ollama:
+        if not _docker_available():
+            typer.echo("Error: Docker is not running. Please start Docker Desktop.", err=True)
+            raise typer.Exit(1)
+        typer.echo("Starting Ollama container ...")
+        _run(_build_compose_cmd(ENV_FILE, [COMPOSE_PROD], action="up", services=["ollama"], build=False), cwd=REPO_ROOT)
+        if not _wait_for_url(model_settings.ollama_base_url, timeout=120, label="Ollama", verbose=False):
+            raise typer.Exit(1)
+    elif local_ollama:
+        typer.echo(f"Using local Ollama at {model_settings.ollama_base_url}.")
+    else:
+        typer.echo(f"Using external Ollama at {model_settings.ollama_base_url}.")
+
+    model_names = [model_settings.ollama_embed_model, model_settings.ollama_chat_model]
+    typer.echo("Pulling Ollama models:")
+    for model_name in model_names:
+        typer.echo(f"  {model_name}")
+
+    async def pull_models() -> None:
+        client = OllamaClientWrapper(model_settings, logger)
+        try:
+            await client.pull_models(model_names)
+        finally:
+            await client.close()
+
+    try:
+        asyncio.run(pull_models())
+    except Exception as exc:
+        typer.echo(f"Model pull failed: {type(exc).__name__}: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    typer.echo("Ollama model pull complete.")
+
+
+def _bootstrap_vocabs(foreground: bool, start_services: bool) -> None:
+    _ensure_no_bootstrap_vocab_job()
+
+    os.environ["APP_ENV"] = "development"
+    _ensure_env_file(ENV_FILE, ENV_EXAMPLE)
+    env_values = _read_env_file(ENV_FILE)
+    local_neo4j, local_ollama = _local_service_flags(env_values)
+
+    if start_services:
+        services = [service for service, enabled in (("neo4j", local_neo4j), ("ollama", local_ollama)) if enabled]
+        if services:
+            if not _docker_available():
+                typer.echo("Error: Docker is not running. Please start Docker Desktop.", err=True)
+                raise typer.Exit(1)
+            typer.echo(f"Starting {' + '.join(services)} containers ...")
+            _run(_build_compose_cmd(ENV_FILE, [COMPOSE_PROD], action="up", services=services, build=False), cwd=REPO_ROOT)
+            if local_neo4j:
+                if not _wait_for_url("http://127.0.0.1:7474", timeout=120, label="Neo4j", verbose=False):
+                    raise typer.Exit(1)
+            if local_ollama:
+                ollama_port = env_values.get("OLLAMA_PORT", "11433")
+                if not _wait_for_url(f"http://127.0.0.1:{ollama_port}", timeout=120, label="Ollama", verbose=False):
+                    raise typer.Exit(1)
+        else:
+            typer.echo("Using external Neo4j/Ollama services from .env.")
+
+    process_env = os.environ.copy()
+    process_env.update(env_values)
+    process_env["APP_ENV"] = "development"
+    cmd = [sys.executable, "-m", "app.bootstrap", "initial-vocabs"]
+
+    if foreground:
+        _write_bootstrap_vocab_lock(os.getpid())
+        try:
+            result = _run(cmd, cwd=BACKEND_DIR, check=False, capture_output=False, env=process_env)
+            if result.returncode != 0:
+                raise typer.Exit(result.returncode)
+            return
+        finally:
+            _remove_bootstrap_vocab_lock(os.getpid())
+
+    BOOTSTRAP_VOCABS_LOG.parent.mkdir(parents=True, exist_ok=True)
+    with BOOTSTRAP_VOCABS_LOG.open("a", encoding="utf-8") as log_file:
+        log_file.write(f"\n[{datetime.now().isoformat(timespec='seconds')}] Starting initial vocabulary bootstrap\n")
+        popen_kwargs = {}
+        if sys.platform == "win32":
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = 0
+            popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+            popen_kwargs["startupinfo"] = startupinfo
+        process = subprocess.Popen(
+            cmd,
+            cwd=str(BACKEND_DIR),
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            env=process_env,
+            **popen_kwargs,
+        )
+
+    _write_bootstrap_vocab_lock(process.pid)
+    typer.echo(f"Started initial vocabulary bootstrap in the background (PID {process.pid}).")
+    typer.echo(f"Log file: {BOOTSTRAP_VOCABS_LOG.relative_to(REPO_ROOT)}")
+
+
 @app.command()
 def down() -> None:
     """Stop all SIMONE services (containers and local processes)."""
     os.environ.setdefault("APP_ENV", "production")
+
+    typer.echo("Stopping vocabulary bootstrap process ...")
+    bootstrap_pids = _stop_bootstrap_vocab_job()
+    if bootstrap_pids:
+        typer.echo(f"Stopped vocabulary bootstrap processes: {bootstrap_pids}")
+    else:
+        typer.echo("No vocabulary bootstrap process found.")
+
     if not _docker_available():
         typer.echo("Warning: Docker not available. Skipping container shutdown.", err=True)
     else:

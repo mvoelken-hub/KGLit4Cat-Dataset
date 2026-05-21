@@ -46,15 +46,27 @@ The CLI creates one `.env` file from `.env.example` and sets `APP_ENV` automatic
 | `OLLAMA_EMBED_MODEL` | `qwen3-embedding:0.6b` | `qwen3-embedding:0.6b` | Embedding model used for semantic search and vocabulary grounding. |
 | `OLLAMA_CHAT_MODEL` | `gemma4:31b-cloud` | `gemma4:31b-cloud` | Chat model used by extraction agents. The default is an Ollama Cloud model and may require sign-in. |
 | `FRONTEND_PORT` | `3000` | `3000` | Frontend browser port. The API automatically allows `localhost` and `127.0.0.1` origins for this port. |
-| `SKIP_INITIAL_VOCAB_IMPORT` | `false` | `true` | Override: skip importing initial vocabularies on startup. |
 | `SKIP_MODEL_PULL` | `false` | `true` | Override: skip pulling configured Ollama models on startup. |
-| `GENERATE_MISSING_EMBEDDINGS_ON_STARTUP` | `true` | `false` | Override: generate missing vocabulary embeddings on startup. |
+| `SKIP_INITIAL_VOCAB_IMPORT` | `false` | `true` | Override: skip importing initial vocabularies on startup. |
 
 \*Neo4j applies `NEO4J_USER` and `NEO4J_PASSWORD` only when `data/docker/neo4j/data` is initialized for the first time. If you change either value later, either update the `.env` file to match the persisted database credentials or run `simone reset-neo4j`.
 
 Startup behavior is mode-specific by default. Production **pulls configured models**, **imports initial vocabularies**, and **generates missing embeddings**.
 
 Development skips those startup-heavy tasks. Advanced users can override this by adding `SKIP_INITIAL_VOCAB_IMPORT`, `SKIP_MODEL_PULL`, or `GENERATE_MISSING_EMBEDDINGS_ON_STARTUP` to `.env`.
+
+The initial vocabulary list is defined in `backend/app/core/initial_vocabs.py`. Adjust `INITIAL_VOCABS` there if you want SIMONE to bootstrap a different set of vocabularies. You can inspect the active configuration with:
+
+```bash
+simone vocabs --info
+```
+
+Configured Ollama models come from `OLLAMA_EMBED_MODEL` and `OLLAMA_CHAT_MODEL` in `.env`. You can inspect or pull them manually with:
+
+```bash
+simone models --info
+simone models --pull
+```
 
 
 ### CLI Wrappers
