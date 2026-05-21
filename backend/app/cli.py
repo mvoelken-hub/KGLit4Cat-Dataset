@@ -271,6 +271,13 @@ def _frontend_url(env_values: Optional[dict[str, str]] = None) -> str:
     return f"http://127.0.0.1:{values.get('FRONTEND_PORT', '3000')}"
 
 
+def _neo4j_browser_url(env_values: Optional[dict[str, str]] = None) -> str:
+    values = env_values if env_values is not None else _read_env_file(ENV_FILE)
+    hostname = values.get("NEO4J_HOSTNAME")
+    host = "127.0.0.1" if _is_local_host(hostname) else hostname
+    return f"http://{host}:7474/browser/"
+
+
 def _check_dev_neo4j_auth(compose_files: list[Path]) -> bool:
     env_values = _read_env_file(ENV_FILE)
     user = env_values.get("NEO4J_USER", "neo4j")
@@ -467,6 +474,19 @@ def _format_health_check(name: str, check: object) -> str:
     return f"  {name}: {status_text}{details}"
 
 
+def _print_vocab_bootstrap_status() -> None:
+    pids = sorted(set(_running_bootstrap_vocab_pids()))
+    if not pids:
+        if BOOTSTRAP_VOCABS_PID.exists():
+            typer.echo("  Initial vocab bootstrap: not running (stale PID file)")
+        else:
+            typer.echo("  Initial vocab bootstrap: not running")
+        return
+
+    typer.echo(f"  Initial vocab bootstrap: running (PID {pids})")
+    typer.echo(f"  Bootstrap log:          {BOOTSTRAP_VOCABS_LOG.relative_to(REPO_ROOT)}")
+
+
 def _print_api_health() -> None:
     status_code, payload, error = _get_json_url(HEALTH_URL, timeout=60)
     typer.echo("")
@@ -563,11 +583,12 @@ def _wait_for_url(
 
 def _print_links() -> None:
     frontend_url = _frontend_url()
+    neo4j_browser_url = _neo4j_browser_url()
     typer.echo("")
     typer.echo("SIMONE is starting up. You can access the services at:")
     typer.echo(f"  Frontend:    {frontend_url}")
     typer.echo(f"  API Docs:    {API_URL}")
-    typer.echo(f"  Neo4j:       {NEO4J_BROWSER_URL}")
+    typer.echo(f"  Neo4j:       {neo4j_browser_url}")
     typer.echo("")
 
 
@@ -1300,18 +1321,17 @@ def status() -> None:
     _ensure_env_file(ENV_FILE, ENV_EXAMPLE)
     if not _docker_available():
         typer.echo("Docker is not available.")
-        return
-
-    typer.echo("Docker containers:")
-    result = _run(
-        _compose_base_cmd(ENV_FILE, [COMPOSE_PROD]) + ["ps", "--format", "table {{.Service}}\t{{.Status}}\t{{.Ports}}"],
-        cwd=REPO_ROOT,
-        check=False,
-    )
-    if result.stdout:
-        typer.echo(result.stdout)
     else:
-        typer.echo("  (no containers running)")
+        typer.echo("Docker containers:")
+        result = _run(
+            _compose_base_cmd(ENV_FILE, [COMPOSE_PROD]) + ["ps", "--format", "table {{.Service}}\t{{.Status}}\t{{.Ports}}"],
+            cwd=REPO_ROOT,
+            check=False,
+        )
+        if result.stdout:
+            typer.echo(result.stdout)
+        else:
+            typer.echo("  (no containers running)")
 
     typer.echo("")
     typer.echo("Local dev processes (used by 'simone dev', not by production 'simone up'):")
@@ -1321,13 +1341,17 @@ def status() -> None:
     typer.echo(f"  API (uvicorn):     {'running (PID ' + str(api_pids) + ')' if api_pids else 'not running'}")
     typer.echo(f"  Frontend (vite):   {'running (PID ' + str(frontend_pids) + ')' if frontend_pids else 'not running'}")
 
+    typer.echo("")
+    typer.echo("Background jobs:")
+    _print_vocab_bootstrap_status()
+
     _print_api_health()
 
     typer.echo("")
     typer.echo("Service URLs:")
     typer.echo(f"  Frontend:    {_frontend_url()}")
     typer.echo(f"  API Docs:    {API_URL}")
-    typer.echo(f"  Neo4j:       {NEO4J_BROWSER_URL}")
+    typer.echo(f"  Neo4j:       {_neo4j_browser_url()}")
 
 
 if __name__ == "__main__":
