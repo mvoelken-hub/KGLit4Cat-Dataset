@@ -39,7 +39,7 @@ The CLI creates one `.env` file from `.env.example` and sets `APP_ENV` automatic
 |---|---|---|---|
 | `NEO4J_HOSTNAME` | empty | empty | Optional Neo4j host override. Empty, `localhost`, or `127.0.0.1` means the CLI manages the local Neo4j Docker service. Remote values are used directly and the local service is skipped. |
 | `NEO4J_PORT` | `7687` | `7687` | Neo4j Bolt port. The API derives the full Bolt URI automatically. |
-| `NEO4J_USER` | `neo4j` | `neo4j` | Neo4j username. |
+| `NEO4J_USER` | `neo4j` | `neo4j` | Neo4j username.\* |
 | `NEO4J_PASSWORD` | `12345678` | `12345678` | Neo4j password used by the API and container initialization.\* |
 | `OLLAMA_HOSTNAME` | empty | empty | Optional Ollama host override. Empty, `localhost`, or `127.0.0.1` means the CLI manages the local Ollama Docker service. Remote values are used directly and the local service is skipped. |
 | `OLLAMA_PORT` | `11433` | `11433` | Ollama API port. The API derives the base URL automatically. |
@@ -50,7 +50,7 @@ The CLI creates one `.env` file from `.env.example` and sets `APP_ENV` automatic
 | `SKIP_MODEL_PULL` | `false` | `true` | Override: skip pulling configured Ollama models on startup. |
 | `GENERATE_MISSING_EMBEDDINGS_ON_STARTUP` | `true` | `false` | Override: generate missing vocabulary embeddings on startup. |
 
-\*Neo4j applies `NEO4J_PASSWORD` only when `data/docker/neo4j/data` is initialized for the first time. If you change the password later, either update the `.env` file to match the persisted database password or run `simone reset-neo4j`.
+\*Neo4j applies `NEO4J_USER` and `NEO4J_PASSWORD` only when `data/docker/neo4j/data` is initialized for the first time. If you change either value later, either update the `.env` file to match the persisted database credentials or run `simone reset-neo4j`.
 
 Startup behavior is mode-specific by default. Production **pulls configured models**, **imports initial vocabularies**, and **generates missing embeddings**.
 
