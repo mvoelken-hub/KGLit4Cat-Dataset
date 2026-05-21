@@ -26,8 +26,8 @@ The prototype aims to turn an uploaded dataset archive into a progressively refi
 ### Clone and Prepare
 
 ```bash
-git clone https://github.com/smnclmns/Semantic-Inference-Module-for-Ontology-driven-Node-Extraction-SIMONE-.git
-cd Semantic-Inference-Module-for-Ontology-driven-Node-Extraction-SIMONE-
+git clone https://github.com/smnclmns/Semantic-Inference-Module-for-Ontology-driven-Node-Extraction-SIMONE.git
+cd Semantic-Inference-Module-for-Ontology-driven-Node-Extraction-SIMONE
 ```
 
 
