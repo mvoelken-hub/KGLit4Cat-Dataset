@@ -37,6 +37,7 @@ The CLI creates one `.env` file from `.env.example` and sets `APP_ENV` automatic
 
 | Variable | Production default | Development default | Purpose |
 |---|---|---|---|
+| `APP_ENV` | `production` | `development` | Runtime mode. The CLI sets this automatically for `simone up` and `simone dev`. |
 | `NEO4J_HOSTNAME` | empty | empty | Optional Neo4j host override. Empty, `localhost`, or `127.0.0.1` means the CLI manages the local Neo4j Docker service. Remote values are used directly and the local service is skipped. |
 | `NEO4J_PORT` | `7687` | `7687` | Neo4j Bolt port. The API derives the full Bolt URI automatically. |
 | `NEO4J_USER` | `neo4j` | `neo4j` | Neo4j username.\* |
@@ -45,6 +46,10 @@ The CLI creates one `.env` file from `.env.example` and sets `APP_ENV` automatic
 | `OLLAMA_PORT` | `11433` | `11433` | Ollama API port. The API derives the base URL automatically. |
 | `OLLAMA_EMBED_MODEL` | `qwen3-embedding:0.6b` | `qwen3-embedding:0.6b` | Embedding model used for semantic search and vocabulary grounding. |
 | `OLLAMA_CHAT_MODEL` | `gemma4:31b-cloud` | `gemma4:31b-cloud` | Chat model used by extraction agents. The default is an Ollama Cloud model and may require sign-in. |
+| `OLLAMA_EMBED_DIMENSIONS` | `768` | `768` | Expected embedding vector size for the configured embedding model. |
+| `EMBEDDING_BATCH_SIZE` | `32` | `32` | Number of texts embedded per Ollama request batch. |
+| `MAX_CONTEXT_LENGTH` | `64000` | `64000` | Maximum model context length used when preparing Ollama requests. |
+| `RUNTIME_DIR` | `./.runtime` | `./.runtime` | Base runtime directory for uploads, vocabularies, profiles, output files, and API logs. |
 | `FRONTEND_PORT` | `3000` | `3000` | Frontend browser port. The API automatically allows `localhost` and `127.0.0.1` origins for this port. |
 | `SKIP_MODEL_PULL` | `false` | `true` | Override: skip pulling configured Ollama models on startup. |
 | `SKIP_INITIAL_VOCAB_IMPORT` | `false` | `true` | Override: skip importing initial vocabularies on startup. |
@@ -53,7 +58,7 @@ The CLI creates one `.env` file from `.env.example` and sets `APP_ENV` automatic
 
 Startup behavior is mode-specific by default. Production **pulls configured models**, **imports initial vocabularies**, and **generates missing embeddings**.
 
-Development skips those startup-heavy tasks. Advanced users can override this by adding `SKIP_INITIAL_VOCAB_IMPORT`, `SKIP_MODEL_PULL`, or `GENERATE_MISSING_EMBEDDINGS_ON_STARTUP` to `.env`.
+Development skips those startup-heavy tasks. Advanced users can override this by adding `SKIP_INITIAL_VOCAB_IMPORT` or `SKIP_MODEL_PULL` to `.env`.
 
 The initial vocabulary list is defined in `backend/app/core/initial_vocabs.py`. Adjust `INITIAL_VOCABS` there if you want SIMONE to bootstrap a different set of vocabularies. You can inspect the active configuration with:
 

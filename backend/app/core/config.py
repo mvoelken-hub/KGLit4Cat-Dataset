@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     ollama_hostname: str | None = None
     ollama_port: int = 11433
     ollama_embed_model: str = "qwen3-embedding:0.6b"
-    ollama_chat_model: str = "gemma4:31b-cloud" #TODO: implement signin logic when ollama container is started the first time
+    ollama_chat_model: str = "gemma4:31b-cloud"
     ollama_embed_dimensions: int = 768
     embedding_batch_size: int = 32
     max_context_length: int = 64000
@@ -78,11 +78,6 @@ class Settings(BaseSettings):
         return self.runtime_dir / "output"
 
 
-    # Workflow configuration
-    semantic_chunking_threshold: int = 97
-    combined_lines_buffer_size: int = 2
-    num_chunks_per_turn: int = 5
-
     # Vocabulary configuration
     rdf_skolem_prefix: str = "bnode"
     rdf_skolem_base: str = "http://example.org/.well-known/bnodes/"
@@ -90,7 +85,6 @@ class Settings(BaseSettings):
     # Startup behavior
     skip_initial_vocab_import_override: bool | None = Field(default=None, validation_alias="SKIP_INITIAL_VOCAB_IMPORT")
     skip_model_pull_override: bool | None = Field(default=None, validation_alias="SKIP_MODEL_PULL")
-    generate_missing_embeddings_on_startup_override: bool | None = Field(default=None, validation_alias="GENERATE_MISSING_EMBEDDINGS_ON_STARTUP")
 
     @computed_field
     @property
@@ -105,13 +99,6 @@ class Settings(BaseSettings):
         if self.skip_model_pull_override is not None:
             return self.skip_model_pull_override
         return self.app_env != "production"
-
-    @computed_field
-    @property
-    def generate_missing_embeddings_on_startup(self) -> bool:
-        if self.generate_missing_embeddings_on_startup_override is not None:
-            return self.generate_missing_embeddings_on_startup_override
-        return self.app_env == "production"
 
     # Frontend configuration
     frontend_port: int = 3000
