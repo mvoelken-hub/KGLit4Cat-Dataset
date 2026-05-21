@@ -1,4 +1,3 @@
 @echo off
 REM SIMONE CLI wrapper — delegates to the backend virtual environment
-cd /d "%~dp0backend"
-uv run simone %*
+uv --directory "%~dp0backend" run simone %*

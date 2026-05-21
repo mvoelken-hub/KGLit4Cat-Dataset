@@ -12,7 +12,7 @@ from app.core.task_registry import task_registry
 
 from app.dependencies import get_semantic_service
 
-from backend.app.bootstrap import start_setup
+from app.bootstrap import start_setup
 
 # Import API routers
 from app.api.v1.datasources import router as datasources_router
@@ -62,7 +62,7 @@ fastapi_app = FastAPI(title="Semantic Metadata Extraction API", lifespan=lifespa
 # Configure CORS middleware to allow requests from the frontend application
 fastapi_app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_base_url],
+    allow_origins=settings.frontend_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

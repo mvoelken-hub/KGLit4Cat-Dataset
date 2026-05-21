@@ -73,7 +73,12 @@ class Settings(BaseSettings):
     generate_missing_embeddings_on_startup: bool = False
 
     # Frontend configuration
-    frontend_base_url: str = "http://localhost:3000"
+    frontend_base_urls: str = "http://localhost:3000,http://127.0.0.1:3000"
+
+    @computed_field
+    @property
+    def frontend_cors_origins(self) -> list[str]:
+        return [item.strip() for item in self.frontend_base_urls.split(",") if item.strip()]
 
 
 settings = Settings()
