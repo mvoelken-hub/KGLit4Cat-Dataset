@@ -680,36 +680,44 @@ def dev(
         "$env:APP_ENV='development'; uv run --env-file ../.env uvicorn app.main:fastapi_app "
         '--host 127.0.0.1 --port 8000 --reload'
     )
-    typer.echo("Starting local API with hot reload ...")
-    if sys.platform == "win32":
-        subprocess.Popen(
-            ["cmd", "/c", "start", "SIMONE API", "powershell", "-Command", api_cmd],
-            cwd=str(BACKEND_DIR),
-            creationflags=subprocess.CREATE_NEW_CONSOLE,
-        )
+    existing_api = _find_pids_by_cmdline("uvicorn app.main:fastapi_app") or _find_pids_by_window_title("SIMONE API")
+    if existing_api:
+        typer.echo("Local API is already running (PID " + str(existing_api) + "). Skipping.")
     else:
-        subprocess.Popen(
-            "APP_ENV=development uv run --env-file ../.env uvicorn app.main:fastapi_app --host 127.0.0.1 --port 8000 --reload",
-            cwd=str(BACKEND_DIR),
-            shell=True,
-        )
-
-    if not use_docker_frontend:
-        # Start local frontend in a new visible terminal window
-        frontend_cmd = "npm run dev -- --host 127.0.0.1"
-        typer.echo("Starting local frontend dev server ...")
+        typer.echo("Starting local API with hot reload ...")
         if sys.platform == "win32":
             subprocess.Popen(
-                ["cmd", "/c", "start", "SIMONE Frontend", "powershell", "-Command", frontend_cmd],
-                cwd=str(FRONTEND_DIR),
+                ["cmd", "/c", "start", "SIMONE API", "powershell", "-Command", api_cmd],
+                cwd=str(BACKEND_DIR),
                 creationflags=subprocess.CREATE_NEW_CONSOLE,
             )
         else:
             subprocess.Popen(
-                frontend_cmd,
-                cwd=str(FRONTEND_DIR),
+                "APP_ENV=development uv run --env-file ../.env uvicorn app.main:fastapi_app --host 127.0.0.1 --port 8000 --reload",
+                cwd=str(BACKEND_DIR),
                 shell=True,
             )
+
+    if not use_docker_frontend:
+        # Start local frontend in a new visible terminal window
+        existing_frontend = _find_pids_by_cmdline("npm run dev") or _find_pids_by_cmdline("vite") or _find_pids_by_window_title("SIMONE Frontend")
+        if existing_frontend:
+            typer.echo("Local frontend is already running (PID " + str(existing_frontend) + "). Skipping.")
+        else:
+            frontend_cmd = "npm run dev -- --host 127.0.0.1"
+            typer.echo("Starting local frontend dev server ...")
+            if sys.platform == "win32":
+                subprocess.Popen(
+                    ["cmd", "/c", "start", "SIMONE Frontend", "powershell", "-Command", frontend_cmd],
+                    cwd=str(FRONTEND_DIR),
+                    creationflags=subprocess.CREATE_NEW_CONSOLE,
+                )
+            else:
+                subprocess.Popen(
+                    frontend_cmd,
+                    cwd=str(FRONTEND_DIR),
+                    shell=True,
+                )
     else:
         pass
 
