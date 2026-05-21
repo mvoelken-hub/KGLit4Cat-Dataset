@@ -51,6 +51,7 @@ h1 span:last-child { margin-top: 0.2em; }
 .profile-register-form input { border-radius: 0.65rem; padding: 0.55rem 0.65rem; font-size: 0.82rem; }
 .profile-register-form button { padding: 0.55rem 0.75rem; font-size: 0.8rem; }
 .profile-remove-button { width: 100%; margin-top: 8px; padding: 0.5rem 0.7rem; font-size: 0.78rem; }
+.dataset-remove-button { width: 100%; margin-top: 8px; padding: 0.5rem 0.7rem; font-size: 0.78rem; }
 .profile-source-toggle { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .profile-source-toggle button { border-radius: 0.65rem; }
 

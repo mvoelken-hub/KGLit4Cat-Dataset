@@ -41,3 +41,11 @@ export async function getDataPackageChunks(data_package_id: string): Promise<Chu
 export async function getFileEntryContent(data_package_id: string, file_path: string): Promise<{ file_path: string; file_name: string; file_extension: string; content: string }> {
   return readJson(await fetch(apiBaseUrl + '/datasources/' + encodeURIComponent(data_package_id) + '/files/' + encodeURIComponent(file_path)));
 }
+
+export async function deleteDataPackage(id: string): Promise<void> {
+  const response = await fetch(apiBaseUrl + '/datasources/' + encodeURIComponent(id), { method: 'DELETE' });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(body || `Failed to delete dataset (${response.status})`);
+  }
+}

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { chunkDataPackage, getChunkStatus, getDataPackageChunks, getFileEntryContent, listDataPackages, uploadDataPackage } from './api/datasources';
+import { chunkDataPackage, deleteDataPackage, getChunkStatus, getDataPackageChunks, getFileEntryContent, listDataPackages, uploadDataPackage } from './api/datasources';
 import {
   extractInitialContext,
   extractInitialDraft,
@@ -22,7 +22,7 @@ import { ChunkingDialog } from './components/ChunkingDialog';
 import type { ChunkRequestResponse, ChunkResponse, DataPackageResponse, FileEntryResponse, InitialContext, ProfileManifestResponse, TextQualityConfig } from './api/types';
 import type { PatchArtifacts, PatchProgress, PatchReviewResolutionItem, PatchReviewState, PatchTaskStatus } from './api/extraction';
 
-type BusyKey = 'upload' | 'chunk' | 'context' | 'draft' | 'patch' | 'resolve' | 'load' | 'profile' | 'profile-delete';
+type BusyKey = 'upload' | 'chunk' | 'context' | 'draft' | 'patch' | 'resolve' | 'load' | 'profile' | 'profile-delete' | 'dataset-delete';
 type ReviewTab = 'matched' | 'unmapped' | 'resolved';
 type ReviewItem = JsonPatchMarker & { kind: 'matched' | 'unmapped'; targetPath?: string; fact?: string; reason?: string; outcome?: string; resolutionNote?: string };
 
@@ -632,6 +632,35 @@ export function App() {
     }
   }
 
+  async function onDeleteDataPackage() {
+    if (!selectedPackageId) {
+      setMessage('Select a dataset to remove.');
+      return;
+    }
+    const pkg = packages.find((p) => p.id === selectedPackageId);
+    const confirmed = window.confirm(`Remove dataset "${pkg?.file_name ?? selectedPackageId}"? This deletes the uploaded dataset and all associated chunks.`);
+    if (!confirmed) return;
+
+    setBusy('dataset-delete');
+    try {
+      await deleteDataPackage(selectedPackageId);
+      const nextPackages = await listDataPackages();
+      setPackages(nextPackages);
+      setSelectedPackageId(nextPackages[0]?.id ?? '');
+      setChunkResult(null);
+      setChunksByFile([]);
+      setContext(null);
+      setDraft(null);
+      setPatchArtifacts(null);
+      setPatchReviewState(emptyReviewState);
+      setMessage(`Dataset ${pkg?.file_name ?? selectedPackageId} removed.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Dataset removal failed.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function onUpload(file?: File) {
     if (!file) return;
     setBusy('upload');
@@ -1031,6 +1060,13 @@ export function App() {
                   <option value="">No package selected</option>
                   {packages.map((item) => <option key={item.id} value={item.id}>{item.file_name}</option>)}
                 </select>
+                <button
+                  className="ghost dataset-remove-button"
+                  onClick={() => void onDeleteDataPackage()}
+                  disabled={!selectedPackageId || !!busy}
+                >
+                  {busy === 'dataset-delete' ? 'Removing...' : 'Remove selected'}
+                </button>
               </div>
               <div className="panel compact">
                 <div className="panel-heading">
