@@ -1,4 +1,5 @@
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -53,6 +54,12 @@ class FileSystemProfileRepository:
                 manifests.append(ProfileManifest.model_validate(json.load(file)))
 
         return sorted(manifests, key=lambda manifest: manifest.identifier)
+
+    def delete_profile(self, identifier: str) -> None:
+        profile_dir = self._profile_dir(identifier)
+        if not profile_dir.exists():
+            raise ProfileNotFoundError(f"Profile with identifier '{identifier}' not found.")
+        shutil.rmtree(profile_dir)
 
     def load_merged_schema(self, identifier: str) -> str:
         return self._read_required_text(identifier, MERGED_SCHEMA_FILE)

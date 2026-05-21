@@ -16,13 +16,13 @@ import {
   savePatchReviewState,
   setProtectedFields as apiSetProtectedFields,
 } from './api/extraction';
-import { listProfiles } from './api/profiles';
+import { deleteProfile, listProfiles, registerProfile } from './api/profiles';
 import { JsonEditor, type JsonObject, type JsonPatchMarker, type JsonValue, setValueAtPath, getValueAtPath, extractPatchInnerValue, PatchValueEditor } from './components/JsonEditor';
 import { ChunkingDialog } from './components/ChunkingDialog';
 import type { ChunkRequestResponse, ChunkResponse, DataPackageResponse, FileEntryResponse, InitialContext, ProfileManifestResponse, TextQualityConfig } from './api/types';
 import type { PatchArtifacts, PatchProgress, PatchReviewResolutionItem, PatchReviewState, PatchTaskStatus } from './api/extraction';
 
-type BusyKey = 'upload' | 'chunk' | 'context' | 'draft' | 'patch' | 'resolve' | 'load';
+type BusyKey = 'upload' | 'chunk' | 'context' | 'draft' | 'patch' | 'resolve' | 'load' | 'profile' | 'profile-delete';
 type ReviewTab = 'matched' | 'unmapped' | 'resolved';
 type ReviewItem = JsonPatchMarker & { kind: 'matched' | 'unmapped'; targetPath?: string; fact?: string; reason?: string; outcome?: string; resolutionNote?: string };
 
@@ -471,6 +471,15 @@ export function App() {
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [reviewPanelCollapsed, setReviewPanelCollapsed] = useState(false);
   const [chunkingDialogOpen, setChunkingDialogOpen] = useState(false);
+  const [profileFormOpen, setProfileFormOpen] = useState(false);
+  const [profileIdentifier, setProfileIdentifier] = useState('');
+  const [profileTargetClass, setProfileTargetClass] = useState('Dataset');
+  const [profileSourceMode, setProfileSourceMode] = useState<'url' | 'upload'>('url');
+  const [profileSchemaUrl, setProfileSchemaUrl] = useState('');
+  const [profileSchemaFile, setProfileSchemaFile] = useState<File | null>(null);
+  const [profileVersion, setProfileVersion] = useState('');
+  const [profileEnrichableFields, setProfileEnrichableFields] = useState('');
+  const datasetUploadInputRef = useRef<HTMLInputElement | null>(null);
   const saveDraftTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedPackageIdRef = useRef('');
 
@@ -545,6 +554,84 @@ export function App() {
     setSelectedPackageId(nextPackageId);
   }
 
+  function resetProfileForm() {
+    setProfileIdentifier('');
+    setProfileTargetClass('Dataset');
+    setProfileSourceMode('url');
+    setProfileSchemaUrl('');
+    setProfileSchemaFile(null);
+    setProfileVersion('');
+    setProfileEnrichableFields('');
+  }
+
+  async function onRegisterProfile() {
+    const identifier = profileIdentifier.trim();
+    const targetClass = profileTargetClass.trim() || 'Dataset';
+    const schemaUrl = profileSchemaUrl.trim();
+    const version = profileVersion.trim();
+    const enrichableFields = profileEnrichableFields
+      .split(',')
+      .map((field) => field.trim())
+      .filter(Boolean);
+
+    if (!identifier) {
+      setMessage('Profile identifier is required.');
+      return;
+    }
+    if (profileSourceMode === 'url' && !schemaUrl) {
+      setMessage('Schema URL is required for URL registration.');
+      return;
+    }
+    if (profileSourceMode === 'upload' && !profileSchemaFile) {
+      setMessage('Schema file is required for upload registration.');
+      return;
+    }
+
+    setBusy('profile');
+    try {
+      const registered = await registerProfile({
+        identifier,
+        target_class: targetClass,
+        schema_url: profileSourceMode === 'url' ? schemaUrl : undefined,
+        schema_file: profileSourceMode === 'upload' ? profileSchemaFile ?? undefined : undefined,
+        version: version || undefined,
+        enrichable_fields: enrichableFields,
+      });
+      const nextProfiles = await listProfiles();
+      setProfiles(nextProfiles);
+      setSelectedProfile(registered.identifier);
+      setProfileFormOpen(false);
+      resetProfileForm();
+      setMessage(`Profile ${registered.identifier} registered.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Profile registration failed.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function onDeleteProfile() {
+    if (!selectedProfile) {
+      setMessage('Select a profile to remove.');
+      return;
+    }
+    const confirmed = window.confirm(`Remove profile "${selectedProfile}"? This deletes the registered profile artifacts.`);
+    if (!confirmed) return;
+
+    setBusy('profile-delete');
+    try {
+      await deleteProfile(selectedProfile);
+      const nextProfiles = await listProfiles();
+      setProfiles(nextProfiles);
+      setSelectedProfile(nextProfiles[0]?.identifier ?? '');
+      setMessage(`Profile ${selectedProfile} removed.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Profile removal failed.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function onUpload(file?: File) {
     if (!file) return;
     setBusy('upload');
@@ -563,6 +650,9 @@ export function App() {
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Upload failed.');
     } finally {
+      if (datasetUploadInputRef.current) {
+        datasetUploadInputRef.current.value = '';
+      }
       setBusy(null);
     }
   }
@@ -923,27 +1013,93 @@ export function App() {
           </button>
           {!railCollapsed && (
             <>
-              <label className="upload-box">
-                <input type="file" accept=".zip" onChange={(event) => void onUpload(event.target.files?.[0])} />
-                <span>Upload dataset ZIP</span>
-                <strong>{busy === 'upload' ? 'Uploading...' : 'Choose archive'}</strong>
-              </label>
               <div className="panel compact">
                 <div className="panel-heading">
-                  <span>Packages</span>
-                  <button onClick={() => void refresh()} disabled={!!busy}>Refresh</button>
+                  <span>Datasets</span>
+                  <button onClick={() => datasetUploadInputRef.current?.click()} disabled={!!busy}>
+                    {busy === 'upload' ? 'Uploading...' : 'Upload ZIP'}
+                  </button>
                 </div>
+                <input
+                  ref={datasetUploadInputRef}
+                  className="hidden-file-input"
+                  type="file"
+                  accept=".zip"
+                  onChange={(event) => void onUpload(event.target.files?.[0])}
+                />
                 <select value={selectedPackageId} onChange={(event) => handlePackageSelection(event.target.value)}>
                   <option value="">No package selected</option>
                   {packages.map((item) => <option key={item.id} value={item.id}>{item.file_name}</option>)}
                 </select>
               </div>
               <div className="panel compact">
-                <div className="panel-heading"><span>Profile</span></div>
+                <div className="panel-heading">
+                  <span>Profile</span>
+                  <button onClick={() => setProfileFormOpen((open) => !open)} disabled={!!busy}>
+                    {profileFormOpen ? 'Close' : 'Register'}
+                  </button>
+                </div>
                 <select value={selectedProfile} onChange={(event) => setSelectedProfile(event.target.value)}>
                   <option value="">No profile selected</option>
                   {profiles.map((profile) => <option key={profile.identifier} value={profile.identifier}>{profile.identifier}</option>)}
                 </select>
+                <button
+                  className="ghost profile-remove-button"
+                  onClick={() => void onDeleteProfile()}
+                  disabled={!selectedProfile || !!busy}
+                >
+                  {busy === 'profile-delete' ? 'Removing...' : 'Remove selected'}
+                </button>
+                {profileFormOpen && (
+                  <div className="profile-register-form">
+                    <label>
+                      <span>Identifier</span>
+                      <input value={profileIdentifier} onChange={(event) => setProfileIdentifier(event.target.value)} placeholder="my-profile" />
+                    </label>
+                    <label>
+                      <span>Target class</span>
+                      <input value={profileTargetClass} onChange={(event) => setProfileTargetClass(event.target.value)} placeholder="Dataset" />
+                    </label>
+                    <div className="profile-source-toggle">
+                      <button
+                        className={profileSourceMode === 'url' ? '' : 'ghost'}
+                        onClick={() => setProfileSourceMode('url')}
+                        type="button"
+                      >
+                        URL
+                      </button>
+                      <button
+                        className={profileSourceMode === 'upload' ? '' : 'ghost'}
+                        onClick={() => setProfileSourceMode('upload')}
+                        type="button"
+                      >
+                        Upload
+                      </button>
+                    </div>
+                    {profileSourceMode === 'url' ? (
+                      <label>
+                        <span>Schema URL</span>
+                        <input value={profileSchemaUrl} onChange={(event) => setProfileSchemaUrl(event.target.value)} placeholder="https://..." />
+                      </label>
+                    ) : (
+                      <label>
+                        <span>Schema file</span>
+                        <input type="file" accept=".yaml,.yml,.json" onChange={(event) => setProfileSchemaFile(event.target.files?.[0] ?? null)} />
+                      </label>
+                    )}
+                    <label>
+                      <span>Version</span>
+                      <input value={profileVersion} onChange={(event) => setProfileVersion(event.target.value)} placeholder="optional" />
+                    </label>
+                    <label>
+                      <span>Enrichable fields</span>
+                      <input value={profileEnrichableFields} onChange={(event) => setProfileEnrichableFields(event.target.value)} placeholder="field_a, field_b" />
+                    </label>
+                    <button onClick={() => void onRegisterProfile()} disabled={busy === 'profile'}>
+                      {busy === 'profile' ? 'Registering...' : 'Register profile'}
+                    </button>
+                  </div>
+                )}
               </div>
             </>
           )}

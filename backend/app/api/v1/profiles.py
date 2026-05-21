@@ -163,3 +163,14 @@ async def get_profile(
         return _profile_manifest_response(profile_service.get_profile(identifier))
     except Exception as exc:
         _raise_profile_error(exc)
+
+
+@router.delete("/{identifier}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_profile(
+    identifier: str = Path(..., description="Profile identifier."),
+    profile_service: ProfileService = Depends(get_profile_service),
+):
+    try:
+        profile_service.delete_profile(identifier)
+    except Exception as exc:
+        _raise_profile_error(exc)

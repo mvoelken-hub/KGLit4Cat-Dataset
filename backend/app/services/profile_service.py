@@ -89,6 +89,10 @@ class ProfileService:
             raise ProfileNotFoundError(f"Profile with identifier '{identifier}' not found.")
         return manifest
 
+    def delete_profile(self, identifier: str) -> None:
+        self.get_profile(identifier)
+        self.profile_repository.delete_profile(identifier)
+
     def load_json_schema(self, identifier: str) -> dict:
         self.get_profile(identifier)
         return self.profile_repository.load_json_schema(identifier)

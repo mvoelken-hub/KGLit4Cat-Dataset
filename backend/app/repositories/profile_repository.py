@@ -13,6 +13,9 @@ class ProfileRepository(Protocol):
     def list_profile_manifests(self) -> list[ProfileManifest]:
         ...
 
+    def delete_profile(self, identifier: str) -> None:
+        ...
+
     def load_merged_schema(self, identifier: str) -> str:
         ...
 

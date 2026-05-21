@@ -199,6 +199,16 @@ class ExtractionProfileApiTests(unittest.TestCase):
             self.assertEqual(jsonld["document"]["title"], "Catalyst dataset")
             self.assertNotIn("description", jsonld["document"])
 
+            delete_response = client.delete("/api/v1/profiles/test-profile")
+            self.assertEqual(delete_response.status_code, 204)
+
+            list_after_delete_response = client.get("/api/v1/profiles")
+            self.assertEqual(list_after_delete_response.status_code, 200)
+            self.assertEqual(list_after_delete_response.json(), [])
+
+            missing_delete_response = client.delete("/api/v1/profiles/test-profile")
+            self.assertEqual(missing_delete_response.status_code, 404)
+
 
 if __name__ == "__main__":
     unittest.main()

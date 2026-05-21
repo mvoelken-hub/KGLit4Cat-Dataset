@@ -1,8 +1,34 @@
 import { apiBaseUrl, readJson } from './client';
 import type { ProfileManifestResponse } from './types';
 
+export interface RegisterProfileInput {
+  identifier: string;
+  target_class: string;
+  schema_url?: string;
+  schema_file?: File;
+  version?: string;
+  enrichable_fields?: string[];
+}
+
 export async function listProfiles(): Promise<ProfileManifestResponse[]> {
   return readJson(await fetch(apiBaseUrl + '/profiles'));
+}
+
+export async function registerProfile(input: RegisterProfileInput): Promise<ProfileManifestResponse> {
+  const form = new FormData();
+  form.append('identifier', input.identifier);
+  form.append('target_class', input.target_class || 'Dataset');
+  if (input.schema_url) form.append('schema_url', input.schema_url);
+  if (input.schema_file) form.append('schema_file', input.schema_file);
+  if (input.version) form.append('version', input.version);
+  for (const field of input.enrichable_fields ?? []) {
+    form.append('enrichable_fields', field);
+  }
+  return readJson(await fetch(apiBaseUrl + '/profiles', { method: 'POST', body: form }));
+}
+
+export async function deleteProfile(identifier: string): Promise<void> {
+  await readJson(await fetch(apiBaseUrl + '/profiles/' + encodeURIComponent(identifier), { method: 'DELETE' }));
 }
 
 export async function validateProfileDocument(identifier: string, document: object): Promise<{ valid: boolean; errors: Array<{ path: string; message: string; schema_path: string }> }> {
