@@ -472,8 +472,17 @@ export function App() {
   const [reviewPanelCollapsed, setReviewPanelCollapsed] = useState(false);
   const [chunkingDialogOpen, setChunkingDialogOpen] = useState(false);
   const saveDraftTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const selectedPackageIdRef = useRef('');
 
   const selectedPackage = useMemo(() => packages.find((item) => item.id === selectedPackageId) || null, [packages, selectedPackageId]);
+  const chunkCountByFile = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const group of chunksByFile) {
+      const filePath = group[0]?.file_path;
+      if (filePath) counts.set(filePath, group.length);
+    }
+    return counts;
+  }, [chunksByFile]);
   const isPatching = patchStatus === 'running';
   const hasVisiblePatchArtifacts = Boolean(patchArtifacts && hasPatchArtifacts(patchArtifacts));
   const patchButtonLabel = isPatching ? 'Patching...' : hasVisiblePatchArtifacts ? 'Resume patching from checkpoint' : 'Start new patching';
@@ -509,6 +518,33 @@ export function App() {
     void refresh();
   }, []);
 
+  useEffect(() => {
+    selectedPackageIdRef.current = selectedPackageId;
+  }, [selectedPackageId]);
+
+  function resetPackageWorkflowState() {
+    setChunkResult(null);
+    setHasChunks(false);
+    setChunksByFile([]);
+    setViewingFile(null);
+    setFileContent(null);
+    setContext(null);
+    setDraft(null);
+    setProtectedFields([]);
+    setPatchStatus(null);
+    setPatchProgress(null);
+    setPatchArtifacts(null);
+    setPatchReviewState(emptyReviewState);
+    setChunkingDialogOpen(false);
+    setBusy(null);
+  }
+
+  function handlePackageSelection(nextPackageId: string) {
+    selectedPackageIdRef.current = nextPackageId;
+    resetPackageWorkflowState();
+    setSelectedPackageId(nextPackageId);
+  }
+
   async function onUpload(file?: File) {
     if (!file) return;
     setBusy('upload');
@@ -518,6 +554,7 @@ export function App() {
       setPackages(nextPackages);
       setSelectedPackageId(uploaded.id);
       setChunkResult(null);
+      setChunksByFile([]);
       setContext(null);
       setDraft(null);
       setPatchArtifacts(null);
@@ -532,39 +569,46 @@ export function App() {
 
   async function onChunk(params?: { replace_existing_chunks: boolean; buffer_window_size: number; semantic_chunking_threshold: number; protected_line_indices: Record<string, number[]>; text_quality_config: TextQualityConfig }) {
     if (!selectedPackageId) return;
+    const packageId = selectedPackageId;
     setBusy('chunk');
     try {
       const result = await chunkDataPackage({
-        id: selectedPackageId,
+        id: packageId,
         replace_existing_chunks: params?.replace_existing_chunks ?? false,
         buffer_window_size: params?.buffer_window_size,
         semantic_chunking_threshold: params?.semantic_chunking_threshold,
         protected_line_indices: params?.protected_line_indices,
         text_quality_config: params?.text_quality_config,
       });
+      if (selectedPackageIdRef.current !== packageId) return;
       setChunkResult(result);
+      setChunksByFile(result.chunks);
       setHasChunks(result.status === 'completed');
       setMessage(result.status === 'completed' ? 'Chunks are ready.' : 'Chunking is running...');
     } catch (error) {
+      if (selectedPackageIdRef.current !== packageId) return;
       setMessage(error instanceof Error ? error.message : 'Chunking failed.');
     } finally {
-      setBusy(null);
+      if (selectedPackageIdRef.current === packageId) setBusy(null);
     }
   }
 
   async function pollChunkProgress() {
     if (!selectedPackageId || !chunkResult) return;
+    const packageId = selectedPackageId;
     try {
       const [status, chunks] = await Promise.all([
-        getChunkStatus(selectedPackageId),
-        getDataPackageChunks(selectedPackageId),
+        getChunkStatus(packageId),
+        getDataPackageChunks(packageId),
       ]);
+      if (selectedPackageIdRef.current !== packageId) return;
       setHasChunks(status.has_chunks);
+      setChunksByFile(chunks);
       if (status.has_chunks) {
         setChunkResult((prev) => prev ? { ...prev, status: 'completed', chunks } : prev);
         setMessage(`Chunking completed — ${chunks.flat().length} chunks created.`);
       } else {
-        setChunkResult((prev) => prev ? { ...prev, chunks } : prev);
+        setChunkResult((prev) => prev ? { ...prev, status: status.status, chunks } : prev);
         const chunkCount = chunks.flat().length;
         if (chunkCount > 0) {
           setMessage(`Chunking in progress — ${chunkCount} chunks created so far...`);
@@ -597,7 +641,6 @@ export function App() {
   function closeFileViewer() {
     setViewingFile(null);
     setFileContent(null);
-    setChunksByFile([]);
   }
 
   async function onContext() {
@@ -802,19 +845,28 @@ export function App() {
   }
 
   useEffect(() => {
-    if (!selectedPackageId) return;
+    resetPackageWorkflowState();
+    if (!selectedPackageId) {
+      setMessage('Select a package or upload a dataset archive to begin.');
+      return;
+    }
+    const packageId = selectedPackageId;
     setBusy('load');
     void (async () => {
       try {
         const [ctx, draftResult, fields, { status, progress }, artifacts, reviewState, chunkStatus] = await Promise.all([
-          getExistingInitialContext(selectedPackageId),
-          getExistingInitialDraft(selectedPackageId),
-          getProtectedFields(selectedPackageId),
-          getPatchProgress(selectedPackageId),
-          getPatchArtifacts(selectedPackageId),
-          getPatchReviewState(selectedPackageId),
-          getChunkStatus(selectedPackageId),
+          getExistingInitialContext(packageId),
+          getExistingInitialDraft(packageId),
+          getProtectedFields(packageId),
+          getPatchProgress(packageId),
+          getPatchArtifacts(packageId),
+          getPatchReviewState(packageId),
+          getChunkStatus(packageId),
         ]);
+        const chunks = chunkStatus.status !== 'unknown' || chunkStatus.has_chunks
+          ? await getDataPackageChunks(packageId)
+          : [];
+        if (selectedPackageIdRef.current !== packageId) return;
         if (ctx) setContext(ctx);
         if (draftResult) setDraft(draftResult);
         setProtectedFields(fields);
@@ -823,11 +875,16 @@ export function App() {
         if (status === 'completed' || status === 'crashed' || status === 'cancelled' || hasPatchArtifacts(artifacts)) setPatchArtifacts(artifacts);
         setPatchReviewState(reviewState);
         setHasChunks(chunkStatus.has_chunks);
+        setChunksByFile(chunks);
+        if (chunkStatus.status !== 'unknown' || chunks.flat().length > 0) {
+          setChunkResult({ status: chunkStatus.status, chunks });
+        }
         setMessage('Workflow state loaded.');
       } catch (error) {
+        if (selectedPackageIdRef.current !== packageId) return;
         setMessage(error instanceof Error ? error.message : 'Failed to load workflow state.');
       } finally {
-        setBusy(null);
+        if (selectedPackageIdRef.current === packageId) setBusy(null);
       }
     })();
   }, [selectedPackageId]);
@@ -876,7 +933,7 @@ export function App() {
                   <span>Packages</span>
                   <button onClick={() => void refresh()} disabled={!!busy}>Refresh</button>
                 </div>
-                <select value={selectedPackageId} onChange={(event) => setSelectedPackageId(event.target.value)}>
+                <select value={selectedPackageId} onChange={(event) => handlePackageSelection(event.target.value)}>
                   <option value="">No package selected</option>
                   {packages.map((item) => <option key={item.id} value={item.id}>{item.file_name}</option>)}
                 </select>
@@ -899,13 +956,12 @@ export function App() {
               <h2>Upload dataset and create chunks</h2>
               <p>The archive is stored as a data package. Chunking prepares the package for later patch and enrichment stages.</p>
               <div className="actions">
-                <button onClick={() => setChunkingDialogOpen(true)} disabled={!selectedPackageId || !!busy}>{busy === 'chunk' ? 'Checking...' : hasChunks ? 'Re-create and remove old chunks' : 'Create new chunks'}</button>
+                <button onClick={() => setChunkingDialogOpen(true)} disabled={!selectedPackageId || !!busy}>{busy === 'chunk' ? 'Checking...' : 'Configure Chunking'}</button>
               </div>
               {selectedPackage && (
                 <div className="file-list">
-                  {selectedPackage.files.slice(0, 8).map((file) => {
-                    const fileChunks = chunkResult?.chunks.find((group) => group[0]?.file_path === file.file_path);
-                    const chunkCount = fileChunks?.length ?? 0;
+                  {selectedPackage.files.map((file) => {
+                    const chunkCount = chunkCountByFile.get(file.file_path) ?? 0;
                     return (
                       <div key={file.file_path} className="file-row" onClick={() => void onViewFile(file)} title="Click to view file content">
                         <span>{file.file_path}</span>

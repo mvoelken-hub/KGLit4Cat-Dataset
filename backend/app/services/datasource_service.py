@@ -55,6 +55,17 @@ class DataSourceService:
 
         return self._load_content_chunks_by_file(data_package_id)
 
+    def get_chunk_task_status(self, data_package_id: str) -> TaskStatus:
+        task_name = f"chunking:file_entries:{data_package_id}"
+        task_info = self.task_registry.get_task_info(task_name)
+        if task_info is not None:
+            return task_info.status
+
+        if self._load_content_chunks_by_file(data_package_id):
+            return TaskStatus.COMPLETED
+
+        return TaskStatus.UNKNOWN
+
     def _load_content_chunks_by_file(
         self,
         data_package_id: str,

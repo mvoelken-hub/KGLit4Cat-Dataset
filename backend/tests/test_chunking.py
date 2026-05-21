@@ -25,17 +25,16 @@ class FakeFileEntry(FileEntry):
 
 class ProtectedLineIndicesTests(unittest.IsolatedAsyncioTestCase):
     async def test_protected_indices_keeps_dropped_header(self):
-        """When protected_line_indices contains [0], a header that would normally be MAYBE is retained."""
+        """When protected_line_indices contains [0], a dropped header is retained."""
         content = (
-            "##.DELAY= (6.5, 6.5)\n"
+            "%%%%%%\n"
             "Some normal sentence here.\n"
             "Another normal sentence.\n"
         )
         file_entry = FakeFileEntry(content)
 
-        # Default classifier gives MAYBE for the first line
-        default_result = classify_text_line("##.DELAY= (6.5, 6.5)")
-        self.assertEqual(default_result.kind, DecisionKind.MAYBE)
+        default_result = classify_text_line("%%%%%%")
+        self.assertEqual(default_result.kind, DecisionKind.DROP)
 
         mock_embed = AsyncMock(return_value=[
             [0.1] * 768,
@@ -56,12 +55,12 @@ class ProtectedLineIndicesTests(unittest.IsolatedAsyncioTestCase):
         # The first line (index 0) must be present in filtered_line_indices
         self.assertIn(0, chunk.filtered_line_indices)
         # The full content should include the protected header
-        self.assertIn("##.DELAY= (6.5, 6.5)", chunk.content)
+        self.assertIn("%%%%%%", chunk.content)
 
     async def test_no_protected_indices_does_not_change_behaviour(self):
         """With protected_line_indices=None the header is treated as usual."""
         content = (
-            "##.DELAY= (6.5, 6.5)\n"
+            "%%%%%%\n"
             "Some normal sentence here.\n"
             "Another normal sentence.\n"
         )
@@ -83,7 +82,7 @@ class ProtectedLineIndicesTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(chunks), 1)
         chunk = chunks[0]
         self.assertNotIn(0, chunk.filtered_line_indices)
-        self.assertNotIn("##.DELAY= (6.5, 6.5)", chunk.content)
+        self.assertNotIn("%%%%%%", chunk.content)
 
     async def test_protected_indices_does_not_duplicate_already_kept_lines(self):
         """If a protected line is already KEEP, it appears only once."""

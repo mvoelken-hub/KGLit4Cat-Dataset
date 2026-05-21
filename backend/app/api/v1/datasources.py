@@ -121,7 +121,11 @@ async def get_chunk_status(
 ):
     try:
         chunks = datasource_service.get_completed_content_chunks_by_file(id)
-        return {"has_chunks": bool(chunks), "file_count": len(chunks)}
+        return {
+            "has_chunks": bool(chunks),
+            "file_count": len(chunks),
+            "status": datasource_service.get_chunk_task_status(id),
+        }
     except Exception as exc:
         _raise_datasource_error(exc)
 

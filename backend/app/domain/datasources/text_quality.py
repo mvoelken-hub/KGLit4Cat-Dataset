@@ -1,7 +1,7 @@
 """Text quality gate for filtering semantically meaningful lines.
 
 This module is pure Python with no framework dependencies. It classifies
-text lines as KEEP, DROP, or MAYBE based on heuristic features.
+text lines as KEEP or DROP based on heuristic features.
 """
 
 import math
@@ -14,7 +14,6 @@ from enum import Enum
 class DecisionKind(Enum):
     KEEP = "keep"
     DROP = "drop"
-    MAYBE = "maybe"
 
 
 @dataclass
@@ -33,9 +32,8 @@ class TextQualityConfig:
     """
     symbol_ratio_threshold: float = 0.45
     digit_ratio_threshold: float = 0.45
-    keep_score_threshold: float = 0.45
-    maybe_score_threshold: float = 0.30
-    structured_text_bonus: float = 0.15
+    keep_score_threshold: float = 0.30
+    structured_text_bonus: float = 0.70
 
 
 WORD_RE = re.compile(r"[^\W\d_][^\W\d_'\-]{1,}", re.UNICODE)
@@ -110,8 +108,6 @@ def classify_text_line(
     score = max(0.0, min(1.0, score))
     if score >= cfg.keep_score_threshold:
         return TextQualityDecision(DecisionKind.KEEP, score, ", ".join(reasons))
-    if score >= cfg.maybe_score_threshold:
-        return TextQualityDecision(DecisionKind.MAYBE, score, ", ".join(reasons))
     return TextQualityDecision(DecisionKind.DROP, score, ", ".join(reasons))
 
 def _features(s: str) -> dict[str, float]:

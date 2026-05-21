@@ -56,7 +56,7 @@ h1 span:last-child { margin-top: 0.2em; }
 h2 { margin: 0; font-size: clamp(1.6rem, 3vw, 2.6rem); letter-spacing: -0.04em; }
 .step-body p { color: var(--muted); line-height: 1.65; }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0; }
-.file-list { display: grid; border-top: 1px solid var(--line); margin-top: 18px; }
+.file-list { display: grid; max-height: 320px; overflow-y: auto; overscroll-behavior: contain; border-top: 1px solid var(--line); margin-top: 18px; padding-right: 6px; }
 .file-row { cursor: pointer; transition: background 140ms ease; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); color: var(--muted); }
 .file-row:hover { background: rgba(99, 154, 0, 0.08); }
 .file-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -222,6 +222,13 @@ textarea.json-editor-input { resize: vertical; min-height: 80px; }
 .form-row.checkbox { grid-template-columns: auto 1fr; }
 .form-row input[type="number"] { width: 100%; border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.4rem; background: rgba(255,255,255,0.6); }
 .form-row input[type="checkbox"] { width: 18px; height: 18px; }
+.config-label { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.config-tooltip { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; flex: 0 0 18px; border: 1px solid var(--line); border-radius: 50%; color: var(--muted); background: rgba(255,255,255,0.72); font-size: 0.72rem; font-weight: 700; line-height: 1; cursor: help; }
+.config-tooltip:hover, .config-tooltip:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
+.config-tooltip::after { content: attr(data-tooltip); position: absolute; left: 0; top: calc(100% + 8px); z-index: 10002; width: min(340px, 72vw); padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: #1f261f; color: #fff; box-shadow: 0 14px 40px rgba(26, 26, 26, 0.22); font-size: 0.76rem; font-weight: 400; line-height: 1.35; text-transform: none; letter-spacing: 0; text-align: left; white-space: normal; pointer-events: none; opacity: 0; transform: translateY(-4px); transition: opacity 120ms ease, transform 120ms ease; }
+.config-tooltip::before { content: ""; position: absolute; left: 4px; top: calc(100% + 3px); z-index: 10003; width: 10px; height: 10px; background: #1f261f; border-left: 1px solid var(--line); border-top: 1px solid var(--line); pointer-events: none; opacity: 0; transform: translateY(-4px) rotate(45deg); transition: opacity 120ms ease, transform 120ms ease; }
+.config-tooltip:hover::after, .config-tooltip:focus-visible::after { opacity: 1; transform: translateY(0); }
+.config-tooltip:hover::before, .config-tooltip:focus-visible::before { opacity: 1; transform: translateY(0) rotate(45deg); }
 .advanced-panel { display: grid; gap: 8px; padding: 10px; border: 1px dashed var(--line); border-radius: 0.8rem; background: rgba(255,255,255,0.5); }
 .chunking-file-panel { display: grid; gap: 10px; align-content: start; }
 .file-picker { display: grid; gap: 6px; }

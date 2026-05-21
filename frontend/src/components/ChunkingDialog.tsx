@@ -27,6 +27,25 @@ const chunkColors = [
   'rgba(0, 160, 140, 0.18)',
 ];
 
+const configTooltips = {
+  bufferWindowSize: 'Embeds each kept line together with this many kept neighbor lines before and after it. Higher values smooth local differences and usually create fewer, broader chunks; lower values react to sharper line-to-line changes and can create more granular chunks. A significant side effect of increasing the buffer size is a significant increase in the number of tokens processed by the embedding API.',
+  semanticThreshold: 'Percentile cutoff for semantic distance between adjacent embedded line windows. Lower values mark more breakpoints and usually make smaller chunks; higher values keep only the strongest topic shifts and usually make larger chunks.',
+  symbolThreshold: 'Symbol-heavy lines receive a quality penalty when their symbol ratio is at or above this value. Lower values are stricter and drop more notation-heavy lines; higher values keep more lines with punctuation, formulas, or metadata keys.',
+  digitThreshold: 'Digit-heavy lines receive a quality penalty when their digit ratio is at or above this value. Lower values drop more numeric lines; higher values keep more measurements, identifiers, and tables.',
+  keepThreshold: 'Minimum quality score for a line to be included in chunking. Lower values keep more borderline lines and noise; higher values keep fewer, cleaner lines but may remove useful evidence.',
+  structuredBonus: 'Score bonus for short structured text such as key/value metadata, headings, bullets, or JSON/YAML-like lines. Higher values keep more structured metadata lines; lower values make them easier to filter out.',
+  protectedLines: 'Selected lines are forced into the chunk input even if the text-quality filter would normally drop them. Use this for headers, identifiers, or metadata lines that look noisy but are semantically important.',
+};
+
+function ConfigLabel({ children, tooltip }: { children: string; tooltip: string }) {
+  return (
+    <span className="config-label">
+      <span>{children}</span>
+      <span className="config-tooltip" tabIndex={0} aria-label={tooltip} data-tooltip={tooltip}>?</span>
+    </span>
+  );
+}
+
 function getChunkInfo(fileChunks: ChunkResponse[], lineIndex: number) {
   for (let i = 0; i < fileChunks.length; i++) {
     const chunk = fileChunks[i];
@@ -48,9 +67,8 @@ export function ChunkingDialog({ isOpen, packageId, dataPackage, chunksByFile, o
 
   const [symbolThreshold, setSymbolThreshold] = useState(0.45);
   const [digitThreshold, setDigitThreshold] = useState(0.45);
-  const [keepThreshold, setKeepThreshold] = useState(0.45);
-  const [maybeThreshold, setMaybeThreshold] = useState(0.30);
-  const [structuredBonus, setStructuredBonus] = useState(0.15);
+  const [keepThreshold, setKeepThreshold] = useState(0.3);
+  const [structuredBonus, setStructuredBonus] = useState(0.7);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
@@ -75,9 +93,8 @@ export function ChunkingDialog({ isOpen, packageId, dataPackage, chunksByFile, o
     setSemanticThreshold(95);
     setSymbolThreshold(0.45);
     setDigitThreshold(0.45);
-    setKeepThreshold(0.45);
-    setMaybeThreshold(0.30);
-    setStructuredBonus(0.15);
+    setKeepThreshold(0.3);
+    setStructuredBonus(0.7);
     setShowAdvanced(false);
     setSelectedFilePath(null);
     setFileContent(null);
@@ -155,7 +172,6 @@ export function ChunkingDialog({ isOpen, packageId, dataPackage, chunksByFile, o
         symbol_ratio_threshold: symbolThreshold,
         digit_ratio_threshold: digitThreshold,
         keep_score_threshold: keepThreshold,
-        maybe_score_threshold: maybeThreshold,
         structured_text_bonus: structuredBonus,
       },
     });
@@ -176,11 +192,11 @@ export function ChunkingDialog({ isOpen, packageId, dataPackage, chunksByFile, o
         <div className="chunking-dialog-body">
           <div className="chunking-form">
             <label className="form-row">
-              <span>Buffer window size</span>
+              <ConfigLabel tooltip={configTooltips.bufferWindowSize}>Buffer window size</ConfigLabel>
               <input type="number" min={0} max={10} value={bufferWindowSize} onChange={(e) => setBufferWindowSize(Number(e.target.value))} />
             </label>
             <label className="form-row">
-              <span>Semantic threshold (%)</span>
+              <ConfigLabel tooltip={configTooltips.semanticThreshold}>Semantic threshold (%)</ConfigLabel>
               <input type="number" min={0} max={100} value={semanticThreshold} onChange={(e) => setSemanticThreshold(Number(e.target.value))} />
             </label>
 
@@ -191,23 +207,19 @@ export function ChunkingDialog({ isOpen, packageId, dataPackage, chunksByFile, o
             {showAdvanced && (
               <div className="advanced-panel">
                 <label className="form-row">
-                  <span>Symbol ratio threshold</span>
+                  <ConfigLabel tooltip={configTooltips.symbolThreshold}>Symbol ratio threshold</ConfigLabel>
                   <input type="number" min={0} max={1} step={0.05} value={symbolThreshold} onChange={(e) => setSymbolThreshold(Number(e.target.value))} />
                 </label>
                 <label className="form-row">
-                  <span>Digit ratio threshold</span>
+                  <ConfigLabel tooltip={configTooltips.digitThreshold}>Digit ratio threshold</ConfigLabel>
                   <input type="number" min={0} max={1} step={0.05} value={digitThreshold} onChange={(e) => setDigitThreshold(Number(e.target.value))} />
                 </label>
                 <label className="form-row">
-                  <span>KEEP score threshold</span>
+                  <ConfigLabel tooltip={configTooltips.keepThreshold}>KEEP score threshold</ConfigLabel>
                   <input type="number" min={0} max={1} step={0.05} value={keepThreshold} onChange={(e) => setKeepThreshold(Number(e.target.value))} />
                 </label>
                 <label className="form-row">
-                  <span>MAYBE score threshold</span>
-                  <input type="number" min={0} max={1} step={0.05} value={maybeThreshold} onChange={(e) => setMaybeThreshold(Number(e.target.value))} />
-                </label>
-                <label className="form-row">
-                  <span>Structured-text bonus</span>
+                  <ConfigLabel tooltip={configTooltips.structuredBonus}>Structured-text bonus</ConfigLabel>
                   <input type="number" min={0} max={1} step={0.05} value={structuredBonus} onChange={(e) => setStructuredBonus(Number(e.target.value))} />
                 </label>
               </div>
@@ -216,7 +228,9 @@ export function ChunkingDialog({ isOpen, packageId, dataPackage, chunksByFile, o
 
           <div className="chunking-file-panel">
             <div className="file-picker">
-              <span className="panel-label">Select a file to protect lines</span>
+              <span className="panel-label">
+                <ConfigLabel tooltip={configTooltips.protectedLines}>Select a file to protect lines</ConfigLabel>
+              </span>
               <select value={selectedFilePath ?? ''} onChange={(e) => setSelectedFilePath(e.target.value || null)}>
                 <option value="">No file selected</option>
                 {dataPackage?.files.map((f) => (

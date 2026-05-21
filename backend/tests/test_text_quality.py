@@ -17,12 +17,11 @@ class TextQualityConfigTests(unittest.TestCase):
         self.assertEqual(result.kind, DecisionKind.DROP)
         self.assertIn("numeric_array", result.reason)
 
-    def test_default_config_now_recognises_hash_prefix(self):
+    def test_default_config_keeps_structured_hash_prefix(self):
         """The regex fix means ##.DELAY= … now gets structured_text bonus by default."""
         line = "##.DELAY= (6.5, 6.5)"
         result = classify_text_line(line)
-        # With the fixed regex this is MAYBE (score 0.30) rather than DROP
-        self.assertEqual(result.kind, DecisionKind.MAYBE)
+        self.assertEqual(result.kind, DecisionKind.KEEP)
         self.assertIn("structured_text", result.reason)
         self.assertIn("too_many_symbols", result.reason)
 
@@ -34,16 +33,15 @@ class TextQualityConfigTests(unittest.TestCase):
         self.assertEqual(result.kind, DecisionKind.KEEP)
         self.assertIn("structured_text", result.reason)
 
-    def test_tuned_keep_threshold_promotes_maybe_to_keep(self):
-        """Lowering keep_score_threshold promotes a MAYBE line to KEEP."""
+    def test_tuned_keep_threshold_can_drop_borderline_structured_line(self):
+        """Raising keep_score_threshold can still drop a borderline structured line."""
         line = "##.DELAY= (6.5, 6.5)"
-        # Default gives MAYBE (score 0.30) because of too_many_symbols penalty
         default_result = classify_text_line(line)
-        self.assertEqual(default_result.kind, DecisionKind.MAYBE)
+        self.assertEqual(default_result.kind, DecisionKind.KEEP)
 
-        config = TextQualityConfig(keep_score_threshold=0.25)
+        config = TextQualityConfig(keep_score_threshold=0.90)
         result = classify_text_line(line, config)
-        self.assertEqual(result.kind, DecisionKind.KEEP)
+        self.assertEqual(result.kind, DecisionKind.DROP)
         self.assertIn("structured_text", result.reason)
 
     def test_structured_text_regex_recognises_hash_dollar_prefix(self):

@@ -1,5 +1,5 @@
 import { apiBaseUrl, buildQuery, readJson } from './client';
-import type { ChunkRequestResponse, ChunkResponse, DataPackageResponse, TextQualityConfig } from './types';
+import type { ChunkRequestResponse, ChunkResponse, DataPackageResponse, TaskStatus, TextQualityConfig } from './types';
 
 export async function listDataPackages(): Promise<DataPackageResponse[]> {
   return readJson(await fetch(apiBaseUrl + '/datasources'));
@@ -30,7 +30,7 @@ export async function chunkDataPackage(input: {
   return readJson(await fetch(apiBaseUrl + '/datasources/chunk' + query, { method: 'POST' }));
 }
 
-export async function getChunkStatus(data_package_id: string): Promise<{ has_chunks: boolean; file_count: number }> {
+export async function getChunkStatus(data_package_id: string): Promise<{ has_chunks: boolean; file_count: number; status: TaskStatus }> {
   return readJson(await fetch(apiBaseUrl + '/datasources/' + encodeURIComponent(data_package_id) + '/chunks/status'));
 }
 

@@ -27,7 +27,6 @@ export interface TextQualityConfig {
   symbol_ratio_threshold?: number;
   digit_ratio_threshold?: number;
   keep_score_threshold?: number;
-  maybe_score_threshold?: number;
   structured_text_bonus?: number;
 }
 
