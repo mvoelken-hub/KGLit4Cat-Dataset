@@ -58,7 +58,7 @@ class Neo4jDriver:
         except Exception as e:
             raise ConnectionError("Failed to connect to Neo4j database") from e
 
-    async def wait_for_connection(self, timeout_s: float = 30.0, interval_s: float = 1.0) -> None:
+    async def wait_for_connection(self, timeout_s: float = 30.0, interval_s: float = 2.0) -> None:
         deadline = time.monotonic() + timeout_s
         last_exc: Exception | None = None
 

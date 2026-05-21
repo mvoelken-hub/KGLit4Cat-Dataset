@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     ollama_embed_model: str = "qwen3-embedding:0.6b"
     ollama_chat_model: str = "gemma4:31b-cloud" #TODO: implement signin logic when ollama container is started the first time
     ollama_embed_dimensions: int = 768
-    embedding_batch_size: int = 10
+    embedding_batch_size: int = 32
     max_context_length: int = 64000
 
     # Runtime directory configuration
@@ -69,7 +69,6 @@ class Settings(BaseSettings):
     # Startup behavior
     skip_initial_vocab_import: bool = True
     skip_model_pull: bool = False
-    load_ollama_models_on_startup: bool = False
     generate_missing_embeddings_on_startup: bool = False
 
     # Frontend configuration
