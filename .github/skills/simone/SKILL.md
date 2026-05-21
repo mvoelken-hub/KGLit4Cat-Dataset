@@ -101,8 +101,8 @@ All styles in `frontend/src/styles.css`. Uses CSS custom properties:
 ### Start Backend (dev)
 ```powershell
 cd backend
-# Use the existing .env file (already configured for remote Neo4j/Ollama)
-uv run --env-file .env uvicorn app.main:fastapi_app --host 127.0.0.1 --port 8000 --reload
+# Use the project .env file (the CLI creates it from .env.example on first use)
+uv run --env-file ../.env uvicorn app.main:fastapi_app --host 127.0.0.1 --port 8000 --reload
 ```
 
 ### Start Frontend (dev)
@@ -121,14 +121,19 @@ The Vite dev server proxies `/api/v1` to `http://127.0.0.1:8000`.
   ```
 - **PowerShell Execution Policy**: If `npm`/`npx` fails with a PSSecurityException, PowerShell script execution is disabled. Either run `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser` (requires admin), or use the direct `node.exe` command above.
 
-### Start Full Stack (Docker)
+### Start Full Stack (CLI)
 ```powershell
-# Production mode
-docker compose --env-file .env.production up -d --build
+# Production mode (API + frontend in Docker; Neo4j/Ollama in Docker unless .env points to remote hosts)
+simone up
 
-# Dev mode (Neo4j + Ollama in Docker, API + Frontend local)
-docker compose --env-file .env.development -f docker-compose.dev.yml up -d
+# Dev mode (API locally; Neo4j/Ollama in Docker unless .env points to remote hosts)
+simone dev
+
+# Dev mode with Docker frontend (no local npm needed)
+simone dev --no-npm
 ```
+
+The CLI creates `.env` from `.env.example` on first use and sets `APP_ENV` automatically (`production` for `up`, `development` for `dev`). If `NEO4J_HOSTNAME` or `OLLAMA_HOSTNAME` in `.env` point to a remote host, the CLI skips the corresponding local Docker service.
 
 ## Common Tasks
 
@@ -152,11 +157,13 @@ docker compose --env-file .env.development -f docker-compose.dev.yml up -d
 4. Add API function in `frontend/src/api/`
 
 ## Environment Files
-- `.env.development.example` — local dev config (Neo4j on localhost, Ollama on localhost)
-- `.env.production.example` — Docker config (Neo4j/ Ollama via service names)
+- `.env.example` — template with shared defaults (hostnames, ports, model settings). No `APP_ENV` — the CLI sets it per command.
+- `.env` — runtime file created from `.env.example` by the CLI. Gitignored.
+
+Host behavior: if `NEO4J_HOSTNAME` or `OLLAMA_HOSTNAME` is empty, `localhost`, or `127.0.0.1`, the CLI starts the corresponding Docker service. Remote host values are used directly and the local service is skipped.
 
 ## Important Notes
 - The frontend uses `"latest"` for all npm deps — `package-lock.json` is gitignored
 - Backend uses `uv.lock` (not committed, per Python library convention)
 - Neo4j password is only applied on first data directory initialization
-- Ollama models are pulled on first startup unless `SKIP_MODEL_PULL=true`
+- Ollama models are pulled on first startup in production mode unless `SKIP_MODEL_PULL=true`

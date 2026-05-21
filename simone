@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
-# SIMONE CLI wrapper — delegates to the backend virtual environment
+# SIMONE CLI wrapper - delegates to the backend virtual environment
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 uv --directory "$SCRIPT_DIR/backend" run simone "$@"

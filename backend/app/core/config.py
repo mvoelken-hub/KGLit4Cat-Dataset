@@ -1,16 +1,24 @@
 from pathlib import Path
 
 from dotenv import load_dotenv
-from pydantic import computed_field
+from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings
 
 load_dotenv()
+
+
+def _resolve_service_host(hostname: str | None, *, production_host: str, development_host: str, app_env: str) -> str:
+    if hostname and hostname.strip().lower() not in {"localhost", "127.0.0.1", "::1"}:
+        return hostname.strip()
+    return production_host if app_env == "production" else development_host
+
 
 class Settings(BaseSettings):
     app_env: str = "development"
 
     # Neo4j configuration
-    neo4j_uri: str = "bolt://localhost:7687"
+    neo4j_hostname: str | None = None
+    neo4j_port: int = 7687
     neo4j_user: str = "neo4j"
     neo4j_password: str = "change-me"
 
@@ -21,17 +29,30 @@ class Settings(BaseSettings):
 
     @computed_field
     @property
+    def neo4j_uri(self) -> str:
+        host = _resolve_service_host(self.neo4j_hostname, production_host="neo4j", development_host="localhost", app_env=self.app_env)
+        return f"bolt://{host}:{self.neo4j_port}"
+
+    @computed_field
+    @property
     def neo4j_auth(self) -> tuple[str, str]:
         return self.neo4j_user, self.neo4j_password
     
     
     # Ollama configuration
-    ollama_base_url: str = "http://localhost:11433"
+    ollama_hostname: str | None = None
+    ollama_port: int = 11433
     ollama_embed_model: str = "qwen3-embedding:0.6b"
     ollama_chat_model: str = "gemma4:31b-cloud" #TODO: implement signin logic when ollama container is started the first time
     ollama_embed_dimensions: int = 768
     embedding_batch_size: int = 32
     max_context_length: int = 64000
+
+    @computed_field
+    @property
+    def ollama_base_url(self) -> str:
+        host = _resolve_service_host(self.ollama_hostname, production_host="ollama", development_host="localhost", app_env=self.app_env)
+        return f"http://{host}:{self.ollama_port}"
 
     # Runtime directory configuration
     runtime_dir: Path = Path("./.runtime")
@@ -67,17 +88,41 @@ class Settings(BaseSettings):
     rdf_skolem_base: str = "http://example.org/.well-known/bnodes/"
 
     # Startup behavior
-    skip_initial_vocab_import: bool = True
-    skip_model_pull: bool = False
-    generate_missing_embeddings_on_startup: bool = False
+    skip_initial_vocab_import_override: bool | None = Field(default=None, validation_alias="SKIP_INITIAL_VOCAB_IMPORT")
+    skip_model_pull_override: bool | None = Field(default=None, validation_alias="SKIP_MODEL_PULL")
+    generate_missing_embeddings_on_startup_override: bool | None = Field(default=None, validation_alias="GENERATE_MISSING_EMBEDDINGS_ON_STARTUP")
+
+    @computed_field
+    @property
+    def skip_initial_vocab_import(self) -> bool:
+        if self.skip_initial_vocab_import_override is not None:
+            return self.skip_initial_vocab_import_override
+        return self.app_env != "production"
+
+    @computed_field
+    @property
+    def skip_model_pull(self) -> bool:
+        if self.skip_model_pull_override is not None:
+            return self.skip_model_pull_override
+        return self.app_env != "production"
+
+    @computed_field
+    @property
+    def generate_missing_embeddings_on_startup(self) -> bool:
+        if self.generate_missing_embeddings_on_startup_override is not None:
+            return self.generate_missing_embeddings_on_startup_override
+        return self.app_env == "production"
 
     # Frontend configuration
-    frontend_base_urls: str = "http://localhost:3000,http://127.0.0.1:3000"
+    frontend_port: int = 3000
 
     @computed_field
     @property
     def frontend_cors_origins(self) -> list[str]:
-        return [item.strip() for item in self.frontend_base_urls.split(",") if item.strip()]
+        return [
+            f"http://localhost:{self.frontend_port}",
+            f"http://127.0.0.1:{self.frontend_port}",
+        ]
 
 
 settings = Settings()

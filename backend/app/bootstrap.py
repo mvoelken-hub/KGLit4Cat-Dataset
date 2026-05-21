@@ -100,7 +100,7 @@ async def start_setup(
 
     # Neo4j connection and bootstrap
 
-    await neo4j_driver.wait_for_connection(100.0, 5.0)
+    await neo4j_driver.wait_for_connection(60.0, 5.0)
 
     if settings.skip_initial_vocab_import:
         logger.info("Skipping initial vocabulary import because skip_initial_vocab_import is enabled.")

@@ -188,9 +188,8 @@ data/
 **/temp/*
 backups/
 
-# runtime env files
-.env.development
-.env.production
+# runtime env file
+.env
 
 # Frontend
 node_modules/

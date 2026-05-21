@@ -2,14 +2,15 @@ services:
 
   neo4j:
     image: neo4j:2026.01.3
-    restart: always
+    restart: unless-stopped
     ports:
       - "127.0.0.1:7474:7474"
-      - "127.0.0.1:7687:7687"
+      - "127.0.0.1:${NEO4J_PORT}:${NEO4J_PORT}"
     environment:
       NEO4J_AUTH: ${NEO4J_USER}/${NEO4J_PASSWORD}
       NEO4J_PLUGINS: '["apoc"]'
       NEO4J_apoc_export_file_enabled: "true"
+      NEO4J_server_bolt_listen__address: ":${NEO4J_PORT}"
       NEO4J_server_jvm_additional: "--add-modules jdk.incubator.vector"
     volumes:
       - ./data/docker/neo4j/data:/data
@@ -18,11 +19,13 @@ services:
 
   ollama:
     image: ollama/ollama:latest
-    restart: always
+    restart: unless-stopped
     environment:
       - OLLAMA_KV_CACHE_TYPE=q8_0
       - OLLAMA_KEEP_ALIVE=-1
-      - OLLAMA_HOST=0.0.0.0:11433
+      - OLLAMA_HOST=0.0.0.0:${OLLAMA_PORT}
+    ports:
+      - "127.0.0.1:${OLLAMA_PORT}:${OLLAMA_PORT}"
     volumes:
       - ./data/docker/ollama/data:/root/.ollama
 
@@ -30,13 +33,10 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    depends_on:
-      neo4j:
-        condition: service_started
-      ollama:
-        condition: service_started
     env_file:
-      - .env.production
+      - ${SIMONE_ENV_FILE:-.env}
+    environment:
+      APP_ENV: ${APP_ENV:-production}
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
@@ -49,9 +49,6 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_BASE_URL: http://127.0.0.1:8000/api/v1
-    depends_on:
-      api:
-        condition: service_started
     ports:
-      - "127.0.0.1:3000:80"
+      - "127.0.0.1:${FRONTEND_PORT}:80"
     restart: unless-stopped
