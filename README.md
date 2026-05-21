@@ -77,16 +77,10 @@ If your shell can resolve the wrapper as `simone`, you can use `simone` instead 
 
 ### Production Mode
 
-Production mode runs the API and frontend in Docker. Neo4j and Ollama are also started as local Docker services unless `.env` points them at remote hosts.
+Production mode runs the API and frontend in Docker. Neo4j and Ollama are also started as local Docker services unless `.env` points them at remote hosts. Ollama is configured with GPU acceleration by default.
 
 ```bash
 simone up
-```
-
-Use GPU support for Ollama:
-
-```bash
-simone up --gpu
 ```
 
 By default, `up` reuses existing images and containers. Rebuild images explicitly after Dockerfile or dependency changes:
@@ -109,12 +103,6 @@ You can choose Docker frontend mode directly:
 
 ```bash
 simone dev --no-npm
-```
-
-Use GPU support for Ollama in dev mode:
-
-```bash
-simone dev --gpu
 ```
 
 If Neo4j and Ollama run on another machine, for example on your Tailscale network, configure `.env` with the remote service addresses. The CLI will detect the remote hosts and skip the local Neo4j/Ollama containers automatically:

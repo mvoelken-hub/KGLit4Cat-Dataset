@@ -24,10 +24,19 @@ services:
       - OLLAMA_KV_CACHE_TYPE=q8_0
       - OLLAMA_KEEP_ALIVE=-1
       - OLLAMA_HOST=0.0.0.0:${OLLAMA_PORT}
+      - OLLAMA_FLASH_ATTENTION=1
     ports:
       - "127.0.0.1:${OLLAMA_PORT}:${OLLAMA_PORT}"
     volumes:
       - ./data/docker/ollama/data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities:
+                - gpu
 
   api:
     build:

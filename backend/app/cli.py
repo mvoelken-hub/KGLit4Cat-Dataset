@@ -26,7 +26,6 @@ ENV_FILE = REPO_ROOT / ".env"
 ENV_EXAMPLE = REPO_ROOT / ".env.example"
 
 COMPOSE_PROD = REPO_ROOT / "docker-compose.yml"
-COMPOSE_GPU = REPO_ROOT / "docker-compose.gpu.yml"
 
 API_URL = "http://127.0.0.1:8000/docs"
 HEALTH_URL = "http://127.0.0.1:8000/api/v1/health"
@@ -464,11 +463,8 @@ def _print_links() -> None:
     typer.echo("")
 
 
-def _compose_files_for_mode(dev: bool, gpu: bool) -> list[Path]:
-    files = [COMPOSE_PROD]
-    if gpu:
-        files.append(COMPOSE_GPU)
-    return files
+def _compose_files_for_mode() -> list[Path]:
+    return [COMPOSE_PROD]
 
 
 def _build_compose_cmd(
@@ -585,7 +581,6 @@ def main(ctx: typer.Context) -> None:
 
 @app.command()
 def up(
-    gpu: bool = typer.Option(False, "--gpu", help="Enable GPU support for Ollama"),
     build: bool = typer.Option(False, "--build", help="Build images before starting containers"),
     verbose: bool = typer.Option(True, "--verbose/--quiet", help="Show startup progress, container status, and API logs while waiting"),
 ) -> None:
@@ -599,12 +594,12 @@ def up(
     env_values = _read_env_file(ENV_FILE)
     local_neo4j, local_ollama = _local_service_flags(env_values)
 
-    compose_files = _compose_files_for_mode(dev=False, gpu=gpu)
+    compose_files = _compose_files_for_mode()
     services = [service for service, enabled in (("neo4j", local_neo4j), ("ollama", local_ollama)) if enabled]
     services.extend(["api", "frontend"])
     cmd = _build_compose_cmd(ENV_FILE, compose_files, action="up", services=services, build=build)
 
-    typer.echo(f"Starting production stack ({'GPU' if gpu else 'CPU'}) ...")
+    typer.echo("Starting production stack ...")
     _run(cmd, cwd=REPO_ROOT, capture_output=not verbose)
 
     api_ready = _wait_for_url(
@@ -624,7 +619,6 @@ def up(
 
 @app.command()
 def dev(
-    gpu: bool = typer.Option(False, "--gpu", help="Enable GPU support for Ollama"),
     no_npm: bool = typer.Option(False, "--no-npm", help="Run the frontend in Docker instead of requiring local npm"),
 ) -> None:
     """Start SIMONE in development mode (API locally; local services as needed)."""
@@ -661,14 +655,14 @@ def dev(
             typer.echo("Frontend node_modules already exists. Skipping npm install.")
 
     typer.echo("")
-    compose_files = _compose_files_for_mode(dev=True, gpu=gpu)
+    compose_files = _compose_files_for_mode()
     services = [service for service, enabled in (("neo4j", local_neo4j), ("ollama", local_ollama)) if enabled]
     if use_docker_frontend:
         services.append("frontend")
     if services:
         cmd = _build_compose_cmd(ENV_FILE, compose_files, action="up", services=services, build=True)
         container_label = " + ".join(services)
-        typer.echo(f"Starting {container_label} containers ({'GPU' if gpu else 'CPU'}) ...")
+        typer.echo(f"Starting {container_label} containers ...")
         _run(cmd, cwd=REPO_ROOT)
     else:
         typer.echo("Using external Neo4j/Ollama services from .env.")
@@ -729,6 +723,7 @@ def dev(
         compose_files=compose_files if use_docker_frontend else None,
         log_services=["frontend"] if use_docker_frontend else None,
     )
+    _print_api_health()
     _print_links()
 
 
@@ -742,12 +737,6 @@ def down() -> None:
         stacks = [
             ("SIMONE", ENV_FILE, [COMPOSE_PROD]),
         ]
-        if COMPOSE_GPU.exists():
-            stacks.extend(
-                [
-                    ("SIMONE GPU", ENV_FILE, [COMPOSE_PROD, COMPOSE_GPU]),
-                ]
-            )
 
         stopped_any_stack = False
         for label, env_file, compose_files in stacks:
