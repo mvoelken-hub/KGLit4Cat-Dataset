@@ -124,6 +124,37 @@ Use `--no-npm` if the frontend should still run in Docker on your laptop:
 simone dev --no-npm
 ```
 
+### Infrastructure Mode
+
+Infrastructure mode starts only Neo4j and/or Ollama on a host machine, without the API or frontend. This is useful when you want another machine to run `simone dev` or `simone up` while connecting to these services remotely.
+
+On the host machine, leave `NEO4J_HOSTNAME` and `OLLAMA_HOSTNAME` empty in `.env` so the CLI starts the local Docker services:
+
+```bash
+# Start all local infrastructure services
+simone host
+
+# Start only Neo4j
+simone host --neo4j
+
+# Start only Ollama
+simone host --ollama
+
+# Start both explicitly
+simone host --neo4j --ollama
+```
+
+The command prints the `.env` values that other machines should use to connect. For example, on a Tailscale network:
+
+```env
+NEO4J_HOSTNAME=my-gpu-box.tailnet-name.ts.net
+NEO4J_PORT=7687
+OLLAMA_HOSTNAME=my-gpu-box.tailnet-name.ts.net
+OLLAMA_PORT=11433
+```
+
+If both hostnames are set to remote addresses in `.env`, `simone host` exits with a message — there is nothing to start locally.
+
 ### Service URLs
 
 | Service | URL |

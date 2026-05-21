@@ -131,9 +131,16 @@ simone dev
 
 # Dev mode with Docker frontend (no local npm needed)
 simone dev --no-npm
+
+# Infrastructure mode (only Neo4j/Ollama, no API/frontend — for remote host setups)
+simone host
+
+# Start only specific services
+simone host --neo4j
+simone host --ollama
 ```
 
-The CLI creates `.env` from `.env.example` on first use and sets `APP_ENV` automatically (`production` for `up`, `development` for `dev`). If `NEO4J_HOSTNAME` or `OLLAMA_HOSTNAME` in `.env` point to a remote host, the CLI skips the corresponding local Docker service.
+The CLI creates `.env` from `.env.example` on first use and sets `APP_ENV` automatically (`production` for `up` and `host`, `development` for `dev`). If `NEO4J_HOSTNAME` or `OLLAMA_HOSTNAME` in `.env` point to a remote host, the CLI skips the corresponding local Docker service.
 
 ## Common Tasks
 

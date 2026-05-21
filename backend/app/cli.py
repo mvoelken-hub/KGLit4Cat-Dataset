@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -733,6 +734,98 @@ def dev(
     )
     _print_api_health()
     _print_links()
+
+
+@app.command()
+def host(
+    neo4j: bool = typer.Option(False, "--neo4j", help="Start Neo4j (default: start all local services)"),
+    ollama: bool = typer.Option(False, "--ollama", help="Start Ollama (default: start all local services)"),
+    verbose: bool = typer.Option(True, "--verbose/--quiet", help="Show startup progress and container status"),
+) -> None:
+    """Start only infrastructure services (Neo4j and/or Ollama) for remote access by other SIMONE instances."""
+    if not _docker_available():
+        typer.echo("Error: Docker is not installed or not on PATH.", err=True)
+        raise typer.Exit(1)
+
+    os.environ["APP_ENV"] = "production"
+    _ensure_env_file(ENV_FILE, ENV_EXAMPLE)
+    env_values = _read_env_file(ENV_FILE)
+    local_neo4j, local_ollama = _local_service_flags(env_values)
+
+    # If no specific services requested, start all local services
+    select_specific = neo4j or ollama
+    start_neo4j = neo4j if select_specific else local_neo4j
+    start_ollama = ollama if select_specific else local_ollama
+
+    # Warn if a requested service is configured as remote
+    if neo4j and not local_neo4j:
+        typer.echo("Note: Neo4j is configured as a remote service in .env (NEO4J_HOSTNAME is set). Starting it anyway.")
+        start_neo4j = True
+    if ollama and not local_ollama:
+        typer.echo("Note: Ollama is configured as a remote service in .env (OLLAMA_HOSTNAME is set). Starting it anyway.")
+        start_ollama = True
+
+    compose_services = []
+    if start_neo4j:
+        compose_services.append("neo4j")
+    if start_ollama:
+        compose_services.append("ollama")
+
+    if not compose_services:
+        typer.echo("Both Neo4j and Ollama are configured as remote services in .env.")
+        typer.echo("Nothing to start locally. Use --neo4j and/or --ollama to force start, or update NEO4J_HOSTNAME and OLLAMA_HOSTNAME.")
+        raise typer.Exit(0)
+
+    compose_files = _compose_files_for_mode()
+    cmd = _build_compose_cmd(ENV_FILE, compose_files, action="up", services=compose_services, build=False)
+    container_label = " + ".join(compose_services)
+    typer.echo(f"Starting {container_label} for remote access ...")
+    _run(cmd, cwd=REPO_ROOT, capture_output=not verbose)
+
+    if start_neo4j:
+        neo4j_ready = _wait_for_url(
+            "http://127.0.0.1:7474",
+            timeout=120,
+            label="Neo4j",
+            verbose=verbose,
+            env_file=ENV_FILE,
+            compose_files=compose_files,
+            log_services=["neo4j"],
+        )
+        if neo4j_ready:
+            typer.echo(f"Neo4j is available at bolt://127.0.0.1:{env_values.get('NEO4J_PORT', '7687')}")
+
+    if start_ollama:
+        ollama_port = env_values.get("OLLAMA_PORT", "11433")
+        ollama_ready = _wait_for_url(
+            f"http://127.0.0.1:{ollama_port}",
+            timeout=120,
+            label="Ollama",
+            verbose=verbose,
+            env_file=ENV_FILE,
+            compose_files=compose_files,
+            log_services=["ollama"],
+        )
+        if ollama_ready:
+            typer.echo(f"Ollama is available at http://127.0.0.1:{ollama_port}")
+
+    # Determine the machine's hostname for remote connection hints
+    hostname = socket.gethostname()
+    try:
+        # Prefer the fully-qualified hostname; fall back to the short name
+        fqdn = socket.getfqdn()
+        display_host = fqdn if "." in fqdn else hostname
+    except Exception:
+        display_host = hostname
+
+    typer.echo("")
+    typer.echo("Infrastructure services are running. Other machines can connect by setting these values in their .env:")
+    if start_neo4j:
+        typer.echo(f"  NEO4J_HOSTNAME={display_host}")
+        typer.echo(f"  NEO4J_PORT={env_values.get('NEO4J_PORT', '7687')}")
+    if start_ollama:
+        typer.echo(f"  OLLAMA_HOSTNAME={display_host}")
+        typer.echo(f"  OLLAMA_PORT={env_values.get('OLLAMA_PORT', '11433')}")
 
 
 @app.command()
