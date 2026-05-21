@@ -56,7 +56,10 @@ def _check_command(name: str) -> bool:
 
 
 def _docker_available() -> bool:
-    return _check_command("docker")
+    if not _check_command("docker"):
+        return False
+    result = subprocess.run(["docker", "info"], capture_output=True, text=True)
+    return result.returncode == 0
 
 
 def _docker_compose_cmd() -> list[str]:
@@ -313,7 +316,7 @@ def _is_ollama_chat_unauthorized(health_payload: dict[str, object] | None) -> bo
 
 
 def _ensure_ollama_signin(env_file: Path, compose_files: list[Path], local_ollama: bool = True) -> None:
-    status_code, payload, error = _get_json_url(HEALTH_URL, timeout=30)
+    status_code, payload, error = _get_json_url(HEALTH_URL, timeout=60)
     if error:
         typer.echo("Ollama Cloud sign-in status could not be checked yet.")
         typer.echo(f"Health check detail: {error}")
@@ -337,7 +340,7 @@ def _ensure_ollama_signin(env_file: Path, compose_files: list[Path], local_ollam
         typer.echo("Ollama sign-in command did not complete successfully.", err=True)
         return
 
-    status_code, payload, error = _get_json_url(HEALTH_URL, timeout=30)
+    status_code, payload, error = _get_json_url(HEALTH_URL, timeout=60)
     if error:
         typer.echo(f"Ollama sign-in command finished, but health could not be rechecked: {error}", err=True)
     elif _is_ollama_chat_unauthorized(payload):
@@ -361,7 +364,7 @@ def _format_health_check(name: str, check: object) -> str:
 
 
 def _print_api_health() -> None:
-    status_code, payload, error = _get_json_url(HEALTH_URL, timeout=30)
+    status_code, payload, error = _get_json_url(HEALTH_URL, timeout=60)
     typer.echo("")
     typer.echo("API health:")
     if error:
@@ -587,7 +590,7 @@ def up(
 ) -> None:
     """Start SIMONE in production mode (API/frontend in Docker)."""
     if not _docker_available():
-        typer.echo("Error: Docker is not installed or not on PATH.", err=True)
+        typer.echo("Error: Docker is not running. Please start Docker Desktop.", err=True)
         raise typer.Exit(1)
 
     os.environ["APP_ENV"] = "production"
@@ -613,7 +616,7 @@ def up(
         log_services=["api"],
     )
     if api_ready:
-        typer.echo("Now checking health... (takes up to 30s)")
+        typer.echo("Now checking health... (takes up to 60s)")
         _ensure_ollama_signin(ENV_FILE, compose_files, local_ollama=local_ollama)
     _print_links()
 
@@ -623,10 +626,6 @@ def dev(
     no_npm: bool = typer.Option(False, "--no-npm", help="Run the frontend in Docker instead of requiring local npm"),
 ) -> None:
     """Start SIMONE in development mode (API locally; local services as needed)."""
-    if not _docker_available():
-        typer.echo("Error: Docker is not installed or not on PATH.", err=True)
-        raise typer.Exit(1)
-
     os.environ["APP_ENV"] = "development"
     _ensure_env_file(ENV_FILE, ENV_EXAMPLE)
     env_values = _read_env_file(ENV_FILE)
@@ -653,7 +652,7 @@ def dev(
             typer.echo("Running npm install in frontend/ ...")
             _run(["npm", "install"], cwd=FRONTEND_DIR)
         else:
-            typer.echo("Frontend node_modules already exists. Skipping npm install.")
+            pass
 
     typer.echo("")
     compose_files = _compose_files_for_mode()
@@ -661,6 +660,9 @@ def dev(
     if use_docker_frontend:
         services.append("frontend")
     if services:
+        if not _docker_available():
+            typer.echo("Error: Docker is not running. Please start Docker Desktop.", err=True)
+            raise typer.Exit(1)
         cmd = _build_compose_cmd(ENV_FILE, compose_files, action="up", services=services, build=True)
         container_label = " + ".join(services)
         typer.echo(f"Starting {container_label} containers ...")
@@ -688,7 +690,7 @@ def dev(
         typer.echo("Starting local API with hot reload ...")
         if sys.platform == "win32":
             subprocess.Popen(
-                ["cmd", "/c", "start", "SIMONE API", "powershell", "-Command", api_cmd],
+                ["cmd", "/c", "start", "SIMONE API", "powershell", "-ExecutionPolicy", "Bypass", "-Command", api_cmd],
                 cwd=str(BACKEND_DIR),
                 creationflags=subprocess.CREATE_NEW_CONSOLE,
             )
@@ -709,7 +711,7 @@ def dev(
             typer.echo("Starting local frontend dev server ...")
             if sys.platform == "win32":
                 subprocess.Popen(
-                    ["cmd", "/c", "start", "SIMONE Frontend", "powershell", "-Command", frontend_cmd],
+                    ["cmd", "/c", "start", "SIMONE Frontend", "powershell", "-ExecutionPolicy", "Bypass", "-Command", frontend_cmd],
                     cwd=str(FRONTEND_DIR),
                     creationflags=subprocess.CREATE_NEW_CONSOLE,
                 )
@@ -722,16 +724,18 @@ def dev(
     else:
         pass
 
-    _wait_for_url(API_URL, timeout=120, label="API", verbose=False)
+    api_ready = _wait_for_url(API_URL, timeout=120, label="API", verbose=False)
     _wait_for_url(
         _frontend_url(env_values),
-        timeout=120,
+        timeout=60,
         label="Frontend",
         verbose=False,
         env_file=ENV_FILE if use_docker_frontend else None,
         compose_files=compose_files if use_docker_frontend else None,
         log_services=["frontend"] if use_docker_frontend else None,
     )
+    if api_ready:
+        typer.echo("Now checking health... (takes up to 60s)")
     _print_api_health()
     _print_links()
 
@@ -744,7 +748,7 @@ def host(
 ) -> None:
     """Start only infrastructure services (Neo4j and/or Ollama) for remote access by other SIMONE instances."""
     if not _docker_available():
-        typer.echo("Error: Docker is not installed or not on PATH.", err=True)
+        typer.echo("Error: Docker is not running. Please start Docker Desktop.", err=True)
         raise typer.Exit(1)
 
     os.environ["APP_ENV"] = "production"
@@ -884,7 +888,7 @@ def down() -> None:
 def signin_ollama() -> None:
     """Run Ollama Cloud sign-in inside the Docker Ollama container."""
     if not _docker_available():
-        typer.echo("Error: Docker is not installed or not on PATH.", err=True)
+        typer.echo("Error: Docker is not running. Please start Docker Desktop.", err=True)
         raise typer.Exit(1)
     os.environ["APP_ENV"] = "production"
     _ensure_env_file(ENV_FILE, ENV_EXAMPLE)
@@ -900,7 +904,7 @@ def signin_ollama() -> None:
 def backup_neo4j() -> None:
     """Create a Cypher backup of the development Neo4j database."""
     if not _docker_available():
-        typer.echo("Error: Docker is not installed or not on PATH.", err=True)
+        typer.echo("Error: Docker is not running. Please start Docker Desktop.", err=True)
         raise typer.Exit(1)
     os.environ["APP_ENV"] = "development"
     _backup_neo4j()
@@ -913,7 +917,7 @@ def reset_neo4j(
 ) -> None:
     """Reset the local Neo4j data directory used by development and production."""
     if not _docker_available():
-        typer.echo("Error: Docker is not installed or not on PATH.", err=True)
+        typer.echo("Error: Docker is not running. Please start Docker Desktop.", err=True)
         raise typer.Exit(1)
     os.environ["APP_ENV"] = "development"
 
@@ -948,7 +952,7 @@ def restore_neo4j(
 ) -> None:
     """Restore a Cypher backup into the development Neo4j database."""
     if not _docker_available():
-        typer.echo("Error: Docker is not installed or not on PATH.", err=True)
+        typer.echo("Error: Docker is not running. Please start Docker Desktop.", err=True)
         raise typer.Exit(1)
     if not backup_file.exists():
         typer.echo(f"Backup file not found: {backup_file}", err=True)
