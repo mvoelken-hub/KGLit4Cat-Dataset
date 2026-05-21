@@ -1,4 +1,5 @@
 # Semantic Inference Module for Ontology-driven Node Extraction (SIMONE)
+
 My thesis work contributes an automated extraction approach that turns heterogeneous catalysis research data into structured, reusable, and FAIR-compliant datasets.
 
 ## Research Context
@@ -13,124 +14,143 @@ The prototype aims to turn an uploaded dataset archive into a progressively refi
 
 In short, the repository serves as an experimental implementation of an LLM-supported semantic metadata extraction pipeline for catalytic experiment resources.
 
-## Running the Full Stack App
+## Running the App
 
-### Quick Start
+### Prerequisites
 
-Clone the repo:
+| Tool | Required for | Notes |
+|---|---|---|
+| Docker Desktop | All modes | Provides Docker Compose and runs Neo4j, Ollama, API, and frontend containers. |
+| uv | All modes | Used by the `simone` CLI wrapper and the local development API. |
+| Node.js + npm | Optional | Only needed if you want to run the frontend locally with hot reload. Without npm, `simone dev` falls back to the Docker frontend. |
+
+Install links:
+
+- Docker Desktop: https://www.docker.com/get-started/
+- uv: https://docs.astral.sh/uv/getting-started/installation/
+- Node.js: https://nodejs.org/
+
+### Clone and Prepare
+
 ```bash
 git clone https://github.com/smnclmns/Semantic-Inference-Module-for-Ontology-driven-Node-Extraction-SIMONE-.git
+cd Semantic-Inference-Module-for-Ontology-driven-Node-Extraction-SIMONE-
 ```
 
-After cloning the repository, run the setup assistant from the repo root:
+The CLI creates `.env.production` or `.env.development` from the matching example file on first use.
 
-```bash
-python setup.py
-```
+### CLI Wrappers
 
-This script will:
-1. Check if Docker Desktop is installed — if not, it gives you the download link.
-2. Check if `uv` is installed — if not, it gives you the install command.
-3. Check if Node.js is installed (optional, only needed for dev mode).
-4. Run `uv sync` to install Python dependencies.
-5. Print the commands to start the app.
-
----
-
-### Manual Prerequisites
-
-If you prefer to install manually:
-
-| Tool | Required for | Download |
-|---|---|---|
-| **Docker Desktop** | All modes | [docker.com/get-started](https://www.docker.com/get-started/) |
-| **uv** | All modes | [astral.sh/uv](https://docs.astral.sh/uv/getting-started/installation/) |
-| **Node.js + npm** | `simone dev` only | [nodejs.org](https://nodejs.org/) |
-
----
-
-### Start the App
-
-**Production mode** (all services in Docker — no Node.js needed):
+Run commands from the repository root:
 
 ```bash
 # Windows
-simone.bat up
+simone.bat --help
 
 # macOS / Linux
-./simone up
+./simone --help
 ```
 
-**Development mode** (Neo4j + Ollama in Docker; API + frontend locally with hot reload):
+If your shell can resolve the wrapper as `simone`, you can use `simone` instead of `simone.bat` or `./simone`.
+
+### Production Mode
+
+Production mode runs the full stack in Docker: Neo4j, Ollama, API, and frontend.
 
 ```bash
-# Windows
-simone.bat dev
-
-# macOS / Linux
-./simone dev
+simone up
 ```
 
-**With GPU support** (append `--gpu` to either command):
+Use GPU support for Ollama:
 
 ```bash
-# Windows
-simone.bat up --gpu
-simone.bat dev --gpu
-
-# macOS / Linux
-./simone up --gpu
-./simone dev --gpu
+simone up --gpu
 ```
 
----
+By default, `up` reuses existing images and containers. Rebuild images explicitly after Dockerfile or dependency changes:
 
-### Access the Services
+```bash
+simone up --build
+```
 
-Once started, the services are available at:
+### Development Mode
+
+Development mode runs the API locally with Uvicorn reload. Neo4j and Ollama run in Docker.
+
+```bash
+simone dev
+```
+
+If npm is installed, the frontend runs locally with Vite hot reload. If npm is missing, the CLI prints the Node.js download link and falls back to Docker frontend mode automatically.
+
+You can choose Docker frontend mode directly:
+
+```bash
+simone dev --no-npm
+```
+
+Use GPU support for Ollama in dev mode:
+
+```bash
+simone dev --gpu
+```
+
+### Service URLs
 
 | Service | URL |
 |---|---|
 | Frontend | http://127.0.0.1:3000 |
 | API Docs | http://127.0.0.1:8000/docs |
+| API Health | http://127.0.0.1:8000/api/v1/health |
 | Neo4j Browser | http://127.0.0.1:7474/browser/ |
 
----
-
-### Stop and Status
+### Stop and Inspect
 
 ```bash
-# Windows
-simone.bat down     # Stop all services
-simone.bat status   # Check what's running
-
-# macOS / Linux
-./simone down
-./simone status
+simone status
+simone down
 ```
 
----
+`status` shows Docker containers, local dev processes, and API health. `down` stops SIMONE containers and closes local development API/frontend processes.
 
-### First-Time Ollama Cloud Sign-In
+### Ollama Cloud Sign-In
 
-The default chat model is an Ollama Cloud model (`gemma4:31b-cloud`). On a fresh machine or after resetting the Ollama data volume, the app can start successfully but the `/api/v1/health` endpoint may report the chat check as `unauthorized (status code: 401)` until the Ollama container is signed in.
+The default chat model is an Ollama Cloud model (`gemma4:31b-cloud`). On a fresh machine or after resetting the Ollama data volume, `/api/v1/health` may report the chat check as `unauthorized (status code: 401)`.
 
-After starting the stack once, run:
+`simone up` checks health after the API is reachable and starts the Ollama sign-in flow when needed. You can also run it manually:
 
-```bat
-scripts\signin-ollama.bat
+```bash
+simone signin-ollama
 ```
 
-The script runs `ollama signin` inside the running Ollama Docker container. If the container is not signed in yet, Ollama prints a link like:
+If Ollama prints a connect link, open it in your browser and complete the sign-in. The credential is stored in `data/docker/ollama/data`, so you normally only need this once per local data volume.
 
-```text
-https://ollama.com/connect?name=...&key=...
+### Neo4j Data Maintenance
+
+Neo4j stores local data in `data/docker/neo4j/data`. The password is applied only when this data directory is initialized. Changing `NEO4J_PASSWORD` later does not change the persisted database password.
+
+Create a backup:
+
+```bash
+simone backup-neo4j
 ```
 
-Open that link in your browser and complete the sign-in. The credential is stored in the mounted Ollama data directory (`data/docker/ollama/data`), so you normally only need to do this once per local data volume.
+Reset local Neo4j data:
 
-If you prefer to run the command manually, use:
-
-```bat
-docker compose exec -T ollama ollama signin
+```bash
+simone reset-neo4j
 ```
+
+The reset command asks whether to create a backup before deleting the data. Non-interactive variants are available:
+
+```bash
+simone reset-neo4j --backup
+simone reset-neo4j --yes
+```
+
+Restore a backup:
+
+```bash
+simone restore-neo4j .backups/neo4j/<backup-file>.cypher
+```
+

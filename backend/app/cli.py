@@ -1,10 +1,12 @@
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -33,6 +35,8 @@ API_URL = "http://127.0.0.1:8000/docs"
 HEALTH_URL = "http://127.0.0.1:8000/api/v1/health"
 FRONTEND_URL = "http://127.0.0.1:3000"
 NEO4J_BROWSER_URL = "http://127.0.0.1:7474/browser/"
+NEO4J_DATA_DIR = REPO_ROOT / "data" / "docker" / "neo4j" / "data"
+NEO4J_BACKUP_DIR = REPO_ROOT / ".backups" / "neo4j"
 
 
 def _run(
@@ -109,9 +113,157 @@ def _compose_logs(env_file: Path, compose_files: list[Path], services: list[str]
     return (result.stdout + result.stderr).strip()
 
 
-def _compose_exec(env_file: Path, compose_files: list[Path], service: str, command: list[str]) -> subprocess.CompletedProcess:
+def _compose_exec(
+    env_file: Path,
+    compose_files: list[Path],
+    service: str,
+    command: list[str],
+    capture_output: bool = False,
+) -> subprocess.CompletedProcess:
     cmd = _compose_base_cmd(env_file, compose_files) + ["exec", "-T", service, *command]
-    return _run(cmd, cwd=REPO_ROOT, check=False, capture_output=False)
+    return _run(cmd, cwd=REPO_ROOT, check=False, capture_output=capture_output)
+
+
+def _compose_stop_services(env_file: Path, compose_files: list[Path], services: list[str]) -> None:
+    cmd = _compose_base_cmd(env_file, compose_files) + ["stop", *services]
+    _run(cmd, cwd=REPO_ROOT, check=False)
+
+
+def _compose_container_id(env_file: Path, compose_files: list[Path], service: str) -> str:
+    result = _run(
+        _compose_base_cmd(env_file, compose_files) + ["ps", "-q", service],
+        cwd=REPO_ROOT,
+        check=False,
+    )
+    return result.stdout.strip().splitlines()[0] if result.stdout.strip() else ""
+
+
+def _read_env_file(env_file: Path) -> dict[str, str]:
+    values = {}
+    if not env_file.exists():
+        return values
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        text = line.strip()
+        if not text or text.startswith("#") or "=" not in text:
+            continue
+        key, value = text.split("=", 1)
+        values[key.strip()] = value.strip().strip('"').strip("'")
+    return values
+
+
+def _check_dev_neo4j_auth(compose_files: list[Path]) -> bool:
+    env_values = _read_env_file(ENV_DEV)
+    user = env_values.get("NEO4J_USER", "neo4j")
+    password = env_values.get("NEO4J_PASSWORD", "")
+    last_result: subprocess.CompletedProcess | None = None
+    for _ in range(30):
+        result = _compose_exec(
+            ENV_DEV,
+            compose_files,
+            "neo4j",
+            ["cypher-shell", "-a", "bolt://localhost:7687", "-u", user, "-p", password, "RETURN 1;"],
+            capture_output=True,
+        )
+        last_result = result
+        output = f"{result.stdout or ''}\n{result.stderr or ''}".lower()
+        if result.returncode == 0:
+            return True
+        if any(phrase in output for phrase in ("unauthorized", "authentication failure", "incorrect authentication")):
+            break
+        if "unable to connect" in output or "connection refused" in output or "serviceunavailable" in output:
+            time.sleep(2)
+            continue
+        time.sleep(2)
+
+    if last_result is None:
+        return False
+
+    result = last_result
+    if result.returncode == 0:
+        return True
+
+    logs = _compose_logs_tail(ENV_DEV, compose_files, ["neo4j"], tail=20).lower()
+    stderr = (result.stderr or "").lower()
+    stdout = (result.stdout or "").lower()
+    auth_failed = any(
+        phrase in text
+        for text in (logs, stderr, stdout)
+        for phrase in ("unauthorized", "authentication failure", "incorrect authentication")
+    )
+    if auth_failed:
+        typer.echo("Neo4j authentication failed for the credentials in .env.development.", err=True)
+        typer.echo(f"  NEO4J_USER={user}", err=True)
+        typer.echo("  NEO4J_PASSWORD=<value from .env.development>", err=True)
+        typer.echo("", err=True)
+        typer.echo("Neo4j keeps the password from the first time the data directory was initialized.", err=True)
+        typer.echo("Changing NEO4J_PASSWORD later does not update the persisted database password.", err=True)
+        typer.echo("Update .env.development to the existing Neo4j password, or run 'simone reset-neo4j'.", err=True)
+    else:
+        typer.echo("Neo4j did not become reachable within 60 seconds, so the local API was not started.", err=True)
+        typer.echo("Run 'simone status' or check the Neo4j container logs if startup continues to fail.", err=True)
+    return False
+
+
+def _backup_neo4j() -> Path:
+    _ensure_env_file(ENV_DEV, ENV_DEV_EXAMPLE)
+    env_values = _read_env_file(ENV_DEV)
+    user = env_values.get("NEO4J_USER", "neo4j")
+    password = env_values.get("NEO4J_PASSWORD", "")
+
+    typer.echo("Ensuring Neo4j container is running ...")
+    _run(_build_compose_cmd(ENV_DEV, [COMPOSE_DEV], action="up", services=["neo4j"], build=False), cwd=REPO_ROOT, check=False)
+
+    backup_name = f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.cypher"
+    backup_file = NEO4J_BACKUP_DIR / backup_name
+    NEO4J_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+
+    typer.echo(f"Exporting Neo4j graph to {backup_file.relative_to(REPO_ROOT)} ...")
+    result = _compose_exec(
+        ENV_DEV,
+        [COMPOSE_DEV],
+        "neo4j",
+        [
+            "cypher-shell",
+            "-u",
+            user,
+            "-p",
+            password,
+            f"CALL apoc.export.cypher.all('{backup_name}', {{format: 'cypher-shell'}});",
+        ],
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        typer.echo("Backup failed. Check .env.development Neo4j credentials.", err=True)
+        if result.stderr:
+            typer.echo(result.stderr.strip(), err=True)
+        raise typer.Exit(1)
+
+    container_id = _compose_container_id(ENV_DEV, [COMPOSE_DEV], "neo4j")
+    if not container_id:
+        typer.echo("Backup export succeeded, but the Neo4j container could not be found.", err=True)
+        raise typer.Exit(1)
+    copy_result = _run(
+        ["docker", "cp", f"{container_id}:/var/lib/neo4j/import/{backup_name}", str(backup_file)],
+        cwd=REPO_ROOT,
+        check=False,
+    )
+    if copy_result.returncode != 0:
+        typer.echo("Backup export succeeded, but copying the backup file failed.", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"Backup created: {backup_file.relative_to(REPO_ROOT)}")
+    return backup_file
+
+
+def _reset_neo4j_data_dir() -> None:
+    NEO4J_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    for child in NEO4J_DATA_DIR.iterdir():
+        if child.name == ".gitkeep":
+            continue
+        if child.is_dir():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+    (NEO4J_DATA_DIR / ".gitkeep").touch()
 
 
 def _get_json_url(url: str, timeout: int = 5) -> tuple[int | None, dict[str, object] | None, str | None]:
@@ -148,7 +300,10 @@ def _is_ollama_chat_unauthorized(health_payload: dict[str, object] | None) -> bo
 def _ensure_ollama_signin(env_file: Path, compose_files: list[Path]) -> None:
     status_code, payload, error = _get_json_url(HEALTH_URL, timeout=30)
     if error:
-        typer.echo(f"Could not check Ollama Cloud sign-in status yet: {error}", err=True)
+        typer.echo("Ollama Cloud sign-in status could not be checked yet.")
+        typer.echo(f"Health check detail: {error}")
+        typer.echo("The stack is running; Ollama may still be pulling, loading, or warming up models.")
+        typer.echo("Run 'simone status' in a moment to see whether sign-in is required.")
         return
     if not _is_ollama_chat_unauthorized(payload):
         return
@@ -229,6 +384,7 @@ def _wait_for_url(
     verbose: bool = False,
     env_file: Optional[Path] = None,
     compose_files: Optional[list[Path]] = None,
+    log_services: Optional[list[str]] = None,
 ) -> bool:
     typer.echo(f"Waiting for {label} at {url} ...")
     start = time.time()
@@ -236,8 +392,8 @@ def _wait_for_url(
     last_error = ""
     last_details_at = -10
     previous_logs = ""
-    if verbose and env_file and compose_files:
-        previous_logs = _compose_logs(env_file, compose_files, ["api"])
+    if verbose and env_file and compose_files and log_services:
+        previous_logs = _compose_logs(env_file, compose_files, log_services)
     while time.time() - start < timeout:
         attempt += 1
         try:
@@ -255,8 +411,8 @@ def _wait_for_url(
             last_error = f"{type(exc).__name__}: {exc}"
 
         elapsed = int(time.time() - start)
-        if verbose and env_file and compose_files:
-            current_logs = _compose_logs(env_file, compose_files, ["api"])
+        if verbose and env_file and compose_files and log_services:
+            current_logs = _compose_logs(env_file, compose_files, log_services)
             if _print_new_log_lines(current_logs, previous_logs):
                 previous_logs = current_logs
                 last_details_at = elapsed
@@ -351,9 +507,48 @@ def _find_pids_by_cmdline(pattern: str) -> list[int]:
 def _kill_pids(pids: list[int]) -> None:
     for pid in pids:
         try:
-            subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True)
+            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)
         except Exception:
             pass
+
+
+def _find_pids_by_window_title(title: str) -> list[int]:
+    if sys.platform != "win32":
+        return []
+    try:
+        result = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                "Get-Process | Select-Object Id,MainWindowTitle | ConvertTo-Json -Compress",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return []
+        processes = json.loads(result.stdout)
+        if isinstance(processes, dict):
+            processes = [processes]
+        return [
+            int(process["Id"])
+            for process in processes
+            if str(process.get("MainWindowTitle") or "").startswith(title)
+        ]
+    except Exception:
+        return []
+
+
+def _kill_windows_by_title(title: str) -> None:
+    pids = _find_pids_by_window_title(title)
+    if pids:
+        _kill_pids(pids)
+        return
+    try:
+        subprocess.run(["taskkill", "/FI", f"WINDOWTITLE eq {title}*", "/F"], capture_output=True)
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -385,11 +580,19 @@ def up(
     cmd = _build_compose_cmd(ENV_PROD, compose_files, action="up", build=build)
 
     typer.echo(f"Starting production stack ({'GPU' if gpu else 'CPU'}) ...")
-    typer.echo(" ".join(cmd))
     _run(cmd, cwd=REPO_ROOT, capture_output=not verbose)
 
-    api_ready = _wait_for_url(API_URL, timeout=120, label="API", verbose=verbose, env_file=ENV_PROD, compose_files=compose_files)
+    api_ready = _wait_for_url(
+        API_URL,
+        timeout=120,
+        label="API",
+        verbose=verbose,
+        env_file=ENV_PROD,
+        compose_files=compose_files,
+        log_services=["api"],
+    )
     if api_ready:
+        typer.echo("Now checking health... (takes up to 30s)")
         _ensure_ollama_signin(ENV_PROD, compose_files)
     _print_links()
 
@@ -397,8 +600,9 @@ def up(
 @app.command()
 def dev(
     gpu: bool = typer.Option(False, "--gpu", help="Enable GPU support for Ollama"),
+    no_npm: bool = typer.Option(False, "--no-npm", help="Run the frontend in Docker instead of requiring local npm"),
 ) -> None:
-    """Start SIMONE in development mode (Neo4j + Ollama in Docker; API + frontend locally)."""
+    """Start SIMONE in development mode (API locally; infrastructure in Docker)."""
     if not _docker_available():
         typer.echo("Error: Docker is not installed or not on PATH.", err=True)
         raise typer.Exit(1)
@@ -413,27 +617,39 @@ def dev(
     if not (BACKEND_DIR / ".venv").exists():
         typer.echo("Running uv sync in backend/ ...")
         _run(["uv", "sync"], cwd=BACKEND_DIR)
-    else:
-        typer.echo("Backend virtual environment already exists. Skipping uv sync.")
 
-    if not _check_command("npm"):
-        typer.echo("Error: 'npm' is not installed or not on PATH. Install Node.js from https://nodejs.org/", err=True)
-        raise typer.Exit(1)
+    use_docker_frontend = no_npm
+    if not no_npm:
+        if not _check_command("npm"):
+            typer.echo("")
+            typer.echo("npm is not installed or not on PATH.")
+            typer.echo("Install Node.js from https://nodejs.org/ if you want to work on the frontend locally.")
+            typer.echo("Falling back to Docker frontend mode, same as 'simone dev --no-npm'.")
+            use_docker_frontend = True
+        elif not (FRONTEND_DIR / "node_modules").exists():
+            typer.echo("Running npm install in frontend/ ...")
+            _run(["npm", "install"], cwd=FRONTEND_DIR)
+        else:
+            typer.echo("Frontend node_modules already exists. Skipping npm install.")
 
-    if not (FRONTEND_DIR / "node_modules").exists():
-        typer.echo("Running npm install in frontend/ ...")
-        _run(["npm", "install"], cwd=FRONTEND_DIR)
-    else:
-        typer.echo("Frontend node_modules already exists. Skipping npm install.")
-
+    typer.echo("")
     # Start infrastructure containers
     compose_files = _compose_files_for_mode(dev=True, gpu=gpu)
-    cmd = _build_compose_cmd(ENV_DEV, compose_files, action="up", services=["neo4j", "ollama"], build=True)
+    services = ["neo4j", "ollama", "frontend"] if use_docker_frontend else ["neo4j", "ollama"]
+    cmd = _build_compose_cmd(ENV_DEV, compose_files, action="up", services=services, build=True)
 
-    typer.echo(f"Starting infrastructure containers ({'GPU' if gpu else 'CPU'}) ...")
-    typer.echo(" ".join(cmd))
+    container_label = "infrastructure + frontend" if use_docker_frontend else "infrastructure"
+    typer.echo(f"Starting {container_label} containers ({'GPU' if gpu else 'CPU'}) ...")
     _run(cmd, cwd=REPO_ROOT)
 
+    _compose_stop_services(ENV_PROD, [COMPOSE_PROD], ["api"])
+    if not use_docker_frontend:
+        _compose_stop_services(ENV_PROD, [COMPOSE_PROD], ["frontend"])
+
+    if not _check_dev_neo4j_auth(compose_files):
+        raise typer.Exit(1)
+
+    typer.echo("")
     # Start local API in a new visible terminal window
     api_cmd = (
         'uv run --env-file ../.env.development uvicorn app.main:fastapi_app '
@@ -442,7 +658,7 @@ def dev(
     typer.echo("Starting local API with hot reload ...")
     if sys.platform == "win32":
         subprocess.Popen(
-            ["cmd", "/c", "start", "SIMONE API", "powershell", "-NoExit", "-Command", api_cmd],
+            ["cmd", "/c", "start", "SIMONE API", "powershell", "-Command", api_cmd],
             cwd=str(BACKEND_DIR),
             creationflags=subprocess.CREATE_NEW_CONSOLE,
         )
@@ -453,24 +669,35 @@ def dev(
             shell=True,
         )
 
-    # Start local frontend in a new visible terminal window
-    frontend_cmd = "npm run dev -- --host 127.0.0.1"
-    typer.echo("Starting local frontend dev server ...")
-    if sys.platform == "win32":
-        subprocess.Popen(
-            ["cmd", "/c", "start", "SIMONE Frontend", "powershell", "-NoExit", "-Command", frontend_cmd],
-            cwd=str(FRONTEND_DIR),
-            creationflags=subprocess.CREATE_NEW_CONSOLE,
-        )
+    if not use_docker_frontend:
+        # Start local frontend in a new visible terminal window
+        frontend_cmd = "npm run dev -- --host 127.0.0.1"
+        typer.echo("Starting local frontend dev server ...")
+        if sys.platform == "win32":
+            subprocess.Popen(
+                ["cmd", "/c", "start", "SIMONE Frontend", "powershell", "-Command", frontend_cmd],
+                cwd=str(FRONTEND_DIR),
+                creationflags=subprocess.CREATE_NEW_CONSOLE,
+            )
+        else:
+            subprocess.Popen(
+                frontend_cmd,
+                cwd=str(FRONTEND_DIR),
+                shell=True,
+            )
     else:
-        subprocess.Popen(
-            frontend_cmd,
-            cwd=str(FRONTEND_DIR),
-            shell=True,
-        )
+        pass
 
-    _wait_for_url(API_URL, timeout=120, label="API", verbose=True, env_file=ENV_DEV, compose_files=compose_files)
-    _wait_for_url(FRONTEND_URL, timeout=120, label="Frontend", verbose=True, env_file=ENV_DEV, compose_files=compose_files)
+    _wait_for_url(API_URL, timeout=120, label="API", verbose=False)
+    _wait_for_url(
+        FRONTEND_URL,
+        timeout=120,
+        label="Frontend",
+        verbose=False,
+        env_file=ENV_DEV if use_docker_frontend else None,
+        compose_files=compose_files if use_docker_frontend else None,
+        log_services=["frontend"] if use_docker_frontend else None,
+    )
     _print_links()
 
 
@@ -510,21 +737,24 @@ def down() -> None:
 
     # Kill local dev processes
     typer.echo("Stopping local API process ...")
-    api_pids = _find_pids_by_cmdline("uvicorn app.main:fastapi_app")
+    api_pids = sorted(set(_find_pids_by_cmdline("uvicorn app.main:fastapi_app") + _find_pids_by_window_title("SIMONE API")))
     if api_pids:
         _kill_pids(api_pids)
         typer.echo(f"Stopped API processes: {api_pids}")
     else:
+        _kill_windows_by_title("SIMONE API")
         typer.echo("No local API process found.")
 
     typer.echo("Stopping local frontend process ...")
     frontend_pids = _find_pids_by_cmdline("npm run dev")
     if not frontend_pids:
         frontend_pids = _find_pids_by_cmdline("vite")
+    frontend_pids = sorted(set(frontend_pids + _find_pids_by_window_title("SIMONE Frontend")))
     if frontend_pids:
         _kill_pids(frontend_pids)
         typer.echo(f"Stopped frontend processes: {frontend_pids}")
     else:
+        _kill_windows_by_title("SIMONE Frontend")
         typer.echo("No local frontend process found.")
 
     typer.echo("SIMONE is down.")
@@ -538,6 +768,98 @@ def signin_ollama() -> None:
         raise typer.Exit(1)
     _ensure_env_file(ENV_PROD, ENV_PROD_EXAMPLE)
     _compose_exec(ENV_PROD, [COMPOSE_PROD], "ollama", ["ollama", "signin"])
+
+
+@app.command("backup-neo4j")
+def backup_neo4j() -> None:
+    """Create a Cypher backup of the development Neo4j database."""
+    if not _docker_available():
+        typer.echo("Error: Docker is not installed or not on PATH.", err=True)
+        raise typer.Exit(1)
+    _backup_neo4j()
+
+
+@app.command("reset-neo4j")
+def reset_neo4j(
+    backup: bool = typer.Option(False, "--backup", help="Create a Cypher backup before resetting"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Reset without an interactive confirmation prompt"),
+) -> None:
+    """Reset the local Neo4j data directory used by development and production."""
+    if not _docker_available():
+        typer.echo("Error: Docker is not installed or not on PATH.", err=True)
+        raise typer.Exit(1)
+
+    typer.echo("WARNING: This will delete the local Neo4j database in data/docker/neo4j/data.")
+    should_backup = backup
+    if not backup and not yes:
+        should_backup = typer.confirm("Create a backup before resetting?", default=True)
+
+    if not yes and not typer.confirm("Reset local Neo4j data?", default=False):
+        typer.echo("Reset cancelled.")
+        return
+
+    if should_backup:
+        _backup_neo4j()
+
+    typer.echo("Stopping Neo4j containers ...")
+    for env_file, compose_files in (
+        (ENV_PROD, [COMPOSE_PROD]),
+        (ENV_DEV, [COMPOSE_DEV]),
+    ):
+        if env_file.exists() and all(compose_file.exists() for compose_file in compose_files):
+            _compose_stop_services(env_file, compose_files, ["neo4j"])
+
+    typer.echo("Removing Neo4j data contents ...")
+    _reset_neo4j_data_dir()
+    typer.echo("Neo4j database reset complete.")
+    typer.echo("The next startup will initialize Neo4j with the current .env credentials.")
+
+
+@app.command("restore-neo4j")
+def restore_neo4j(
+    backup_file: Path = typer.Argument(..., help="Path to a .cypher backup file"),
+) -> None:
+    """Restore a Cypher backup into the development Neo4j database."""
+    if not _docker_available():
+        typer.echo("Error: Docker is not installed or not on PATH.", err=True)
+        raise typer.Exit(1)
+    if not backup_file.exists():
+        typer.echo(f"Backup file not found: {backup_file}", err=True)
+        raise typer.Exit(1)
+
+    _ensure_env_file(ENV_DEV, ENV_DEV_EXAMPLE)
+    env_values = _read_env_file(ENV_DEV)
+    user = env_values.get("NEO4J_USER", "neo4j")
+    password = env_values.get("NEO4J_PASSWORD", "")
+
+    typer.echo("Ensuring Neo4j container is running ...")
+    _run(_build_compose_cmd(ENV_DEV, [COMPOSE_DEV], action="up", services=["neo4j"], build=False), cwd=REPO_ROOT, check=False)
+
+    container_id = _compose_container_id(ENV_DEV, [COMPOSE_DEV], "neo4j")
+    if not container_id:
+        typer.echo("No running development Neo4j container was found.", err=True)
+        raise typer.Exit(1)
+
+    typer.echo("Copying backup into Neo4j container ...")
+    copy_result = _run(["docker", "cp", str(backup_file), f"{container_id}:/tmp/restore.cypher"], cwd=REPO_ROOT, check=False)
+    if copy_result.returncode != 0:
+        typer.echo("Failed to copy backup file into Neo4j container.", err=True)
+        raise typer.Exit(1)
+
+    typer.echo(f"Restoring Neo4j graph from {backup_file} ...")
+    result = _compose_exec(
+        ENV_DEV,
+        [COMPOSE_DEV],
+        "neo4j",
+        ["cypher-shell", "-u", user, "-p", password, "-f", "/tmp/restore.cypher"],
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        typer.echo("Restore failed. Check .env.development Neo4j credentials and backup contents.", err=True)
+        if result.stderr:
+            typer.echo(result.stderr.strip(), err=True)
+        raise typer.Exit(1)
+    typer.echo("Restore completed successfully.")
 
 
 @app.command()
