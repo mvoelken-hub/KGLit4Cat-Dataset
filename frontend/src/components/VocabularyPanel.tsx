@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { checkVocabularyEmbeddings, deleteVocabulary, getVocabulary, importVocabulary, listVocabularies, queryVocabulary } from '../api/semantic';
-import type { VocabEmbeddingStatus, VocabQueryResult, VocabSchemeInfo } from '../api/types';
+import type { SearchMode, VocabEmbeddingStatus, VocabQueryParams, VocabQueryResult, VocabSchemeInfo } from '../api/types';
 
 type VocabEmbeddingStatusState = VocabEmbeddingStatus & { status: 'ready' | 'pending' | 'running' | 'unknown' | 'error'; message?: string };
 
@@ -33,23 +33,90 @@ function findResourceLabel(resource: VocabQueryResult['resources'][string] | und
 
 function VocabularyDetails({ details }: { details: VocabSchemeInfo }) {
   const [expandedTermSchemes, setExpandedTermSchemes] = useState<Set<string>>(new Set());
-  const [queryText, setQueryText] = useState('');
-  const [queryRdfType, setQueryRdfType] = useState(details.vocab_term_schemes[0]?.rdf_type || '');
   const [queryResult, setQueryResult] = useState<VocabQueryResult | null>(null);
   const [queryBusy, setQueryBusy] = useState(false);
   const [queryMessage, setQueryMessage] = useState('');
 
+  // Query parameter state
+  const [searchMode, setSearchMode] = useState<SearchMode>('hybrid');
+  const [queryRdfType, setQueryRdfType] = useState(details.vocab_term_schemes[0]?.rdf_type || '');
+  const [vectorQuery, setVectorQuery] = useState('');
+  const [fulltextQuery, setFulltextQuery] = useState('');
+  const [vectorTopK, setVectorTopK] = useState(10);
+  const [fulltextTopK, setFulltextTopK] = useState(10);
+  const [seedTopK, setSeedTopK] = useState(5);
+  const [traversalDirection, setTraversalDirection] = useState<'outgoing' | 'incoming' | 'undirected'>('undirected');
+  const [maxHops, setMaxHops] = useState(1);
+  const [maxStatementsPerSeed, setMaxStatementsPerSeed] = useState(25);
+  const [allowedRelTypes, setAllowedRelTypes] = useState<string[]>([]);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [vectorWeight, setVectorWeight] = useState(1.0);
+  const [fulltextWeight, setFulltextWeight] = useState(1.0);
+  const [rrfK, setRrfK] = useState(60);
+
+  const currentScheme = details.vocab_term_schemes.find((s) => s.rdf_type === queryRdfType);
+  const applicableRels = currentScheme?.applicable_relationships ?? [];
+
+  function toggleRelType(rel: string) {
+    setAllowedRelTypes((prev) =>
+      prev.includes(rel) ? prev.filter((r) => r !== rel) : [...prev, rel]
+    );
+  }
+
+  function selectAllRels() {
+    setAllowedRelTypes(applicableRels);
+  }
+
+  function clearAllRels() {
+    setAllowedRelTypes([]);
+  }
+
+  function resetDefaults() {
+    setVectorTopK(10);
+    setFulltextTopK(10);
+    setSeedTopK(5);
+    setTraversalDirection('undirected');
+    setMaxHops(1);
+    setMaxStatementsPerSeed(25);
+    setVectorWeight(1.0);
+    setFulltextWeight(1.0);
+    setRrfK(60);
+  }
+
+  function canQuery(): boolean {
+    if (searchMode === 'vector') return vectorQuery.trim().length > 0;
+    if (searchMode === 'fulltext') return fulltextQuery.trim().length > 0;
+    return vectorQuery.trim().length > 0 || fulltextQuery.trim().length > 0;
+  }
+
   async function onQueryVocabulary() {
-    const query = queryText.trim();
-    if (!query || !queryRdfType) {
+    if (!canQuery() || !queryRdfType) {
       setQueryMessage('Query text and RDF type are required.');
       return;
     }
 
+    const params: VocabQueryParams = {
+      identifier: details.identifier,
+      rdfType: queryRdfType,
+      searchMode,
+      vectorQuery: vectorQuery.trim(),
+      fulltextQuery: fulltextQuery.trim(),
+      vectorTopK,
+      fulltextTopK,
+      seedTopK,
+      traversalDirection,
+      maxHops,
+      maxStatementsPerSeed,
+      allowedRelTypes,
+      vectorWeight,
+      fulltextWeight,
+      rrfK,
+    };
+
     setQueryBusy(true);
     setQueryMessage('');
     try {
-      const result = await queryVocabulary({ identifier: details.identifier, rdfType: queryRdfType, query });
+      const result = await queryVocabulary(params);
       setQueryResult(result);
       setQueryMessage(result.seeds.length ? '' : 'No matching vocabulary resources found.');
     } catch (error) {
@@ -73,6 +140,55 @@ function VocabularyDetails({ details }: { details: VocabSchemeInfo }) {
           <h3>Query Vocabulary</h3>
         </div>
         <div className="vocab-query-form">
+          {/* Search mode toggle */}
+          <div className="vocab-query-mode-group">
+            <span>Search mode</span>
+            <div className="vocab-query-mode-toggle">
+              {(['vector', 'fulltext', 'hybrid'] as SearchMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={searchMode === mode ? 'active' : ''}
+                  onClick={() => setSearchMode(mode)}
+                  disabled={queryBusy}
+                >
+                  {mode === 'vector' ? 'Vector' : mode === 'fulltext' ? 'Full-text' : 'Hybrid'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Query inputs */}
+          {(searchMode === 'vector' || searchMode === 'hybrid') && (
+            <label>
+              <span>Vector query</span>
+              <input
+                value={vectorQuery}
+                onChange={(event) => setVectorQuery(event.target.value)}
+                placeholder="Semantic search terms..."
+                disabled={queryBusy}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') void onQueryVocabulary();
+                }}
+              />
+            </label>
+          )}
+          {(searchMode === 'fulltext' || searchMode === 'hybrid') && (
+            <label>
+              <span>Full-text query</span>
+              <input
+                value={fulltextQuery}
+                onChange={(event) => setFulltextQuery(event.target.value)}
+                placeholder="Full-text search terms..."
+                disabled={queryBusy}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') void onQueryVocabulary();
+                }}
+              />
+            </label>
+          )}
+
+          {/* RDF type */}
           <label>
             <span>RDF type</span>
             <select value={queryRdfType} onChange={(event) => setQueryRdfType(event.target.value)} disabled={queryBusy}>
@@ -81,22 +197,103 @@ function VocabularyDetails({ details }: { details: VocabSchemeInfo }) {
               ))}
             </select>
           </label>
-          <label>
-            <span>Query</span>
-            <input
-              value={queryText}
-              onChange={(event) => setQueryText(event.target.value)}
-              placeholder="Search vocabulary terms..."
-              disabled={queryBusy}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') void onQueryVocabulary();
-              }}
-            />
-          </label>
-          <button onClick={() => void onQueryVocabulary()} disabled={queryBusy || !queryText.trim() || !queryRdfType}>
+
+          {/* Top-k row */}
+          <div className="vocab-query-numeric-row">
+            <label>
+              <span>Vector top-k</span>
+              <input type="number" min={1} value={vectorTopK} onChange={(e) => setVectorTopK(Math.max(1, parseInt(e.target.value, 10) || 1))} disabled={queryBusy} />
+            </label>
+            <label>
+              <span>Full-text top-k</span>
+              <input type="number" min={1} value={fulltextTopK} onChange={(e) => setFulltextTopK(Math.max(1, parseInt(e.target.value, 10) || 1))} disabled={queryBusy} />
+            </label>
+            <label>
+              <span>Seed top-k</span>
+              <input type="number" min={1} value={seedTopK} onChange={(e) => setSeedTopK(Math.max(1, parseInt(e.target.value, 10) || 1))} disabled={queryBusy} />
+            </label>
+          </div>
+
+          {/* Graph expansion row */}
+          <div className="vocab-query-numeric-row">
+            <label>
+              <span>Traversal direction</span>
+              <select value={traversalDirection} onChange={(e) => setTraversalDirection(e.target.value as 'outgoing' | 'incoming' | 'undirected')} disabled={queryBusy}>
+                <option value="undirected">Undirected</option>
+                <option value="outgoing">Outgoing</option>
+                <option value="incoming">Incoming</option>
+              </select>
+            </label>
+            <label>
+              <span>Max hops</span>
+              <input type="number" min={1} value={maxHops} onChange={(e) => setMaxHops(Math.max(1, parseInt(e.target.value, 10) || 1))} disabled={queryBusy} />
+            </label>
+            <label>
+              <span>Max statements/seed</span>
+              <input type="number" min={1} value={maxStatementsPerSeed} onChange={(e) => setMaxStatementsPerSeed(Math.max(1, parseInt(e.target.value, 10) || 1))} disabled={queryBusy} />
+            </label>
+          </div>
+
+          {/* Relationship multi-select */}
+          {applicableRels.length > 0 && (
+            <div className="vocab-query-rel-group">
+              <div className="vocab-query-rel-heading">
+                <span>Allowed relationships</span>
+                <div className="vocab-query-rel-actions">
+                  <button type="button" className="ghost small" onClick={selectAllRels} disabled={queryBusy}>All</button>
+                  <button type="button" className="ghost small" onClick={clearAllRels} disabled={queryBusy}>None</button>
+                </div>
+              </div>
+              <div className="vocab-query-rel-chips">
+                {applicableRels.map((rel) => (
+                  <button
+                    key={rel}
+                    type="button"
+                    className={allowedRelTypes.includes(rel) ? 'selected' : ''}
+                    onClick={() => toggleRelType(rel)}
+                    disabled={queryBusy}
+                  >
+                    {rel}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Query button */}
+          <button onClick={() => void onQueryVocabulary()} disabled={queryBusy || !canQuery() || !queryRdfType}>
             {queryBusy ? 'Querying...' : 'Query'}
           </button>
         </div>
+
+        {/* Advanced toggle */}
+        <div className="vocab-query-advanced-toggle">
+          <button type="button" className="ghost small" onClick={() => setShowAdvanced((prev) => !prev)}>
+            {showAdvanced ? 'Hide advanced' : 'Advanced options'}
+          </button>
+        </div>
+
+        {/* Advanced panel */}
+        {showAdvanced && (
+          <div className="vocab-query-advanced-panel">
+            <div className="vocab-query-numeric-row">
+              <label>
+                <span>Vector weight</span>
+                <input type="number" min={0.01} step={0.1} value={vectorWeight} onChange={(e) => setVectorWeight(Math.max(0.01, parseFloat(e.target.value) || 1))} disabled={queryBusy} />
+              </label>
+              <label>
+                <span>Full-text weight</span>
+                <input type="number" min={0.01} step={0.1} value={fulltextWeight} onChange={(e) => setFulltextWeight(Math.max(0.01, parseFloat(e.target.value) || 1))} disabled={queryBusy} />
+              </label>
+              <label>
+                <span>RRF constant k</span>
+                <input type="number" min={1} value={rrfK} onChange={(e) => setRrfK(Math.max(1, parseInt(e.target.value, 10) || 60))} disabled={queryBusy} />
+              </label>
+            </div>
+            <button type="button" className="ghost small" onClick={resetDefaults} disabled={queryBusy}>Reset defaults</button>
+          </div>
+        )}
+
         {queryMessage && <p className="muted vocab-query-message">{queryMessage}</p>}
         {queryResult && queryResult.seeds.length > 0 && (
           <ul className="vocab-query-results">

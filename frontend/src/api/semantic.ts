@@ -1,5 +1,5 @@
 import { apiBaseUrl, readJson } from './client';
-import type { VocabEmbeddingStatus, VocabQueryResult, VocabSchemeInfo } from './types';
+import type { VocabEmbeddingStatus, VocabQueryParams, VocabQueryResult, VocabSchemeInfo } from './types';
 
 export async function listVocabularies(): Promise<string[]> {
   return readJson(await fetch(apiBaseUrl + '/semantic/vocabularies'));
@@ -24,21 +24,34 @@ export async function checkVocabularyEmbeddings(identifier: string): Promise<Voc
   return readJson(await fetch(apiBaseUrl + '/semantic/vocabularies/embeddings/' + encodeURIComponent(identifier), { method: 'POST' }));
 }
 
-export async function queryVocabulary(params: { identifier: string; rdfType: string; query: string }): Promise<VocabQueryResult> {
+export async function queryVocabulary(params: VocabQueryParams): Promise<VocabQueryResult> {
+  const body: Record<string, unknown> = {
+    rdf_type: params.rdfType,
+    vector_top_k: params.vectorTopK,
+    fulltext_top_k: params.fulltextTopK,
+    seed_top_k: params.seedTopK,
+    traversal_direction: params.traversalDirection,
+    max_hops: params.maxHops,
+    max_statements_per_seed: params.maxStatementsPerSeed,
+    allowed_rel_types: params.allowedRelTypes,
+    vector_weight: params.vectorWeight,
+    fulltext_weight: params.fulltextWeight,
+    rrf_k: params.rrfK,
+  };
+
+  if (params.searchMode === 'vector') {
+    body.vector_query = params.vectorQuery;
+  } else if (params.searchMode === 'fulltext') {
+    body.fulltext_query = params.fulltextQuery;
+  } else {
+    body.vector_query = params.vectorQuery;
+    body.fulltext_query = params.fulltextQuery;
+  }
+
   return readJson(await fetch(apiBaseUrl + '/semantic/vocabularies/query/' + encodeURIComponent(params.identifier), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      rdf_type: params.rdfType,
-      vector_query: params.query,
-      fulltext_query: params.query,
-      vector_top_k: 10,
-      fulltext_top_k: 10,
-      seed_top_k: 5,
-      allowed_rel_types: [],
-      max_hops: 1,
-      max_statements_per_seed: 25,
-    }),
+    body: JSON.stringify(body),
   }));
 }
 

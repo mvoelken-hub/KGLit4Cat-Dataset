@@ -122,3 +122,23 @@ export interface VocabQueryResult {
   graph_statements: Array<{ subject_uri: string; predicate: string; object_uri: string }>;
   resources: Record<string, VocabQueryResource>;
 }
+
+export type SearchMode = 'vector' | 'fulltext' | 'hybrid';
+
+export interface VocabQueryParams {
+  identifier: string;
+  rdfType: string;
+  searchMode: SearchMode;
+  vectorQuery: string;
+  fulltextQuery: string;
+  vectorTopK: number;
+  fulltextTopK: number;
+  seedTopK: number;
+  traversalDirection: 'outgoing' | 'incoming' | 'undirected';
+  maxHops: number;
+  maxStatementsPerSeed: number;
+  allowedRelTypes: string[];
+  vectorWeight: number;
+  fulltextWeight: number;
+  rrfK: number;
+}
