@@ -358,7 +358,7 @@ export function App() {
   const unresolvedReviewItems = reviewItems.filter((item) => !item.resolved);
   const patchMarkers = unresolvedReviewItems;
   const reviewMarkers = unresolvedReviewItems.filter((marker) => marker.status === 'needs_review' || marker.status === 'unmapped');
-  const autoResolutionActive = patchProgress?.resolution_active === true;
+  const autoResolutionActive = patchProgress?.resolution_active === true || (isPatching && autoResolve);
   const manualReviewActionsDisabled = autoResolutionActive;
 
   async function refresh() {
@@ -1135,18 +1135,10 @@ export function App() {
                     {progressTotalBatches > 0 && <span>Patching batch {progressBatchNo} of {progressTotalBatches}</span>}
                   </div>
                   <div className="patch-progress-track" aria-hidden="true"><div style={{ width: `${progressPercent}%` }} /></div>
-                  {patchProgress && (
-                    <div className="patch-progress-summary">
-                      {patchProgress.file_name && <span>Current patch <strong>{patchProgress.file_name}</strong></span>}
-                      <span>{patchProgress.accepted_fields?.length || 0} accepted field changes</span>
-                      <span>{patchProgress.total_candidates || 0} candidates reviewed</span>
-                      {(patchProgress.validation_errors?.length || 0) > 0 && <span className="warning">Schema review required</span>}
-                    </div>
-                  )}
                   <ResolutionLogList entries={patchProgress?.resolution_log ?? []} />
                 </div>
               )}
-              {draft && reviewMarkers.length > 0 && (
+              {draft && !autoResolutionActive && reviewMarkers.length > 0 && (
                 <div className="review-strip">
                   <strong>{reviewMarkers.length} unresolved review item{reviewMarkers.length === 1 ? '' : 's'}</strong>
                   <div>{reviewMarkers.slice(0, 8).map((marker, index) => <span key={`${marker.path}-${index}`}>{marker.path}</span>)}</div>
