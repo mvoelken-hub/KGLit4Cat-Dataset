@@ -303,6 +303,20 @@ button.small { padding: 0.4rem 0.7rem; font-size: 0.78rem; }
 .vocab-detail-grid .field { border: 1px solid var(--line); border-radius: 1rem; padding: 10px; background: rgba(255,255,255,0.42); }
 .vocab-detail-grid .field span { display: block; color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px; }
 .vocab-detail-grid .field strong { font-size: 0.9rem; word-break: break-word; }
+.vocab-query-panel { display: grid; gap: 10px; margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,0.52); }
+.vocab-query-heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.vocab-query-heading h3 { margin: 0; font-size: 0.98rem; color: var(--accent-dark); }
+.vocab-query-form { display: grid; grid-template-columns: minmax(180px, 0.7fr) minmax(220px, 1fr) auto; gap: 10px; align-items: end; }
+.vocab-query-form label { display: grid; gap: 6px; }
+.vocab-query-form label span { color: var(--muted); font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; }
+.vocab-query-form input, .vocab-query-form select { border-radius: 8px; padding: 0.62rem 0.7rem; }
+.vocab-query-form button { border-radius: 8px; padding: 0.62rem 0.9rem; }
+.vocab-query-message { margin: 0; }
+.vocab-query-results { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.vocab-query-results li { display: grid; gap: 5px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,0.6); }
+.vocab-query-results strong { overflow-wrap: anywhere; font-size: 0.9rem; }
+.vocab-query-results code { width: fit-content; max-width: 100%; padding: 3px 6px; border-radius: 6px; background: rgba(255,255,255,0.72); color: var(--ink); overflow-wrap: anywhere; white-space: normal; }
+.vocab-query-results span { color: var(--muted); font-size: 0.78rem; }
 .vocab-detail-panel .json-panel { max-height: 240px; font-size: 0.78rem; padding: 12px; background: rgba(255,255,255,0.72); color: var(--ink); }
 .vocab-term-scheme-list { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 8px; }
 .vocab-term-scheme { border: 1px solid var(--line); border-radius: 0.8rem; padding: 10px; background: rgba(255,255,255,0.5); }
@@ -319,6 +333,7 @@ button.small { padding: 0.4rem 0.7rem; font-size: 0.78rem; }
   .rail { position: static; }
   .context-grid { grid-template-columns: 1fr; }
   .vocab-detail-grid { grid-template-columns: 1fr; }
+  .vocab-query-form { grid-template-columns: 1fr; }
   .step-card { grid-template-columns: 1fr; }
   .step-index { border-right: 0; border-bottom: 1px solid var(--line); padding: 14px 24px; }
   .json-editor { grid-template-columns: 1fr; }

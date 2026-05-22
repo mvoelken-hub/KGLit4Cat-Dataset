@@ -98,3 +98,27 @@ export interface VocabEmbeddingStatus {
   pending_updates: number;
   task_status: TaskStatus;
 }
+
+export interface VocabQuerySeed {
+  uri: string;
+  rdf_type: string;
+  rrf_score: number;
+  vector_score: number | null;
+  vector_rank: number | null;
+  fulltext_score: number | null;
+  fulltext_rank: number | null;
+}
+
+export interface VocabQueryResource {
+  uri: string;
+  rdf_types: string[];
+  properties: Record<string, unknown>;
+}
+
+export interface VocabQueryResult {
+  identifier: string;
+  rdf_type: string;
+  seeds: VocabQuerySeed[];
+  graph_statements: Array<{ subject_uri: string; predicate: string; object_uri: string }>;
+  resources: Record<string, VocabQueryResource>;
+}

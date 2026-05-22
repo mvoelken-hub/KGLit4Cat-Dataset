@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { checkVocabularyEmbeddings, deleteVocabulary, getVocabulary, importVocabulary, listVocabularies } from '../api/semantic';
-import type { VocabEmbeddingStatus, VocabSchemeInfo } from '../api/types';
+import { checkVocabularyEmbeddings, deleteVocabulary, getVocabulary, importVocabulary, listVocabularies, queryVocabulary } from '../api/semantic';
+import type { VocabEmbeddingStatus, VocabQueryResult, VocabSchemeInfo } from '../api/types';
 
 type VocabEmbeddingStatusState = VocabEmbeddingStatus & { status: 'ready' | 'pending' | 'running' | 'unknown' | 'error'; message?: string };
 
@@ -14,8 +14,47 @@ function DetailField({ label, value }: { label: string; value?: string | number 
   );
 }
 
+function formatResourceLabel(resource: VocabQueryResult['resources'][string] | undefined, fallback: string): string {
+  const labelKeys = ['prefLabel', 'label', 'title', 'name'];
+  for (const key of labelKeys) {
+    const value = resource?.properties[key];
+    if (typeof value === 'string' && value.trim()) return value;
+    if (Array.isArray(value)) {
+      const first = value.find((item) => typeof item === 'string' && item.trim());
+      if (typeof first === 'string') return first;
+    }
+  }
+  return fallback;
+}
+
 function VocabularyDetails({ details }: { details: VocabSchemeInfo }) {
   const [expandedTermSchemes, setExpandedTermSchemes] = useState<Set<string>>(new Set());
+  const [queryText, setQueryText] = useState('');
+  const [queryRdfType, setQueryRdfType] = useState(details.vocab_term_schemes[0]?.rdf_type || '');
+  const [queryResult, setQueryResult] = useState<VocabQueryResult | null>(null);
+  const [queryBusy, setQueryBusy] = useState(false);
+  const [queryMessage, setQueryMessage] = useState('');
+
+  async function onQueryVocabulary() {
+    const query = queryText.trim();
+    if (!query || !queryRdfType) {
+      setQueryMessage('Query text and RDF type are required.');
+      return;
+    }
+
+    setQueryBusy(true);
+    setQueryMessage('');
+    try {
+      const result = await queryVocabulary({ identifier: details.identifier, rdfType: queryRdfType, query });
+      setQueryResult(result);
+      setQueryMessage(result.seeds.length ? '' : 'No matching vocabulary resources found.');
+    } catch (error) {
+      setQueryResult(null);
+      setQueryMessage(error instanceof Error ? error.message : 'Vocabulary query failed.');
+    } finally {
+      setQueryBusy(false);
+    }
+  }
 
   return (
     <div className="vocab-detail-panel">
@@ -24,6 +63,51 @@ function VocabularyDetails({ details }: { details: VocabSchemeInfo }) {
         <DetailField label="Source" value={details.source} />
         <DetailField label="Format" value={details.rdf_format} />
         <DetailField label="Triples" value={details.num_triples} />
+      </div>
+      <div className="vocab-query-panel">
+        <div className="vocab-query-heading">
+          <h3>Query Vocabulary</h3>
+        </div>
+        <div className="vocab-query-form">
+          <label>
+            <span>RDF type</span>
+            <select value={queryRdfType} onChange={(event) => setQueryRdfType(event.target.value)} disabled={queryBusy}>
+              {details.vocab_term_schemes.map((scheme) => (
+                <option key={scheme.rdf_type} value={scheme.rdf_type}>{scheme.rdf_type}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Query</span>
+            <input
+              value={queryText}
+              onChange={(event) => setQueryText(event.target.value)}
+              placeholder="Search vocabulary terms..."
+              disabled={queryBusy}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') void onQueryVocabulary();
+              }}
+            />
+          </label>
+          <button onClick={() => void onQueryVocabulary()} disabled={queryBusy || !queryText.trim() || !queryRdfType}>
+            {queryBusy ? 'Querying...' : 'Query'}
+          </button>
+        </div>
+        {queryMessage && <p className="muted vocab-query-message">{queryMessage}</p>}
+        {queryResult && queryResult.seeds.length > 0 && (
+          <ul className="vocab-query-results">
+            {queryResult.seeds.map((seed) => {
+              const resource = queryResult.resources[seed.uri];
+              return (
+                <li key={seed.uri}>
+                  <strong>{formatResourceLabel(resource, seed.uri)}</strong>
+                  <code>{seed.uri}</code>
+                  <span>{seed.vector_rank ? `Vector #${seed.vector_rank}` : 'No vector rank'} | {seed.fulltext_rank ? `Full-text #${seed.fulltext_rank}` : 'No full-text rank'}</span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
       {details.description && (
         <>
