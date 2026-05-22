@@ -92,7 +92,7 @@ h2 { margin: 0; font-size: clamp(1.6rem, 3vw, 2.6rem); letter-spacing: -0.04em; 
 
 /* JsonEditor */
 .json-editor { display: grid; grid-template-columns: minmax(180px, var(--json-editor-sidebar-width, 260px)) 8px minmax(0, 1fr); gap: 0; margin-top: 18px; border: 1px solid var(--line); border-radius: 1rem; overflow: hidden; background: var(--panel); }
-.json-editor-sidebar { background: var(--panel); color: var(--ink); padding: 16px; overflow: auto; max-height: 520px; min-width: 0; }
+.json-editor-sidebar { background: var(--panel); color: var(--ink); padding: 16px 0; overflow: auto; max-height: 520px; min-width: 0; }
 .json-editor-resize-handle { position: relative; width: 8px; max-height: 520px; border-left: 1px solid var(--line); border-right: 1px solid var(--line); background: rgba(26, 26, 26, 0.035); cursor: col-resize; touch-action: none; }
 .json-editor-resize-handle::after { content: ""; position: absolute; inset: 12px 3px; border-radius: 999px; background: rgba(26, 26, 26, 0.16); transition: background 140ms ease, inset 140ms ease; }
 .json-editor-resize-handle:hover::after, .json-editor-resize-handle:focus-visible::after { inset-inline: 2px; background: var(--accent); }

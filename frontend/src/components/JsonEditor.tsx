@@ -115,14 +115,14 @@ function itemSchema(schema: Record<string, unknown>, rootSchema: JsonSchemaDocum
   return normalizeSchema(current.items, rootSchema);
 }
 
-function schemaForPath(rootSchema: JsonSchemaDocument | null | undefined, targetClass: string | undefined, path: string): { typeName: string | null } {
-  if (!rootSchema || !targetClass) return { typeName: null };
+function schemaForPath(rootSchema: JsonSchemaDocument | null | undefined, targetClass: string | undefined, path: string): { schema: Record<string, unknown> | null; typeName: string | null } {
+  if (!rootSchema || !targetClass) return { schema: null, typeName: null };
   const defs = isRecord(rootSchema.$defs) ? rootSchema.$defs : {};
   let current: Record<string, unknown> | null = isRecord(defs[targetClass]) ? defs[targetClass] : rootSchema;
   let typeName: string | null = path ? null : targetClass;
 
   for (const part of path.split('.').filter(Boolean)) {
-    if (!current) return { typeName: null };
+    if (!current) return { schema: null, typeName: null };
     if (/^\d+$/.test(part)) {
       const next = itemSchema(current, rootSchema);
       current = next.schema;
@@ -138,7 +138,7 @@ function schemaForPath(rootSchema: JsonSchemaDocument | null | undefined, target
     typeName = next.typeName;
   }
 
-  return { typeName };
+  return { schema: current, typeName };
 }
 
 function typedPathLabel(rootSchema: JsonSchemaDocument | null | undefined, targetClass: string | undefined, path: string): string {
@@ -152,6 +152,85 @@ function typedPathLabel(rootSchema: JsonSchemaDocument | null | undefined, targe
   }
   const typeName = schemaForPath(rootSchema, targetClass, path).typeName;
   return typeName ? `${part}: ${typeName}` : part;
+}
+
+function schemaTypes(schema: Record<string, unknown> | null): string[] {
+  if (!schema) return [];
+  if (Array.isArray(schema.type)) return schema.type.filter((item): item is string => typeof item === 'string');
+  if (typeof schema.type === 'string') return [schema.type];
+  if (schema.properties) return ['object'];
+  if (schema.items) return ['array'];
+  return [];
+}
+
+function defaultValueForSchema(schema: unknown, rootSchema: JsonSchemaDocument | null | undefined, depth = 0): JsonValue {
+  if (!rootSchema) return null;
+  const normalized = normalizeSchema(schema, rootSchema);
+  const current = normalized.schema;
+  if (!current) return null;
+  const types = schemaTypes(current);
+  if (depth > 0 && types.includes('null')) return null;
+
+  if (types.includes('object')) {
+    const properties = isRecord(current.properties) ? current.properties : {};
+    if (depth > 2) return {};
+    return Object.fromEntries(
+      Object.entries(properties).map(([key, propertySchema]) => [
+        key,
+        defaultValueForSchema(propertySchema, rootSchema, depth + 1),
+      ]),
+    ) as JsonObject;
+  }
+
+  if (types.includes('array')) return [];
+  if (types.includes('string')) return '';
+  if (types.includes('integer') || types.includes('number')) return 0;
+  if (types.includes('boolean')) return false;
+  return null;
+}
+
+function nullReplacementOptions(
+  rootSchema: JsonSchemaDocument | null | undefined,
+  targetClass: string | undefined,
+  path: string,
+): Array<{ value: string; label: string; nextValue: JsonValue }> {
+  const fallbackOptions = [
+    { value: 'null', label: 'null', nextValue: null },
+    { value: 'true', label: 'true', nextValue: true },
+    { value: 'false', label: 'false', nextValue: false },
+    { value: 'empty-string', label: 'empty string', nextValue: '' },
+  ];
+  if (!rootSchema || !targetClass) return fallbackOptions;
+
+  const { schema, typeName } = schemaForPath(rootSchema, targetClass, path);
+  if (!schema) return fallbackOptions;
+  const types = schemaTypes(schema);
+  const options: Array<{ value: string; label: string; nextValue: JsonValue }> = [
+    { value: 'null', label: 'null', nextValue: null },
+  ];
+
+  if (types.includes('object')) {
+    options.push({
+      value: 'schema-object',
+      label: `Create ${typeName || 'object'}`,
+      nextValue: defaultValueForSchema(schema, rootSchema),
+    });
+  }
+  if (types.includes('array')) {
+    options.push({ value: 'schema-array', label: 'Create empty array', nextValue: [] });
+  }
+  if (types.includes('string')) {
+    options.push({ value: 'schema-string', label: 'empty string', nextValue: '' });
+  }
+  if (types.includes('integer') || types.includes('number')) {
+    options.push({ value: 'schema-number', label: '0', nextValue: 0 });
+  }
+  if (types.includes('boolean')) {
+    options.push({ value: 'true', label: 'true', nextValue: true });
+    options.push({ value: 'false', label: 'false', nextValue: false });
+  }
+
+  return options.length > 1 ? options : fallbackOptions;
 }
 
 function clampSidebarWidth(width: number, editorWidth: number): number {
@@ -292,6 +371,8 @@ function ValueEditor({
   onToggleProtected,
   patchMarkers,
   onApplyPatch,
+  schema,
+  targetClass,
 }: {
   value: JsonValue;
   path: string;
@@ -300,29 +381,26 @@ function ValueEditor({
   onToggleProtected: (path: string) => void;
   patchMarkers: JsonPatchMarker[];
   onApplyPatch?: (itemId: string, value: unknown) => void;
+  schema?: JsonSchemaDocument | null;
+  targetClass?: string;
 }) {
   const isProtected = isPathProtected(path, protectedPaths);
 
   if (value === null || value === undefined) {
+    const options = nullReplacementOptions(schema, targetClass, path);
     return (
       <select
         className="json-editor-input"
         value="null"
         onChange={(e) => {
-          const v = e.target.value;
-          if (v === 'null') onChange(path, null);
-          else if (v === 'true') onChange(path, true);
-          else if (v === 'false') onChange(path, false);
-          else if (v === '') onChange(path, '');
-          else if (!Number.isNaN(Number(v))) onChange(path, Number(v));
-          else onChange(path, v);
+          const selected = options.find((option) => option.value === e.target.value);
+          if (selected) onChange(path, selected.nextValue);
         }}
         disabled={isProtected}
       >
-        <option value="null">null</option>
-        <option value="true">true</option>
-        <option value="false">false</option>
-        <option value="">empty string</option>
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
       </select>
     );
   }
@@ -461,6 +539,8 @@ function ValueEditor({
             onToggleProtected={onToggleProtected}
             patchMarkers={patchMarkers}
             onApplyPatch={onApplyPatch}
+            schema={schema}
+            targetClass={targetClass}
           />
         </div>
         );
@@ -873,6 +953,8 @@ export function JsonEditor({
               onToggleProtected={handleToggleProtected}
               patchMarkers={patchMarkers || []}
               onApplyPatch={onApplyPatch}
+              schema={schema}
+              targetClass={targetClass}
             />
           ) : (
             <p className="muted">Select a node from the tree to edit.</p>
