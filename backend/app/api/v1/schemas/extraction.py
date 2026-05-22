@@ -38,11 +38,10 @@ class PatchDraftRequest(BaseModel):
         ...,
         description="Identifier of the registered extraction profile.",
     )
-    num_chunks_per_turn: int | None = Field(
-        None,
+    num_chunks_per_turn: int= Field(
+        ...,
         ge=1,
-        le=50,
-        description="Optional number of chunks to include in each patch agent call.",
+        description="Number of chunks to include in each patch agent call.",
     )
 
 

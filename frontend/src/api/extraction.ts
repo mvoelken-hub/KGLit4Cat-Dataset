@@ -108,7 +108,7 @@ export async function saveDraft(data_package_id: string, draft: object): Promise
 export async function patchDraft(input: {
   data_package_id: string;
   profile_identifier: string;
-  num_chunks_per_turn?: number;
+  num_chunks_per_turn: number;
 }): Promise<PatchDraftResponse> {
   return readJson(await fetch(apiBaseUrl + '/extraction/patch-draft', {
     method: 'POST',

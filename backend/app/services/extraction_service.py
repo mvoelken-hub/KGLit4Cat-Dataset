@@ -132,7 +132,7 @@ class ExtractionService:
         *,
         data_package_id: str,
         profile_identifier: str,
-        num_chunks_per_turn: int | None = None,
+        num_chunks_per_turn: int,
     ) -> tuple[dict[str, Any], TaskStatus]:
         if (
             self.datasource_service is None
@@ -216,7 +216,7 @@ class ExtractionService:
         *,
         data_package_id: str,
         profile_identifier: str,
-        num_chunks_per_turn: int | None = None,
+        num_chunks_per_turn: int,
     ) -> dict[str, Any]:
         if (
             self.datasource_service is None
@@ -263,7 +263,7 @@ class ExtractionService:
         protected_fields = self.output_repository.load_protected_fields(data_package_id)
 
         def load_protected_fields() -> list[str]:
-            return self.output_repository.load_protected_fields(data_package_id)
+            return self.output_repository.load_protected_fields(data_package_id) # type: ignore
 
         async def save_progress(
             draft: dict[str, Any],
@@ -286,11 +286,7 @@ class ExtractionService:
             profile_manifest=profile_manifest,
             profile_json_schema=profile_json_schema,
             model=self.ollama_client.agent_model,
-            num_chunks_per_turn=(
-                num_chunks_per_turn
-                if num_chunks_per_turn is not None
-                else self.settings.num_chunks_per_turn
-            ),
+            num_chunks_per_turn=num_chunks_per_turn,
             on_patch_processed=save_progress,
             protected_fields=protected_fields,
             protected_fields_loader=load_protected_fields,

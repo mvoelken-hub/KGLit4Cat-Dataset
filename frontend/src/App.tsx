@@ -472,6 +472,15 @@ export function App() {
   const [railCollapsed, setRailCollapsed] = useState(true);
   const [reviewPanelCollapsed, setReviewPanelCollapsed] = useState(false);
   const [chunkingDialogOpen, setChunkingDialogOpen] = useState(false);
+  const [numChunksPerTurn, setNumChunksPerTurn] = useState(() => {
+    try {
+      const stored = localStorage.getItem('simone_num_chunks_per_turn');
+      const parsed = stored ? parseInt(stored, 10) : NaN;
+      return Number.isFinite(parsed) && parsed >= 1 ? parsed : 3;
+    } catch {
+      return 3;
+    }
+  });
   const [profileFormOpen, setProfileFormOpen] = useState(false);
   const [profileIdentifier, setProfileIdentifier] = useState('');
   const [profileTargetClass, setProfileTargetClass] = useState('Dataset');
@@ -531,6 +540,14 @@ export function App() {
   useEffect(() => {
     selectedPackageIdRef.current = selectedPackageId;
   }, [selectedPackageId]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('simone_num_chunks_per_turn', String(numChunksPerTurn));
+    } catch {
+      // ignore storage errors
+    }
+  }, [numChunksPerTurn]);
 
   function resetPackageWorkflowState() {
     setChunkResult(null);
@@ -815,7 +832,7 @@ export function App() {
     setBusy('patch');
     try {
       setPatchProgress(null);
-      const result = await patchDraft({ data_package_id: selectedPackageId, profile_identifier: selectedProfile });
+      const result = await patchDraft({ data_package_id: selectedPackageId, profile_identifier: selectedProfile, num_chunks_per_turn: numChunksPerTurn });
       setDraft(result.draft);
       setPatchStatus(result.status);
       const [artifacts, reviewState] = await Promise.all([getPatchArtifacts(selectedPackageId), getPatchReviewState(selectedPackageId)]);
@@ -1219,6 +1236,21 @@ export function App() {
               <div className="actions">
                 <button onClick={() => void onDraft()} disabled={!selectedPackageId || !selectedProfile || !!busy}>{busy === 'draft' ? 'Drafting...' : draft ? 'Re-create and remove old draft' : 'Create new draft'}</button>
                 <button onClick={() => void onPatch()} disabled={!draft || !selectedProfile || !!busy || isPatching}>{patchButtonLabel}</button>
+                <div className="patch-config-row">
+                  <label htmlFor="num-chunks-per-turn">Chunks per turn</label>
+                  <input
+                    id="num-chunks-per-turn"
+                    type="number"
+                    min={1}
+                    value={numChunksPerTurn}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      setNumChunksPerTurn(Number.isFinite(val) && val >= 1 ? val : 1);
+                    }}
+                    disabled={isPatching}
+                    title="Number of chunks to include in each patch agent call. Higher values process more content per turn but increase token usage."
+                  />
+                </div>
                 <button className="ghost" onClick={() => void onShowPatchArtifacts()} disabled={!selectedPackageId || busy === 'load'}>Show/refresh artifacts</button>
               </div>
               {patchStatus && (

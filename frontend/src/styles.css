@@ -65,6 +65,9 @@ h1 span:last-child { margin-top: 0.2em; }
 h2 { margin: 0; font-size: clamp(1.6rem, 3vw, 2.6rem); letter-spacing: -0.04em; }
 .step-body p { color: var(--muted); line-height: 1.65; }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0; }
+.patch-config-row { display: inline-flex; align-items: center; gap: 8px; font-size: 0.88rem; }
+.patch-config-row label { color: var(--muted); white-space: nowrap; }
+.patch-config-row input[type="number"] { width: 72px; border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.4rem; background: rgba(255,255,255,0.6); }
 .file-list { display: grid; max-height: 320px; overflow-y: auto; overscroll-behavior: contain; border-top: 1px solid var(--line); margin-top: 18px; padding-right: 6px; }
 .file-row { cursor: pointer; transition: background 140ms ease; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); color: var(--muted); }
 .file-row:hover { background: rgba(99, 154, 0, 0.08); }

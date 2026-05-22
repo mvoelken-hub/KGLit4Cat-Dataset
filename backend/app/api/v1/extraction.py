@@ -215,7 +215,7 @@ async def resolve_patch_review(
     data_package_id: str,
     request: PatchReviewResolutionRequest,
     extraction_service: ExtractionService = Depends(get_extraction_service),
-) -> PatchReviewResolutionResponse:
+) -> PatchReviewResolutionResponse: # type: ignore
     try:
         result = await extraction_service.resolve_patch_review_items(
             data_package_id=data_package_id,
