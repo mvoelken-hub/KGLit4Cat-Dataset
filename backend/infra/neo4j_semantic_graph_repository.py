@@ -219,13 +219,10 @@ class Neo4jSemanticGraphRepository:
         result = await self._neo4j_driver.query(query, parameters={"uris": list(uris)})
         resources = []
         for record in result:
-            labels = [label for label in record["rdfTypes"] if label != "Resource"]
-            if not labels:
-                raise ValueError(f"Resource with URI '{record['uri']}' has no RDF types other than 'Resource'")
-            
+            labels = [label for label in record["rdfTypes"] if label != "Resource"]            
             labels = [label for label in labels if label not in META_ONTOLOGY_TYPES]
             if not labels:
-                raise ValueError(f"Resource with URI '{record['uri']}' has no RDF types after filtering out meta-ontology types")
+                continue
             
             resources.append(
                 VocabResource(
