@@ -32,6 +32,28 @@ const emptyReviewState: PatchReviewState = {
   resolved_at: {},
 };
 
+const selectedPackageStorageKey = 'simone_selected_package_id';
+
+function readStoredSelectedPackageId(): string {
+  try {
+    return localStorage.getItem(selectedPackageStorageKey) || '';
+  } catch {
+    return '';
+  }
+}
+
+function persistSelectedPackageId(packageId: string) {
+  try {
+    if (packageId) {
+      localStorage.setItem(selectedPackageStorageKey, packageId);
+    } else {
+      localStorage.removeItem(selectedPackageStorageKey);
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return bytes + ' B';
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
@@ -343,9 +365,14 @@ export function App() {
     setBusy('load');
     try {
       const [nextPackages, nextProfiles] = await Promise.all([listDataPackages(), listProfiles()]);
+      const storedPackageId = readStoredSelectedPackageId();
       setPackages(nextPackages);
       setProfiles(nextProfiles);
-      setSelectedPackageId((current) => current || nextPackages[0]?.id || '');
+      setSelectedPackageId((current) => {
+        const nextPackageId = [current, storedPackageId].find((id) => nextPackages.some((item) => item.id === id)) || nextPackages[0]?.id || '';
+        persistSelectedPackageId(nextPackageId);
+        return nextPackageId;
+      });
       setSelectedProfile((current) => current || nextProfiles[0]?.identifier || '');
       setMessage(nextPackages.length ? 'Select a package or continue the workflow.' : 'Upload a dataset archive to begin.');
     } catch (error) {
@@ -417,6 +444,7 @@ export function App() {
 
   function handlePackageSelection(nextPackageId: string) {
     selectedPackageIdRef.current = nextPackageId;
+    persistSelectedPackageId(nextPackageId);
     resetPackageWorkflowState();
     setSelectedPackageId(nextPackageId);
   }
@@ -512,8 +540,10 @@ export function App() {
     try {
       await deleteDataPackage(selectedPackageId);
       const nextPackages = await listDataPackages();
+      const nextPackageId = nextPackages[0]?.id ?? '';
       setPackages(nextPackages);
-      setSelectedPackageId(nextPackages[0]?.id ?? '');
+      persistSelectedPackageId(nextPackageId);
+      setSelectedPackageId(nextPackageId);
       setChunkResult(null);
       setChunksByFile([]);
       setContext(null);
@@ -535,6 +565,7 @@ export function App() {
       const uploaded = await uploadDataPackage(file);
       const nextPackages = await listDataPackages();
       setPackages(nextPackages);
+      persistSelectedPackageId(uploaded.id);
       setSelectedPackageId(uploaded.id);
       setChunkResult(null);
       setChunksByFile([]);
@@ -645,6 +676,17 @@ export function App() {
 
   async function onDraft() {
     if (!selectedPackageId || !selectedProfile) return;
+    const isReplacingDraft = Boolean(draft);
+    if (isReplacingDraft) {
+      const confirmed = window.confirm(
+        'Re-create the initial draft?\n\nThis removes the current draft, locked fields, patch artifacts, and review progress for this dataset.',
+      );
+      if (!confirmed) return;
+    }
+    if (saveDraftTimeoutRef.current) {
+      clearTimeout(saveDraftTimeoutRef.current);
+      saveDraftTimeoutRef.current = null;
+    }
     setBusy('draft');
     try {
       const result = await extractInitialDraft({ data_package_id: selectedPackageId, profile_identifier: selectedProfile });
@@ -654,7 +696,7 @@ export function App() {
       setPatchProgress(null);
       setPatchReviewState(emptyReviewState);
       setProtectedFields([]);
-      setMessage('Initial profile draft created.');
+      setMessage(isReplacingDraft ? 'Initial profile draft re-created. Previous draft progress was removed.' : 'Initial profile draft created.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Draft creation failed.');
     } finally {
@@ -841,6 +883,12 @@ export function App() {
     const interval = setInterval(() => void pollChunkProgress(), 3000);
     return () => clearInterval(interval);
   }, [chunkResult, selectedPackageId]);
+
+  useEffect(() => {
+    if (!selectedPackageId || patchStatus !== 'running') return;
+    const interval = setInterval(() => void onShowPatchArtifacts(), 30000);
+    return () => clearInterval(interval);
+  }, [patchStatus, selectedPackageId]);
 
   return (
     <main className="shell">
@@ -1035,40 +1083,52 @@ export function App() {
           <article className="step-card">
             <div className="step-index">03</div>
             <div className="step-body">
-              <h2>Draft workspace</h2>
-              <p>Create the initial profile draft, edit and lock fields, then patch the draft with chunk evidence while reviewing issues as they appear.</p>
-              <div className="actions">
-                <button onClick={() => void onDraft()} disabled={!selectedPackageId || !selectedProfile || !!busy}>{busy === 'draft' ? 'Drafting...' : draft ? 'Re-create and remove old draft' : 'Create new draft'}</button>
-                <button onClick={() => void onPatch()} disabled={!draft || !selectedProfile || !!busy || isPatching}>{patchButtonLabel}</button>
-                <div className="patch-config-row">
-                  <label htmlFor="num-chunks-per-turn">Chunks per turn</label>
-                  <input
-                    id="num-chunks-per-turn"
-                    type="number"
-                    min={1}
-                    value={numChunksPerTurn}
-                    onChange={(e) => {
-                      const val = parseInt(e.target.value, 10);
-                      setNumChunksPerTurn(Number.isFinite(val) && val >= 1 ? val : 1);
-                    }}
-                    disabled={isPatching}
-                    title="Number of chunks to include in each patch agent call. Higher values process more content per turn but increase token usage."
-                  />
-                </div>
-                <div className="patch-config-row checkbox">
-                  <input
-                    id="auto-resolve"
-                    type="checkbox"
-                    checked={autoResolve}
-                    onChange={(e) => setAutoResolve(e.target.checked)}
-                    disabled={isPatching}
-                    title="Automatically send unresolved review items to the resolve agent as patch artifacts are produced."
-                  />
-                  <label htmlFor="auto-resolve">Auto-resolve review items</label>
-                </div>
-                <button className="ghost" onClick={() => void onShowPatchArtifacts()} disabled={!selectedPackageId || busy === 'load'}>Show/refresh artifacts</button>
+              <div className="draft-workspace-heading">
+                <h2>Draft workspace</h2>
+                {draft && (
+                  <button className="ghost draft-refresh-button" onClick={() => void onShowPatchArtifacts()} disabled={!selectedPackageId || busy === 'load'}>Refresh</button>
+                )}
               </div>
-              {patchStatus && (
+              <p>Create the initial profile draft, edit and lock fields, then patch the draft with chunk evidence while reviewing issues as they appear.</p>
+              <div className={draft ? 'draft-actions' : 'actions'}>
+                {!draft ? (
+                  <button onClick={() => void onDraft()} disabled={!selectedPackageId || !selectedProfile || !!busy}>{busy === 'draft' ? 'Drafting...' : 'Create new draft'}</button>
+                ) : (
+                  <>
+                    <button onClick={() => void onPatch()} disabled={!selectedProfile || !!busy || isPatching}>{patchButtonLabel}</button>
+                    <div className="draft-settings">
+                      <label className="patch-config-row" htmlFor="num-chunks-per-turn">
+                        <span>Chunks per turn</span>
+                        <input
+                          id="num-chunks-per-turn"
+                          type="number"
+                          min={1}
+                          value={numChunksPerTurn}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            setNumChunksPerTurn(Number.isFinite(val) && val >= 1 ? val : 1);
+                          }}
+                          disabled={isPatching}
+                          title="Number of chunks to include in each patch agent call. Higher values process more content per turn but increase token usage."
+                        />
+                      </label>
+                      <label className="patch-config-row checkbox" htmlFor="auto-resolve">
+                        <input
+                          id="auto-resolve"
+                          type="checkbox"
+                          checked={autoResolve}
+                          onChange={(e) => setAutoResolve(e.target.checked)}
+                          disabled={isPatching}
+                          title="Automatically send unresolved review items to the resolve agent as patch artifacts are produced."
+                        />
+                        <span>Auto-resolve review items</span>
+                      </label>
+                    </div>
+                    <button className="ghost draft-recreate-button" onClick={() => void onDraft()} disabled={!selectedPackageId || !selectedProfile || !!busy}>{busy === 'draft' ? 'Re-creating...' : 'Re-create draft'}</button>
+                  </>
+                )}
+              </div>
+              {draft && patchStatus && (
                 <div className="patch-progress">
                   <div className="patch-progress-header">
                     <span>Status: <strong>{patchStatus}</strong></span>
@@ -1086,7 +1146,7 @@ export function App() {
                   <ResolutionLogList entries={patchProgress?.resolution_log ?? []} />
                 </div>
               )}
-              {reviewMarkers.length > 0 && (
+              {draft && reviewMarkers.length > 0 && (
                 <div className="review-strip">
                   <strong>{reviewMarkers.length} unresolved review item{reviewMarkers.length === 1 ? '' : 's'}</strong>
                   <div>{reviewMarkers.slice(0, 8).map((marker, index) => <span key={`${marker.path}-${index}`}>{marker.path}</span>)}</div>

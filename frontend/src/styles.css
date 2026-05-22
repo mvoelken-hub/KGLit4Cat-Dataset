@@ -65,11 +65,18 @@ h1 span:last-child { margin-top: 0.2em; }
 h2 { margin: 0; font-size: clamp(1.6rem, 3vw, 2.6rem); letter-spacing: -0.04em; }
 .step-body p { color: var(--muted); line-height: 1.65; }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0; }
+.draft-workspace-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.draft-refresh-button { flex: 0 0 auto; padding: 0.5rem 0.78rem; font-size: 0.82rem; }
+.draft-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin: 14px 0 16px; }
+.draft-actions > button { padding: 0.62rem 0.9rem; }
+.draft-settings { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; color: var(--muted); }
+.draft-recreate-button { margin-left: auto; padding: 0.35rem 0.1rem; color: #8d3f22; border: 0; background: transparent; }
+.draft-recreate-button:hover:not(:disabled) { background: rgba(141, 63, 34, 0.08); color: #6f2f18; }
 .patch-config-row { display: inline-flex; align-items: center; gap: 8px; font-size: 0.88rem; }
-.patch-config-row label { color: var(--muted); white-space: nowrap; }
+.patch-config-row label, .patch-config-row span { color: var(--muted); white-space: nowrap; }
 .patch-config-row input[type="number"] { width: 72px; border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.4rem; background: rgba(255,255,255,0.6); }
 .patch-config-row.checkbox input[type="checkbox"] { width: 18px; height: 18px; margin: 0; }
-.patch-config-row.checkbox label { color: var(--ink); }
+.patch-config-row.checkbox label, .patch-config-row.checkbox span { color: var(--ink); }
 .file-list { display: grid; max-height: 320px; overflow-y: auto; overscroll-behavior: contain; border-top: 1px solid var(--line); margin-top: 18px; padding-right: 6px; }
 .file-row { cursor: pointer; transition: background 140ms ease; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); color: var(--muted); }
 .file-row:hover { background: rgba(99, 154, 0, 0.08); }
