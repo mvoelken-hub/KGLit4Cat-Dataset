@@ -275,7 +275,7 @@ button.small { padding: 0.4rem 0.7rem; font-size: 0.78rem; }
 .vocab-dialog { background: var(--panel); border: 1px solid var(--line); border-radius: 1.2rem; box-shadow: 0 30px 90px rgba(26, 26, 26, 0.18); width: min(840px, calc(100vw - 48px)); max-height: calc(100vh - 48px); display: grid; grid-template-rows: auto 1fr; overflow: hidden; }
 .vocab-dialog-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
 .vocab-dialog-header strong { min-width: 0; overflow-wrap: anywhere; font-size: 1rem; }
-.vocab-dialog-body { overflow: auto; padding: 18px 20px 20px; }
+.vocab-dialog-body { overflow-y: auto; overflow-x: hidden; padding: 18px 20px 20px; }
 .vocab-dialog-body .vocab-detail-panel { margin-top: 0; padding-top: 0; border-top: 0; }
 .vocab-management-dialog { width: min(760px, calc(100vw - 48px)); }
 .vocab-management-body { display: grid; gap: 14px; }
@@ -332,6 +332,11 @@ button.small { padding: 0.4rem 0.7rem; font-size: 0.78rem; }
 .vocab-query-rel-chips button:hover:not(:disabled):not(.selected) { background: rgba(99, 154, 0, 0.12); }
 .vocab-query-advanced-toggle { display: flex; justify-content: flex-end; }
 .vocab-query-advanced-panel { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,0.42); }
+/* Center tooltips inside the vocab query panel so they don't overflow the dialog edges */
+.vocab-query-panel .config-tooltip::after { left: 50%; width: min(220px, 50vw); transform: translate(-50%, -4px); }
+.vocab-query-panel .config-tooltip:hover::after, .vocab-query-panel .config-tooltip:focus-visible::after { transform: translate(-50%, 0); }
+.vocab-query-panel .config-tooltip::before { left: 50%; margin-left: -5px; transform: translate(-50%, -4px) rotate(45deg); }
+.vocab-query-panel .config-tooltip:hover::before, .vocab-query-panel .config-tooltip:focus-visible::before { transform: translate(-50%, 0) rotate(45deg); }
 .vocab-query-message { margin: 0; }
 .vocab-query-results { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
 .vocab-query-results li { display: grid; gap: 5px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,0.6); }

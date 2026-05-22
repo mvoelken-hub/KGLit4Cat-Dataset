@@ -5,6 +5,15 @@ import type { SearchMode, VocabEmbeddingStatus, VocabQueryParams, VocabQueryResu
 
 type VocabEmbeddingStatusState = VocabEmbeddingStatus & { status: 'ready' | 'pending' | 'running' | 'unknown' | 'error'; message?: string };
 
+function VocabTooltip({ label, tooltip }: { label: string; tooltip: string }) {
+  return (
+    <span className="config-label">
+      <span>{label}</span>
+      <span className="config-tooltip" tabIndex={0} aria-label={tooltip} data-tooltip={tooltip}>?</span>
+    </span>
+  );
+}
+
 function DetailField({ label, value }: { label: string; value?: string | number | null }) {
   return (
     <div className="field">
@@ -142,7 +151,7 @@ function VocabularyDetails({ details }: { details: VocabSchemeInfo }) {
         <div className="vocab-query-form">
           {/* Search mode toggle */}
           <div className="vocab-query-mode-group">
-            <span>Search mode</span>
+            <VocabTooltip label="Search mode" tooltip="Choose whether to search by vector embedding similarity, full-text index, or both (hybrid)." />
             <div className="vocab-query-mode-toggle">
               {(['vector', 'fulltext', 'hybrid'] as SearchMode[]).map((mode) => (
                 <button
@@ -161,7 +170,7 @@ function VocabularyDetails({ details }: { details: VocabSchemeInfo }) {
           {/* Query inputs */}
           {(searchMode === 'vector' || searchMode === 'hybrid') && (
             <label>
-              <span>Vector query</span>
+              <VocabTooltip label="Vector query" tooltip="Text used for semantic (embedding-based) search. The input is converted to a vector and matched against vocabulary embeddings." />
               <input
                 value={vectorQuery}
                 onChange={(event) => setVectorQuery(event.target.value)}
@@ -175,7 +184,7 @@ function VocabularyDetails({ details }: { details: VocabSchemeInfo }) {
           )}
           {(searchMode === 'fulltext' || searchMode === 'hybrid') && (
             <label>
-              <span>Full-text query</span>
+              <VocabTooltip label="Full-text query" tooltip="Text used for full-text index search against vocabulary labels and definitions." />
               <input
                 value={fulltextQuery}
                 onChange={(event) => setFulltextQuery(event.target.value)}
@@ -190,7 +199,7 @@ function VocabularyDetails({ details }: { details: VocabSchemeInfo }) {
 
           {/* RDF type */}
           <label>
-            <span>RDF type</span>
+            <VocabTooltip label="RDF type" tooltip="The RDF class of vocabulary terms to search within (e.g. skos:Concept, owl:Class)." />
             <select value={queryRdfType} onChange={(event) => setQueryRdfType(event.target.value)} disabled={queryBusy}>
               {details.vocab_term_schemes.map((scheme) => (
                 <option key={scheme.rdf_type} value={scheme.rdf_type}>{scheme.rdf_type}</option>
@@ -201,15 +210,15 @@ function VocabularyDetails({ details }: { details: VocabSchemeInfo }) {
           {/* Top-k row */}
           <div className="vocab-query-numeric-row">
             <label>
-              <span>Vector top-k</span>
+              <VocabTooltip label="Vector top-k" tooltip="Maximum number of candidates to retrieve from the vector (embedding) index." />
               <input type="number" min={1} value={vectorTopK} onChange={(e) => setVectorTopK(Math.max(1, parseInt(e.target.value, 10) || 1))} disabled={queryBusy} />
             </label>
             <label>
-              <span>Full-text top-k</span>
+              <VocabTooltip label="Full-text top-k" tooltip="Maximum number of candidates to retrieve from the full-text index." />
               <input type="number" min={1} value={fulltextTopK} onChange={(e) => setFulltextTopK(Math.max(1, parseInt(e.target.value, 10) || 1))} disabled={queryBusy} />
             </label>
             <label>
-              <span>Seed top-k</span>
+              <VocabTooltip label="Seed top-k" tooltip="Maximum number of seed terms to keep after fusing vector and full-text results." />
               <input type="number" min={1} value={seedTopK} onChange={(e) => setSeedTopK(Math.max(1, parseInt(e.target.value, 10) || 1))} disabled={queryBusy} />
             </label>
           </div>
@@ -217,7 +226,7 @@ function VocabularyDetails({ details }: { details: VocabSchemeInfo }) {
           {/* Graph expansion row */}
           <div className="vocab-query-numeric-row">
             <label>
-              <span>Traversal direction</span>
+              <VocabTooltip label="Traversal direction" tooltip="Direction to follow when traversing relationships from each seed term." />
               <select value={traversalDirection} onChange={(e) => setTraversalDirection(e.target.value as 'outgoing' | 'incoming' | 'undirected')} disabled={queryBusy}>
                 <option value="undirected">Undirected</option>
                 <option value="outgoing">Outgoing</option>
@@ -225,11 +234,11 @@ function VocabularyDetails({ details }: { details: VocabSchemeInfo }) {
               </select>
             </label>
             <label>
-              <span>Max hops</span>
+              <VocabTooltip label="Max hops" tooltip="How many relationship hops to expand from each seed term into the graph." />
               <input type="number" min={1} value={maxHops} onChange={(e) => setMaxHops(Math.max(1, parseInt(e.target.value, 10) || 1))} disabled={queryBusy} />
             </label>
             <label>
-              <span>Max statements/seed</span>
+              <VocabTooltip label="Max statements/seed" tooltip="Maximum triples (statements) to return per seed during graph expansion." />
               <input type="number" min={1} value={maxStatementsPerSeed} onChange={(e) => setMaxStatementsPerSeed(Math.max(1, parseInt(e.target.value, 10) || 1))} disabled={queryBusy} />
             </label>
           </div>
@@ -238,7 +247,7 @@ function VocabularyDetails({ details }: { details: VocabSchemeInfo }) {
           {applicableRels.length > 0 && (
             <div className="vocab-query-rel-group">
               <div className="vocab-query-rel-heading">
-                <span>Allowed relationships</span>
+                <VocabTooltip label="Allowed relationships" tooltip="Which relationship predicates to follow during graph expansion. Selecting none skips expansion entirely." />
                 <div className="vocab-query-rel-actions">
                   <button type="button" className="ghost small" onClick={selectAllRels} disabled={queryBusy}>All</button>
                   <button type="button" className="ghost small" onClick={clearAllRels} disabled={queryBusy}>None</button>
@@ -278,15 +287,15 @@ function VocabularyDetails({ details }: { details: VocabSchemeInfo }) {
           <div className="vocab-query-advanced-panel">
             <div className="vocab-query-numeric-row">
               <label>
-                <span>Vector weight</span>
+                <VocabTooltip label="Vector weight" tooltip="Weight applied to vector rank when fusing vector and full-text results (higher = more influence)." />
                 <input type="number" min={0.01} step={0.1} value={vectorWeight} onChange={(e) => setVectorWeight(Math.max(0.01, parseFloat(e.target.value) || 1))} disabled={queryBusy} />
               </label>
               <label>
-                <span>Full-text weight</span>
+                <VocabTooltip label="Full-text weight" tooltip="Weight applied to full-text rank when fusing vector and full-text results (higher = more influence)." />
                 <input type="number" min={0.01} step={0.1} value={fulltextWeight} onChange={(e) => setFulltextWeight(Math.max(0.01, parseFloat(e.target.value) || 1))} disabled={queryBusy} />
               </label>
               <label>
-                <span>RRF constant k</span>
+                <VocabTooltip label="RRF constant k" tooltip="Reciprocal Rank Fusion constant. Larger values dampen the impact of rank position differences." />
                 <input type="number" min={1} value={rrfK} onChange={(e) => setRrfK(Math.max(1, parseInt(e.target.value, 10) || 60))} disabled={queryBusy} />
               </label>
             </div>
