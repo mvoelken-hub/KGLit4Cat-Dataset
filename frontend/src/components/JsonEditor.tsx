@@ -371,6 +371,8 @@ function ValueEditor({
   onToggleProtected,
   patchMarkers,
   onApplyPatch,
+  onResolvePatch,
+  reviewActionsDisabled = false,
   schema,
   targetClass,
 }: {
@@ -381,6 +383,8 @@ function ValueEditor({
   onToggleProtected: (path: string) => void;
   patchMarkers: JsonPatchMarker[];
   onApplyPatch?: (itemId: string, value: unknown) => void;
+  onResolvePatch?: (itemId: string) => void;
+  reviewActionsDisabled?: boolean;
   schema?: JsonSchemaDocument | null;
   targetClass?: string;
 }) {
@@ -530,7 +534,13 @@ function ValueEditor({
               </button>
             )}
           </div>
-          <SelectedPatchMarkerReview markers={childMarkers} compact onApplyPatch={onApplyPatch} />
+          <SelectedPatchMarkerReview
+            markers={childMarkers}
+            compact
+            onApplyPatch={onApplyPatch}
+            onResolvePatch={onResolvePatch}
+            actionsDisabled={reviewActionsDisabled}
+          />
           <ValueEditor
             value={val}
             path={childPath}
@@ -539,6 +549,8 @@ function ValueEditor({
             onToggleProtected={onToggleProtected}
             patchMarkers={patchMarkers}
             onApplyPatch={onApplyPatch}
+            onResolvePatch={onResolvePatch}
+            reviewActionsDisabled={reviewActionsDisabled}
             schema={schema}
             targetClass={targetClass}
           />
@@ -730,7 +742,19 @@ function PatchMarkerBadges({ markers }: { markers: JsonPatchMarker[] }) {
   );
 }
 
-function SelectedPatchMarkerReview({ markers, compact = false, onApplyPatch }: { markers: JsonPatchMarker[]; compact?: boolean; onApplyPatch?: (itemId: string, value: unknown) => void }) {
+function SelectedPatchMarkerReview({
+  markers,
+  compact = false,
+  onApplyPatch,
+  onResolvePatch,
+  actionsDisabled = false,
+}: {
+  markers: JsonPatchMarker[];
+  compact?: boolean;
+  onApplyPatch?: (itemId: string, value: unknown) => void;
+  onResolvePatch?: (itemId: string) => void;
+  actionsDisabled?: boolean;
+}) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editedValue, setEditedValue] = useState<unknown>(null);
 
@@ -758,6 +782,7 @@ function SelectedPatchMarkerReview({ markers, compact = false, onApplyPatch }: {
           <div className="selected-patch-card-heading">
             <span className={`patch-marker-badge ${marker.status}`}>{marker.label}</span>
             {marker.confidence !== undefined && <small>{Math.round(marker.confidence * 100)}% confidence</small>}
+            {marker.path && <small>{marker.path}</small>}
             {marker.fileName && <small>{marker.fileName}</small>}
           </div>
           {marker.detail && <p>{marker.detail}</p>}
@@ -785,18 +810,23 @@ function SelectedPatchMarkerReview({ markers, compact = false, onApplyPatch }: {
                   <PatchValueEditor value={editedValue} onChange={setEditedValue} />
                   <div className="patch-edit-actions">
                     <button className="ghost" onClick={cancelEditing}>Cancel</button>
-                    <button onClick={() => { onApplyPatch?.(marker.id, editedValue); cancelEditing(); }}>Apply patch</button>
+                    <button disabled={actionsDisabled} onClick={() => { onApplyPatch?.(marker.id, editedValue); cancelEditing(); }}>Apply patch</button>
                   </div>
                 </>
               ) : (
                 <>
                   <pre>{formatPatchValue(marker.patch)}</pre>
                   {onApplyPatch && (
-                    <button className="ghost" onClick={() => startEditing(marker)}>Edit patch</button>
+                    <button className="ghost" disabled={actionsDisabled} onClick={() => startEditing(marker)}>Edit patch</button>
                   )}
                 </>
               )}
             </div>
+          )}
+          {onResolvePatch && (
+            <button className="ghost" disabled={actionsDisabled} onClick={() => onResolvePatch(marker.id)}>
+              Mark resolved
+            </button>
           )}
         </article>
       ))}
@@ -811,6 +841,8 @@ export function JsonEditor({
   onProtectedPathsChange,
   patchMarkers,
   onApplyPatch,
+  onResolvePatch,
+  reviewActionsDisabled = false,
   schema,
   targetClass,
 }: {
@@ -820,6 +852,8 @@ export function JsonEditor({
   onProtectedPathsChange?: (paths: string[]) => void;
   patchMarkers?: JsonPatchMarker[];
   onApplyPatch?: (itemId: string, value: unknown) => void;
+  onResolvePatch?: (itemId: string) => void;
+  reviewActionsDisabled?: boolean;
   schema?: JsonSchemaDocument | null;
   targetClass?: string;
 }) {
@@ -837,7 +871,11 @@ export function JsonEditor({
   const editorRef = useRef<HTMLDivElement | null>(null);
 
   const currentValue = getValueAtPath(value as JsonObject, selectedPath);
-  const selectedPatchMarkers = (patchMarkers || []).filter((marker) => marker.path === selectedPath);
+  const selectedPatchMarkers = (patchMarkers || []).filter((marker) => {
+    if (marker.path === selectedPath) return true;
+    if (selectedPath !== '') return false;
+    return marker.status === 'unmapped' || marker.path === 'Unassigned' || getValueAtPath(value as JsonObject, marker.path) === undefined;
+  });
   const breadcrumbLabel = typedPathLabel(schema, targetClass, selectedPath);
   const editorStyle = { '--json-editor-sidebar-width': `${sidebarWidth}px` } as CSSProperties;
 
@@ -943,7 +981,12 @@ export function JsonEditor({
       <div className="json-editor-main">
         <div className="json-editor-breadcrumb">{breadcrumbLabel}</div>
         <div className="json-editor-panel">
-          <SelectedPatchMarkerReview markers={selectedPatchMarkers} onApplyPatch={onApplyPatch} />
+          <SelectedPatchMarkerReview
+            markers={selectedPatchMarkers}
+            onApplyPatch={onApplyPatch}
+            onResolvePatch={onResolvePatch}
+            actionsDisabled={reviewActionsDisabled}
+          />
           {currentValue !== undefined ? (
             <ValueEditor
               value={currentValue}
@@ -953,6 +996,8 @@ export function JsonEditor({
               onToggleProtected={handleToggleProtected}
               patchMarkers={patchMarkers || []}
               onApplyPatch={onApplyPatch}
+              onResolvePatch={onResolvePatch}
+              reviewActionsDisabled={reviewActionsDisabled}
               schema={schema}
               targetClass={targetClass}
             />

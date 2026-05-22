@@ -11,20 +11,18 @@ import {
   getPatchReviewState,
   getProtectedFields,
   patchDraft,
-  resolvePatchReview,
   saveDraft,
   savePatchReviewState,
   setProtectedFields as apiSetProtectedFields,
 } from './api/extraction';
 import { deleteProfile, getProfileJsonSchema, listProfiles, registerProfile } from './api/profiles';
-import { JsonEditor, type JsonObject, type JsonPatchMarker, type JsonSchemaDocument, type JsonValue, setValueAtPath, getValueAtPath, extractPatchInnerValue, PatchValueEditor } from './components/JsonEditor';
+import { JsonEditor, type JsonObject, type JsonPatchMarker, type JsonSchemaDocument, type JsonValue, setValueAtPath } from './components/JsonEditor';
 import { ChunkingDialog } from './components/ChunkingDialog';
 import { VocabularyPanel } from './components/VocabularyPanel';
 import type { ChunkRequestResponse, ChunkResponse, DataPackageResponse, FileEntryResponse, InitialContext, ProfileManifestResponse, TextQualityConfig } from './api/types';
-import type { PatchArtifacts, PatchProgress, PatchReviewResolutionItem, PatchReviewState, PatchTaskStatus } from './api/extraction';
+import type { PatchArtifacts, PatchProgress, PatchReviewState, PatchTaskStatus } from './api/extraction';
 
-type BusyKey = 'upload' | 'chunk' | 'context' | 'draft' | 'patch' | 'resolve' | 'load' | 'profile' | 'profile-delete' | 'dataset-delete';
-type ReviewTab = 'matched' | 'unmapped' | 'resolved';
+type BusyKey = 'upload' | 'chunk' | 'context' | 'draft' | 'patch' | 'load' | 'profile' | 'profile-delete' | 'dataset-delete';
 type ReviewItem = JsonPatchMarker & { kind: 'matched' | 'unmapped'; targetPath?: string; fact?: string; reason?: string; outcome?: string; resolutionNote?: string };
 
 const emptyReviewState: PatchReviewState = {
@@ -55,10 +53,6 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function asRecordArray(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.map(asRecord).filter((item): item is Record<string, unknown> => Boolean(item)) : [];
-}
-
-function topLevelFields(draft: object | null): string[] {
-  return draft && typeof draft === 'object' ? Object.keys(draft).sort() : [];
 }
 
 function hasPatchArtifacts(artifacts: PatchArtifacts): boolean {
@@ -106,52 +100,6 @@ function unmappedReviewItemId(fact: Record<string, unknown>): string {
 function reviewOutcomeFromNote(note?: string): string | undefined {
   const match = note?.match(/^(included|already_present|excluded|unresolved):/);
   return match?.[1];
-}
-
-function reviewOutcomeLabel(outcome?: string): string {
-  if (outcome === 'included') return 'Included';
-  if (outcome === 'already_present') return 'Already present';
-  if (outcome === 'excluded') return 'Excluded';
-  if (outcome === 'unresolved') return 'Unresolved';
-  return 'Resolved';
-}
-
-function reviewActionLabel(outcome?: string): string {
-  if (outcome === 'included') return 'Accepted into draft';
-  if (outcome === 'already_present') return 'Already present in draft';
-  if (outcome === 'excluded') return 'Kept out of draft';
-  if (outcome === 'unresolved') return 'Still needs review';
-  return 'Marked resolved';
-}
-
-function resolutionTargetPath(item: ReviewItem): string {
-  const noteTarget = item.resolutionNote?.match(/Target: ([^.]+(?:\.[^.]+)*)\./)?.[1];
-  if (noteTarget) return noteTarget;
-  if (item.targetPath) return item.targetPath;
-  return item.path === 'Unassigned' ? '' : item.path;
-}
-
-function formatDraftValue(value: unknown): string {
-  if (value === undefined) return 'No value found at this path.';
-  if (typeof value === 'string') return value;
-  return JSON.stringify(value, null, 2);
-}
-
-function resolutionSummaryMessage(resolvedCount: number, unresolvedCount: number, decisions: { outcome: string }[]): string {
-  const included = decisions.filter((decision) => decision.outcome === 'included' || decision.outcome === 'already_present').length;
-  const excluded = decisions.filter((decision) => decision.outcome === 'excluded').length;
-  if (decisions.length > 0) {
-    const parts = [
-      `Included ${included}`,
-      `excluded ${excluded}`,
-      `${unresolvedCount} still need review`,
-    ];
-    return parts.join(', ') + '.';
-  }
-  if (unresolvedCount > 0) {
-    return `Review agent resolved ${resolvedCount} item${resolvedCount === 1 ? '' : 's'}; ${unresolvedCount} still need manual review.`;
-  }
-  return `Review agent resolved ${resolvedCount} item${resolvedCount === 1 ? '' : 's'}.`;
 }
 
 function buildReviewItems(artifacts: PatchArtifacts | null, reviewState: PatchReviewState): ReviewItem[] {
@@ -229,162 +177,6 @@ function buildReviewItems(artifacts: PatchArtifacts | null, reviewState: PatchRe
   }
 
   return items;
-}
-
-function toResolutionItem(item: ReviewItem): PatchReviewResolutionItem {
-  const resolutionItem: PatchReviewResolutionItem = {
-    id: item.id,
-    kind: item.kind,
-    path: item.targetPath ?? item.path,
-    detail: item.detail,
-    issues: item.issues || [],
-    evidence: item.evidence || [],
-    fact: item.fact,
-    reason: item.reason,
-    confidence: item.confidence,
-    file_name: item.fileName,
-  };
-  if (item.patch && typeof item.patch === 'object' && !Array.isArray(item.patch)) {
-    resolutionItem.patch = item.patch as Record<string, unknown>;
-  }
-  return resolutionItem;
-}
-
-function ReviewItemList({
-  items,
-  draft,
-  onResolve,
-  onApplyPatch,
-  actionsDisabled = false,
-}: {
-  items: ReviewItem[];
-  draft?: object | null;
-  onResolve: (itemId: string) => void;
-  onApplyPatch?: (itemId: string, value: unknown) => void;
-  actionsDisabled?: boolean;
-}) {
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editedValue, setEditedValue] = useState<unknown>(null);
-
-  if (!items.length) return <p className="muted">No review items in this category.</p>;
-
-  const startEditing = (item: ReviewItem) => {
-    const innerValue = extractPatchInnerValue(item.patch);
-    setEditingId(item.id);
-    setEditedValue(innerValue);
-  };
-
-  const cancelEditing = () => {
-    setEditingId(null);
-    setEditedValue(null);
-  };
-
-  return (
-    <ul className="artifact-list">
-      {items.map((item) => {
-        const targetPath = resolutionTargetPath(item);
-        const draftValue = draft && targetPath ? getValueAtPath(draft as JsonObject, targetPath) : undefined;
-        const shouldShowDraftValue = item.resolved && item.outcome !== 'excluded' && Boolean(targetPath);
-        return (
-        <li key={item.id} className="review-item">
-          <div className="review-item-heading">
-            <strong>{item.path}</strong>
-            <span className={`patch-marker-badge ${item.status}`}>{item.resolved ? reviewOutcomeLabel(item.outcome) : item.label}</span>
-          </div>
-          {item.detail && <p>{item.detail}</p>}
-          {item.resolved && (
-            <div className="review-resolution">
-              <div>
-                <span>Action</span>
-                <strong>{reviewActionLabel(item.outcome)}</strong>
-              </div>
-              {targetPath && (
-                <div>
-                  <span>Draft location</span>
-                  <code>{targetPath}</code>
-                </div>
-              )}
-              {item.resolutionNote && (
-                <div>
-                  <span>Reason</span>
-                  <p>{item.resolutionNote.replace(/^(included|already_present|excluded|unresolved):\s*/, '')}</p>
-                </div>
-              )}
-              {shouldShowDraftValue && (
-                <div>
-                  <span>Current draft value</span>
-                  <pre className="review-item-value">{formatDraftValue(draftValue)}</pre>
-                </div>
-              )}
-            </div>
-          )}
-          {item.issues && item.issues.length > 0 && (
-            <div className="review-item-section">
-              <span>Issues</span>
-              <ul>{item.issues.map((issue, index) => <li key={`${item.id}-issue-${index}`}>{issue}</li>)}</ul>
-            </div>
-          )}
-          {item.evidence && item.evidence.length > 0 && (
-            <div className="review-item-section">
-              <span>Evidence</span>
-              <ul>{item.evidence.map((evidence, index) => <li key={`${item.id}-evidence-${index}`}>{evidence}</li>)}</ul>
-            </div>
-          )}
-          {item.patch !== undefined && (
-            <div className="review-item-section">
-              <span>Proposed change</span>
-              {editingId === item.id ? (
-                <>
-                  <PatchValueEditor value={editedValue} onChange={setEditedValue} />
-                  <div className="patch-edit-actions">
-                    <button className="ghost" onClick={cancelEditing}>Cancel</button>
-                    <button disabled={actionsDisabled} onClick={() => { onApplyPatch?.(item.id, editedValue); cancelEditing(); }}>Apply patch</button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <pre className="review-item-patch">{JSON.stringify(item.patch, null, 2)}</pre>
-                  {!item.resolved && onApplyPatch && (
-                    <button className="ghost" disabled={actionsDisabled} onClick={() => startEditing(item)}>Edit patch</button>
-                  )}
-                </>
-              )}
-            </div>
-          )}
-          {!item.resolved && <button className="ghost" disabled={actionsDisabled} onClick={() => onResolve(item.id)}>Mark resolved</button>}
-        </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-function UnmappedFactList({ facts, fields, reviewState, onAssign, actionsDisabled = false }: {
-  facts: Record<string, unknown>[];
-  fields: string[];
-  reviewState: PatchReviewState;
-  onAssign: (key: string, field: string) => void;
-  actionsDisabled?: boolean;
-}) {
-  if (!facts.length) return <p className="muted">No unmapped facts yet.</p>;
-  return (
-    <ul className="artifact-list">
-      {facts.map((fact, index) => {
-        const key = unmappedReviewItemId(fact);
-        return (
-          <li key={`${key}-${index}`} className="unmapped-fact">
-            <strong>{String(fact.fact || 'Unmapped fact')}</strong>
-            <p>{String(fact.reason || 'No mapping reason provided.')}</p>
-            {Boolean(fact.source_hint) && <small>{String(fact.source_hint)}</small>}
-            <select value={reviewState.unmapped_assignments[key] || ''} disabled={actionsDisabled} onChange={(event) => onAssign(key, event.target.value)}>
-              <option value="">Select matching field</option>
-              {fields.map((field) => <option key={field} value={field}>{field}</option>)}
-            </select>
-          </li>
-        );
-      })}
-    </ul>
-  );
 }
 
 function ResolutionLogList({ entries }: { entries: string[] }) {
@@ -490,13 +282,10 @@ export function App() {
   const [patchProgress, setPatchProgress] = useState<PatchProgress | null>(null);
   const [patchArtifacts, setPatchArtifacts] = useState<PatchArtifacts | null>(null);
   const [activeProfileSchema, setActiveProfileSchema] = useState<JsonSchemaDocument | null>(null);
-  const [reviewTab, setReviewTab] = useState<ReviewTab>('matched');
   const [patchReviewState, setPatchReviewState] = useState<PatchReviewState>(emptyReviewState);
   const [busy, setBusy] = useState<BusyKey | null>('load');
   const [message, setMessage] = useState('Loading workspace.');
-  const [resolutionLog, setResolutionLog] = useState<string[]>([]);
   const [railCollapsed, setRailCollapsed] = useState(true);
-  const [reviewPanelCollapsed, setReviewPanelCollapsed] = useState(false);
   const [chunkingDialogOpen, setChunkingDialogOpen] = useState(false);
   const [numChunksPerTurn, setNumChunksPerTurn] = useState(() => {
     try {
@@ -543,18 +332,12 @@ export function App() {
   const progressBatchNo = patchProgress?.batch_no ?? 0;
   const progressTotalBatches = patchProgress?.total_batches ?? 0;
   const progressPercent = progressTotalBatches > 0 ? Math.min(100, Math.round((progressBatchNo / progressTotalBatches) * 100)) : 0;
-  const draftFields = useMemo(() => topLevelFields(draft), [draft]);
   const reviewItems = useMemo(() => buildReviewItems(patchArtifacts, patchReviewState), [patchArtifacts, patchReviewState]);
   const unresolvedReviewItems = reviewItems.filter((item) => !item.resolved);
   const patchMarkers = unresolvedReviewItems;
   const reviewMarkers = unresolvedReviewItems.filter((marker) => marker.status === 'needs_review' || marker.status === 'unmapped');
-  const matchedReviewItems = reviewItems.filter((item) => item.kind === 'matched' && !item.resolved);
-  const unmappedReviewFacts = patchArtifacts?.unmapped_facts ?? [];
-  const resolvedReviewItems = reviewItems.filter((item) => item.resolved);
-  const visibleResolutionLog = resolutionLog.length ? resolutionLog : patchProgress?.resolution_log ?? [];
   const autoResolutionActive = patchProgress?.resolution_active === true;
-  const manualReviewActionsDisabled = autoResolutionActive || busy === 'resolve';
-  const effectiveReviewPanelCollapsed = autoResolve || reviewPanelCollapsed;
+  const manualReviewActionsDisabled = autoResolutionActive;
 
   async function refresh() {
     setBusy('load');
@@ -613,7 +396,6 @@ export function App() {
     } catch {
       // ignore storage errors
     }
-    if (autoResolve) setReviewPanelCollapsed(true);
   }, [autoResolve]);
 
   function resetPackageWorkflowState() {
@@ -629,7 +411,6 @@ export function App() {
     setPatchProgress(null);
     setPatchArtifacts(null);
     setPatchReviewState(emptyReviewState);
-    setResolutionLog([]);
     setChunkingDialogOpen(false);
     setBusy(null);
   }
@@ -900,7 +681,6 @@ export function App() {
     setBusy('patch');
     try {
       setPatchProgress(null);
-      setResolutionLog([]);
       const result = await patchDraft({ data_package_id: selectedPackageId, profile_identifier: selectedProfile, num_chunks_per_turn: numChunksPerTurn, auto_resolve: autoResolve });
       setDraft(result.draft);
       setPatchStatus(result.status);
@@ -996,45 +776,6 @@ export function App() {
       },
       'Review item marked resolved.',
     );
-  }
-
-  async function onAssignUnmappedFact(itemId: string, field: string) {
-    if (autoResolutionActive) {
-      setMessage('Auto resolver is running. Manual review controls are disabled until it finishes.');
-      return;
-    }
-    const unmapped_assignments = { ...patchReviewState.unmapped_assignments };
-    if (field) unmapped_assignments[itemId] = field;
-    else delete unmapped_assignments[itemId];
-    await persistPatchReviewState({ ...patchReviewState, unmapped_assignments }, field ? 'Unmapped fact assigned to field.' : 'Unmapped fact assignment removed.');
-  }
-
-  async function onDelegateReviewResolution() {
-    if (!selectedPackageId || !selectedProfile || !unresolvedReviewItems.length) return;
-    if (autoResolutionActive) {
-      setMessage('Auto resolver is already running. Manual delegation is disabled until it finishes.');
-      return;
-    }
-    setBusy('resolve');
-    try {
-      const result = await resolvePatchReview({
-        data_package_id: selectedPackageId,
-        profile_identifier: selectedProfile,
-        review_items: unresolvedReviewItems.map(toResolutionItem),
-      });
-      setDraft(result.draft);
-      setPatchReviewState(result.review_state);
-      setResolutionLog(result.resolution_log || []);
-      if (result.validation_errors.length > 0) {
-        setMessage('Review agent produced schema issues. No review items were resolved.');
-      } else {
-        setMessage(resolutionSummaryMessage(result.resolved_count, result.unresolved_item_ids.length, result.resolution_decisions || []));
-      }
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Review resolution agent failed.');
-    } finally {
-      setBusy(null);
-    }
   }
 
   async function onSaveProtectedFields(fields: string[]) {
@@ -1359,52 +1100,11 @@ export function App() {
                   onProtectedPathsChange={(paths) => void onSaveProtectedFields(paths)}
                   patchMarkers={patchMarkers}
                   onApplyPatch={(itemId, value) => void onApplyPatch(itemId, value)}
+                  onResolvePatch={(itemId) => void onResolveReviewItem(itemId)}
+                  reviewActionsDisabled={manualReviewActionsDisabled}
                   schema={activeProfileSchema}
                   targetClass={selectedProfileManifest?.target_class}
                 />
-              )}
-              {patchArtifacts && (
-                <div className={`artifact-panel ${effectiveReviewPanelCollapsed ? 'collapsed' : ''}`}>
-                  <div className="artifact-panel-heading">
-                    <h3>Review</h3>
-                    <button
-                      className="ghost"
-                      disabled={autoResolve}
-                      title={autoResolve ? 'Review panel stays collapsed while auto-resolve is enabled.' : undefined}
-                      onClick={() => setReviewPanelCollapsed((current) => !current)}
-                    >
-                      {effectiveReviewPanelCollapsed ? '↓' : '↑'}
-                    </button>
-                  </div>
-                  <div className="review-toolbar">
-                    <span>{unresolvedReviewItems.length} unresolved item{unresolvedReviewItems.length === 1 ? '' : 's'}</span>
-                    {autoResolutionActive && <span className="muted">Auto resolver running...</span>}
-                    <button onClick={() => void onDelegateReviewResolution()} disabled={!unresolvedReviewItems.length || !!busy || autoResolutionActive}>
-                      {busy === 'resolve' || autoResolutionActive ? 'Agent resolving...' : 'Delegate remaining to agent'}
-                    </button>
-                  </div>
-                  <ResolutionLogList entries={visibleResolutionLog} />
-                  {!effectiveReviewPanelCollapsed && (
-                    <>
-                      <div className="artifact-tabs" role="tablist" aria-label="Patch review">
-                        <button className={reviewTab === 'matched' ? 'active' : ''} onClick={() => setReviewTab('matched')}>Matched issues ({matchedReviewItems.length})</button>
-                        <button className={reviewTab === 'unmapped' ? 'active' : ''} onClick={() => setReviewTab('unmapped')}>Unmapped ({unmappedReviewFacts.length})</button>
-                        <button className={reviewTab === 'resolved' ? 'active' : ''} onClick={() => setReviewTab('resolved')}>Resolved ({resolvedReviewItems.length})</button>
-                      </div>
-                      {reviewTab === 'matched' && <ReviewItemList items={matchedReviewItems} draft={draft} actionsDisabled={manualReviewActionsDisabled} onResolve={(itemId) => void onResolveReviewItem(itemId)} onApplyPatch={(itemId, value) => void onApplyPatch(itemId, value)} />}
-                      {reviewTab === 'unmapped' && (
-                        <UnmappedFactList
-                          facts={unmappedReviewFacts}
-                          fields={draftFields}
-                          reviewState={patchReviewState}
-                          actionsDisabled={manualReviewActionsDisabled}
-                          onAssign={(key, field) => void onAssignUnmappedFact(key, field)}
-                        />
-                      )}
-                      {reviewTab === 'resolved' && <ReviewItemList items={resolvedReviewItems} draft={draft} actionsDisabled={manualReviewActionsDisabled} onResolve={(itemId) => void onResolveReviewItem(itemId)} />}
-                    </>
-                  )}
-                </div>
               )}
             </div>
           </article>
