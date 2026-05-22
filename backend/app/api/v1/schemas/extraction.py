@@ -39,9 +39,13 @@ class PatchDraftRequest(BaseModel):
         description="Identifier of the registered extraction profile.",
     )
     num_chunks_per_turn: int= Field(
-        ...,
+        1,
         ge=1,
         description="Number of chunks to include in each patch agent call.",
+    )
+    auto_resolve: bool = Field(
+        default=False,
+        description="Automatically send unresolved review items to the resolve agent as patch artifacts are produced.",
     )
 
 
@@ -110,6 +114,7 @@ class PatchReviewResolutionResponse(BaseModel):
     unresolved_item_ids: list[str] = Field(default_factory=list)
     validation_errors: list[str] = Field(default_factory=list)
     resolution_decisions: list[PatchReviewDecisionResponse] = Field(default_factory=list)
+    resolution_log: list[str] = Field(default_factory=list)
 
 
 def _initial_context_response(initial_context: InitialContext) -> InitialContext:

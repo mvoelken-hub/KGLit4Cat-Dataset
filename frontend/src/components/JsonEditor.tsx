@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 
 export type JsonValue = string | number | boolean | null | JsonObject | JsonArray;
 export type JsonObject = { [key: string]: JsonValue };
 export type JsonArray = JsonValue[];
+export type JsonSchemaDocument = Record<string, unknown>;
 
 export type JsonPatchMarker = {
   id: string;
@@ -69,6 +70,113 @@ function formatPrimitivePreview(value: JsonValue): string {
   return text.length > 34 ? text.slice(0, 31) + '...' : text;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function schemaRefName(schema: unknown): string | null {
+  if (!isRecord(schema) || typeof schema.$ref !== 'string') return null;
+  const parts = schema.$ref.split('/');
+  return parts[parts.length - 1] || null;
+}
+
+function resolveSchemaRef(schema: unknown, rootSchema: JsonSchemaDocument): { schema: Record<string, unknown> | null; typeName: string | null } {
+  if (!isRecord(schema)) return { schema: null, typeName: null };
+  const typeName = schemaRefName(schema);
+  if (!typeName) return { schema, typeName: null };
+  const defs = isRecord(rootSchema.$defs) ? rootSchema.$defs : {};
+  const resolved = defs[typeName];
+  return { schema: isRecord(resolved) ? resolved : schema, typeName };
+}
+
+function schemaOptions(schema: Record<string, unknown>): unknown[] {
+  if (Array.isArray(schema.anyOf)) return schema.anyOf;
+  if (Array.isArray(schema.oneOf)) return schema.oneOf;
+  return [];
+}
+
+function normalizeSchema(schema: unknown, rootSchema: JsonSchemaDocument): { schema: Record<string, unknown> | null; typeName: string | null } {
+  const resolved = resolveSchemaRef(schema, rootSchema);
+  if (!resolved.schema) return resolved;
+  if (resolved.typeName) return resolved;
+
+  const options = schemaOptions(resolved.schema)
+    .filter((option) => !(isRecord(option) && option.type === 'null'));
+  const typedOption = options.find((option) => schemaRefName(option));
+  const option = typedOption || options.find(isRecord);
+  if (option) return normalizeSchema(option, rootSchema);
+  return resolved;
+}
+
+function itemSchema(schema: Record<string, unknown>, rootSchema: JsonSchemaDocument): { schema: Record<string, unknown> | null; typeName: string | null } {
+  const normalized = normalizeSchema(schema, rootSchema);
+  const current = normalized.schema;
+  if (!current) return { schema: null, typeName: null };
+  return normalizeSchema(current.items, rootSchema);
+}
+
+function schemaForPath(rootSchema: JsonSchemaDocument | null | undefined, targetClass: string | undefined, path: string): { typeName: string | null } {
+  if (!rootSchema || !targetClass) return { typeName: null };
+  const defs = isRecord(rootSchema.$defs) ? rootSchema.$defs : {};
+  let current: Record<string, unknown> | null = isRecord(defs[targetClass]) ? defs[targetClass] : rootSchema;
+  let typeName: string | null = path ? null : targetClass;
+
+  for (const part of path.split('.').filter(Boolean)) {
+    if (!current) return { typeName: null };
+    if (/^\d+$/.test(part)) {
+      const next = itemSchema(current, rootSchema);
+      current = next.schema;
+      typeName = next.typeName;
+      continue;
+    }
+
+    const normalized = normalizeSchema(current, rootSchema).schema;
+    const properties = normalized && isRecord(normalized.properties) ? normalized.properties : {};
+    const propertySchema = properties[part];
+    const next = normalizeSchema(propertySchema, rootSchema);
+    current = next.schema;
+    typeName = next.typeName;
+  }
+
+  return { typeName };
+}
+
+function typedPathLabel(rootSchema: JsonSchemaDocument | null | undefined, targetClass: string | undefined, path: string): string {
+  if (!path) return schemaForPath(rootSchema, targetClass, '').typeName || 'root';
+  const parts = path.split('.').filter(Boolean);
+  const part = parts[parts.length - 1];
+
+  if (/^\d+$/.test(part)) {
+    const typeName = schemaForPath(rootSchema, targetClass, path).typeName;
+    return typeName ? `${typeName} ${Number(part) + 1}` : String(Number(part) + 1);
+  }
+  const typeName = schemaForPath(rootSchema, targetClass, path).typeName;
+  return typeName ? `${part}: ${typeName}` : part;
+}
+
+function clampSidebarWidth(width: number, editorWidth: number): number {
+  const minSidebarWidth = 180;
+  const minMainWidth = 360;
+  const maxSidebarWidth = Math.max(minSidebarWidth, editorWidth - minMainWidth);
+  return Math.min(Math.max(width, minSidebarWidth), maxSidebarWidth);
+}
+
+function formatTreeNodeLabel(rawLabel: string, data: JsonValue, childCount: number, schemaTypeName: string | null): string {
+  const isPrimitive = typeof data !== 'object';
+  const isArray = Array.isArray(data);
+  const isIndex = /^\d+$/.test(rawLabel);
+  const indexLabel = isIndex ? String(Number(rawLabel) + 1) : rawLabel;
+  const label = schemaTypeName && !isPrimitive && !isArray
+    ? isIndex
+      ? `${schemaTypeName} ${indexLabel}`
+      : rawLabel === 'root'
+        ? schemaTypeName
+        : `${rawLabel}: ${schemaTypeName}`
+    : indexLabel;
+  if (isPrimitive) return `${label}: ${formatPrimitivePreview(data)}`;
+  return isArray ? `${label} [${childCount}]` : `${label} (${childCount})`;
+}
+
 function TreeNode({
   data,
   path,
@@ -77,6 +185,8 @@ function TreeNode({
   protectedPaths,
   onToggleProtected,
   patchMarkers,
+  schema,
+  targetClass,
   depth = 0,
 }: {
   data: JsonValue;
@@ -86,6 +196,8 @@ function TreeNode({
   protectedPaths: string[];
   onToggleProtected: (path: string) => void;
   patchMarkers: JsonPatchMarker[];
+  schema?: JsonSchemaDocument | null;
+  targetClass?: string;
   depth?: number;
 }) {
   if (data === null || data === undefined) return null;
@@ -93,17 +205,17 @@ function TreeNode({
   const isPrimitive = typeof data !== 'object';
   const isArray = Array.isArray(data);
   const rawLabel = path.split('.').pop() || 'root';
-  const label = /^\d+$/.test(rawLabel) ? String(Number(rawLabel) + 1) : rawLabel;
   const isSelected = path === selectedPath;
   const isLockable = isTopLevelPath(path);
   const isProtected = isPathProtected(path, protectedPaths);
   const fieldMarkers = patchMarkers.filter((marker) => marker.path === path);
   const childCount = isPrimitive ? 0 : isArray ? data.length : Object.keys(data).length;
-  const displayLabel = isPrimitive
-    ? `${label}: ${formatPrimitivePreview(data)}`
-    : isArray
-      ? `${label} [${childCount}]`
-      : `${label} (${childCount})`;
+  const displayLabel = formatTreeNodeLabel(
+    rawLabel,
+    data,
+    childCount,
+    schemaForPath(schema, targetClass, path).typeName,
+  );
 
   return (
     <>
@@ -143,6 +255,8 @@ function TreeNode({
             protectedPaths={protectedPaths}
             onToggleProtected={onToggleProtected}
             patchMarkers={patchMarkers}
+            schema={schema}
+            targetClass={targetClass}
             depth={depth + 1}
           />
         );
@@ -160,6 +274,8 @@ function TreeNode({
             protectedPaths={protectedPaths}
             onToggleProtected={onToggleProtected}
             patchMarkers={patchMarkers}
+            schema={schema}
+            targetClass={targetClass}
             depth={depth + 1}
           />
         );
@@ -615,6 +731,8 @@ export function JsonEditor({
   onProtectedPathsChange,
   patchMarkers,
   onApplyPatch,
+  schema,
+  targetClass,
 }: {
   value: Record<string, unknown>;
   onChange?: (value: Record<string, unknown>) => void;
@@ -622,12 +740,26 @@ export function JsonEditor({
   onProtectedPathsChange?: (paths: string[]) => void;
   patchMarkers?: JsonPatchMarker[];
   onApplyPatch?: (itemId: string, value: unknown) => void;
+  schema?: JsonSchemaDocument | null;
+  targetClass?: string;
 }) {
   const [selectedPath, setSelectedPath] = useState<string>('');
   const [showRaw, setShowRaw] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    try {
+      const stored = localStorage.getItem('simone_json_editor_sidebar_width');
+      const parsed = stored ? Number(stored) : NaN;
+      return Number.isFinite(parsed) ? Math.min(Math.max(parsed, 180), 640) : 260;
+    } catch {
+      return 260;
+    }
+  });
+  const editorRef = useRef<HTMLDivElement | null>(null);
 
   const currentValue = getValueAtPath(value as JsonObject, selectedPath);
   const selectedPatchMarkers = (patchMarkers || []).filter((marker) => marker.path === selectedPath);
+  const breadcrumbLabel = typedPathLabel(schema, targetClass, selectedPath);
+  const editorStyle = { '--json-editor-sidebar-width': `${sidebarWidth}px` } as CSSProperties;
 
   const handleChange = (path: string, newValue: JsonValue) => {
     if (path === '__select__') {
@@ -653,8 +785,40 @@ export function JsonEditor({
     }
   };
 
+  const setClampedSidebarWidth = (nextWidth: number) => {
+    const editorWidth = editorRef.current?.getBoundingClientRect().width ?? 0;
+    const width = editorWidth > 0 ? clampSidebarWidth(nextWidth, editorWidth) : nextWidth;
+    setSidebarWidth(width);
+    try {
+      localStorage.setItem('simone_json_editor_sidebar_width', String(Math.round(width)));
+    } catch {
+      // ignore storage errors
+    }
+  };
+
+  const handleResizePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!editorRef.current) return;
+    event.preventDefault();
+    const editor = editorRef.current;
+    const previousUserSelect = document.body.style.userSelect;
+    document.body.style.userSelect = 'none';
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const rect = editor.getBoundingClientRect();
+      setClampedSidebarWidth(moveEvent.clientX - rect.left);
+    };
+    const handlePointerUp = () => {
+      document.body.style.userSelect = previousUserSelect;
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+  };
+
   return (
-    <div className="json-editor">
+    <div className="json-editor" ref={editorRef} style={editorStyle}>
       <div className="json-editor-sidebar">
         <div className="json-editor-tree">
           <ul>
@@ -666,12 +830,38 @@ export function JsonEditor({
               protectedPaths={protectedPaths || []}
               onToggleProtected={handleToggleProtected}
               patchMarkers={patchMarkers || []}
+              schema={schema}
+              targetClass={targetClass}
             />
           </ul>
         </div>
       </div>
+      <div
+        className="json-editor-resize-handle"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize explorer panel"
+        tabIndex={0}
+        onPointerDown={handleResizePointerDown}
+        onDoubleClick={() => setClampedSidebarWidth(260)}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowLeft') {
+            event.preventDefault();
+            setClampedSidebarWidth(sidebarWidth - 24);
+          } else if (event.key === 'ArrowRight') {
+            event.preventDefault();
+            setClampedSidebarWidth(sidebarWidth + 24);
+          } else if (event.key === 'Home') {
+            event.preventDefault();
+            setClampedSidebarWidth(180);
+          } else if (event.key === 'End') {
+            event.preventDefault();
+            setClampedSidebarWidth(640);
+          }
+        }}
+      />
       <div className="json-editor-main">
-        <div className="json-editor-breadcrumb">{selectedPath || 'root'}</div>
+        <div className="json-editor-breadcrumb">{breadcrumbLabel}</div>
         <div className="json-editor-panel">
           <SelectedPatchMarkerReview markers={selectedPatchMarkers} onApplyPatch={onApplyPatch} />
           {currentValue !== undefined ? (

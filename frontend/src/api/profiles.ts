@@ -14,6 +14,10 @@ export async function listProfiles(): Promise<ProfileManifestResponse[]> {
   return readJson(await fetch(apiBaseUrl + '/profiles'));
 }
 
+export async function getProfileJsonSchema(identifier: string): Promise<Record<string, unknown>> {
+  return readJson(await fetch(apiBaseUrl + '/profiles/' + encodeURIComponent(identifier) + '/json-schema'));
+}
+
 export async function registerProfile(input: RegisterProfileInput): Promise<ProfileManifestResponse> {
   const form = new FormData();
   form.append('identifier', input.identifier);

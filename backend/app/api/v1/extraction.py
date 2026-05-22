@@ -284,6 +284,7 @@ async def patch_initial_draft(
             data_package_id=request.data_package_id,
             profile_identifier=request.profile_identifier,
             num_chunks_per_turn=request.num_chunks_per_turn,
+            auto_resolve=request.auto_resolve,
         )
         return _patch_draft_response(draft, task_status)
     except Exception as exc:

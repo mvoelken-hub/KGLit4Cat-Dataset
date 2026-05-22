@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import copy
+import asyncio
+import logging
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 from app.core.task_registry import TaskInfo, TaskRegistry, TaskStatus, TaskType
 from app.core.config import Settings
@@ -31,6 +33,10 @@ if TYPE_CHECKING:
     from app.ollama.client import OllamaClientWrapper
     from app.services.datasource_service import DataSourceService
     from app.services.profile_service import ProfileService
+
+
+logger = logging.getLogger(__name__)
+RESOLVED_REVIEW_OUTCOMES = {"included", "already_present", "excluded"}
 
 
 class ExtractionService:
@@ -132,7 +138,8 @@ class ExtractionService:
         *,
         data_package_id: str,
         profile_identifier: str,
-        num_chunks_per_turn: int,
+        num_chunks_per_turn: int = 1,
+        auto_resolve: bool = False,
     ) -> tuple[dict[str, Any], TaskStatus]:
         if (
             self.datasource_service is None
@@ -199,6 +206,7 @@ class ExtractionService:
                     data_package_id=data_package_id,
                     profile_identifier=profile_identifier,
                     num_chunks_per_turn=num_chunks_per_turn,
+                    auto_resolve=auto_resolve,
                 ),
                 type=TaskType.WORKFLOW,
                 name=task_name,
@@ -216,7 +224,8 @@ class ExtractionService:
         *,
         data_package_id: str,
         profile_identifier: str,
-        num_chunks_per_turn: int,
+        num_chunks_per_turn: int = 1,
+        auto_resolve: bool = False,
     ) -> dict[str, Any]:
         if (
             self.datasource_service is None
@@ -261,9 +270,36 @@ class ExtractionService:
         )
 
         protected_fields = self.output_repository.load_protected_fields(data_package_id)
+        resolver_task: asyncio.Task[dict[str, Any] | None] | None = None
 
         def load_protected_fields() -> list[str]:
             return self.output_repository.load_protected_fields(data_package_id) # type: ignore
+
+        def start_auto_resolve() -> None:
+            nonlocal resolver_task
+            if not auto_resolve:
+                return
+            if resolver_task is not None and not resolver_task.done():
+                return
+            resolver_task = asyncio.create_task(
+                self._auto_resolve_review_items(
+                    data_package_id=data_package_id,
+                    profile_identifier=profile_identifier,
+                ),
+                name=f"resolving:review:{data_package_id}",
+            )
+
+        async def finish_auto_resolve() -> None:
+            nonlocal resolver_task
+            if not auto_resolve:
+                return
+            if resolver_task is not None:
+                await resolver_task
+                resolver_task = None
+            await self._auto_resolve_review_items(
+                data_package_id=data_package_id,
+                profile_identifier=profile_identifier,
+            )
 
         async def save_progress(
             draft: dict[str, Any],
@@ -278,6 +314,7 @@ class ExtractionService:
                 batch_no=batch_no,
                 total_batches=total_batches,
             )
+            start_auto_resolve()
 
         result = await patch_draft_from_content_chunks(
             initial_context=initial_context,
@@ -294,17 +331,427 @@ class ExtractionService:
                 data_package_id,
             ),
         )
-        next_draft = normalize_review_draft(
+        patching_draft = normalize_review_draft(
             result.draft,
             dataset_id=str(result.draft.get("id") or data_package_id),
         )
+        next_draft = patching_draft
+        if auto_resolve:
+            latest_draft = self._load_latest_draft_for_resolution(
+                data_package_id=data_package_id,
+                fallback=current_draft,
+            )
+            if latest_draft != current_draft:
+                patching_delta = self._json_merge_patch_diff(current_draft, patching_draft)
+                next_draft = apply_merge_patch(latest_draft, patching_delta)
+                validation = validate_document_against_profile(
+                    document=next_draft,
+                    json_schema=profile_json_schema,
+                    target_class=profile_manifest.target_class,
+                )
+                if not validation.valid:
+                    next_draft = patching_draft
 
         self.output_repository.save_draft(
             workflow_id=data_package_id,
             draft=next_draft,
         )
 
+        await finish_auto_resolve()
+        if auto_resolve:
+            try:
+                next_draft = self.output_repository.load_draft(data_package_id)
+            except FileNotFoundError:
+                next_draft = normalize_review_draft(
+                    result.draft,
+                    dataset_id=str(result.draft.get("id") or data_package_id),
+                )
+
         return next_draft
+
+    async def _auto_resolve_review_items(
+        self,
+        *,
+        data_package_id: str,
+        profile_identifier: str,
+    ) -> dict[str, Any] | None:
+        """Automatically resolve unresolved review items from saved patch artifacts."""
+        resolution_log: list[str] = []
+
+        def update_progress(
+            result: dict[str, Any] | None = None,
+            *,
+            active: bool = True,
+        ) -> None:
+            self._update_patch_resolution_progress(
+                data_package_id=data_package_id,
+                resolution_log=resolution_log,
+                resolution_result=result,
+                resolution_active=active,
+            )
+
+        update_progress(active=True)
+
+        if (
+            self.ollama_client is None
+            or self.output_repository is None
+        ):
+            self._record_resolution_log(
+                resolution_log,
+                data_package_id,
+                "Auto-resolve skipped because the resolver dependencies are unavailable.",
+            )
+            update_progress(active=False)
+            return None
+
+        try:
+            current_draft = self.output_repository.load_draft(data_package_id)
+        except FileNotFoundError:
+            current_draft = self.output_repository.load_initial_draft(data_package_id)
+
+        profile_manifest = self.profile_service.get_profile(profile_identifier)
+        profile_json_schema = self.profile_service.load_json_schema(profile_identifier)
+        current_draft = sanitize_document_against_schema(
+            document=current_draft,
+            json_schema=profile_json_schema,
+            target_class=profile_manifest.target_class,
+        )
+        current_draft = normalize_review_draft(
+            current_draft,
+            dataset_id=str(current_draft.get("id") or data_package_id),
+        )
+
+        existing_state = self.output_repository.load_patch_review_state(data_package_id)
+        artifacts = await self.get_patch_artifacts(data_package_id)
+        review_items = self._build_patch_review_items_from_artifacts(
+            artifacts=artifacts,
+            existing_state=existing_state,
+        )
+
+        if not review_items:
+            self._record_resolution_log(
+                resolution_log,
+                data_package_id,
+                "Auto-resolve found no unresolved patch review items.",
+            )
+            update_progress(active=False)
+            return None
+
+        parsed_items = [PatchReviewItem.model_validate(item) for item in review_items]
+        result = await self._resolve_and_persist_review_items(
+            data_package_id=data_package_id,
+            current_draft=current_draft,
+            parsed_items=parsed_items,
+            profile_manifest=profile_manifest,
+            profile_json_schema=profile_json_schema,
+            existing_review_state=existing_state,
+            resolution_log=resolution_log,
+            progress_callback=update_progress,
+        )
+        update_progress(result, active=False)
+        return result
+
+    def _build_patch_review_items_from_artifacts(
+        self,
+        *,
+        artifacts: dict[str, Any],
+        existing_state: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        resolved_ids = set(existing_state.get("resolved_item_ids", []))
+        rating_by_patch_and_field: dict[str, dict[str, Any]] = {}
+
+        for report in self._record_list(artifacts.get("quality_reports", [])):
+            base_name = self._patch_artifact_base_name(str(report.get("file_name") or ""))
+            report_content = self._record(report.get("content")) or {}
+            for rating in self._record_list(report_content.get("candidate_ratings")):
+                field_path = str(rating.get("field_path") or "")
+                if field_path:
+                    rating_by_patch_and_field[f"{base_name}:{field_path}"] = rating
+
+        review_items: list[dict[str, Any]] = []
+        for artifact in self._record_list(artifacts.get("patches", [])):
+            if artifact.get("artifact_type") != "candidates":
+                continue
+            file_name = str(artifact.get("file_name") or "")
+            base_name = self._patch_artifact_base_name(file_name)
+            for candidate_index, candidate in enumerate(self._record_list(artifact.get("content"))):
+                path = str(candidate.get("field_path") or "")
+                if not path:
+                    continue
+                confidence = candidate.get("confidence")
+                confidence_value = (
+                    float(confidence)
+                    if isinstance(confidence, (int, float)) and not isinstance(confidence, bool)
+                    else None
+                )
+                rating = rating_by_patch_and_field.get(f"{base_name}:{path}", {})
+                decision = str(rating.get("decision") or "")
+                issues = [
+                    self._format_quality_issue(issue)
+                    for issue in self._record_list(rating.get("issues"))
+                ]
+                needs_review = (
+                    confidence_value is None
+                    or confidence_value < 0.8
+                    or decision != "accept"
+                    or len(issues) > 0
+                )
+                if not needs_review:
+                    continue
+                item_id = self._matched_review_item_id(base_name, path, candidate_index)
+                if item_id in resolved_ids:
+                    continue
+                detail_parts = [
+                    self._confidence_label(confidence_value),
+                    f"Decision: {decision}" if decision else "",
+                    f"{len(issues)} issue{'s' if len(issues) != 1 else ''}" if issues else "",
+                    str(candidate.get("reasoning") or ""),
+                ]
+                review_items.append({
+                    "id": item_id,
+                    "kind": "matched",
+                    "path": path,
+                    "detail": " - ".join(part for part in detail_parts if part),
+                    "issues": issues,
+                    "evidence": self._text_list(candidate.get("source_evidence")),
+                    "patch": candidate.get("patch") if isinstance(candidate.get("patch"), dict) else {},
+                    "confidence": confidence_value,
+                    "file_name": file_name,
+                })
+
+        for fact in self._record_list(artifacts.get("unmapped_facts", [])):
+            item_id = self._unmapped_review_item_id(fact)
+            if item_id in resolved_ids:
+                continue
+            source_hint = str(fact.get("source_hint") or "")
+            review_items.append({
+                "id": item_id,
+                "kind": "unmapped",
+                "path": "Unassigned",
+                "detail": str(fact.get("fact") or fact.get("reason") or "Unmapped source fact"),
+                "issues": [],
+                "evidence": [source_hint] if source_hint else [],
+                "fact": str(fact.get("fact") or ""),
+                "reason": str(fact.get("reason") or ""),
+                "file_name": str(fact.get("file_name") or ""),
+            })
+
+        return review_items
+
+    async def _resolve_and_persist_review_items(
+        self,
+        *,
+        data_package_id: str,
+        current_draft: dict[str, Any],
+        parsed_items: list[PatchReviewItem],
+        profile_manifest: Any,
+        profile_json_schema: dict[str, Any],
+        existing_review_state: dict[str, Any],
+        resolution_log: list[str],
+        progress_callback: Callable[[], None] | None = None,
+    ) -> dict[str, Any]:
+        if self.ollama_client is None or self.output_repository is None:
+            raise RuntimeError(
+                "ExtractionService requires ollama_client and output_repository "
+                "to run the patch review resolution agent."
+            )
+
+        kind_counts = {
+            "matched": sum(1 for item in parsed_items if item.kind == "matched"),
+            "unmapped": sum(1 for item in parsed_items if item.kind == "unmapped"),
+        }
+        self._record_resolution_log(
+            resolution_log,
+            data_package_id,
+            "Starting review resolution for "
+            f"{len(parsed_items)} items: {kind_counts['matched']} matched, "
+            f"{kind_counts['unmapped']} unmapped.",
+        )
+        if progress_callback:
+            progress_callback()
+
+        resolution = await resolve_patch_review_items(
+            current_draft=current_draft,
+            review_items=parsed_items,
+            profile_manifest=profile_manifest,
+            profile_json_schema=profile_json_schema,
+            existing_review_state=existing_review_state,
+            model=self.ollama_client.agent_model,
+        )
+        self._record_resolution_log(
+            resolution_log,
+            data_package_id,
+            f"Review agent returned {len(resolution.item_decisions)} decisions.",
+        )
+        if progress_callback:
+            progress_callback()
+
+        next_draft = resolution.final_draft or current_draft
+        validation = validate_document_against_profile(
+            document=next_draft,
+            json_schema=profile_json_schema,
+            target_class=profile_manifest.target_class,
+        )
+        if not validation.valid:
+            validation_errors = [
+                f"{issue.path}: {issue.message}" for issue in validation.errors
+            ]
+            self._record_resolution_log(
+                resolution_log,
+                data_package_id,
+                f"Final draft failed schema validation with {len(validation_errors)} errors; review state was not changed.",
+            )
+            if progress_callback:
+                progress_callback()
+            return {
+                "draft": current_draft,
+                "review_state": existing_review_state,
+                "resolved_count": 0,
+                "unresolved_item_ids": [item.id for item in parsed_items],
+                "validation_errors": validation_errors,
+                "resolution_decisions": [],
+                "resolution_log": resolution_log,
+            }
+
+        self._record_resolution_log(
+            resolution_log,
+            data_package_id,
+            "Final draft passed schema validation.",
+        )
+
+        latest_draft = self._load_latest_draft_for_resolution(
+            data_package_id=data_package_id,
+            fallback=current_draft,
+        )
+        if latest_draft != current_draft:
+            draft_patch = self._json_merge_patch_diff(current_draft, next_draft)
+            next_draft = apply_merge_patch(latest_draft, draft_patch)
+            rebased_validation = validate_document_against_profile(
+                document=next_draft,
+                json_schema=profile_json_schema,
+                target_class=profile_manifest.target_class,
+            )
+            if not rebased_validation.valid:
+                validation_errors = [
+                    f"{issue.path}: {issue.message}"
+                    for issue in rebased_validation.errors
+                ]
+                self._record_resolution_log(
+                    resolution_log,
+                    data_package_id,
+                    "Rebased resolver changes failed schema validation with "
+                    f"{len(validation_errors)} errors; review state was not changed.",
+                )
+                if progress_callback:
+                    progress_callback()
+                return {
+                    "draft": latest_draft,
+                    "review_state": existing_review_state,
+                    "resolved_count": 0,
+                    "unresolved_item_ids": [item.id for item in parsed_items],
+                    "validation_errors": validation_errors,
+                    "resolution_decisions": [],
+                    "resolution_log": resolution_log,
+                }
+            self._record_resolution_log(
+                resolution_log,
+                data_package_id,
+                "Rebased resolver draft changes onto the latest patching draft.",
+            )
+
+        requested_item_ids = {item.id for item in parsed_items}
+        decisions_by_id = self._review_decisions_by_id(
+            resolution.item_decisions,
+            requested_item_ids,
+        )
+        decisions_by_id, synthesized_count = self._normalize_review_decisions(
+            decisions_by_id=decisions_by_id,
+            parsed_items=parsed_items,
+        )
+        if synthesized_count:
+            self._record_resolution_log(
+                resolution_log,
+                data_package_id,
+                f"Converted {synthesized_count} missing or unresolved decisions to excluded.",
+            )
+
+        outcome_counts = {
+            outcome: sum(
+                1 for decision in decisions_by_id.values()
+                if decision.outcome == outcome
+            )
+            for outcome in sorted(RESOLVED_REVIEW_OUTCOMES)
+        }
+        self._record_resolution_log(
+            resolution_log,
+            data_package_id,
+            "Decision counts: "
+            f"{outcome_counts.get('included', 0)} included, "
+            f"{outcome_counts.get('already_present', 0)} already present, "
+            f"{outcome_counts.get('excluded', 0)} excluded.",
+        )
+
+        resolved_now = list(decisions_by_id)
+        resolved_ids = list(dict.fromkeys([
+            *existing_review_state.get("resolved_item_ids", []),
+            *resolved_now,
+        ]))
+        resolved_id_set = set(resolved_ids)
+        remaining_unresolved_ids = [
+            item.id for item in parsed_items if item.id not in resolved_id_set
+        ]
+        resolved_at = dict(existing_review_state.get("resolved_at", {}))
+        timestamp = datetime.now(UTC).isoformat()
+        for item_id in resolved_now:
+            resolved_at.setdefault(item_id, timestamp)
+        next_state = {
+            "resolved_item_ids": resolved_ids,
+            "unmapped_assignments": {
+                **dict(existing_review_state.get("unmapped_assignments", {})),
+                **resolution.unmapped_assignments,
+            },
+            "resolution_notes": {
+                **dict(existing_review_state.get("resolution_notes", {})),
+                **{
+                    item_id: self._format_review_decision_note(decision)
+                    for item_id, decision in decisions_by_id.items()
+                },
+            },
+            "resolved_at": resolved_at,
+        }
+        self.output_repository.save_draft(
+            workflow_id=data_package_id,
+            draft=next_draft,
+        )
+        self.output_repository.save_initial_draft(
+            workflow_id=data_package_id,
+            initial_draft=next_draft,
+        )
+        self.output_repository.save_patch_review_state(
+            workflow_id=data_package_id,
+            review_state=next_state,
+        )
+        self._record_resolution_log(
+            resolution_log,
+            data_package_id,
+            f"Saved review state with {len(resolved_ids)} total resolved item IDs; "
+            f"{len(remaining_unresolved_ids)} submitted items remain unresolved.",
+        )
+        if progress_callback:
+            progress_callback()
+
+        return {
+            "draft": next_draft,
+            "review_state": next_state,
+            "resolved_count": len(resolved_now),
+            "unresolved_item_ids": remaining_unresolved_ids,
+            "validation_errors": [],
+            "resolution_decisions": [
+                decision.model_dump(mode="json")
+                for decision in decisions_by_id.values()
+            ],
+            "resolution_log": resolution_log,
+        }
 
     def _save_patch_progress(
         self,
@@ -533,94 +980,198 @@ class ExtractionService:
 
         existing_state = self.output_repository.load_patch_review_state(data_package_id)
         parsed_items = [PatchReviewItem.model_validate(item) for item in review_items]
-        resolution = await resolve_patch_review_items(
+        return await self._resolve_and_persist_review_items(
+            data_package_id=data_package_id,
             current_draft=current_draft,
-            review_items=parsed_items,
+            parsed_items=parsed_items,
             profile_manifest=profile_manifest,
             profile_json_schema=profile_json_schema,
             existing_review_state=existing_state,
-            model=self.ollama_client.agent_model,
+            resolution_log=[],
         )
 
-        next_draft = resolution.final_draft or current_draft
-        validation = validate_document_against_profile(
-            document=next_draft,
-            json_schema=profile_json_schema,
-            target_class=profile_manifest.target_class,
-        )
-        if not validation.valid:
-            return {
-                "draft": current_draft,
-                "review_state": existing_state,
-                "resolved_count": 0,
-                "unresolved_item_ids": [item.id for item in parsed_items],
-                "validation_errors": [
-                    f"{issue.path}: {issue.message}" for issue in validation.errors
-                ],
-                "resolution_decisions": [],
-            }
+    @staticmethod
+    def _record(value: Any) -> dict[str, Any] | None:
+        return value if isinstance(value, dict) else None
 
-        requested_item_ids = {item.id for item in parsed_items}
-        decisions_by_id = self._review_decisions_by_id(
-            resolution.item_decisions,
-            requested_item_ids,
-        )
-        resolved_now = [
-            item_id
-            for item_id, decision in decisions_by_id.items()
-            if decision.outcome in {"included", "already_present", "excluded"}
+    @classmethod
+    def _record_list(cls, value: Any) -> list[dict[str, Any]]:
+        if not isinstance(value, list):
+            return []
+        return [
+            item
+            for item in (cls._record(item) for item in value)
+            if item is not None
         ]
-        resolved_ids = list(dict.fromkeys([
-            *existing_state.get("resolved_item_ids", []),
-            *resolved_now,
-        ]))
-        resolved_id_set = set(resolved_ids)
-        remaining_unresolved_ids = [
-            item.id for item in parsed_items if item.id not in resolved_id_set
+
+    @staticmethod
+    def _text_list(value: Any) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        return [text for text in (str(item) for item in value) if text]
+
+    @staticmethod
+    def _confidence_label(confidence: float | None) -> str:
+        if confidence is None:
+            return "unknown confidence"
+        return f"{round(confidence * 100)}% confidence"
+
+    @staticmethod
+    def _patch_artifact_base_name(file_name: str) -> str:
+        suffixes = [
+            ".quality_report.json",
+            ".candidates.json",
+            ".accepted.json",
+            ".raw.json",
+            ".unmapped_facts.json",
         ]
-        resolved_at = dict(existing_state.get("resolved_at", {}))
-        timestamp = datetime.now(UTC).isoformat()
-        for item_id in resolved_now:
-            resolved_at.setdefault(item_id, timestamp)
-        next_state = {
-            "resolved_item_ids": resolved_ids,
-            "unmapped_assignments": {
-                **dict(existing_state.get("unmapped_assignments", {})),
-                **resolution.unmapped_assignments,
-            },
-            "resolution_notes": {
-                **dict(existing_state.get("resolution_notes", {})),
-                **{
-                    item_id: self._format_review_decision_note(decision)
-                    for item_id, decision in decisions_by_id.items()
-                    if decision.outcome in {"included", "already_present", "excluded"}
-                },
-            },
-            "resolved_at": resolved_at,
-        }
-        self.output_repository.save_draft(
-            workflow_id=data_package_id,
-            draft=next_draft,
+        for suffix in suffixes:
+            if file_name.endswith(suffix):
+                return f"{file_name[:-len(suffix)]}.json"
+        return file_name
+
+    @staticmethod
+    def _matched_review_item_id(base_name: str, path: str, index: int) -> str:
+        return f"matched:{base_name}:{path}:{index}"
+
+    @staticmethod
+    def _unmapped_review_item_id(fact: dict[str, Any]) -> str:
+        key = "|".join(
+            str(fact.get(field) or "")
+            for field in ("file_name", "fact", "reason", "source_hint")
         )
-        self.output_repository.save_initial_draft(
-            workflow_id=data_package_id,
-            initial_draft=next_draft,
+        return f"unmapped:{key}"
+
+    @staticmethod
+    def _format_quality_issue(issue: dict[str, Any]) -> str:
+        parts = [
+            str(issue.get("issue_type") or ""),
+            f"({issue.get('severity')})" if issue.get("severity") else "",
+            str(issue.get("explanation") or ""),
+            (
+                f"Suggested field: {issue.get('suggested_target_path')}"
+                if issue.get("suggested_target_path")
+                else ""
+            ),
+        ]
+        return " ".join(part for part in parts if part)
+
+    def _load_latest_draft_for_resolution(
+        self,
+        *,
+        data_package_id: str,
+        fallback: dict[str, Any],
+    ) -> dict[str, Any]:
+        if self.output_repository is None:
+            return fallback
+        try:
+            return self.output_repository.load_draft(data_package_id)
+        except FileNotFoundError:
+            return fallback
+
+    @classmethod
+    def _json_merge_patch_diff(cls, before: Any, after: Any) -> dict[str, Any]:
+        if before == after:
+            return {}
+        if isinstance(before, dict) and isinstance(after, dict):
+            patch: dict[str, Any] = {}
+            for key in before.keys() - after.keys():
+                patch[key] = None
+            for key, after_value in after.items():
+                before_value = before.get(key)
+                if key not in before or before_value != after_value:
+                    if isinstance(before_value, dict) and isinstance(after_value, dict):
+                        nested_patch = cls._json_merge_patch_diff(
+                            before_value,
+                            after_value,
+                        )
+                        if nested_patch:
+                            patch[key] = nested_patch
+                    else:
+                        patch[key] = copy.deepcopy(after_value)
+            return patch
+        return copy.deepcopy(after) if isinstance(after, dict) else {}
+
+    @staticmethod
+    def _normalize_review_decisions(
+        *,
+        decisions_by_id: dict[str, PatchReviewDecision],
+        parsed_items: list[PatchReviewItem],
+    ) -> tuple[dict[str, PatchReviewDecision], int]:
+        normalized: dict[str, PatchReviewDecision] = {}
+        synthesized_count = 0
+        for item in parsed_items:
+            decision = decisions_by_id.get(item.id)
+            target_path = None if item.path == "Unassigned" else item.path
+            if decision is None:
+                synthesized_count += 1
+                normalized[item.id] = PatchReviewDecision(
+                    id=item.id,
+                    outcome="excluded",
+                    note=(
+                        "The resolution agent did not return a decision for this "
+                        "item, so it was excluded to complete delegated review "
+                        "without applying unsupported metadata."
+                    ),
+                    target_path=target_path,
+                )
+            elif decision.outcome == "unresolved":
+                synthesized_count += 1
+                normalized[item.id] = PatchReviewDecision(
+                    id=item.id,
+                    outcome="excluded",
+                    note=(
+                        "The resolution agent marked this item unresolved, so it "
+                        "was excluded to complete delegated review. Agent note: "
+                        f"{decision.note}"
+                    ),
+                    target_path=decision.target_path or target_path,
+                )
+            else:
+                normalized[item.id] = decision
+        return normalized, synthesized_count
+
+    @staticmethod
+    def _record_resolution_log(
+        resolution_log: list[str],
+        data_package_id: str,
+        message: str,
+    ) -> None:
+        formatted = f"{data_package_id}: {message}"
+        logger.info("Patch review resolution - %s", formatted)
+        resolution_log.append(formatted)
+
+    def _update_patch_resolution_progress(
+        self,
+        *,
+        data_package_id: str,
+        resolution_log: list[str],
+        resolution_result: dict[str, Any] | None = None,
+        resolution_active: bool | None = None,
+    ) -> None:
+        if self.task_registry is None:
+            return
+        task_info = self.task_registry.get_task_info(
+            self._patch_draft_task_name(data_package_id),
         )
-        self.output_repository.save_patch_review_state(
-            workflow_id=data_package_id,
-            review_state=next_state,
+        if task_info is None:
+            return
+        progress = dict(task_info.progress or {})
+        progress["resolution_log"] = list(resolution_log)
+        if resolution_active is not None:
+            progress["resolution_active"] = resolution_active
+        if resolution_result is not None:
+            progress["resolution_resolved_count"] = resolution_result.get(
+                "resolved_count",
+                0,
+            )
+            progress["resolution_unresolved_item_ids"] = list(
+                resolution_result.get("unresolved_item_ids", []),
+            )
+        self.task_registry.update_progress(
+            self._patch_draft_task_name(data_package_id),
+            progress,
         )
-        return {
-            "draft": next_draft,
-            "review_state": next_state,
-            "resolved_count": len(resolved_now),
-            "unresolved_item_ids": remaining_unresolved_ids,
-            "validation_errors": [],
-            "resolution_decisions": [
-                decision.model_dump(mode="json")
-                for decision in decisions_by_id.values()
-            ],
-        }
 
     @staticmethod
     def _review_decisions_by_id(

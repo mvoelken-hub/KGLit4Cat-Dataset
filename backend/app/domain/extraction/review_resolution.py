@@ -35,8 +35,8 @@ class PatchReviewDecision(BaseModel):
         description=(
             "included when the final draft now represents the information; "
             "already_present when the current draft already represented it; "
-            "excluded when it was intentionally kept out; unresolved when no "
-            "confident decision could be made."
+            "excluded when it was intentionally kept out. The service may "
+            "normalize unresolved decisions to excluded."
         ),
     )
     note: str = Field(description="Short explanation of the decision.")
@@ -80,7 +80,7 @@ You receive the current DCAT-style metadata draft, unresolved review items, the
 profile JSON Schema, and the existing review state.
 
 Your task:
-- Resolve as many review items as possible by producing a complete schema-valid
+- Resolve every review item by producing a complete schema-valid
   final_draft rooted at the Dataset object.
 - Preserve all valid current draft content unless a review item supports a correction.
 - For matched items, inspect the proposed patch, issues, evidence, and current draft.
@@ -93,10 +93,10 @@ Your task:
 - Use outcome "included" only when final_draft contains the information.
 - Use outcome "already_present" only when the current draft already contains it.
 - Use outcome "excluded" when the source fact or patch is invalid, semantically
-  wrong, schema-incompatible, or cannot be confidently attached to the draft, and
-  you intentionally keep it out.
-- Use outcome "unresolved" when you cannot make a confident include/exclude
-  decision.
+  wrong, schema-incompatible, unsupported, low confidence, or cannot be safely
+  attached to the draft, and you intentionally keep it out.
+- Do not return outcome "unresolved"; choose "excluded" with a clear note when
+  you cannot safely include or confirm the item.
 - Do not use description, title, or keyword as dumping grounds for structured facts.
 - Never invent source facts, URIs, schema fields, files, instruments, or values.
 - Never create namespace-looking identifiers such as https://w3id.org/... .

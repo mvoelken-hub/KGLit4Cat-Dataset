@@ -1,4 +1,5 @@
 import json
+import asyncio
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -334,10 +335,24 @@ class FakeOutputRepository:
         return self.review_state
 
     def load_patch_files(self, workflow_id: str) -> list[dict]:
-        return [
+        artifacts = [
             {"file_name": file_name, "artifact_type": "patch", "content": patch}
             for file_name, patch in sorted(self.patches.items())
         ]
+        artifacts.extend(
+            {
+                "file_name": file_name.replace(".json", ".candidates.json"),
+                "artifact_type": "candidates",
+                "content": [
+                    candidate.model_dump(mode="json")
+                    if hasattr(candidate, "model_dump")
+                    else candidate
+                    for candidate in candidates
+                ],
+            }
+            for file_name, candidates in sorted(self.candidates.items())
+        )
+        return artifacts
 
     def load_patch_quality_reports(self, workflow_id: str) -> list[dict]:
         return [
@@ -411,11 +426,13 @@ class FakeExtractionService:
         data_package_id: str,
         profile_identifier: str,
         num_chunks_per_turn: int | None = None,
+        auto_resolve: bool = False,
     ) -> tuple[dict, TaskStatus]:
         self.request = {
             "data_package_id": data_package_id,
             "profile_identifier": profile_identifier,
             "num_chunks_per_turn": num_chunks_per_turn,
+            "auto_resolve": auto_resolve,
         }
         if isinstance(self.result, Exception):
             raise self.result
@@ -731,6 +748,174 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
         task_info = task_registry.get_task_info(service._patch_draft_task_name("package-id"))
         self.assertEqual(task_info.progress["batch_no"], 1)  # type: ignore[union-attr,index]
         self.assertEqual(task_info.progress["total_batches"], 1)  # type: ignore[union-attr,index]
+
+    async def test_patch_initial_draft_starts_auto_resolve_before_patching_finishes(self):
+        from unittest import mock as unittest_mock
+
+        datasource_service = FakeDataSourceService(make_data_package())
+        datasource_service.chunks_by_file = [
+            [
+                ContentChunk(
+                    content="First chunk says chunk-keyword.",
+                    data_package_id="package-id",
+                    file_path="metadata.txt",
+                    start_idx=0,
+                    end_idx=0,
+                ),
+                ContentChunk(
+                    content="Second chunk says chunk-keyword.",
+                    data_package_id="package-id",
+                    file_path="metadata.txt",
+                    start_idx=1,
+                    end_idx=1,
+                ),
+            ]
+        ]
+        output_repository = FakeOutputRepository()
+        output_repository.initial_context = InitialContext.model_validate(
+            INITIAL_CONTEXT_OUTPUT
+        )
+        output_repository.initial_draft = INITIAL_DRAFT_OUTPUT
+        accept_report = PatchQualityReport(
+            overall_decision="accept",
+            candidate_ratings=[
+                CandidateQualityRating(
+                    field_path="description",
+                    decision="accept",
+                    issues=[],
+                ),
+                CandidateQualityRating(
+                    field_path="keywords",
+                    decision="accept",
+                    issues=[],
+                ),
+            ],
+            summary="All candidates accepted.",
+        )
+        task_registry = TaskRegistry(settings=None, logger=FakeLogger())  # type: ignore[arg-type]
+        service = ExtractionService(
+            FakeProfileRepository(),  # type: ignore[arg-type]
+            settings=None,  # type: ignore[arg-type]
+            datasource_service=datasource_service,  # type: ignore[arg-type]
+            ollama_client=FakeOllamaClient(FIELD_PATCH_OUTPUT),  # type: ignore[arg-type]
+            output_repository=output_repository,
+            task_registry=task_registry,
+        )
+        resolve_patch_counts: list[int] = []
+
+        async def fake_auto_resolve(
+            *,
+            data_package_id: str,
+            profile_identifier: str,
+        ) -> None:
+            resolve_patch_counts.append(len(output_repository.patches))
+            await asyncio.sleep(0.01)
+
+        service._auto_resolve_review_items = fake_auto_resolve  # type: ignore[method-assign]
+
+        with unittest_mock.patch(
+            "app.domain.extraction.patch_draft.review_patch_semantic_quality",
+            return_value=accept_report,
+        ):
+            await service.patch_initial_draft(
+                data_package_id="package-id",
+                profile_identifier="test-profile",
+                num_chunks_per_turn=1,
+                auto_resolve=True,
+            )
+            await task_registry.wait_for_task(
+                service._patch_draft_task_name("package-id"),
+                timeout=2.0,
+            )
+
+        self.assertEqual(len(output_repository.patches), 2)
+        self.assertGreaterEqual(len(resolve_patch_counts), 2)
+        self.assertEqual(resolve_patch_counts[0], 1)
+
+    async def test_auto_resolve_marks_progress_active_while_running(self):
+        from unittest import mock as unittest_mock
+
+        output_repository = FakeOutputRepository()
+        output_repository.initial_draft = INITIAL_DRAFT_OUTPUT
+        output_repository.draft = INITIAL_DRAFT_OUTPUT
+        output_repository.candidates["patch_1.json"] = [
+            {
+                "field_path": "description",
+                "patch": {"description": "Updated with chunk evidence."},
+                "confidence": 0.5,
+                "reasoning": "Low confidence candidate needs resolver review.",
+                "source_evidence": ["Chunk says chunk-keyword."],
+            }
+        ]
+        output_repository.quality_reports["patch_1.json"] = PatchQualityReport(
+            overall_decision="reject",
+            candidate_ratings=[
+                CandidateQualityRating(
+                    field_path="description",
+                    decision="reject",
+                    issues=[],
+                )
+            ],
+            summary="Resolver should review the candidate.",
+        )
+        task_registry = TaskRegistry(settings=None, logger=FakeLogger())  # type: ignore[arg-type]
+        service = ExtractionService(
+            FakeProfileRepository(),  # type: ignore[arg-type]
+            settings=None,  # type: ignore[arg-type]
+            datasource_service=FakeDataSourceService(make_data_package()),  # type: ignore[arg-type]
+            ollama_client=FakeOllamaClient({}),  # type: ignore[arg-type]
+            output_repository=output_repository,
+            task_registry=task_registry,
+        )
+        task_name = service._patch_draft_task_name("package-id")
+        await task_registry.create_task(
+            asyncio.sleep(1),
+            TaskType.WORKFLOW,
+            task_name,
+        )
+        resolver_started = asyncio.Event()
+        release_resolver = asyncio.Event()
+
+        async def fake_resolve(**kwargs):
+            resolver_started.set()
+            await release_resolver.wait()
+            return PatchReviewResolution(
+                final_draft=INITIAL_DRAFT_OUTPUT,
+                item_decisions=[
+                    {
+                        "id": "matched:patch_1.json:description:0",
+                        "outcome": "excluded",
+                        "note": "Insufficient confidence.",
+                        "target_path": "description",
+                    }
+                ],
+            )
+
+        try:
+            with unittest_mock.patch(
+                "app.services.extraction_service.resolve_patch_review_items",
+                side_effect=fake_resolve,
+            ):
+                resolve_task = asyncio.create_task(
+                    service._auto_resolve_review_items(
+                        data_package_id="package-id",
+                        profile_identifier="test-profile",
+                    )
+                )
+                await asyncio.wait_for(resolver_started.wait(), timeout=2.0)
+                task_info = task_registry.get_task_info(task_name)
+                self.assertTrue(task_info.progress["resolution_active"])  # type: ignore[union-attr,index]
+
+                release_resolver.set()
+                result = await asyncio.wait_for(resolve_task, timeout=2.0)
+
+            task_info = task_registry.get_task_info(task_name)
+            self.assertFalse(task_info.progress["resolution_active"])  # type: ignore[union-attr,index]
+            self.assertEqual(task_info.progress["resolution_resolved_count"], 1)  # type: ignore[union-attr,index]
+            self.assertEqual(task_info.progress["resolution_unresolved_item_ids"], [])  # type: ignore[union-attr,index]
+            self.assertEqual(result["resolved_count"], 1)
+        finally:
+            await task_registry.cancel_task(task_name)
 
     async def test_patch_initial_draft_normalizes_duplicate_object_arrays_before_saving(self):
         from unittest import mock as unittest_mock
@@ -1090,18 +1275,95 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
                 ],
             )
 
-        self.assertEqual(result["resolved_count"], 1)
-        self.assertEqual(result["unresolved_item_ids"], ["unmapped:temperature"])
+        self.assertEqual(result["resolved_count"], 2)
+        self.assertEqual(result["unresolved_item_ids"], [])
         self.assertEqual(result["draft"], final_draft)
         self.assertEqual(output_repository.draft, final_draft)
         self.assertEqual(
             output_repository.review_state["resolved_item_ids"],
-            ["matched:patch:description:0"],
+            ["matched:patch:description:0", "unmapped:temperature"],
         )
         self.assertEqual(
             output_repository.review_state["resolution_notes"]["matched:patch:description:0"],
             "included: Added the sourced description. Target: description.",
         )
+        self.assertIn(
+            "excluded: The resolution agent marked this item unresolved",
+            output_repository.review_state["resolution_notes"]["unmapped:temperature"],
+        )
+        self.assertTrue(result["resolution_log"])
+
+    def test_auto_resolve_review_item_ids_match_frontend_shape(self):
+        service = ExtractionService(
+            FakeProfileRepository(),  # type: ignore[arg-type]
+            settings=None,  # type: ignore[arg-type]
+        )
+
+        review_items = service._build_patch_review_items_from_artifacts(
+            artifacts={
+                "patches": [
+                    {
+                        "file_name": "patch.candidates.json",
+                        "artifact_type": "candidates",
+                        "content": [
+                            {
+                                "field_path": "was_generated_by",
+                                "patch": {"was_generated_by": [{"name": ["Instrument"]}]},
+                                "confidence": 0.9,
+                                "reasoning": "Candidate needs quality review.",
+                                "source_evidence": ["Instrument evidence"],
+                            }
+                        ],
+                    }
+                ],
+                "quality_reports": [
+                    {
+                        "file_name": "patch.quality_report.json",
+                        "content": {
+                            "candidate_ratings": [
+                                {
+                                    "field_path": "was_generated_by",
+                                    "decision": "reject",
+                                    "issues": [
+                                        {
+                                            "issue_type": "unsupported_fact",
+                                            "severity": "major",
+                                            "explanation": "Not supported by source.",
+                                            "suggested_target_path": "description",
+                                        }
+                                    ],
+                                }
+                            ]
+                        },
+                    }
+                ],
+                "unmapped_facts": [
+                    {
+                        "file_name": "patch.unmapped_facts.json",
+                        "fact": "Temperature was 300 K.",
+                        "reason": "No target field.",
+                        "source_hint": "line 4",
+                    }
+                ],
+            },
+            existing_state={
+                "resolved_item_ids": [],
+                "unmapped_assignments": {},
+                "resolution_notes": {},
+                "resolved_at": {},
+            },
+        )
+
+        self.assertEqual(
+            [item["id"] for item in review_items],
+            [
+                "matched:patch.json:was_generated_by:0",
+                "unmapped:patch.unmapped_facts.json|Temperature was 300 K.|No target field.|line 4",
+            ],
+        )
+        self.assertEqual(review_items[0]["issues"], [
+            "unsupported_fact (major) Not supported by source. Suggested field: description",
+        ])
 
     async def test_resolve_patch_review_excludes_without_changing_draft(self):
         from unittest import mock as unittest_mock
@@ -1151,6 +1413,65 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
             "excluded: Source instrument conflicts with the NMR context. Target: was_generated_by.",
         )
 
+    async def test_resolve_patch_review_excludes_missing_agent_decision(self):
+        from unittest import mock as unittest_mock
+
+        output_repository = FakeOutputRepository()
+        output_repository.initial_draft = INITIAL_DRAFT_OUTPUT
+        resolution = PatchReviewResolution(
+            final_draft=INITIAL_DRAFT_OUTPUT,
+            item_decisions=[
+                {
+                    "id": "matched:patch:description:0",
+                    "outcome": "already_present",
+                    "note": "Description is already represented.",
+                    "target_path": "description",
+                }
+            ],
+        )
+        service = ExtractionService(
+            FakeProfileRepository(),  # type: ignore[arg-type]
+            settings=None,  # type: ignore[arg-type]
+            datasource_service=FakeDataSourceService(make_data_package()),  # type: ignore[arg-type]
+            ollama_client=FakeOllamaClient({}),  # type: ignore[arg-type]
+            output_repository=output_repository,
+        )
+
+        with unittest_mock.patch(
+            "app.services.extraction_service.resolve_patch_review_items",
+            return_value=resolution,
+        ):
+            result = await service.resolve_patch_review_items(
+                data_package_id="package-id",
+                profile_identifier="test-profile",
+                review_items=[
+                    {
+                        "id": "matched:patch:description:0",
+                        "kind": "matched",
+                        "path": "description",
+                    },
+                    {
+                        "id": "matched:patch:keywords:1",
+                        "kind": "matched",
+                        "path": "keywords",
+                    },
+                ],
+            )
+
+        self.assertEqual(result["resolved_count"], 2)
+        self.assertEqual(result["unresolved_item_ids"], [])
+        self.assertEqual(
+            output_repository.review_state["resolved_item_ids"],
+            ["matched:patch:description:0", "matched:patch:keywords:1"],
+        )
+        self.assertIn(
+            "excluded: The resolution agent did not return a decision",
+            output_repository.review_state["resolution_notes"]["matched:patch:keywords:1"],
+        )
+        self.assertTrue(
+            any("Converted 1 missing or unresolved decisions" in entry for entry in result["resolution_log"]),
+        )
+
     async def test_resolve_patch_review_rejects_invalid_full_draft(self):
         from unittest import mock as unittest_mock
 
@@ -1196,6 +1517,7 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["resolved_count"], 0)
         self.assertEqual(result["unresolved_item_ids"], ["matched:patch:description:0"])
         self.assertTrue(result["validation_errors"])
+        self.assertTrue(result["resolution_log"])
         self.assertIsNone(output_repository.draft)
         self.assertEqual(output_repository.review_state["resolved_item_ids"], [])
 

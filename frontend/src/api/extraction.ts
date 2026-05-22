@@ -10,6 +10,10 @@ export type PatchProgress = {
   accepted_fields?: string[];
   total_candidates?: number;
   validation_errors?: string[];
+  resolution_active?: boolean;
+  resolution_log?: string[];
+  resolution_resolved_count?: number;
+  resolution_unresolved_item_ids?: string[];
 };
 
 export type PatchArtifact = {
@@ -60,6 +64,7 @@ export type PatchReviewResolutionResponse = {
   unresolved_item_ids: string[];
   validation_errors: string[];
   resolution_decisions: PatchReviewDecision[];
+  resolution_log: string[];
 };
 
 export async function getExistingInitialContext(data_package_id: string): Promise<InitialContext | null> {
@@ -109,6 +114,7 @@ export async function patchDraft(input: {
   data_package_id: string;
   profile_identifier: string;
   num_chunks_per_turn: number;
+  auto_resolve: boolean;
 }): Promise<PatchDraftResponse> {
   return readJson(await fetch(apiBaseUrl + '/extraction/patch-draft', {
     method: 'POST',
