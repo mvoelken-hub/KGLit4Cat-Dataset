@@ -77,3 +77,24 @@ export interface PatchDraftResponse {
   draft: object;
   status: TaskStatus;
 }
+
+export interface VocabTermScheme {
+  rdf_type: string;
+  properties: string[];
+  applicable_relationships: string[];
+  count: number;
+}
+
+export interface VocabSchemeInfo {
+  identifier: string;
+  source: string;
+  rdf_format: string;
+  num_triples: number;
+  description: string | null;
+  vocab_term_schemes: VocabTermScheme[];
+}
+
+export interface VocabEmbeddingStatus {
+  pending_updates: number;
+  task_status: TaskStatus;
+}

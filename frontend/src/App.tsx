@@ -19,6 +19,7 @@ import {
 import { deleteProfile, listProfiles, registerProfile } from './api/profiles';
 import { JsonEditor, type JsonObject, type JsonPatchMarker, type JsonValue, setValueAtPath, getValueAtPath, extractPatchInnerValue, PatchValueEditor } from './components/JsonEditor';
 import { ChunkingDialog } from './components/ChunkingDialog';
+import { VocabularyPanel } from './components/VocabularyPanel';
 import type { ChunkRequestResponse, ChunkResponse, DataPackageResponse, FileEntryResponse, InitialContext, ProfileManifestResponse, TextQualityConfig } from './api/types';
 import type { PatchArtifacts, PatchProgress, PatchReviewResolutionItem, PatchReviewState, PatchTaskStatus } from './api/extraction';
 
@@ -1137,6 +1138,7 @@ export function App() {
                   </div>
                 )}
               </div>
+              <VocabularyPanel onError={setMessage} />
             </>
           )}
         </aside>

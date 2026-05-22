@@ -55,6 +55,8 @@ class SemanticService:
         vocab_info_with_terms = await self.get_vocabulary(identifier)
         if vocab_info_with_terms is None:
             raise Exception("Failed to retrieve vocabulary after import.")
+
+        await self.generate_embeddings_for_vocabulary(identifier)
         
         return vocab_info_with_terms
     
@@ -168,20 +170,25 @@ class SemanticService:
 
         pending_updates = await self.semantic_graph_repository.check_pending_embedding_updates(identifier)
 
-        if not task_info or task_info.status == TaskStatus.CANCELLED:
+        if not pending_updates:
+            return 0, TaskStatus.COMPLETED
+
+        if task_info and task_info.status == TaskStatus.RUNNING:
+            return len(pending_updates), TaskStatus.RUNNING
+
+        if task_info and task_info.status == TaskStatus.CRASHED:
+            exception = task_info.task.exception()
+            raise exception if exception else Exception("Embedding generation task crashed without an exception.")
+
+        if not task_info or task_info.status in {TaskStatus.CANCELLED, TaskStatus.COMPLETED, TaskStatus.UNKNOWN}:
             await self.task_registry.create_task(
                 coro=self._run_embedding_generation(pending_vocab_resources=pending_updates),
                 type=TaskType.EMBEDDING,
                 name=TASK_NAME
             )
             return len(pending_updates), TaskStatus.RUNNING
-        
-        elif task_info.status == TaskStatus.CRASHED:
-            exception = task_info.task.exception()
-            raise exception if exception else Exception("Embedding generation task crashed without an exception.")
-        
-        else:
-            return len(pending_updates), task_info.status
+
+        return len(pending_updates), task_info.status
     # task runners
 
     async def _run_embedding_generation(self, pending_vocab_resources: list[VocabResource]) -> None:
