@@ -241,11 +241,26 @@ textarea.json-editor-input { resize: vertical; min-height: 80px; }
 .file-picker { display: grid; gap: 6px; }
 .panel-label { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; }
 .dialog-viewer { max-height: 420px; overflow: auto; border: 1px solid var(--line); border-radius: 0.6rem; background: rgba(255,255,255,0.7); padding: 8px 0; }
+.dialog-viewer .file-viewer-line { padding-right: 84px; }
 .dialog-viewer .file-viewer-line { user-select: text; }
 .dialog-viewer .line-content { user-select: text; }
 .dialog-viewer ::selection { background: rgba(99, 154, 0, 0.35); }
 .file-viewer-line { cursor: pointer; position: relative; }
+.file-viewer-line.line-quality-drop { color: var(--muted); }
+.file-viewer-line.line-quality-drop .line-content { opacity: 0.72; text-decoration: line-through; text-decoration-thickness: 1px; text-decoration-color: rgba(202, 116, 6, 0.72); }
 .file-viewer-line.line-protected { outline: 2px solid var(--accent); outline-offset: -2px; }
+.quality-badge { position: absolute; right: 36px; top: 50%; transform: translateY(-50%); border: 1px solid rgba(202, 116, 6, 0.54); border-radius: 999px; padding: 0.08rem 0.34rem; color: var(--warn); background: rgba(255, 248, 234, 0.92); font-family: 'Inter', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; font-size: 0.62rem; font-weight: 700; line-height: 1.2; pointer-events: none; }
+.quality-tooltip { position: absolute; right: 8px; bottom: calc(100% + 7px); z-index: 10004; display: none; max-width: min(430px, 70vw); padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #1f261f; color: #fff; box-shadow: 0 14px 40px rgba(26, 26, 26, 0.22); font-family: 'Inter', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; font-size: 0.72rem; line-height: 1.35; pointer-events: none; }
+.quality-tooltip::after { content: ""; position: absolute; right: 18px; top: 100%; width: 10px; height: 10px; background: #1f261f; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); transform: translateY(-5px) rotate(45deg); }
+.file-viewer-line:hover .quality-tooltip, .file-viewer-line:focus-within .quality-tooltip { display: grid; gap: 5px; }
+.quality-tooltip-kind { font-weight: 800; letter-spacing: 0.08em; }
+.quality-tooltip-kind.keep { color: #90d67c; }
+.quality-tooltip-kind.drop { color: #ff9a7a; }
+.quality-tooltip-score { color: rgba(255,255,255,0.78); }
+.quality-tooltip-reasons { display: flex; flex-wrap: wrap; gap: 4px; }
+.quality-reason { border: 1px solid rgba(255,255,255,0.22); border-radius: 999px; padding: 0.08rem 0.34rem; background: rgba(255,255,255,0.08); }
+.quality-reason.positive { color: #90d67c; border-color: rgba(144, 214, 124, 0.46); background: rgba(74, 116, 0, 0.22); }
+.quality-reason.negative { color: #ff9a7a; border-color: rgba(255, 154, 122, 0.46); background: rgba(202, 116, 6, 0.18); }
 .protect-badge { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); color: var(--accent); font-size: 0.9rem; pointer-events: none; }
 button.small { padding: 0.4rem 0.7rem; font-size: 0.78rem; }
 
