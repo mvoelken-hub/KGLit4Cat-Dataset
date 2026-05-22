@@ -1,7 +1,9 @@
 import unittest
 
 from neo4j.time import Date as Neo4jDate
+from rdflib import Graph
 
+from app.domain.semantics import VocabSchemeInfo
 from infra.neo4j_semantic_graph_repository import Neo4jSemanticGraphRepository
 
 
@@ -52,6 +54,23 @@ class QueryReturningNeo4jDriver:
         return self.result
 
 
+class ImportNeo4jDriver:
+    def __init__(self):
+        self.added_graphs: list[Graph] = []
+        self.constraints: list[tuple[str, str]] = []
+        self.queries: list[tuple[str, dict | None]] = []
+
+    def add_graph(self, graph: Graph) -> None:
+        self.added_graphs.append(graph)
+
+    async def create_uniqueness_constraint(self, label: str, property_key: str) -> None:
+        self.constraints.append((label, property_key))
+
+    async def query(self, query: str, parameters: dict | None = None, db_name: str | None = None) -> list[dict]:
+        self.queries.append((query, parameters))
+        return []
+
+
 class Neo4jSemanticGraphRepositoryTests(unittest.IsolatedAsyncioTestCase):
     async def test_get_vocabulary_returns_single_rdf_type(self):
         repository = Neo4jSemanticGraphRepository(FakeNeo4jDriver(), FakeOllamaClient())
@@ -63,6 +82,41 @@ class Neo4jSemanticGraphRepositoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(vocab.vocab_term_schemes[0].properties, ["skos__prefLabel"])
         self.assertEqual(vocab.vocab_term_schemes[0].applicable_relationships, ["skos__broader"])
         self.assertEqual(vocab.vocab_term_schemes[0].count, 532)
+
+    async def test_cleanup_untyped_resources_deletes_resource_only_nodes(self):
+        driver = QueryReturningNeo4jDriver([])
+        repository = Neo4jSemanticGraphRepository(driver, FakeOllamaClient())
+
+        await repository.cleanup_untyped_resources()
+
+        query, _ = driver.queries[0]
+        self.assertIn("MATCH (r:Resource)", query)
+        self.assertIn("labels(r)", query)
+        self.assertIn("label <> 'Resource'", query)
+        self.assertIn("DETACH DELETE r", query)
+
+    async def test_import_vocabulary_cleans_resource_only_nodes_after_graph_import(self):
+        driver = ImportNeo4jDriver()
+        repository = Neo4jSemanticGraphRepository(driver, FakeOllamaClient())
+        vocab_info = VocabSchemeInfo(
+            identifier="urn:vocab",
+            source="vocab.ttl",
+            rdf_format="turtle",
+            num_triples=0,
+            resources=["urn:typed"],
+        )
+
+        await repository.import_vocabulary(vocab_info, Graph())
+
+        self.assertEqual(len(driver.added_graphs), 1)
+        cleanup_query, _ = driver.queries[0]
+        self.assertIn("MATCH (r:Resource)", cleanup_query)
+        self.assertIn("labels(r)", cleanup_query)
+        self.assertIn("label <> 'Resource'", cleanup_query)
+        self.assertIn("DETACH DELETE r", cleanup_query)
+        link_query, link_parameters = driver.queries[1]
+        self.assertIn("HAS_RESOURCE", link_query)
+        self.assertEqual(link_parameters["resources"], ["urn:typed"])
 
     async def test_vector_candidate_query_uses_rdf_type_index_and_vocabulary_filter(self):
         driver = QueryReturningNeo4jDriver([{"uri": "urn:term", "score": 0.91}])

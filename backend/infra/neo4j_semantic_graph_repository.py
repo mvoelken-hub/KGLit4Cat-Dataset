@@ -34,6 +34,7 @@ class Neo4jSemanticGraphRepository:
 
     async def import_vocabulary(self, vocab_scheme_info: VocabSchemeInfo, rdf_graph: Graph) -> None:
         self._neo4j_driver.add_graph(rdf_graph)
+        await self.cleanup_untyped_resources()
 
         await self._neo4j_driver.create_uniqueness_constraint(label="VocabScheme", property_key="identifier")
 
@@ -51,6 +52,15 @@ class Neo4jSemanticGraphRepository:
                 "props": vocab_scheme_info.model_dump(exclude={"resources", "vocab_term_schemes"}),
                 "resources": vocab_scheme_info.resources,
             },
+        )
+
+    async def cleanup_untyped_resources(self) -> None:
+        await self._neo4j_driver.query(
+            """
+            MATCH (r:Resource)
+            WHERE size([label IN labels(r) WHERE label <> 'Resource']) = 0
+            DETACH DELETE r
+            """
         )
 
     async def get_vocabulary(self, identifier: str) -> VocabSchemeInfo | None:

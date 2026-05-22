@@ -184,6 +184,23 @@ class SemanticServiceVocabQueryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.seeds[0].vector_rank, 1)
         self.assertEqual(result.seeds[0].fulltext_rank, 1)
 
+    async def test_empty_allowed_relationships_keeps_query_to_seed_resources(self):
+        repository = FakeSemanticGraphRepository(make_vocab())
+        service = make_service(repository, FakeOllamaClient())
+
+        result = await service.query_vocabulary(
+            "urn:vocab",
+            VocabQuery(
+                rdf_type="skos__Concept",
+                fulltext_query="temperature",
+                allowed_rel_types=[],
+            ),
+        )
+
+        self.assertIsNone(repository.expand_call)
+        self.assertEqual(repository.resource_uris, {"urn:seed"})
+        self.assertEqual(result.graph_statements, [])
+
     async def test_invalid_rdf_type_is_rejected(self):
         repository = FakeSemanticGraphRepository(make_vocab())
         service = make_service(repository, FakeOllamaClient())

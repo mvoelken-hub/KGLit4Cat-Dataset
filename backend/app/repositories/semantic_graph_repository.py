@@ -18,6 +18,9 @@ class SemanticGraphRepository(Protocol):
     async def import_vocabulary(self, vocab_scheme_info: VocabSchemeInfo, rdf_graph: Graph) -> None:
         ...
 
+    async def cleanup_untyped_resources(self) -> None:
+        ...
+
     async def get_vocabulary(self, identifier: str) -> VocabSchemeInfo | None:
         ...
 

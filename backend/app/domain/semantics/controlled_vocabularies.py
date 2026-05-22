@@ -1,5 +1,6 @@
 from typing import Any
 from rdflib import Graph, URIRef
+from rdflib.namespace import RDF
 
 from pydantic import BaseModel, Field
 
@@ -70,11 +71,11 @@ class VocabSchemeInfo(BaseModel):
 
         graph = loaded_graph.graph
 
-        resource_uris = [
-            str(node)
-            for node in set(graph.subjects()) | set(graph.objects())
-            if isinstance(node, URIRef)
-        ]
+        resource_uris = sorted(
+            str(subject)
+            for subject in set(graph.subjects(RDF.type, None))
+            if isinstance(subject, URIRef)
+        )
 
         return cls(
             identifier=graph.identifier,

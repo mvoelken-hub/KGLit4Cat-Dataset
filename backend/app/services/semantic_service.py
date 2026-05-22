@@ -66,6 +66,9 @@ class SemanticService:
     async def list_vocabularies(self) -> list[str]:
         return await self.semantic_graph_repository.list_vocabulary_identifiers()
 
+    async def cleanup_untyped_resources(self) -> None:
+        await self.semantic_graph_repository.cleanup_untyped_resources()
+
     async def query_vocabulary(self, identifier: str, query: VocabQuery) -> VocabQueryResult:
         vocab_scheme_info = await self.get_vocabulary(identifier)
         if vocab_scheme_info is None:

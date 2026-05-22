@@ -68,6 +68,8 @@ async def start_setup(
     # Neo4j connection and Graph bootstrap
 
     await neo4j_driver.wait_for_connection(60.0, 5.0)
+    logger.info("Removing Resource-only semantic graph nodes.")
+    await semantic_service.cleanup_untyped_resources()
 
     if settings.skip_initial_vocab_import:
         logger.info("Skipping initial vocabulary import because skip_initial_vocab_import is enabled.")
@@ -91,7 +93,10 @@ async def run_initial_vocab_bootstrap() -> None:
     logger.info("Starting initial vocabulary bootstrap.")
     try:
         await neo4j_driver.wait_for_connection(60.0, 5.0)
-        await import_initial_vocab(get_semantic_service(), logger=logger)
+        semantic_service = get_semantic_service()
+        logger.info("Removing Resource-only semantic graph nodes.")
+        await semantic_service.cleanup_untyped_resources()
+        await import_initial_vocab(semantic_service, logger=logger)
         logger.info("Initial vocabulary bootstrap completed.")
     finally:
         await task_registry.cancel_all_tasks()

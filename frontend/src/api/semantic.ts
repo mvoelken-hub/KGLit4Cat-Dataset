@@ -35,6 +35,7 @@ export async function queryVocabulary(params: { identifier: string; rdfType: str
       vector_top_k: 10,
       fulltext_top_k: 10,
       seed_top_k: 5,
+      allowed_rel_types: [],
       max_hops: 1,
       max_statements_per_seed: 25,
     }),
