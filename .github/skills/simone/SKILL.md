@@ -22,18 +22,22 @@ SIMONE is a metadata extraction pipeline that takes dataset archives (ZIP files)
 backend/
   app/
     api/v1/           # FastAPI routers (extraction, profiles, datasources, semantic, system)
-    core/             # Config, logging, task registry
+      schemas/        # Pydantic request/response models for all v1 endpoints
+    bootstrap.py      # Startup orchestration: pulls Ollama models, imports initial vocabularies
+    cli.py            # Typer CLI for Docker Compose management, backups, health checks
+    core/             # Config, logging, task registry, initial vocabularies
+    dependencies.py   # Manual DI container: instantiates singleton repositories and services
     domain/           # Business logic: datasources, extraction agents, profiles, semantics
     neo4j/            # Driver, indexes, types
     ollama/           # Client wrapper
-    repositories/     # Protocols for persistence
+    repositories/     # Protocol classes for persistence
     services/         # Service layer orchestrating repositories and agents
-  infra/              # Filesystem implementations of repositories
+  infra/              # Filesystem and Neo4j implementations of repository protocols
   tests/              # pytest suite
 frontend/
   src/
-    api/              # API client functions (datasources, extraction, profiles, types)
-    components/         # Reusable UI components (JsonEditor)
+    api/              # API client functions (client, datasources, extraction, profiles, semantic, types)
+    components/       # Reusable UI components (ChunkingDialog, JsonEditor, VocabularyPanel)
     App.tsx           # Main application shell
     styles.css        # All styles in one file
   vite.config.ts      # Vite config with /api/v1 proxy to localhost:8000
@@ -51,7 +55,10 @@ All persistence goes through Protocol classes in `app/repositories/`, implemente
 - `ExtractionOutputRepository` — saves/loads JSON artifacts per workflow_id
 - `DataSourceBlobRepository` — stores uploaded ZIP files
 - `ProfileRepository` — stores registered DCAT-AP profiles
-- `SemanticGraphRepository` — Neo4j graph operations
+- `SemanticGraphRepository` — Neo4j graph operations (vocabularies, embeddings, queries)
+
+### Dependency Injection
+`backend/app/dependencies.py` acts as a manual DI container. It instantiates repository and service singletons at module import time (e.g., `datasource_blob_repository = FileSystemDataSourceBlobRepository(...)`) and provides getter functions used by FastAPI `Depends`.
 
 ### Task Registry
 Long-running operations (chunking, patching) use `TaskRegistry` with `TaskStatus` enum:
@@ -65,17 +72,18 @@ Long-running operations (chunking, patching) use `TaskRegistry` with `TaskStatus
 - `readJson<T>()` — parses JSON, throws `ApiError` on non-ok responses
 - `buildQuery()` — helper for URLSearchParams
 
+Additional API modules:
+- `frontend/src/api/semantic.ts` — vocabulary import, embedding checks, vocabulary queries
+- `frontend/src/api/types.ts` — shared TypeScript types (TaskStatus, ChunkResponse, VocabQueryResult, etc.)
+
 ### State Management
 Pure React hooks in `App.tsx`. No external state library.
 Key states: `packages`, `profiles`, `selectedPackageId`, `selectedProfile`, `context`, `draft`, `busy`, `message`
 
-### JsonEditor Component
-`frontend/src/components/JsonEditor.tsx`
-- Tree sidebar showing only containers (objects/arrays) with child counts
-- Editable panel with form fields for strings, numbers, booleans
-- Array items render as clickable cards
-- Raw JSON toggle for reference
-- Live updates via `onChange` callback
+### Components
+- `JsonEditor.tsx` — Tree sidebar showing only containers (objects/arrays) with child counts; editable panel with form fields for strings, numbers, booleans; array items render as clickable cards; raw JSON toggle for reference; live updates via `onChange` callback
+- `ChunkingDialog.tsx` — Modal for configuring dataset chunking parameters (buffer window size, semantic threshold, text quality filters, protected lines)
+- `VocabularyPanel.tsx` — Modal for browsing/importing controlled vocabularies, checking embedding status, and running vocabulary queries
 
 ### CSS Architecture
 All styles in `frontend/src/styles.css`. Uses CSS custom properties:
@@ -145,10 +153,10 @@ The CLI creates `.env` from `.env.example` on first use and sets `APP_ENV` autom
 ## Common Tasks
 
 ### Adding a New API Endpoint
-1. Add route handler in `backend/app/api/v1/<domain>.py`
-2. Add request/response schemas in `backend/app/api/v1/schemas/`
+1. Add request/response schemas in `backend/app/api/v1/schemas/<domain>.py`
+2. Add route handler in `backend/app/api/v1/<domain>.py`
 3. Add service method in `backend/app/services/<domain>_service.py`
-4. Wire up dependency injection in `backend/app/dependencies.py`
+4. Wire up dependency injection in `backend/app/dependencies.py` (instantiate repository/service singletons)
 5. Add frontend API function in `frontend/src/api/<domain>.ts`
 6. Update `frontend/src/App.tsx` to use it
 
@@ -162,6 +170,15 @@ The CLI creates `.env` from `.env.example` on first use and sets `APP_ENV` autom
 2. Add handler function (e.g., `onNewStep()`)
 3. Add `BusyKey` variant if needed
 4. Add API function in `frontend/src/api/`
+
+### Working with Vocabularies and Semantic Graph
+- Backend domain logic: `backend/app/domain/semantics/` (controlled_vocabularies.py, ontologies.py, rdf.py, vocab_queries.py)
+- Backend service: `backend/app/services/semantic_service.py`
+- Backend repository: `infra/neo4j_semantic_graph_repository.py`
+- Frontend API: `frontend/src/api/semantic.ts`
+- Frontend UI: `frontend/src/components/VocabularyPanel.tsx`
+- API endpoints: `backend/app/api/v1/semantic.py` (prefix `/semantic`)
+- Initial vocabularies loaded at startup are defined in `backend/app/core/initial_vocabs.py`
 
 ## Environment Files
 - `.env.example` — template with shared defaults (hostnames, ports, model settings). No `APP_ENV` — the CLI sets it per command.
