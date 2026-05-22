@@ -14,17 +14,21 @@ function DetailField({ label, value }: { label: string; value?: string | number 
   );
 }
 
-function formatResourceLabel(resource: VocabQueryResult['resources'][string] | undefined, fallback: string): string {
-  const labelKeys = ['prefLabel', 'label', 'title', 'name'];
-  for (const key of labelKeys) {
-    const value = resource?.properties[key];
+function findResourceLabel(resource: VocabQueryResult['resources'][string] | undefined): string | null {
+  if (!resource) return null;
+
+  const labelKeyMatches = ['preflabel', 'label', 'title', 'name'];
+  for (const [key, value] of Object.entries(resource.properties)) {
+    const normalizedKey = key.toLowerCase().replace(/[_:-]/g, '');
+    if (!labelKeyMatches.some((labelKey) => normalizedKey.endsWith(labelKey))) continue;
+
     if (typeof value === 'string' && value.trim()) return value;
     if (Array.isArray(value)) {
       const first = value.find((item) => typeof item === 'string' && item.trim());
       if (typeof first === 'string') return first;
     }
   }
-  return fallback;
+  return null;
 }
 
 function VocabularyDetails({ details }: { details: VocabSchemeInfo }) {
@@ -98,10 +102,12 @@ function VocabularyDetails({ details }: { details: VocabSchemeInfo }) {
           <ul className="vocab-query-results">
             {queryResult.seeds.map((seed) => {
               const resource = queryResult.resources[seed.uri];
+              const label = findResourceLabel(resource);
+              const showLabel = label && label !== seed.uri;
               return (
                 <li key={seed.uri}>
-                  <strong>{formatResourceLabel(resource, seed.uri)}</strong>
-                  <code>{seed.uri}</code>
+                  {showLabel && <strong>{label}</strong>}
+                  <a href={seed.uri} target="_blank" rel="noreferrer">{seed.uri}</a>
                   <span>{seed.vector_rank ? `Vector #${seed.vector_rank}` : 'No vector rank'} | {seed.fulltext_rank ? `Full-text #${seed.fulltext_rank}` : 'No full-text rank'}</span>
                 </li>
               );

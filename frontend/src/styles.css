@@ -315,7 +315,8 @@ button.small { padding: 0.4rem 0.7rem; font-size: 0.78rem; }
 .vocab-query-results { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
 .vocab-query-results li { display: grid; gap: 5px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,0.6); }
 .vocab-query-results strong { overflow-wrap: anywhere; font-size: 0.9rem; }
-.vocab-query-results code { width: fit-content; max-width: 100%; padding: 3px 6px; border-radius: 6px; background: rgba(255,255,255,0.72); color: var(--ink); overflow-wrap: anywhere; white-space: normal; }
+.vocab-query-results a { width: fit-content; max-width: 100%; color: var(--ink); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.78rem; overflow-wrap: anywhere; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.vocab-query-results a:hover { color: var(--accent-dark); }
 .vocab-query-results span { color: var(--muted); font-size: 0.78rem; }
 .vocab-detail-panel .json-panel { max-height: 240px; font-size: 0.78rem; padding: 12px; background: rgba(255,255,255,0.72); color: var(--ink); }
 .vocab-term-scheme-list { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 8px; }
