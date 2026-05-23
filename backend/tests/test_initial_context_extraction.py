@@ -902,11 +902,23 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
             token_usage["combined"]["average_total_tokens_per_patch"],
             0,
         )
+        self.assertGreater(
+            token_usage["combined"]["average_input_tokens_per_request"],
+            0,
+        )
+        self.assertGreater(
+            token_usage["combined"]["average_total_tokens_per_request"],
+            0,
+        )
         workflow_usage = await service.get_token_usage("package-id")
         self.assertIn("patch_discovery", workflow_usage["agents"])
         self.assertIn("schema_patch_writer", workflow_usage["agents"])
         self.assertGreater(
             workflow_usage["combined"]["average_total_tokens_per_operation"],
+            0,
+        )
+        self.assertGreater(
+            workflow_usage["combined"]["average_input_tokens_per_request"],
             0,
         )
 

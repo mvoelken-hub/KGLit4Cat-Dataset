@@ -125,6 +125,16 @@ async def get_current_settings(settings: Settings = Depends(get_settings)):
     return settings.model_dump(mode="json")
 
 
+@router.get("/llm-budget")
+async def get_llm_budget(settings: Settings = Depends(get_settings)):
+    return {
+        "chat_model": settings.ollama_chat_model,
+        "max_context_length": settings.max_context_length,
+        "warning_threshold": 0.8,
+        "danger_threshold": 1.0,
+    }
+
+
 @router.get("/tasks", response_model=list[TaskResponse])
 async def get_tasks(task_registry: TaskRegistry = Depends(get_task_registry)):
     """

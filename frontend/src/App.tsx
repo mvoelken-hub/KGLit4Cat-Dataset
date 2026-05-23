@@ -17,6 +17,7 @@ import {
   setProtectedFields as apiSetProtectedFields,
 } from './api/extraction';
 import { deleteProfile, getProfileJsonSchema, listProfiles, registerProfile } from './api/profiles';
+import { getLlmBudget, type LlmBudget } from './api/system';
 import { JsonEditor, type JsonObject, type JsonPatchMarker, type JsonSchemaDocument, type JsonValue, setValueAtPath } from './components/JsonEditor';
 import { ChunkingDialog } from './components/ChunkingDialog';
 import { VocabularyPanel } from './components/VocabularyPanel';
@@ -274,16 +275,35 @@ function usageAverage(usage: PatchTokenUsageEntry, unit: 'patch' | 'operation', 
   return typeof total === 'number' ? total / Math.max(1, Number(count || 1)) : 0;
 }
 
+function requestAverage(usage: PatchTokenUsageEntry, kind: 'input' | 'output' | 'total'): number {
+  const key = `average_${kind}_tokens_per_request` as keyof PatchTokenUsageEntry;
+  const preferred = usage[key];
+  if (typeof preferred === 'number') return preferred;
+  const totalKey = `${kind}_tokens` as keyof PatchTokenUsageEntry;
+  const total = usage[totalKey];
+  return typeof total === 'number' ? total / Math.max(1, Number(usage.requests || 1)) : 0;
+}
+
+function usageBudgetState(usage: PatchTokenUsageEntry, budget?: LlmBudget | null): 'ok' | 'warning' | 'danger' {
+  if (!budget?.max_context_length) return 'ok';
+  const avgInput = requestAverage(usage, 'input');
+  if (avgInput >= budget.max_context_length * budget.danger_threshold) return 'danger';
+  if (avgInput >= budget.max_context_length * budget.warning_threshold) return 'warning';
+  return 'ok';
+}
+
 function TokenUsageSummary({
   tokenUsage,
   averageUnit = 'patch',
   heading = 'Token usage',
   agentKeys,
+  budget,
 }: {
   tokenUsage?: PatchTokenUsage | null;
   averageUnit?: 'patch' | 'operation';
   heading?: string;
   agentKeys?: string[];
+  budget?: LlmBudget | null;
 }) {
   const allowedAgents = agentKeys ? new Set(agentKeys) : null;
   const agentEntries = Object.entries(tokenUsage?.agents ?? {})
@@ -314,14 +334,23 @@ function TokenUsageSummary({
       <span>{heading}</span>
       <div>
         {rows.map((row) => (
-          <div className={`token-usage-row ${row.key === 'combined' ? 'combined' : ''}`} key={row.key}>
+          <div className={`token-usage-row ${row.key === 'combined' ? 'combined' : ''} ${usageBudgetState(row.usage, budget)}`} key={row.key}>
             <strong>{row.label}</strong>
-            <span>{formatTokenCount(usageAverage(row.usage, averageUnit, 'total'))} avg total / {averageUnit === 'patch' ? 'patch' : 'agent call'}</span>
+            <span>{formatTokenCount(usageAverage(row.usage, averageUnit, 'total'))} avg total / {averageUnit === 'patch' ? 'patch' : 'run'}</span>
             <small>
-              {formatTokenCount(usageAverage(row.usage, averageUnit, 'input'))} in / {formatTokenCount(usageAverage(row.usage, averageUnit, 'output'))} out avg
+              {formatTokenCount(requestAverage(row.usage, 'input'))} input / {formatTokenCount(requestAverage(row.usage, 'output'))} output avg per model call
               {' - '}
-              {formatTokenCount(row.usage.requests)} request{row.usage.requests === 1 ? '' : 's'}
+              {formatTokenCount(requestAverage(row.usage, 'total'))} total avg per model call
+              {' - '}
+              {formatTokenCount(row.usage.requests)} model call{row.usage.requests === 1 ? '' : 's'}
             </small>
+            {budget?.max_context_length ? (
+              <small>
+                limit: {formatTokenCount(budget.max_context_length)} input tokens
+                {usageBudgetState(row.usage, budget) === 'warning' && ' - Average input per model call is near the configured context window.'}
+                {usageBudgetState(row.usage, budget) === 'danger' && ' - Average input per model call exceeds the configured context window.'}
+              </small>
+            ) : null}
           </div>
         ))}
       </div>
@@ -420,6 +449,7 @@ export function App() {
   const [patchProgress, setPatchProgress] = useState<PatchProgress | null>(null);
   const [patchArtifacts, setPatchArtifacts] = useState<PatchArtifacts | null>(null);
   const [tokenUsage, setTokenUsage] = useState<PatchTokenUsage | null>(null);
+  const [llmBudget, setLlmBudget] = useState<LlmBudget | null>(null);
   const [activeProfileSchema, setActiveProfileSchema] = useState<JsonSchemaDocument | null>(null);
   const [patchReviewState, setPatchReviewState] = useState<PatchReviewState>(emptyReviewState);
   const [busy, setBusy] = useState<BusyKey | null>('load');
@@ -481,7 +511,8 @@ export function App() {
   async function refresh() {
     setBusy('load');
     try {
-      const [nextPackages, nextProfiles] = await Promise.all([listDataPackages(), listProfiles()]);
+      const [nextPackages, nextProfiles, nextBudget] = await Promise.all([listDataPackages(), listProfiles(), getLlmBudget()]);
+      setLlmBudget(nextBudget);
       const storedPackageId = readStoredSelectedPackageId();
       setPackages(nextPackages);
       setProfiles(nextProfiles);
@@ -1204,7 +1235,7 @@ export function App() {
                   <div className="chips">{context.keywords.map((keyword) => <span key={keyword}>{keyword}</span>)}</div>
                 </div>
               )}
-              <TokenUsageSummary tokenUsage={tokenUsage} averageUnit="operation" heading="Extraction token usage" agentKeys={['initial_context']} />
+              <TokenUsageSummary tokenUsage={tokenUsage} averageUnit="operation" heading="Extraction token usage" agentKeys={['initial_context']} budget={llmBudget} />
             </div>
           </article>
 
@@ -1263,7 +1294,7 @@ export function App() {
                     {progressTotalBatches > 0 && <span>Patching batch {progressBatchNo} of {progressTotalBatches}</span>}
                   </div>
                   <div className="patch-progress-track" aria-hidden="true"><div style={{ width: `${progressPercent}%` }} /></div>
-                  <TokenUsageSummary tokenUsage={patchProgress?.token_usage} averageUnit="patch" />
+                  <TokenUsageSummary tokenUsage={patchProgress?.token_usage} averageUnit="patch" budget={llmBudget} />
                   <ResolutionLogList entries={patchProgress?.resolution_log ?? []} />
                 </div>
               )}

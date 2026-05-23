@@ -1234,6 +1234,7 @@ class ExtractionService:
         output_tokens = int(values.get("output_tokens", 0))
         total_tokens = int(values.get("total_tokens", 0))
         denominator = max(1, int(values.get(count_key, 0)))
+        requests = max(1, int(values.get("requests", 0)))
         return {
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
@@ -1244,6 +1245,9 @@ class ExtractionService:
             f"average_input_tokens_per_{average_suffix}": round(input_tokens / denominator, 2),
             f"average_output_tokens_per_{average_suffix}": round(output_tokens / denominator, 2),
             f"average_total_tokens_per_{average_suffix}": round(total_tokens / denominator, 2),
+            "average_input_tokens_per_request": round(input_tokens / requests, 2),
+            "average_output_tokens_per_request": round(output_tokens / requests, 2),
+            "average_total_tokens_per_request": round(total_tokens / requests, 2),
         }
 
     def _update_patch_token_usage_progress(
