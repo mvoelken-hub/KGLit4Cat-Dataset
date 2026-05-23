@@ -6,6 +6,7 @@ both the initial-draft expander and the field-level patch extraction pipeline.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any
 
@@ -168,3 +169,136 @@ def get_top_level_fields(
         )
 
     return fields
+
+
+def json_pointer_tokens(pointer: str) -> list[str]:
+    """Return unescaped JSON Pointer tokens, or an empty list for invalid input."""
+    if pointer == "":
+        return []
+    if not pointer.startswith("/"):
+        return []
+    return [
+        token.replace("~1", "/").replace("~0", "~")
+        for token in pointer.split("/")[1:]
+    ]
+
+
+def json_pointer_top_level_field(pointer: str) -> str | None:
+    tokens = json_pointer_tokens(pointer)
+    return tokens[0] if tokens else None
+
+
+def resolve_json_pointer(document: Any, pointer: str) -> Any:
+    """Resolve a JSON Pointer against *document*.
+
+    Raises ``KeyError`` or ``IndexError`` when the pointer cannot be resolved.
+    """
+    current = document
+    for token in json_pointer_tokens(pointer):
+        if isinstance(current, dict):
+            current = current[token]
+        elif isinstance(current, list):
+            current = current[int(token)]
+        else:
+            raise KeyError(pointer)
+    return current
+
+
+def slice_profile_json_schema(
+    *,
+    profile_json_schema: dict[str, Any],
+    target_class: str,
+    field_names: list[str] | set[str],
+) -> dict[str, Any]:
+    """Return a JSON Schema containing only selected target-class fields.
+
+    Referenced ``$defs`` are copied recursively so nested object schemas remain
+    usable for prompt context. This slice is intended for LLM context, not as
+    the authoritative validator.
+    """
+    selected_fields = set(field_names)
+    defs = profile_json_schema.get("$defs")
+    if not isinstance(defs, dict) or target_class not in defs:
+        return _slice_root_schema(profile_json_schema, selected_fields)
+
+    target_schema = deepcopy(defs[target_class])
+    properties = target_schema.get("properties")
+    if isinstance(properties, dict):
+        target_schema["properties"] = {
+            name: deepcopy(schema)
+            for name, schema in properties.items()
+            if name in selected_fields
+        }
+    required = target_schema.get("required")
+    if isinstance(required, list):
+        target_schema["required"] = [
+            name for name in required if name in selected_fields
+        ]
+
+    result: dict[str, Any] = {
+        "$schema": profile_json_schema.get(
+            "$schema",
+            "https://json-schema.org/draft/2019-09/schema",
+        ),
+        "$defs": {target_class: target_schema},
+        "$ref": f"#/$defs/{target_class}",
+    }
+    if "$id" in profile_json_schema:
+        result["$id"] = profile_json_schema["$id"]
+
+    _copy_reachable_defs(result, source_defs=defs, target_defs=result["$defs"])
+    return result
+
+
+def _slice_root_schema(
+    schema: dict[str, Any],
+    selected_fields: set[str],
+) -> dict[str, Any]:
+    result = deepcopy(schema)
+    properties = result.get("properties")
+    if isinstance(properties, dict):
+        result["properties"] = {
+            name: value for name, value in properties.items() if name in selected_fields
+        }
+    required = result.get("required")
+    if isinstance(required, list):
+        result["required"] = [name for name in required if name in selected_fields]
+    defs = result.get("$defs")
+    if isinstance(defs, dict):
+        target_defs: dict[str, Any] = {}
+        result["$defs"] = target_defs
+        _copy_reachable_defs(result, source_defs=defs, target_defs=target_defs)
+    return result
+
+
+def _copy_reachable_defs(
+    value: Any,
+    *,
+    source_defs: dict[str, Any],
+    target_defs: dict[str, Any],
+) -> None:
+    for ref_name in _iter_schema_ref_names(value):
+        if ref_name in target_defs or ref_name not in source_defs:
+            continue
+        target_defs[ref_name] = deepcopy(source_defs[ref_name])
+        _copy_reachable_defs(
+            target_defs[ref_name],
+            source_defs=source_defs,
+            target_defs=target_defs,
+        )
+
+
+def _iter_schema_ref_names(value: Any) -> list[str]:
+    refs: list[str] = []
+    if isinstance(value, dict):
+        ref = value.get("$ref")
+        if isinstance(ref, str):
+            prefix = "#/$defs/"
+            if ref.startswith(prefix):
+                refs.append(ref[len(prefix):].split("/", 1)[0])
+        for child in value.values():
+            refs.extend(_iter_schema_ref_names(child))
+    elif isinstance(value, list):
+        for child in value:
+            refs.extend(_iter_schema_ref_names(child))
+    return refs

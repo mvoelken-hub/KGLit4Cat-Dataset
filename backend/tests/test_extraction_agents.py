@@ -30,7 +30,10 @@ from app.domain.extraction import (
     validate_json_output_against_schema,
     patch_draft_from_content_chunks,
 )
-from app.domain.extraction.schema_utils import get_top_level_fields
+from app.domain.extraction.schema_utils import (
+    get_top_level_fields,
+    slice_profile_json_schema,
+)
 from app.domain.extraction.sanitizers import (
     normalize_review_draft,
     sanitize_document_against_schema,
@@ -200,6 +203,21 @@ FIELD_PATCH_OUTPUT = {
     ]
 }
 
+LEAN_DESCRIPTION_PATCH_OUTPUT = {
+    "information": "The chunk provides an updated description.",
+    "evidence": ["chunk text"],
+    "location_picks": [
+        {
+            "path": "/description",
+            "rationale": "The information summarizes the dataset.",
+            "confidence": 0.9,
+        }
+    ],
+    "destination": "/description",
+    "patch": {"description": "Updated with chunk evidence."},
+    "reasoning": "Description is the best single destination.",
+}
+
 
 class TinyOutput(BaseModel):
     title: str
@@ -332,6 +350,21 @@ class ExtractionAgentHelperTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(agent._max_output_retries, DEFAULT_OUTPUT_RETRIES)
+
+    def test_slice_profile_json_schema_keeps_selected_fields_and_refs(self):
+        result = slice_profile_json_schema(
+            profile_json_schema=RICH_PROFILE_JSON_SCHEMA,
+            target_class="Dataset",
+            field_names=["was_generated_by"],
+        )
+
+        dataset_properties = result["$defs"]["Dataset"]["properties"]
+        self.assertEqual(list(dataset_properties), ["was_generated_by"])
+        self.assertIn("Activity", result["$defs"])
+        self.assertIn("Agent", result["$defs"])
+        self.assertIn("Concept", result["$defs"])
+        self.assertNotIn("publisher", dataset_properties)
+        self.assertNotIn("keyword", dataset_properties)
 
     def test_initial_context_model_accepts_expected_shape(self):
         context = InitialContext.model_validate(INITIAL_CONTEXT_OUTPUT)
@@ -796,29 +829,6 @@ class ExtractionAgentHelperTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(agent._max_output_retries, DEFAULT_OUTPUT_RETRIES)
 
     async def test_patch_draft_from_content_chunks_returns_updated_draft_and_patches(self):
-        from unittest import mock as unittest_mock
-
-        from app.domain.extraction.patch_quality import (
-            CandidateQualityRating,
-            PatchQualityReport,
-        )
-
-        accept_report = PatchQualityReport(
-            overall_decision="accept",
-            candidate_ratings=[
-                CandidateQualityRating(
-                    field_path="description",
-                    decision="accept",
-                    issues=[],
-                ),
-                CandidateQualityRating(
-                    field_path="keywords",
-                    decision="accept",
-                    issues=[],
-                ),
-            ],
-            summary="All candidates accepted.",
-        )
         progress: list[tuple[dict, str, int, int]] = []
 
         async def save_progress(
@@ -831,27 +841,23 @@ class ExtractionAgentHelperTests(unittest.IsolatedAsyncioTestCase):
                 (draft, patch_record.file_name, batch_no, total_batches)
             )
 
-        with unittest_mock.patch(
-            "app.domain.extraction.patch_draft.review_patch_semantic_quality",
-            return_value=accept_report,
-        ):
-            result = await patch_draft_from_content_chunks(
-                initial_context=InitialContext.model_validate(INITIAL_CONTEXT_OUTPUT),
-                initial_draft=INITIAL_DRAFT_OUTPUT,
-                content_chunks_by_file=make_content_chunks(),
-                profile_manifest=make_profile_manifest(),
-                profile_json_schema=PROFILE_JSON_SCHEMA,
-                model=TestModel(
-                    call_tools=[],
-                    custom_output_text=json.dumps(FIELD_PATCH_OUTPUT),
-                ),
-                num_chunks_per_turn=1,
-                on_patch_processed=save_progress,
-            )
+        result = await patch_draft_from_content_chunks(
+            initial_context=InitialContext.model_validate(INITIAL_CONTEXT_OUTPUT),
+            initial_draft=INITIAL_DRAFT_OUTPUT,
+            content_chunks_by_file=make_content_chunks(),
+            profile_manifest=make_profile_manifest(),
+            profile_json_schema=PROFILE_JSON_SCHEMA,
+            model=TestModel(
+                call_tools=[],
+                custom_output_text=json.dumps(LEAN_DESCRIPTION_PATCH_OUTPUT),
+            ),
+            num_chunks_per_turn=1,
+            on_patch_processed=save_progress,
+        )
 
         self.assertEqual(result.draft["description"], "Updated with chunk evidence.")
-        self.assertIn("chunk-keyword", result.draft["keywords"])
         self.assertIn("description", result.patches[0].accepted_fields)
+        self.assertEqual(result.patches[0].quality_report.overall_decision, "accept")
         self.assertEqual(len(progress), 1)
         self.assertEqual(progress[0][0]["description"], "Updated with chunk evidence.")
         self.assertEqual(progress[0][2:], (1, 1))
@@ -930,29 +936,6 @@ class ExtractionAgentHelperTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(progress, [])
 
     async def test_patch_draft_from_content_chunks_reloads_protected_fields_per_batch(self):
-        from unittest import mock as unittest_mock
-
-        from app.domain.extraction.patch_quality import (
-            CandidateQualityRating,
-            PatchQualityReport,
-        )
-
-        accept_report = PatchQualityReport(
-            overall_decision="accept",
-            candidate_ratings=[
-                CandidateQualityRating(
-                    field_path="description",
-                    decision="accept",
-                    issues=[],
-                ),
-                CandidateQualityRating(
-                    field_path="keywords",
-                    decision="accept",
-                    issues=[],
-                ),
-            ],
-            summary="All candidates accepted.",
-        )
         chunks = [
             [
                 ContentChunk(
@@ -978,28 +961,23 @@ class ExtractionAgentHelperTests(unittest.IsolatedAsyncioTestCase):
             protected_calls += 1
             return [] if protected_calls == 1 else ["description", "keywords"]
 
-        with unittest_mock.patch(
-            "app.domain.extraction.patch_draft.review_patch_semantic_quality",
-            return_value=accept_report,
-        ):
-            result = await patch_draft_from_content_chunks(
-                initial_context=InitialContext.model_validate(INITIAL_CONTEXT_OUTPUT),
-                initial_draft=INITIAL_DRAFT_OUTPUT,
-                content_chunks_by_file=chunks,
-                profile_manifest=make_profile_manifest(),
-                profile_json_schema=PROFILE_JSON_SCHEMA,
-                model=TestModel(
-                    call_tools=[],
-                    custom_output_text=json.dumps(FIELD_PATCH_OUTPUT),
-                ),
-                num_chunks_per_turn=1,
-                protected_fields_loader=load_protected_fields,
-            )
+        result = await patch_draft_from_content_chunks(
+            initial_context=InitialContext.model_validate(INITIAL_CONTEXT_OUTPUT),
+            initial_draft=INITIAL_DRAFT_OUTPUT,
+            content_chunks_by_file=chunks,
+            profile_manifest=make_profile_manifest(),
+            profile_json_schema=PROFILE_JSON_SCHEMA,
+            model=TestModel(
+                call_tools=[],
+                custom_output_text=json.dumps(LEAN_DESCRIPTION_PATCH_OUTPUT),
+            ),
+            num_chunks_per_turn=1,
+            protected_fields_loader=load_protected_fields,
+        )
 
         self.assertEqual(protected_calls, 2)
         self.assertEqual(result.draft["description"], "Updated with chunk evidence.")
-        self.assertIn("chunk-keyword", result.draft["keywords"])
-        self.assertEqual(result.patches[0].accepted_fields, ["description", "keywords"])
+        self.assertEqual(result.patches[0].accepted_fields, ["description"])
         self.assertEqual(result.patches[1].accepted_fields, [])
 
 

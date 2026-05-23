@@ -218,8 +218,9 @@ function ResolutionLogList({ entries }: { entries: string[] }) {
 }
 
 const tokenUsageLabels: Record<string, string> = {
-  patch_extraction: 'Patch extraction',
-  patch_quality: 'Patch quality review',
+  patch_discovery: 'Patch discovery',
+  schema_patch_writer: 'Schema patch writer',
+  schema_repair: 'Schema repair',
   auto_resolve: 'Auto-resolve',
 };
 
@@ -232,7 +233,7 @@ function TokenUsageSummary({ tokenUsage }: { tokenUsage?: PatchProgress['token_u
   const agentEntries = Object.entries(tokenUsage?.agents ?? {})
     .filter(([, usage]) => usage.total_tokens > 0)
     .sort(([left], [right]) => {
-      const order = ['patch_extraction', 'patch_quality', 'auto_resolve'];
+      const order = ['patch_discovery', 'schema_patch_writer', 'schema_repair', 'auto_resolve'];
       return (order.indexOf(left) === -1 ? order.length : order.indexOf(left))
         - (order.indexOf(right) === -1 ? order.length : order.indexOf(right));
     });

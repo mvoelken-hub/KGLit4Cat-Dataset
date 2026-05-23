@@ -94,6 +94,36 @@ FIELD_PATCH_OUTPUT = {
     ]
 }
 
+LEAN_DESCRIPTION_PATCH_OUTPUT = {
+    "information": "The chunk provides an updated description.",
+    "evidence": ["Chunk says chunk-keyword."],
+    "location_picks": [
+        {
+            "path": "/description",
+            "rationale": "The fact is best stored in the description.",
+            "confidence": 0.9,
+        }
+    ],
+    "destination": "/description",
+    "patch": {"description": "Updated with chunk evidence."},
+    "reasoning": "Description is the best single destination.",
+}
+
+LEAN_KEYWORD_PATCH_OUTPUT = {
+    "information": "The chunk introduces keyword chunk-keyword.",
+    "evidence": ["Chunk says chunk-keyword."],
+    "location_picks": [
+        {
+            "path": "/keywords",
+            "rationale": "The fact is a keyword.",
+            "confidence": 0.85,
+        }
+    ],
+    "destination": "/keywords",
+    "patch": {"keywords": ["chunk-keyword"]},
+    "reasoning": "Keywords are the best single destination.",
+}
+
 PROFILE_JSON_SCHEMA = {
     "$schema": "https://json-schema.org/draft/2019-09/schema",
     "$defs": {
@@ -604,8 +634,6 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
             )
 
     async def test_patch_initial_draft_restarts_stale_completed_task_without_artifacts(self):
-        from unittest import mock as unittest_mock
-
         datasource_service = FakeDataSourceService(make_data_package())
         datasource_service.chunks_by_file = [
             [
@@ -624,27 +652,11 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         output_repository.initial_draft = INITIAL_DRAFT_OUTPUT
         task_registry = TaskRegistry(settings=None, logger=FakeLogger())  # type: ignore[arg-type]
-        accept_report = PatchQualityReport(
-            overall_decision="accept",
-            candidate_ratings=[
-                CandidateQualityRating(
-                    field_path="description",
-                    decision="accept",
-                    issues=[],
-                ),
-                CandidateQualityRating(
-                    field_path="keywords",
-                    decision="accept",
-                    issues=[],
-                ),
-            ],
-            summary="All candidates accepted.",
-        )
         service = ExtractionService(
             FakeProfileRepository(),  # type: ignore[arg-type]
             settings=None,  # type: ignore[arg-type]
             datasource_service=datasource_service,  # type: ignore[arg-type]
-            ollama_client=FakeOllamaClient(FIELD_PATCH_OUTPUT),  # type: ignore[arg-type]
+            ollama_client=FakeOllamaClient(LEAN_DESCRIPTION_PATCH_OUTPUT),  # type: ignore[arg-type]
             output_repository=output_repository,
             task_registry=task_registry,
         )
@@ -660,24 +672,18 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
             (TaskStatus.UNKNOWN, None),
         )
 
-        with unittest_mock.patch(
-            "app.domain.extraction.patch_draft.review_patch_semantic_quality",
-            return_value=accept_report,
-        ):
-            draft, status = await service.patch_initial_draft(
-                data_package_id="package-id",
-                profile_identifier="test-profile",
-                num_chunks_per_turn=1,
-            )
-            await task_registry.wait_for_task(task_name, timeout=2.0)
+        draft, status = await service.patch_initial_draft(
+            data_package_id="package-id",
+            profile_identifier="test-profile",
+            num_chunks_per_turn=1,
+        )
+        await task_registry.wait_for_task(task_name, timeout=2.0)
 
         self.assertEqual(status, TaskStatus.RUNNING)
         self.assertEqual(draft, INITIAL_DRAFT_OUTPUT)
         self.assertTrue(output_repository.patches)
 
     async def test_patch_initial_draft_persists_draft_and_patches(self):
-        from unittest import mock as unittest_mock
-
         datasource_service = FakeDataSourceService(make_data_package())
         datasource_service.chunks_by_file = [
             [
@@ -696,46 +702,25 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         output_repository.initial_draft = INITIAL_DRAFT_OUTPUT
 
-        accept_report = PatchQualityReport(
-            overall_decision="accept",
-            candidate_ratings=[
-                CandidateQualityRating(
-                    field_path="description",
-                    decision="accept",
-                    issues=[],
-                ),
-                CandidateQualityRating(
-                    field_path="keywords",
-                    decision="accept",
-                    issues=[],
-                ),
-            ],
-            summary="All candidates accepted.",
+        task_registry = TaskRegistry(settings=None, logger=FakeLogger())  # type: ignore[arg-type]
+        service = ExtractionService(
+            FakeProfileRepository(),  # type: ignore[arg-type]
+            settings=None,  # type: ignore[arg-type]
+            datasource_service=datasource_service,  # type: ignore[arg-type]
+            ollama_client=FakeOllamaClient(LEAN_DESCRIPTION_PATCH_OUTPUT),  # type: ignore[arg-type]
+            output_repository=output_repository,
+            task_registry=task_registry,
         )
 
-        with unittest_mock.patch(
-            "app.domain.extraction.patch_draft.review_patch_semantic_quality",
-            return_value=accept_report,
-        ):
-            task_registry = TaskRegistry(settings=None, logger=FakeLogger())  # type: ignore[arg-type]
-            service = ExtractionService(
-                FakeProfileRepository(),  # type: ignore[arg-type]
-                settings=None,  # type: ignore[arg-type]
-                datasource_service=datasource_service,  # type: ignore[arg-type]
-                ollama_client=FakeOllamaClient(FIELD_PATCH_OUTPUT),  # type: ignore[arg-type]
-                output_repository=output_repository,
-                task_registry=task_registry,
-            )
-
-            draft, status = await service.patch_initial_draft(
-                data_package_id="package-id",
-                profile_identifier="test-profile",
-                num_chunks_per_turn=1,
-            )
-            await task_registry.wait_for_task(
-                service._patch_draft_task_name("package-id"),
-                timeout=2.0,
-            )
+        draft, status = await service.patch_initial_draft(
+            data_package_id="package-id",
+            profile_identifier="test-profile",
+            num_chunks_per_turn=1,
+        )
+        await task_registry.wait_for_task(
+            service._patch_draft_task_name("package-id"),
+            timeout=2.0,
+        )
 
         result = output_repository.draft
         self.assertEqual(status, TaskStatus.RUNNING)
@@ -744,14 +729,15 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["description"], "Updated with chunk evidence.")
         self.assertEqual(output_repository.draft, result)
         self.assertEqual(output_repository.draft_saves[0], INITIAL_DRAFT_OUTPUT)
-        self.assertEqual(list(output_repository.patches.values())[0], {"description": "Updated with chunk evidence.", "keywords": ["chunk-keyword"]})
+        self.assertEqual(
+            list(output_repository.patches.values())[0],
+            {"description": "Updated with chunk evidence."},
+        )
         task_info = task_registry.get_task_info(service._patch_draft_task_name("package-id"))
         self.assertEqual(task_info.progress["batch_no"], 1)  # type: ignore[union-attr,index]
         self.assertEqual(task_info.progress["total_batches"], 1)  # type: ignore[union-attr,index]
 
     async def test_patch_initial_draft_starts_auto_resolve_before_patching_finishes(self):
-        from unittest import mock as unittest_mock
-
         datasource_service = FakeDataSourceService(make_data_package())
         datasource_service.chunks_by_file = [
             [
@@ -776,28 +762,12 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
             INITIAL_CONTEXT_OUTPUT
         )
         output_repository.initial_draft = INITIAL_DRAFT_OUTPUT
-        accept_report = PatchQualityReport(
-            overall_decision="accept",
-            candidate_ratings=[
-                CandidateQualityRating(
-                    field_path="description",
-                    decision="accept",
-                    issues=[],
-                ),
-                CandidateQualityRating(
-                    field_path="keywords",
-                    decision="accept",
-                    issues=[],
-                ),
-            ],
-            summary="All candidates accepted.",
-        )
         task_registry = TaskRegistry(settings=None, logger=FakeLogger())  # type: ignore[arg-type]
         service = ExtractionService(
             FakeProfileRepository(),  # type: ignore[arg-type]
             settings=None,  # type: ignore[arg-type]
             datasource_service=datasource_service,  # type: ignore[arg-type]
-            ollama_client=FakeOllamaClient(FIELD_PATCH_OUTPUT),  # type: ignore[arg-type]
+            ollama_client=FakeOllamaClient(LEAN_DESCRIPTION_PATCH_OUTPUT),  # type: ignore[arg-type]
             output_repository=output_repository,
             task_registry=task_registry,
         )
@@ -814,41 +784,31 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
 
         service._auto_resolve_review_items = fake_auto_resolve  # type: ignore[method-assign]
 
-        with unittest_mock.patch(
-            "app.domain.extraction.patch_draft.review_patch_semantic_quality",
-            return_value=accept_report,
-        ):
-            await service.patch_initial_draft(
-                data_package_id="package-id",
-                profile_identifier="test-profile",
-                num_chunks_per_turn=1,
-                auto_resolve=True,
-            )
-            await task_registry.wait_for_task(
-                service._patch_draft_task_name("package-id"),
-                timeout=2.0,
-            )
+        await service.patch_initial_draft(
+            data_package_id="package-id",
+            profile_identifier="test-profile",
+            num_chunks_per_turn=1,
+            auto_resolve=True,
+        )
+        await task_registry.wait_for_task(
+            service._patch_draft_task_name("package-id"),
+            timeout=2.0,
+        )
 
         self.assertEqual(len(output_repository.patches), 2)
         self.assertGreaterEqual(len(resolve_patch_counts), 2)
         self.assertEqual(resolve_patch_counts[0], 1)
 
     async def test_patch_initial_draft_progress_includes_token_usage_summary(self):
-        from unittest import mock as unittest_mock
-
-        class FakeUsage:
-            input_tokens = 120
-            output_tokens = 30
-            total_tokens = 150
-            requests = 1
-
         datasource_service = FakeDataSourceService(make_data_package())
         datasource_service.chunks_by_file = [
             [
                 ContentChunk(
+                    content="Chunk says chunk-keyword.",
+                    data_package_id="package-id",
                     file_path="metadata.txt",
-                    chunk_index=0,
-                    text="Chunk says chunk-keyword.",
+                    start_idx=0,
+                    end_idx=0,
                 )
             ]
         ]
@@ -857,61 +817,37 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
             INITIAL_CONTEXT_OUTPUT
         )
         output_repository.initial_draft = INITIAL_DRAFT_OUTPUT
-        accept_report = PatchQualityReport(
-            overall_decision="accept",
-            candidate_ratings=[
-                CandidateQualityRating(
-                    field_path="description",
-                    decision="accept",
-                    issues=[],
-                ),
-                CandidateQualityRating(
-                    field_path="keywords",
-                    decision="accept",
-                    issues=[],
-                ),
-            ],
-            summary="All candidates accepted.",
-        )
-
-        async def fake_quality_review(**kwargs):
-            kwargs["on_token_usage"]("patch_quality", FakeUsage(), 1)
-            return accept_report
-
         task_registry = TaskRegistry(settings=None, logger=FakeLogger())  # type: ignore[arg-type]
         service = ExtractionService(
             FakeProfileRepository(),  # type: ignore[arg-type]
             settings=None,  # type: ignore[arg-type]
             datasource_service=datasource_service,  # type: ignore[arg-type]
-            ollama_client=FakeOllamaClient(FIELD_PATCH_OUTPUT),  # type: ignore[arg-type]
+            ollama_client=FakeOllamaClient(LEAN_DESCRIPTION_PATCH_OUTPUT),  # type: ignore[arg-type]
             output_repository=output_repository,
             task_registry=task_registry,
         )
 
-        with unittest_mock.patch(
-            "app.domain.extraction.patch_draft.review_patch_semantic_quality",
-            side_effect=fake_quality_review,
-        ):
-            await service.patch_initial_draft(
-                data_package_id="package-id",
-                profile_identifier="test-profile",
-                num_chunks_per_turn=1,
-            )
-            await task_registry.wait_for_task(
-                service._patch_draft_task_name("package-id"),
-                timeout=2.0,
-            )
+        await service.patch_initial_draft(
+            data_package_id="package-id",
+            profile_identifier="test-profile",
+            num_chunks_per_turn=1,
+        )
+        await task_registry.wait_for_task(
+            service._patch_draft_task_name("package-id"),
+            timeout=2.0,
+        )
 
         progress = task_registry.get_task_info(
             service._patch_draft_task_name("package-id"),
         ).progress
         token_usage = progress["token_usage"]  # type: ignore[index]
-        self.assertIn("patch_extraction", token_usage["agents"])
-        self.assertEqual(
-            token_usage["agents"]["patch_quality"]["average_total_tokens_per_patch"],
-            150,
+        self.assertIn("patch_discovery", token_usage["agents"])
+        self.assertIn("schema_patch_writer", token_usage["agents"])
+        self.assertNotIn("patch_quality", token_usage["agents"])
+        self.assertGreater(
+            token_usage["combined"]["average_total_tokens_per_patch"],
+            0,
         )
-        self.assertGreater(token_usage["combined"]["average_total_tokens_per_patch"], 150)
 
     async def test_auto_resolve_marks_progress_active_while_running(self):
         from unittest import mock as unittest_mock
@@ -1083,35 +1019,38 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
             ],
         }
         patch_output = {
-            "candidates": [
+            "information": "The NMR acquisition used a 400 MHz field strength.",
+            "evidence": ["400 MHz"],
+            "location_picks": [
                 {
-                    "field_path": "was_generated_by",
-                    "patch": {
-                        "was_generated_by": [
-                            {
-                                "id": "activity-nmr",
-                                "has_quantitative_attribute": [
-                                    {
-                                        "has_quantity_type": "frequency",
-                                        "unit": "MHz",
-                                        "value": 400.0,
-                                        "title": "Magnetic Field Strength",
-                                    },
-                                    {
-                                        "has_quantity_type": "frequency",
-                                        "unit": "MHz",
-                                        "value": 400.0,
-                                        "title": "Magnetic Field Strength",
-                                    },
-                                ],
-                            }
-                        ]
-                    },
+                    "path": "/was_generated_by/0/has_quantitative_attribute",
+                    "rationale": "The value describes the generating activity.",
                     "confidence": 0.95,
-                    "reasoning": "Chunk repeats the field strength.",
-                    "source_evidence": ["400 MHz"],
                 }
-            ]
+            ],
+            "destination": "/was_generated_by/0/has_quantitative_attribute",
+            "patch": {
+                "was_generated_by": [
+                    {
+                        "id": "activity-nmr",
+                        "has_quantitative_attribute": [
+                            {
+                                "has_quantity_type": "frequency",
+                                "unit": "MHz",
+                                "value": 400.0,
+                                "title": "Magnetic Field Strength",
+                            },
+                            {
+                                "has_quantity_type": "frequency",
+                                "unit": "MHz",
+                                "value": 400.0,
+                                "title": "Magnetic Field Strength",
+                            },
+                        ],
+                    }
+                ]
+            },
+            "reasoning": "Activity quantitative attributes are the best destination.",
         }
         datasource_service = FakeDataSourceService(make_data_package())
         datasource_service.chunks_by_file = [
@@ -1130,41 +1069,25 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
             INITIAL_CONTEXT_OUTPUT
         )
         output_repository.initial_draft = initial_draft
-        accept_report = PatchQualityReport(
-            overall_decision="accept",
-            candidate_ratings=[
-                CandidateQualityRating(
-                    field_path="was_generated_by",
-                    decision="accept",
-                    issues=[],
-                ),
-            ],
-            summary="Accepted.",
+        task_registry = TaskRegistry(settings=None, logger=FakeLogger())  # type: ignore[arg-type]
+        service = ExtractionService(
+            FakeProfileRepository(rich_schema),  # type: ignore[arg-type]
+            settings=None,  # type: ignore[arg-type]
+            datasource_service=datasource_service,  # type: ignore[arg-type]
+            ollama_client=FakeOllamaClient(patch_output),  # type: ignore[arg-type]
+            output_repository=output_repository,
+            task_registry=task_registry,
         )
 
-        with unittest_mock.patch(
-            "app.domain.extraction.patch_draft.review_patch_semantic_quality",
-            return_value=accept_report,
-        ):
-            task_registry = TaskRegistry(settings=None, logger=FakeLogger())  # type: ignore[arg-type]
-            service = ExtractionService(
-                FakeProfileRepository(rich_schema),  # type: ignore[arg-type]
-                settings=None,  # type: ignore[arg-type]
-                datasource_service=datasource_service,  # type: ignore[arg-type]
-                ollama_client=FakeOllamaClient(patch_output),  # type: ignore[arg-type]
-                output_repository=output_repository,
-                task_registry=task_registry,
-            )
-
-            await service.patch_initial_draft(
-                data_package_id="package-id",
-                profile_identifier="test-profile",
-                num_chunks_per_turn=1,
-            )
-            await task_registry.wait_for_task(
-                service._patch_draft_task_name("package-id"),
-                timeout=2.0,
-            )
+        await service.patch_initial_draft(
+            data_package_id="package-id",
+            profile_identifier="test-profile",
+            num_chunks_per_turn=1,
+        )
+        await task_registry.wait_for_task(
+            service._patch_draft_task_name("package-id"),
+            timeout=2.0,
+        )
 
         activity = output_repository.draft["was_generated_by"][0]
         self.assertEqual(
@@ -1180,8 +1103,6 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_patch_initial_draft_does_not_merge_protected_fields(self):
-        from unittest import mock as unittest_mock
-
         datasource_service = FakeDataSourceService(make_data_package())
         datasource_service.chunks_by_file = [
             [
@@ -1201,41 +1122,25 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
         output_repository.initial_draft = INITIAL_DRAFT_OUTPUT
         output_repository.protected_fields = ["description"]
 
-        accept_report = PatchQualityReport(
-            overall_decision="accept",
-            candidate_ratings=[
-                CandidateQualityRating(
-                    field_path="keywords",
-                    decision="accept",
-                    issues=[],
-                ),
-            ],
-            summary="Unprotected candidates accepted.",
+        task_registry = TaskRegistry(settings=None, logger=FakeLogger())  # type: ignore[arg-type]
+        service = ExtractionService(
+            FakeProfileRepository(),  # type: ignore[arg-type]
+            settings=None,  # type: ignore[arg-type]
+            datasource_service=datasource_service,  # type: ignore[arg-type]
+            ollama_client=FakeOllamaClient(LEAN_KEYWORD_PATCH_OUTPUT),  # type: ignore[arg-type]
+            output_repository=output_repository,
+            task_registry=task_registry,
         )
 
-        with unittest_mock.patch(
-            "app.domain.extraction.patch_draft.review_patch_semantic_quality",
-            return_value=accept_report,
-        ):
-            task_registry = TaskRegistry(settings=None, logger=FakeLogger())  # type: ignore[arg-type]
-            service = ExtractionService(
-                FakeProfileRepository(),  # type: ignore[arg-type]
-                settings=None,  # type: ignore[arg-type]
-                datasource_service=datasource_service,  # type: ignore[arg-type]
-                ollama_client=FakeOllamaClient(FIELD_PATCH_OUTPUT),  # type: ignore[arg-type]
-                output_repository=output_repository,
-                task_registry=task_registry,
-            )
-
-            await service.patch_initial_draft(
-                data_package_id="package-id",
-                profile_identifier="test-profile",
-                num_chunks_per_turn=1,
-            )
-            await task_registry.wait_for_task(
-                service._patch_draft_task_name("package-id"),
-                timeout=2.0,
-            )
+        await service.patch_initial_draft(
+            data_package_id="package-id",
+            profile_identifier="test-profile",
+            num_chunks_per_turn=1,
+        )
+        await task_registry.wait_for_task(
+            service._patch_draft_task_name("package-id"),
+            timeout=2.0,
+        )
 
         self.assertEqual(
             output_repository.draft["description"],
@@ -1251,8 +1156,6 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_patch_initial_draft_rejects_revisions_touching_protected_fields(self):
-        from unittest import mock as unittest_mock
-
         datasource_service = FakeDataSourceService(make_data_package())
         datasource_service.chunks_by_file = [
             [
@@ -1272,57 +1175,25 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
         output_repository.initial_draft = INITIAL_DRAFT_OUTPUT
         output_repository.protected_fields = ["description"]
 
-        revise_report = PatchQualityReport(
-            overall_decision="revise",
-            candidate_ratings=[
-                CandidateQualityRating(
-                    field_path="keywords",
-                    decision="revise",
-                    issues=[],
-                    revised_patch={
-                        "description": "Should not be merged.",
-                        "keywords": ["chunk-keyword"],
-                    },
-                ),
-            ],
-            summary="Revision touches a protected field.",
+        task_registry = TaskRegistry(settings=None, logger=FakeLogger())  # type: ignore[arg-type]
+        service = ExtractionService(
+            FakeProfileRepository(),  # type: ignore[arg-type]
+            settings=None,  # type: ignore[arg-type]
+            datasource_service=datasource_service,  # type: ignore[arg-type]
+            ollama_client=FakeOllamaClient(LEAN_DESCRIPTION_PATCH_OUTPUT),  # type: ignore[arg-type]
+            output_repository=output_repository,
+            task_registry=task_registry,
         )
 
-        with unittest_mock.patch(
-            "app.domain.extraction.patch_draft.review_patch_semantic_quality",
-            return_value=revise_report,
-        ):
-            task_registry = TaskRegistry(settings=None, logger=FakeLogger())  # type: ignore[arg-type]
-            service = ExtractionService(
-                FakeProfileRepository(),  # type: ignore[arg-type]
-                settings=None,  # type: ignore[arg-type]
-                datasource_service=datasource_service,  # type: ignore[arg-type]
-                ollama_client=FakeOllamaClient(
-                    {
-                        "candidates": [
-                            {
-                                "field_path": "keywords",
-                                "patch": {"keywords": ["chunk-keyword"]},
-                                "confidence": 0.85,
-                                "reasoning": "Chunk contains keyword evidence.",
-                                "source_evidence": ["Chunk says chunk-keyword."],
-                            },
-                        ]
-                    }
-                ),  # type: ignore[arg-type]
-                output_repository=output_repository,
-                task_registry=task_registry,
-            )
-
-            await service.patch_initial_draft(
-                data_package_id="package-id",
-                profile_identifier="test-profile",
-                num_chunks_per_turn=1,
-            )
-            await task_registry.wait_for_task(
-                service._patch_draft_task_name("package-id"),
-                timeout=2.0,
-            )
+        await service.patch_initial_draft(
+            data_package_id="package-id",
+            profile_identifier="test-profile",
+            num_chunks_per_turn=1,
+        )
+        await task_registry.wait_for_task(
+            service._patch_draft_task_name("package-id"),
+            timeout=2.0,
+        )
 
         self.assertEqual(output_repository.draft, INITIAL_DRAFT_OUTPUT)
         self.assertEqual(list(output_repository.patches.values())[0], {})
