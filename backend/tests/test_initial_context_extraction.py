@@ -473,6 +473,19 @@ class FakeExtractionService:
             raise self.result
         return self.result  # type: ignore[return-value]
 
+    async def save_initial_context(
+        self,
+        *,
+        data_package_id: str,
+        initial_context: InitialContext,
+    ) -> None:
+        self.request = {
+            "data_package_id": data_package_id,
+            "initial_context": initial_context,
+        }
+        if isinstance(self.result, Exception):
+            raise self.result
+
     async def extract_initial_draft(
         self,
         *,
@@ -586,6 +599,31 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(
             output_repository.token_usage["initial_context"]["total_tokens"],
             0,
+        )
+
+    async def test_save_initial_context_persists_context(self):
+        output_repository = FakeOutputRepository()
+        service = ExtractionService(
+            FakeProfileRepository(),  # type: ignore[arg-type]
+            settings=None,  # type: ignore[arg-type]
+            output_repository=output_repository,
+        )
+        context = InitialContext.model_validate(
+            {
+                **INITIAL_CONTEXT_OUTPUT,
+                "dataset_title": "Edited dataset",
+            }
+        )
+
+        await service.save_initial_context(
+            data_package_id="package-id",
+            initial_context=context,
+        )
+
+        self.assertEqual(output_repository.saved["workflow_id"], "package-id")  # type: ignore[index]
+        self.assertEqual(
+            output_repository.saved["initial_context"].dataset_title,  # type: ignore[index]
+            "Edited dataset",
         )
 
     async def test_extract_initial_draft_loads_context_profile_and_persists_draft(self):
@@ -1921,6 +1959,43 @@ class InitialContextExtractionApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["agents"][0]["model"], "GC-42")
         self.assertEqual(service.request["data_package_id"], "package-id")  # type: ignore[index]
+
+    def test_save_initial_context_endpoint_returns_saved_context(self):
+        context = InitialContext.model_validate(
+            {
+                **INITIAL_CONTEXT_OUTPUT,
+                "dataset_title": "Edited dataset",
+            }
+        )
+        service = FakeExtractionService(context)
+        client = self.make_client(service)
+
+        response = client.put(
+            "/api/v1/extraction/initial-context/package-id",
+            json=context.model_dump(mode="json"),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["dataset_title"], "Edited dataset")
+        self.assertEqual(service.request["data_package_id"], "package-id")  # type: ignore[index]
+        self.assertEqual(
+            service.request["initial_context"].dataset_title,  # type: ignore[index]
+            "Edited dataset",
+        )
+
+    def test_save_initial_context_endpoint_rejects_invalid_context(self):
+        service = FakeExtractionService(InitialContext.model_validate(INITIAL_CONTEXT_OUTPUT))
+        client = self.make_client(service)
+
+        response = client.put(
+            "/api/v1/extraction/initial-context/package-id",
+            json={
+                **INITIAL_CONTEXT_OUTPUT,
+                "summary": None,
+            },
+        )
+
+        self.assertEqual(response.status_code, 422)
 
     def test_initial_context_endpoint_maps_missing_datasource_to_404(self):
         service = FakeExtractionService(DataPackageIdNotFoundError("missing package"))

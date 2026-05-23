@@ -111,6 +111,22 @@ async def get_existing_initial_context(
     )
 
 
+@router.put("/initial-context/{data_package_id}", response_model=InitialContext)
+async def save_initial_context(
+    data_package_id: str,
+    request: InitialContext,
+    extraction_service: ExtractionService = Depends(get_extraction_service),
+):
+    try:
+        await extraction_service.save_initial_context(
+            data_package_id=data_package_id,
+            initial_context=request,
+        )
+        return _initial_context_response(request)
+    except Exception as exc:
+        _raise_extraction_error(exc)
+
+
 @router.get("/initial-draft/{data_package_id}")
 async def get_existing_initial_draft(
     data_package_id: str,

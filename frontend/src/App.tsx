@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { chunkDataPackage, deleteDataPackage, getChunkStatus, getDataPackageChunks, getFileEntryContent, listDataPackages, uploadDataPackage } from './api/datasources';
 import {
@@ -13,6 +13,7 @@ import {
   getTokenUsage,
   patchDraft,
   saveDraft,
+  saveInitialContext,
   savePatchReviewState,
   setProtectedFields as apiSetProtectedFields,
 } from './api/extraction';
@@ -62,12 +63,118 @@ function formatBytes(bytes: number): string {
   return (bytes / 1024 / 1024).toFixed(1) + ' MB';
 }
 
-function Field({ label, value }: { label: string; value?: string | number | null }) {
+function EditableContextField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
   return (
-    <div className="field">
+    <label className="context-field">
+      <span>{label}</span>
+      <input value={value} onChange={(event) => onChange(event.target.value)} />
+    </label>
+  );
+}
+
+function EditableContextTextArea({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="context-field context-field-wide">
+      <span>{label}</span>
+      <textarea value={value} onChange={(event) => onChange(event.target.value)} />
+    </label>
+  );
+}
+
+function PersistedContextField({
+  label,
+  value,
+  wide = false,
+}: {
+  label: string;
+  value?: string | number | null;
+  wide?: boolean;
+}) {
+  return (
+    <div className={`context-field context-field-readonly ${wide ? 'context-field-wide' : ''}`}>
       <span>{label}</span>
       <strong>{value || '-'}</strong>
     </div>
+  );
+}
+
+function PersistedContextChips({ label, values }: { label: string; values: string[] }) {
+  return (
+    <div className="context-field context-field-wide context-field-readonly context-chips-field">
+      <span>{label}</span>
+      {values.length ? (
+        <div className="chips">
+          {values.map((value) => <span key={value}>{value}</span>)}
+        </div>
+      ) : (
+        <strong>-</strong>
+      )}
+    </div>
+  );
+}
+
+function StepPanel({
+  number,
+  title,
+  description,
+  children,
+  actions,
+  active = false,
+}: {
+  number: string;
+  title: string;
+  description: string;
+  children: ReactNode;
+  actions?: ReactNode;
+  active?: boolean;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  const contentId = `step-panel-${number}`;
+
+  return (
+    <article className={`step-card ${active ? 'active' : ''} ${collapsed ? 'collapsed' : ''}`}>
+      <div className="step-index">{number}</div>
+      <div className="step-body">
+        <div className="step-header">
+          <button
+            className="step-collapse-toggle"
+            type="button"
+            aria-expanded={!collapsed}
+            aria-controls={contentId}
+            onClick={() => setCollapsed((value) => !value)}
+            title={collapsed ? `Expand ${title}` : `Collapse ${title}`}
+          >
+            {collapsed ? '+' : '-'}
+          </button>
+          <div className="step-title">
+            <h2>{title}</h2>
+            <p>{description}</p>
+          </div>
+          {actions && <div className="step-header-actions">{actions}</div>}
+        </div>
+        {!collapsed && (
+          <div className="step-content" id={contentId}>
+            {children}
+          </div>
+        )}
+      </div>
+    </article>
   );
 }
 
@@ -75,27 +182,82 @@ function contextTechnique(context: InitialContext): string | null | undefined {
   return context.activities?.find((activity) => activity.technique)?.technique;
 }
 
-function contextAgentLabel(context: InitialContext): string | null | undefined {
-  if (context.agents?.length) {
-    return context.agents
-      .map((agent) => agent.model ? `${agent.name} (${agent.model})` : agent.name)
-      .join(', ');
-  }
-  return null;
-}
-
-function contextEntityLabel(context: InitialContext): string | null {
-  const labels = context.entities?.length
-    ? context.entities.map((entity) => entity.identifier || entity.label)
-    : [];
-  return labels.length ? labels.join(', ') : null;
-}
-
 function contextActivityLabel(context: InitialContext): string | null {
   const labels = context.activities
     ?.map((activity) => activity.label || activity.technique)
     .filter(Boolean) as string[] | undefined;
   return labels?.length ? labels.join(', ') : null;
+}
+
+function contextAgentLabel(context: InitialContext): string | null {
+  if (!context.agents?.length) return null;
+  const labels = context.agents.map((agent) => agent.model ? `${agent.name} (${agent.model})` : agent.name).filter(Boolean);
+  return labels.length ? labels.join(', ') : null;
+}
+
+function contextEntityLabel(context: InitialContext): string | null {
+  const labels = context.entities?.map((entity) => entity.label).filter(Boolean) ?? [];
+  return labels.length ? labels.join(', ') : null;
+}
+
+function commaList(value: string): string[] {
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function contextEntitiesInput(context: InitialContext): string {
+  return (context.entities ?? []).map((entity) => entity.label).join(', ');
+}
+
+function updateContextDatasetTitle(context: InitialContext, value: string): InitialContext {
+  return { ...context, dataset_title: value.trim() || null };
+}
+
+function updateContextTechnique(context: InitialContext, value: string): InitialContext {
+  const activities = [...(context.activities ?? [])];
+  const first = activities[0] ?? { label: null, technique: null, agent_names: [] };
+  activities[0] = { ...first, technique: value.trim() || null };
+  return { ...context, activities };
+}
+
+function updateContextAgentName(context: InitialContext, value: string): InitialContext {
+  const agents = [...(context.agents ?? [])];
+  const first = agents[0] ?? { name: '', role: 'unknown' as const };
+  agents[0] = { ...first, name: value };
+  return { ...context, agents };
+}
+
+function updateContextAgentModel(context: InitialContext, value: string): InitialContext {
+  const agents = [...(context.agents ?? [])];
+  const first = agents[0] ?? { name: '', role: 'unknown' as const };
+  agents[0] = { ...first, model: value.trim() || null };
+  return { ...context, agents };
+}
+
+function updateContextEntities(context: InitialContext, value: string): InitialContext {
+  const labels = commaList(value);
+  const entities = labels.map((label, index) => {
+    const existing = context.entities?.[index];
+    return existing ? { ...existing, label } : { label, role: 'unknown' as const };
+  });
+  return { ...context, entities };
+}
+
+function updateContextActivityLabel(context: InitialContext, value: string): InitialContext {
+  const activities = [...(context.activities ?? [])];
+  const first = activities[0] ?? { label: null, technique: null, agent_names: [] };
+  activities[0] = { ...first, label: value.trim() || null };
+  return { ...context, activities };
+}
+
+function updateContextDescription(context: InitialContext, value: string): InitialContext {
+  return { ...context, dataset_description: value.trim() || null };
+}
+
+function updateContextKeywords(context: InitialContext, value: string): InitialContext {
+  return { ...context, keywords: commaList(value) };
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -455,6 +617,7 @@ export function App() {
   const [busy, setBusy] = useState<BusyKey | null>('load');
   const [message, setMessage] = useState('Loading workspace.');
   const [railCollapsed, setRailCollapsed] = useState(true);
+  const [contextEditMode, setContextEditMode] = useState(false);
   const [chunkingDialogOpen, setChunkingDialogOpen] = useState(false);
   const [numChunksPerTurn, setNumChunksPerTurn] = useState(() => {
     try {
@@ -482,6 +645,7 @@ export function App() {
   const [profileVersion, setProfileVersion] = useState('');
   const [profileEnrichableFields, setProfileEnrichableFields] = useState('');
   const datasetUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const saveContextTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveDraftTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedPackageIdRef = useRef('');
 
@@ -573,13 +737,29 @@ export function App() {
     }
   }, [autoResolve]);
 
+  useEffect(() => {
+    return () => {
+      if (saveContextTimeoutRef.current) clearTimeout(saveContextTimeoutRef.current);
+      if (saveDraftTimeoutRef.current) clearTimeout(saveDraftTimeoutRef.current);
+    };
+  }, []);
+
   function resetPackageWorkflowState() {
+    if (saveContextTimeoutRef.current) {
+      clearTimeout(saveContextTimeoutRef.current);
+      saveContextTimeoutRef.current = null;
+    }
+    if (saveDraftTimeoutRef.current) {
+      clearTimeout(saveDraftTimeoutRef.current);
+      saveDraftTimeoutRef.current = null;
+    }
     setChunkResult(null);
     setHasChunks(false);
     setChunksByFile([]);
     setViewingFile(null);
     setFileContent(null);
     setContext(null);
+    setContextEditMode(false);
     setDraft(null);
     setProtectedFields([]);
     setPatchStatus(null);
@@ -815,6 +995,7 @@ export function App() {
     try {
       const result = await extractInitialContext({ data_package_id: selectedPackageId });
       setContext(result);
+      setContextEditMode(true);
       setTokenUsage(await getTokenUsage(selectedPackageId));
       setMessage('Initial context extracted.');
     } catch (error) {
@@ -822,6 +1003,24 @@ export function App() {
     } finally {
       setBusy(null);
     }
+  }
+
+  function onContextChange(update: (current: InitialContext) => InitialContext) {
+    if (!context || !selectedPackageId) return;
+    const packageId = selectedPackageId;
+    const updated = update(context);
+    setContext(updated);
+    if (saveContextTimeoutRef.current) clearTimeout(saveContextTimeoutRef.current);
+    saveContextTimeoutRef.current = setTimeout(async () => {
+      try {
+        await saveInitialContext(packageId, updated);
+        if (selectedPackageIdRef.current === packageId) setMessage('Initial context saved.');
+      } catch (error) {
+        if (selectedPackageIdRef.current === packageId) {
+          setMessage(error instanceof Error ? error.message : 'Failed to save initial context.');
+        }
+      }
+    }, 800);
   }
 
   async function onDraft() {
@@ -1168,11 +1367,12 @@ export function App() {
         </aside>
 
         <section className="workflow">
-          <article className="step-card active">
-            <div className="step-index">01</div>
-            <div className="step-body">
-              <h2>Upload dataset and create chunks</h2>
-              <p>The archive is stored as a data package. Chunking prepares the package for later patch and enrichment stages.</p>
+          <StepPanel
+            number="01"
+            title="Upload dataset and create chunks"
+            description="The archive is stored as a data package. Chunking prepares the package for later patch and enrichment stages."
+            active
+          >
               <div className="actions">
                 <button onClick={() => setChunkingDialogOpen(true)} disabled={!selectedPackageId || !!busy}>{busy === 'chunk' ? 'Checking...' : 'Configure Chunking'}</button>
               </div>
@@ -1212,43 +1412,98 @@ export function App() {
                   void onChunk(params);
                 }}
               />
-            </div>
-          </article>
+          </StepPanel>
 
-          <article className="step-card">
-            <div className="step-index">02</div>
-            <div className="step-body">
-              <h2>Determine initial context</h2>
-              <p>Extract high-level context, likely metadata sources, keywords, file relationships, and evidence from the package.</p>
+          <StepPanel
+            number="02"
+            title="Determine initial context"
+            description="Extract high-level context, likely metadata sources, keywords, file relationships, and evidence from the package."
+            actions={context && (
+              <button
+                type="button"
+                className={`context-edit-toggle ${contextEditMode ? 'active' : 'ghost'}`}
+                onClick={() => setContextEditMode((value) => !value)}
+                disabled={!!busy}
+                aria-pressed={contextEditMode}
+                title={contextEditMode ? 'Disable edit mode' : 'Enable edit mode'}
+              >
+                Edit mode
+              </button>
+            )}
+          >
               <div className="actions">
                 <button onClick={() => void onContext()} disabled={!selectedPackageId || !!busy}>{busy === 'context' ? 'Extracting...' : context ? 'Re-extract and remove old context' : 'Extract new context'}</button>
               </div>
               {context && (
                 <div className="context-grid">
-                  <Field label="Dataset" value={context.dataset_title} />
-                  <Field label="Technique" value={contextTechnique(context)} />
-                  <Field label="Agents" value={contextAgentLabel(context)} />
-                  <Field label="Entities" value={contextEntityLabel(context)} />
-                  <Field label="Activities" value={contextActivityLabel(context)} />
-                  <Field label="Model" value={context.agents?.find((agent) => agent.model)?.model} />
-                  <div className="summary-box">{context.dataset_description || context.summary}</div>
-                  <div className="chips">{context.keywords.map((keyword) => <span key={keyword}>{keyword}</span>)}</div>
+                  {contextEditMode ? (
+                    <>
+                      <EditableContextField
+                        label="Dataset"
+                        value={context.dataset_title ?? ''}
+                        onChange={(value) => onContextChange((current) => updateContextDatasetTitle(current, value))}
+                      />
+                      <EditableContextField
+                        label="Technique"
+                        value={context.activities?.[0]?.technique ?? contextTechnique(context) ?? ''}
+                        onChange={(value) => onContextChange((current) => updateContextTechnique(current, value))}
+                      />
+                      <EditableContextField
+                        label="Agents"
+                        value={context.agents?.[0]?.name ?? ''}
+                        onChange={(value) => onContextChange((current) => updateContextAgentName(current, value))}
+                      />
+                      <EditableContextField
+                        label="Entities"
+                        value={contextEntitiesInput(context)}
+                        onChange={(value) => onContextChange((current) => updateContextEntities(current, value))}
+                      />
+                      <EditableContextField
+                        label="Activities"
+                        value={context.activities?.[0]?.label ?? contextActivityLabel(context) ?? ''}
+                        onChange={(value) => onContextChange((current) => updateContextActivityLabel(current, value))}
+                      />
+                      <EditableContextField
+                        label="Model"
+                        value={context.agents?.[0]?.model ?? ''}
+                        onChange={(value) => onContextChange((current) => updateContextAgentModel(current, value))}
+                      />
+                      <EditableContextTextArea
+                        label="Description"
+                        value={context.dataset_description ?? context.summary ?? ''}
+                        onChange={(value) => onContextChange((current) => updateContextDescription(current, value))}
+                      />
+                      <EditableContextField
+                        label="Keywords"
+                        value={context.keywords.join(', ')}
+                        onChange={(value) => onContextChange((current) => updateContextKeywords(current, value))}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <PersistedContextField label="Dataset" value={context.dataset_title} />
+                      <PersistedContextField label="Technique" value={contextTechnique(context)} />
+                      <PersistedContextField label="Agents" value={contextAgentLabel(context)} />
+                      <PersistedContextField label="Entities" value={contextEntityLabel(context)} />
+                      <PersistedContextField label="Activities" value={contextActivityLabel(context)} />
+                      <PersistedContextField label="Model" value={context.agents?.[0]?.model} />
+                      <PersistedContextField label="Description" value={context.dataset_description || context.summary} wide />
+                      <PersistedContextChips label="Keywords" values={context.keywords} />
+                    </>
+                  )}
                 </div>
               )}
               <TokenUsageSummary tokenUsage={tokenUsage} averageUnit="operation" heading="Extraction token usage" agentKeys={['initial_context']} budget={llmBudget} />
-            </div>
-          </article>
+          </StepPanel>
 
-          <article className="step-card">
-            <div className="step-index">03</div>
-            <div className="step-body">
-              <div className="draft-workspace-heading">
-                <h2>Draft workspace</h2>
-                {draft && (
-                  <button className="ghost draft-refresh-button" onClick={() => void onShowPatchArtifacts()} disabled={!selectedPackageId || busy === 'load'}>Refresh</button>
-                )}
-              </div>
-              <p>Create the initial profile draft, edit and lock fields, then patch the draft with chunk evidence while reviewing issues as they appear.</p>
+          <StepPanel
+            number="03"
+            title="Draft workspace"
+            description="Create the initial profile draft, edit and lock fields, then patch the draft with chunk evidence while reviewing issues as they appear."
+            actions={draft && (
+              <button className="ghost draft-refresh-button" onClick={() => void onShowPatchArtifacts()} disabled={!selectedPackageId || busy === 'load'}>Refresh</button>
+            )}
+          >
               <div className={draft ? 'draft-actions' : 'actions'}>
                 {!draft ? (
                   <button onClick={() => void onDraft()} disabled={!selectedPackageId || !selectedProfile || !!busy}>{busy === 'draft' ? 'Drafting...' : 'Create new draft'}</button>
@@ -1318,8 +1573,7 @@ export function App() {
                   targetClass={selectedProfileManifest?.target_class}
                 />
               )}
-            </div>
-          </article>
+          </StepPanel>
         </section>
       </section>
     </main>

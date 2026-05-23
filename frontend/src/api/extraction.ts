@@ -116,6 +116,14 @@ export async function extractInitialContext(input: {
   }));
 }
 
+export async function saveInitialContext(data_package_id: string, context: InitialContext): Promise<InitialContext> {
+  return readJson(await fetch(apiBaseUrl + '/extraction/initial-context/' + encodeURIComponent(data_package_id), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(context),
+  }));
+}
+
 export async function extractInitialDraft(input: {
   data_package_id: string;
   profile_identifier: string;

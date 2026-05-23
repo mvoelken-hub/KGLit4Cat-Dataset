@@ -914,6 +914,21 @@ class ExtractionService:
         except FileNotFoundError:
             return None
 
+    async def save_initial_context(
+        self,
+        *,
+        data_package_id: str,
+        initial_context: InitialContext,
+    ) -> None:
+        if self.output_repository is None:
+            raise RuntimeError(
+                "ExtractionService requires output_repository to save initial context."
+            )
+        self.output_repository.save_initial_context(
+            workflow_id=data_package_id,
+            initial_context=initial_context,
+        )
+
     async def get_existing_initial_draft(
         self,
         *,
