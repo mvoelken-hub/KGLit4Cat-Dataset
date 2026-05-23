@@ -1227,6 +1227,14 @@ export function App() {
                   </>
                 )}
               </div>
+              {draft && (
+                <TokenUsageSummary
+                  tokenUsage={tokenUsage}
+                  averageUnit="operation"
+                  heading="Initial draft token usage"
+                  agentKeys={['initial_draft']}
+                />
+              )}
               {draft && patchStatus && (
                 <div className="patch-progress">
                   <div className="patch-progress-header">
