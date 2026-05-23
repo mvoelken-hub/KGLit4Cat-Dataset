@@ -25,6 +25,11 @@ class OllamaClientWrapper:
         self.agent_model = OllamaModel(
             settings.ollama_chat_model,
             provider=OllamaProvider(base_url=settings.ollama_base_url+"/v1"),
+            settings={
+                "extra_body": {
+                    "num_ctx": self.max_context_length,
+                },
+            },
         )
 
     async def stop_all_models(self) -> None:

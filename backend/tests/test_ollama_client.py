@@ -25,6 +25,14 @@ class OllamaClientWrapperTests(unittest.TestCase):
             str(client.agent_model.__dict__["_provider"]),
         )
 
+    def test_configures_agent_model_context_length(self):
+        client = OllamaClientWrapper(FakeSettings(), getLogger(__name__))  # type: ignore[arg-type]
+
+        self.assertEqual(
+            client.agent_model.settings,
+            {"extra_body": {"num_ctx": FakeSettings.max_context_length}},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

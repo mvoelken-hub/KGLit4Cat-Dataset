@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     ollama_chat_model: str = "gemma4:31b-cloud"
     ollama_embed_dimensions: int = 768
     embedding_batch_size: int = 32
-    max_context_length: int = 64000
+    max_context_length: int = 8192
 
     @computed_field
     @property
