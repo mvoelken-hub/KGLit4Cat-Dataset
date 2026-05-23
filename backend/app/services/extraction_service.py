@@ -271,9 +271,22 @@ class ExtractionService:
 
         protected_fields = self.output_repository.load_protected_fields(data_package_id)
         resolver_task: asyncio.Task[dict[str, Any] | None] | None = None
+        token_usage_totals: dict[str, dict[str, int]] = {}
 
         def load_protected_fields() -> list[str]:
             return self.output_repository.load_protected_fields(data_package_id) # type: ignore
+
+        def record_token_usage(agent_name: str, usage: Any, patch_count: int = 1) -> None:
+            self._record_patch_token_usage(
+                token_usage_totals,
+                agent_name=agent_name,
+                usage=usage,
+                patch_count=patch_count,
+            )
+            self._update_patch_token_usage_progress(
+                data_package_id=data_package_id,
+                token_usage=token_usage_totals,
+            )
 
         def start_auto_resolve() -> None:
             nonlocal resolver_task
@@ -285,6 +298,7 @@ class ExtractionService:
                 self._auto_resolve_review_items(
                     data_package_id=data_package_id,
                     profile_identifier=profile_identifier,
+                    on_token_usage=record_token_usage,
                 ),
                 name=f"resolving:review:{data_package_id}",
             )
@@ -299,6 +313,7 @@ class ExtractionService:
             await self._auto_resolve_review_items(
                 data_package_id=data_package_id,
                 profile_identifier=profile_identifier,
+                on_token_usage=record_token_usage,
             )
 
         async def save_progress(
@@ -313,6 +328,7 @@ class ExtractionService:
                 patch_record=patch_record,
                 batch_no=batch_no,
                 total_batches=total_batches,
+                token_usage=self._patch_token_usage_summary(token_usage_totals),
             )
             start_auto_resolve()
 
@@ -330,6 +346,7 @@ class ExtractionService:
             completed_patch_file_names=self.output_repository.load_completed_patch_file_names(
                 data_package_id,
             ),
+            on_token_usage=record_token_usage,
         )
         patching_draft = normalize_review_draft(
             result.draft,
@@ -374,6 +391,7 @@ class ExtractionService:
         *,
         data_package_id: str,
         profile_identifier: str,
+        on_token_usage: Callable[[str, Any, int], None] | None = None,
     ) -> dict[str, Any] | None:
         """Automatically resolve unresolved review items from saved patch artifacts."""
         resolution_log: list[str] = []
@@ -447,6 +465,7 @@ class ExtractionService:
             existing_review_state=existing_state,
             resolution_log=resolution_log,
             progress_callback=update_progress,
+            on_token_usage=on_token_usage,
         )
         update_progress(result, active=False)
         return result
@@ -549,6 +568,7 @@ class ExtractionService:
         existing_review_state: dict[str, Any],
         resolution_log: list[str],
         progress_callback: Callable[[], None] | None = None,
+        on_token_usage: Callable[[str, Any, int], None] | None = None,
     ) -> dict[str, Any]:
         if self.ollama_client is None or self.output_repository is None:
             raise RuntimeError(
@@ -577,6 +597,7 @@ class ExtractionService:
             profile_json_schema=profile_json_schema,
             existing_review_state=existing_review_state,
             model=self.ollama_client.agent_model,
+            on_token_usage=on_token_usage,
         )
         self._record_resolution_log(
             resolution_log,
@@ -761,6 +782,7 @@ class ExtractionService:
         patch_record: PatchRecord,
         batch_no: int,
         total_batches: int,
+        token_usage: dict[str, Any] | None = None,
     ) -> None:
         if self.output_repository is None:
             raise RuntimeError("ExtractionService requires output_repository.")
@@ -776,8 +798,9 @@ class ExtractionService:
         # Update task registry progress
         if self.task_registry is not None:
             task_name = self._patch_draft_task_name(workflow_id)
-            self.task_registry.update_progress(
-                task_name,
+            task_info = self.task_registry.get_task_info(task_name)
+            progress = dict(task_info.progress or {}) if task_info else {}
+            progress.update(
                 {
                     "batch_no": batch_no,
                     "total_batches": total_batches,
@@ -785,7 +808,13 @@ class ExtractionService:
                     "accepted_fields": patch_record.accepted_fields,
                     "total_candidates": len(patch_record.candidates),
                     "validation_errors": patch_record.validation_errors or [],
-                },
+                }
+            )
+            if token_usage and token_usage.get("agents"):
+                progress["token_usage"] = token_usage
+            self.task_registry.update_progress(
+                task_name,
+                progress,
             )
 
         # Save the field-level candidates for revision agent support.
@@ -990,6 +1019,111 @@ class ExtractionService:
             resolution_log=[],
         )
 
+    @classmethod
+    def _record_patch_token_usage(
+        cls,
+        totals: dict[str, dict[str, int]],
+        *,
+        agent_name: str,
+        usage: Any,
+        patch_count: int = 1,
+    ) -> None:
+        input_tokens = cls._usage_int(usage, "input_tokens")
+        output_tokens = cls._usage_int(usage, "output_tokens")
+        total_tokens = cls._usage_int(usage, "total_tokens") or (
+            input_tokens + output_tokens
+        )
+        requests = cls._usage_int(usage, "requests")
+        if not any((input_tokens, output_tokens, total_tokens, requests)):
+            return
+
+        entry = totals.setdefault(
+            agent_name,
+            {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 0,
+                "requests": 0,
+                "patch_count": 0,
+            },
+        )
+        entry["input_tokens"] += input_tokens
+        entry["output_tokens"] += output_tokens
+        entry["total_tokens"] += total_tokens
+        entry["requests"] += requests
+        entry["patch_count"] += max(1, patch_count)
+
+    @staticmethod
+    def _usage_int(usage: Any, field_name: str) -> int:
+        value = getattr(usage, field_name, 0)
+        try:
+            return int(value or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    @classmethod
+    def _patch_token_usage_summary(
+        cls,
+        totals: dict[str, dict[str, int]],
+    ) -> dict[str, Any]:
+        agents = {
+            agent_name: cls._patch_token_usage_entry_summary(values)
+            for agent_name, values in totals.items()
+            if any(
+                values.get(key, 0)
+                for key in ("input_tokens", "output_tokens", "total_tokens", "requests")
+            )
+        }
+        if not agents:
+            return {"agents": {}}
+
+        combined_values = {
+            "input_tokens": sum(item["input_tokens"] for item in agents.values()),
+            "output_tokens": sum(item["output_tokens"] for item in agents.values()),
+            "total_tokens": sum(item["total_tokens"] for item in agents.values()),
+            "requests": sum(item["requests"] for item in agents.values()),
+            "patch_count": max(item["patch_count"] for item in agents.values()),
+        }
+        return {
+            "agents": agents,
+            "combined": cls._patch_token_usage_entry_summary(combined_values),
+        }
+
+    @staticmethod
+    def _patch_token_usage_entry_summary(values: dict[str, int]) -> dict[str, int | float]:
+        patch_count = max(1, int(values.get("patch_count", 0)))
+        input_tokens = int(values.get("input_tokens", 0))
+        output_tokens = int(values.get("output_tokens", 0))
+        total_tokens = int(values.get("total_tokens", 0))
+        return {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": total_tokens,
+            "requests": int(values.get("requests", 0)),
+            "patch_count": patch_count,
+            "average_input_tokens_per_patch": round(input_tokens / patch_count, 2),
+            "average_output_tokens_per_patch": round(output_tokens / patch_count, 2),
+            "average_total_tokens_per_patch": round(total_tokens / patch_count, 2),
+        }
+
+    def _update_patch_token_usage_progress(
+        self,
+        *,
+        data_package_id: str,
+        token_usage: dict[str, dict[str, int]],
+    ) -> None:
+        if self.task_registry is None:
+            return
+        task_name = self._patch_draft_task_name(data_package_id)
+        task_info = self.task_registry.get_task_info(task_name)
+        if task_info is None:
+            return
+        progress = dict(task_info.progress or {})
+        summary = self._patch_token_usage_summary(token_usage)
+        if summary.get("agents"):
+            progress["token_usage"] = summary
+            self.task_registry.update_progress(task_name, progress)
+
     @staticmethod
     def _record(value: Any) -> dict[str, Any] | None:
         return value if isinstance(value, dict) else None
@@ -1137,9 +1271,12 @@ class ExtractionService:
         data_package_id: str,
         message: str,
     ) -> None:
-        formatted = f"{data_package_id}: {message}"
-        logger.info("Patch review resolution - %s", formatted)
-        resolution_log.append(formatted)
+        logger.info(
+            "Patch review resolution for %s - %s",
+            data_package_id,
+            message,
+        )
+        resolution_log.append(message)
 
     def _update_patch_resolution_progress(
         self,

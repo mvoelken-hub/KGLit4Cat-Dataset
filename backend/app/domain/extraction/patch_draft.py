@@ -113,6 +113,7 @@ class PatchDraftResult:
 
 
 PatchProgressCallback = Callable[[dict[str, Any], PatchRecord, int, int], Awaitable[None]]
+TokenUsageCallback = Callable[[str, Any, int], None]
 
 
 # ---------------------------------------------------------------------------
@@ -202,6 +203,7 @@ async def extract_field_patch_candidates(
     top_level_fields: list[FieldInfo],
     model: Any,
     protected_fields: list[str] | None = None,
+    on_token_usage: TokenUsageCallback | None = None,
 ) -> list[PatchCandidate]:
     """Extract field-level patch candidates from a chunk batch."""
     agent = create_patch_draft_agent(model=model)
@@ -226,6 +228,8 @@ async def extract_field_patch_candidates(
         ),
         deps=deps,
     )
+    if on_token_usage is not None:
+        on_token_usage("patch_extraction", result.usage, 1)
     return result.output.candidates
 
 
@@ -246,6 +250,7 @@ async def patch_draft_from_content_chunks(
     protected_fields: list[str] | None = None,
     protected_fields_loader: Callable[[], list[str]] | None = None,
     completed_patch_file_names: set[str] | None = None,
+    on_token_usage: TokenUsageCallback | None = None,
 ) -> PatchDraftResult:
     draft = copy.deepcopy(initial_draft)
     patches: list[PatchRecord] = []
@@ -304,6 +309,7 @@ async def patch_draft_from_content_chunks(
                 top_level_fields=top_level_fields,
                 model=model,
                 protected_fields=current_protected_fields,
+                on_token_usage=on_token_usage,
             )
             candidates = [
                 candidate
@@ -339,6 +345,7 @@ async def patch_draft_from_content_chunks(
                 profile_json_schema=profile_json_schema,
                 candidates=candidates,
                 model=model,
+                on_token_usage=on_token_usage,
             )
 
             # Step 5: Apply per-candidate decisions.

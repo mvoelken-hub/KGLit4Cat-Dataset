@@ -124,6 +124,10 @@ function reviewOutcomeFromNote(note?: string): string | undefined {
   return match?.[1];
 }
 
+function displayResolutionLogEntry(entry: string): string {
+  return entry.replace(/^[0-9a-f]{64}:\s+/i, '');
+}
+
 function buildReviewItems(artifacts: PatchArtifacts | null, reviewState: PatchReviewState): ReviewItem[] {
   if (!artifacts) return [];
   const resolvedIds = new Set(reviewState.resolved_item_ids);
@@ -158,7 +162,7 @@ function buildReviewItems(artifacts: PatchArtifacts | null, reviewState: PatchRe
         path,
         status: needsReview ? 'needs_review' : 'accepted',
         label: needsReview ? 'Review' : 'Patch',
-        resolved: resolvedIds.has(id),
+        resolved: !needsReview || resolvedIds.has(id),
         outcome: reviewOutcomeFromNote(resolutionNote),
         resolutionNote,
         confidence,
@@ -207,8 +211,62 @@ function ResolutionLogList({ entries }: { entries: string[] }) {
     <div className="resolution-log">
       <span>Resolution log</span>
       <ol>
-        {entries.map((entry, index) => <li key={`${index}-${entry}`}>{entry}</li>)}
+        {entries.map((entry, index) => <li key={`${index}-${entry}`}>{displayResolutionLogEntry(entry)}</li>)}
       </ol>
+    </div>
+  );
+}
+
+const tokenUsageLabels: Record<string, string> = {
+  patch_extraction: 'Patch extraction',
+  patch_quality: 'Patch quality review',
+  auto_resolve: 'Auto-resolve',
+};
+
+function formatTokenCount(value?: number): string {
+  const numberValue = typeof value === 'number' && Number.isFinite(value) ? value : 0;
+  return Math.round(numberValue).toLocaleString();
+}
+
+function TokenUsageSummary({ tokenUsage }: { tokenUsage?: PatchProgress['token_usage'] }) {
+  const agentEntries = Object.entries(tokenUsage?.agents ?? {})
+    .filter(([, usage]) => usage.total_tokens > 0)
+    .sort(([left], [right]) => {
+      const order = ['patch_extraction', 'patch_quality', 'auto_resolve'];
+      return (order.indexOf(left) === -1 ? order.length : order.indexOf(left))
+        - (order.indexOf(right) === -1 ? order.length : order.indexOf(right));
+    });
+  const combined = tokenUsage?.combined && tokenUsage.combined.total_tokens > 0
+    ? tokenUsage.combined
+    : null;
+
+  if (!agentEntries.length && !combined) return null;
+
+  const rows = [
+    ...agentEntries.map(([key, usage]) => ({
+      key,
+      label: tokenUsageLabels[key] || key,
+      usage,
+    })),
+    ...(combined ? [{ key: 'combined', label: 'Combined', usage: combined }] : []),
+  ];
+
+  return (
+    <div className="token-usage-summary">
+      <span>Token usage</span>
+      <div>
+        {rows.map((row) => (
+          <div className={`token-usage-row ${row.key === 'combined' ? 'combined' : ''}`} key={row.key}>
+            <strong>{row.label}</strong>
+            <span>{formatTokenCount(row.usage.average_total_tokens_per_patch)} avg total / patch</span>
+            <small>
+              {formatTokenCount(row.usage.average_input_tokens_per_patch)} in / {formatTokenCount(row.usage.average_output_tokens_per_patch)} out avg
+              {' - '}
+              {formatTokenCount(row.usage.requests)} request{row.usage.requests === 1 ? '' : 's'}
+            </small>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1135,6 +1193,7 @@ export function App() {
                     {progressTotalBatches > 0 && <span>Patching batch {progressBatchNo} of {progressTotalBatches}</span>}
                   </div>
                   <div className="patch-progress-track" aria-hidden="true"><div style={{ width: `${progressPercent}%` }} /></div>
+                  <TokenUsageSummary tokenUsage={patchProgress?.token_usage} />
                   <ResolutionLogList entries={patchProgress?.resolution_log ?? []} />
                 </div>
               )}

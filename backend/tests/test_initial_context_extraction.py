@@ -807,6 +807,7 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
             *,
             data_package_id: str,
             profile_identifier: str,
+            on_token_usage=None,
         ) -> None:
             resolve_patch_counts.append(len(output_repository.patches))
             await asyncio.sleep(0.01)
@@ -831,6 +832,86 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(output_repository.patches), 2)
         self.assertGreaterEqual(len(resolve_patch_counts), 2)
         self.assertEqual(resolve_patch_counts[0], 1)
+
+    async def test_patch_initial_draft_progress_includes_token_usage_summary(self):
+        from unittest import mock as unittest_mock
+
+        class FakeUsage:
+            input_tokens = 120
+            output_tokens = 30
+            total_tokens = 150
+            requests = 1
+
+        datasource_service = FakeDataSourceService(make_data_package())
+        datasource_service.chunks_by_file = [
+            [
+                ContentChunk(
+                    file_path="metadata.txt",
+                    chunk_index=0,
+                    text="Chunk says chunk-keyword.",
+                )
+            ]
+        ]
+        output_repository = FakeOutputRepository()
+        output_repository.initial_context = InitialContext.model_validate(
+            INITIAL_CONTEXT_OUTPUT
+        )
+        output_repository.initial_draft = INITIAL_DRAFT_OUTPUT
+        accept_report = PatchQualityReport(
+            overall_decision="accept",
+            candidate_ratings=[
+                CandidateQualityRating(
+                    field_path="description",
+                    decision="accept",
+                    issues=[],
+                ),
+                CandidateQualityRating(
+                    field_path="keywords",
+                    decision="accept",
+                    issues=[],
+                ),
+            ],
+            summary="All candidates accepted.",
+        )
+
+        async def fake_quality_review(**kwargs):
+            kwargs["on_token_usage"]("patch_quality", FakeUsage(), 1)
+            return accept_report
+
+        task_registry = TaskRegistry(settings=None, logger=FakeLogger())  # type: ignore[arg-type]
+        service = ExtractionService(
+            FakeProfileRepository(),  # type: ignore[arg-type]
+            settings=None,  # type: ignore[arg-type]
+            datasource_service=datasource_service,  # type: ignore[arg-type]
+            ollama_client=FakeOllamaClient(FIELD_PATCH_OUTPUT),  # type: ignore[arg-type]
+            output_repository=output_repository,
+            task_registry=task_registry,
+        )
+
+        with unittest_mock.patch(
+            "app.domain.extraction.patch_draft.review_patch_semantic_quality",
+            side_effect=fake_quality_review,
+        ):
+            await service.patch_initial_draft(
+                data_package_id="package-id",
+                profile_identifier="test-profile",
+                num_chunks_per_turn=1,
+            )
+            await task_registry.wait_for_task(
+                service._patch_draft_task_name("package-id"),
+                timeout=2.0,
+            )
+
+        progress = task_registry.get_task_info(
+            service._patch_draft_task_name("package-id"),
+        ).progress
+        token_usage = progress["token_usage"]  # type: ignore[index]
+        self.assertIn("patch_extraction", token_usage["agents"])
+        self.assertEqual(
+            token_usage["agents"]["patch_quality"]["average_total_tokens_per_patch"],
+            150,
+        )
+        self.assertGreater(token_usage["combined"]["average_total_tokens_per_patch"], 150)
 
     async def test_auto_resolve_marks_progress_active_while_running(self):
         from unittest import mock as unittest_mock
@@ -876,9 +957,30 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
         resolver_started = asyncio.Event()
         release_resolver = asyncio.Event()
 
+        class FakeUsage:
+            input_tokens = 80
+            output_tokens = 20
+            total_tokens = 100
+            requests = 1
+
+        token_usage_totals: dict[str, dict[str, int]] = {}
+
+        def record_usage(agent_name, usage, patch_count):
+            service._record_patch_token_usage(
+                token_usage_totals,
+                agent_name=agent_name,
+                usage=usage,
+                patch_count=patch_count,
+            )
+            service._update_patch_token_usage_progress(
+                data_package_id="package-id",
+                token_usage=token_usage_totals,
+            )
+
         async def fake_resolve(**kwargs):
             resolver_started.set()
             await release_resolver.wait()
+            kwargs["on_token_usage"]("auto_resolve", FakeUsage(), 1)
             return PatchReviewResolution(
                 final_draft=INITIAL_DRAFT_OUTPUT,
                 item_decisions=[
@@ -900,6 +1002,7 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
                     service._auto_resolve_review_items(
                         data_package_id="package-id",
                         profile_identifier="test-profile",
+                        on_token_usage=record_usage,
                     )
                 )
                 await asyncio.wait_for(resolver_started.wait(), timeout=2.0)
@@ -913,6 +1016,10 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(task_info.progress["resolution_active"])  # type: ignore[union-attr,index]
             self.assertEqual(task_info.progress["resolution_resolved_count"], 1)  # type: ignore[union-attr,index]
             self.assertEqual(task_info.progress["resolution_unresolved_item_ids"], [])  # type: ignore[union-attr,index]
+            self.assertEqual(
+                task_info.progress["token_usage"]["agents"]["auto_resolve"]["average_total_tokens_per_patch"],  # type: ignore[union-attr,index]
+                100,
+            )
             self.assertEqual(result["resolved_count"], 1)
         finally:
             await task_registry.cancel_task(task_name)

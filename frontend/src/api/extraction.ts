@@ -3,6 +3,22 @@ import type { InitialContext, PatchDraftResponse } from './types';
 
 export type PatchTaskStatus = 'unknown' | 'running' | 'completed' | 'cancelled' | 'crashed';
 
+export type PatchTokenUsageEntry = {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  requests: number;
+  patch_count: number;
+  average_input_tokens_per_patch: number;
+  average_output_tokens_per_patch: number;
+  average_total_tokens_per_patch: number;
+};
+
+export type PatchTokenUsage = {
+  agents?: Record<string, PatchTokenUsageEntry>;
+  combined?: PatchTokenUsageEntry;
+};
+
 export type PatchProgress = {
   batch_no?: number;
   total_batches?: number;
@@ -14,6 +30,7 @@ export type PatchProgress = {
   resolution_log?: string[];
   resolution_resolved_count?: number;
   resolution_unresolved_item_ids?: string[];
+  token_usage?: PatchTokenUsage;
 };
 
 export type PatchArtifact = {

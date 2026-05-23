@@ -23,12 +23,14 @@ from app.domain.extraction import (
     initialize_draft_from_initial_context,
     list_initial_context_dataset_files,
     create_schema_validated_agent,
+    extract_field_patch_candidates,
     prompted_json_output,
     read_initial_context_file_content,
     structured_profile_output,
     validate_json_output_against_schema,
     patch_draft_from_content_chunks,
 )
+from app.domain.extraction.schema_utils import get_top_level_fields
 from app.domain.extraction.sanitizers import (
     normalize_review_draft,
     sanitize_document_against_schema,
@@ -853,6 +855,38 @@ class ExtractionAgentHelperTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(progress), 1)
         self.assertEqual(progress[0][0]["description"], "Updated with chunk evidence.")
         self.assertEqual(progress[0][2:], (1, 1))
+
+    async def test_extract_field_patch_candidates_reports_token_usage(self):
+        usage_events = []
+        chunks = make_content_chunks()[0]
+
+        candidates = await extract_field_patch_candidates(
+            initial_context=InitialContext.model_validate(INITIAL_CONTEXT_OUTPUT),
+            draft=INITIAL_DRAFT_OUTPUT,
+            document_file_path=chunks[0].file_path,
+            chunk_batch=chunks,
+            batch_no=1,
+            total_batches=1,
+            profile_manifest=make_profile_manifest(),
+            profile_json_schema=PROFILE_JSON_SCHEMA,
+            top_level_fields=get_top_level_fields(
+                profile_json_schema=PROFILE_JSON_SCHEMA,
+                target_class=make_profile_manifest().target_class,
+            ),
+            model=TestModel(
+                call_tools=[],
+                custom_output_text=json.dumps(FIELD_PATCH_OUTPUT),
+            ),
+            on_token_usage=lambda agent_name, usage, patch_count: usage_events.append(
+                (agent_name, usage, patch_count)
+            ),
+        )
+
+        self.assertEqual(candidates[0].field_path, "description")
+        self.assertEqual(len(usage_events), 1)
+        self.assertEqual(usage_events[0][0], "patch_extraction")
+        self.assertEqual(usage_events[0][2], 1)
+        self.assertGreater(usage_events[0][1].total_tokens, 0)
 
     async def test_patch_draft_from_content_chunks_skips_completed_checkpoint(self):
         chunks = make_content_chunks()

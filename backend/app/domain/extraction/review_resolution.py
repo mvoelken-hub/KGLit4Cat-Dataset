@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
@@ -13,6 +13,7 @@ from app.domain.profiles import ProfileManifest
 
 ReviewItemKind = Literal["matched", "unmapped"]
 ReviewItemOutcome = Literal["included", "already_present", "excluded", "unresolved"]
+TokenUsageCallback = Callable[[str, Any, int], None]
 
 
 class PatchReviewItem(BaseModel):
@@ -158,6 +159,7 @@ async def resolve_patch_review_items(
     profile_json_schema: dict[str, Any],
     existing_review_state: dict[str, Any],
     model: Any,
+    on_token_usage: TokenUsageCallback | None = None,
 ) -> PatchReviewResolution:
     agent = create_patch_review_resolution_agent(model=model)
     deps = PatchReviewResolutionDeps(
@@ -173,4 +175,7 @@ async def resolve_patch_review_items(
         "support the change.",
         deps=deps,
     )
+    if on_token_usage is not None:
+        patch_count = len({item.file_name for item in review_items if item.file_name}) or 1
+        on_token_usage("auto_resolve", result.usage, patch_count)
     return result.output
