@@ -220,7 +220,6 @@ function ResolutionLogList({ entries }: { entries: string[] }) {
 
 const tokenUsageLabels: Record<string, string> = {
   initial_context: 'Initial context',
-  initial_draft: 'Initial draft',
   patch_discovery: 'Patch discovery',
   schema_patch_writer: 'Schema patch writer',
   schema_repair: 'Schema repair',
@@ -264,7 +263,7 @@ function TokenUsageSummary({
     .filter(([key]) => !allowedAgents || allowedAgents.has(key))
     .filter(([, usage]) => usage.total_tokens > 0)
     .sort(([left], [right]) => {
-      const order = ['initial_context', 'initial_draft', 'patch_discovery', 'schema_patch_writer', 'schema_repair', 'patch_extraction', 'patch_quality', 'auto_resolve'];
+      const order = ['initial_context', 'patch_discovery', 'schema_patch_writer', 'schema_repair', 'patch_extraction', 'patch_quality', 'auto_resolve'];
       return (order.indexOf(left) === -1 ? order.length : order.indexOf(left))
         - (order.indexOf(right) === -1 ? order.length : order.indexOf(right));
     });
@@ -1227,14 +1226,6 @@ export function App() {
                   </>
                 )}
               </div>
-              {draft && (
-                <TokenUsageSummary
-                  tokenUsage={tokenUsage}
-                  averageUnit="operation"
-                  heading="Initial draft token usage"
-                  agentKeys={['initial_draft']}
-                />
-              )}
               {draft && patchStatus && (
                 <div className="patch-progress">
                   <div className="patch-progress-header">

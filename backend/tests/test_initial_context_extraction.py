@@ -575,7 +575,6 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
             profile_repository,  # type: ignore[arg-type]
             settings=None,  # type: ignore[arg-type]
             datasource_service=datasource_service,  # type: ignore[arg-type]
-            ollama_client=FakeOllamaClient(INITIAL_DRAFT_OUTPUT),  # type: ignore[arg-type]
             output_repository=output_repository,
             task_registry=task_registry,
         )
@@ -596,76 +595,18 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(profile_repository.requested_manifest_identifier, "test-profile")
         self.assertEqual(profile_repository.requested_schema_identifier, "test-profile")
         self.assertEqual(result["title"], "Gas chromatography dataset for sample-a")
-        self.assertEqual(output_repository.initial_draft, INITIAL_DRAFT_OUTPUT)
-        self.assertIn("initial_draft", output_repository.token_usage)
-        self.assertGreater(
-            output_repository.token_usage["initial_draft"]["total_tokens"],
-            0,
-        )
-        usage_summary = await service.get_token_usage("package-id")
         self.assertEqual(
-            usage_summary["agents"]["initial_draft"]["operation_count"],
-            1,
+            output_repository.initial_draft,
+            {
+                "title": "Gas chromatography dataset for sample-a",
+                "description": "The package contains gas chromatography metadata for sample-a.",
+                "keywords": ["gas chromatography", "sample-a"],
+            },
         )
-        self.assertGreater(
-            usage_summary["agents"]["initial_draft"]["average_total_tokens_per_operation"],
-            0,
-        )
+        self.assertNotIn("initial_draft", output_repository.token_usage)
+        usage_summary = await service.get_token_usage("package-id")
+        self.assertNotIn("initial_draft", usage_summary["agents"])
         self.assertIsNone(task_registry.get_task_info(task_name))
-
-    async def test_extract_initial_draft_replaces_prior_initial_draft_token_usage(self):
-        output_repository = FakeOutputRepository()
-        output_repository.initial_context = InitialContext.model_validate(
-            INITIAL_CONTEXT_OUTPUT
-        )
-        output_repository.token_usage = {
-            "initial_context": {
-                "input_tokens": 10,
-                "output_tokens": 5,
-                "total_tokens": 15,
-                "requests": 1,
-                "operation_count": 1,
-                "patch_count": 0,
-            },
-            "initial_draft": {
-                "input_tokens": 1000,
-                "output_tokens": 100,
-                "total_tokens": 1100,
-                "requests": 4,
-                "operation_count": 2,
-                "patch_count": 0,
-            },
-        }
-        service = ExtractionService(
-            FakeProfileRepository(),  # type: ignore[arg-type]
-            settings=None,  # type: ignore[arg-type]
-            datasource_service=FakeDataSourceService(make_data_package()),  # type: ignore[arg-type]
-            ollama_client=FakeOllamaClient(INITIAL_DRAFT_OUTPUT),  # type: ignore[arg-type]
-            output_repository=output_repository,
-        )
-
-        await service.extract_initial_draft(
-            data_package_id="package-id",
-            profile_identifier="test-profile",
-        )
-
-        self.assertEqual(
-            output_repository.token_usage["initial_context"]["total_tokens"],
-            15,
-        )
-        self.assertEqual(
-            output_repository.token_usage["initial_draft"]["operation_count"],
-            1,
-        )
-        self.assertNotEqual(
-            output_repository.token_usage["initial_draft"]["total_tokens"],
-            1100,
-        )
-        usage_summary = await service.get_token_usage("package-id")
-        self.assertEqual(
-            usage_summary["agents"]["initial_draft"]["operation_count"],
-            1,
-        )
 
     async def test_extract_initial_draft_requires_existing_initial_context(self):
         output_repository = FakeOutputRepository()
@@ -673,7 +614,6 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
             FakeProfileRepository(),  # type: ignore[arg-type]
             settings=None,  # type: ignore[arg-type]
             datasource_service=FakeDataSourceService(make_data_package()),  # type: ignore[arg-type]
-            ollama_client=FakeOllamaClient(INITIAL_DRAFT_OUTPUT),  # type: ignore[arg-type]
             output_repository=output_repository,
         )
 

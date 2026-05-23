@@ -22,10 +22,8 @@ from app.domain.extraction.initial_context import (
     read_initial_context_file_content,
 )
 from app.domain.extraction.initial_draft import (
-    INITIAL_DRAFT_INSTRUCTIONS,
     InitialContextRequiredError,
-    InitialDraftDeps,
-    create_initial_draft_agent,
+    build_initial_draft_from_context,
     expand_schema_placeholders,
     initialize_draft_from_initial_context,
 )
@@ -80,7 +78,6 @@ from app.domain.extraction.schema_utils import (
 
 __all__ = [
     "DEFAULT_OUTPUT_RETRIES",
-    "INITIAL_DRAFT_INSTRUCTIONS",
     "INITIAL_CONTEXT_INSTRUCTIONS",
     "PATCH_DRAFT_INSTRUCTIONS",
     "PATCH_QUALITY_INSTRUCTIONS",
@@ -91,7 +88,6 @@ __all__ = [
     "FieldPatchResult",
     "InitialContextRequiredError",
     "InitialContextDeps",
-    "InitialDraftDeps",
     "JSON_OUTPUT_TEMPLATE",
     "FileRelationship",
     "InitialContext",
@@ -113,7 +109,6 @@ __all__ = [
     "apply_merge_patch",
     "create_patch_discovery_agent",
     "create_initial_context_agent",
-    "create_initial_draft_agent",
     "create_patch_draft_agent",
     "create_patch_quality_agent",
     "create_schema_patch_agent",
@@ -123,6 +118,7 @@ __all__ = [
     "discover_patch_information",
     "extract_field_patch_candidates",
     "extract_initial_context_from_data_package",
+    "build_initial_draft_from_context",
     "expand_schema_placeholders",
     "get_top_level_fields",
     "initialize_draft_from_initial_context",

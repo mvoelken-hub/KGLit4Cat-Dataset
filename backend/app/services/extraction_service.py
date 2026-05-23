@@ -101,12 +101,11 @@ class ExtractionService:
     ) -> dict[str, Any]:
         if (
             self.datasource_service is None
-            or self.ollama_client is None
             or self.output_repository is None
         ):
             raise RuntimeError(
-                "ExtractionService requires datasource_service, ollama_client, "
-                "and output_repository to run extraction agents."
+                "ExtractionService requires datasource_service and "
+                "output_repository to initialize drafts."
             )
 
         data_package = self.datasource_service.get_data_package(data_package_id)
@@ -121,23 +120,11 @@ class ExtractionService:
                 "before /api/v1/extraction/initial-draft."
             ) from exc
 
-        token_usage_totals: dict[str, dict[str, int]] = {}
-
-        def record_token_usage(agent_name: str, usage: Any, operation_count: int = 1) -> None:
-            self._record_token_usage(
-                token_usage_totals,
-                agent_name=agent_name,
-                usage=usage,
-                operation_count=operation_count,
-            )
-
         initial_draft = await initialize_draft_from_initial_context(
             initial_context=initial_context,
             data_package=data_package,
             profile_manifest=profile_manifest,
             profile_json_schema=profile_json_schema,
-            model=self.ollama_client.agent_model,
-            on_token_usage=record_token_usage,
         )
         initial_draft = normalize_review_draft(
             initial_draft,
@@ -146,10 +133,6 @@ class ExtractionService:
         self.output_repository.save_initial_draft(
             workflow_id=data_package_id,
             initial_draft=initial_draft,
-        )
-        self._replace_workflow_token_usage_agents(
-            data_package_id=data_package_id,
-            token_usage=token_usage_totals,
         )
         self.output_repository.clear_patch_artifacts(workflow_id=data_package_id)
         if self.task_registry is not None:
@@ -1150,22 +1133,6 @@ class ExtractionService:
             usage=usage,
             operation_count=operation_count,
         )
-        self.output_repository.save_token_usage(
-            workflow_id=data_package_id,
-            token_usage=totals,
-        )
-
-    def _replace_workflow_token_usage_agents(
-        self,
-        *,
-        data_package_id: str,
-        token_usage: dict[str, dict[str, int]],
-    ) -> None:
-        if self.output_repository is None or not token_usage:
-            return
-        totals = self.output_repository.load_token_usage(data_package_id)
-        for agent_name, values in token_usage.items():
-            totals[agent_name] = dict(values)
         self.output_repository.save_token_usage(
             workflow_id=data_package_id,
             token_usage=totals,

@@ -13,10 +13,8 @@ from app.domain.extraction import (
     JSON_OUTPUT_TEMPLATE,
     InitialContext,
     InitialContextDeps,
-    InitialDraftDeps,
     apply_merge_patch,
     create_initial_context_agent,
-    create_initial_draft_agent,
     create_patch_draft_agent,
     expand_schema_placeholders,
     extract_initial_context_from_data_package,
@@ -442,54 +440,27 @@ class ExtractionAgentHelperTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(usage_events[0][2], 1)
         self.assertGreater(usage_events[0][1].total_tokens, 0)
 
-    def test_create_initial_draft_agent_uses_retry_budget(self):
-        agent = create_initial_draft_agent(
-            model=TestModel(
-                call_tools=[],
-                custom_output_text=json.dumps(INITIAL_DRAFT_OUTPUT),
-            ),
-            profile_json_schema=PROFILE_JSON_SCHEMA,
-            target_class="Dataset",
-        )
-
-        self.assertEqual(agent._max_output_retries, DEFAULT_OUTPUT_RETRIES)
-
     async def test_initialize_draft_from_initial_context_returns_profile_dict(self):
         result = await initialize_draft_from_initial_context(
             initial_context=InitialContext.model_validate(INITIAL_CONTEXT_OUTPUT),
             data_package=make_data_package(),
             profile_manifest=make_profile_manifest(),
             profile_json_schema=PROFILE_JSON_SCHEMA,
-            model=TestModel(
-                call_tools=[],
-                custom_output_text=json.dumps(INITIAL_DRAFT_OUTPUT),
-            ),
         )
 
         self.assertEqual(result["title"], "Mass spectrometry dataset for sample-1")
         self.assertEqual(result["keywords"], ["mass spectrometry", "sample-1"])
 
-    async def test_initialize_draft_from_initial_context_reports_token_usage(self):
-        usage_events = []
-
-        await initialize_draft_from_initial_context(
+    async def test_initialize_draft_from_initial_context_uses_deterministic_mapping(self):
+        result = await initialize_draft_from_initial_context(
             initial_context=InitialContext.model_validate(INITIAL_CONTEXT_OUTPUT),
             data_package=make_data_package(),
             profile_manifest=make_profile_manifest(),
             profile_json_schema=PROFILE_JSON_SCHEMA,
-            model=TestModel(
-                call_tools=[],
-                custom_output_text=json.dumps(INITIAL_DRAFT_OUTPUT),
-            ),
-            on_token_usage=lambda agent_name, usage, operation_count: usage_events.append(
-                (agent_name, usage, operation_count)
-            ),
         )
 
-        self.assertEqual(len(usage_events), 1)
-        self.assertEqual(usage_events[0][0], "initial_draft")
-        self.assertEqual(usage_events[0][2], 1)
-        self.assertGreater(usage_events[0][1].total_tokens, 0)
+        self.assertEqual(result["title"], "Mass spectrometry dataset for sample-1")
+        self.assertEqual(result["description"], INITIAL_CONTEXT_OUTPUT["summary"])
 
     def test_expand_schema_placeholders_adds_nullable_fields_and_preserves_values(self):
         result = expand_schema_placeholders(
@@ -574,27 +545,13 @@ class ExtractionAgentHelperTests(unittest.IsolatedAsyncioTestCase):
             data_package=make_data_package(),
             profile_manifest=make_profile_manifest(),
             profile_json_schema=RICH_PROFILE_JSON_SCHEMA,
-            model=TestModel(
-                call_tools=[],
-                custom_output_text=json.dumps({"response": RICH_INITIAL_DRAFT_OUTPUT}),
-            ),
         )
 
-        self.assertEqual(result["id"], "dataset-sample-1")
-        self.assertEqual(result["keyword"], None)
+        self.assertEqual(result["id"], "dataset-test-package")
+        self.assertEqual(result["keyword"], ["mass spectrometry", "sample-1"])
         self.assertEqual(result["publisher"], None)
-        self.assertEqual(result["was_generated_by"][0]["agent"][0]["type"]["id"], "instrument")
-
-    def test_initial_draft_deps_carry_context_and_profile(self):
-        deps = InitialDraftDeps(
-            initial_context=InitialContext.model_validate(INITIAL_CONTEXT_OUTPUT),
-            data_package=make_data_package(),
-            profile_manifest=make_profile_manifest(),
-            profile_json_schema=PROFILE_JSON_SCHEMA,
-        )
-
-        self.assertEqual(deps.profile_manifest.identifier, "test-profile")
-        self.assertEqual(deps.initial_context.device_model, "MS-1000")
+        self.assertEqual(result["was_generated_by"][0]["agent"][0]["name"], ["Mass spectrometer"])
+        self.assertEqual(result["was_generated_by"][0]["agent"][0]["type"], None)
 
     def test_apply_merge_patch_merges_nested_values_and_string_lists(self):
         draft = {
