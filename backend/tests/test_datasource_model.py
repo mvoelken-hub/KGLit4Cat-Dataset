@@ -7,6 +7,12 @@ import unittest
 import pymupdf
 
 from app.domain.datasources import DataPackage, InvalidDataPackageZipFileError
+from app.domain.datasources import (
+    ContentChunk,
+    DataPackageIdNotFoundError,
+    DataPackageZipNotFoundError,
+    MultipleDataPackageZipFilesError,
+)
 from app.domain.datasources.file_types import FileType, determine_file_type, extract_text_from_file
 from infra.filesystem_datasource_blob_repository import FileSystemDataSourceBlobRepository
 
@@ -55,6 +61,111 @@ class DataPackageTests(unittest.TestCase):
 
         self.assertEqual(loaded_data_package.file_name, "sample")
         self.assertEqual(loaded_data_package.get_file_path_list(), ["sample.txt"])
+
+    def test_filesystem_repository_lists_valid_saved_packages(self):
+        with TemporaryDirectory() as temporary_directory:
+            repository = FileSystemDataSourceBlobRepository(Path(temporary_directory))
+            repository.save_data_package(
+                zip_bytes({"sample.txt": b"content"}),
+                "package-id",
+                "sample",
+            )
+            invalid_package_dir = Path(temporary_directory) / "invalid-id"
+            invalid_package_dir.mkdir()
+            (invalid_package_dir / "invalid.zip").write_bytes(b"not a zip")
+
+            packages = repository.list_data_packages()
+
+        self.assertEqual([package.file_name for package in packages], ["sample"])
+
+    def test_filesystem_repository_returns_empty_list_when_base_path_missing(self):
+        with TemporaryDirectory() as temporary_directory:
+            repository = FileSystemDataSourceBlobRepository(
+                Path(temporary_directory) / "missing"
+            )
+
+            self.assertEqual(repository.list_data_packages(), [])
+
+    def test_filesystem_repository_saves_and_loads_content_chunks(self):
+        with TemporaryDirectory() as temporary_directory:
+            repository = FileSystemDataSourceBlobRepository(Path(temporary_directory))
+            chunk = ContentChunk(
+                content="Instrument: GC-42\n",
+                data_package_id="package-id",
+                file_path="metadata.txt",
+                start_idx=0,
+                end_idx=0,
+                filtered_line_indices=[0],
+                summary="instrument metadata",
+                embedding=[0.1, 0.2],
+            )
+
+            repository.save_content_chunks([chunk])
+            loaded_chunks = repository.load_content_chunks_by_file_path(
+                "package-id",
+                "metadata.txt",
+            )
+
+        self.assertEqual(loaded_chunks, [chunk])
+
+    def test_filesystem_repository_ignores_empty_chunk_save_and_missing_chunks(self):
+        with TemporaryDirectory() as temporary_directory:
+            repository = FileSystemDataSourceBlobRepository(Path(temporary_directory))
+
+            repository.save_content_chunks([])
+            loaded_chunks = repository.load_content_chunks_by_file_path(
+                "package-id",
+                "metadata.txt",
+            )
+
+        self.assertEqual(loaded_chunks, [])
+
+    def test_filesystem_repository_deletes_package_without_chunks(self):
+        with TemporaryDirectory() as temporary_directory:
+            base_path = Path(temporary_directory)
+            repository = FileSystemDataSourceBlobRepository(base_path)
+            repository.save_data_package(
+                zip_bytes({"sample.txt": b"content"}),
+                "package-id",
+                "sample",
+            )
+
+            repository.delete_data_package("package-id")
+
+            self.assertFalse((base_path / "package-id").exists())
+
+    def test_filesystem_repository_delete_content_chunks_is_idempotent(self):
+        with TemporaryDirectory() as temporary_directory:
+            repository = FileSystemDataSourceBlobRepository(Path(temporary_directory))
+
+            repository.delete_content_chunks("package-id")
+
+    def test_filesystem_repository_reports_missing_package_id(self):
+        with TemporaryDirectory() as temporary_directory:
+            repository = FileSystemDataSourceBlobRepository(Path(temporary_directory))
+
+            with self.assertRaises(DataPackageIdNotFoundError):
+                repository.load_data_package("missing")
+
+    def test_filesystem_repository_reports_missing_zip_in_package_directory(self):
+        with TemporaryDirectory() as temporary_directory:
+            package_dir = Path(temporary_directory) / "package-id"
+            package_dir.mkdir()
+            repository = FileSystemDataSourceBlobRepository(Path(temporary_directory))
+
+            with self.assertRaises(DataPackageZipNotFoundError):
+                repository.load_data_package("package-id")
+
+    def test_filesystem_repository_reports_multiple_zips_in_package_directory(self):
+        with TemporaryDirectory() as temporary_directory:
+            package_dir = Path(temporary_directory) / "package-id"
+            package_dir.mkdir()
+            (package_dir / "one.zip").write_bytes(zip_bytes({"one.txt": b"1"}).getvalue())
+            (package_dir / "two.zip").write_bytes(zip_bytes({"two.txt": b"2"}).getvalue())
+            repository = FileSystemDataSourceBlobRepository(Path(temporary_directory))
+
+            with self.assertRaises(MultipleDataPackageZipFilesError):
+                repository.load_data_package("package-id")
 
     def test_extract_text_from_file_dispatches_pdf_without_dot_suffix(self):
         extracted = extract_text_from_file(

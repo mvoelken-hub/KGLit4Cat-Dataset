@@ -1,5 +1,8 @@
+import asyncio
+from types import SimpleNamespace
 import unittest
 from app.domain.semantics import (
+    VocabAlreadyExistsError,
     VocabGraphStatement,
     VocabNotFoundError,
     VocabQuery,
@@ -8,6 +11,7 @@ from app.domain.semantics import (
     VocabSearchCandidate,
     VocabTermScheme,
 )
+from app.core.task_registry import TaskInfo, TaskStatus, TaskType
 from app.services.semantic_service import SemanticService
 
 
@@ -27,6 +31,13 @@ class FakeOllamaClient:
 class FakeSemanticGraphRepository:
     def __init__(self, vocab: VocabSchemeInfo | None):
         self.vocab = vocab
+        self.identifiers = [vocab.identifier] if vocab else []
+        self.pending_updates: list[VocabResource] = []
+        self.updated_embedding_batches: list[list[VocabResource]] = []
+        self.created_index_identifier: str | None = None
+        self.deleted_index_identifier: str | None = None
+        self.deleted_vocabulary_identifier: str | None = None
+        self.cleaned_up = False
         self.vector_call: dict | None = None
         self.fulltext_call: dict | None = None
         self.expand_call: dict | None = None
@@ -34,6 +45,27 @@ class FakeSemanticGraphRepository:
 
     async def get_vocabulary(self, identifier: str):
         return self.vocab
+
+    async def list_vocabulary_identifiers(self):
+        return self.identifiers
+
+    async def cleanup_untyped_resources(self):
+        self.cleaned_up = True
+
+    async def create_vocab_indexes(self, identifier: str):
+        self.created_index_identifier = identifier
+
+    async def delete_vocab_indexes(self, identifier: str):
+        self.deleted_index_identifier = identifier
+
+    async def delete_vocabulary(self, identifier: str):
+        self.deleted_vocabulary_identifier = identifier
+
+    async def check_pending_embedding_updates(self, identifier: str):
+        return self.pending_updates
+
+    async def update_resource_embeddings(self, resources: list[VocabResource]):
+        self.updated_embedding_batches.append(resources)
 
     async def query_vocab_vector_candidates(
         self,
@@ -220,6 +252,153 @@ class SemanticServiceVocabQueryTests(unittest.IsolatedAsyncioTestCase):
                 "urn:missing",
                 VocabQuery(rdf_type="skos__Concept", fulltext_query="temperature"),
             )
+
+    async def test_list_and_cleanup_delegate_to_repository(self):
+        repository = FakeSemanticGraphRepository(make_vocab())
+        service = make_service(repository, FakeOllamaClient())
+
+        self.assertEqual(await service.list_vocabularies(), ["urn:vocab"])
+        await service.cleanup_untyped_resources()
+
+        self.assertTrue(repository.cleaned_up)
+
+    async def test_delete_vocabulary_removes_indexes_before_vocabulary(self):
+        repository = FakeSemanticGraphRepository(make_vocab())
+        service = make_service(repository, FakeOllamaClient())
+
+        await service.delete_vocabulary("urn:vocab")
+
+        self.assertEqual(repository.deleted_index_identifier, "urn:vocab")
+        self.assertEqual(repository.deleted_vocabulary_identifier, "urn:vocab")
+
+    async def test_delete_vocabulary_rejects_missing_identifier(self):
+        repository = FakeSemanticGraphRepository(None)
+        service = make_service(repository, FakeOllamaClient())
+
+        with self.assertRaises(ValueError):
+            await service.delete_vocabulary("urn:missing")
+
+    async def test_create_and_delete_vocab_indexes_delegate_to_repository(self):
+        repository = FakeSemanticGraphRepository(make_vocab())
+        service = make_service(repository, FakeOllamaClient())
+
+        await service._create_vocab_indexes("urn:vocab")
+        await service._delete_vocab_indexes("urn:vocab")
+
+        self.assertEqual(repository.created_index_identifier, "urn:vocab")
+        self.assertEqual(repository.deleted_index_identifier, "urn:vocab")
+
+
+class FakeTaskRegistry:
+    def __init__(self, task_info: TaskInfo | None = None):
+        self.task_info = task_info
+        self.created: list[dict] = []
+
+    def get_task_info(self, name: str):
+        self.requested_name = name
+        return self.task_info
+
+    async def create_task(self, coro, type, name: str):
+        self.created.append({"type": type, "name": name})
+        coro.close()
+        return SimpleNamespace()
+
+
+class SemanticServiceEmbeddingTests(unittest.IsolatedAsyncioTestCase):
+    def make_service(
+        self,
+        repository: FakeSemanticGraphRepository,
+        task_registry: FakeTaskRegistry,
+        ollama: FakeOllamaClient | None = None,
+    ):
+        return SemanticService(
+            semantic_graph_repository=repository,
+            settings=FakeSettings(),
+            ollama_client=ollama or FakeOllamaClient(),
+            task_registry=task_registry,
+        )
+
+    def make_resource(self, uri: str) -> VocabResource:
+        return VocabResource(
+            uri=uri,
+            rdf_types=["skos__Concept"],
+            properties={"skos__prefLabel": uri},
+        )
+
+    async def test_generate_embeddings_rejects_missing_vocabulary(self):
+        repository = FakeSemanticGraphRepository(None)
+        service = self.make_service(repository, FakeTaskRegistry())
+
+        with self.assertRaises(ValueError):
+            await service.generate_embeddings_for_vocabulary("urn:missing")
+
+    async def test_generate_embeddings_completes_when_no_pending_updates(self):
+        repository = FakeSemanticGraphRepository(make_vocab())
+        service = self.make_service(repository, FakeTaskRegistry())
+
+        pending_count, status = await service.generate_embeddings_for_vocabulary("urn:vocab")
+
+        self.assertEqual(pending_count, 0)
+        self.assertEqual(status, TaskStatus.COMPLETED)
+
+    async def test_generate_embeddings_reports_running_task_without_starting_duplicate(self):
+        task = asyncio.create_task(asyncio.sleep(0))
+        task_info = TaskInfo(task=task, status=TaskStatus.RUNNING, type=TaskType.EMBEDDING)
+        repository = FakeSemanticGraphRepository(make_vocab())
+        repository.pending_updates = [self.make_resource("urn:seed")]
+        task_registry = FakeTaskRegistry(task_info)
+        service = self.make_service(repository, task_registry)
+
+        pending_count, status = await service.generate_embeddings_for_vocabulary("urn:vocab")
+
+        self.assertEqual(pending_count, 1)
+        self.assertEqual(status, TaskStatus.RUNNING)
+        self.assertEqual(task_registry.created, [])
+        await task
+
+    async def test_generate_embeddings_raises_crashed_task_exception(self):
+        async def fail():
+            raise RuntimeError("embedding failed")
+
+        task = asyncio.create_task(fail())
+        await asyncio.gather(task, return_exceptions=True)
+        task_info = TaskInfo(task=task, status=TaskStatus.CRASHED, type=TaskType.EMBEDDING)
+        repository = FakeSemanticGraphRepository(make_vocab())
+        repository.pending_updates = [self.make_resource("urn:seed")]
+        service = self.make_service(repository, FakeTaskRegistry(task_info))
+
+        with self.assertRaisesRegex(RuntimeError, "embedding failed"):
+            await service.generate_embeddings_for_vocabulary("urn:vocab")
+
+    async def test_generate_embeddings_starts_new_task_for_pending_updates(self):
+        repository = FakeSemanticGraphRepository(make_vocab())
+        repository.pending_updates = [self.make_resource("urn:seed")]
+        task_registry = FakeTaskRegistry()
+        service = self.make_service(repository, task_registry)
+
+        pending_count, status = await service.generate_embeddings_for_vocabulary("urn:vocab")
+
+        self.assertEqual(pending_count, 1)
+        self.assertEqual(status, TaskStatus.RUNNING)
+        self.assertEqual(
+            task_registry.created,
+            [{"type": TaskType.EMBEDDING, "name": "embedding:vocab:urn:vocab"}],
+        )
+
+    async def test_run_embedding_generation_batches_and_persists_embeddings(self):
+        repository = FakeSemanticGraphRepository(make_vocab())
+        resources = [self.make_resource("urn:one"), self.make_resource("urn:two")]
+        ollama = FakeOllamaClient()
+        service = self.make_service(repository, FakeTaskRegistry(), ollama=ollama)
+
+        await service._run_embedding_generation(resources)
+
+        self.assertEqual(len(repository.updated_embedding_batches), 1)
+        self.assertEqual([resource.embedding for resource in resources], [[0.1, 0.2, 0.3], [0.1, 0.2, 0.3]])
+        self.assertEqual(
+            ollama.embedding_inputs,
+            [resource.to_embedding_str() for resource in resources],
+        )
 
 
 if __name__ == "__main__":
