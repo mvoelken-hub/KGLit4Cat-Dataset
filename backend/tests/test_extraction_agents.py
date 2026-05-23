@@ -13,26 +13,35 @@ from app.domain.extraction import (
     JSON_OUTPUT_TEMPLATE,
     InitialContext,
     InitialContextDeps,
-    InitialDraftDeps,
     apply_merge_patch,
     create_initial_context_agent,
-    create_initial_draft_agent,
     create_patch_draft_agent,
     expand_schema_placeholders,
     extract_initial_context_from_data_package,
     initialize_draft_from_initial_context,
     list_initial_context_dataset_files,
     create_schema_validated_agent,
+    extract_field_patch_candidates,
     prompted_json_output,
     read_initial_context_file_content,
     structured_profile_output,
     validate_json_output_against_schema,
     patch_draft_from_content_chunks,
 )
+from app.domain.extraction.schema_utils import (
+    get_top_level_fields,
+    slice_profile_json_schema,
+)
 from app.domain.extraction.sanitizers import (
     normalize_review_draft,
     sanitize_document_against_schema,
 )
+from app.domain.extraction.patch_draft import (
+    PatchDiscoveryResult,
+    PatchLocationPick,
+    create_schema_bound_patch,
+)
+from app.domain.extraction.token_budget import TokenBudget, estimate_text_tokens
 from app.domain.profiles import ProfileManifest, validate_document_against_profile
 
 
@@ -198,16 +207,56 @@ FIELD_PATCH_OUTPUT = {
     ]
 }
 
+LEAN_DESCRIPTION_PATCH_OUTPUT = {
+    "information": "The chunk provides an updated description.",
+    "evidence": ["chunk text"],
+    "location_picks": [
+        {
+            "path": "/description",
+            "rationale": "The information summarizes the dataset.",
+            "confidence": 0.9,
+        }
+    ],
+    "destination": "/description",
+    "patch": {"description": "Updated with chunk evidence."},
+    "reasoning": "Description is the best single destination.",
+}
+
 
 class TinyOutput(BaseModel):
     title: str
 
 
 INITIAL_CONTEXT_OUTPUT = {
-    "device_name": "Mass spectrometer",
-    "device_model": "MS-1000",
-    "entities_analyzed": ["sample-1"],
-    "analytical_technique": "mass spectrometry",
+    "dataset_title": "Sample-1 mass spectrometry dataset",
+    "dataset_description": "Dataset description for sample-1.",
+    "entities": [
+        {
+            "label": "sample-1",
+            "role": "sample",
+            "identifier": "sample-1",
+            "evidence": "Sample: sample-1",
+            "confidence": 0.95,
+        }
+    ],
+    "agents": [
+        {
+            "name": "Mass spectrometer",
+            "role": "instrument",
+            "model": "MS-1000",
+            "evidence": "Instrument: Mass spectrometer MS-1000",
+            "confidence": 0.95,
+        }
+    ],
+    "activities": [
+        {
+            "label": "Mass spectrometry acquisition",
+            "technique": "mass spectrometry",
+            "agent_names": ["Mass spectrometer"],
+            "evidence": "Instrument: Mass spectrometer MS-1000",
+            "confidence": 0.9,
+        }
+    ],
     "file_relationships": [
         {
             "source_file": "README.txt",
@@ -223,7 +272,7 @@ INITIAL_CONTEXT_OUTPUT = {
             "file_path": "README.txt",
             "source_type": "README",
             "description": "Contains instrument and sample metadata.",
-            "extracted_fields": ["device_name", "entities_analyzed"],
+            "extracted_fields": ["agents", "entities"],
             "evidence": "Instrument: Mass spectrometer",
             "confidence": 0.95,
         }
@@ -331,10 +380,25 @@ class ExtractionAgentHelperTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(agent._max_output_retries, DEFAULT_OUTPUT_RETRIES)
 
+    def test_slice_profile_json_schema_keeps_selected_fields_and_refs(self):
+        result = slice_profile_json_schema(
+            profile_json_schema=RICH_PROFILE_JSON_SCHEMA,
+            target_class="Dataset",
+            field_names=["was_generated_by"],
+        )
+
+        dataset_properties = result["$defs"]["Dataset"]["properties"]
+        self.assertEqual(list(dataset_properties), ["was_generated_by"])
+        self.assertIn("Activity", result["$defs"])
+        self.assertIn("Agent", result["$defs"])
+        self.assertIn("Concept", result["$defs"])
+        self.assertNotIn("publisher", dataset_properties)
+        self.assertNotIn("keyword", dataset_properties)
+
     def test_initial_context_model_accepts_expected_shape(self):
         context = InitialContext.model_validate(INITIAL_CONTEXT_OUTPUT)
 
-        self.assertEqual(context.device_model, "MS-1000")
+        self.assertEqual(context.agents[0].model, "MS-1000")
         self.assertEqual(context.file_relationships[0].relationship_type, "metadata_for")
 
     def test_initial_context_file_tools_use_data_package_content(self):
@@ -386,19 +450,26 @@ class ExtractionAgentHelperTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertIsInstance(result, InitialContext)
-        self.assertEqual(result.device_name, "Mass spectrometer")
+        self.assertEqual(result.agents[0].name, "Mass spectrometer")
 
-    def test_create_initial_draft_agent_uses_retry_budget(self):
-        agent = create_initial_draft_agent(
+    async def test_extract_initial_context_from_data_package_reports_token_usage(self):
+        usage_events = []
+
+        await extract_initial_context_from_data_package(
+            data_package=make_data_package(),
             model=TestModel(
                 call_tools=[],
-                custom_output_text=json.dumps(INITIAL_DRAFT_OUTPUT),
+                custom_output_text=json.dumps(INITIAL_CONTEXT_OUTPUT),
             ),
-            profile_json_schema=PROFILE_JSON_SCHEMA,
-            target_class="Dataset",
+            on_token_usage=lambda agent_name, usage, operation_count: usage_events.append(
+                (agent_name, usage, operation_count)
+            ),
         )
 
-        self.assertEqual(agent._max_output_retries, DEFAULT_OUTPUT_RETRIES)
+        self.assertEqual(len(usage_events), 1)
+        self.assertEqual(usage_events[0][0], "initial_context")
+        self.assertEqual(usage_events[0][2], 1)
+        self.assertGreater(usage_events[0][1].total_tokens, 0)
 
     async def test_initialize_draft_from_initial_context_returns_profile_dict(self):
         result = await initialize_draft_from_initial_context(
@@ -406,14 +477,21 @@ class ExtractionAgentHelperTests(unittest.IsolatedAsyncioTestCase):
             data_package=make_data_package(),
             profile_manifest=make_profile_manifest(),
             profile_json_schema=PROFILE_JSON_SCHEMA,
-            model=TestModel(
-                call_tools=[],
-                custom_output_text=json.dumps(INITIAL_DRAFT_OUTPUT),
-            ),
         )
 
-        self.assertEqual(result["title"], "Mass spectrometry dataset for sample-1")
+        self.assertEqual(result["title"], "Sample-1 mass spectrometry dataset")
         self.assertEqual(result["keywords"], ["mass spectrometry", "sample-1"])
+
+    async def test_initialize_draft_from_initial_context_uses_deterministic_mapping(self):
+        result = await initialize_draft_from_initial_context(
+            initial_context=InitialContext.model_validate(INITIAL_CONTEXT_OUTPUT),
+            data_package=make_data_package(),
+            profile_manifest=make_profile_manifest(),
+            profile_json_schema=PROFILE_JSON_SCHEMA,
+        )
+
+        self.assertEqual(result["title"], "Sample-1 mass spectrometry dataset")
+        self.assertEqual(result["description"], "Dataset description for sample-1.")
 
     def test_expand_schema_placeholders_adds_nullable_fields_and_preserves_values(self):
         result = expand_schema_placeholders(
@@ -498,27 +576,22 @@ class ExtractionAgentHelperTests(unittest.IsolatedAsyncioTestCase):
             data_package=make_data_package(),
             profile_manifest=make_profile_manifest(),
             profile_json_schema=RICH_PROFILE_JSON_SCHEMA,
-            model=TestModel(
-                call_tools=[],
-                custom_output_text=json.dumps({"response": RICH_INITIAL_DRAFT_OUTPUT}),
-            ),
         )
 
-        self.assertEqual(result["id"], "dataset-sample-1")
-        self.assertEqual(result["keyword"], None)
+        self.assertEqual(result["id"], "dataset-test-package")
+        self.assertEqual(result["title"], ["Sample-1 mass spectrometry dataset"])
+        self.assertEqual(result["description"], ["Dataset description for sample-1."])
+        self.assertEqual(result["keyword"], ["mass spectrometry", "sample-1"])
         self.assertEqual(result["publisher"], None)
-        self.assertEqual(result["was_generated_by"][0]["agent"][0]["type"]["id"], "instrument")
-
-    def test_initial_draft_deps_carry_context_and_profile(self):
-        deps = InitialDraftDeps(
-            initial_context=InitialContext.model_validate(INITIAL_CONTEXT_OUTPUT),
-            data_package=make_data_package(),
-            profile_manifest=make_profile_manifest(),
-            profile_json_schema=PROFILE_JSON_SCHEMA,
+        activity = result["was_generated_by"][0]
+        self.assertEqual(activity["id"], "dataset-test-package/root-activity")
+        self.assertEqual(activity["title"], ["Mass spectrometry acquisition"])
+        self.assertEqual(
+            activity["description"],
+            ["The data was generated by: mass spectrometry"],
         )
-
-        self.assertEqual(deps.profile_manifest.identifier, "test-profile")
-        self.assertEqual(deps.initial_context.device_model, "MS-1000")
+        self.assertEqual(activity["agent"][0]["name"], ["Mass spectrometer"])
+        self.assertEqual(activity["agent"][0]["type"], None)
 
     def test_apply_merge_patch_merges_nested_values_and_string_lists(self):
         draft = {
@@ -793,30 +866,14 @@ class ExtractionAgentHelperTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(agent._max_output_retries, DEFAULT_OUTPUT_RETRIES)
 
+    def test_token_budget_estimates_and_targets_input_window(self):
+        budget = TokenBudget(max_context_length=100)
+
+        self.assertEqual(budget.input_token_budget, 75)
+        self.assertEqual(estimate_text_tokens("abcd"), 1)
+        self.assertEqual(estimate_text_tokens("abcde"), 2)
+
     async def test_patch_draft_from_content_chunks_returns_updated_draft_and_patches(self):
-        from unittest import mock as unittest_mock
-
-        from app.domain.extraction.patch_quality import (
-            CandidateQualityRating,
-            PatchQualityReport,
-        )
-
-        accept_report = PatchQualityReport(
-            overall_decision="accept",
-            candidate_ratings=[
-                CandidateQualityRating(
-                    field_path="description",
-                    decision="accept",
-                    issues=[],
-                ),
-                CandidateQualityRating(
-                    field_path="keywords",
-                    decision="accept",
-                    issues=[],
-                ),
-            ],
-            summary="All candidates accepted.",
-        )
         progress: list[tuple[dict, str, int, int]] = []
 
         async def save_progress(
@@ -829,30 +886,160 @@ class ExtractionAgentHelperTests(unittest.IsolatedAsyncioTestCase):
                 (draft, patch_record.file_name, batch_no, total_batches)
             )
 
-        with unittest_mock.patch(
-            "app.domain.extraction.patch_draft.review_patch_semantic_quality",
-            return_value=accept_report,
-        ):
-            result = await patch_draft_from_content_chunks(
-                initial_context=InitialContext.model_validate(INITIAL_CONTEXT_OUTPUT),
-                initial_draft=INITIAL_DRAFT_OUTPUT,
-                content_chunks_by_file=make_content_chunks(),
-                profile_manifest=make_profile_manifest(),
-                profile_json_schema=PROFILE_JSON_SCHEMA,
-                model=TestModel(
-                    call_tools=[],
-                    custom_output_text=json.dumps(FIELD_PATCH_OUTPUT),
-                ),
-                num_chunks_per_turn=1,
-                on_patch_processed=save_progress,
-            )
+        result = await patch_draft_from_content_chunks(
+            initial_context=InitialContext.model_validate(INITIAL_CONTEXT_OUTPUT),
+            initial_draft=INITIAL_DRAFT_OUTPUT,
+            content_chunks_by_file=make_content_chunks(),
+            profile_manifest=make_profile_manifest(),
+            profile_json_schema=PROFILE_JSON_SCHEMA,
+            model=TestModel(
+                call_tools=[],
+                custom_output_text=json.dumps(LEAN_DESCRIPTION_PATCH_OUTPUT),
+            ),
+            num_chunks_per_turn=1,
+            on_patch_processed=save_progress,
+        )
 
         self.assertEqual(result.draft["description"], "Updated with chunk evidence.")
-        self.assertIn("chunk-keyword", result.draft["keywords"])
         self.assertIn("description", result.patches[0].accepted_fields)
+        self.assertEqual(result.patches[0].quality_report.overall_decision, "accept")
         self.assertEqual(len(progress), 1)
         self.assertEqual(progress[0][0]["description"], "Updated with chunk evidence.")
         self.assertEqual(progress[0][2:], (1, 1))
+
+    async def test_patch_discovery_splits_over_budget_chunk_batches(self):
+        usage_events = []
+        chunks = [
+            [
+                ContentChunk(
+                    content="A" * 200,
+                    data_package_id="package-id",
+                    file_path="README.txt",
+                    start_idx=0,
+                    end_idx=0,
+                ),
+                ContentChunk(
+                    content="B" * 200,
+                    data_package_id="package-id",
+                    file_path="README.txt",
+                    start_idx=1,
+                    end_idx=1,
+                ),
+            ]
+        ]
+
+        result = await patch_draft_from_content_chunks(
+            initial_context=InitialContext.model_validate(INITIAL_CONTEXT_OUTPUT),
+            initial_draft=INITIAL_DRAFT_OUTPUT,
+            content_chunks_by_file=chunks,
+            profile_manifest=make_profile_manifest(),
+            profile_json_schema=PROFILE_JSON_SCHEMA,
+            model=TestModel(
+                call_tools=[],
+                custom_output_text=json.dumps(LEAN_DESCRIPTION_PATCH_OUTPUT),
+            ),
+            num_chunks_per_turn=2,
+            token_budget=TokenBudget(max_context_length=200),
+            on_token_usage=lambda agent_name, usage, patch_count: usage_events.append(
+                (agent_name, usage, patch_count)
+            ),
+        )
+
+        discovery_events = [
+            usage for agent_name, usage, _ in usage_events if agent_name == "patch_discovery"
+        ]
+        self.assertEqual(len(result.patches), 2)
+        self.assertEqual(len(discovery_events), 2)
+        self.assertGreater(discovery_events[0].split_count, 0)
+        self.assertEqual(discovery_events[0].input_token_budget, 150)
+
+    async def test_schema_patch_writer_compacts_over_budget_schema_context(self):
+        usage_events = []
+        discovery = PatchDiscoveryResult(
+            information="Updated description.",
+            evidence=["evidence 1", "evidence 2", "evidence 3", "evidence 4"],
+            location_picks=[
+                PatchLocationPick(path="/description", confidence=0.8),
+                PatchLocationPick(path="/keywords", confidence=0.2),
+                PatchLocationPick(path="/title", confidence=0.1),
+                PatchLocationPick(path="/id", confidence=0.1),
+            ],
+        )
+        noisy_schema = {
+            **PROFILE_JSON_SCHEMA,
+            "$defs": {
+                "Dataset": {
+                    **PROFILE_JSON_SCHEMA["$defs"]["Dataset"],
+                    "description": "X" * 4000,
+                    "properties": {
+                        **PROFILE_JSON_SCHEMA["$defs"]["Dataset"]["properties"],
+                        "description": {
+                            "type": "string",
+                            "description": "Y" * 4000,
+                            "examples": ["Z" * 1000],
+                        },
+                    },
+                }
+            },
+        }
+
+        result = await create_schema_bound_patch(
+            discovery=discovery,
+            current_draft_slice={"description": "old"},
+            schema_slice=noisy_schema,
+            location_picks=discovery.location_picks,
+            document_file_path="README.txt",
+            model=TestModel(
+                call_tools=[],
+                custom_output_text=json.dumps(
+                    {
+                        "destination": "/description",
+                        "patch": {"description": "Updated description."},
+                        "reasoning": "Fits schema.",
+                    }
+                ),
+            ),
+            token_budget=TokenBudget(max_context_length=200),
+            on_token_usage=lambda agent_name, usage, patch_count: usage_events.append(
+                (agent_name, usage, patch_count)
+            ),
+        )
+
+        self.assertEqual(result.patch["description"], "Updated description.")
+        self.assertEqual(usage_events[0][0], "schema_patch_writer")
+        self.assertEqual(usage_events[0][1].compaction_count, 1)
+
+    async def test_extract_field_patch_candidates_reports_token_usage(self):
+        usage_events = []
+        chunks = make_content_chunks()[0]
+
+        candidates = await extract_field_patch_candidates(
+            initial_context=InitialContext.model_validate(INITIAL_CONTEXT_OUTPUT),
+            draft=INITIAL_DRAFT_OUTPUT,
+            document_file_path=chunks[0].file_path,
+            chunk_batch=chunks,
+            batch_no=1,
+            total_batches=1,
+            profile_manifest=make_profile_manifest(),
+            profile_json_schema=PROFILE_JSON_SCHEMA,
+            top_level_fields=get_top_level_fields(
+                profile_json_schema=PROFILE_JSON_SCHEMA,
+                target_class=make_profile_manifest().target_class,
+            ),
+            model=TestModel(
+                call_tools=[],
+                custom_output_text=json.dumps(FIELD_PATCH_OUTPUT),
+            ),
+            on_token_usage=lambda agent_name, usage, patch_count: usage_events.append(
+                (agent_name, usage, patch_count)
+            ),
+        )
+
+        self.assertEqual(candidates[0].field_path, "description")
+        self.assertEqual(len(usage_events), 1)
+        self.assertEqual(usage_events[0][0], "patch_extraction")
+        self.assertEqual(usage_events[0][2], 1)
+        self.assertGreater(usage_events[0][1].total_tokens, 0)
 
     async def test_patch_draft_from_content_chunks_skips_completed_checkpoint(self):
         chunks = make_content_chunks()
@@ -896,29 +1083,6 @@ class ExtractionAgentHelperTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(progress, [])
 
     async def test_patch_draft_from_content_chunks_reloads_protected_fields_per_batch(self):
-        from unittest import mock as unittest_mock
-
-        from app.domain.extraction.patch_quality import (
-            CandidateQualityRating,
-            PatchQualityReport,
-        )
-
-        accept_report = PatchQualityReport(
-            overall_decision="accept",
-            candidate_ratings=[
-                CandidateQualityRating(
-                    field_path="description",
-                    decision="accept",
-                    issues=[],
-                ),
-                CandidateQualityRating(
-                    field_path="keywords",
-                    decision="accept",
-                    issues=[],
-                ),
-            ],
-            summary="All candidates accepted.",
-        )
         chunks = [
             [
                 ContentChunk(
@@ -944,28 +1108,23 @@ class ExtractionAgentHelperTests(unittest.IsolatedAsyncioTestCase):
             protected_calls += 1
             return [] if protected_calls == 1 else ["description", "keywords"]
 
-        with unittest_mock.patch(
-            "app.domain.extraction.patch_draft.review_patch_semantic_quality",
-            return_value=accept_report,
-        ):
-            result = await patch_draft_from_content_chunks(
-                initial_context=InitialContext.model_validate(INITIAL_CONTEXT_OUTPUT),
-                initial_draft=INITIAL_DRAFT_OUTPUT,
-                content_chunks_by_file=chunks,
-                profile_manifest=make_profile_manifest(),
-                profile_json_schema=PROFILE_JSON_SCHEMA,
-                model=TestModel(
-                    call_tools=[],
-                    custom_output_text=json.dumps(FIELD_PATCH_OUTPUT),
-                ),
-                num_chunks_per_turn=1,
-                protected_fields_loader=load_protected_fields,
-            )
+        result = await patch_draft_from_content_chunks(
+            initial_context=InitialContext.model_validate(INITIAL_CONTEXT_OUTPUT),
+            initial_draft=INITIAL_DRAFT_OUTPUT,
+            content_chunks_by_file=chunks,
+            profile_manifest=make_profile_manifest(),
+            profile_json_schema=PROFILE_JSON_SCHEMA,
+            model=TestModel(
+                call_tools=[],
+                custom_output_text=json.dumps(LEAN_DESCRIPTION_PATCH_OUTPUT),
+            ),
+            num_chunks_per_turn=1,
+            protected_fields_loader=load_protected_fields,
+        )
 
         self.assertEqual(protected_calls, 2)
         self.assertEqual(result.draft["description"], "Updated with chunk evidence.")
-        self.assertIn("chunk-keyword", result.draft["keywords"])
-        self.assertEqual(result.patches[0].accepted_fields, ["description", "keywords"])
+        self.assertEqual(result.patches[0].accepted_fields, ["description"])
         self.assertEqual(result.patches[1].accepted_fields, [])
 
 

@@ -1,22 +1,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 from pydantic_ai import Agent, RunContext
 
 from app.domain.datasources import DataPackage
 from app.domain.extraction.agents import DEFAULT_OUTPUT_RETRIES, prompted_json_output
 from app.domain.extraction.artifacts import InitialContext
+from app.domain.extraction.token_budget import BudgetedUsage, TokenBudget
 
 
 INITIAL_CONTEXT_INSTRUCTIONS = (
-    "You are a scientific data archivist. Analyze research artifact bundles "
-    "and extract structured context metadata. Be precise about instrument or "
-    "device names, analytical techniques, sample identifiers, compound names, "
-    "file roles, metadata provenance, keywords, and uncertainty. Use the "
-    "available tools to inspect the file tree and read the most informative "
-    "files before producing the final InitialContext."
+    "You are a scientific data archivist. Extract a compact InitialContext "
+    "from research artifact bundles. Use the output field descriptions as the "
+    "contract, ground values in file evidence, and prefer null or empty lists "
+    "when support is weak. Use the available tools to inspect the file tree "
+    "and read the most informative files before producing the final output."
 )
 
 
@@ -26,6 +26,9 @@ class InitialContextDeps:
     max_files_to_read: int = 12
     max_chars_per_file: int = 3000
     files_read: set[str] = field(default_factory=set)
+
+
+TokenUsageCallback = Callable[[str, Any, int], None]
 
 
 def create_initial_context_agent(
@@ -80,6 +83,8 @@ async def extract_initial_context_from_data_package(
     model: Any,
     max_files_to_read: int = 12,
     max_chars_per_file: int = 3000,
+    token_budget: TokenBudget | None = None,
+    on_token_usage: TokenUsageCallback | None = None,
 ) -> InitialContext:
     agent = create_initial_context_agent(model=model)
     deps = InitialContextDeps(
@@ -87,10 +92,22 @@ async def extract_initial_context_from_data_package(
         max_files_to_read=max_files_to_read,
         max_chars_per_file=max_chars_per_file,
     )
+    prompt = _initial_context_prompt(data_package, max_files_to_read, max_chars_per_file)
+    estimated_input_tokens = token_budget.estimate_text_tokens(prompt) if token_budget else 0
     result = await agent.run(
-        _initial_context_prompt(data_package, max_files_to_read, max_chars_per_file),
+        prompt,
         deps=deps,
     )
+    if on_token_usage is not None:
+        usage = (
+            BudgetedUsage(
+                result.usage,
+                token_budget.metadata(estimated_input_tokens=estimated_input_tokens),
+            )
+            if token_budget
+            else result.usage
+        )
+        on_token_usage("initial_context", usage, 1)
     return result.output
 
 
@@ -129,13 +146,13 @@ def _initial_context_prompt(
     max_chars_per_file: int,
 ) -> str:
     return (
-        "Analyze the research artifact archive and extract an InitialContext. "
+        "Analyze the research artifact archive and extract a compact "
+        "InitialContext. "
         "Start by listing all files, then read the most informative files "
         "such as README files, metadata tables, instrument exports, report PDFs, "
         "and file headers. "
         f"The data package name is '{data_package.file_name}' and it contains "
         f"{len(data_package.files)} files. Read up to {max_files_to_read} files "
-        f"and up to {max_chars_per_file} characters per file. Fill every output "
-        "field with concise evidence-grounded values. Use empty lists when no "
-        "entities, relationships, metadata sources, or keywords can be identified."
+        f"and up to {max_chars_per_file} characters per file. Follow the field "
+        "descriptions, keep values concise, and avoid unsupported inferences."
     )

@@ -53,11 +53,36 @@ export interface FileRelationship {
   confidence?: number | null;
 }
 
+export interface ContextEntity {
+  label: string;
+  role: 'sample' | 'compound' | 'specimen' | 'unknown';
+  identifier?: string | null;
+  evidence?: string | null;
+  confidence?: number | null;
+}
+
+export interface ContextAgent {
+  name: string;
+  role: 'instrument' | 'software' | 'organization' | 'person' | 'unknown';
+  model?: string | null;
+  evidence?: string | null;
+  confidence?: number | null;
+}
+
+export interface ContextActivity {
+  label?: string | null;
+  technique?: string | null;
+  agent_names: string[];
+  evidence?: string | null;
+  confidence?: number | null;
+}
+
 export interface InitialContext {
-  device_name?: string | null;
-  device_model?: string | null;
-  entities_analyzed: string[];
-  analytical_technique?: string | null;
+  dataset_title?: string | null;
+  dataset_description?: string | null;
+  entities: ContextEntity[];
+  agents: ContextAgent[];
+  activities: ContextActivity[];
   file_relationships: FileRelationship[];
   metadata_sources: MetadataSource[];
   keywords: string[];

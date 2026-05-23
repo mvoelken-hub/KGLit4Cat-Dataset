@@ -115,6 +115,17 @@ class ExtractionOutputRepository(Protocol):
     def load_patch_review_state(self, workflow_id: str) -> dict[str, Any]:
         ...
 
+    def save_token_usage(
+        self,
+        *,
+        workflow_id: str,
+        token_usage: dict[str, dict[str, int]],
+    ) -> None:
+        ...
+
+    def load_token_usage(self, workflow_id: str) -> dict[str, dict[str, int]]:
+        ...
+
     def load_patch_files(self, workflow_id: str) -> list[dict[str, Any]]:
         ...
 

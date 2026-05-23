@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { chunkDataPackage, deleteDataPackage, getChunkStatus, getDataPackageChunks, getFileEntryContent, listDataPackages, uploadDataPackage } from './api/datasources';
 import {
@@ -10,19 +10,32 @@ import {
   getPatchProgress,
   getPatchReviewState,
   getProtectedFields,
+  getTokenUsage,
   patchDraft,
   saveDraft,
+  saveInitialContext,
   savePatchReviewState,
   setProtectedFields as apiSetProtectedFields,
 } from './api/extraction';
 import { deleteProfile, getProfileJsonSchema, listProfiles, registerProfile } from './api/profiles';
+import {
+  getLlmBudget,
+  getOllamaConfig,
+  pullOllamaModel,
+  removeOllamaModel,
+  runOllamaPerformanceTest,
+  updateOllamaRuntimeConfig,
+  type LlmBudget,
+  type OllamaConfig,
+  type OllamaPerformanceTest,
+} from './api/system';
 import { JsonEditor, type JsonObject, type JsonPatchMarker, type JsonSchemaDocument, type JsonValue, setValueAtPath } from './components/JsonEditor';
 import { ChunkingDialog } from './components/ChunkingDialog';
 import { VocabularyPanel } from './components/VocabularyPanel';
 import type { ChunkRequestResponse, ChunkResponse, DataPackageResponse, FileEntryResponse, InitialContext, ProfileManifestResponse, TextQualityConfig } from './api/types';
-import type { PatchArtifacts, PatchProgress, PatchReviewState, PatchTaskStatus } from './api/extraction';
+import type { PatchArtifacts, PatchProgress, PatchReviewState, PatchTaskStatus, PatchTokenUsage, PatchTokenUsageEntry } from './api/extraction';
 
-type BusyKey = 'upload' | 'chunk' | 'context' | 'draft' | 'patch' | 'load' | 'profile' | 'profile-delete' | 'dataset-delete';
+type BusyKey = 'upload' | 'chunk' | 'context' | 'draft' | 'patch' | 'load' | 'profile' | 'profile-delete' | 'dataset-delete' | 'ollama';
 type ReviewItem = JsonPatchMarker & { kind: 'matched' | 'unmapped'; targetPath?: string; fact?: string; reason?: string; outcome?: string; resolutionNote?: string };
 
 const emptyReviewState: PatchReviewState = {
@@ -60,13 +73,201 @@ function formatBytes(bytes: number): string {
   return (bytes / 1024 / 1024).toFixed(1) + ' MB';
 }
 
-function Field({ label, value }: { label: string; value?: string | number | null }) {
+function EditableContextField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
   return (
-    <div className="field">
+    <label className="context-field">
+      <span>{label}</span>
+      <input value={value} onChange={(event) => onChange(event.target.value)} />
+    </label>
+  );
+}
+
+function EditableContextTextArea({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="context-field context-field-wide">
+      <span>{label}</span>
+      <textarea value={value} onChange={(event) => onChange(event.target.value)} />
+    </label>
+  );
+}
+
+function PersistedContextField({
+  label,
+  value,
+  wide = false,
+}: {
+  label: string;
+  value?: string | number | null;
+  wide?: boolean;
+}) {
+  return (
+    <div className={`context-field context-field-readonly ${wide ? 'context-field-wide' : ''}`}>
       <span>{label}</span>
       <strong>{value || '-'}</strong>
     </div>
   );
+}
+
+function PersistedContextChips({ label, values }: { label: string; values: string[] }) {
+  return (
+    <div className="context-field context-field-wide context-field-readonly context-chips-field">
+      <span>{label}</span>
+      {values.length ? (
+        <div className="chips">
+          {values.map((value) => <span key={value}>{value}</span>)}
+        </div>
+      ) : (
+        <strong>-</strong>
+      )}
+    </div>
+  );
+}
+
+function StepPanel({
+  number,
+  title,
+  description,
+  children,
+  actions,
+  active = false,
+}: {
+  number: string;
+  title: string;
+  description: string;
+  children: ReactNode;
+  actions?: ReactNode;
+  active?: boolean;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  const contentId = `step-panel-${number}`;
+
+  return (
+    <article className={`step-card ${active ? 'active' : ''} ${collapsed ? 'collapsed' : ''}`}>
+      <div className="step-index">{number}</div>
+      <div className="step-body">
+        <div className="step-header">
+          <button
+            className="step-collapse-toggle"
+            type="button"
+            aria-expanded={!collapsed}
+            aria-controls={contentId}
+            onClick={() => setCollapsed((value) => !value)}
+            title={collapsed ? `Expand ${title}` : `Collapse ${title}`}
+          >
+            {collapsed ? '+' : '-'}
+          </button>
+          <div className="step-title">
+            <h2>{title}</h2>
+            <p>{description}</p>
+          </div>
+          {actions && <div className="step-header-actions">{actions}</div>}
+        </div>
+        {!collapsed && (
+          <div className="step-content" id={contentId}>
+            {children}
+          </div>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function contextTechnique(context: InitialContext): string | null | undefined {
+  return context.activities?.find((activity) => activity.technique)?.technique;
+}
+
+function contextActivityLabel(context: InitialContext): string | null {
+  const labels = context.activities
+    ?.map((activity) => activity.label || activity.technique)
+    .filter(Boolean) as string[] | undefined;
+  return labels?.length ? labels.join(', ') : null;
+}
+
+function contextAgentLabel(context: InitialContext): string | null {
+  if (!context.agents?.length) return null;
+  const labels = context.agents.map((agent) => agent.model ? `${agent.name} (${agent.model})` : agent.name).filter(Boolean);
+  return labels.length ? labels.join(', ') : null;
+}
+
+function contextEntityLabel(context: InitialContext): string | null {
+  const labels = context.entities?.map((entity) => entity.label).filter(Boolean) ?? [];
+  return labels.length ? labels.join(', ') : null;
+}
+
+function commaList(value: string): string[] {
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function contextEntitiesInput(context: InitialContext): string {
+  return (context.entities ?? []).map((entity) => entity.label).join(', ');
+}
+
+function updateContextDatasetTitle(context: InitialContext, value: string): InitialContext {
+  return { ...context, dataset_title: value.trim() || null };
+}
+
+function updateContextTechnique(context: InitialContext, value: string): InitialContext {
+  const activities = [...(context.activities ?? [])];
+  const first = activities[0] ?? { label: null, technique: null, agent_names: [] };
+  activities[0] = { ...first, technique: value.trim() || null };
+  return { ...context, activities };
+}
+
+function updateContextAgentName(context: InitialContext, value: string): InitialContext {
+  const agents = [...(context.agents ?? [])];
+  const first = agents[0] ?? { name: '', role: 'unknown' as const };
+  agents[0] = { ...first, name: value };
+  return { ...context, agents };
+}
+
+function updateContextAgentModel(context: InitialContext, value: string): InitialContext {
+  const agents = [...(context.agents ?? [])];
+  const first = agents[0] ?? { name: '', role: 'unknown' as const };
+  agents[0] = { ...first, model: value.trim() || null };
+  return { ...context, agents };
+}
+
+function updateContextEntities(context: InitialContext, value: string): InitialContext {
+  const labels = commaList(value);
+  const entities = labels.map((label, index) => {
+    const existing = context.entities?.[index];
+    return existing ? { ...existing, label } : { label, role: 'unknown' as const };
+  });
+  return { ...context, entities };
+}
+
+function updateContextActivityLabel(context: InitialContext, value: string): InitialContext {
+  const activities = [...(context.activities ?? [])];
+  const first = activities[0] ?? { label: null, technique: null, agent_names: [] };
+  activities[0] = { ...first, label: value.trim() || null };
+  return { ...context, activities };
+}
+
+function updateContextDescription(context: InitialContext, value: string): InitialContext {
+  return { ...context, dataset_description: value.trim() || null };
+}
+
+function updateContextKeywords(context: InitialContext, value: string): InitialContext {
+  return { ...context, keywords: commaList(value) };
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -124,6 +325,10 @@ function reviewOutcomeFromNote(note?: string): string | undefined {
   return match?.[1];
 }
 
+function displayResolutionLogEntry(entry: string): string {
+  return entry.replace(/^[0-9a-f]{64}:\s+/i, '');
+}
+
 function buildReviewItems(artifacts: PatchArtifacts | null, reviewState: PatchReviewState): ReviewItem[] {
   if (!artifacts) return [];
   const resolvedIds = new Set(reviewState.resolved_item_ids);
@@ -158,7 +363,7 @@ function buildReviewItems(artifacts: PatchArtifacts | null, reviewState: PatchRe
         path,
         status: needsReview ? 'needs_review' : 'accepted',
         label: needsReview ? 'Review' : 'Patch',
-        resolved: resolvedIds.has(id),
+        resolved: !needsReview || resolvedIds.has(id),
         outcome: reviewOutcomeFromNote(resolutionNote),
         resolutionNote,
         confidence,
@@ -207,9 +412,499 @@ function ResolutionLogList({ entries }: { entries: string[] }) {
     <div className="resolution-log">
       <span>Resolution log</span>
       <ol>
-        {entries.map((entry, index) => <li key={`${index}-${entry}`}>{entry}</li>)}
+        {entries.map((entry, index) => <li key={`${index}-${entry}`}>{displayResolutionLogEntry(entry)}</li>)}
       </ol>
     </div>
+  );
+}
+
+const tokenUsageLabels: Record<string, string> = {
+  initial_context: 'Initial context',
+  patch_discovery: 'Patch discovery',
+  schema_patch_writer: 'Schema patch writer',
+  schema_repair: 'Schema repair',
+  patch_extraction: 'Patch extraction',
+  patch_quality: 'Patch quality review',
+  auto_resolve: 'Auto-resolve',
+};
+
+function formatTokenCount(value?: number): string {
+  const numberValue = typeof value === 'number' && Number.isFinite(value) ? value : 0;
+  return Math.round(numberValue).toLocaleString();
+}
+
+function usageAverage(usage: PatchTokenUsageEntry, unit: 'patch' | 'operation', kind: 'input' | 'output' | 'total'): number {
+  const suffix = unit === 'patch' ? 'patch' : 'operation';
+  const key = `average_${kind}_tokens_per_${suffix}` as keyof PatchTokenUsageEntry;
+  const preferred = usage[key];
+  if (typeof preferred === 'number') return preferred;
+  const fallbackKey = `average_${kind}_tokens_per_${unit === 'patch' ? 'operation' : 'patch'}` as keyof PatchTokenUsageEntry;
+  const fallback = usage[fallbackKey];
+  if (typeof fallback === 'number') return fallback;
+  const totalKey = `${kind}_tokens` as keyof PatchTokenUsageEntry;
+  const total = usage[totalKey];
+  const count = unit === 'patch' ? usage.patch_count : usage.operation_count;
+  return typeof total === 'number' ? total / Math.max(1, Number(count || 1)) : 0;
+}
+
+function requestAverage(usage: PatchTokenUsageEntry, kind: 'input' | 'output' | 'total'): number {
+  const key = `average_${kind}_tokens_per_request` as keyof PatchTokenUsageEntry;
+  const preferred = usage[key];
+  if (typeof preferred === 'number') return preferred;
+  const totalKey = `${kind}_tokens` as keyof PatchTokenUsageEntry;
+  const total = usage[totalKey];
+  return typeof total === 'number' ? total / Math.max(1, Number(usage.requests || 1)) : 0;
+}
+
+function usageBudgetState(usage: PatchTokenUsageEntry, budget?: LlmBudget | null): 'ok' | 'warning' | 'danger' {
+  if (!budget?.max_context_length) return 'ok';
+  const avgInput = requestAverage(usage, 'input');
+  if (avgInput >= budget.max_context_length * budget.danger_threshold) return 'danger';
+  if (avgInput >= budget.max_context_length * budget.warning_threshold) return 'warning';
+  return 'ok';
+}
+
+function TokenUsageSummary({
+  tokenUsage,
+  averageUnit = 'patch',
+  heading = 'Token usage',
+  agentKeys,
+  budget,
+}: {
+  tokenUsage?: PatchTokenUsage | null;
+  averageUnit?: 'patch' | 'operation';
+  heading?: string;
+  agentKeys?: string[];
+  budget?: LlmBudget | null;
+}) {
+  const allowedAgents = agentKeys ? new Set(agentKeys) : null;
+  const agentEntries = Object.entries(tokenUsage?.agents ?? {})
+    .filter(([key]) => !allowedAgents || allowedAgents.has(key))
+    .filter(([, usage]) => usage.total_tokens > 0)
+    .sort(([left], [right]) => {
+      const order = ['initial_context', 'patch_discovery', 'schema_patch_writer', 'schema_repair', 'patch_extraction', 'patch_quality', 'auto_resolve'];
+      return (order.indexOf(left) === -1 ? order.length : order.indexOf(left))
+        - (order.indexOf(right) === -1 ? order.length : order.indexOf(right));
+    });
+  const combined = !allowedAgents && tokenUsage?.combined && tokenUsage.combined.total_tokens > 0
+    ? tokenUsage.combined
+    : null;
+
+  if (!agentEntries.length && !combined) return null;
+
+  const rows = [
+    ...agentEntries.map(([key, usage]) => ({
+      key,
+      label: tokenUsageLabels[key] || key,
+      usage,
+    })),
+    ...(combined ? [{ key: 'combined', label: 'Combined', usage: combined }] : []),
+  ];
+
+  return (
+    <div className="token-usage-summary">
+      <span>{heading}</span>
+      <div>
+        {rows.map((row) => (
+          <div className={`token-usage-row ${row.key === 'combined' ? 'combined' : ''} ${usageBudgetState(row.usage, budget)}`} key={row.key}>
+            <strong>{row.label}</strong>
+            <span>{formatTokenCount(usageAverage(row.usage, averageUnit, 'total'))} avg total / {averageUnit === 'patch' ? 'patch' : 'run'}</span>
+            <small>
+              {formatTokenCount(requestAverage(row.usage, 'input'))} input / {formatTokenCount(requestAverage(row.usage, 'output'))} output avg per model call
+              {' - '}
+              {formatTokenCount(requestAverage(row.usage, 'total'))} total avg per model call
+              {' - '}
+              {formatTokenCount(row.usage.requests)} model call{row.usage.requests === 1 ? '' : 's'}
+            </small>
+            {budget?.max_context_length ? (
+              <small>
+                limit: {formatTokenCount(budget.max_context_length)} input tokens
+                {usageBudgetState(row.usage, budget) === 'warning' && ' - Average input per model call is near the configured context window.'}
+                {usageBudgetState(row.usage, budget) === 'danger' && ' - Average input per model call exceeds the configured context window.'}
+              </small>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function formatMemory(value?: number | null): string {
+  if (!value || !Number.isFinite(value)) return 'N/A';
+  return `${Math.round(value / 1024 / 1024).toLocaleString()} MB`;
+}
+
+function formatDuration(value?: number | null): string {
+  if (value == null || !Number.isFinite(value)) return 'N/A';
+  if (value >= 1000) return `${(value / 1000).toFixed(1)} s`;
+  return `${Math.round(value)} ms`;
+}
+
+function OllamaSettingsPanel({
+  config,
+  budget,
+  tokenUsage,
+  patchTokenUsage,
+  busy,
+  onApply,
+  onRefresh,
+  onPullModel,
+  onRemoveModel,
+  onRunPerformanceTest,
+}: {
+  config: OllamaConfig | null;
+  budget: LlmBudget | null;
+  tokenUsage: PatchTokenUsage | null;
+  patchTokenUsage?: PatchTokenUsage | null;
+  busy: boolean;
+  onApply: (values: {
+    chat_model: string;
+    embedding_model: string;
+    max_context_length: number;
+    embedding_batch_size: number;
+    embedding_num_gpu: number;
+  }) => void;
+  onRefresh: () => void;
+  onPullModel: (model: string) => Promise<void>;
+  onRemoveModel: (model: string) => Promise<void>;
+  onRunPerformanceTest: (values: {
+    chat_model: string;
+    embedding_model: string;
+    max_context_length: number;
+    embedding_num_gpu: number;
+  }) => Promise<OllamaPerformanceTest>;
+}) {
+  const runtime = config?.runtime;
+  const combinedUsage = patchTokenUsage?.combined ?? tokenUsage?.combined ?? null;
+  const averageInput = combinedUsage ? requestAverage(combinedUsage, 'input') : 0;
+  const [chatModel, setChatModel] = useState('');
+  const [embeddingModel, setEmbeddingModel] = useState('');
+  const [maxContextLength, setMaxContextLength] = useState(8192);
+  const [embeddingBatchSize, setEmbeddingBatchSize] = useState(32);
+  const [embeddingNumGpu, setEmbeddingNumGpu] = useState(-1);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [pullModelName, setPullModelName] = useState('');
+  const [performanceTest, setPerformanceTest] = useState<OllamaPerformanceTest | null>(null);
+  const [localMessage, setLocalMessage] = useState('');
+
+  useEffect(() => {
+    if (!runtime) return;
+    setChatModel(runtime.chat_model);
+    setEmbeddingModel(runtime.embedding_model);
+    setMaxContextLength(runtime.max_context_length);
+    setEmbeddingBatchSize(runtime.embedding_batch_size);
+    setEmbeddingNumGpu(runtime.embedding_num_gpu);
+  }, [runtime]);
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    onApply({
+      chat_model: chatModel.trim(),
+      embedding_model: embeddingModel.trim(),
+      max_context_length: Math.max(512, maxContextLength),
+      embedding_batch_size: Math.max(1, embeddingBatchSize),
+      embedding_num_gpu: embeddingNumGpu,
+    });
+  }
+
+  async function runSwitchTest() {
+    if (!runtime) return;
+    setLocalMessage('');
+    try {
+      const result = await onRunPerformanceTest({
+        chat_model: chatModel.trim(),
+        embedding_model: embeddingModel.trim(),
+        max_context_length: Math.max(512, maxContextLength),
+        embedding_num_gpu: embeddingNumGpu,
+      });
+      setPerformanceTest(result);
+      setLocalMessage('Switch test completed.');
+    } catch (error) {
+      setLocalMessage(error instanceof Error ? error.message : 'Switch test failed.');
+    }
+  }
+
+  async function pullModel(event: FormEvent) {
+    event.preventDefault();
+    const model = pullModelName.trim();
+    if (!model) return;
+    const host = config?.host.base_url ?? 'the configured Ollama host';
+    if (!window.confirm(`Pull ${model} on ${host}? This mutates the Ollama host.`)) return;
+    setLocalMessage('');
+    try {
+      await onPullModel(model);
+      setPullModelName('');
+      setLocalMessage(`Pull requested for ${model}.`);
+    } catch (error) {
+      setLocalMessage(error instanceof Error ? error.message : 'Could not pull model.');
+    }
+  }
+
+  async function removeModel(model: string) {
+    const host = config?.host.base_url ?? 'the configured Ollama host';
+    if (!window.confirm(`Remove ${model} from ${host}? This mutates the Ollama host.`)) return;
+    setLocalMessage('');
+    try {
+      await onRemoveModel(model);
+      setLocalMessage(`Removed ${model}.`);
+    } catch (error) {
+      setLocalMessage(error instanceof Error ? error.message : 'Could not remove model.');
+    }
+  }
+
+  const availableModels = config?.models.models ?? [];
+  const chatModelOptions = Array.from(new Set([
+    chatModel,
+    ...availableModels
+      .filter((model) => model.kind !== 'embedding')
+      .map((model) => model.model || model.name || '')
+      .filter(Boolean),
+  ])).filter(Boolean);
+  const embeddingModelOptions = Array.from(new Set([
+    embeddingModel,
+    ...availableModels
+      .filter((model) => model.kind === 'embedding')
+      .map((model) => model.model || model.name || '')
+      .filter(Boolean),
+  ])).filter(Boolean);
+  const selectedChatModelInfo = availableModels.find((model) => (model.model || model.name) === chatModel);
+  const selectedChatModelName = chatModel.toLowerCase();
+  const selectedChatModelSize = selectedChatModelInfo?.size ?? null;
+  const selectedChatModelIsCloud = Boolean(selectedChatModelInfo?.is_cloud) || selectedChatModelName.includes('cloud') || selectedChatModelSize === 0;
+  const showPerformanceTest = Boolean(runtime && !selectedChatModelIsCloud);
+
+  useEffect(() => {
+    if (selectedChatModelIsCloud) setPerformanceTest(null);
+  }, [selectedChatModelIsCloud]);
+
+  return (
+    <section className="ollama-panel" aria-label="Ollama runtime settings">
+      <div className="ollama-panel-header">
+        <div>
+          <span>Ollama</span>
+          <strong>{config?.host.base_url ?? 'Unavailable'}</strong>
+          {config && <small className="ollama-mode-chip">{config.host.is_local ? 'Local' : 'Remote'}</small>}
+        </div>
+        <button
+          className="ghost small"
+          type="button"
+          onClick={() => setDetailsOpen(true)}
+        >
+          Details
+        </button>
+      </div>
+
+      <div className="ollama-summary-grid">
+        <div>
+          <span>Models</span>
+          <strong>{runtime?.chat_model ?? 'No chat model'}</strong>
+          <small>{runtime?.embedding_model ?? 'No embedding model'}</small>
+        </div>
+        <div>
+          <span>Context budget</span>
+          <strong>{formatTokenCount(budget?.input_token_budget ?? runtime?.input_token_budget)} input tokens</strong>
+          <small>{formatTokenCount(budget?.max_context_length ?? runtime?.max_context_length)} total context tokens</small>
+        </div>
+      </div>
+
+      {detailsOpen && createPortal((
+        <div className="vocab-dialog-overlay" onClick={() => setDetailsOpen(false)}>
+          <div className="vocab-dialog ollama-dialog" onClick={(event) => event.stopPropagation()}>
+            <div className="vocab-dialog-header">
+              <strong>Ollama Runtime Settings</strong>
+              <div className="ollama-dialog-actions">
+                <button className="ghost small" type="button" onClick={onRefresh} disabled={busy}>Refresh</button>
+                <button className="ghost" type="button" onClick={() => setDetailsOpen(false)}>Close</button>
+              </div>
+            </div>
+            <div className="vocab-dialog-body ollama-dialog-body">
+              <div className="ollama-status-grid">
+                <div>
+                  <span>Host mode</span>
+                  <strong>{config ? (config.host.is_local ? 'Local host' : 'Remote host') : 'Unknown'}</strong>
+                  <small>{config?.host.is_local ? config.host.server_settings_note : 'Remote mode shows runtime controls and Ollama API diagnostics only.'}</small>
+                </div>
+                {config?.host.is_local && (
+                  <div>
+                    <span>Server memory settings</span>
+                    <strong>flash {String(config.host.flash_attention ?? false)} / KV {config.host.kv_cache_type ?? 'unknown'}</strong>
+                    <small>Change these on the Ollama host, not from the UI.</small>
+                  </div>
+                )}
+                <div>
+                  <span>Context budget</span>
+                  <strong>{formatTokenCount(budget?.input_token_budget ?? runtime?.input_token_budget)} input tokens</strong>
+                  <small>{formatTokenCount(budget?.max_context_length ?? runtime?.max_context_length)} total context tokens</small>
+                </div>
+                <div>
+                  <span>Recent average input</span>
+                  <strong>{formatTokenCount(averageInput)} tokens</strong>
+                  <small>{averageInput && runtime && averageInput > runtime.input_token_budget * 0.8 ? 'Lower context usage before starting the next run.' : 'Use chunks per turn to tune call size.'}</small>
+                </div>
+                <div>
+                  <span>Diagnostics</span>
+                  <strong>{config?.diagnostics.status ?? 'unknown'}</strong>
+                  <small>{config?.diagnostics.summary ?? 'Run the switch test for residency guidance.'}</small>
+                </div>
+              </div>
+
+              <form className="ollama-runtime-form" onSubmit={submit}>
+                <label>
+                  <span>Chat model</span>
+                  <select value={chatModel} onChange={(event) => setChatModel(event.target.value)} disabled={!runtime || busy || chatModelOptions.length === 0}>
+                    {chatModelOptions.map((model) => (
+                      <option key={model} value={model}>{model}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Embedding model</span>
+                  <select value={embeddingModel} onChange={(event) => setEmbeddingModel(event.target.value)} disabled={!runtime || busy || embeddingModelOptions.length === 0}>
+                    {embeddingModelOptions.map((model) => (
+                      <option key={model} value={model}>{model}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Max context</span>
+                  <input type="number" min={512} step={512} value={maxContextLength} onChange={(event) => setMaxContextLength(parseInt(event.target.value, 10) || 512)} disabled={!runtime || busy} />
+                </label>
+                <label>
+                  <span>Embedding batch</span>
+                  <input type="number" min={1} value={embeddingBatchSize} onChange={(event) => setEmbeddingBatchSize(parseInt(event.target.value, 10) || 1)} disabled={!runtime || busy} />
+                </label>
+                <label>
+                  <span>Embedding GPU</span>
+                  <select value={embeddingNumGpu} onChange={(event) => setEmbeddingNumGpu(parseInt(event.target.value, 10))} disabled={!runtime || busy}>
+                    <option value={-1}>Auto</option>
+                    <option value={0}>CPU only</option>
+                    <option value={999}>GPU only</option>
+                  </select>
+                </label>
+                <button type="submit" disabled={!runtime || busy}>Apply runtime settings</button>
+              </form>
+
+              {showPerformanceTest && (
+                <div className="ollama-test-panel">
+                  <div className="ollama-section-header">
+                    <div>
+                      <span>Performance test</span>
+                      <strong>Embedding/chat switch test</strong>
+                    </div>
+                    <button className="ghost small" type="button" onClick={() => void runSwitchTest()} disabled={!runtime || busy}>
+                      Run switch test
+                    </button>
+                  </div>
+                  <small>Loads embedding -{'>'} chat -{'>'} embedding -{'>'} chat to detect reload pressure.</small>
+                  {performanceTest && (
+                    <div className="ollama-test-result">
+                      <strong>{performanceTest.diagnostics.summary}</strong>
+                      <div className="ollama-test-steps">
+                        {performanceTest.steps.map((step) => (
+                          <div key={step.key}>
+                            <span>{step.label}</span>
+                            <strong>{step.success ? formatDuration(step.load_duration_ms) : 'failed'}</strong>
+                            <small>{step.success ? `${step.snapshot.models.length} loaded after call` : step.error}</small>
+                          </div>
+                        ))}
+                      </div>
+                      {performanceTest.diagnostics.recommendations.length > 0 && (
+                        <div className="ollama-recommendations">
+                          {performanceTest.diagnostics.recommendations.map((recommendation) => (
+                            <small key={recommendation}>{recommendation}</small>
+                          ))}
+                          <div className="ollama-recommendation-actions">
+                            <button className="ghost small" type="button" onClick={() => setEmbeddingNumGpu(0)} disabled={busy}>
+                              Set embeddings to CPU
+                            </button>
+                            <button className="ghost small" type="button" onClick={() => setEmbeddingBatchSize(Math.max(1, Math.floor(embeddingBatchSize / 2)))} disabled={busy}>
+                              Halve embed batch
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="ollama-loaded-models">
+                <span>Loaded models</span>
+                {!config?.running.available && <small>{config?.running.error?.message ?? 'Could not inspect loaded Ollama models.'}</small>}
+                {config?.running.available && !config.running.models.length && <small>No models are currently resident.</small>}
+                {config?.running.models.map((model, index) => (
+                  <small key={model.model || index}>
+                    {model.model || 'unknown'} - {model.processor ? `Processor ${model.processor}` : `VRAM ${formatMemory(model.size_vram)} / total ${formatMemory(model.size)}`}
+                    {model.processor ? ` - VRAM ${formatMemory(model.size_vram)} / total ${formatMemory(model.size)}` : ''}
+                    {model.context_length ? ` - context ${formatTokenCount(model.context_length)}` : ''}
+                  </small>
+                ))}
+                {config?.running.available && (
+                  <small>
+                    Chat {config.running.chat_model_loaded ? 'resident' : 'not resident'}; embedding {config.running.embedding_model_loaded ? 'resident' : 'not resident'}.
+                  </small>
+                )}
+              </div>
+
+              <div className="ollama-model-overview">
+                <div className="ollama-section-header">
+                  <div>
+                    <span>Available models</span>
+                    <strong>{config?.models.available ? `${availableModels.length} installed` : 'Unavailable'}</strong>
+                  </div>
+                </div>
+                {!config?.models.available && <small>{config?.models.error?.message ?? 'Could not inspect installed models.'}</small>}
+                <form className="ollama-pull-form" onSubmit={(event) => void pullModel(event)}>
+                  <input
+                    value={pullModelName}
+                    onChange={(event) => setPullModelName(event.target.value)}
+                    placeholder="model:tag"
+                    disabled={busy}
+                  />
+                  <button type="submit" disabled={busy || !pullModelName.trim()}>Pull model</button>
+                </form>
+                {availableModels.length > 0 && (
+                  <div className="ollama-model-list">
+                    {availableModels.map((model, index) => {
+                      const name = model.model || model.name || '';
+                      const canUseAsChat = model.kind !== 'embedding';
+                      const canUseAsEmbedding = model.kind === 'embedding';
+                      return (
+                        <div className="ollama-model-row" key={name || index}>
+                          <div>
+                            <strong>{name || 'unknown'}</strong>
+                            <small>
+                              {formatMemory(model.size)}
+                              {model.details?.parameter_size ? ` - ${model.details.parameter_size}` : ''}
+                              {model.details?.quantization_level ? ` - ${model.details.quantization_level}` : ''}
+                              {model.kind ? ` - ${model.kind}` : ''}
+                              {model.is_cloud ? ' - Cloud' : ''}
+                            </small>
+                          </div>
+                          <div className="ollama-model-actions">
+                            {canUseAsChat && (
+                              <button className="ghost small" type="button" onClick={() => setChatModel(name)} disabled={!name || busy}>Chat</button>
+                            )}
+                            {canUseAsEmbedding && (
+                              <button className="ghost small" type="button" onClick={() => setEmbeddingModel(name)} disabled={!name || busy}>Embed</button>
+                            )}
+                            <button className="ghost small danger-button" type="button" onClick={() => void removeModel(name)} disabled={!name || busy}>Remove</button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {localMessage && <p className="muted">{localMessage}</p>}
+              <p className="muted">ℹ️ Runtime edits affect future SIMONE calls only and reset when the API restarts.</p>
+            </div>
+          </div>
+        </div>
+      ), document.body)}
+    </section>
   );
 }
 
@@ -303,11 +998,15 @@ export function App() {
   const [patchStatus, setPatchStatus] = useState<PatchTaskStatus | null>(null);
   const [patchProgress, setPatchProgress] = useState<PatchProgress | null>(null);
   const [patchArtifacts, setPatchArtifacts] = useState<PatchArtifacts | null>(null);
+  const [tokenUsage, setTokenUsage] = useState<PatchTokenUsage | null>(null);
+  const [llmBudget, setLlmBudget] = useState<LlmBudget | null>(null);
+  const [ollamaConfig, setOllamaConfig] = useState<OllamaConfig | null>(null);
   const [activeProfileSchema, setActiveProfileSchema] = useState<JsonSchemaDocument | null>(null);
   const [patchReviewState, setPatchReviewState] = useState<PatchReviewState>(emptyReviewState);
   const [busy, setBusy] = useState<BusyKey | null>('load');
   const [message, setMessage] = useState('Loading workspace.');
   const [railCollapsed, setRailCollapsed] = useState(true);
+  const [contextEditMode, setContextEditMode] = useState(false);
   const [chunkingDialogOpen, setChunkingDialogOpen] = useState(false);
   const [numChunksPerTurn, setNumChunksPerTurn] = useState(() => {
     try {
@@ -335,6 +1034,7 @@ export function App() {
   const [profileVersion, setProfileVersion] = useState('');
   const [profileEnrichableFields, setProfileEnrichableFields] = useState('');
   const datasetUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const saveContextTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveDraftTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedPackageIdRef = useRef('');
 
@@ -364,7 +1064,9 @@ export function App() {
   async function refresh() {
     setBusy('load');
     try {
-      const [nextPackages, nextProfiles] = await Promise.all([listDataPackages(), listProfiles()]);
+      const [nextPackages, nextProfiles, nextBudget, nextOllamaConfig] = await Promise.all([listDataPackages(), listProfiles(), getLlmBudget(), getOllamaConfig()]);
+      setLlmBudget(nextBudget);
+      setOllamaConfig(nextOllamaConfig);
       const storedPackageId = readStoredSelectedPackageId();
       setPackages(nextPackages);
       setProfiles(nextProfiles);
@@ -425,18 +1127,35 @@ export function App() {
     }
   }, [autoResolve]);
 
+  useEffect(() => {
+    return () => {
+      if (saveContextTimeoutRef.current) clearTimeout(saveContextTimeoutRef.current);
+      if (saveDraftTimeoutRef.current) clearTimeout(saveDraftTimeoutRef.current);
+    };
+  }, []);
+
   function resetPackageWorkflowState() {
+    if (saveContextTimeoutRef.current) {
+      clearTimeout(saveContextTimeoutRef.current);
+      saveContextTimeoutRef.current = null;
+    }
+    if (saveDraftTimeoutRef.current) {
+      clearTimeout(saveDraftTimeoutRef.current);
+      saveDraftTimeoutRef.current = null;
+    }
     setChunkResult(null);
     setHasChunks(false);
     setChunksByFile([]);
     setViewingFile(null);
     setFileContent(null);
     setContext(null);
+    setContextEditMode(false);
     setDraft(null);
     setProtectedFields([]);
     setPatchStatus(null);
     setPatchProgress(null);
     setPatchArtifacts(null);
+    setTokenUsage(null);
     setPatchReviewState(emptyReviewState);
     setChunkingDialogOpen(false);
     setBusy(null);
@@ -666,12 +1385,118 @@ export function App() {
     try {
       const result = await extractInitialContext({ data_package_id: selectedPackageId });
       setContext(result);
+      setContextEditMode(true);
+      setTokenUsage(await getTokenUsage(selectedPackageId));
       setMessage('Initial context extracted.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Context extraction failed.');
     } finally {
       setBusy(null);
     }
+  }
+
+  async function refreshOllamaConfig() {
+    setBusy('ollama');
+    try {
+      const [nextConfig, nextBudget] = await Promise.all([getOllamaConfig(), getLlmBudget()]);
+      setOllamaConfig(nextConfig);
+      setLlmBudget(nextBudget);
+      setMessage('Ollama runtime settings refreshed.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not refresh Ollama settings.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function applyOllamaRuntimeConfig(values: {
+    chat_model: string;
+    embedding_model: string;
+    max_context_length: number;
+    embedding_batch_size: number;
+    embedding_num_gpu: number;
+  }) {
+    setBusy('ollama');
+    try {
+      const updated = await updateOllamaRuntimeConfig(values);
+      const nextBudget = await getLlmBudget();
+      setOllamaConfig(updated);
+      setLlmBudget(nextBudget);
+      setMessage('Ollama runtime settings updated for future calls.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not update Ollama runtime settings.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function pullOllamaModelFromUi(model: string) {
+    setBusy('ollama');
+    try {
+      await pullOllamaModel(model);
+      const nextConfig = await getOllamaConfig();
+      setOllamaConfig(nextConfig);
+      setMessage(`Pull requested for ${model} on the configured Ollama host.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not pull Ollama model.');
+      throw error;
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function removeOllamaModelFromUi(model: string) {
+    setBusy('ollama');
+    try {
+      await removeOllamaModel(model);
+      const nextConfig = await getOllamaConfig();
+      setOllamaConfig(nextConfig);
+      setMessage(`Removed ${model} from the configured Ollama host.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not remove Ollama model.');
+      throw error;
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function runOllamaSwitchTest(values: {
+    chat_model: string;
+    embedding_model: string;
+    max_context_length: number;
+    embedding_num_gpu: number;
+  }) {
+    setBusy('ollama');
+    try {
+      const result = await runOllamaPerformanceTest(values);
+      const nextConfig = await getOllamaConfig();
+      setOllamaConfig(nextConfig);
+      setMessage('Ollama switch test completed.');
+      return result;
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not run Ollama switch test.');
+      throw error;
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function onContextChange(update: (current: InitialContext) => InitialContext) {
+    if (!context || !selectedPackageId) return;
+    const packageId = selectedPackageId;
+    const updated = update(context);
+    setContext(updated);
+    if (saveContextTimeoutRef.current) clearTimeout(saveContextTimeoutRef.current);
+    saveContextTimeoutRef.current = setTimeout(async () => {
+      try {
+        await saveInitialContext(packageId, updated);
+        if (selectedPackageIdRef.current === packageId) setMessage('Initial context saved.');
+      } catch (error) {
+        if (selectedPackageIdRef.current === packageId) {
+          setMessage(error instanceof Error ? error.message : 'Failed to save initial context.');
+        }
+      }
+    }, 800);
   }
 
   async function onDraft() {
@@ -696,6 +1521,7 @@ export function App() {
       setPatchProgress(null);
       setPatchReviewState(emptyReviewState);
       setProtectedFields([]);
+      setTokenUsage(await getTokenUsage(selectedPackageId));
       setMessage(isReplacingDraft ? 'Initial profile draft re-created. Previous draft progress was removed.' : 'Initial profile draft created.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Draft creation failed.');
@@ -726,6 +1552,7 @@ export function App() {
       const result = await patchDraft({ data_package_id: selectedPackageId, profile_identifier: selectedProfile, num_chunks_per_turn: numChunksPerTurn, auto_resolve: autoResolve });
       setDraft(result.draft);
       setPatchStatus(result.status);
+      setTokenUsage(await getTokenUsage(selectedPackageId));
       setMessage(
         result.status === 'completed'
           ? 'Draft patching completed. Use Show/refresh artifacts to load the latest artifacts and review items.'
@@ -750,6 +1577,7 @@ export function App() {
       setPatchProgress(progress || null);
       setPatchArtifacts(artifacts);
       setPatchReviewState(reviewState);
+      setTokenUsage(await getTokenUsage(selectedPackageId));
       setMessage(hasPatchArtifacts(artifacts) ? 'Loaded existing patch artifacts.' : 'No existing patch artifacts found.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Failed to load patch artifacts.');
@@ -843,7 +1671,7 @@ export function App() {
     setBusy('load');
     void (async () => {
       try {
-        const [ctx, draftResult, fields, { status, progress }, artifacts, reviewState, chunkStatus] = await Promise.all([
+        const [ctx, draftResult, fields, { status, progress }, artifacts, reviewState, chunkStatus, usage] = await Promise.all([
           getExistingInitialContext(packageId),
           getExistingInitialDraft(packageId),
           getProtectedFields(packageId),
@@ -851,6 +1679,7 @@ export function App() {
           getPatchArtifacts(packageId),
           getPatchReviewState(packageId),
           getChunkStatus(packageId),
+          getTokenUsage(packageId),
         ]);
         const chunks = chunkStatus.status !== 'unknown' || chunkStatus.has_chunks
           ? await getDataPackageChunks(packageId)
@@ -861,6 +1690,7 @@ export function App() {
         setProtectedFields(fields);
         setPatchStatus(status);
         setPatchProgress(progress || null);
+        setTokenUsage(usage);
         if (status === 'completed' || status === 'crashed' || status === 'cancelled' || hasPatchArtifacts(artifacts)) setPatchArtifacts(artifacts);
         setPatchReviewState(reviewState);
         setHasChunks(chunkStatus.has_chunks);
@@ -1007,17 +1837,30 @@ export function App() {
                   </div>
                 )}
               </div>
+              <OllamaSettingsPanel
+                config={ollamaConfig}
+                budget={llmBudget}
+                tokenUsage={tokenUsage}
+                patchTokenUsage={patchProgress?.token_usage}
+                busy={busy === 'ollama'}
+                onApply={(values) => void applyOllamaRuntimeConfig(values)}
+                onRefresh={() => void refreshOllamaConfig()}
+                onPullModel={(model) => pullOllamaModelFromUi(model)}
+                onRemoveModel={(model) => removeOllamaModelFromUi(model)}
+                onRunPerformanceTest={(values) => runOllamaSwitchTest(values)}
+              />
               <VocabularyPanel onError={setMessage} />
             </>
           )}
         </aside>
 
         <section className="workflow">
-          <article className="step-card active">
-            <div className="step-index">01</div>
-            <div className="step-body">
-              <h2>Upload dataset and create chunks</h2>
-              <p>The archive is stored as a data package. Chunking prepares the package for later patch and enrichment stages.</p>
+          <StepPanel
+            number="01"
+            title="Upload dataset and create chunks"
+            description="The archive is stored as a data package. Chunking prepares the package for later patch and enrichment stages."
+            active
+          >
               <div className="actions">
                 <button onClick={() => setChunkingDialogOpen(true)} disabled={!selectedPackageId || !!busy}>{busy === 'chunk' ? 'Checking...' : 'Configure Chunking'}</button>
               </div>
@@ -1057,39 +1900,98 @@ export function App() {
                   void onChunk(params);
                 }}
               />
-            </div>
-          </article>
+          </StepPanel>
 
-          <article className="step-card">
-            <div className="step-index">02</div>
-            <div className="step-body">
-              <h2>Determine initial context</h2>
-              <p>Extract high-level context, likely metadata sources, keywords, file relationships, and evidence from the package.</p>
+          <StepPanel
+            number="02"
+            title="Determine initial context"
+            description="Extract high-level context, likely metadata sources, keywords, file relationships, and evidence from the package."
+            actions={context && (
+              <button
+                type="button"
+                className={`context-edit-toggle ${contextEditMode ? 'active' : 'ghost'}`}
+                onClick={() => setContextEditMode((value) => !value)}
+                disabled={!!busy}
+                aria-pressed={contextEditMode}
+                title={contextEditMode ? 'Disable edit mode' : 'Enable edit mode'}
+              >
+                Edit mode
+              </button>
+            )}
+          >
               <div className="actions">
                 <button onClick={() => void onContext()} disabled={!selectedPackageId || !!busy}>{busy === 'context' ? 'Extracting...' : context ? 'Re-extract and remove old context' : 'Extract new context'}</button>
               </div>
               {context && (
                 <div className="context-grid">
-                  <Field label="Technique" value={context.analytical_technique} />
-                  <Field label="Device" value={context.device_name} />
-                  <Field label="Model" value={context.device_model} />
-                  <div className="summary-box">{context.summary}</div>
-                  <div className="chips">{context.keywords.map((keyword) => <span key={keyword}>{keyword}</span>)}</div>
+                  {contextEditMode ? (
+                    <>
+                      <EditableContextField
+                        label="Dataset"
+                        value={context.dataset_title ?? ''}
+                        onChange={(value) => onContextChange((current) => updateContextDatasetTitle(current, value))}
+                      />
+                      <EditableContextField
+                        label="Technique"
+                        value={context.activities?.[0]?.technique ?? contextTechnique(context) ?? ''}
+                        onChange={(value) => onContextChange((current) => updateContextTechnique(current, value))}
+                      />
+                      <EditableContextField
+                        label="Agents"
+                        value={context.agents?.[0]?.name ?? ''}
+                        onChange={(value) => onContextChange((current) => updateContextAgentName(current, value))}
+                      />
+                      <EditableContextField
+                        label="Entities"
+                        value={contextEntitiesInput(context)}
+                        onChange={(value) => onContextChange((current) => updateContextEntities(current, value))}
+                      />
+                      <EditableContextField
+                        label="Activities"
+                        value={context.activities?.[0]?.label ?? contextActivityLabel(context) ?? ''}
+                        onChange={(value) => onContextChange((current) => updateContextActivityLabel(current, value))}
+                      />
+                      <EditableContextField
+                        label="Model"
+                        value={context.agents?.[0]?.model ?? ''}
+                        onChange={(value) => onContextChange((current) => updateContextAgentModel(current, value))}
+                      />
+                      <EditableContextTextArea
+                        label="Description"
+                        value={context.dataset_description ?? context.summary ?? ''}
+                        onChange={(value) => onContextChange((current) => updateContextDescription(current, value))}
+                      />
+                      <EditableContextField
+                        label="Keywords"
+                        value={context.keywords.join(', ')}
+                        onChange={(value) => onContextChange((current) => updateContextKeywords(current, value))}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <PersistedContextField label="Dataset" value={context.dataset_title} />
+                      <PersistedContextField label="Technique" value={contextTechnique(context)} />
+                      <PersistedContextField label="Agents" value={contextAgentLabel(context)} />
+                      <PersistedContextField label="Entities" value={contextEntityLabel(context)} />
+                      <PersistedContextField label="Activities" value={contextActivityLabel(context)} />
+                      <PersistedContextField label="Model" value={context.agents?.[0]?.model} />
+                      <PersistedContextField label="Description" value={context.dataset_description || context.summary} wide />
+                      <PersistedContextChips label="Keywords" values={context.keywords} />
+                    </>
+                  )}
                 </div>
               )}
-            </div>
-          </article>
+              <TokenUsageSummary tokenUsage={tokenUsage} averageUnit="operation" heading="Extraction token usage" agentKeys={['initial_context']} budget={llmBudget} />
+          </StepPanel>
 
-          <article className="step-card">
-            <div className="step-index">03</div>
-            <div className="step-body">
-              <div className="draft-workspace-heading">
-                <h2>Draft workspace</h2>
-                {draft && (
-                  <button className="ghost draft-refresh-button" onClick={() => void onShowPatchArtifacts()} disabled={!selectedPackageId || busy === 'load'}>Refresh</button>
-                )}
-              </div>
-              <p>Create the initial profile draft, edit and lock fields, then patch the draft with chunk evidence while reviewing issues as they appear.</p>
+          <StepPanel
+            number="03"
+            title="Draft workspace"
+            description="Create the initial profile draft, edit and lock fields, then patch the draft with chunk evidence while reviewing issues as they appear."
+            actions={draft && (
+              <button className="ghost draft-refresh-button" onClick={() => void onShowPatchArtifacts()} disabled={!selectedPackageId || busy === 'load'}>Refresh</button>
+            )}
+          >
               <div className={draft ? 'draft-actions' : 'actions'}>
                 {!draft ? (
                   <button onClick={() => void onDraft()} disabled={!selectedPackageId || !selectedProfile || !!busy}>{busy === 'draft' ? 'Drafting...' : 'Create new draft'}</button>
@@ -1135,6 +2037,7 @@ export function App() {
                     {progressTotalBatches > 0 && <span>Patching batch {progressBatchNo} of {progressTotalBatches}</span>}
                   </div>
                   <div className="patch-progress-track" aria-hidden="true"><div style={{ width: `${progressPercent}%` }} /></div>
+                  <TokenUsageSummary tokenUsage={patchProgress?.token_usage} averageUnit="patch" budget={llmBudget} />
                   <ResolutionLogList entries={patchProgress?.resolution_log ?? []} />
                 </div>
               )}
@@ -1158,8 +2061,7 @@ export function App() {
                   targetClass={selectedProfileManifest?.target_class}
                 />
               )}
-            </div>
-          </article>
+          </StepPanel>
         </section>
       </section>
     </main>

@@ -13,11 +13,19 @@ from app.domain.datasources import ContentChunk
 from app.domain.extraction.agents import DEFAULT_OUTPUT_RETRIES, prompted_json_output
 from app.domain.extraction.artifacts import FieldPatchResult, InitialContext, PatchCandidate
 from app.domain.extraction.patch_quality import (
+    CandidateQualityRating,
     PatchQualityReport,
-    review_patch_semantic_quality,
+    PatchQualityIssue,
     validate_candidate_draft,
 )
-from app.domain.extraction.schema_utils import FieldInfo, get_top_level_fields
+from app.domain.extraction.schema_utils import (
+    FieldInfo,
+    get_top_level_fields,
+    json_pointer_top_level_field,
+    resolve_json_pointer,
+    slice_profile_json_schema,
+)
+from app.domain.extraction.token_budget import BudgetedUsage, TokenBudget
 from app.domain.profiles import ProfileManifest
 
 
@@ -45,7 +53,7 @@ PATCH_DRAFT_INSTRUCTIONS = (
     "For each top-level field of the Dataset schema, decide whether the "
     "current chunk batch contains information relevant to that field. "
     "If it does, produce a PatchCandidate with the field name, a merge "
-    "patch scoped to just that field, your confidence (0.0–1.0), a brief "
+    "patch scoped to just that field, your confidence (0.0-1.0), a brief "
     "reasoning explanation, and source evidence from the chunks. "
     "If a field has no relevant information in this chunk, omit it from "
     "the candidates list. "
@@ -97,6 +105,32 @@ class PatchDraftDeps:
 
 
 @dataclass
+class PatchDiscoveryDeps:
+    current_draft: dict[str, Any]
+    chunk_batch: list[ContentChunk]
+    batch_no: int
+    total_batches: int
+    document_file_path: str
+    protected_fields: list[str] = field(default_factory=list)
+
+
+@dataclass
+class SchemaPatchDeps:
+    current_draft_slice: dict[str, Any]
+    schema_slice: dict[str, Any]
+    location_picks: list["PatchLocationPick"]
+    information: str
+    evidence: list[str]
+    document_file_path: str
+
+
+@dataclass
+class SchemaRepairDeps(SchemaPatchDeps):
+    invalid_patch: dict[str, Any] = field(default_factory=dict)
+    validation_errors: list[str] = field(default_factory=list)
+
+
+@dataclass
 class PatchRecord:
     file_name: str
     candidates: list[PatchCandidate]
@@ -112,7 +146,45 @@ class PatchDraftResult:
     patches: list[PatchRecord]
 
 
+class PatchLocationPick(BaseModel):
+    path: str = Field(
+        description=(
+            "JSON Pointer to the best existing draft location for this "
+            "information, e.g. /was_generated_by/0/has_quantitative_attribute."
+        )
+    )
+    rationale: str | None = None
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+
+
+class PatchDiscoveryResult(BaseModel):
+    information: str | None = Field(
+        default=None,
+        description=(
+            "Concise metadata information from the chunk that should be added "
+            "to the draft, or null if there is nothing useful to add."
+        ),
+    )
+    evidence: list[str] = Field(default_factory=list)
+    location_picks: list[PatchLocationPick] = Field(default_factory=list)
+
+
+class SchemaPatchResult(BaseModel):
+    destination: str = Field(description="Single chosen JSON Pointer destination.")
+    patch: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Top-level JSON merge patch rooted at the Dataset object.",
+    )
+    reasoning: str | None = None
+
+
 PatchProgressCallback = Callable[[dict[str, Any], PatchRecord, int, int], Awaitable[None]]
+TokenUsageCallback = Callable[[str, Any, int], None]
+
+
+SCHEMA_PATCH_EVIDENCE_LIMIT = 3
+SCHEMA_PATCH_LOCATION_LIMIT = 3
+SCHEMA_REPAIR_ERROR_LIMIT = 5
 
 
 # ---------------------------------------------------------------------------
@@ -202,6 +274,7 @@ async def extract_field_patch_candidates(
     top_level_fields: list[FieldInfo],
     model: Any,
     protected_fields: list[str] | None = None,
+    on_token_usage: TokenUsageCallback | None = None,
 ) -> list[PatchCandidate]:
     """Extract field-level patch candidates from a chunk batch."""
     agent = create_patch_draft_agent(model=model)
@@ -226,7 +299,351 @@ async def extract_field_patch_candidates(
         ),
         deps=deps,
     )
+    if on_token_usage is not None:
+        on_token_usage("patch_extraction", result.usage, 1)
     return result.output.candidates
+
+
+# ---------------------------------------------------------------------------
+# Lean schema-late patch agents
+# ---------------------------------------------------------------------------
+
+PATCH_DISCOVERY_INSTRUCTIONS = (
+    "You inspect source chunks against the current metadata draft. "
+    "Do not create a schema patch. Find one concise piece of new metadata "
+    "that is supported by the chunks and not already represented in the draft. "
+    "Return information=null when the chunks add nothing useful. "
+    "When information exists, return ranked JSON Pointer location picks that "
+    "point to reasonable existing places in the draft where this information "
+    "should be stored. Prefer precise nested pointers over broad root fields. "
+    "Do not invent facts."
+)
+
+SCHEMA_PATCH_INSTRUCTIONS = (
+    "You convert discovered metadata information into one JSON merge patch "
+    "for a Dataset draft. Use only the provided schema slice and draft slice. "
+    "Choose exactly one destination from the provided JSON Pointer picks. "
+    "Return a top-level merge patch rooted at the Dataset object, not a JSON "
+    "Patch operation list. Do not use null to delete existing values. "
+    + URI_POLICY_INSTRUCTIONS
+)
+
+SCHEMA_REPAIR_INSTRUCTIONS = (
+    "You repair a JSON merge patch that failed full Dataset schema validation. "
+    "Use the validation errors, schema slice, draft slice, and source evidence "
+    "to return a corrected top-level JSON merge patch. Preserve the intended "
+    "metadata information and do not invent facts or schema fields. "
+    + URI_POLICY_INSTRUCTIONS
+)
+
+
+def create_patch_discovery_agent(
+    *,
+    model: Any,
+    output_retries: int = DEFAULT_OUTPUT_RETRIES,
+) -> Agent[PatchDiscoveryDeps, PatchDiscoveryResult]:
+    agent = Agent(
+        model,
+        deps_type=PatchDiscoveryDeps,
+        output_type=prompted_json_output(
+            PatchDiscoveryResult,
+            name="PatchDiscoveryResult",
+            description="New chunk information and ranked draft locations.",
+        ),
+        instructions=PATCH_DISCOVERY_INSTRUCTIONS,
+        model_settings={"temperature": 0.0, "seed": 42},
+        output_retries=output_retries,
+    )
+
+    @agent.instructions
+    def add_discovery_context(ctx: RunContext[PatchDiscoveryDeps]) -> str:
+        return _patch_discovery_context(ctx.deps)
+
+    return agent
+
+
+def _patch_discovery_context(deps: PatchDiscoveryDeps) -> str:
+    protected_note = ""
+    if deps.protected_fields:
+        protected_note = (
+            "\n\nProtected fields (do not pick locations under these):\n"
+            + "\n".join(f"- {field}" for field in deps.protected_fields)
+            + "\n"
+        )
+    return (
+        f"Document file path:\n{deps.document_file_path}\n\n"
+        f"Patch batch:\n{deps.batch_no}/{deps.total_batches}\n\n"
+        "Current draft JSON:\n"
+        f"{json.dumps(deps.current_draft, indent=2, ensure_ascii=False)}\n\n"
+        "Source chunk batch:\n"
+        f"{json.dumps([chunk.model_dump(exclude={'embedding'}) for chunk in deps.chunk_batch], indent=2, ensure_ascii=False)}\n"
+        f"{protected_note}"
+    )
+
+
+def create_schema_patch_agent(
+    *,
+    model: Any,
+    output_retries: int = DEFAULT_OUTPUT_RETRIES,
+) -> Agent[SchemaPatchDeps, SchemaPatchResult]:
+    agent = Agent(
+        model,
+        deps_type=SchemaPatchDeps,
+        output_type=prompted_json_output(
+            SchemaPatchResult,
+            name="SchemaPatchResult",
+            description="A schema-conformant top-level JSON merge patch.",
+        ),
+        instructions=SCHEMA_PATCH_INSTRUCTIONS,
+        model_settings={"temperature": 0.0, "seed": 42},
+        output_retries=output_retries,
+    )
+
+    @agent.instructions
+    def add_patch_context(ctx: RunContext[SchemaPatchDeps]) -> str:
+        return _schema_patch_context(ctx.deps)
+
+    return agent
+
+
+def create_schema_repair_agent(
+    *,
+    model: Any,
+    output_retries: int = DEFAULT_OUTPUT_RETRIES,
+) -> Agent[SchemaRepairDeps, SchemaPatchResult]:
+    agent = Agent(
+        model,
+        deps_type=SchemaRepairDeps,
+        output_type=prompted_json_output(
+            SchemaPatchResult,
+            name="SchemaPatchResult",
+            description="A repaired schema-conformant top-level JSON merge patch.",
+        ),
+        instructions=SCHEMA_REPAIR_INSTRUCTIONS,
+        model_settings={"temperature": 0.0, "seed": 42},
+        output_retries=output_retries,
+    )
+
+    @agent.instructions
+    def add_repair_context(ctx: RunContext[SchemaRepairDeps]) -> str:
+        return _schema_repair_context(ctx.deps)
+
+    return agent
+
+
+def _schema_patch_context(deps: SchemaPatchDeps) -> str:
+    return (
+        "Information to add:\n"
+        f"{deps.information}\n\n"
+        "Evidence:\n"
+        f"{json.dumps(deps.evidence, indent=2, ensure_ascii=False)}\n\n"
+        "Location picks:\n"
+        f"{json.dumps([pick.model_dump(mode='json') for pick in deps.location_picks], indent=2, ensure_ascii=False)}\n\n"
+        f"Document file path:\n{deps.document_file_path}\n\n"
+        "Current draft slice JSON:\n"
+        f"{json.dumps(deps.current_draft_slice, indent=2, ensure_ascii=False)}\n\n"
+        "Relevant schema slice JSON:\n"
+        f"{json.dumps(deps.schema_slice, indent=2, ensure_ascii=False)}\n"
+    )
+
+
+def _budget_schema_patch_deps(
+    deps: SchemaPatchDeps,
+    *,
+    token_budget: TokenBudget | None,
+) -> tuple[SchemaPatchDeps, dict[str, int] | None]:
+    if token_budget is None:
+        return deps, None
+
+    initial_estimate = token_budget.estimate_text_tokens(_schema_patch_context(deps))
+    if initial_estimate <= token_budget.input_token_budget:
+        return deps, token_budget.metadata(estimated_input_tokens=initial_estimate)
+
+    compacted = SchemaPatchDeps(
+        current_draft_slice=deps.current_draft_slice,
+        schema_slice=_compact_schema_for_prompt(deps.schema_slice),
+        location_picks=deps.location_picks[:SCHEMA_PATCH_LOCATION_LIMIT],
+        information=deps.information,
+        evidence=deps.evidence[:SCHEMA_PATCH_EVIDENCE_LIMIT],
+        document_file_path=deps.document_file_path,
+    )
+    estimate = token_budget.estimate_text_tokens(_schema_patch_context(compacted))
+    return compacted, token_budget.metadata(
+        estimated_input_tokens=estimate,
+        compaction_count=1,
+    )
+
+
+def _budget_schema_repair_deps(
+    deps: SchemaRepairDeps,
+    *,
+    token_budget: TokenBudget | None,
+) -> tuple[SchemaRepairDeps, dict[str, int] | None]:
+    if token_budget is None:
+        return deps, None
+
+    initial_estimate = token_budget.estimate_text_tokens(_schema_repair_context(deps))
+    if initial_estimate <= token_budget.input_token_budget:
+        return deps, token_budget.metadata(estimated_input_tokens=initial_estimate)
+
+    compacted = SchemaRepairDeps(
+        current_draft_slice=deps.current_draft_slice,
+        schema_slice=_compact_schema_for_prompt(deps.schema_slice),
+        location_picks=deps.location_picks[:SCHEMA_PATCH_LOCATION_LIMIT],
+        information=deps.information,
+        evidence=deps.evidence[:SCHEMA_PATCH_EVIDENCE_LIMIT],
+        document_file_path=deps.document_file_path,
+        invalid_patch=deps.invalid_patch,
+        validation_errors=deps.validation_errors[:SCHEMA_REPAIR_ERROR_LIMIT],
+    )
+    estimate = token_budget.estimate_text_tokens(_schema_repair_context(compacted))
+    return compacted, token_budget.metadata(
+        estimated_input_tokens=estimate,
+        compaction_count=1,
+    )
+
+
+def _schema_repair_context(deps: SchemaRepairDeps) -> str:
+    return (
+        _schema_patch_context(deps)
+        + "\nInvalid patch JSON:\n"
+        + json.dumps(deps.invalid_patch, indent=2, ensure_ascii=False)
+        + "\n\nValidation errors:\n"
+        + json.dumps(deps.validation_errors, indent=2, ensure_ascii=False)
+        + "\n"
+    )
+
+
+def _compact_schema_for_prompt(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _compact_schema_for_prompt(child)
+            for key, child in value.items()
+            if key not in {"description", "title", "$comment", "examples", "default"}
+        }
+    if isinstance(value, list):
+        return [_compact_schema_for_prompt(item) for item in value]
+    return value
+
+
+async def discover_patch_information(
+    *,
+    draft: dict[str, Any],
+    document_file_path: str,
+    chunk_batch: list[ContentChunk],
+    batch_no: int,
+    total_batches: int,
+    model: Any,
+    protected_fields: list[str] | None = None,
+    token_budget: TokenBudget | None = None,
+    budget_split_count: int = 0,
+    on_token_usage: TokenUsageCallback | None = None,
+) -> PatchDiscoveryResult:
+    agent = create_patch_discovery_agent(model=model)
+    deps = PatchDiscoveryDeps(
+        current_draft=draft,
+        chunk_batch=chunk_batch,
+        batch_no=batch_no,
+        total_batches=total_batches,
+        document_file_path=document_file_path,
+        protected_fields=protected_fields or [],
+    )
+    budget_metadata = None
+    if token_budget is not None:
+        budget_metadata = token_budget.metadata(
+            estimated_input_tokens=token_budget.estimate_text_tokens(
+                _patch_discovery_context(deps),
+            ),
+            split_count=budget_split_count,
+        )
+    result = await agent.run(
+        "Find new metadata information in this chunk batch and rank JSON "
+        "Pointer locations in the current draft where it belongs.",
+        deps=deps,
+    )
+    if on_token_usage is not None:
+        on_token_usage(
+            "patch_discovery",
+            BudgetedUsage(result.usage, budget_metadata) if budget_metadata else result.usage,
+            1,
+        )
+    return result.output
+
+
+async def create_schema_bound_patch(
+    *,
+    discovery: PatchDiscoveryResult,
+    current_draft_slice: dict[str, Any],
+    schema_slice: dict[str, Any],
+    location_picks: list[PatchLocationPick],
+    document_file_path: str,
+    model: Any,
+    token_budget: TokenBudget | None = None,
+    on_token_usage: TokenUsageCallback | None = None,
+) -> SchemaPatchResult:
+    agent = create_schema_patch_agent(model=model)
+    deps, budget_metadata = _budget_schema_patch_deps(
+        SchemaPatchDeps(
+            current_draft_slice=current_draft_slice,
+            schema_slice=schema_slice,
+            location_picks=location_picks,
+            information=discovery.information or "",
+            evidence=discovery.evidence,
+            document_file_path=document_file_path,
+        ),
+        token_budget=token_budget,
+    )
+    result = await agent.run(
+        "Create one top-level JSON merge patch for the discovered information.",
+        deps=deps,
+    )
+    if on_token_usage is not None:
+        on_token_usage(
+            "schema_patch_writer",
+            BudgetedUsage(result.usage, budget_metadata) if budget_metadata else result.usage,
+            1,
+        )
+    return result.output
+
+
+async def repair_schema_bound_patch(
+    *,
+    discovery: PatchDiscoveryResult,
+    current_draft_slice: dict[str, Any],
+    schema_slice: dict[str, Any],
+    location_picks: list[PatchLocationPick],
+    invalid_patch: dict[str, Any],
+    validation_errors: list[str],
+    document_file_path: str,
+    model: Any,
+    token_budget: TokenBudget | None = None,
+    on_token_usage: TokenUsageCallback | None = None,
+) -> SchemaPatchResult:
+    agent = create_schema_repair_agent(model=model)
+    deps, budget_metadata = _budget_schema_repair_deps(
+        SchemaRepairDeps(
+            current_draft_slice=current_draft_slice,
+            schema_slice=schema_slice,
+            location_picks=location_picks,
+            information=discovery.information or "",
+            evidence=discovery.evidence,
+            document_file_path=document_file_path,
+            invalid_patch=invalid_patch,
+            validation_errors=validation_errors,
+        ),
+        token_budget=token_budget,
+    )
+    result = await agent.run(
+        "Repair the JSON merge patch so it satisfies the schema.",
+        deps=deps,
+    )
+    if on_token_usage is not None:
+        on_token_usage(
+            "schema_repair",
+            BudgetedUsage(result.usage, budget_metadata) if budget_metadata else result.usage,
+            1,
+        )
+    return result.output
 
 
 # ---------------------------------------------------------------------------
@@ -246,6 +663,8 @@ async def patch_draft_from_content_chunks(
     protected_fields: list[str] | None = None,
     protected_fields_loader: Callable[[], list[str]] | None = None,
     completed_patch_file_names: set[str] | None = None,
+    token_budget: TokenBudget | None = None,
+    on_token_usage: TokenUsageCallback | None = None,
 ) -> PatchDraftResult:
     draft = copy.deepcopy(initial_draft)
     patches: list[PatchRecord] = []
@@ -254,6 +673,9 @@ async def patch_draft_from_content_chunks(
     progress_total_batches = _count_progress_batches(
         content_chunks_by_file=content_chunks_by_file,
         num_chunks_per_turn=num_chunks_per_turn,
+        draft=draft,
+        token_budget=token_budget,
+        protected_fields=protected_fields,
     )
 
     top_level_fields = get_top_level_fields(
@@ -265,15 +687,21 @@ async def patch_draft_from_content_chunks(
         if not chunks:
             continue
 
-        effective_batch_size = max(1, min(num_chunks_per_turn, len(chunks)))
-        total_batches = (len(chunks) + effective_batch_size - 1) // effective_batch_size
         document_file_path = chunks[0].file_path
+        budgeted_batches = _budgeted_discovery_batches(
+            draft=draft,
+            chunks=chunks,
+            document_file_path=document_file_path,
+            num_chunks_per_turn=num_chunks_per_turn,
+            token_budget=token_budget,
+            protected_fields=protected_fields,
+        )
+        total_batches = len(budgeted_batches)
 
-        for batch_index, start_index in enumerate(
-            range(0, len(chunks), effective_batch_size),
+        for batch_index, (chunk_batch, budget_split_count) in enumerate(
+            budgeted_batches,
             start=1,
         ):
-            chunk_batch = chunks[start_index : start_index + effective_batch_size]
             patch_file_name = (
                 f"{document_index}_{ContentChunk.get_chunk_group_id_from_file_path(document_file_path)}"
                 f"_patch_{batch_index}_{total_batches}.json"
@@ -291,129 +719,30 @@ async def patch_draft_from_content_chunks(
                 current_protected_fields,
             )
 
-            # Step 1: Extract field-level patch candidates from the LLM agent.
-            candidates = await extract_field_patch_candidates(
-                initial_context=initial_context,
+            discovery = await discover_patch_information(
                 draft=draft,
                 document_file_path=document_file_path,
                 chunk_batch=chunk_batch,
                 batch_no=batch_index,
                 total_batches=total_batches,
-                profile_manifest=profile_manifest,
-                profile_json_schema=profile_json_schema,
-                top_level_fields=top_level_fields,
                 model=model,
                 protected_fields=current_protected_fields,
+                token_budget=token_budget,
+                budget_split_count=budget_split_count,
+                on_token_usage=on_token_usage,
             )
-            candidates = [
-                candidate
-                for candidate in candidates
-                if not _candidate_touches_protected_field(
-                    candidate,
-                    protected_top_level_fields,
-                )
-            ]
-
-            # Step 2: Merge accepted candidates into a single proposed patch.
-            proposed_patch = _merge_candidates_into_patch(candidates)
-
-            # Step 3: Apply the proposed patch to a candidate draft and validate.
-            candidate = apply_merge_patch(draft, proposed_patch)
-
-            schema_errors = validate_candidate_draft(
-                candidate=candidate,
-                profile_json_schema=profile_json_schema,
-                profile_manifest=profile_manifest,
+            location_picks = _valid_location_picks(
+                discovery.location_picks,
+                protected_fields=protected_top_level_fields,
+                top_level_fields={field.name for field in top_level_fields},
             )
-
-            # Step 4: Semantic quality review (batch review of all candidates).
-            quality_report = await review_patch_semantic_quality(
-                initial_context=initial_context,
-                current_draft=draft,
-                proposed_patch=proposed_patch,
-                candidate_draft=candidate,
-                schema_validation_errors=schema_errors,
-                chunk_batch=chunk_batch,
-                document_file_path=document_file_path,
-                profile_manifest=profile_manifest,
-                profile_json_schema=profile_json_schema,
-                candidates=candidates,
-                model=model,
-            )
-
-            # Step 5: Apply per-candidate decisions.
-            accepted_fields: list[str] = []
-            merged_accepted_patch: dict[str, Any] = {}
-
-            for rating in quality_report.candidate_ratings:
-                candidate_obj = _find_candidate(
-                    candidates, rating.field_path,
-                )
-                if candidate_obj is None:
-                    continue
-
-                if rating.decision == "accept":
-                    accepted_fields.append(rating.field_path)
-                    merged_accepted_patch = deep_merge(
-                        merged_accepted_patch, candidate_obj.patch,
-                    )
-                elif rating.decision == "revise" and rating.revised_patch:
-                    if _patch_touches_protected_field(
-                        rating.revised_patch,
-                        protected_top_level_fields,
-                    ):
-                        continue
-                    revised_candidate = apply_merge_patch(
-                        draft, rating.revised_patch,
-                    )
-                    revised_errors = validate_candidate_draft(
-                        candidate=revised_candidate,
-                        profile_json_schema=profile_json_schema,
-                        profile_manifest=profile_manifest,
-                    )
-                    if not revised_errors:
-                        accepted_fields.append(rating.field_path)
-                        merged_accepted_patch = deep_merge(
-                            merged_accepted_patch, rating.revised_patch,
-                        )
-                # "reject" → skip
-
-            # Step 6: Deterministic guard — validate the full merged draft.
-            if accepted_fields:
-                merged_draft = apply_merge_patch(draft, merged_accepted_patch)
-                merged_errors = validate_candidate_draft(
-                    candidate=merged_draft,
-                    profile_json_schema=profile_json_schema,
-                    profile_manifest=profile_manifest,
-                )
-                if merged_errors:
-                    # Merged result is invalid — reject entire batch.
-                    patch_record = PatchRecord(
-                        file_name=patch_file_name,
-                        candidates=candidates,
-                        accepted_fields=[],
-                        merged_patch=merged_accepted_patch,
-                        quality_report=quality_report,
-                        validation_errors=merged_errors,
-                    )
-                    patches.append(patch_record)
-                    progress_batch_no += 1
-                    await _notify_patch_progress(
-                        on_patch_processed,
-                        draft,
-                        patch_record,
-                        progress_batch_no,
-                        progress_total_batches,
-                    )
-                    continue
-
-                draft = merged_draft
+            if not _has_discovered_information(discovery) or not location_picks:
                 patch_record = PatchRecord(
                     file_name=patch_file_name,
-                    candidates=candidates,
-                    accepted_fields=accepted_fields,
-                    merged_patch=merged_accepted_patch,
-                    quality_report=quality_report,
+                    candidates=[],
+                    accepted_fields=[],
+                    merged_patch={},
+                    quality_report=None,
                     validation_errors=[],
                 )
                 patches.append(patch_record)
@@ -425,15 +754,79 @@ async def patch_draft_from_content_chunks(
                     progress_batch_no,
                     progress_total_batches,
                 )
-            else:
-                # No candidates accepted — record as empty batch.
+                continue
+
+            target_fields = _top_level_fields_from_location_picks(location_picks)
+            schema_slice = slice_profile_json_schema(
+                profile_json_schema=profile_json_schema,
+                target_class=profile_manifest.target_class,
+                field_names=target_fields,
+            )
+            draft_slice = _draft_slice_for_location_picks(draft, location_picks)
+            schema_patch = await create_schema_bound_patch(
+                discovery=discovery,
+                current_draft_slice=draft_slice,
+                schema_slice=schema_slice,
+                location_picks=location_picks,
+                document_file_path=document_file_path,
+                model=model,
+                token_budget=token_budget,
+                on_token_usage=on_token_usage,
+            )
+            merged_patch = schema_patch.patch
+            validation_errors = _validate_generated_patch(
+                patch=merged_patch,
+                draft=draft,
+                protected_fields=protected_top_level_fields,
+                profile_json_schema=profile_json_schema,
+                profile_manifest=profile_manifest,
+            )
+            repair_attempts = 0
+            while validation_errors and repair_attempts < DEFAULT_OUTPUT_RETRIES:
+                repair_attempts += 1
+                schema_patch = await repair_schema_bound_patch(
+                    discovery=discovery,
+                    current_draft_slice=draft_slice,
+                    schema_slice=schema_slice,
+                    location_picks=location_picks,
+                    invalid_patch=merged_patch,
+                    validation_errors=validation_errors,
+                    document_file_path=document_file_path,
+                    model=model,
+                    token_budget=token_budget,
+                    on_token_usage=on_token_usage,
+                )
+                merged_patch = schema_patch.patch
+                validation_errors = _validate_generated_patch(
+                    patch=merged_patch,
+                    draft=draft,
+                    protected_fields=protected_top_level_fields,
+                    profile_json_schema=profile_json_schema,
+                    profile_manifest=profile_manifest,
+                )
+
+            candidate_field = _patch_primary_field(merged_patch) or target_fields[0]
+            patch_candidate = PatchCandidate(
+                field_path=candidate_field,
+                patch=merged_patch,
+                confidence=_location_pick_confidence(location_picks),
+                reasoning=schema_patch.reasoning
+                or f"Schema-late patch for discovered information: {discovery.information}",
+                source_evidence=discovery.evidence,
+            )
+
+            if validation_errors:
                 patch_record = PatchRecord(
                     file_name=patch_file_name,
-                    candidates=candidates,
+                    candidates=[patch_candidate],
                     accepted_fields=[],
-                    merged_patch={},
-                    quality_report=quality_report,
-                    validation_errors=schema_errors or [],
+                    merged_patch=merged_patch,
+                    quality_report=_synthetic_quality_report(
+                        candidate=patch_candidate,
+                        accepted=False,
+                        validation_errors=validation_errors,
+                    ),
+                    validation_errors=validation_errors,
                 )
                 patches.append(patch_record)
                 progress_batch_no += 1
@@ -444,8 +837,164 @@ async def patch_draft_from_content_chunks(
                     progress_batch_no,
                     progress_total_batches,
                 )
+                continue
+
+            draft = apply_merge_patch(draft, merged_patch)
+            patch_record = PatchRecord(
+                file_name=patch_file_name,
+                candidates=[patch_candidate],
+                accepted_fields=[patch_candidate.field_path],
+                merged_patch=merged_patch,
+                quality_report=_synthetic_quality_report(
+                    candidate=patch_candidate,
+                    accepted=True,
+                    validation_errors=[],
+                ),
+                validation_errors=[],
+            )
+            patches.append(patch_record)
+            progress_batch_no += 1
+            await _notify_patch_progress(
+                on_patch_processed,
+                draft,
+                patch_record,
+                progress_batch_no,
+                progress_total_batches,
+            )
+            continue
 
     return PatchDraftResult(draft=draft, patches=patches)
+
+
+def _has_discovered_information(discovery: PatchDiscoveryResult) -> bool:
+    return bool(discovery.information and discovery.information.strip())
+
+
+def _valid_location_picks(
+    picks: list[PatchLocationPick],
+    *,
+    protected_fields: set[str],
+    top_level_fields: set[str],
+) -> list[PatchLocationPick]:
+    valid: list[PatchLocationPick] = []
+    seen: set[str] = set()
+    for pick in picks:
+        top_level_field = json_pointer_top_level_field(pick.path)
+        if (
+            top_level_field is None
+            or top_level_field not in top_level_fields
+            or top_level_field in protected_fields
+            or pick.path in seen
+        ):
+            continue
+        seen.add(pick.path)
+        valid.append(pick)
+    return valid
+
+
+def _top_level_fields_from_location_picks(
+    location_picks: list[PatchLocationPick],
+) -> list[str]:
+    fields: list[str] = []
+    for pick in location_picks:
+        field = json_pointer_top_level_field(pick.path)
+        if field and field not in fields:
+            fields.append(field)
+    return fields
+
+
+def _draft_slice_for_location_picks(
+    draft: dict[str, Any],
+    location_picks: list[PatchLocationPick],
+) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for field in _top_level_fields_from_location_picks(location_picks):
+        if field in draft:
+            result[field] = copy.deepcopy(draft[field])
+
+    pointer_context: dict[str, Any] = {}
+    for pick in location_picks:
+        try:
+            pointer_context[pick.path] = copy.deepcopy(
+                resolve_json_pointer(draft, pick.path)
+            )
+        except (KeyError, IndexError, TypeError, ValueError):
+            continue
+    if pointer_context:
+        result["_selected_location_context"] = pointer_context
+    return result
+
+
+def _validate_generated_patch(
+    *,
+    patch: dict[str, Any],
+    draft: dict[str, Any],
+    protected_fields: set[str],
+    profile_json_schema: dict[str, Any],
+    profile_manifest: ProfileManifest,
+) -> list[str]:
+    if not patch:
+        return ["Schema patch writer returned an empty patch."]
+    if _patch_touches_protected_field(patch, protected_fields):
+        return ["Generated patch touches a protected field."]
+    candidate = apply_merge_patch(draft, patch)
+    return validate_candidate_draft(
+        candidate=candidate,
+        profile_json_schema=profile_json_schema,
+        profile_manifest=profile_manifest,
+    )
+
+
+def _patch_primary_field(patch: dict[str, Any]) -> str | None:
+    for key in patch:
+        return key
+    return None
+
+
+def _location_pick_confidence(location_picks: list[PatchLocationPick]) -> float:
+    for pick in location_picks:
+        if pick.confidence is not None:
+            return pick.confidence
+    return 0.8
+
+
+def _synthetic_quality_report(
+    *,
+    candidate: PatchCandidate,
+    accepted: bool,
+    validation_errors: list[str],
+) -> PatchQualityReport:
+    if accepted:
+        return PatchQualityReport(
+            overall_decision="accept",
+            candidate_ratings=[
+                CandidateQualityRating(
+                    field_path=candidate.field_path,
+                    decision="accept",
+                    issues=[],
+                )
+            ],
+            summary="Schema-late patch passed full schema validation.",
+        )
+
+    return PatchQualityReport(
+        overall_decision="reject",
+        candidate_ratings=[
+            CandidateQualityRating(
+                field_path=candidate.field_path,
+                decision="reject",
+                issues=[
+                    PatchQualityIssue(
+                        path=candidate.field_path,
+                        issue_type="schema_mismatch",
+                        severity="major",
+                        explanation="; ".join(validation_errors),
+                    )
+                ],
+            )
+        ],
+        summary="Schema-late patch failed full schema validation.",
+    )
 
 
 def _find_candidate(
@@ -473,14 +1022,87 @@ def _count_progress_batches(
     *,
     content_chunks_by_file: list[list[ContentChunk]],
     num_chunks_per_turn: int,
+    draft: dict[str, Any] | None = None,
+    token_budget: TokenBudget | None = None,
+    protected_fields: list[str] | None = None,
 ) -> int:
     total = 0
     for chunks in content_chunks_by_file:
         if not chunks:
             continue
-        effective_batch_size = max(1, min(num_chunks_per_turn, len(chunks)))
-        total += (len(chunks) + effective_batch_size - 1) // effective_batch_size
+        if draft is not None and token_budget is not None:
+            total += len(
+                _budgeted_discovery_batches(
+                    draft=draft,
+                    chunks=chunks,
+                    document_file_path=chunks[0].file_path,
+                    num_chunks_per_turn=num_chunks_per_turn,
+                    token_budget=token_budget,
+                    protected_fields=protected_fields,
+                )
+            )
+        else:
+            effective_batch_size = max(1, min(num_chunks_per_turn, len(chunks)))
+            total += (len(chunks) + effective_batch_size - 1) // effective_batch_size
     return total
+
+
+def _budgeted_discovery_batches(
+    *,
+    draft: dict[str, Any],
+    chunks: list[ContentChunk],
+    document_file_path: str,
+    num_chunks_per_turn: int,
+    token_budget: TokenBudget | None,
+    protected_fields: list[str] | None,
+) -> list[tuple[list[ContentChunk], int]]:
+    max_batch_size = max(1, min(num_chunks_per_turn, len(chunks)))
+    batches: list[tuple[list[ContentChunk], int]] = []
+    start_index = 0
+    while start_index < len(chunks):
+        batch_size = min(max_batch_size, len(chunks) - start_index)
+        split_count = 0
+        while batch_size > 1 and token_budget is not None:
+            estimate = _estimate_discovery_batch_tokens(
+                draft=draft,
+                chunks=chunks[start_index : start_index + batch_size],
+                document_file_path=document_file_path,
+                batch_no=len(batches) + 1,
+                total_batches=1,
+                protected_fields=protected_fields,
+                token_budget=token_budget,
+            )
+            if estimate <= token_budget.input_token_budget:
+                break
+            batch_size -= 1
+            split_count += 1
+        batches.append((chunks[start_index : start_index + batch_size], split_count))
+        start_index += batch_size
+    return batches
+
+
+def _estimate_discovery_batch_tokens(
+    *,
+    draft: dict[str, Any],
+    chunks: list[ContentChunk],
+    document_file_path: str,
+    batch_no: int,
+    total_batches: int,
+    protected_fields: list[str] | None,
+    token_budget: TokenBudget,
+) -> int:
+    return token_budget.estimate_text_tokens(
+        _patch_discovery_context(
+            PatchDiscoveryDeps(
+                current_draft=draft,
+                chunk_batch=chunks,
+                batch_no=batch_no,
+                total_batches=total_batches,
+                document_file_path=document_file_path,
+                protected_fields=protected_fields or [],
+            )
+        )
+    )
 
 
 def _normalise_protected_fields(

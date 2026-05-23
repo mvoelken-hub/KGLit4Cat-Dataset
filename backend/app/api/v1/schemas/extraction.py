@@ -115,6 +115,7 @@ class PatchReviewResolutionResponse(BaseModel):
     validation_errors: list[str] = Field(default_factory=list)
     resolution_decisions: list[PatchReviewDecisionResponse] = Field(default_factory=list)
     resolution_log: list[str] = Field(default_factory=list)
+    token_usage: dict[str, Any] | None = None
 
 
 def _initial_context_response(initial_context: InitialContext) -> InitialContext:

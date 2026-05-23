@@ -66,12 +66,13 @@ The initial vocabulary list is defined in `backend/app/core/initial_vocabs.py`. 
 simone vocabs --info
 ```
 
-Configured Ollama models come from `OLLAMA_EMBED_MODEL` and `OLLAMA_CHAT_MODEL` in `.env`. You can inspect or pull them manually with:
+Configured Ollama models come from `OLLAMA_EMBED_MODEL` and `OLLAMA_CHAT_MODEL` in `.env`. Run model management on the machine that hosts Ollama:
 
 ```bash
-simone models --info
-simone models --pull
+simone models
 ```
+
+When `.env` points to a remote Ollama host, the local SIMONE CLI only inspects that host. Pulling, removing, selecting resident models, and server-side memory tuning should be done on the Ollama host. The web UI can adjust runtime request options for future SIMONE agent calls, but it does not write `.env` or change Docker/Ollama host settings.
 
 
 ### CLI Wrappers

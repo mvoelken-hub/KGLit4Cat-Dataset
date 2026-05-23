@@ -3,6 +3,35 @@ import type { InitialContext, PatchDraftResponse } from './types';
 
 export type PatchTaskStatus = 'unknown' | 'running' | 'completed' | 'cancelled' | 'crashed';
 
+export type PatchTokenUsageEntry = {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  requests: number;
+  operation_count?: number;
+  patch_count: number;
+  average_input_tokens_per_operation?: number;
+  average_output_tokens_per_operation?: number;
+  average_total_tokens_per_operation?: number;
+  average_input_tokens_per_patch?: number;
+  average_output_tokens_per_patch?: number;
+  average_total_tokens_per_patch?: number;
+  average_input_tokens_per_request?: number;
+  average_output_tokens_per_request?: number;
+  average_total_tokens_per_request?: number;
+  estimated_input_tokens?: number;
+  input_token_budget?: number;
+  max_context_length?: number;
+  split_count?: number;
+  compaction_count?: number;
+  average_estimated_input_tokens_per_request?: number;
+};
+
+export type PatchTokenUsage = {
+  agents?: Record<string, PatchTokenUsageEntry>;
+  combined?: PatchTokenUsageEntry;
+};
+
 export type PatchProgress = {
   batch_no?: number;
   total_batches?: number;
@@ -14,6 +43,7 @@ export type PatchProgress = {
   resolution_log?: string[];
   resolution_resolved_count?: number;
   resolution_unresolved_item_ids?: string[];
+  token_usage?: PatchTokenUsage;
 };
 
 export type PatchArtifact = {
@@ -65,6 +95,7 @@ export type PatchReviewResolutionResponse = {
   validation_errors: string[];
   resolution_decisions: PatchReviewDecision[];
   resolution_log: string[];
+  token_usage?: PatchTokenUsage | null;
 };
 
 export async function getExistingInitialContext(data_package_id: string): Promise<InitialContext | null> {
@@ -88,6 +119,14 @@ export async function extractInitialContext(input: {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
+  }));
+}
+
+export async function saveInitialContext(data_package_id: string, context: InitialContext): Promise<InitialContext> {
+  return readJson(await fetch(apiBaseUrl + '/extraction/initial-context/' + encodeURIComponent(data_package_id), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(context),
   }));
 }
 
@@ -140,6 +179,11 @@ export async function setProtectedFields(data_package_id: string, fields: string
 
 export async function getPatchProgress(data_package_id: string): Promise<{ status: PatchTaskStatus; progress?: PatchProgress | null }> {
   const response = await fetch(apiBaseUrl + '/extraction/patch-draft/' + encodeURIComponent(data_package_id) + '/progress');
+  return readJson(await response);
+}
+
+export async function getTokenUsage(data_package_id: string): Promise<PatchTokenUsage> {
+  const response = await fetch(apiBaseUrl + '/extraction/' + encodeURIComponent(data_package_id) + '/token-usage');
   return readJson(await response);
 }
 

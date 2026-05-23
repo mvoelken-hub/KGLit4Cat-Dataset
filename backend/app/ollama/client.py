@@ -14,6 +14,9 @@ class OllamaClientWrapper:
 
         self.embed_model = settings.ollama_embed_model
         self.chat_model = settings.ollama_chat_model
+        self.embed_num_gpu = getattr(settings, "ollama_embed_num_gpu", -1)
+        self.flash_attention = getattr(settings, "ollama_flash_attention", False)
+        self.kv_cache_type = getattr(settings, "ollama_kv_cache_type", "f16")
 
         self.model_client = ollama.AsyncClient(host=settings.ollama_base_url, timeout=httpx.Timeout(None))
         self.embedding_client = ollama.AsyncClient(host=settings.ollama_base_url, timeout=httpx.Timeout(None))
@@ -22,10 +25,37 @@ class OllamaClientWrapper:
         self.embed_dimensions = settings.ollama_embed_dimensions
         self.max_context_length = settings.max_context_length
 
+        self._base_url = settings.ollama_base_url
+        self._build_agent_model()
+
+    def _build_agent_model(self) -> None:
         self.agent_model = OllamaModel(
-            settings.ollama_chat_model,
-            provider=OllamaProvider(base_url=settings.ollama_base_url+"/v1"),
+            self.chat_model,
+            provider=OllamaProvider(base_url=self._base_url+"/v1"),
+            settings={
+                "extra_body": {
+                    "num_ctx": self.max_context_length,
+                },
+            },
         )
+
+    def update_runtime_config(
+        self,
+        *,
+        chat_model: str | None = None,
+        embed_model: str | None = None,
+        max_context_length: int | None = None,
+        embed_num_gpu: int | None = None,
+    ) -> None:
+        if chat_model is not None:
+            self.chat_model = chat_model
+        if embed_model is not None:
+            self.embed_model = embed_model
+        if max_context_length is not None:
+            self.max_context_length = max_context_length
+        if embed_num_gpu is not None:
+            self.embed_num_gpu = embed_num_gpu
+        self._build_agent_model()
 
     async def stop_all_models(self) -> None:
         await self.stop_embedding_model()
@@ -79,6 +109,87 @@ class OllamaClientWrapper:
             await self.model_client.pull(model=model_name)
             self.logger.info(f"Pulled Ollama model: {model_name}")
 
+    async def delete_model(self, model_name: str) -> None:
+        await self.model_client.delete(model=model_name)
+        self.logger.info(f"Deleted Ollama model: {model_name}")
+
+    async def list_models(self) -> ollama.ListResponse:
+        return await self.model_client.list()
+
+    async def show_model(self, model_name: str) -> ollama.ShowResponse:
+        return await self.model_client.show(model=model_name)
+
+    async def list_running_models(self) -> ollama.ProcessResponse:
+        return await self.model_client.ps()
+
+    async def ping_model(self, model_name: str, num_ctx: int | None = None, is_embedding: bool = False, num_gpu: int | None = None) -> dict[str, object]:
+        """Load a model into GPU memory to check if it fits.
+
+        Uses keep_alive=-1 to keep the model loaded so VRAM can be inspected.
+        For embedding models, uses the embed() endpoint; for chat/generate models,
+        uses the generate() endpoint.
+        Returns a dict with 'success' (bool), 'model' (str), 'error' (str|None),
+        'load_duration_ns' (int|None), and 'eval_count' (int|None).
+        """
+        options: dict[str, object] = {}
+        if num_ctx is not None:
+            options["num_ctx"] = num_ctx
+        if num_gpu is not None:
+            options["num_gpu"] = num_gpu
+        try:
+            if is_embedding:
+                response = await self.model_client.embed(
+                    model=model_name,
+                    input=["ping"],
+                    keep_alive=-1,
+                    options=options if options else None,
+                )
+                load_duration = response.load_duration
+                eval_count = None  # embed responses don't have eval_count
+            else:
+                response = await self.model_client.generate(
+                    model=model_name,
+                    prompt="ping... just respond with 'ok' to confirm you're alive.",
+                    keep_alive=-1,
+                    options=options if options else None,
+                )
+                load_duration = response.load_duration
+                eval_count = response.eval_count
+            return {
+                "success": True,
+                "model": model_name,
+                "error": None,
+                "load_duration_ns": load_duration,
+                "eval_count": eval_count,
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "model": model_name,
+                "error": f"{type(e).__name__}: {e}",
+                "load_duration_ns": None,
+                "eval_count": None,
+            }
+
+    async def unload_model(self, model_name: str, is_embedding: bool = False) -> None:
+        """Unload a model from GPU memory by setting keep_alive=0.
+
+        For embedding models, uses the embed() endpoint; for chat/generate models,
+        uses the generate() endpoint.
+        """
+        if is_embedding:
+            await self.model_client.embed(
+                model=model_name,
+                input=[""],
+                keep_alive=0,
+            )
+        else:
+            await self.model_client.generate(
+                model=model_name,
+                prompt="",
+                keep_alive=0,
+            )
+
     async def change_embedding_model(self, model_name: str) -> ollama.ShowResponse:
         await self.model_client.pull(model=model_name)
         await self.stop_embedding_model()
@@ -108,12 +219,18 @@ class OllamaClientWrapper:
             return await self.chat_client.show(model=previous_model)
 
     async def get_embeddings(self, input: list[str]) -> list[Embedding]:
-        response = await self.embedding_client.embed(
-            model=self.embed_model,
-            input=input,
-            dimensions=self.embed_dimensions,
-            truncate=False,
-        )
+        options: dict[str, object] = {}
+        if self.embed_num_gpu != -1:
+            options["num_gpu"] = self.embed_num_gpu
+        kwargs: dict[str, object] = {
+            "model": self.embed_model,
+            "input": input,
+            "dimensions": self.embed_dimensions,
+            "truncate": False,
+        }
+        if options:
+            kwargs["options"] = options
+        response = await self.embedding_client.embed(**kwargs)
         return response.embeddings # type: ignore
 
 ollama_client = OllamaClientWrapper(settings=settings, logger=logger)

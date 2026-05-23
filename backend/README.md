@@ -2,6 +2,24 @@
 
 See the root [`README.md`](../README.md) for instructions on starting the full stack with the `simone` CLI.
 
+## Testing
+
+From this directory, run the backend test suite with:
+
+```powershell
+uv run pytest
+```
+
+To include coverage, run:
+
+```powershell
+uv run pytest --cov
+```
+
+The pytest configuration in `pyproject.toml` pins test discovery to `tests` and adds the backend directory to `pythonpath`, so both `app` and `infra` imports work the same way for local agents, CI, and direct developer runs.
+
+Coverage is configured for the importable backend application code under `app` and `infra`. Operational entrypoints (`app/cli.py`, `app/bootstrap.py`, and `app/main.py`) are intentionally excluded from the unit-test coverage threshold; cover those with smoke or integration tests when their startup behavior changes.
+
 ## Vocab Query flow
 **Vocab Query Flow Handout**
 

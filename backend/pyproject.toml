@@ -25,8 +25,35 @@ dependencies = [
 [project.scripts]
 simone = "app.cli:app"
 
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+    "pytest-cov>=7.1.0",
+]
+
 [tool.uv]
 package = true
 
-[tool.setuptools]
-packages = ["app"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*", "infra*"]
+namespaces = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = ["-ra"]
+
+[tool.coverage.run]
+branch = true
+source = ["app", "infra"]
+omit = [
+    "app/bootstrap.py",
+    "app/cli.py",
+    "app/main.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+fail_under = 75

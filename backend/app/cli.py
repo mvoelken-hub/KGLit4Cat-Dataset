@@ -258,6 +258,30 @@ def _read_env_file(env_file: Path) -> dict[str, str]:
     return values
 
 
+def _write_env_value(env_file: Path, key: str, value: str) -> None:
+    """Update or append a single key=value pair in a .env file, preserving comments and ordering."""
+    if not env_file.exists():
+        env_file.write_text(f"{key}={value}\n", encoding="utf-8")
+        return
+    lines = env_file.read_text(encoding="utf-8").splitlines()
+    updated = False
+    for i, line in enumerate(lines):
+        text = line.strip()
+        if not text or text.startswith("#") or "=" not in text:
+            continue
+        existing_key = text.split("=", 1)[0].strip()
+        if existing_key == key:
+            lines[i] = f"{key}={value}"
+            updated = True
+            break
+    if not updated:
+        # Append a blank line separator if the file doesn't end with one
+        if lines and lines[-1].strip():
+            lines.append("")
+        lines.append(f"{key}={value}")
+    env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def _is_local_host(hostname: str | None) -> bool:
     return not hostname or hostname.strip().lower() in {"localhost", "127.0.0.1", "::1"}
 
@@ -998,46 +1022,15 @@ def _print_initial_vocab_info() -> None:
 
 @app.command("models")
 def models(
-    ctx: typer.Context,
-    info: bool = typer.Option(False, "--info", help="Print the configured Ollama models as JSON"),
-    pull: bool = typer.Option(False, "--pull", help="Pull the configured Ollama embedding and chat models"),
-    start_services: bool = typer.Option(True, "--start-services/--no-start-services", help="Start local Ollama before pulling models"),
+    start_services: bool = typer.Option(True, "--start-services/--no-start-services", help="Start local Ollama before interacting"),
 ) -> None:
-    """Inspect or pull the configured Ollama models."""
-    if info and pull:
-        typer.echo("Error: choose either --info or --pull, not both.", err=True)
-        raise typer.Exit(1)
-
-    if not info and not pull:
-        typer.echo(ctx.get_help())
-        raise typer.Exit(0)
-
+    """Interactively manage Ollama models: list, inspect, pull, remove, or set as configured model."""
     os.environ["APP_ENV"] = "development"
     _ensure_env_file(ENV_FILE, ENV_EXAMPLE)
     env_values = _read_env_file(ENV_FILE)
     os.environ.update(env_values)
     os.environ["APP_ENV"] = "development"
 
-    if info:
-        _print_ollama_model_info()
-        return
-
-    _pull_ollama_models(start_services=start_services, env_values=env_values)
-
-
-def _print_ollama_model_info() -> None:
-    from app.core.config import Settings
-
-    model_settings = Settings()
-    payload = {
-        "ollama_base_url": model_settings.ollama_base_url,
-        "embedding_model": model_settings.ollama_embed_model,
-        "chat_model": model_settings.ollama_chat_model,
-    }
-    typer.echo(json.dumps(payload, indent=2))
-
-
-def _pull_ollama_models(start_services: bool, env_values: dict[str, str]) -> None:
     from app.core.config import Settings
     from app.ollama.client import OllamaClientWrapper
     from app.core.logging import logger
@@ -1058,25 +1051,347 @@ def _pull_ollama_models(start_services: bool, env_values: dict[str, str]) -> Non
     else:
         typer.echo(f"Using external Ollama at {model_settings.ollama_base_url}.")
 
-    model_names = [model_settings.ollama_embed_model, model_settings.ollama_chat_model]
-    typer.echo("Pulling Ollama models:")
-    for model_name in model_names:
-        typer.echo(f"  {model_name}")
+    typer.echo("Ollama model management is intended to run on the machine that hosts Ollama.")
+    if local_ollama:
+        typer.echo("This SIMONE environment points to local/Docker Ollama, so model operations are enabled.")
+    else:
+        typer.echo("This SIMONE environment points to a remote Ollama host.")
+        typer.echo("Inspection is available here; run this command on the Ollama host for pull/remove/set/fit operations.")
+    typer.echo(f"  Embedding model: {model_settings.ollama_embed_model}")
+    typer.echo(f"  Chat model:       {model_settings.ollama_chat_model}")
+    typer.echo("")
 
-    async def pull_models() -> None:
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    async def _ollama_list():
         client = OllamaClientWrapper(model_settings, logger)
         try:
-            await client.pull_models(model_names)
+            return await client.list_models()
+        finally:
+            await client.close()
+
+    while True:
+        # --- List all downloaded models ---
+        try:
+            listed = loop.run_until_complete(_ollama_list())
+        except Exception as exc:
+            typer.echo(f"Failed to list models: {type(exc).__name__}: {exc}", err=True)
+            listed = None
+
+        if listed and listed.models:
+            typer.echo("Downloaded models:")
+            typer.echo(f"  {'#':>3}  {'Model':<40} {'Size':>10} {'Family':<16} {'Params':<12} {'Quant':<8} Role")
+            typer.echo(f"  {'---':>3}  {'---':<40} {'---':>10}  {'---':<16} {'---':<12} {'---':<8} ---")
+            for i, m in enumerate(listed.models, 1):
+                size_mb = f"{m.size.real / 1024 / 1024:.0f} MB" if m.size else ""
+                family = m.details.family if m.details and m.details.family else ""
+                params = m.details.parameter_size if m.details and m.details.parameter_size else ""
+                quant = m.details.quantization_level if m.details and m.details.quantization_level else ""
+                roles: list[str] = []
+                if m.model == model_settings.ollama_embed_model:
+                    roles.append("embedding")
+                if m.model == model_settings.ollama_chat_model:
+                    roles.append("chat")
+                role_tag = ",".join(roles) if roles else ""
+                typer.echo(f"  {i:>3}  {m.model:<40} {size_mb:>10} {family:<16} {params:<12} {quant:<8} {role_tag}")
+        else:
+            typer.echo("No models downloaded yet.")
+
+        typer.echo("")
+        typer.echo("Actions: [i] inspect  [p] pull  [r] remove  [s] set as  [g] fit check  [q] quit")
+        action = typer.prompt("Choose action", default="q").strip().lower()
+
+        if action in ("q", "quit", ""):
+            typer.echo("Goodbye!")
+            break
+
+        elif action in ("i", "inspect"):
+            _models_action_inspect(model_settings, listed, loop)
+
+        elif action in ("p", "pull"):
+            if not local_ollama:
+                typer.echo("Pull is disabled here because Ollama is remote. Run this command on the Ollama host.")
+                typer.echo("")
+                continue
+            _models_action_pull(model_settings, loop)
+
+        elif action in ("r", "remove"):
+            if not local_ollama:
+                typer.echo("Remove is disabled here because Ollama is remote. Run this command on the Ollama host.")
+                typer.echo("")
+                continue
+            _models_action_remove(model_settings, listed, loop)
+
+        elif action in ("s", "set"):
+            if not local_ollama:
+                typer.echo("Changing configured models is disabled here because Ollama is remote. Run this command on the Ollama host.")
+                typer.echo("")
+                continue
+            _models_action_set(model_settings, listed, env_values)
+            model_settings = Settings()
+
+        elif action in ("g", "gpu", "ping"):
+            if not local_ollama:
+                typer.echo("Fit check is disabled here because Ollama is remote. Run this command on the Ollama host.")
+                typer.echo("")
+                continue
+            _models_action_gpu(model_settings, loop)
+
+        else:
+            typer.echo(f"Unknown action: {action}")
+
+        typer.echo("")
+
+    loop.close()
+
+
+def _models_action_inspect(model_settings, listed, loop) -> None:
+    from app.ollama.client import OllamaClientWrapper
+    from app.core.logging import logger
+
+    if not listed or not listed.models:
+        typer.echo("No models to inspect.")
+        return
+
+    choice = typer.prompt("Model number to inspect", type=int)
+    if choice < 1 or choice > len(listed.models):
+        typer.echo(f"Invalid selection: {choice}", err=True)
+        return
+
+    model_name = listed.models[choice - 1].model
+    typer.echo(f"Inspecting {model_name} ...")
+
+    async def _run():
+        client = OllamaClientWrapper(model_settings, logger)
+        try:
+            return await client.show_model(model_name)
         finally:
             await client.close()
 
     try:
-        asyncio.run(pull_models())
+        info = loop.run_until_complete(_run())
     except Exception as exc:
-        typer.echo(f"Model pull failed: {type(exc).__name__}: {exc}", err=True)
-        raise typer.Exit(1) from exc
+        typer.echo(f"Failed to inspect model: {type(exc).__name__}: {exc}", err=True)
+        return
 
-    typer.echo("Ollama model pull complete.")
+    typer.echo(f"  Model:        {model_name}")
+    if info.details:
+        typer.echo(f"  Family:       {info.details.family or ''}")
+        typer.echo(f"  Parameter size: {info.details.parameter_size or ''}")
+        typer.echo(f"  Quantization: {info.details.quantization_level or ''}")
+        typer.echo(f"  Format:       {info.details.format or ''}")
+    if info.capabilities:
+        typer.echo(f"  Capabilities: {', '.join(info.capabilities)}")
+    if info.parameters:
+        typer.echo(f"  Parameters:   {info.parameters}")
+    if info.template:
+        typer.echo(f"  Template:      {info.template[:200]}{'...' if len(info.template) > 200 else ''}")
+    if info.license:
+        typer.echo(f"  License:      {info.license[:200]}{'...' if len(info.license) > 200 else ''}")
+    if info.modelinfo:
+        for k, v in info.modelinfo.items():
+            val_str = str(v)
+            typer.echo(f"  {k}: {val_str[:100]}{'...' if len(val_str) > 100 else ''}")
+
+
+def _models_action_pull(model_settings, loop) -> None:
+    from app.ollama.client import OllamaClientWrapper
+    from app.core.logging import logger
+
+    model_name = typer.prompt("Model name to pull (e.g. gemma3:4b)")
+    if not model_name.strip():
+        typer.echo("No model name provided.")
+        return
+
+    typer.echo(f"Pulling {model_name} ...")
+
+    async def _run():
+        client = OllamaClientWrapper(model_settings, logger)
+        try:
+            await client.pull_models([model_name.strip()])
+        finally:
+            await client.close()
+
+    try:
+        loop.run_until_complete(_run())
+    except Exception as exc:
+        typer.echo(f"Pull failed: {type(exc).__name__}: {exc}", err=True)
+        return
+
+    typer.echo(f"Pulled {model_name} successfully.")
+
+
+def _models_action_remove(model_settings, listed, loop) -> None:
+    from app.ollama.client import OllamaClientWrapper
+    from app.core.logging import logger
+
+    if not listed or not listed.models:
+        typer.echo("No models to remove.")
+        return
+
+    choice = typer.prompt("Model number to remove", type=int)
+    if choice < 1 or choice > len(listed.models):
+        typer.echo(f"Invalid selection: {choice}", err=True)
+        return
+
+    model_name = listed.models[choice - 1].model
+    if not typer.confirm(f"Remove {model_name}?", default=False):
+        typer.echo("Cancelled.")
+        return
+
+    async def _run():
+        client = OllamaClientWrapper(model_settings, logger)
+        try:
+            await client.delete_model(model_name)
+        finally:
+            await client.close()
+
+    try:
+        loop.run_until_complete(_run())
+    except Exception as exc:
+        typer.echo(f"Remove failed: {type(exc).__name__}: {exc}", err=True)
+        return
+
+    typer.echo(f"Removed {model_name}.")
+
+
+def _models_action_set(model_settings, listed, env_values: dict[str, str]) -> None:
+    if not listed or not listed.models:
+        typer.echo("No models available. Pull a model first.")
+        return
+
+    choice = typer.prompt("Model number to set as configured model", type=int)
+    if choice < 1 or choice > len(listed.models):
+        typer.echo(f"Invalid selection: {choice}", err=True)
+        return
+
+    model_name = listed.models[choice - 1].model
+    role = typer.prompt("Set as [e]mbedding or [c]hat?", default="c").strip().lower()
+
+    if role in ("e", "embedding", "embed"):
+        env_key = "OLLAMA_EMBED_MODEL"
+        role_label = "embedding"
+    elif role in ("c", "chat"):
+        env_key = "OLLAMA_CHAT_MODEL"
+        role_label = "chat"
+    else:
+        typer.echo(f"Unknown role: {role}. Use 'embedding' or 'chat'.", err=True)
+        return
+
+    _write_env_value(ENV_FILE, env_key, model_name)
+    env_values[env_key] = model_name
+    os.environ[env_key] = model_name
+    typer.echo(f"Set {model_name} as the {role_label} model in .env ({env_key}={model_name}).")
+    typer.echo("Restart the API for the change to take effect.")
+
+
+def _models_action_gpu(model_settings, loop) -> None:
+    from app.ollama.client import OllamaClientWrapper
+    from app.core.logging import logger
+
+    embed_model = model_settings.ollama_embed_model
+    chat_model = model_settings.ollama_chat_model
+    num_ctx = model_settings.max_context_length
+    embed_batch_size = model_settings.embedding_batch_size
+    flash_attn = model_settings.ollama_flash_attention
+    kv_cache_type = model_settings.ollama_kv_cache_type
+    embed_num_gpu = model_settings.ollama_embed_num_gpu
+
+    typer.echo("Fit check - testing configured model residency without unloading existing models.")
+    typer.echo(f"  MAX_CONTEXT_LENGTH={num_ctx}  (KV cache size for chat model)")
+    typer.echo(f"  EMBEDDING_BATCH_SIZE={embed_batch_size}  (peak memory during embedding)")
+    typer.echo(f"  OLLAMA_FLASH_ATTENTION={flash_attn}  (server-side setting on the Ollama host)")
+    typer.echo(f"  OLLAMA_KV_CACHE_TYPE={kv_cache_type}  (server-side KV cache type; q8_0 and q4_0 can reduce memory)")
+    embed_gpu_label = "auto (all GPU)" if embed_num_gpu == -1 else ("CPU only" if embed_num_gpu == 0 else f"{embed_num_gpu} layers")
+    typer.echo(f"  OLLAMA_EMBED_NUM_GPU={embed_num_gpu}  (embedding model: {embed_gpu_label})")
+    typer.echo("")
+
+    async def _ping_all():
+        client = OllamaClientWrapper(model_settings, logger)
+        try:
+            before = await client.list_running_models()
+            before_names = {m.model for m in before.models} if before and before.models else set()
+            embed_num_gpu_opt = embed_num_gpu if embed_num_gpu != -1 else None
+            embed_result = await client.ping_model(embed_model, num_ctx=num_ctx, is_embedding=True, num_gpu=embed_num_gpu_opt)
+            chat_result = await client.ping_model(chat_model, num_ctx=num_ctx, is_embedding=False)
+            after = await client.list_running_models()
+            return embed_result, chat_result, before_names, after
+        except Exception:
+            await client.close()
+            raise
+        finally:
+            await client.close()
+
+    try:
+        embed_result, chat_result, before_names, running = loop.run_until_complete(_ping_all())
+    except Exception as exc:
+        typer.echo(f"Fit check failed: {type(exc).__name__}: {exc}", err=True)
+        return
+
+    # Report results
+    for label, result in [("Embedding", embed_result), ("Chat", chat_result)]:
+        model_name = result["model"]
+        if result["success"]:
+            load_ns = result.get("load_duration_ns")
+            load_info = f"load: {load_ns / 1_000_000:.0f} ms" if load_ns else ""
+            extras = ", ".join(p for p in [load_info] if p)
+            was_loaded = "already loaded" if model_name in before_names else "loaded by check"
+            typer.echo(f"  {label}: {model_name} - OK, {was_loaded}{(' (' + extras + ')') if extras else ''}")
+        else:
+            typer.echo(f"  {label}: {model_name} - FAILED ({result['error']})")
+
+    # Show currently loaded models with VRAM usage
+    both_loaded = embed_result["success"] and chat_result["success"]
+    configured_loaded = set()
+    if running and running.models:
+        for model in running.models:
+            if model.model in {embed_model, chat_model}:
+                configured_loaded.add(model.model)
+    expected_configured_count = len({embed_model, chat_model})
+
+    if running and running.models:
+        typer.echo("")
+        typer.echo("Currently loaded models:")
+        for m in running.models:
+            size_vram = f"{m.size_vram.real / 1024 / 1024:.0f} MB" if m.size_vram else "N/A"
+            size_total = f"{m.size.real / 1024 / 1024:.0f} MB" if m.size else "N/A"
+            typer.echo(f"  {m.model}  VRAM: {size_vram}  Total: {size_total}")
+    elif running:
+        typer.echo("")
+        typer.echo("No models currently loaded in GPU memory.")
+
+    # Summary and actionable advice
+    typer.echo("")
+    if both_loaded and len(configured_loaded) >= expected_configured_count:
+        typer.echo(typer.style("OK: configured model residency looks stable after the check.", fg=typer.colors.GREEN))
+    elif both_loaded:
+        typer.echo(typer.style("WARNING: configured models loaded individually, but not all are resident after the check.", fg=typer.colors.YELLOW))
+        typer.echo("")
+        typer.echo("  Options to reduce model churn:")
+        typer.echo("    - Reduce MAX_CONTEXT_LENGTH (currently {}) to shrink the chat KV cache".format(num_ctx))
+        typer.echo("    - Configure OLLAMA_KV_CACHE_TYPE=q8_0 or q4_0 on the Ollama host")
+        typer.echo("    - Configure OLLAMA_FLASH_ATTENTION=true on the Ollama host")
+        typer.echo("    - Set OLLAMA_EMBED_NUM_GPU=0 to run embedding requests on CPU")
+        typer.echo("    - Use a smaller chat model (currently {})".format(chat_model))
+        typer.echo("    - Use a smaller embedding model (currently {})".format(embed_model))
+    elif not embed_result["success"] or not chat_result["success"]:
+        typer.echo(typer.style("FAILED: one or both models failed to load.", fg=typer.colors.RED))
+        failed = []
+        if not embed_result["success"]:
+            failed.append(embed_model)
+        if not chat_result["success"]:
+            failed.append(chat_model)
+        typer.echo(f"  Failed: {', '.join(failed)}")
+        typer.echo("")
+        typer.echo("  Options:")
+        typer.echo("    - Reduce MAX_CONTEXT_LENGTH (currently {})".format(num_ctx))
+        typer.echo("    - Configure OLLAMA_KV_CACHE_TYPE=q8_0 or q4_0 on the Ollama host")
+        typer.echo("    - Set OLLAMA_EMBED_NUM_GPU=0 to run embedding requests on CPU")
+        typer.echo("    - Use smaller models")
+
+    typer.echo("")
+    typer.echo("No models were unloaded by this check.")
 
 
 def _bootstrap_vocabs(foreground: bool, start_services: bool) -> None:

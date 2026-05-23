@@ -7,6 +7,7 @@ from app.domain.datasources import (
     DataPackage,
     FileEntry,
     InvalidDataPackageFileNameError,
+    InvalidDataPackageZipFileError,
     DataPackageZipNotFoundError,
     DataPackageIdNotFoundError,
     MultipleDataPackageZipFilesError,
@@ -44,10 +45,11 @@ class FileSystemDataSourceBlobRepository:
         if chunk_dir.exists() and chunk_dir.is_dir():
             for chunk_file in chunk_dir.glob("*.json"):
                 chunk_file.unlink(missing_ok=True)
+            chunk_dir.rmdir()
 
-        # Remove the empty directories
-        chunk_dir.rmdir()
-        zip_path.parent.rmdir()
+        package_dir = zip_path.parent
+        if package_dir.exists():
+            package_dir.rmdir()
 
     def list_data_packages(self) -> list[DataPackage]:
         if not self.base_path.exists() or not self.base_path.is_dir():
@@ -60,7 +62,7 @@ class FileSystemDataSourceBlobRepository:
             try:
                 data_package = DataPackage.from_bytes(data, file_name)
                 data_packages.append(data_package)
-            except InvalidDataPackageFileNameError:
+            except (InvalidDataPackageFileNameError, InvalidDataPackageZipFileError):
                 continue
         return data_packages
 

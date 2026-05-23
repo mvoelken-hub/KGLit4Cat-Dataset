@@ -7,9 +7,11 @@ from pydantic_ai.models.test import TestModel
 from app.domain.datasources import DataPackage, FileEntry
 from app.domain.datasources.chunking import ContentChunk
 from app.domain.extraction import (
+    DEFAULT_OUTPUT_RETRIES,
     InitialContext,
     PatchCandidate,
     PatchRecord,
+    SchemaPatchResult,
     apply_merge_patch,
     patch_draft_from_content_chunks,
     validate_candidate_draft,
@@ -71,10 +73,23 @@ PROFILE_JSON_SCHEMA = {
 
 
 INITIAL_CONTEXT_OUTPUT = {
-    "device_name": "Mass spectrometer",
-    "device_model": "MS-1000",
-    "entities_analyzed": ["sample-1"],
-    "analytical_technique": "mass spectrometry",
+    "dataset_title": "Sample-1 mass spectrometry dataset",
+    "dataset_description": "Dataset description for sample-1.",
+    "entities": [{"label": "sample-1", "role": "sample"}],
+    "agents": [
+        {
+            "name": "Mass spectrometer",
+            "role": "instrument",
+            "model": "MS-1000",
+        }
+    ],
+    "activities": [
+        {
+            "label": "Mass spectrometry acquisition",
+            "technique": "mass spectrometry",
+            "agent_names": ["Mass spectrometer"],
+        }
+    ],
     "file_relationships": [],
     "metadata_sources": [],
     "keywords": ["mass spectrometry", "sample-1"],
@@ -129,6 +144,69 @@ FIELD_PATCH_OUTPUT = {
             "source_evidence": ["GC-MS"],
         },
     ]
+}
+
+LEAN_DESCRIPTION_PATCH_OUTPUT = {
+    "information": "Technique information should update the description.",
+    "evidence": ["Technique: GC-MS"],
+    "location_picks": [
+        {
+            "path": "/description",
+            "rationale": "The fact belongs in the dataset summary.",
+            "confidence": 0.9,
+        }
+    ],
+    "destination": "/description",
+    "patch": {"description": "Updated with chunk evidence."},
+    "reasoning": "Description is the best single destination.",
+}
+
+LEAN_ACTIVITY_PATCH_OUTPUT = {
+    "information": "The pulse program is zgpg30.",
+    "evidence": ["pulse sequence zg30"],
+    "location_picks": [
+        {
+            "path": "/was_generated_by/0/has_qualitative_attribute",
+            "rationale": "The fact describes the generating activity.",
+            "confidence": 0.7,
+        }
+    ],
+    "destination": "/was_generated_by/0/has_qualitative_attribute",
+    "patch": {
+        "was_generated_by": [
+            {
+                "id": "activity-1",
+                "has_qualitative_attribute": [
+                    {"title": "pulse program", "value": "zgpg30"}
+                ],
+            }
+        ]
+    },
+    "reasoning": "Structured activity attribute is the best destination.",
+}
+
+NO_INFORMATION_OUTPUT = {
+    "information": None,
+    "evidence": [],
+    "location_picks": [],
+    "destination": "/description",
+    "patch": {},
+    "reasoning": "No useful information.",
+}
+
+INVALID_SCHEMA_PATCH_OUTPUT = {
+    "information": "The chunk mentions an unsupported field.",
+    "evidence": ["some text"],
+    "location_picks": [
+        {
+            "path": "/description",
+            "rationale": "The closest valid draft location is description.",
+            "confidence": 0.5,
+        }
+    ],
+    "destination": "/description",
+    "patch": {"unknown_field": "not in schema"},
+    "reasoning": "This intentionally violates the schema.",
 }
 
 
@@ -270,70 +348,35 @@ class PatchQualityReportModelTests(unittest.TestCase):
 
 
 class PatchDraftLoopWithQualityReviewTests(unittest.IsolatedAsyncioTestCase):
-    """Test the patch loop integration with quality review.
-
-    These tests use TestModel to control the patch extraction agent output
-    and mock the quality review agent to test the decision branching logic.
-    """
+    """Test the lean schema-late patch loop."""
 
     async def test_accept_clean_patch(self):
-        """When the quality agent accepts all candidates, they are applied to the draft."""
         initial_context = make_initial_context()
         initial_draft = {"title": "Test Dataset", "keywords": ["existing"]}
         manifest = make_profile_manifest()
         chunks = make_content_chunks()
-
-        # The patch extraction agent returns field-level candidates.
         patch_model = TestModel(
             call_tools=[],
-            custom_output_text=json.dumps(FIELD_PATCH_OUTPUT),
+            custom_output_text=json.dumps(LEAN_DESCRIPTION_PATCH_OUTPUT),
         )
 
-        # The quality agent accepts all candidates.
-        accept_report = PatchQualityReport(
-            overall_decision="accept",
-            candidate_ratings=[
-                CandidateQualityRating(
-                    field_path="description",
-                    decision="accept",
-                    issues=[],
-                ),
-                CandidateQualityRating(
-                    field_path="keywords",
-                    decision="accept",
-                    issues=[],
-                ),
-            ],
-            summary="All candidates accepted.",
+        result = await patch_draft_from_content_chunks(
+            initial_context=initial_context,
+            initial_draft=initial_draft,
+            content_chunks_by_file=chunks,
+            profile_manifest=manifest,
+            profile_json_schema=PROFILE_JSON_SCHEMA,
+            model=patch_model,
+            num_chunks_per_turn=1,
         )
 
-        import unittest.mock as mock
-
-        with mock.patch(
-            "app.domain.extraction.patch_draft.review_patch_semantic_quality",
-            return_value=accept_report,
-        ):
-            result = await patch_draft_from_content_chunks(
-                initial_context=initial_context,
-                initial_draft=initial_draft,
-                content_chunks_by_file=chunks,
-                profile_manifest=manifest,
-                profile_json_schema=PROFILE_JSON_SCHEMA,
-                model=patch_model,
-                num_chunks_per_turn=1,
-            )
-
-        # The draft should include the patch content.
         self.assertEqual(result.draft["description"], "Updated with chunk evidence.")
-        self.assertIn("chunk-keyword", result.draft["keywords"])
-        # The patch record should have accepted fields.
         self.assertEqual(len(result.patches), 1)
-        self.assertIn("description", result.patches[0].accepted_fields)
-        self.assertIn("keywords", result.patches[0].accepted_fields)
+        self.assertEqual(result.patches[0].accepted_fields, ["description"])
         self.assertEqual(result.patches[0].validation_errors, [])
+        self.assertEqual(result.patches[0].quality_report.overall_decision, "accept")
 
-    async def test_revise_description_abusive_patch(self):
-        """When the quality agent revises a candidate, the revised patch is applied."""
+    async def test_schema_writer_applies_structured_activity_patch(self):
         initial_context = make_initial_context()
         initial_draft = {
             "title": "Test Dataset",
@@ -343,289 +386,133 @@ class PatchDraftLoopWithQualityReviewTests(unittest.IsolatedAsyncioTestCase):
         }
         manifest = make_profile_manifest()
         chunks = make_content_chunks()
-
-        # The patch extraction agent returns a candidate that abuses description.
-        abusive_candidate_output = {
-            "candidates": [
-                {
-                    "field_path": "was_generated_by",
-                    "patch": {
-                        "was_generated_by": [
-                            {
-                                "id": "activity-1",
-                                "description": [
-                                    "Long list of operational details that should not be a description."
-                                ],
-                                "has_qualitative_attribute": [
-                                    {"title": "pulse program", "value": "zgpg30"}
-                                ],
-                            }
-                        ]
-                    },
-                    "confidence": 0.7,
-                    "reasoning": "Chunk contains activity details.",
-                    "source_evidence": ["pulse sequence zg30"],
-                }
-            ]
-        }
-
         patch_model = TestModel(
             call_tools=[],
-            custom_output_text=json.dumps(abusive_candidate_output),
+            custom_output_text=json.dumps(LEAN_ACTIVITY_PATCH_OUTPUT),
         )
 
-        # The quality agent revises the candidate to remove description abuse.
-        revised_patch = {
-            "was_generated_by": [
-                {
-                    "id": "activity-1",
-                    "has_qualitative_attribute": [
-                        {"title": "pulse program", "value": "zgpg30"}
-                    ],
-                }
-            ]
-        }
-        revise_report = PatchQualityReport(
-            overall_decision="revise",
-            candidate_ratings=[
-                CandidateQualityRating(
-                    field_path="was_generated_by",
-                    decision="revise",
-                    issues=[
-                        PatchQualityIssue(
-                            path="$.was_generated_by[0].description",
-                            issue_type="description_abuse",
-                            explanation="Description is used as a fallback container.",
-                        )
-                    ],
-                    revised_patch=revised_patch,
-                )
-            ],
-            summary="Moved structured fact out of description.",
+        result = await patch_draft_from_content_chunks(
+            initial_context=initial_context,
+            initial_draft=initial_draft,
+            content_chunks_by_file=chunks,
+            profile_manifest=manifest,
+            profile_json_schema=PROFILE_JSON_SCHEMA,
+            model=patch_model,
+            num_chunks_per_turn=1,
         )
 
-        import unittest.mock as mock
-
-        with mock.patch(
-            "app.domain.extraction.patch_draft.review_patch_semantic_quality",
-            return_value=revise_report,
-        ):
-            result = await patch_draft_from_content_chunks(
-                initial_context=initial_context,
-                initial_draft=initial_draft,
-                content_chunks_by_file=chunks,
-                profile_manifest=manifest,
-                profile_json_schema=PROFILE_JSON_SCHEMA,
-                model=patch_model,
-                num_chunks_per_turn=1,
-            )
-
-        # The accepted patch should be the revised one (without description abuse).
         self.assertEqual(len(result.patches), 1)
         self.assertIn("was_generated_by", result.patches[0].accepted_fields)
-        # The draft should have the qualitative attribute but not the description dump.
         activity = result.draft["was_generated_by"][0]
         self.assertIn("has_qualitative_attribute", activity)
+        self.assertEqual(activity["description"], ["Original description."])
 
-    async def test_reject_noisy_patch(self):
-        """When the quality agent rejects all candidates, the draft remains unchanged."""
+    async def test_discovery_with_no_information_skips_patch_writer(self):
         initial_context = make_initial_context()
         initial_draft = {"title": "Test Dataset", "keywords": ["existing"]}
         manifest = make_profile_manifest()
         chunks = make_content_chunks()
-
         patch_model = TestModel(
             call_tools=[],
-            custom_output_text=json.dumps(FIELD_PATCH_OUTPUT),
-        )
-
-        # The quality agent rejects all candidates.
-        reject_report = PatchQualityReport(
-            overall_decision="reject",
-            candidate_ratings=[
-                CandidateQualityRating(
-                    field_path="description",
-                    decision="reject",
-                    issues=[
-                        PatchQualityIssue(
-                            path="$.description",
-                            issue_type="overly_granular",
-                            severity="major",
-                            explanation="Patch attempts to add raw low-level log information.",
-                        )
-                    ],
-                    unmapped_facts=[
-                        UnmappedFact(
-                            fact="Some source-supported low-level detail",
-                            reason="No suitable schema field.",
-                        )
-                    ],
-                ),
-                CandidateQualityRating(
-                    field_path="keywords",
-                    decision="reject",
-                    issues=[
-                        PatchQualityIssue(
-                            path="$.keywords",
-                            issue_type="unsupported_fact",
-                            explanation="Keyword not supported by evidence.",
-                        )
-                    ],
-                ),
-            ],
-            summary="All candidates rejected.",
+            custom_output_text=json.dumps(NO_INFORMATION_OUTPUT),
         )
 
         import unittest.mock as mock
 
         with mock.patch(
-            "app.domain.extraction.patch_draft.review_patch_semantic_quality",
-            return_value=reject_report,
-        ):
-            result = await patch_draft_from_content_chunks(
-                initial_context=initial_context,
-                initial_draft=initial_draft,
-                content_chunks_by_file=chunks,
-                profile_manifest=manifest,
-                profile_json_schema=PROFILE_JSON_SCHEMA,
-                model=patch_model,
-                num_chunks_per_turn=1,
-            )
-
-        # The draft should remain unchanged.
-        self.assertEqual(result.draft, initial_draft)
-        # The patch record should have no accepted fields.
-        self.assertEqual(len(result.patches), 1)
-        self.assertEqual(result.patches[0].accepted_fields, [])
-        self.assertIsNotNone(result.patches[0].quality_report)
-        self.assertEqual(result.patches[0].quality_report.overall_decision, "reject")
-
-    async def test_revised_patch_must_still_validate(self):
-        """When a revised candidate still fails schema validation, it is rejected."""
-        initial_context = make_initial_context()
-        initial_draft = {"title": "Test Dataset"}
-        manifest = make_profile_manifest()
-        chunks = make_content_chunks()
-
-        patch_model = TestModel(
-            call_tools=[],
-            custom_output_text=json.dumps(FIELD_PATCH_OUTPUT),
-        )
-
-        # The quality agent revises, but the revised patch introduces an
-        # additionalProperties violation (unknown field "unknown_field").
-        invalid_revised_patch = {
-            "title": "Test Dataset",
-            "unknown_field": "this is not allowed by the schema",
-        }
-        revise_report = PatchQualityReport(
-            overall_decision="revise",
-            candidate_ratings=[
-                CandidateQualityRating(
-                    field_path="description",
-                    decision="revise",
-                    issues=[
-                        PatchQualityIssue(
-                            path="$",
-                            issue_type="schema_mismatch",
-                            explanation="Revised patch introduces unknown fields.",
-                        )
-                    ],
-                    revised_patch=invalid_revised_patch,
-                ),
-                CandidateQualityRating(
-                    field_path="keywords",
-                    decision="accept",
-                    issues=[],
-                ),
-            ],
-            summary="Attempted revision but still invalid.",
-        )
-
-        import unittest.mock as mock
-
-        with mock.patch(
-            "app.domain.extraction.patch_draft.review_patch_semantic_quality",
-            return_value=revise_report,
-        ):
-            result = await patch_draft_from_content_chunks(
-                initial_context=initial_context,
-                initial_draft=initial_draft,
-                content_chunks_by_file=chunks,
-                profile_manifest=manifest,
-                profile_json_schema=PROFILE_JSON_SCHEMA,
-                model=patch_model,
-                num_chunks_per_turn=1,
-            )
-
-        # The revised description candidate is rejected because it fails
-        # schema validation, but the keywords candidate is accepted.
-        self.assertIn("keywords", result.patches[0].accepted_fields)
-        self.assertNotIn("description", result.patches[0].accepted_fields)
-        # The draft should have the keywords but not the invalid revised patch.
-        self.assertIn("chunk-keyword", result.draft["keywords"])
-
-    async def test_deterministic_guard_rejects_accept_with_schema_errors(self):
-        """Even if the quality agent accepts, schema errors cause rejection."""
-        initial_context = make_initial_context()
-        initial_draft = {"title": "Test Dataset"}
-        manifest = make_profile_manifest()
-        chunks = make_content_chunks()
-
-        # The patch extraction agent returns candidates that add an unknown field.
-        invalid_candidate_output = {
-            "candidates": [
-                {
-                    "field_path": "unknown_field",
-                    "patch": {"unknown_field": "not in schema"},
-                    "confidence": 0.5,
-                    "reasoning": "Chunk mentions unknown concept.",
-                    "source_evidence": ["some text"],
-                }
-            ]
-        }
-
-        patch_model = TestModel(
-            call_tools=[],
-            custom_output_text=json.dumps(invalid_candidate_output),
-        )
-
-        # The quality agent accepts the candidates despite schema errors.
-        accept_report = PatchQualityReport(
-            overall_decision="accept",
-            candidate_ratings=[
-                CandidateQualityRating(
-                    field_path="unknown_field",
-                    decision="accept",
-                    issues=[],
+            "app.domain.extraction.patch_draft.create_schema_bound_patch",
+        ) as patch_writer:
+            with mock.patch(
+                "app.domain.extraction.patch_draft.repair_schema_bound_patch",
+            ) as repair_writer:
+                result = await patch_draft_from_content_chunks(
+                    initial_context=initial_context,
+                    initial_draft=initial_draft,
+                    content_chunks_by_file=chunks,
+                    profile_manifest=manifest,
+                    profile_json_schema=PROFILE_JSON_SCHEMA,
+                    model=patch_model,
+                    num_chunks_per_turn=1,
                 )
-            ],
-            summary="Patch looks semantically fine.",
+
+        self.assertEqual(result.draft, initial_draft)
+        self.assertEqual(len(result.patches), 1)
+        self.assertEqual(result.patches[0].candidates, [])
+        self.assertEqual(result.patches[0].accepted_fields, [])
+        patch_writer.assert_not_called()
+        repair_writer.assert_not_called()
+
+    async def test_repair_attempts_until_valid_patch(self):
+        initial_context = make_initial_context()
+        initial_draft = {"title": "Test Dataset"}
+        manifest = make_profile_manifest()
+        chunks = make_content_chunks()
+        patch_model = TestModel(
+            call_tools=[],
+            custom_output_text=json.dumps(LEAN_DESCRIPTION_PATCH_OUTPUT),
+        )
+        invalid_patch = SchemaPatchResult(
+            destination="/description",
+            patch={"unknown_field": "this is not allowed by the schema"},
+            reasoning="Initial writer missed the schema.",
+        )
+        repaired_patch = SchemaPatchResult(
+            destination="/description",
+            patch={"description": "Updated with chunk evidence."},
+            reasoning="Repair moved the value into description.",
         )
 
         import unittest.mock as mock
 
         with mock.patch(
-            "app.domain.extraction.patch_draft.review_patch_semantic_quality",
-            return_value=accept_report,
+            "app.domain.extraction.patch_draft.create_schema_bound_patch",
+            return_value=invalid_patch,
         ):
-            result = await patch_draft_from_content_chunks(
-                initial_context=initial_context,
-                initial_draft=initial_draft,
-                content_chunks_by_file=chunks,
-                profile_manifest=manifest,
-                profile_json_schema=PROFILE_JSON_SCHEMA,
-                model=patch_model,
-                num_chunks_per_turn=1,
-            )
+            with mock.patch(
+                "app.domain.extraction.patch_draft.repair_schema_bound_patch",
+                side_effect=[invalid_patch, repaired_patch],
+            ) as repair_writer:
+                result = await patch_draft_from_content_chunks(
+                    initial_context=initial_context,
+                    initial_draft=initial_draft,
+                    content_chunks_by_file=chunks,
+                    profile_manifest=manifest,
+                    profile_json_schema=PROFILE_JSON_SCHEMA,
+                    model=patch_model,
+                    num_chunks_per_turn=1,
+                )
 
-        # The draft should remain unchanged because the deterministic guard
-        # rejects structurally invalid patches even when the quality agent accepts.
+        self.assertEqual(repair_writer.call_count, DEFAULT_OUTPUT_RETRIES)
+        self.assertEqual(result.draft["description"], "Updated with chunk evidence.")
+        self.assertEqual(result.patches[0].accepted_fields, ["description"])
+        self.assertEqual(result.patches[0].validation_errors, [])
+
+    async def test_deterministic_guard_rejects_unrepaired_schema_errors(self):
+        initial_context = make_initial_context()
+        initial_draft = {"title": "Test Dataset"}
+        manifest = make_profile_manifest()
+        chunks = make_content_chunks()
+        patch_model = TestModel(
+            call_tools=[],
+            custom_output_text=json.dumps(INVALID_SCHEMA_PATCH_OUTPUT),
+        )
+
+        result = await patch_draft_from_content_chunks(
+            initial_context=initial_context,
+            initial_draft=initial_draft,
+            content_chunks_by_file=chunks,
+            profile_manifest=manifest,
+            profile_json_schema=PROFILE_JSON_SCHEMA,
+            model=patch_model,
+            num_chunks_per_turn=1,
+        )
+
         self.assertEqual(result.draft, initial_draft)
         self.assertEqual(len(result.patches), 1)
         self.assertEqual(result.patches[0].accepted_fields, [])
         self.assertIsNotNone(result.patches[0].validation_errors)
         self.assertTrue(len(result.patches[0].validation_errors) > 0)
+        self.assertEqual(result.patches[0].quality_report.overall_decision, "reject")
 
 
 if __name__ == "__main__":

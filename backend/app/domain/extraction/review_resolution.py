@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
@@ -13,6 +13,7 @@ from app.domain.profiles import ProfileManifest
 
 ReviewItemKind = Literal["matched", "unmapped"]
 ReviewItemOutcome = Literal["included", "already_present", "excluded", "unresolved"]
+TokenUsageCallback = Callable[[str, Any, int], None]
 
 
 class PatchReviewItem(BaseModel):
@@ -47,11 +48,18 @@ class PatchReviewDecision(BaseModel):
 
 
 class PatchReviewResolution(BaseModel):
+    draft_patch: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "JSON merge patch to apply to the current Dataset draft. Prefer this "
+            "over returning the complete draft."
+        ),
+    )
     final_draft: dict[str, Any] = Field(
         default_factory=dict,
         description=(
-            "Complete schema-valid Dataset draft after resolving review items. "
-            "Preserve valid current draft content unless a review item supports a correction."
+            "Backward-compatible complete schema-valid Dataset draft after "
+            "resolving review items. Prefer draft_patch for new resolver output."
         ),
     )
     item_decisions: list[PatchReviewDecision] = Field(
@@ -80,8 +88,7 @@ You receive the current DCAT-style metadata draft, unresolved review items, the
 profile JSON Schema, and the existing review state.
 
 Your task:
-- Resolve every review item by producing a complete schema-valid
-  final_draft rooted at the Dataset object.
+- Resolve every review item by producing a JSON merge patch in draft_patch.
 - Preserve all valid current draft content unless a review item supports a correction.
 - For matched items, inspect the proposed patch, issues, evidence, and current draft.
 - When a proposed patch adds a refined description next to an older generic
@@ -90,6 +97,7 @@ Your task:
 - For unmapped items, assign each fact to the best existing top-level draft field
   in unmapped_assignments when it can be represented safely.
 - For every submitted review item, add exactly one item_decisions entry.
+- Return final_draft only if a merge patch cannot express the change.
 - Use outcome "included" only when final_draft contains the information.
 - Use outcome "already_present" only when the current draft already contains it.
 - Use outcome "excluded" when the source fact or patch is invalid, semantically
@@ -158,6 +166,7 @@ async def resolve_patch_review_items(
     profile_json_schema: dict[str, Any],
     existing_review_state: dict[str, Any],
     model: Any,
+    on_token_usage: TokenUsageCallback | None = None,
 ) -> PatchReviewResolution:
     agent = create_patch_review_resolution_agent(model=model)
     deps = PatchReviewResolutionDeps(
@@ -168,9 +177,12 @@ async def resolve_patch_review_items(
         existing_review_state=existing_review_state,
     )
     result = await agent.run(
-        "Resolve the unresolved patch review items. Return the complete final "
-        "draft and update it only where the source evidence and profile schema "
+        "Resolve the unresolved patch review items. Return a JSON merge patch "
+        "and update it only where the source evidence and profile schema "
         "support the change.",
         deps=deps,
     )
+    if on_token_usage is not None:
+        patch_count = len({item.file_name for item in review_items if item.file_name}) or 1
+        on_token_usage("auto_resolve", result.usage, patch_count)
     return result.output

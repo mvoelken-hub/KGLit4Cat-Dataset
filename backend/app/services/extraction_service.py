@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import asyncio
+import json
 import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Callable
@@ -22,10 +23,17 @@ from app.domain.extraction import (
 from app.domain.extraction.review_resolution import (
     PatchReviewDecision,
     PatchReviewItem,
+    PatchReviewResolution,
     resolve_patch_review_items,
 )
 from app.domain.extraction.sanitizers import sanitize_document_against_schema
 from app.domain.extraction.sanitizers import normalize_review_draft
+from app.domain.extraction.schema_utils import json_pointer_top_level_field, slice_profile_json_schema
+from app.domain.extraction.token_budget import (
+    BudgetedUsage,
+    TokenBudget,
+    budget_from_context_length,
+)
 from app.domain.profiles import validate_document_against_profile
 from app.repositories.extraction_output_repository import ExtractionOutputRepository
 
@@ -70,11 +78,22 @@ class ExtractionService:
             )
 
         data_package = self.datasource_service.get_data_package(data_package_id)
+
+        def record_token_usage(agent_name: str, usage: Any, operation_count: int = 1) -> None:
+            self._record_workflow_token_usage(
+                data_package_id=data_package_id,
+                agent_name=agent_name,
+                usage=usage,
+                operation_count=operation_count,
+            )
+
         initial_context = await extract_initial_context_from_data_package(
             data_package=data_package,
             model=self.ollama_client.agent_model,
             max_files_to_read=max_files_to_read,
             max_chars_per_file=max_chars_per_file,
+            token_budget=self._token_budget(),
+            on_token_usage=record_token_usage,
         )
         if self.output_repository is not None:
             self.output_repository.save_initial_context(
@@ -91,12 +110,11 @@ class ExtractionService:
     ) -> dict[str, Any]:
         if (
             self.datasource_service is None
-            or self.ollama_client is None
             or self.output_repository is None
         ):
             raise RuntimeError(
-                "ExtractionService requires datasource_service, ollama_client, "
-                "and output_repository to run extraction agents."
+                "ExtractionService requires datasource_service and "
+                "output_repository to initialize drafts."
             )
 
         data_package = self.datasource_service.get_data_package(data_package_id)
@@ -116,7 +134,6 @@ class ExtractionService:
             data_package=data_package,
             profile_manifest=profile_manifest,
             profile_json_schema=profile_json_schema,
-            model=self.ollama_client.agent_model,
         )
         initial_draft = normalize_review_draft(
             initial_draft,
@@ -271,9 +288,28 @@ class ExtractionService:
 
         protected_fields = self.output_repository.load_protected_fields(data_package_id)
         resolver_task: asyncio.Task[dict[str, Any] | None] | None = None
+        token_usage_totals: dict[str, dict[str, int]] = {}
 
         def load_protected_fields() -> list[str]:
             return self.output_repository.load_protected_fields(data_package_id) # type: ignore
+
+        def record_token_usage(agent_name: str, usage: Any, patch_count: int = 1) -> None:
+            self._record_patch_token_usage(
+                token_usage_totals,
+                agent_name=agent_name,
+                usage=usage,
+                patch_count=patch_count,
+            )
+            self._record_workflow_token_usage(
+                data_package_id=data_package_id,
+                agent_name=agent_name,
+                usage=usage,
+                operation_count=1,
+            )
+            self._update_patch_token_usage_progress(
+                data_package_id=data_package_id,
+                token_usage=token_usage_totals,
+            )
 
         def start_auto_resolve() -> None:
             nonlocal resolver_task
@@ -285,6 +321,7 @@ class ExtractionService:
                 self._auto_resolve_review_items(
                     data_package_id=data_package_id,
                     profile_identifier=profile_identifier,
+                    on_token_usage=record_token_usage,
                 ),
                 name=f"resolving:review:{data_package_id}",
             )
@@ -299,6 +336,7 @@ class ExtractionService:
             await self._auto_resolve_review_items(
                 data_package_id=data_package_id,
                 profile_identifier=profile_identifier,
+                on_token_usage=record_token_usage,
             )
 
         async def save_progress(
@@ -313,6 +351,7 @@ class ExtractionService:
                 patch_record=patch_record,
                 batch_no=batch_no,
                 total_batches=total_batches,
+                token_usage=self._patch_token_usage_summary(token_usage_totals),
             )
             start_auto_resolve()
 
@@ -330,6 +369,8 @@ class ExtractionService:
             completed_patch_file_names=self.output_repository.load_completed_patch_file_names(
                 data_package_id,
             ),
+            token_budget=self._token_budget(),
+            on_token_usage=record_token_usage,
         )
         patching_draft = normalize_review_draft(
             result.draft,
@@ -374,6 +415,7 @@ class ExtractionService:
         *,
         data_package_id: str,
         profile_identifier: str,
+        on_token_usage: Callable[[str, Any, int], None] | None = None,
     ) -> dict[str, Any] | None:
         """Automatically resolve unresolved review items from saved patch artifacts."""
         resolution_log: list[str] = []
@@ -447,6 +489,7 @@ class ExtractionService:
             existing_review_state=existing_state,
             resolution_log=resolution_log,
             progress_callback=update_progress,
+            on_token_usage=on_token_usage,
         )
         update_progress(result, active=False)
         return result
@@ -549,6 +592,7 @@ class ExtractionService:
         existing_review_state: dict[str, Any],
         resolution_log: list[str],
         progress_callback: Callable[[], None] | None = None,
+        on_token_usage: Callable[[str, Any, int], None] | None = None,
     ) -> dict[str, Any]:
         if self.ollama_client is None or self.output_repository is None:
             raise RuntimeError(
@@ -570,13 +614,13 @@ class ExtractionService:
         if progress_callback:
             progress_callback()
 
-        resolution = await resolve_patch_review_items(
+        resolution = await self._resolve_review_items_in_budgeted_batches(
             current_draft=current_draft,
             review_items=parsed_items,
             profile_manifest=profile_manifest,
             profile_json_schema=profile_json_schema,
             existing_review_state=existing_review_state,
-            model=self.ollama_client.agent_model,
+            on_token_usage=on_token_usage,
         )
         self._record_resolution_log(
             resolution_log,
@@ -753,6 +797,245 @@ class ExtractionService:
             "resolution_log": resolution_log,
         }
 
+    async def _resolve_review_items_in_budgeted_batches(
+        self,
+        *,
+        current_draft: dict[str, Any],
+        review_items: list[PatchReviewItem],
+        profile_manifest: Any,
+        profile_json_schema: dict[str, Any],
+        existing_review_state: dict[str, Any],
+        on_token_usage: Callable[[str, Any, int], None] | None,
+    ) -> PatchReviewResolution:
+        if self.ollama_client is None:
+            raise RuntimeError("ExtractionService requires ollama_client.")
+
+        token_budget = self._token_budget()
+        batches = self._budgeted_review_item_batches(
+            current_draft=current_draft,
+            review_items=review_items,
+            profile_manifest=profile_manifest,
+            profile_json_schema=profile_json_schema,
+            existing_review_state=existing_review_state,
+            token_budget=token_budget,
+        )
+        next_draft = copy.deepcopy(current_draft)
+        decisions: list[PatchReviewDecision] = []
+        unmapped_assignments: dict[str, str] = {}
+
+        for batch_index, batch in enumerate(batches, start=1):
+            prompt_draft = self._resolver_draft_slice(next_draft, batch)
+            prompt_schema = self._resolver_schema_slice(
+                profile_json_schema=profile_json_schema,
+                profile_manifest=profile_manifest,
+                review_items=batch,
+            )
+            prompt_review_state = self._resolver_review_state_slice(
+                existing_review_state,
+                batch,
+            )
+            budget_metadata = token_budget.metadata(
+                estimated_input_tokens=self._estimate_review_resolution_tokens(
+                    current_draft=prompt_draft,
+                    review_items=batch,
+                    profile_manifest=profile_manifest,
+                    profile_json_schema=prompt_schema,
+                    existing_review_state=prompt_review_state,
+                    token_budget=token_budget,
+                ),
+                split_count=max(0, len(batches) - 1),
+            )
+
+            def record_budgeted_usage(
+                agent_name: str,
+                usage: Any,
+                patch_count: int = 1,
+            ) -> None:
+                if on_token_usage is not None:
+                    on_token_usage(
+                        agent_name,
+                        BudgetedUsage(usage, budget_metadata),
+                        patch_count,
+                    )
+
+            result = await resolve_patch_review_items(
+                current_draft=prompt_draft,
+                review_items=batch,
+                profile_manifest=profile_manifest,
+                profile_json_schema=prompt_schema,
+                existing_review_state=prompt_review_state,
+                model=self.ollama_client.agent_model,
+                on_token_usage=record_budgeted_usage,
+            )
+            if result.draft_patch:
+                next_draft = apply_merge_patch(next_draft, result.draft_patch)
+            elif result.final_draft:
+                draft_patch = self._json_merge_patch_diff(prompt_draft, result.final_draft)
+                next_draft = apply_merge_patch(next_draft, draft_patch)
+            decisions.extend(result.item_decisions)
+            unmapped_assignments.update(result.unmapped_assignments)
+            existing_review_state = {
+                **existing_review_state,
+                "resolved_item_ids": list(
+                    dict.fromkeys(
+                        [
+                            *existing_review_state.get("resolved_item_ids", []),
+                            *(decision.id for decision in result.item_decisions),
+                        ]
+                    )
+                ),
+                "unmapped_assignments": {
+                    **dict(existing_review_state.get("unmapped_assignments", {})),
+                    **unmapped_assignments,
+                },
+                "resolver_batch": batch_index,
+            }
+
+        return PatchReviewResolution(
+            final_draft=next_draft,
+            item_decisions=decisions,
+            unmapped_assignments=unmapped_assignments,
+        )
+
+    @staticmethod
+    def _resolver_draft_slice(
+        current_draft: dict[str, Any],
+        review_items: list[PatchReviewItem],
+    ) -> dict[str, Any]:
+        fields = ExtractionService._review_item_top_level_fields(review_items)
+        if not fields:
+            return copy.deepcopy(current_draft)
+        result = {
+            field: copy.deepcopy(current_draft[field])
+            for field in fields
+            if field in current_draft
+        }
+        if "id" in current_draft:
+            result.setdefault("id", current_draft["id"])
+        return result
+
+    @staticmethod
+    def _resolver_schema_slice(
+        *,
+        profile_json_schema: dict[str, Any],
+        profile_manifest: Any,
+        review_items: list[PatchReviewItem],
+    ) -> dict[str, Any]:
+        fields = ExtractionService._review_item_top_level_fields(review_items)
+        if not fields:
+            return profile_json_schema
+        return slice_profile_json_schema(
+            profile_json_schema=profile_json_schema,
+            target_class=profile_manifest.target_class,
+            field_names=fields,
+        )
+
+    @staticmethod
+    def _resolver_review_state_slice(
+        existing_review_state: dict[str, Any],
+        review_items: list[PatchReviewItem],
+    ) -> dict[str, Any]:
+        item_ids = {item.id for item in review_items}
+        return {
+            "resolved_item_ids": [
+                item_id
+                for item_id in existing_review_state.get("resolved_item_ids", [])
+                if item_id in item_ids
+            ],
+            "unmapped_assignments": {
+                item_id: value
+                for item_id, value in dict(
+                    existing_review_state.get("unmapped_assignments", {})
+                ).items()
+                if item_id in item_ids
+            },
+            "resolution_notes": {
+                item_id: value
+                for item_id, value in dict(
+                    existing_review_state.get("resolution_notes", {})
+                ).items()
+                if item_id in item_ids
+            },
+        }
+
+    @staticmethod
+    def _review_item_top_level_fields(review_items: list[PatchReviewItem]) -> list[str]:
+        fields: list[str] = []
+        for item in review_items:
+            candidates = [item.path]
+            if item.patch:
+                candidates.extend(str(key) for key in item.patch)
+            for candidate in candidates:
+                field = (
+                    json_pointer_top_level_field(candidate)
+                    if candidate.startswith("/")
+                    else candidate.split(".", 1)[0]
+                )
+                if field and field not in fields:
+                    fields.append(field)
+        return fields
+
+    def _budgeted_review_item_batches(
+        self,
+        *,
+        current_draft: dict[str, Any],
+        review_items: list[PatchReviewItem],
+        profile_manifest: Any,
+        profile_json_schema: dict[str, Any],
+        existing_review_state: dict[str, Any],
+        token_budget: TokenBudget,
+    ) -> list[list[PatchReviewItem]]:
+        batches: list[list[PatchReviewItem]] = []
+        current_batch: list[PatchReviewItem] = []
+        for item in review_items:
+            candidate_batch = [*current_batch, item]
+            estimate = self._estimate_review_resolution_tokens(
+                current_draft=current_draft,
+                review_items=candidate_batch,
+                profile_manifest=profile_manifest,
+                profile_json_schema=profile_json_schema,
+                existing_review_state=existing_review_state,
+                token_budget=token_budget,
+            )
+            if current_batch and estimate > token_budget.input_token_budget:
+                batches.append(current_batch)
+                current_batch = [item]
+            else:
+                current_batch = candidate_batch
+        if current_batch:
+            batches.append(current_batch)
+        return batches or [[]]
+
+    @staticmethod
+    def _estimate_review_resolution_tokens(
+        *,
+        current_draft: dict[str, Any],
+        review_items: list[PatchReviewItem],
+        profile_manifest: Any,
+        profile_json_schema: dict[str, Any],
+        existing_review_state: dict[str, Any],
+        token_budget: TokenBudget,
+    ) -> int:
+        prompt_context = "".join(
+            [
+                f"Profile identifier:\n{profile_manifest.identifier}\n\n",
+                f"Target class:\n{profile_manifest.target_class}\n\n",
+                "Profile JSON Schema:\n",
+                json.dumps(profile_json_schema, indent=2, ensure_ascii=False),
+                "\n\nCurrent draft JSON:\n",
+                json.dumps(current_draft, indent=2, ensure_ascii=False),
+                "\n\nExisting review state JSON:\n",
+                json.dumps(existing_review_state, indent=2, ensure_ascii=False),
+                "\n\nUnresolved review items JSON:\n",
+                json.dumps(
+                    [item.model_dump(mode="json") for item in review_items],
+                    indent=2,
+                    ensure_ascii=False,
+                ),
+            ]
+        )
+        return token_budget.estimate_text_tokens(prompt_context)
+
     def _save_patch_progress(
         self,
         *,
@@ -761,6 +1044,7 @@ class ExtractionService:
         patch_record: PatchRecord,
         batch_no: int,
         total_batches: int,
+        token_usage: dict[str, Any] | None = None,
     ) -> None:
         if self.output_repository is None:
             raise RuntimeError("ExtractionService requires output_repository.")
@@ -776,8 +1060,9 @@ class ExtractionService:
         # Update task registry progress
         if self.task_registry is not None:
             task_name = self._patch_draft_task_name(workflow_id)
-            self.task_registry.update_progress(
-                task_name,
+            task_info = self.task_registry.get_task_info(task_name)
+            progress = dict(task_info.progress or {}) if task_info else {}
+            progress.update(
                 {
                     "batch_no": batch_no,
                     "total_batches": total_batches,
@@ -785,7 +1070,13 @@ class ExtractionService:
                     "accepted_fields": patch_record.accepted_fields,
                     "total_candidates": len(patch_record.candidates),
                     "validation_errors": patch_record.validation_errors or [],
-                },
+                }
+            )
+            if token_usage and token_usage.get("agents"):
+                progress["token_usage"] = token_usage
+            self.task_registry.update_progress(
+                task_name,
+                progress,
             )
 
         # Save the field-level candidates for revision agent support.
@@ -870,6 +1161,21 @@ class ExtractionService:
             return self.output_repository.load_initial_context(data_package_id)
         except FileNotFoundError:
             return None
+
+    async def save_initial_context(
+        self,
+        *,
+        data_package_id: str,
+        initial_context: InitialContext,
+    ) -> None:
+        if self.output_repository is None:
+            raise RuntimeError(
+                "ExtractionService requires output_repository to save initial context."
+            )
+        self.output_repository.save_initial_context(
+            workflow_id=data_package_id,
+            initial_context=initial_context,
+        )
 
     async def get_existing_initial_draft(
         self,
@@ -980,7 +1286,23 @@ class ExtractionService:
 
         existing_state = self.output_repository.load_patch_review_state(data_package_id)
         parsed_items = [PatchReviewItem.model_validate(item) for item in review_items]
-        return await self._resolve_and_persist_review_items(
+        token_usage_totals: dict[str, dict[str, int]] = {}
+
+        def record_token_usage(agent_name: str, usage: Any, operation_count: int = 1) -> None:
+            self._record_token_usage(
+                token_usage_totals,
+                agent_name=agent_name,
+                usage=usage,
+                operation_count=operation_count,
+            )
+            self._record_workflow_token_usage(
+                data_package_id=data_package_id,
+                agent_name=agent_name,
+                usage=usage,
+                operation_count=1,
+            )
+
+        result = await self._resolve_and_persist_review_items(
             data_package_id=data_package_id,
             current_draft=current_draft,
             parsed_items=parsed_items,
@@ -988,7 +1310,290 @@ class ExtractionService:
             profile_json_schema=profile_json_schema,
             existing_review_state=existing_state,
             resolution_log=[],
+            on_token_usage=record_token_usage,
         )
+        token_usage = self._token_usage_summary(token_usage_totals)
+        if token_usage.get("agents"):
+            result["token_usage"] = token_usage
+        return result
+
+    async def get_token_usage(self, data_package_id: str) -> dict[str, Any]:
+        if self.output_repository is None:
+            return {"agents": {}}
+        return self._token_usage_summary(
+            self.output_repository.load_token_usage(data_package_id)
+        )
+
+    @classmethod
+    def _record_token_usage(
+        cls,
+        totals: dict[str, dict[str, int]],
+        *,
+        agent_name: str,
+        usage: Any,
+        operation_count: int = 1,
+        patch_count: int | None = None,
+    ) -> None:
+        input_tokens = cls._usage_int(usage, "input_tokens")
+        output_tokens = cls._usage_int(usage, "output_tokens")
+        total_tokens = cls._usage_int(usage, "total_tokens") or (
+            input_tokens + output_tokens
+        )
+        requests = cls._usage_int(usage, "requests")
+        if not any((input_tokens, output_tokens, total_tokens, requests)):
+            return
+
+        entry = totals.setdefault(
+            agent_name,
+            {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 0,
+                "requests": 0,
+                "operation_count": 0,
+                "patch_count": 0,
+            },
+        )
+        entry["input_tokens"] += input_tokens
+        entry["output_tokens"] += output_tokens
+        entry["total_tokens"] += total_tokens
+        entry["requests"] += requests
+        entry["operation_count"] += max(1, operation_count)
+        if patch_count is not None:
+            entry["patch_count"] += max(1, patch_count)
+        for key in (
+            "estimated_input_tokens",
+            "input_token_budget",
+            "max_context_length",
+            "split_count",
+            "compaction_count",
+        ):
+            value = cls._usage_int(usage, key)
+            if not value:
+                continue
+            if key in {"input_token_budget", "max_context_length"}:
+                entry[key] = max(entry.get(key, 0), value)
+            else:
+                entry[key] = entry.get(key, 0) + value
+
+    def _token_budget(self) -> TokenBudget:
+        max_context_length = None
+        if self.ollama_client is not None:
+            max_context_length = getattr(self.ollama_client, "max_context_length", None)
+        if max_context_length is None:
+            max_context_length = getattr(self.settings, "max_context_length", None)
+        return budget_from_context_length(max_context_length)
+
+    @classmethod
+    def _record_patch_token_usage(
+        cls,
+        totals: dict[str, dict[str, int]],
+        *,
+        agent_name: str,
+        usage: Any,
+        patch_count: int = 1,
+    ) -> None:
+        cls._record_token_usage(
+            totals,
+            agent_name=agent_name,
+            usage=usage,
+            operation_count=1,
+            patch_count=patch_count,
+        )
+
+    def _record_workflow_token_usage(
+        self,
+        *,
+        data_package_id: str,
+        agent_name: str,
+        usage: Any,
+        operation_count: int = 1,
+    ) -> None:
+        if self.output_repository is None:
+            return
+        totals = self.output_repository.load_token_usage(data_package_id)
+        self._record_token_usage(
+            totals,
+            agent_name=agent_name,
+            usage=usage,
+            operation_count=operation_count,
+        )
+        self.output_repository.save_token_usage(
+            workflow_id=data_package_id,
+            token_usage=totals,
+        )
+
+    @staticmethod
+    def _usage_int(usage: Any, field_name: str) -> int:
+        value = getattr(usage, field_name, 0)
+        try:
+            return int(value or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    @classmethod
+    def _token_usage_summary(
+        cls,
+        totals: dict[str, dict[str, int]],
+    ) -> dict[str, Any]:
+        agents = {
+            agent_name: cls._token_usage_entry_summary(values)
+            for agent_name, values in totals.items()
+            if any(
+                values.get(key, 0)
+                for key in ("input_tokens", "output_tokens", "total_tokens", "requests")
+            )
+        }
+        if not agents:
+            return {"agents": {}}
+
+        combined_values = {
+            "input_tokens": sum(item["input_tokens"] for item in agents.values()),
+            "output_tokens": sum(item["output_tokens"] for item in agents.values()),
+            "total_tokens": sum(item["total_tokens"] for item in agents.values()),
+            "requests": sum(item["requests"] for item in agents.values()),
+            "operation_count": sum(item["operation_count"] for item in agents.values()),
+            "estimated_input_tokens": sum(
+                int(item.get("estimated_input_tokens", 0)) for item in agents.values()
+            ),
+            "input_token_budget": max(
+                int(item.get("input_token_budget", 0)) for item in agents.values()
+            ),
+            "max_context_length": max(
+                int(item.get("max_context_length", 0)) for item in agents.values()
+            ),
+            "split_count": sum(int(item.get("split_count", 0)) for item in agents.values()),
+            "compaction_count": sum(
+                int(item.get("compaction_count", 0)) for item in agents.values()
+            ),
+        }
+        return {
+            "agents": agents,
+            "combined": cls._token_usage_entry_summary(combined_values),
+        }
+
+    @classmethod
+    def _patch_token_usage_summary(
+        cls,
+        totals: dict[str, dict[str, int]],
+    ) -> dict[str, Any]:
+        agents = {
+            agent_name: cls._patch_token_usage_entry_summary(values)
+            for agent_name, values in totals.items()
+            if any(
+                values.get(key, 0)
+                for key in ("input_tokens", "output_tokens", "total_tokens", "requests")
+            )
+        }
+        if not agents:
+            return {"agents": {}}
+
+        combined_values = {
+            "input_tokens": sum(item["input_tokens"] for item in agents.values()),
+            "output_tokens": sum(item["output_tokens"] for item in agents.values()),
+            "total_tokens": sum(item["total_tokens"] for item in agents.values()),
+            "requests": sum(item["requests"] for item in agents.values()),
+            "patch_count": max(item["patch_count"] for item in agents.values()),
+            "estimated_input_tokens": sum(
+                int(item.get("estimated_input_tokens", 0)) for item in agents.values()
+            ),
+            "input_token_budget": max(
+                int(item.get("input_token_budget", 0)) for item in agents.values()
+            ),
+            "max_context_length": max(
+                int(item.get("max_context_length", 0)) for item in agents.values()
+            ),
+            "split_count": sum(int(item.get("split_count", 0)) for item in agents.values()),
+            "compaction_count": sum(
+                int(item.get("compaction_count", 0)) for item in agents.values()
+            ),
+        }
+        return {
+            "agents": agents,
+            "combined": cls._patch_token_usage_entry_summary(combined_values),
+        }
+
+    @classmethod
+    def _token_usage_entry_summary(
+        cls,
+        values: dict[str, int],
+    ) -> dict[str, int | float]:
+        return cls._token_usage_entry_summary_for_count(
+            values,
+            count_key="operation_count",
+            average_suffix="operation",
+        )
+
+    @staticmethod
+    def _patch_token_usage_entry_summary(values: dict[str, int]) -> dict[str, int | float]:
+        return ExtractionService._token_usage_entry_summary_for_count(
+            values,
+            count_key="patch_count",
+            average_suffix="patch",
+        )
+
+    @staticmethod
+    def _token_usage_entry_summary_for_count(
+        values: dict[str, int],
+        *,
+        count_key: str,
+        average_suffix: str,
+    ) -> dict[str, int | float]:
+        operation_count = max(1, int(values.get("operation_count", 0)))
+        patch_count = max(1, int(values.get("patch_count", 0)))
+        input_tokens = int(values.get("input_tokens", 0))
+        output_tokens = int(values.get("output_tokens", 0))
+        total_tokens = int(values.get("total_tokens", 0))
+        denominator = max(1, int(values.get(count_key, 0)))
+        requests = max(1, int(values.get("requests", 0)))
+        summary: dict[str, int | float] = {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": total_tokens,
+            "requests": int(values.get("requests", 0)),
+            "operation_count": operation_count,
+            "patch_count": patch_count,
+            f"average_input_tokens_per_{average_suffix}": round(input_tokens / denominator, 2),
+            f"average_output_tokens_per_{average_suffix}": round(output_tokens / denominator, 2),
+            f"average_total_tokens_per_{average_suffix}": round(total_tokens / denominator, 2),
+            "average_input_tokens_per_request": round(input_tokens / requests, 2),
+            "average_output_tokens_per_request": round(output_tokens / requests, 2),
+            "average_total_tokens_per_request": round(total_tokens / requests, 2),
+        }
+        for key in (
+            "estimated_input_tokens",
+            "input_token_budget",
+            "max_context_length",
+            "split_count",
+            "compaction_count",
+        ):
+            value = int(values.get(key, 0))
+            if value:
+                summary[key] = value
+        if values.get("estimated_input_tokens"):
+            summary["average_estimated_input_tokens_per_request"] = round(
+                int(values["estimated_input_tokens"]) / requests,
+                2,
+            )
+        return summary
+
+    def _update_patch_token_usage_progress(
+        self,
+        *,
+        data_package_id: str,
+        token_usage: dict[str, dict[str, int]],
+    ) -> None:
+        if self.task_registry is None:
+            return
+        task_name = self._patch_draft_task_name(data_package_id)
+        task_info = self.task_registry.get_task_info(task_name)
+        if task_info is None:
+            return
+        progress = dict(task_info.progress or {})
+        summary = self._patch_token_usage_summary(token_usage)
+        if summary.get("agents"):
+            progress["token_usage"] = summary
+            self.task_registry.update_progress(task_name, progress)
 
     @staticmethod
     def _record(value: Any) -> dict[str, Any] | None:
@@ -1137,9 +1742,12 @@ class ExtractionService:
         data_package_id: str,
         message: str,
     ) -> None:
-        formatted = f"{data_package_id}: {message}"
-        logger.info("Patch review resolution - %s", formatted)
-        resolution_log.append(formatted)
+        logger.info(
+            "Patch review resolution for %s - %s",
+            data_package_id,
+            message,
+        )
+        resolution_log.append(message)
 
     def _update_patch_resolution_progress(
         self,

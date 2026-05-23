@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
@@ -14,6 +14,7 @@ from app.domain.profiles import ProfileManifest, validate_document_against_profi
 
 
 PatchQualityDecision = Literal["accept", "revise", "reject"]
+TokenUsageCallback = Callable[[str, Any, int], None]
 
 
 class PatchQualityIssue(BaseModel):
@@ -216,6 +217,7 @@ async def review_patch_semantic_quality(
     profile_json_schema: dict[str, Any],
     model: Any,
     candidates: list[PatchCandidate] | None = None,
+    on_token_usage: TokenUsageCallback | None = None,
 ) -> PatchQualityReport:
     agent = create_patch_quality_agent(model=model)
 
@@ -238,6 +240,8 @@ async def review_patch_semantic_quality(
         "rating and an overall decision.",
         deps=deps,
     )
+    if on_token_usage is not None:
+        on_token_usage("patch_quality", result.usage, 1)
     return result.output
 
 

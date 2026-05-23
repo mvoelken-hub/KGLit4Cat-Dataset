@@ -21,10 +21,10 @@ services:
     image: ollama/ollama:latest
     restart: unless-stopped
     environment:
-      - OLLAMA_KV_CACHE_TYPE=q8_0
+      - OLLAMA_KV_CACHE_TYPE=${OLLAMA_KV_CACHE_TYPE:-q8_0}
       - OLLAMA_KEEP_ALIVE=-1
       - OLLAMA_HOST=0.0.0.0:${OLLAMA_PORT}
-      - OLLAMA_FLASH_ATTENTION=1
+      - OLLAMA_FLASH_ATTENTION=${OLLAMA_FLASH_ATTENTION:-1}
     ports:
       - "127.0.0.1:${OLLAMA_PORT}:${OLLAMA_PORT}"
     volumes:
