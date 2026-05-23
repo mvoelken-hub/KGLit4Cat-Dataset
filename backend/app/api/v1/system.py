@@ -127,9 +127,12 @@ async def get_current_settings(settings: Settings = Depends(get_settings)):
 
 @router.get("/llm-budget")
 async def get_llm_budget(settings: Settings = Depends(get_settings)):
+    input_token_budget = int(settings.max_context_length * 0.75)
     return {
         "chat_model": settings.ollama_chat_model,
         "max_context_length": settings.max_context_length,
+        "input_token_budget": input_token_budget,
+        "input_target_ratio": 0.75,
         "warning_threshold": 0.8,
         "danger_threshold": 1.0,
     }

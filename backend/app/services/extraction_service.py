@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import asyncio
+import json
 import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Callable
@@ -22,10 +23,17 @@ from app.domain.extraction import (
 from app.domain.extraction.review_resolution import (
     PatchReviewDecision,
     PatchReviewItem,
+    PatchReviewResolution,
     resolve_patch_review_items,
 )
 from app.domain.extraction.sanitizers import sanitize_document_against_schema
 from app.domain.extraction.sanitizers import normalize_review_draft
+from app.domain.extraction.schema_utils import json_pointer_top_level_field, slice_profile_json_schema
+from app.domain.extraction.token_budget import (
+    BudgetedUsage,
+    TokenBudget,
+    budget_from_context_length,
+)
 from app.domain.profiles import validate_document_against_profile
 from app.repositories.extraction_output_repository import ExtractionOutputRepository
 
@@ -84,6 +92,7 @@ class ExtractionService:
             model=self.ollama_client.agent_model,
             max_files_to_read=max_files_to_read,
             max_chars_per_file=max_chars_per_file,
+            token_budget=self._token_budget(),
             on_token_usage=record_token_usage,
         )
         if self.output_repository is not None:
@@ -360,6 +369,7 @@ class ExtractionService:
             completed_patch_file_names=self.output_repository.load_completed_patch_file_names(
                 data_package_id,
             ),
+            token_budget=self._token_budget(),
             on_token_usage=record_token_usage,
         )
         patching_draft = normalize_review_draft(
@@ -604,13 +614,12 @@ class ExtractionService:
         if progress_callback:
             progress_callback()
 
-        resolution = await resolve_patch_review_items(
+        resolution = await self._resolve_review_items_in_budgeted_batches(
             current_draft=current_draft,
             review_items=parsed_items,
             profile_manifest=profile_manifest,
             profile_json_schema=profile_json_schema,
             existing_review_state=existing_review_state,
-            model=self.ollama_client.agent_model,
             on_token_usage=on_token_usage,
         )
         self._record_resolution_log(
@@ -787,6 +796,245 @@ class ExtractionService:
             ],
             "resolution_log": resolution_log,
         }
+
+    async def _resolve_review_items_in_budgeted_batches(
+        self,
+        *,
+        current_draft: dict[str, Any],
+        review_items: list[PatchReviewItem],
+        profile_manifest: Any,
+        profile_json_schema: dict[str, Any],
+        existing_review_state: dict[str, Any],
+        on_token_usage: Callable[[str, Any, int], None] | None,
+    ) -> PatchReviewResolution:
+        if self.ollama_client is None:
+            raise RuntimeError("ExtractionService requires ollama_client.")
+
+        token_budget = self._token_budget()
+        batches = self._budgeted_review_item_batches(
+            current_draft=current_draft,
+            review_items=review_items,
+            profile_manifest=profile_manifest,
+            profile_json_schema=profile_json_schema,
+            existing_review_state=existing_review_state,
+            token_budget=token_budget,
+        )
+        next_draft = copy.deepcopy(current_draft)
+        decisions: list[PatchReviewDecision] = []
+        unmapped_assignments: dict[str, str] = {}
+
+        for batch_index, batch in enumerate(batches, start=1):
+            prompt_draft = self._resolver_draft_slice(next_draft, batch)
+            prompt_schema = self._resolver_schema_slice(
+                profile_json_schema=profile_json_schema,
+                profile_manifest=profile_manifest,
+                review_items=batch,
+            )
+            prompt_review_state = self._resolver_review_state_slice(
+                existing_review_state,
+                batch,
+            )
+            budget_metadata = token_budget.metadata(
+                estimated_input_tokens=self._estimate_review_resolution_tokens(
+                    current_draft=prompt_draft,
+                    review_items=batch,
+                    profile_manifest=profile_manifest,
+                    profile_json_schema=prompt_schema,
+                    existing_review_state=prompt_review_state,
+                    token_budget=token_budget,
+                ),
+                split_count=max(0, len(batches) - 1),
+            )
+
+            def record_budgeted_usage(
+                agent_name: str,
+                usage: Any,
+                patch_count: int = 1,
+            ) -> None:
+                if on_token_usage is not None:
+                    on_token_usage(
+                        agent_name,
+                        BudgetedUsage(usage, budget_metadata),
+                        patch_count,
+                    )
+
+            result = await resolve_patch_review_items(
+                current_draft=prompt_draft,
+                review_items=batch,
+                profile_manifest=profile_manifest,
+                profile_json_schema=prompt_schema,
+                existing_review_state=prompt_review_state,
+                model=self.ollama_client.agent_model,
+                on_token_usage=record_budgeted_usage,
+            )
+            if result.draft_patch:
+                next_draft = apply_merge_patch(next_draft, result.draft_patch)
+            elif result.final_draft:
+                draft_patch = self._json_merge_patch_diff(prompt_draft, result.final_draft)
+                next_draft = apply_merge_patch(next_draft, draft_patch)
+            decisions.extend(result.item_decisions)
+            unmapped_assignments.update(result.unmapped_assignments)
+            existing_review_state = {
+                **existing_review_state,
+                "resolved_item_ids": list(
+                    dict.fromkeys(
+                        [
+                            *existing_review_state.get("resolved_item_ids", []),
+                            *(decision.id for decision in result.item_decisions),
+                        ]
+                    )
+                ),
+                "unmapped_assignments": {
+                    **dict(existing_review_state.get("unmapped_assignments", {})),
+                    **unmapped_assignments,
+                },
+                "resolver_batch": batch_index,
+            }
+
+        return PatchReviewResolution(
+            final_draft=next_draft,
+            item_decisions=decisions,
+            unmapped_assignments=unmapped_assignments,
+        )
+
+    @staticmethod
+    def _resolver_draft_slice(
+        current_draft: dict[str, Any],
+        review_items: list[PatchReviewItem],
+    ) -> dict[str, Any]:
+        fields = ExtractionService._review_item_top_level_fields(review_items)
+        if not fields:
+            return copy.deepcopy(current_draft)
+        result = {
+            field: copy.deepcopy(current_draft[field])
+            for field in fields
+            if field in current_draft
+        }
+        if "id" in current_draft:
+            result.setdefault("id", current_draft["id"])
+        return result
+
+    @staticmethod
+    def _resolver_schema_slice(
+        *,
+        profile_json_schema: dict[str, Any],
+        profile_manifest: Any,
+        review_items: list[PatchReviewItem],
+    ) -> dict[str, Any]:
+        fields = ExtractionService._review_item_top_level_fields(review_items)
+        if not fields:
+            return profile_json_schema
+        return slice_profile_json_schema(
+            profile_json_schema=profile_json_schema,
+            target_class=profile_manifest.target_class,
+            field_names=fields,
+        )
+
+    @staticmethod
+    def _resolver_review_state_slice(
+        existing_review_state: dict[str, Any],
+        review_items: list[PatchReviewItem],
+    ) -> dict[str, Any]:
+        item_ids = {item.id for item in review_items}
+        return {
+            "resolved_item_ids": [
+                item_id
+                for item_id in existing_review_state.get("resolved_item_ids", [])
+                if item_id in item_ids
+            ],
+            "unmapped_assignments": {
+                item_id: value
+                for item_id, value in dict(
+                    existing_review_state.get("unmapped_assignments", {})
+                ).items()
+                if item_id in item_ids
+            },
+            "resolution_notes": {
+                item_id: value
+                for item_id, value in dict(
+                    existing_review_state.get("resolution_notes", {})
+                ).items()
+                if item_id in item_ids
+            },
+        }
+
+    @staticmethod
+    def _review_item_top_level_fields(review_items: list[PatchReviewItem]) -> list[str]:
+        fields: list[str] = []
+        for item in review_items:
+            candidates = [item.path]
+            if item.patch:
+                candidates.extend(str(key) for key in item.patch)
+            for candidate in candidates:
+                field = (
+                    json_pointer_top_level_field(candidate)
+                    if candidate.startswith("/")
+                    else candidate.split(".", 1)[0]
+                )
+                if field and field not in fields:
+                    fields.append(field)
+        return fields
+
+    def _budgeted_review_item_batches(
+        self,
+        *,
+        current_draft: dict[str, Any],
+        review_items: list[PatchReviewItem],
+        profile_manifest: Any,
+        profile_json_schema: dict[str, Any],
+        existing_review_state: dict[str, Any],
+        token_budget: TokenBudget,
+    ) -> list[list[PatchReviewItem]]:
+        batches: list[list[PatchReviewItem]] = []
+        current_batch: list[PatchReviewItem] = []
+        for item in review_items:
+            candidate_batch = [*current_batch, item]
+            estimate = self._estimate_review_resolution_tokens(
+                current_draft=current_draft,
+                review_items=candidate_batch,
+                profile_manifest=profile_manifest,
+                profile_json_schema=profile_json_schema,
+                existing_review_state=existing_review_state,
+                token_budget=token_budget,
+            )
+            if current_batch and estimate > token_budget.input_token_budget:
+                batches.append(current_batch)
+                current_batch = [item]
+            else:
+                current_batch = candidate_batch
+        if current_batch:
+            batches.append(current_batch)
+        return batches or [[]]
+
+    @staticmethod
+    def _estimate_review_resolution_tokens(
+        *,
+        current_draft: dict[str, Any],
+        review_items: list[PatchReviewItem],
+        profile_manifest: Any,
+        profile_json_schema: dict[str, Any],
+        existing_review_state: dict[str, Any],
+        token_budget: TokenBudget,
+    ) -> int:
+        prompt_context = "".join(
+            [
+                f"Profile identifier:\n{profile_manifest.identifier}\n\n",
+                f"Target class:\n{profile_manifest.target_class}\n\n",
+                "Profile JSON Schema:\n",
+                json.dumps(profile_json_schema, indent=2, ensure_ascii=False),
+                "\n\nCurrent draft JSON:\n",
+                json.dumps(current_draft, indent=2, ensure_ascii=False),
+                "\n\nExisting review state JSON:\n",
+                json.dumps(existing_review_state, indent=2, ensure_ascii=False),
+                "\n\nUnresolved review items JSON:\n",
+                json.dumps(
+                    [item.model_dump(mode="json") for item in review_items],
+                    indent=2,
+                    ensure_ascii=False,
+                ),
+            ]
+        )
+        return token_budget.estimate_text_tokens(prompt_context)
 
     def _save_patch_progress(
         self,
@@ -1113,6 +1361,26 @@ class ExtractionService:
         entry["operation_count"] += max(1, operation_count)
         if patch_count is not None:
             entry["patch_count"] += max(1, patch_count)
+        for key in (
+            "estimated_input_tokens",
+            "input_token_budget",
+            "max_context_length",
+            "split_count",
+            "compaction_count",
+        ):
+            value = cls._usage_int(usage, key)
+            if not value:
+                continue
+            if key in {"input_token_budget", "max_context_length"}:
+                entry[key] = max(entry.get(key, 0), value)
+            else:
+                entry[key] = entry.get(key, 0) + value
+
+    def _token_budget(self) -> TokenBudget:
+        max_context_length = getattr(self.settings, "max_context_length", None)
+        if max_context_length is None and self.ollama_client is not None:
+            max_context_length = getattr(self.ollama_client, "max_context_length", None)
+        return budget_from_context_length(max_context_length)
 
     @classmethod
     def _record_patch_token_usage(
@@ -1183,6 +1451,19 @@ class ExtractionService:
             "total_tokens": sum(item["total_tokens"] for item in agents.values()),
             "requests": sum(item["requests"] for item in agents.values()),
             "operation_count": sum(item["operation_count"] for item in agents.values()),
+            "estimated_input_tokens": sum(
+                int(item.get("estimated_input_tokens", 0)) for item in agents.values()
+            ),
+            "input_token_budget": max(
+                int(item.get("input_token_budget", 0)) for item in agents.values()
+            ),
+            "max_context_length": max(
+                int(item.get("max_context_length", 0)) for item in agents.values()
+            ),
+            "split_count": sum(int(item.get("split_count", 0)) for item in agents.values()),
+            "compaction_count": sum(
+                int(item.get("compaction_count", 0)) for item in agents.values()
+            ),
         }
         return {
             "agents": agents,
@@ -1211,6 +1492,19 @@ class ExtractionService:
             "total_tokens": sum(item["total_tokens"] for item in agents.values()),
             "requests": sum(item["requests"] for item in agents.values()),
             "patch_count": max(item["patch_count"] for item in agents.values()),
+            "estimated_input_tokens": sum(
+                int(item.get("estimated_input_tokens", 0)) for item in agents.values()
+            ),
+            "input_token_budget": max(
+                int(item.get("input_token_budget", 0)) for item in agents.values()
+            ),
+            "max_context_length": max(
+                int(item.get("max_context_length", 0)) for item in agents.values()
+            ),
+            "split_count": sum(int(item.get("split_count", 0)) for item in agents.values()),
+            "compaction_count": sum(
+                int(item.get("compaction_count", 0)) for item in agents.values()
+            ),
         }
         return {
             "agents": agents,
@@ -1250,7 +1544,7 @@ class ExtractionService:
         total_tokens = int(values.get("total_tokens", 0))
         denominator = max(1, int(values.get(count_key, 0)))
         requests = max(1, int(values.get("requests", 0)))
-        return {
+        summary: dict[str, int | float] = {
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
             "total_tokens": total_tokens,
@@ -1264,6 +1558,22 @@ class ExtractionService:
             "average_output_tokens_per_request": round(output_tokens / requests, 2),
             "average_total_tokens_per_request": round(total_tokens / requests, 2),
         }
+        for key in (
+            "estimated_input_tokens",
+            "input_token_budget",
+            "max_context_length",
+            "split_count",
+            "compaction_count",
+        ):
+            value = int(values.get(key, 0))
+            if value:
+                summary[key] = value
+        if values.get("estimated_input_tokens"):
+            summary["average_estimated_input_tokens_per_request"] = round(
+                int(values["estimated_input_tokens"]) / requests,
+                2,
+            )
+        return summary
 
     def _update_patch_token_usage_progress(
         self,

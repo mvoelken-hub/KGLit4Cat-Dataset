@@ -25,6 +25,7 @@ from app.domain.extraction.schema_utils import (
     resolve_json_pointer,
     slice_profile_json_schema,
 )
+from app.domain.extraction.token_budget import BudgetedUsage, TokenBudget
 from app.domain.profiles import ProfileManifest
 
 
@@ -179,6 +180,11 @@ class SchemaPatchResult(BaseModel):
 
 PatchProgressCallback = Callable[[dict[str, Any], PatchRecord, int, int], Awaitable[None]]
 TokenUsageCallback = Callable[[str, Any, int], None]
+
+
+SCHEMA_PATCH_EVIDENCE_LIMIT = 3
+SCHEMA_PATCH_LOCATION_LIMIT = 3
+SCHEMA_REPAIR_ERROR_LIMIT = 5
 
 
 # ---------------------------------------------------------------------------
@@ -351,24 +357,28 @@ def create_patch_discovery_agent(
 
     @agent.instructions
     def add_discovery_context(ctx: RunContext[PatchDiscoveryDeps]) -> str:
-        protected_note = ""
-        if ctx.deps.protected_fields:
-            protected_note = (
-                "\n\nProtected fields (do not pick locations under these):\n"
-                + "\n".join(f"- {field}" for field in ctx.deps.protected_fields)
-                + "\n"
-            )
-        return (
-            f"Document file path:\n{ctx.deps.document_file_path}\n\n"
-            f"Patch batch:\n{ctx.deps.batch_no}/{ctx.deps.total_batches}\n\n"
-            "Current draft JSON:\n"
-            f"{json.dumps(ctx.deps.current_draft, indent=2, ensure_ascii=False)}\n\n"
-            "Source chunk batch:\n"
-            f"{json.dumps([chunk.model_dump(exclude={'embedding'}) for chunk in ctx.deps.chunk_batch], indent=2, ensure_ascii=False)}\n"
-            f"{protected_note}"
-        )
+        return _patch_discovery_context(ctx.deps)
 
     return agent
+
+
+def _patch_discovery_context(deps: PatchDiscoveryDeps) -> str:
+    protected_note = ""
+    if deps.protected_fields:
+        protected_note = (
+            "\n\nProtected fields (do not pick locations under these):\n"
+            + "\n".join(f"- {field}" for field in deps.protected_fields)
+            + "\n"
+        )
+    return (
+        f"Document file path:\n{deps.document_file_path}\n\n"
+        f"Patch batch:\n{deps.batch_no}/{deps.total_batches}\n\n"
+        "Current draft JSON:\n"
+        f"{json.dumps(deps.current_draft, indent=2, ensure_ascii=False)}\n\n"
+        "Source chunk batch:\n"
+        f"{json.dumps([chunk.model_dump(exclude={'embedding'}) for chunk in deps.chunk_batch], indent=2, ensure_ascii=False)}\n"
+        f"{protected_note}"
+    )
 
 
 def create_schema_patch_agent(
@@ -416,14 +426,7 @@ def create_schema_repair_agent(
 
     @agent.instructions
     def add_repair_context(ctx: RunContext[SchemaRepairDeps]) -> str:
-        return (
-            _schema_patch_context(ctx.deps)
-            + "\nInvalid patch JSON:\n"
-            + json.dumps(ctx.deps.invalid_patch, indent=2, ensure_ascii=False)
-            + "\n\nValidation errors:\n"
-            + json.dumps(ctx.deps.validation_errors, indent=2, ensure_ascii=False)
-            + "\n"
-        )
+        return _schema_repair_context(ctx.deps)
 
     return agent
 
@@ -444,6 +447,85 @@ def _schema_patch_context(deps: SchemaPatchDeps) -> str:
     )
 
 
+def _budget_schema_patch_deps(
+    deps: SchemaPatchDeps,
+    *,
+    token_budget: TokenBudget | None,
+) -> tuple[SchemaPatchDeps, dict[str, int] | None]:
+    if token_budget is None:
+        return deps, None
+
+    initial_estimate = token_budget.estimate_text_tokens(_schema_patch_context(deps))
+    if initial_estimate <= token_budget.input_token_budget:
+        return deps, token_budget.metadata(estimated_input_tokens=initial_estimate)
+
+    compacted = SchemaPatchDeps(
+        current_draft_slice=deps.current_draft_slice,
+        schema_slice=_compact_schema_for_prompt(deps.schema_slice),
+        location_picks=deps.location_picks[:SCHEMA_PATCH_LOCATION_LIMIT],
+        information=deps.information,
+        evidence=deps.evidence[:SCHEMA_PATCH_EVIDENCE_LIMIT],
+        document_file_path=deps.document_file_path,
+    )
+    estimate = token_budget.estimate_text_tokens(_schema_patch_context(compacted))
+    return compacted, token_budget.metadata(
+        estimated_input_tokens=estimate,
+        compaction_count=1,
+    )
+
+
+def _budget_schema_repair_deps(
+    deps: SchemaRepairDeps,
+    *,
+    token_budget: TokenBudget | None,
+) -> tuple[SchemaRepairDeps, dict[str, int] | None]:
+    if token_budget is None:
+        return deps, None
+
+    initial_estimate = token_budget.estimate_text_tokens(_schema_repair_context(deps))
+    if initial_estimate <= token_budget.input_token_budget:
+        return deps, token_budget.metadata(estimated_input_tokens=initial_estimate)
+
+    compacted = SchemaRepairDeps(
+        current_draft_slice=deps.current_draft_slice,
+        schema_slice=_compact_schema_for_prompt(deps.schema_slice),
+        location_picks=deps.location_picks[:SCHEMA_PATCH_LOCATION_LIMIT],
+        information=deps.information,
+        evidence=deps.evidence[:SCHEMA_PATCH_EVIDENCE_LIMIT],
+        document_file_path=deps.document_file_path,
+        invalid_patch=deps.invalid_patch,
+        validation_errors=deps.validation_errors[:SCHEMA_REPAIR_ERROR_LIMIT],
+    )
+    estimate = token_budget.estimate_text_tokens(_schema_repair_context(compacted))
+    return compacted, token_budget.metadata(
+        estimated_input_tokens=estimate,
+        compaction_count=1,
+    )
+
+
+def _schema_repair_context(deps: SchemaRepairDeps) -> str:
+    return (
+        _schema_patch_context(deps)
+        + "\nInvalid patch JSON:\n"
+        + json.dumps(deps.invalid_patch, indent=2, ensure_ascii=False)
+        + "\n\nValidation errors:\n"
+        + json.dumps(deps.validation_errors, indent=2, ensure_ascii=False)
+        + "\n"
+    )
+
+
+def _compact_schema_for_prompt(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _compact_schema_for_prompt(child)
+            for key, child in value.items()
+            if key not in {"description", "title", "$comment", "examples", "default"}
+        }
+    if isinstance(value, list):
+        return [_compact_schema_for_prompt(item) for item in value]
+    return value
+
+
 async def discover_patch_information(
     *,
     draft: dict[str, Any],
@@ -453,23 +535,38 @@ async def discover_patch_information(
     total_batches: int,
     model: Any,
     protected_fields: list[str] | None = None,
+    token_budget: TokenBudget | None = None,
+    budget_split_count: int = 0,
     on_token_usage: TokenUsageCallback | None = None,
 ) -> PatchDiscoveryResult:
     agent = create_patch_discovery_agent(model=model)
+    deps = PatchDiscoveryDeps(
+        current_draft=draft,
+        chunk_batch=chunk_batch,
+        batch_no=batch_no,
+        total_batches=total_batches,
+        document_file_path=document_file_path,
+        protected_fields=protected_fields or [],
+    )
+    budget_metadata = None
+    if token_budget is not None:
+        budget_metadata = token_budget.metadata(
+            estimated_input_tokens=token_budget.estimate_text_tokens(
+                _patch_discovery_context(deps),
+            ),
+            split_count=budget_split_count,
+        )
     result = await agent.run(
         "Find new metadata information in this chunk batch and rank JSON "
         "Pointer locations in the current draft where it belongs.",
-        deps=PatchDiscoveryDeps(
-            current_draft=draft,
-            chunk_batch=chunk_batch,
-            batch_no=batch_no,
-            total_batches=total_batches,
-            document_file_path=document_file_path,
-            protected_fields=protected_fields or [],
-        ),
+        deps=deps,
     )
     if on_token_usage is not None:
-        on_token_usage("patch_discovery", result.usage, 1)
+        on_token_usage(
+            "patch_discovery",
+            BudgetedUsage(result.usage, budget_metadata) if budget_metadata else result.usage,
+            1,
+        )
     return result.output
 
 
@@ -481,12 +578,12 @@ async def create_schema_bound_patch(
     location_picks: list[PatchLocationPick],
     document_file_path: str,
     model: Any,
+    token_budget: TokenBudget | None = None,
     on_token_usage: TokenUsageCallback | None = None,
 ) -> SchemaPatchResult:
     agent = create_schema_patch_agent(model=model)
-    result = await agent.run(
-        "Create one top-level JSON merge patch for the discovered information.",
-        deps=SchemaPatchDeps(
+    deps, budget_metadata = _budget_schema_patch_deps(
+        SchemaPatchDeps(
             current_draft_slice=current_draft_slice,
             schema_slice=schema_slice,
             location_picks=location_picks,
@@ -494,9 +591,18 @@ async def create_schema_bound_patch(
             evidence=discovery.evidence,
             document_file_path=document_file_path,
         ),
+        token_budget=token_budget,
+    )
+    result = await agent.run(
+        "Create one top-level JSON merge patch for the discovered information.",
+        deps=deps,
     )
     if on_token_usage is not None:
-        on_token_usage("schema_patch_writer", result.usage, 1)
+        on_token_usage(
+            "schema_patch_writer",
+            BudgetedUsage(result.usage, budget_metadata) if budget_metadata else result.usage,
+            1,
+        )
     return result.output
 
 
@@ -510,12 +616,12 @@ async def repair_schema_bound_patch(
     validation_errors: list[str],
     document_file_path: str,
     model: Any,
+    token_budget: TokenBudget | None = None,
     on_token_usage: TokenUsageCallback | None = None,
 ) -> SchemaPatchResult:
     agent = create_schema_repair_agent(model=model)
-    result = await agent.run(
-        "Repair the JSON merge patch so it satisfies the schema.",
-        deps=SchemaRepairDeps(
+    deps, budget_metadata = _budget_schema_repair_deps(
+        SchemaRepairDeps(
             current_draft_slice=current_draft_slice,
             schema_slice=schema_slice,
             location_picks=location_picks,
@@ -525,9 +631,18 @@ async def repair_schema_bound_patch(
             invalid_patch=invalid_patch,
             validation_errors=validation_errors,
         ),
+        token_budget=token_budget,
+    )
+    result = await agent.run(
+        "Repair the JSON merge patch so it satisfies the schema.",
+        deps=deps,
     )
     if on_token_usage is not None:
-        on_token_usage("schema_repair", result.usage, 1)
+        on_token_usage(
+            "schema_repair",
+            BudgetedUsage(result.usage, budget_metadata) if budget_metadata else result.usage,
+            1,
+        )
     return result.output
 
 
@@ -548,6 +663,7 @@ async def patch_draft_from_content_chunks(
     protected_fields: list[str] | None = None,
     protected_fields_loader: Callable[[], list[str]] | None = None,
     completed_patch_file_names: set[str] | None = None,
+    token_budget: TokenBudget | None = None,
     on_token_usage: TokenUsageCallback | None = None,
 ) -> PatchDraftResult:
     draft = copy.deepcopy(initial_draft)
@@ -557,6 +673,9 @@ async def patch_draft_from_content_chunks(
     progress_total_batches = _count_progress_batches(
         content_chunks_by_file=content_chunks_by_file,
         num_chunks_per_turn=num_chunks_per_turn,
+        draft=draft,
+        token_budget=token_budget,
+        protected_fields=protected_fields,
     )
 
     top_level_fields = get_top_level_fields(
@@ -568,15 +687,21 @@ async def patch_draft_from_content_chunks(
         if not chunks:
             continue
 
-        effective_batch_size = max(1, min(num_chunks_per_turn, len(chunks)))
-        total_batches = (len(chunks) + effective_batch_size - 1) // effective_batch_size
         document_file_path = chunks[0].file_path
+        budgeted_batches = _budgeted_discovery_batches(
+            draft=draft,
+            chunks=chunks,
+            document_file_path=document_file_path,
+            num_chunks_per_turn=num_chunks_per_turn,
+            token_budget=token_budget,
+            protected_fields=protected_fields,
+        )
+        total_batches = len(budgeted_batches)
 
-        for batch_index, start_index in enumerate(
-            range(0, len(chunks), effective_batch_size),
+        for batch_index, (chunk_batch, budget_split_count) in enumerate(
+            budgeted_batches,
             start=1,
         ):
-            chunk_batch = chunks[start_index : start_index + effective_batch_size]
             patch_file_name = (
                 f"{document_index}_{ContentChunk.get_chunk_group_id_from_file_path(document_file_path)}"
                 f"_patch_{batch_index}_{total_batches}.json"
@@ -602,6 +727,8 @@ async def patch_draft_from_content_chunks(
                 total_batches=total_batches,
                 model=model,
                 protected_fields=current_protected_fields,
+                token_budget=token_budget,
+                budget_split_count=budget_split_count,
                 on_token_usage=on_token_usage,
             )
             location_picks = _valid_location_picks(
@@ -643,6 +770,7 @@ async def patch_draft_from_content_chunks(
                 location_picks=location_picks,
                 document_file_path=document_file_path,
                 model=model,
+                token_budget=token_budget,
                 on_token_usage=on_token_usage,
             )
             merged_patch = schema_patch.patch
@@ -665,6 +793,7 @@ async def patch_draft_from_content_chunks(
                     validation_errors=validation_errors,
                     document_file_path=document_file_path,
                     model=model,
+                    token_budget=token_budget,
                     on_token_usage=on_token_usage,
                 )
                 merged_patch = schema_patch.patch
@@ -893,14 +1022,87 @@ def _count_progress_batches(
     *,
     content_chunks_by_file: list[list[ContentChunk]],
     num_chunks_per_turn: int,
+    draft: dict[str, Any] | None = None,
+    token_budget: TokenBudget | None = None,
+    protected_fields: list[str] | None = None,
 ) -> int:
     total = 0
     for chunks in content_chunks_by_file:
         if not chunks:
             continue
-        effective_batch_size = max(1, min(num_chunks_per_turn, len(chunks)))
-        total += (len(chunks) + effective_batch_size - 1) // effective_batch_size
+        if draft is not None and token_budget is not None:
+            total += len(
+                _budgeted_discovery_batches(
+                    draft=draft,
+                    chunks=chunks,
+                    document_file_path=chunks[0].file_path,
+                    num_chunks_per_turn=num_chunks_per_turn,
+                    token_budget=token_budget,
+                    protected_fields=protected_fields,
+                )
+            )
+        else:
+            effective_batch_size = max(1, min(num_chunks_per_turn, len(chunks)))
+            total += (len(chunks) + effective_batch_size - 1) // effective_batch_size
     return total
+
+
+def _budgeted_discovery_batches(
+    *,
+    draft: dict[str, Any],
+    chunks: list[ContentChunk],
+    document_file_path: str,
+    num_chunks_per_turn: int,
+    token_budget: TokenBudget | None,
+    protected_fields: list[str] | None,
+) -> list[tuple[list[ContentChunk], int]]:
+    max_batch_size = max(1, min(num_chunks_per_turn, len(chunks)))
+    batches: list[tuple[list[ContentChunk], int]] = []
+    start_index = 0
+    while start_index < len(chunks):
+        batch_size = min(max_batch_size, len(chunks) - start_index)
+        split_count = 0
+        while batch_size > 1 and token_budget is not None:
+            estimate = _estimate_discovery_batch_tokens(
+                draft=draft,
+                chunks=chunks[start_index : start_index + batch_size],
+                document_file_path=document_file_path,
+                batch_no=len(batches) + 1,
+                total_batches=1,
+                protected_fields=protected_fields,
+                token_budget=token_budget,
+            )
+            if estimate <= token_budget.input_token_budget:
+                break
+            batch_size -= 1
+            split_count += 1
+        batches.append((chunks[start_index : start_index + batch_size], split_count))
+        start_index += batch_size
+    return batches
+
+
+def _estimate_discovery_batch_tokens(
+    *,
+    draft: dict[str, Any],
+    chunks: list[ContentChunk],
+    document_file_path: str,
+    batch_no: int,
+    total_batches: int,
+    protected_fields: list[str] | None,
+    token_budget: TokenBudget,
+) -> int:
+    return token_budget.estimate_text_tokens(
+        _patch_discovery_context(
+            PatchDiscoveryDeps(
+                current_draft=draft,
+                chunk_batch=chunks,
+                batch_no=batch_no,
+                total_batches=total_batches,
+                document_file_path=document_file_path,
+                protected_fields=protected_fields or [],
+            )
+        )
+    )
 
 
 def _normalise_protected_fields(

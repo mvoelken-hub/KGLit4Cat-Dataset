@@ -8,6 +8,7 @@ from pydantic_ai import Agent, RunContext
 from app.domain.datasources import DataPackage
 from app.domain.extraction.agents import DEFAULT_OUTPUT_RETRIES, prompted_json_output
 from app.domain.extraction.artifacts import InitialContext
+from app.domain.extraction.token_budget import BudgetedUsage, TokenBudget
 
 
 INITIAL_CONTEXT_INSTRUCTIONS = (
@@ -82,6 +83,7 @@ async def extract_initial_context_from_data_package(
     model: Any,
     max_files_to_read: int = 12,
     max_chars_per_file: int = 3000,
+    token_budget: TokenBudget | None = None,
     on_token_usage: TokenUsageCallback | None = None,
 ) -> InitialContext:
     agent = create_initial_context_agent(model=model)
@@ -90,12 +92,22 @@ async def extract_initial_context_from_data_package(
         max_files_to_read=max_files_to_read,
         max_chars_per_file=max_chars_per_file,
     )
+    prompt = _initial_context_prompt(data_package, max_files_to_read, max_chars_per_file)
+    estimated_input_tokens = token_budget.estimate_text_tokens(prompt) if token_budget else 0
     result = await agent.run(
-        _initial_context_prompt(data_package, max_files_to_read, max_chars_per_file),
+        prompt,
         deps=deps,
     )
     if on_token_usage is not None:
-        on_token_usage("initial_context", result.usage, 1)
+        usage = (
+            BudgetedUsage(
+                result.usage,
+                token_budget.metadata(estimated_input_tokens=estimated_input_tokens),
+            )
+            if token_budget
+            else result.usage
+        )
+        on_token_usage("initial_context", usage, 1)
     return result.output
 
 

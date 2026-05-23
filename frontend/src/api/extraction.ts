@@ -19,6 +19,12 @@ export type PatchTokenUsageEntry = {
   average_input_tokens_per_request?: number;
   average_output_tokens_per_request?: number;
   average_total_tokens_per_request?: number;
+  estimated_input_tokens?: number;
+  input_token_budget?: number;
+  max_context_length?: number;
+  split_count?: number;
+  compaction_count?: number;
+  average_estimated_input_tokens_per_request?: number;
 };
 
 export type PatchTokenUsage = {

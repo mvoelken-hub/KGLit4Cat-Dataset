@@ -36,6 +36,12 @@ from app.domain.extraction.sanitizers import (
     normalize_review_draft,
     sanitize_document_against_schema,
 )
+from app.domain.extraction.patch_draft import (
+    PatchDiscoveryResult,
+    PatchLocationPick,
+    create_schema_bound_patch,
+)
+from app.domain.extraction.token_budget import TokenBudget, estimate_text_tokens
 from app.domain.profiles import ProfileManifest, validate_document_against_profile
 
 
@@ -860,6 +866,13 @@ class ExtractionAgentHelperTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(agent._max_output_retries, DEFAULT_OUTPUT_RETRIES)
 
+    def test_token_budget_estimates_and_targets_input_window(self):
+        budget = TokenBudget(max_context_length=100)
+
+        self.assertEqual(budget.input_token_budget, 75)
+        self.assertEqual(estimate_text_tokens("abcd"), 1)
+        self.assertEqual(estimate_text_tokens("abcde"), 2)
+
     async def test_patch_draft_from_content_chunks_returns_updated_draft_and_patches(self):
         progress: list[tuple[dict, str, int, int]] = []
 
@@ -893,6 +906,108 @@ class ExtractionAgentHelperTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(progress), 1)
         self.assertEqual(progress[0][0]["description"], "Updated with chunk evidence.")
         self.assertEqual(progress[0][2:], (1, 1))
+
+    async def test_patch_discovery_splits_over_budget_chunk_batches(self):
+        usage_events = []
+        chunks = [
+            [
+                ContentChunk(
+                    content="A" * 200,
+                    data_package_id="package-id",
+                    file_path="README.txt",
+                    start_idx=0,
+                    end_idx=0,
+                ),
+                ContentChunk(
+                    content="B" * 200,
+                    data_package_id="package-id",
+                    file_path="README.txt",
+                    start_idx=1,
+                    end_idx=1,
+                ),
+            ]
+        ]
+
+        result = await patch_draft_from_content_chunks(
+            initial_context=InitialContext.model_validate(INITIAL_CONTEXT_OUTPUT),
+            initial_draft=INITIAL_DRAFT_OUTPUT,
+            content_chunks_by_file=chunks,
+            profile_manifest=make_profile_manifest(),
+            profile_json_schema=PROFILE_JSON_SCHEMA,
+            model=TestModel(
+                call_tools=[],
+                custom_output_text=json.dumps(LEAN_DESCRIPTION_PATCH_OUTPUT),
+            ),
+            num_chunks_per_turn=2,
+            token_budget=TokenBudget(max_context_length=200),
+            on_token_usage=lambda agent_name, usage, patch_count: usage_events.append(
+                (agent_name, usage, patch_count)
+            ),
+        )
+
+        discovery_events = [
+            usage for agent_name, usage, _ in usage_events if agent_name == "patch_discovery"
+        ]
+        self.assertEqual(len(result.patches), 2)
+        self.assertEqual(len(discovery_events), 2)
+        self.assertGreater(discovery_events[0].split_count, 0)
+        self.assertEqual(discovery_events[0].input_token_budget, 150)
+
+    async def test_schema_patch_writer_compacts_over_budget_schema_context(self):
+        usage_events = []
+        discovery = PatchDiscoveryResult(
+            information="Updated description.",
+            evidence=["evidence 1", "evidence 2", "evidence 3", "evidence 4"],
+            location_picks=[
+                PatchLocationPick(path="/description", confidence=0.8),
+                PatchLocationPick(path="/keywords", confidence=0.2),
+                PatchLocationPick(path="/title", confidence=0.1),
+                PatchLocationPick(path="/id", confidence=0.1),
+            ],
+        )
+        noisy_schema = {
+            **PROFILE_JSON_SCHEMA,
+            "$defs": {
+                "Dataset": {
+                    **PROFILE_JSON_SCHEMA["$defs"]["Dataset"],
+                    "description": "X" * 4000,
+                    "properties": {
+                        **PROFILE_JSON_SCHEMA["$defs"]["Dataset"]["properties"],
+                        "description": {
+                            "type": "string",
+                            "description": "Y" * 4000,
+                            "examples": ["Z" * 1000],
+                        },
+                    },
+                }
+            },
+        }
+
+        result = await create_schema_bound_patch(
+            discovery=discovery,
+            current_draft_slice={"description": "old"},
+            schema_slice=noisy_schema,
+            location_picks=discovery.location_picks,
+            document_file_path="README.txt",
+            model=TestModel(
+                call_tools=[],
+                custom_output_text=json.dumps(
+                    {
+                        "destination": "/description",
+                        "patch": {"description": "Updated description."},
+                        "reasoning": "Fits schema.",
+                    }
+                ),
+            ),
+            token_budget=TokenBudget(max_context_length=200),
+            on_token_usage=lambda agent_name, usage, patch_count: usage_events.append(
+                (agent_name, usage, patch_count)
+            ),
+        )
+
+        self.assertEqual(result.patch["description"], "Updated description.")
+        self.assertEqual(usage_events[0][0], "schema_patch_writer")
+        self.assertEqual(usage_events[0][1].compaction_count, 1)
 
     async def test_extract_field_patch_candidates_reports_token_usage(self):
         usage_events = []

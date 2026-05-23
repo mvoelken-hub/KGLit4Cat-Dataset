@@ -19,7 +19,7 @@ from app.domain.extraction import (
     PatchDraftPrerequisiteError,
 )
 from app.domain.extraction.patch_quality import CandidateQualityRating, PatchQualityReport, UnmappedFact
-from app.domain.extraction.review_resolution import PatchReviewResolution
+from app.domain.extraction.review_resolution import PatchReviewItem, PatchReviewResolution
 from app.domain.extraction.artifacts import PatchCandidate
 from app.domain.profiles import ProfileManifest
 from app.services.extraction_service import ExtractionService
@@ -1070,6 +1070,75 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(result["resolved_count"], 1)
         finally:
             await task_registry.cancel_task(task_name)
+
+    async def test_auto_resolve_batches_review_items_and_applies_merge_patches(self):
+        from unittest import mock as unittest_mock
+
+        small_settings = type("SmallSettings", (), {"max_context_length": 320})()
+        service = ExtractionService(
+            FakeProfileRepository(),  # type: ignore[arg-type]
+            settings=small_settings,  # type: ignore[arg-type]
+            datasource_service=FakeDataSourceService(make_data_package()),  # type: ignore[arg-type]
+            ollama_client=FakeOllamaClient({}),  # type: ignore[arg-type]
+            output_repository=FakeOutputRepository(),
+            task_registry=TaskRegistry(settings=None, logger=FakeLogger()),  # type: ignore[arg-type]
+        )
+        profile = FakeProfileRepository().manifest
+        items = [
+            PatchReviewItem(
+                id=f"item-{index}",
+                kind="matched",
+                path="description",
+                detail="X" * 1000,
+                patch={"description": f"resolved-{index}"},
+                file_name=f"patch-{index}.json",
+            )
+            for index in range(2)
+        ]
+        batch_sizes: list[int] = []
+
+        async def fake_resolve(**kwargs):
+            batch_sizes.append(len(kwargs["review_items"]))
+            item = kwargs["review_items"][0]
+            kwargs["on_token_usage"]("auto_resolve", FakeUsage(), 1)
+            return PatchReviewResolution(
+                draft_patch={"description": item.patch["description"]},
+                item_decisions=[
+                    {
+                        "id": item.id,
+                        "outcome": "included",
+                        "note": "Applied.",
+                        "target_path": "description",
+                    }
+                ],
+            )
+
+        class FakeUsage:
+            input_tokens = 80
+            output_tokens = 20
+            total_tokens = 100
+            requests = 1
+
+        usage_events = []
+        with unittest_mock.patch(
+            "app.services.extraction_service.resolve_patch_review_items",
+            side_effect=fake_resolve,
+        ):
+            result = await service._resolve_review_items_in_budgeted_batches(
+                current_draft=INITIAL_DRAFT_OUTPUT,
+                review_items=items,
+                profile_manifest=profile,
+                profile_json_schema=PROFILE_JSON_SCHEMA,
+                existing_review_state={},
+                on_token_usage=lambda agent_name, usage, patch_count: usage_events.append(
+                    (agent_name, usage, patch_count)
+                ),
+            )
+
+        self.assertEqual(batch_sizes, [1, 1])
+        self.assertEqual(result.final_draft["description"], "resolved-1")
+        self.assertEqual([decision.id for decision in result.item_decisions], ["item-0", "item-1"])
+        self.assertGreater(usage_events[0][1].split_count, 0)
 
     async def test_patch_initial_draft_normalizes_duplicate_object_arrays_before_saving(self):
         from unittest import mock as unittest_mock

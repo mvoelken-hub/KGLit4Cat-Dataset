@@ -10,7 +10,7 @@ class FakeSettings:
     max_context_length = 8192
 
 
-class SystemApiTests:
+class TestSystemApi:
     def test_llm_budget_endpoint_returns_safe_budget_metadata(self):
         app = FastAPI()
         app.include_router(router, prefix="/api/v1")
@@ -23,6 +23,8 @@ class SystemApiTests:
         assert response.json() == {
             "chat_model": "chat-test",
             "max_context_length": 8192,
+            "input_token_budget": 6144,
+            "input_target_ratio": 0.75,
             "warning_threshold": 0.8,
             "danger_threshold": 1.0,
         }
