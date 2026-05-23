@@ -556,6 +556,7 @@ function OllamaSettingsPanel({
   const [maxContextLength, setMaxContextLength] = useState(8192);
   const [embeddingBatchSize, setEmbeddingBatchSize] = useState(32);
   const [embeddingNumGpu, setEmbeddingNumGpu] = useState(-1);
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   useEffect(() => {
     if (!runtime) return;
@@ -584,78 +585,112 @@ function OllamaSettingsPanel({
           <span>Ollama</span>
           <strong>{config?.host.base_url ?? 'Unavailable'}</strong>
         </div>
-        <button className="ghost small" type="button" onClick={onRefresh} disabled={busy}>Refresh</button>
+        <button
+          className="ghost small"
+          type="button"
+          onClick={() => setDetailsOpen(true)}
+        >
+          Details
+        </button>
       </div>
 
-      <div className="ollama-status-grid">
+      <div className="ollama-summary-grid">
         <div>
-          <span>Host mode</span>
-          <strong>{config ? (config.host.is_local ? 'Local host' : 'Remote host') : 'Unknown'}</strong>
-          <small>{config?.host.server_settings_note ?? 'Runtime options apply to future calls only.'}</small>
-        </div>
-        <div>
-          <span>Server memory settings</span>
-          <strong>flash {String(config?.host.flash_attention ?? false)} / KV {config?.host.kv_cache_type ?? 'unknown'}</strong>
-          <small>Change these on the Ollama host, not from the UI.</small>
+          <span>Models</span>
+          <strong>{runtime?.chat_model ?? 'No chat model'}</strong>
+          <small>{runtime?.embedding_model ?? 'No embedding model'}</small>
         </div>
         <div>
           <span>Context budget</span>
           <strong>{formatTokenCount(budget?.input_token_budget ?? runtime?.input_token_budget)} input tokens</strong>
           <small>{formatTokenCount(budget?.max_context_length ?? runtime?.max_context_length)} total context tokens</small>
         </div>
-        <div>
-          <span>Recent average input</span>
-          <strong>{formatTokenCount(averageInput)} tokens</strong>
-          <small>{averageInput && runtime && averageInput > runtime.input_token_budget * 0.8 ? 'Lower context usage before starting the next run.' : 'Use chunks per turn to tune call size.'}</small>
+      </div>
+
+      {detailsOpen && createPortal((
+        <div className="vocab-dialog-overlay" onClick={() => setDetailsOpen(false)}>
+          <div className="vocab-dialog ollama-dialog" onClick={(event) => event.stopPropagation()}>
+            <div className="vocab-dialog-header">
+              <strong>Ollama Runtime Settings</strong>
+              <div className="ollama-dialog-actions">
+                <button className="ghost small" type="button" onClick={onRefresh} disabled={busy}>Refresh</button>
+                <button className="ghost" type="button" onClick={() => setDetailsOpen(false)}>Close</button>
+              </div>
+            </div>
+            <div className="vocab-dialog-body ollama-dialog-body">
+              <div className="ollama-status-grid">
+                <div>
+                  <span>Host mode</span>
+                  <strong>{config ? (config.host.is_local ? 'Local host' : 'Remote host') : 'Unknown'}</strong>
+                  <small>{config?.host.server_settings_note ?? 'Runtime options apply to future calls only.'}</small>
+                </div>
+                <div>
+                  <span>Server memory settings</span>
+                  <strong>flash {String(config?.host.flash_attention ?? false)} / KV {config?.host.kv_cache_type ?? 'unknown'}</strong>
+                  <small>Change these on the Ollama host, not from the UI.</small>
+                </div>
+                <div>
+                  <span>Context budget</span>
+                  <strong>{formatTokenCount(budget?.input_token_budget ?? runtime?.input_token_budget)} input tokens</strong>
+                  <small>{formatTokenCount(budget?.max_context_length ?? runtime?.max_context_length)} total context tokens</small>
+                </div>
+                <div>
+                  <span>Recent average input</span>
+                  <strong>{formatTokenCount(averageInput)} tokens</strong>
+                  <small>{averageInput && runtime && averageInput > runtime.input_token_budget * 0.8 ? 'Lower context usage before starting the next run.' : 'Use chunks per turn to tune call size.'}</small>
+                </div>
+              </div>
+
+              <form className="ollama-runtime-form" onSubmit={submit}>
+                <label>
+                  <span>Chat model</span>
+                  <input value={chatModel} onChange={(event) => setChatModel(event.target.value)} disabled={!runtime || busy} />
+                </label>
+                <label>
+                  <span>Embedding model</span>
+                  <input value={embeddingModel} onChange={(event) => setEmbeddingModel(event.target.value)} disabled={!runtime || busy} />
+                </label>
+                <label>
+                  <span>Max context</span>
+                  <input type="number" min={512} step={512} value={maxContextLength} onChange={(event) => setMaxContextLength(parseInt(event.target.value, 10) || 512)} disabled={!runtime || busy} />
+                </label>
+                <label>
+                  <span>Embedding batch</span>
+                  <input type="number" min={1} value={embeddingBatchSize} onChange={(event) => setEmbeddingBatchSize(parseInt(event.target.value, 10) || 1)} disabled={!runtime || busy} />
+                </label>
+                <label>
+                  <span>Embedding GPU</span>
+                  <select value={embeddingNumGpu} onChange={(event) => setEmbeddingNumGpu(parseInt(event.target.value, 10))} disabled={!runtime || busy}>
+                    <option value={-1}>Auto</option>
+                    <option value={0}>CPU only</option>
+                    <option value={1}>1 GPU layer</option>
+                    <option value={8}>8 GPU layers</option>
+                    <option value={16}>16 GPU layers</option>
+                  </select>
+                </label>
+                <button type="submit" disabled={!runtime || busy}>Apply runtime settings</button>
+              </form>
+
+              <div className="ollama-loaded-models">
+                <span>Loaded models</span>
+                {!config?.running.available && <small>{config?.running.error?.message ?? 'Could not inspect loaded Ollama models.'}</small>}
+                {config?.running.available && !config.running.models.length && <small>No models are currently resident.</small>}
+                {config?.running.models.map((model, index) => (
+                  <small key={model.model || index}>
+                    {model.model || 'unknown'} - VRAM {formatMemory(model.size_vram)} / total {formatMemory(model.size)}
+                  </small>
+                ))}
+                {config?.running.available && (
+                  <small>
+                    Chat {config.running.chat_model_loaded ? 'resident' : 'not resident'}; embedding {config.running.embedding_model_loaded ? 'resident' : 'not resident'}.
+                  </small>
+                )}
+              </div>
+              <p className="muted">Runtime edits affect future SIMONE calls only and reset when the API restarts.</p>
+            </div>
+          </div>
         </div>
-      </div>
-
-      <form className="ollama-runtime-form" onSubmit={submit}>
-        <label>
-          <span>Chat model</span>
-          <input value={chatModel} onChange={(event) => setChatModel(event.target.value)} disabled={!runtime || busy} />
-        </label>
-        <label>
-          <span>Embedding model</span>
-          <input value={embeddingModel} onChange={(event) => setEmbeddingModel(event.target.value)} disabled={!runtime || busy} />
-        </label>
-        <label>
-          <span>Max context</span>
-          <input type="number" min={512} step={512} value={maxContextLength} onChange={(event) => setMaxContextLength(parseInt(event.target.value, 10) || 512)} disabled={!runtime || busy} />
-        </label>
-        <label>
-          <span>Embedding batch</span>
-          <input type="number" min={1} value={embeddingBatchSize} onChange={(event) => setEmbeddingBatchSize(parseInt(event.target.value, 10) || 1)} disabled={!runtime || busy} />
-        </label>
-        <label>
-          <span>Embedding GPU</span>
-          <select value={embeddingNumGpu} onChange={(event) => setEmbeddingNumGpu(parseInt(event.target.value, 10))} disabled={!runtime || busy}>
-            <option value={-1}>Auto</option>
-            <option value={0}>CPU only</option>
-            <option value={1}>1 GPU layer</option>
-            <option value={8}>8 GPU layers</option>
-            <option value={16}>16 GPU layers</option>
-          </select>
-        </label>
-        <button type="submit" disabled={!runtime || busy}>Apply runtime settings</button>
-      </form>
-
-      <div className="ollama-loaded-models">
-        <span>Loaded models</span>
-        {!config?.running.available && <small>{config?.running.error?.message ?? 'Could not inspect loaded Ollama models.'}</small>}
-        {config?.running.available && !config.running.models.length && <small>No models are currently resident.</small>}
-        {config?.running.models.map((model, index) => (
-          <small key={model.model || index}>
-            {model.model || 'unknown'} - VRAM {formatMemory(model.size_vram)} / total {formatMemory(model.size)}
-          </small>
-        ))}
-        {config?.running.available && (
-          <small>
-            Chat {config.running.chat_model_loaded ? 'resident' : 'not resident'}; embedding {config.running.embedding_model_loaded ? 'resident' : 'not resident'}.
-          </small>
-        )}
-      </div>
-      <p className="muted">Runtime edits affect future SIMONE calls only and reset when the API restarts.</p>
+      ), document.body)}
     </section>
   );
 }
@@ -1538,6 +1573,15 @@ export function App() {
                   </div>
                 )}
               </div>
+              <OllamaSettingsPanel
+                config={ollamaConfig}
+                budget={llmBudget}
+                tokenUsage={tokenUsage}
+                patchTokenUsage={patchProgress?.token_usage}
+                busy={busy === 'ollama'}
+                onApply={(values) => void applyOllamaRuntimeConfig(values)}
+                onRefresh={() => void refreshOllamaConfig()}
+              />
               <VocabularyPanel onError={setMessage} />
             </>
           )}
@@ -1672,16 +1716,6 @@ export function App() {
               )}
               <TokenUsageSummary tokenUsage={tokenUsage} averageUnit="operation" heading="Extraction token usage" agentKeys={['initial_context']} budget={llmBudget} />
           </StepPanel>
-
-          <OllamaSettingsPanel
-            config={ollamaConfig}
-            budget={llmBudget}
-            tokenUsage={tokenUsage}
-            patchTokenUsage={patchProgress?.token_usage}
-            busy={busy === 'ollama'}
-            onApply={(values) => void applyOllamaRuntimeConfig(values)}
-            onRefresh={() => void refreshOllamaConfig()}
-          />
 
           <StepPanel
             number="03"

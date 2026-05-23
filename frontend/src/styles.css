@@ -117,8 +117,12 @@ h2 { margin: 0; font-size: clamp(1.6rem, 3vw, 2.6rem); letter-spacing: -0.04em; 
 
 .ollama-panel { display: grid; gap: 14px; padding: 20px; border: 1px solid var(--line); border-radius: 1.1rem; background: rgba(255, 255, 255, 0.72); }
 .ollama-panel-header { display: flex; justify-content: space-between; gap: 12px; align-items: start; }
-.ollama-panel-header span, .ollama-status-grid span, .ollama-runtime-form span, .ollama-loaded-models > span { display: block; color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 5px; }
+.ollama-panel-header span, .ollama-summary-grid span, .ollama-status-grid span, .ollama-runtime-form span, .ollama-loaded-models > span { display: block; color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 5px; }
 .ollama-panel-header strong { display: block; word-break: break-word; }
+.ollama-summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.ollama-summary-grid > div { min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 0.8rem; background: rgba(255, 255, 255, 0.48); }
+.ollama-summary-grid strong { display: block; font-size: 0.95rem; line-height: 1.35; word-break: break-word; }
+.ollama-summary-grid small { display: block; margin-top: 5px; color: var(--muted); line-height: 1.4; word-break: break-word; }
 .ollama-status-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .ollama-status-grid > div { min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 0.8rem; background: rgba(255, 255, 255, 0.48); }
 .ollama-status-grid strong { display: block; font-size: 0.95rem; line-height: 1.35; word-break: break-word; }
@@ -128,6 +132,18 @@ h2 { margin: 0; font-size: clamp(1.6rem, 3vw, 2.6rem); letter-spacing: -0.04em; 
 .ollama-runtime-form input, .ollama-runtime-form select { border-radius: 0.65rem; padding: 0.55rem 0.65rem; }
 .ollama-runtime-form button { white-space: nowrap; padding: 0.58rem 0.85rem; }
 .ollama-loaded-models { display: grid; gap: 2px; padding-top: 8px; border-top: 1px solid var(--line); }
+.rail .ollama-panel { padding: 16px; background: var(--panel); }
+.rail .ollama-panel-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+.rail .ollama-panel-header > div { min-width: 0; }
+.rail .ollama-panel-header button { width: fit-content; padding: 0.4rem 0.65rem; font-size: 0.78rem; }
+.rail .ollama-summary-grid, .rail .ollama-status-grid, .rail .ollama-runtime-form { grid-template-columns: 1fr; }
+.rail .ollama-runtime-form button { width: 100%; white-space: normal; }
+.ollama-dialog { width: min(920px, calc(100vw - 48px)); }
+.ollama-dialog-actions { display: flex; gap: 8px; align-items: center; }
+.ollama-dialog-body { display: grid; gap: 14px; }
+.ollama-dialog .ollama-status-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ollama-dialog .ollama-runtime-form { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; }
+.ollama-dialog .ollama-runtime-form button { width: fit-content; }
 
 /* JsonEditor */
 .json-editor { display: grid; grid-template-columns: minmax(180px, var(--json-editor-sidebar-width, 260px)) 8px minmax(0, 1fr); gap: 0; margin-top: 18px; border: 1px solid var(--line); border-radius: 1rem; overflow: hidden; background: var(--panel); }
@@ -385,6 +401,7 @@ button.small { padding: 0.4rem 0.7rem; font-size: 0.78rem; }
   .rail { position: static; }
   .context-grid { grid-template-columns: 1fr; }
   .ollama-status-grid, .ollama-runtime-form { grid-template-columns: 1fr; }
+  .ollama-dialog .ollama-status-grid, .ollama-dialog .ollama-runtime-form { grid-template-columns: 1fr; }
   .ollama-panel-header { flex-direction: column; }
   .vocab-detail-grid { grid-template-columns: 1fr; }
   .vocab-query-form { grid-template-columns: 1fr; }
