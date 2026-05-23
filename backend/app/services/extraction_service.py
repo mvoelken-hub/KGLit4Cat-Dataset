@@ -121,9 +121,11 @@ class ExtractionService:
                 "before /api/v1/extraction/initial-draft."
             ) from exc
 
+        token_usage_totals: dict[str, dict[str, int]] = {}
+
         def record_token_usage(agent_name: str, usage: Any, operation_count: int = 1) -> None:
-            self._record_workflow_token_usage(
-                data_package_id=data_package_id,
+            self._record_token_usage(
+                token_usage_totals,
                 agent_name=agent_name,
                 usage=usage,
                 operation_count=operation_count,
@@ -144,6 +146,10 @@ class ExtractionService:
         self.output_repository.save_initial_draft(
             workflow_id=data_package_id,
             initial_draft=initial_draft,
+        )
+        self._replace_workflow_token_usage_agents(
+            data_package_id=data_package_id,
+            token_usage=token_usage_totals,
         )
         self.output_repository.clear_patch_artifacts(workflow_id=data_package_id)
         if self.task_registry is not None:
@@ -1144,6 +1150,22 @@ class ExtractionService:
             usage=usage,
             operation_count=operation_count,
         )
+        self.output_repository.save_token_usage(
+            workflow_id=data_package_id,
+            token_usage=totals,
+        )
+
+    def _replace_workflow_token_usage_agents(
+        self,
+        *,
+        data_package_id: str,
+        token_usage: dict[str, dict[str, int]],
+    ) -> None:
+        if self.output_repository is None or not token_usage:
+            return
+        totals = self.output_repository.load_token_usage(data_package_id)
+        for agent_name, values in token_usage.items():
+            totals[agent_name] = dict(values)
         self.output_repository.save_token_usage(
             workflow_id=data_package_id,
             token_usage=totals,

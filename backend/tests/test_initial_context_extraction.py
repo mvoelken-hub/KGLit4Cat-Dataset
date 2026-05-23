@@ -613,6 +613,60 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIsNone(task_registry.get_task_info(task_name))
 
+    async def test_extract_initial_draft_replaces_prior_initial_draft_token_usage(self):
+        output_repository = FakeOutputRepository()
+        output_repository.initial_context = InitialContext.model_validate(
+            INITIAL_CONTEXT_OUTPUT
+        )
+        output_repository.token_usage = {
+            "initial_context": {
+                "input_tokens": 10,
+                "output_tokens": 5,
+                "total_tokens": 15,
+                "requests": 1,
+                "operation_count": 1,
+                "patch_count": 0,
+            },
+            "initial_draft": {
+                "input_tokens": 1000,
+                "output_tokens": 100,
+                "total_tokens": 1100,
+                "requests": 4,
+                "operation_count": 2,
+                "patch_count": 0,
+            },
+        }
+        service = ExtractionService(
+            FakeProfileRepository(),  # type: ignore[arg-type]
+            settings=None,  # type: ignore[arg-type]
+            datasource_service=FakeDataSourceService(make_data_package()),  # type: ignore[arg-type]
+            ollama_client=FakeOllamaClient(INITIAL_DRAFT_OUTPUT),  # type: ignore[arg-type]
+            output_repository=output_repository,
+        )
+
+        await service.extract_initial_draft(
+            data_package_id="package-id",
+            profile_identifier="test-profile",
+        )
+
+        self.assertEqual(
+            output_repository.token_usage["initial_context"]["total_tokens"],
+            15,
+        )
+        self.assertEqual(
+            output_repository.token_usage["initial_draft"]["operation_count"],
+            1,
+        )
+        self.assertNotEqual(
+            output_repository.token_usage["initial_draft"]["total_tokens"],
+            1100,
+        )
+        usage_summary = await service.get_token_usage("package-id")
+        self.assertEqual(
+            usage_summary["agents"]["initial_draft"]["operation_count"],
+            1,
+        )
+
     async def test_extract_initial_draft_requires_existing_initial_context(self):
         output_repository = FakeOutputRepository()
         service = ExtractionService(
