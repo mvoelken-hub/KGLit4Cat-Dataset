@@ -11,12 +11,11 @@ from app.domain.extraction.artifacts import InitialContext
 
 
 INITIAL_CONTEXT_INSTRUCTIONS = (
-    "You are a scientific data archivist. Analyze research artifact bundles "
-    "and extract structured context metadata. Be precise about instrument or "
-    "device names, analytical techniques, sample identifiers, compound names, "
-    "file roles, metadata provenance, keywords, and uncertainty. Use the "
-    "available tools to inspect the file tree and read the most informative "
-    "files before producing the final InitialContext."
+    "You are a scientific data archivist. Extract a compact InitialContext "
+    "from research artifact bundles. Use the output field descriptions as the "
+    "contract, ground values in file evidence, and prefer null or empty lists "
+    "when support is weak. Use the available tools to inspect the file tree "
+    "and read the most informative files before producing the final output."
 )
 
 
@@ -135,13 +134,13 @@ def _initial_context_prompt(
     max_chars_per_file: int,
 ) -> str:
     return (
-        "Analyze the research artifact archive and extract an InitialContext. "
+        "Analyze the research artifact archive and extract a compact "
+        "InitialContext. "
         "Start by listing all files, then read the most informative files "
         "such as README files, metadata tables, instrument exports, report PDFs, "
         "and file headers. "
         f"The data package name is '{data_package.file_name}' and it contains "
         f"{len(data_package.files)} files. Read up to {max_files_to_read} files "
-        f"and up to {max_chars_per_file} characters per file. Fill every output "
-        "field with concise evidence-grounded values. Use empty lists when no "
-        "entities, relationships, metadata sources, or keywords can be identified."
+        f"and up to {max_chars_per_file} characters per file. Follow the field "
+        "descriptions, keep values concise, and avoid unsupported inferences."
     )

@@ -73,10 +73,23 @@ PROFILE_JSON_SCHEMA = {
 
 
 INITIAL_CONTEXT_OUTPUT = {
-    "device_name": "Mass spectrometer",
-    "device_model": "MS-1000",
-    "entities_analyzed": ["sample-1"],
-    "analytical_technique": "mass spectrometry",
+    "dataset_title": "Sample-1 mass spectrometry dataset",
+    "dataset_description": "Dataset description for sample-1.",
+    "entities": [{"label": "sample-1", "role": "sample"}],
+    "agents": [
+        {
+            "name": "Mass spectrometer",
+            "role": "instrument",
+            "model": "MS-1000",
+        }
+    ],
+    "activities": [
+        {
+            "label": "Mass spectrometry acquisition",
+            "technique": "mass spectrometry",
+            "agent_names": ["Mass spectrometer"],
+        }
+    ],
     "file_relationships": [],
     "metadata_sources": [],
     "keywords": ["mass spectrometry", "sample-1"],

@@ -7,6 +7,9 @@ from app.domain.extraction.agents import (
     validate_json_output_against_schema,
 )
 from app.domain.extraction.artifacts import (
+    ContextActivity,
+    ContextAgent,
+    ContextEntity,
     FieldPatchResult,
     FileRelationship,
     InitialContext,
@@ -84,6 +87,9 @@ __all__ = [
     "URI_POLICY_INSTRUCTIONS",
     "CandidateQualityRating",
     "ChunkingRequiredError",
+    "ContextActivity",
+    "ContextAgent",
+    "ContextEntity",
     "FieldInfo",
     "FieldPatchResult",
     "InitialContextRequiredError",

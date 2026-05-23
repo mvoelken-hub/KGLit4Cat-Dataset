@@ -90,7 +90,7 @@ def build_initial_draft_from_context(
         properties=properties,
         root_schema=root_schema,
         field_name="description",
-        value=initial_context.summary,
+        value=initial_context.dataset_description or initial_context.summary,
     )
     _set_if_supported(
         draft,
@@ -106,7 +106,8 @@ def build_initial_draft_from_context(
         field_name="keywords",
         value=initial_context.keywords,
     )
-    if initial_context.entities_analyzed:
+    entities = list(initial_context.entities)
+    if entities:
         _set_if_supported(
             draft,
             properties=properties,
@@ -119,16 +120,13 @@ def build_initial_draft_from_context(
                     root_schema=root_schema,
                     dataset_id=dataset_id,
                 )
-                for entity in initial_context.entities_analyzed
+                for entity in entities
             ]
             if "is_about_entity" in properties
             else [],
         )
-    if (
-        initial_context.analytical_technique
-        or initial_context.device_name
-        or initial_context.device_model
-    ):
+    activities: list[Any] = list(initial_context.activities)
+    if activities:
         _set_if_supported(
             draft,
             properties=properties,
@@ -137,10 +135,12 @@ def build_initial_draft_from_context(
             value=[
                 _context_activity(
                     initial_context=initial_context,
+                    activity=activity,
                     field_schema=properties["was_generated_by"],
                     root_schema=root_schema,
                     dataset_id=dataset_id,
                 )
+                for activity in activities
             ]
             if "was_generated_by" in properties
             else [],
@@ -229,19 +229,21 @@ def _expand_value_for_schema(
 
 def _context_entity(
     *,
-    entity: str,
+    entity: Any,
     field_schema: dict[str, Any],
     root_schema: dict[str, Any],
     dataset_id: str,
 ) -> dict[str, Any]:
+    label = entity if isinstance(entity, str) else entity.label
+    identifier = None if isinstance(entity, str) else entity.identifier
     item_schema = _array_item_schema(field_schema, root_schema)
     result = _object_shell(
         item_schema,
         root_schema=root_schema,
-        fallback=entity,
+        fallback=label,
     )
     properties = _schema_properties(item_schema, root_schema)
-    entity_id = f"{dataset_id}/entity/{_slugify(entity)}"
+    entity_id = identifier or f"{dataset_id}/entity/{_slugify(label)}"
     _set_if_supported(
         result,
         properties=properties,
@@ -254,14 +256,14 @@ def _context_entity(
         properties=properties,
         root_schema=root_schema,
         field_name="title",
-        value=entity,
+        value=label,
     )
     _set_if_supported(
         result,
         properties=properties,
         root_schema=root_schema,
         field_name="name",
-        value=entity,
+        value=label,
     )
     return result
 
@@ -269,12 +271,13 @@ def _context_entity(
 def _context_activity(
     *,
     initial_context: InitialContext,
+    activity: Any,
     field_schema: dict[str, Any],
     root_schema: dict[str, Any],
     dataset_id: str,
 ) -> dict[str, Any]:
     item_schema = _array_item_schema(field_schema, root_schema)
-    title = _activity_title(initial_context)
+    title = _activity_title(initial_context, activity)
     result = _object_shell(
         item_schema,
         root_schema=root_schema,
@@ -300,39 +303,63 @@ def _context_activity(
         properties=properties,
         root_schema=root_schema,
         field_name="description",
-        value=_activity_description(initial_context),
+        value=_activity_description(initial_context, activity),
     )
-    agent = _context_agent(
+    agents = _context_activity_agents(
         initial_context,
+        activity=activity,
         properties=properties,
         root_schema=root_schema,
         dataset_id=dataset_id,
     )
-    if agent is not None:
+    if agents:
         for field_name in ("agent", "carried_out_by"):
             _set_if_supported(
                 result,
                 properties=properties,
                 root_schema=root_schema,
                 field_name=field_name,
-                value=[agent],
+                value=agents,
             )
     return result
 
 
-def _context_agent(
+def _context_activity_agents(
     initial_context: InitialContext,
     *,
+    activity: Any,
     properties: dict[str, Any],
     root_schema: dict[str, Any],
     dataset_id: str,
-) -> dict[str, Any] | None:
-    label = initial_context.device_name or initial_context.device_model
-    if not label:
-        return None
+) -> list[dict[str, Any]]:
     agent_field_schema = properties.get("agent") or properties.get("carried_out_by")
     if not isinstance(agent_field_schema, dict):
-        return None
+        return []
+
+    return [
+        _context_agent(
+            agent,
+            agent_field_schema=agent_field_schema,
+            root_schema=root_schema,
+            dataset_id=dataset_id,
+        )
+        for agent in initial_context.agents
+        if not (
+            getattr(activity, "agent_names", [])
+            and agent.name not in getattr(activity, "agent_names", [])
+        )
+    ]
+
+
+def _context_agent(
+    agent: Any,
+    *,
+    agent_field_schema: dict[str, Any],
+    root_schema: dict[str, Any],
+    dataset_id: str,
+) -> dict[str, Any]:
+    label = agent.name
+    model = agent.model
     item_schema = _array_item_schema(agent_field_schema, root_schema)
     result = _object_shell(item_schema, root_schema=root_schema, fallback=label)
     agent_props = _schema_properties(item_schema, root_schema)
@@ -357,13 +384,13 @@ def _context_agent(
         field_name="title",
         value=label,
     )
-    if initial_context.device_model and initial_context.device_model != label:
+    if model and model != label:
         _set_if_supported(
             result,
             properties=agent_props,
             root_schema=root_schema,
             field_name="description",
-            value=f"Device model: {initial_context.device_model}",
+            value=f"Model: {model}",
         )
     return result
 
@@ -484,26 +511,41 @@ def _dataset_id(file_name: str) -> str:
 
 
 def _draft_title(initial_context: InitialContext, data_package: DataPackage) -> str:
-    subject = ", ".join(initial_context.entities_analyzed[:2])
-    if initial_context.analytical_technique and subject:
-        return f"{_sentence_case(initial_context.analytical_technique)} dataset for {subject}"
-    if initial_context.analytical_technique:
-        return f"{_sentence_case(initial_context.analytical_technique)} dataset"
+    if initial_context.dataset_title:
+        return initial_context.dataset_title
+    entities = [entity.label for entity in initial_context.entities]
+    subject = ", ".join(entities[:2])
+    first_activity = initial_context.activities[0] if initial_context.activities else None
+    technique = _activity_technique(initial_context, first_activity)
+    if technique and subject:
+        return f"{_sentence_case(technique)} dataset for {subject}"
+    if technique:
+        return f"{_sentence_case(technique)} dataset"
     if subject:
         return f"Dataset for {subject}"
     return data_package.file_name
 
 
-def _activity_title(initial_context: InitialContext) -> str:
-    if initial_context.analytical_technique:
-        return f"{_sentence_case(initial_context.analytical_technique)} activity"
+def _activity_title(initial_context: InitialContext, activity: Any) -> str:
+    if activity is not None and activity.label:
+        return activity.label
+    technique = _activity_technique(initial_context, activity)
+    if technique:
+        return f"{_sentence_case(technique)} activity"
     return "Initial data-generating activity"
 
 
-def _activity_description(initial_context: InitialContext) -> str:
-    if initial_context.analytical_technique:
-        return f"The data was generated by: {initial_context.analytical_technique}"
+def _activity_description(initial_context: InitialContext, activity: Any) -> str:
+    technique = _activity_technique(initial_context, activity)
+    if technique:
+        return f"The data was generated by: {technique}"
     return "The data was generated by an activity inferred from the initial context."
+
+
+def _activity_technique(initial_context: InitialContext, activity: Any) -> str | None:
+    if activity is not None and activity.technique:
+        return activity.technique
+    return None
 
 
 def _fallback_text(field_name: str, data_package: DataPackage) -> str:

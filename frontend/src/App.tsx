@@ -70,6 +70,33 @@ function Field({ label, value }: { label: string; value?: string | number | null
   );
 }
 
+function contextTechnique(context: InitialContext): string | null | undefined {
+  return context.activities?.find((activity) => activity.technique)?.technique;
+}
+
+function contextAgentLabel(context: InitialContext): string | null | undefined {
+  if (context.agents?.length) {
+    return context.agents
+      .map((agent) => agent.model ? `${agent.name} (${agent.model})` : agent.name)
+      .join(', ');
+  }
+  return null;
+}
+
+function contextEntityLabel(context: InitialContext): string | null {
+  const labels = context.entities?.length
+    ? context.entities.map((entity) => entity.identifier || entity.label)
+    : [];
+  return labels.length ? labels.join(', ') : null;
+}
+
+function contextActivityLabel(context: InitialContext): string | null {
+  const labels = context.activities
+    ?.map((activity) => activity.label || activity.technique)
+    .filter(Boolean) as string[] | undefined;
+  return labels?.length ? labels.join(', ') : null;
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
@@ -1167,10 +1194,13 @@ export function App() {
               </div>
               {context && (
                 <div className="context-grid">
-                  <Field label="Technique" value={context.analytical_technique} />
-                  <Field label="Device" value={context.device_name} />
-                  <Field label="Model" value={context.device_model} />
-                  <div className="summary-box">{context.summary}</div>
+                  <Field label="Dataset" value={context.dataset_title} />
+                  <Field label="Technique" value={contextTechnique(context)} />
+                  <Field label="Agents" value={contextAgentLabel(context)} />
+                  <Field label="Entities" value={contextEntityLabel(context)} />
+                  <Field label="Activities" value={contextActivityLabel(context)} />
+                  <Field label="Model" value={context.agents?.find((agent) => agent.model)?.model} />
+                  <div className="summary-box">{context.dataset_description || context.summary}</div>
                   <div className="chips">{context.keywords.map((keyword) => <span key={keyword}>{keyword}</span>)}</div>
                 </div>
               )}

@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -47,18 +47,136 @@ class MetadataSource(BaseModel):
     )
 
 
-class InitialContext(BaseModel):
-    device_name: str | None = None
-    device_model: str | None = None
-    entities_analyzed: list[str] = Field(
-        default_factory=list,
-        description="Sample IDs, compound names, or specimen identifiers",
+class ContextEntity(BaseModel):
+    label: str = Field(
+        description=(
+            "Human-readable sample, compound, specimen, or other evaluated "
+            "entity label suitable for Dataset.is_about_entity."
+        )
     )
-    analytical_technique: str | None = None
+    role: Literal["sample", "compound", "specimen", "unknown"] = Field(
+        default="unknown",
+        description="Best compact role for the entity; use unknown when the source does not make the role clear.",
+    )
+    identifier: str | None = Field(
+        default=None,
+        description="Source-provided identifier for the entity when available; do not invent global URIs.",
+    )
+    evidence: str | None = Field(
+        default=None,
+        description="Short source text or filename evidence supporting this entity.",
+    )
+    confidence: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Confidence in this entity extraction from 0 to 1.",
+    )
+
+
+class ContextAgent(BaseModel):
+    name: str = Field(
+        description=(
+            "Name of a person, organization, instrument, or software that "
+            "carried out or enabled data generation."
+        )
+    )
+    role: Literal["instrument", "software", "organization", "person", "unknown"] = Field(
+        default="unknown",
+        description=(
+            "Compact agent role; use instrument for devices and software for "
+            "acquisition or processing software."
+        ),
+    )
+    model: str | None = Field(
+        default=None,
+        description="Device model, software version, or similar model/version label when stated by the source.",
+    )
+    evidence: str | None = Field(
+        default=None,
+        description="Short source text or filename evidence supporting this agent.",
+    )
+    confidence: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Confidence in this agent extraction from 0 to 1.",
+    )
+
+
+class ContextActivity(BaseModel):
+    label: str | None = Field(
+        default=None,
+        description="Short label for the high-level data-generating activity, usually one root activity.",
+    )
+    technique: str | None = Field(
+        default=None,
+        description=(
+            "Analytical or data-generating technique used by this activity, "
+            "suitable for Dataset.was_generated_by."
+        ),
+    )
+    agent_names: list[str] = Field(
+        default_factory=list,
+        description="Names of ContextAgent entries associated with this activity.",
+    )
+    evidence: str | None = Field(
+        default=None,
+        description="Short source text or filename evidence supporting this activity.",
+    )
+    confidence: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Confidence in this activity extraction from 0 to 1.",
+    )
+
+
+class InitialContext(BaseModel):
+    dataset_title: str | None = Field(
+        default=None,
+        description=(
+            "Human-readable dataset title intended for Dataset.title; infer "
+            "only from explicit metadata, filenames, or strong source context."
+        ),
+    )
+    dataset_description: str | None = Field(
+        default=None,
+        description=(
+            "Dataset.description-ready description of what the dataset contains; "
+            "do not include extraction-process notes."
+        ),
+    )
+    entities: list[ContextEntity] = Field(
+        default_factory=list,
+        description="Compact evaluated entities the dataset is about, such as samples, compounds, or specimens.",
+    )
+    agents: list[ContextAgent] = Field(
+        default_factory=list,
+        description=(
+            "Compact agents involved in data generation, including instruments, "
+            "software, people, or organizations."
+        ),
+    )
+    activities: list[ContextActivity] = Field(
+        default_factory=list,
+        description=(
+            "Compact high-level data-generating activities; prefer one root "
+            "activity when the source supports it."
+        ),
+    )
     file_relationships: list[FileRelationship] = Field(default_factory=list)
     metadata_sources: list[MetadataSource] = Field(default_factory=list)
-    keywords: list[str] = Field(default_factory=list)
-    summary: str
+    keywords: list[str] = Field(
+        default_factory=list,
+        description="Concise dataset keywords or tags supported by source evidence.",
+    )
+    summary: str = Field(
+        description=(
+            "Short extraction summary for UI/debugging; not necessarily copied "
+            "to Dataset.description when dataset_description is available."
+        )
+    )
 
 
 class PatchCandidate(BaseModel):

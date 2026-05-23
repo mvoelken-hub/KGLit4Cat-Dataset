@@ -44,17 +44,42 @@ async def _completed_task() -> None:
 
 
 INITIAL_CONTEXT_OUTPUT = {
-    "device_name": "Gas chromatograph",
-    "device_model": "GC-42",
-    "entities_analyzed": ["sample-a"],
-    "analytical_technique": "gas chromatography",
+    "dataset_title": "Gas chromatography dataset for sample-a",
+    "dataset_description": "Dataset description for sample-a.",
+    "entities": [
+        {
+            "label": "sample-a",
+            "role": "sample",
+            "identifier": "sample-a",
+            "evidence": "sample-a",
+            "confidence": 0.9,
+        }
+    ],
+    "agents": [
+        {
+            "name": "Gas chromatograph",
+            "role": "instrument",
+            "model": "GC-42",
+            "evidence": "Instrument: GC-42",
+            "confidence": 0.9,
+        }
+    ],
+    "activities": [
+        {
+            "label": "Gas chromatography acquisition",
+            "technique": "gas chromatography",
+            "agent_names": ["Gas chromatograph"],
+            "evidence": "Technique: gas chromatography",
+            "confidence": 0.9,
+        }
+    ],
     "file_relationships": [],
     "metadata_sources": [
         {
             "file_path": "metadata.txt",
             "source_type": "metadata text",
             "description": "Contains instrument and sample metadata.",
-            "extracted_fields": ["device_name", "analytical_technique"],
+            "extracted_fields": ["agents", "activities"],
             "evidence": "Instrument: GC-42",
             "confidence": 0.9,
         }
@@ -550,11 +575,11 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(datasource_service.requested_id, "package-id")
-        self.assertEqual(result.device_model, "GC-42")
-        self.assertEqual(result.analytical_technique, "gas chromatography")
+        self.assertEqual(result.agents[0].model, "GC-42")
+        self.assertEqual(result.activities[0].technique, "gas chromatography")
         self.assertEqual(output_repository.saved["workflow_id"], "package-id")  # type: ignore[index]
         self.assertEqual(
-            output_repository.saved["initial_context"].device_model,  # type: ignore[index]
+            output_repository.saved["initial_context"].agents[0].model,  # type: ignore[index]
             "GC-42",
         )
         self.assertIn("initial_context", output_repository.token_usage)
@@ -599,7 +624,7 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
             output_repository.initial_draft,
             {
                 "title": "Gas chromatography dataset for sample-a",
-                "description": "The package contains gas chromatography metadata for sample-a.",
+                "description": "Dataset description for sample-a.",
                 "keywords": ["gas chromatography", "sample-a"],
             },
         )
@@ -1882,7 +1907,7 @@ class InitialContextExtractionApiTests(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["device_model"], "GC-42")
+        self.assertEqual(response.json()["agents"][0]["model"], "GC-42")
         self.assertEqual(service.request["data_package_id"], "package-id")  # type: ignore[index]
 
     def test_initial_context_endpoint_maps_missing_datasource_to_404(self):
