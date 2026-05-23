@@ -14,6 +14,7 @@ PATCHES_DIR = "patches"
 UNMAPPED_FACTS_DIR = "unmapped_facts"
 PROTECTED_FIELDS_FILE = "protected_fields.json"
 PATCH_REVIEW_STATE_FILE = "patch_review_state.json"
+TOKEN_USAGE_FILE = "token_usage.json"
 
 
 class FileSystemExtractionOutputRepository:
@@ -223,6 +224,41 @@ class FileSystemExtractionOutputRepository:
             "resolved_at": dict(payload.get("resolved_at", {})),
         }
 
+    def save_token_usage(
+        self,
+        *,
+        workflow_id: str,
+        token_usage: dict[str, dict[str, int]],
+    ) -> None:
+        self._write_json_file(
+            self._workflow_dir(workflow_id) / TOKEN_USAGE_FILE,
+            token_usage,
+        )
+
+    def load_token_usage(self, workflow_id: str) -> dict[str, dict[str, int]]:
+        path = self._workflow_dir(workflow_id) / TOKEN_USAGE_FILE
+        if not path.exists():
+            return {}
+        payload = self._read_json_file(path)
+        if not isinstance(payload, dict):
+            return {}
+        result: dict[str, dict[str, int]] = {}
+        for agent_name, values in payload.items():
+            if not isinstance(agent_name, str) or not isinstance(values, dict):
+                continue
+            result[agent_name] = {
+                key: self._safe_int(values.get(key))
+                for key in (
+                    "input_tokens",
+                    "output_tokens",
+                    "total_tokens",
+                    "requests",
+                    "operation_count",
+                    "patch_count",
+                )
+            }
+        return result
+
     def load_patch_files(self, workflow_id: str) -> list[dict[str, Any]]:
         patch_dir = self._workflow_dir(workflow_id) / PATCHES_DIR
         if not patch_dir.exists():
@@ -346,3 +382,10 @@ class FileSystemExtractionOutputRepository:
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding="utf-8") as file:
             json.dump(content, file, ensure_ascii=False, indent=2)
+
+    @staticmethod
+    def _safe_int(value: Any) -> int:
+        try:
+            return int(value or 0)
+        except (TypeError, ValueError):
+            return 0

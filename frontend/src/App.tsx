@@ -10,6 +10,7 @@ import {
   getPatchProgress,
   getPatchReviewState,
   getProtectedFields,
+  getTokenUsage,
   patchDraft,
   saveDraft,
   savePatchReviewState,
@@ -20,7 +21,7 @@ import { JsonEditor, type JsonObject, type JsonPatchMarker, type JsonSchemaDocum
 import { ChunkingDialog } from './components/ChunkingDialog';
 import { VocabularyPanel } from './components/VocabularyPanel';
 import type { ChunkRequestResponse, ChunkResponse, DataPackageResponse, FileEntryResponse, InitialContext, ProfileManifestResponse, TextQualityConfig } from './api/types';
-import type { PatchArtifacts, PatchProgress, PatchReviewState, PatchTaskStatus } from './api/extraction';
+import type { PatchArtifacts, PatchProgress, PatchReviewState, PatchTaskStatus, PatchTokenUsage, PatchTokenUsageEntry } from './api/extraction';
 
 type BusyKey = 'upload' | 'chunk' | 'context' | 'draft' | 'patch' | 'load' | 'profile' | 'profile-delete' | 'dataset-delete';
 type ReviewItem = JsonPatchMarker & { kind: 'matched' | 'unmapped'; targetPath?: string; fact?: string; reason?: string; outcome?: string; resolutionNote?: string };
@@ -218,9 +219,13 @@ function ResolutionLogList({ entries }: { entries: string[] }) {
 }
 
 const tokenUsageLabels: Record<string, string> = {
+  initial_context: 'Initial context',
+  initial_draft: 'Initial draft',
   patch_discovery: 'Patch discovery',
   schema_patch_writer: 'Schema patch writer',
   schema_repair: 'Schema repair',
+  patch_extraction: 'Patch extraction',
+  patch_quality: 'Patch quality review',
   auto_resolve: 'Auto-resolve',
 };
 
@@ -229,15 +234,41 @@ function formatTokenCount(value?: number): string {
   return Math.round(numberValue).toLocaleString();
 }
 
-function TokenUsageSummary({ tokenUsage }: { tokenUsage?: PatchProgress['token_usage'] }) {
+function usageAverage(usage: PatchTokenUsageEntry, unit: 'patch' | 'operation', kind: 'input' | 'output' | 'total'): number {
+  const suffix = unit === 'patch' ? 'patch' : 'operation';
+  const key = `average_${kind}_tokens_per_${suffix}` as keyof PatchTokenUsageEntry;
+  const preferred = usage[key];
+  if (typeof preferred === 'number') return preferred;
+  const fallbackKey = `average_${kind}_tokens_per_${unit === 'patch' ? 'operation' : 'patch'}` as keyof PatchTokenUsageEntry;
+  const fallback = usage[fallbackKey];
+  if (typeof fallback === 'number') return fallback;
+  const totalKey = `${kind}_tokens` as keyof PatchTokenUsageEntry;
+  const total = usage[totalKey];
+  const count = unit === 'patch' ? usage.patch_count : usage.operation_count;
+  return typeof total === 'number' ? total / Math.max(1, Number(count || 1)) : 0;
+}
+
+function TokenUsageSummary({
+  tokenUsage,
+  averageUnit = 'patch',
+  heading = 'Token usage',
+  agentKeys,
+}: {
+  tokenUsage?: PatchTokenUsage | null;
+  averageUnit?: 'patch' | 'operation';
+  heading?: string;
+  agentKeys?: string[];
+}) {
+  const allowedAgents = agentKeys ? new Set(agentKeys) : null;
   const agentEntries = Object.entries(tokenUsage?.agents ?? {})
+    .filter(([key]) => !allowedAgents || allowedAgents.has(key))
     .filter(([, usage]) => usage.total_tokens > 0)
     .sort(([left], [right]) => {
-      const order = ['patch_discovery', 'schema_patch_writer', 'schema_repair', 'auto_resolve'];
+      const order = ['initial_context', 'initial_draft', 'patch_discovery', 'schema_patch_writer', 'schema_repair', 'patch_extraction', 'patch_quality', 'auto_resolve'];
       return (order.indexOf(left) === -1 ? order.length : order.indexOf(left))
         - (order.indexOf(right) === -1 ? order.length : order.indexOf(right));
     });
-  const combined = tokenUsage?.combined && tokenUsage.combined.total_tokens > 0
+  const combined = !allowedAgents && tokenUsage?.combined && tokenUsage.combined.total_tokens > 0
     ? tokenUsage.combined
     : null;
 
@@ -254,14 +285,14 @@ function TokenUsageSummary({ tokenUsage }: { tokenUsage?: PatchProgress['token_u
 
   return (
     <div className="token-usage-summary">
-      <span>Token usage</span>
+      <span>{heading}</span>
       <div>
         {rows.map((row) => (
           <div className={`token-usage-row ${row.key === 'combined' ? 'combined' : ''}`} key={row.key}>
             <strong>{row.label}</strong>
-            <span>{formatTokenCount(row.usage.average_total_tokens_per_patch)} avg total / patch</span>
+            <span>{formatTokenCount(usageAverage(row.usage, averageUnit, 'total'))} avg total / {averageUnit === 'patch' ? 'patch' : 'agent call'}</span>
             <small>
-              {formatTokenCount(row.usage.average_input_tokens_per_patch)} in / {formatTokenCount(row.usage.average_output_tokens_per_patch)} out avg
+              {formatTokenCount(usageAverage(row.usage, averageUnit, 'input'))} in / {formatTokenCount(usageAverage(row.usage, averageUnit, 'output'))} out avg
               {' - '}
               {formatTokenCount(row.usage.requests)} request{row.usage.requests === 1 ? '' : 's'}
             </small>
@@ -362,6 +393,7 @@ export function App() {
   const [patchStatus, setPatchStatus] = useState<PatchTaskStatus | null>(null);
   const [patchProgress, setPatchProgress] = useState<PatchProgress | null>(null);
   const [patchArtifacts, setPatchArtifacts] = useState<PatchArtifacts | null>(null);
+  const [tokenUsage, setTokenUsage] = useState<PatchTokenUsage | null>(null);
   const [activeProfileSchema, setActiveProfileSchema] = useState<JsonSchemaDocument | null>(null);
   const [patchReviewState, setPatchReviewState] = useState<PatchReviewState>(emptyReviewState);
   const [busy, setBusy] = useState<BusyKey | null>('load');
@@ -496,6 +528,7 @@ export function App() {
     setPatchStatus(null);
     setPatchProgress(null);
     setPatchArtifacts(null);
+    setTokenUsage(null);
     setPatchReviewState(emptyReviewState);
     setChunkingDialogOpen(false);
     setBusy(null);
@@ -725,6 +758,7 @@ export function App() {
     try {
       const result = await extractInitialContext({ data_package_id: selectedPackageId });
       setContext(result);
+      setTokenUsage(await getTokenUsage(selectedPackageId));
       setMessage('Initial context extracted.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Context extraction failed.');
@@ -755,6 +789,7 @@ export function App() {
       setPatchProgress(null);
       setPatchReviewState(emptyReviewState);
       setProtectedFields([]);
+      setTokenUsage(await getTokenUsage(selectedPackageId));
       setMessage(isReplacingDraft ? 'Initial profile draft re-created. Previous draft progress was removed.' : 'Initial profile draft created.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Draft creation failed.');
@@ -785,6 +820,7 @@ export function App() {
       const result = await patchDraft({ data_package_id: selectedPackageId, profile_identifier: selectedProfile, num_chunks_per_turn: numChunksPerTurn, auto_resolve: autoResolve });
       setDraft(result.draft);
       setPatchStatus(result.status);
+      setTokenUsage(await getTokenUsage(selectedPackageId));
       setMessage(
         result.status === 'completed'
           ? 'Draft patching completed. Use Show/refresh artifacts to load the latest artifacts and review items.'
@@ -809,6 +845,7 @@ export function App() {
       setPatchProgress(progress || null);
       setPatchArtifacts(artifacts);
       setPatchReviewState(reviewState);
+      setTokenUsage(await getTokenUsage(selectedPackageId));
       setMessage(hasPatchArtifacts(artifacts) ? 'Loaded existing patch artifacts.' : 'No existing patch artifacts found.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Failed to load patch artifacts.');
@@ -902,7 +939,7 @@ export function App() {
     setBusy('load');
     void (async () => {
       try {
-        const [ctx, draftResult, fields, { status, progress }, artifacts, reviewState, chunkStatus] = await Promise.all([
+        const [ctx, draftResult, fields, { status, progress }, artifacts, reviewState, chunkStatus, usage] = await Promise.all([
           getExistingInitialContext(packageId),
           getExistingInitialDraft(packageId),
           getProtectedFields(packageId),
@@ -910,6 +947,7 @@ export function App() {
           getPatchArtifacts(packageId),
           getPatchReviewState(packageId),
           getChunkStatus(packageId),
+          getTokenUsage(packageId),
         ]);
         const chunks = chunkStatus.status !== 'unknown' || chunkStatus.has_chunks
           ? await getDataPackageChunks(packageId)
@@ -920,6 +958,7 @@ export function App() {
         setProtectedFields(fields);
         setPatchStatus(status);
         setPatchProgress(progress || null);
+        setTokenUsage(usage);
         if (status === 'completed' || status === 'crashed' || status === 'cancelled' || hasPatchArtifacts(artifacts)) setPatchArtifacts(artifacts);
         setPatchReviewState(reviewState);
         setHasChunks(chunkStatus.has_chunks);
@@ -1136,6 +1175,7 @@ export function App() {
                   <div className="chips">{context.keywords.map((keyword) => <span key={keyword}>{keyword}</span>)}</div>
                 </div>
               )}
+              <TokenUsageSummary tokenUsage={tokenUsage} averageUnit="operation" heading="Extraction token usage" agentKeys={['initial_context']} />
             </div>
           </article>
 
@@ -1194,7 +1234,7 @@ export function App() {
                     {progressTotalBatches > 0 && <span>Patching batch {progressBatchNo} of {progressTotalBatches}</span>}
                   </div>
                   <div className="patch-progress-track" aria-hidden="true"><div style={{ width: `${progressPercent}%` }} /></div>
-                  <TokenUsageSummary tokenUsage={patchProgress?.token_usage} />
+                  <TokenUsageSummary tokenUsage={patchProgress?.token_usage} averageUnit="patch" />
                   <ResolutionLogList entries={patchProgress?.resolution_log ?? []} />
                 </div>
               )}

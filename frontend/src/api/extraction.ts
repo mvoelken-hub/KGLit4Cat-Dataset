@@ -8,10 +8,14 @@ export type PatchTokenUsageEntry = {
   output_tokens: number;
   total_tokens: number;
   requests: number;
+  operation_count?: number;
   patch_count: number;
-  average_input_tokens_per_patch: number;
-  average_output_tokens_per_patch: number;
-  average_total_tokens_per_patch: number;
+  average_input_tokens_per_operation?: number;
+  average_output_tokens_per_operation?: number;
+  average_total_tokens_per_operation?: number;
+  average_input_tokens_per_patch?: number;
+  average_output_tokens_per_patch?: number;
+  average_total_tokens_per_patch?: number;
 };
 
 export type PatchTokenUsage = {
@@ -82,6 +86,7 @@ export type PatchReviewResolutionResponse = {
   validation_errors: string[];
   resolution_decisions: PatchReviewDecision[];
   resolution_log: string[];
+  token_usage?: PatchTokenUsage | null;
 };
 
 export async function getExistingInitialContext(data_package_id: string): Promise<InitialContext | null> {
@@ -157,6 +162,11 @@ export async function setProtectedFields(data_package_id: string, fields: string
 
 export async function getPatchProgress(data_package_id: string): Promise<{ status: PatchTaskStatus; progress?: PatchProgress | null }> {
   const response = await fetch(apiBaseUrl + '/extraction/patch-draft/' + encodeURIComponent(data_package_id) + '/progress');
+  return readJson(await response);
+}
+
+export async function getTokenUsage(data_package_id: string): Promise<PatchTokenUsage> {
+  const response = await fetch(apiBaseUrl + '/extraction/' + encodeURIComponent(data_package_id) + '/token-usage');
   return readJson(await response);
 }
 

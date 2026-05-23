@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 from pydantic_ai import Agent, RunContext
 
@@ -26,6 +26,9 @@ class InitialContextDeps:
     max_files_to_read: int = 12
     max_chars_per_file: int = 3000
     files_read: set[str] = field(default_factory=set)
+
+
+TokenUsageCallback = Callable[[str, Any, int], None]
 
 
 def create_initial_context_agent(
@@ -80,6 +83,7 @@ async def extract_initial_context_from_data_package(
     model: Any,
     max_files_to_read: int = 12,
     max_chars_per_file: int = 3000,
+    on_token_usage: TokenUsageCallback | None = None,
 ) -> InitialContext:
     agent = create_initial_context_agent(model=model)
     deps = InitialContextDeps(
@@ -91,6 +95,8 @@ async def extract_initial_context_from_data_package(
         _initial_context_prompt(data_package, max_files_to_read, max_chars_per_file),
         deps=deps,
     )
+    if on_token_usage is not None:
+        on_token_usage("initial_context", result.usage, 1)
     return result.output
 
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, Callable, cast
 
 from pydantic_ai import Agent, RunContext
 
@@ -51,6 +51,9 @@ class InitialDraftDeps:
     data_package: DataPackage
     profile_manifest: ProfileManifest
     profile_json_schema: dict[str, Any]
+
+
+TokenUsageCallback = Callable[[str, Any, int], None]
 
 
 class InitialContextRequiredError(Exception):
@@ -122,6 +125,7 @@ async def initialize_draft_from_initial_context(
     profile_manifest: ProfileManifest,
     profile_json_schema: dict[str, Any],
     model: Any,
+    on_token_usage: TokenUsageCallback | None = None,
 ) -> dict[str, Any]:
     agent = create_initial_draft_agent(
         model=model,
@@ -141,6 +145,8 @@ async def initialize_draft_from_initial_context(
         ),
         deps=deps,
     )
+    if on_token_usage is not None:
+        on_token_usage("initial_draft", result.usage, 1)
     expanded = expand_schema_placeholders(
         draft=result.output,
         profile_json_schema=profile_json_schema,

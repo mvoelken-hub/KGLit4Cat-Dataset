@@ -70,11 +70,21 @@ class ExtractionService:
             )
 
         data_package = self.datasource_service.get_data_package(data_package_id)
+
+        def record_token_usage(agent_name: str, usage: Any, operation_count: int = 1) -> None:
+            self._record_workflow_token_usage(
+                data_package_id=data_package_id,
+                agent_name=agent_name,
+                usage=usage,
+                operation_count=operation_count,
+            )
+
         initial_context = await extract_initial_context_from_data_package(
             data_package=data_package,
             model=self.ollama_client.agent_model,
             max_files_to_read=max_files_to_read,
             max_chars_per_file=max_chars_per_file,
+            on_token_usage=record_token_usage,
         )
         if self.output_repository is not None:
             self.output_repository.save_initial_context(
@@ -111,12 +121,21 @@ class ExtractionService:
                 "before /api/v1/extraction/initial-draft."
             ) from exc
 
+        def record_token_usage(agent_name: str, usage: Any, operation_count: int = 1) -> None:
+            self._record_workflow_token_usage(
+                data_package_id=data_package_id,
+                agent_name=agent_name,
+                usage=usage,
+                operation_count=operation_count,
+            )
+
         initial_draft = await initialize_draft_from_initial_context(
             initial_context=initial_context,
             data_package=data_package,
             profile_manifest=profile_manifest,
             profile_json_schema=profile_json_schema,
             model=self.ollama_client.agent_model,
+            on_token_usage=record_token_usage,
         )
         initial_draft = normalize_review_draft(
             initial_draft,
@@ -282,6 +301,12 @@ class ExtractionService:
                 agent_name=agent_name,
                 usage=usage,
                 patch_count=patch_count,
+            )
+            self._record_workflow_token_usage(
+                data_package_id=data_package_id,
+                agent_name=agent_name,
+                usage=usage,
+                operation_count=1,
             )
             self._update_patch_token_usage_progress(
                 data_package_id=data_package_id,
@@ -1009,7 +1034,23 @@ class ExtractionService:
 
         existing_state = self.output_repository.load_patch_review_state(data_package_id)
         parsed_items = [PatchReviewItem.model_validate(item) for item in review_items]
-        return await self._resolve_and_persist_review_items(
+        token_usage_totals: dict[str, dict[str, int]] = {}
+
+        def record_token_usage(agent_name: str, usage: Any, operation_count: int = 1) -> None:
+            self._record_token_usage(
+                token_usage_totals,
+                agent_name=agent_name,
+                usage=usage,
+                operation_count=operation_count,
+            )
+            self._record_workflow_token_usage(
+                data_package_id=data_package_id,
+                agent_name=agent_name,
+                usage=usage,
+                operation_count=1,
+            )
+
+        result = await self._resolve_and_persist_review_items(
             data_package_id=data_package_id,
             current_draft=current_draft,
             parsed_items=parsed_items,
@@ -1017,16 +1058,29 @@ class ExtractionService:
             profile_json_schema=profile_json_schema,
             existing_review_state=existing_state,
             resolution_log=[],
+            on_token_usage=record_token_usage,
+        )
+        token_usage = self._token_usage_summary(token_usage_totals)
+        if token_usage.get("agents"):
+            result["token_usage"] = token_usage
+        return result
+
+    async def get_token_usage(self, data_package_id: str) -> dict[str, Any]:
+        if self.output_repository is None:
+            return {"agents": {}}
+        return self._token_usage_summary(
+            self.output_repository.load_token_usage(data_package_id)
         )
 
     @classmethod
-    def _record_patch_token_usage(
+    def _record_token_usage(
         cls,
         totals: dict[str, dict[str, int]],
         *,
         agent_name: str,
         usage: Any,
-        patch_count: int = 1,
+        operation_count: int = 1,
+        patch_count: int | None = None,
     ) -> None:
         input_tokens = cls._usage_int(usage, "input_tokens")
         output_tokens = cls._usage_int(usage, "output_tokens")
@@ -1044,6 +1098,7 @@ class ExtractionService:
                 "output_tokens": 0,
                 "total_tokens": 0,
                 "requests": 0,
+                "operation_count": 0,
                 "patch_count": 0,
             },
         )
@@ -1051,7 +1106,48 @@ class ExtractionService:
         entry["output_tokens"] += output_tokens
         entry["total_tokens"] += total_tokens
         entry["requests"] += requests
-        entry["patch_count"] += max(1, patch_count)
+        entry["operation_count"] += max(1, operation_count)
+        if patch_count is not None:
+            entry["patch_count"] += max(1, patch_count)
+
+    @classmethod
+    def _record_patch_token_usage(
+        cls,
+        totals: dict[str, dict[str, int]],
+        *,
+        agent_name: str,
+        usage: Any,
+        patch_count: int = 1,
+    ) -> None:
+        cls._record_token_usage(
+            totals,
+            agent_name=agent_name,
+            usage=usage,
+            operation_count=1,
+            patch_count=patch_count,
+        )
+
+    def _record_workflow_token_usage(
+        self,
+        *,
+        data_package_id: str,
+        agent_name: str,
+        usage: Any,
+        operation_count: int = 1,
+    ) -> None:
+        if self.output_repository is None:
+            return
+        totals = self.output_repository.load_token_usage(data_package_id)
+        self._record_token_usage(
+            totals,
+            agent_name=agent_name,
+            usage=usage,
+            operation_count=operation_count,
+        )
+        self.output_repository.save_token_usage(
+            workflow_id=data_package_id,
+            token_usage=totals,
+        )
 
     @staticmethod
     def _usage_int(usage: Any, field_name: str) -> int:
@@ -1060,6 +1156,34 @@ class ExtractionService:
             return int(value or 0)
         except (TypeError, ValueError):
             return 0
+
+    @classmethod
+    def _token_usage_summary(
+        cls,
+        totals: dict[str, dict[str, int]],
+    ) -> dict[str, Any]:
+        agents = {
+            agent_name: cls._token_usage_entry_summary(values)
+            for agent_name, values in totals.items()
+            if any(
+                values.get(key, 0)
+                for key in ("input_tokens", "output_tokens", "total_tokens", "requests")
+            )
+        }
+        if not agents:
+            return {"agents": {}}
+
+        combined_values = {
+            "input_tokens": sum(item["input_tokens"] for item in agents.values()),
+            "output_tokens": sum(item["output_tokens"] for item in agents.values()),
+            "total_tokens": sum(item["total_tokens"] for item in agents.values()),
+            "requests": sum(item["requests"] for item in agents.values()),
+            "operation_count": sum(item["operation_count"] for item in agents.values()),
+        }
+        return {
+            "agents": agents,
+            "combined": cls._token_usage_entry_summary(combined_values),
+        }
 
     @classmethod
     def _patch_token_usage_summary(
@@ -1089,21 +1213,48 @@ class ExtractionService:
             "combined": cls._patch_token_usage_entry_summary(combined_values),
         }
 
+    @classmethod
+    def _token_usage_entry_summary(
+        cls,
+        values: dict[str, int],
+    ) -> dict[str, int | float]:
+        return cls._token_usage_entry_summary_for_count(
+            values,
+            count_key="operation_count",
+            average_suffix="operation",
+        )
+
     @staticmethod
     def _patch_token_usage_entry_summary(values: dict[str, int]) -> dict[str, int | float]:
+        return ExtractionService._token_usage_entry_summary_for_count(
+            values,
+            count_key="patch_count",
+            average_suffix="patch",
+        )
+
+    @staticmethod
+    def _token_usage_entry_summary_for_count(
+        values: dict[str, int],
+        *,
+        count_key: str,
+        average_suffix: str,
+    ) -> dict[str, int | float]:
+        operation_count = max(1, int(values.get("operation_count", 0)))
         patch_count = max(1, int(values.get("patch_count", 0)))
         input_tokens = int(values.get("input_tokens", 0))
         output_tokens = int(values.get("output_tokens", 0))
         total_tokens = int(values.get("total_tokens", 0))
+        denominator = max(1, int(values.get(count_key, 0)))
         return {
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
             "total_tokens": total_tokens,
             "requests": int(values.get("requests", 0)),
+            "operation_count": operation_count,
             "patch_count": patch_count,
-            "average_input_tokens_per_patch": round(input_tokens / patch_count, 2),
-            "average_output_tokens_per_patch": round(output_tokens / patch_count, 2),
-            "average_total_tokens_per_patch": round(total_tokens / patch_count, 2),
+            f"average_input_tokens_per_{average_suffix}": round(input_tokens / denominator, 2),
+            f"average_output_tokens_per_{average_suffix}": round(output_tokens / denominator, 2),
+            f"average_total_tokens_per_{average_suffix}": round(total_tokens / denominator, 2),
         }
 
     def _update_patch_token_usage_progress(

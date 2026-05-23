@@ -228,6 +228,7 @@ class FakeOutputRepository:
         self.candidates: dict[str, list] = {}
         self.quality_reports: dict[str, PatchQualityReport] = {}
         self.unmapped_facts: dict[str, list[UnmappedFact]] = {}
+        self.token_usage: dict[str, dict[str, int]] = {}
         self.protected_fields: list[str] = []
         self.review_state: dict = {
             "resolved_item_ids": [],
@@ -364,6 +365,17 @@ class FakeOutputRepository:
     def load_patch_review_state(self, workflow_id: str) -> dict:
         return self.review_state
 
+    def save_token_usage(
+        self,
+        *,
+        workflow_id: str,
+        token_usage: dict[str, dict[str, int]],
+    ) -> None:
+        self.token_usage = json.loads(json.dumps(token_usage))
+
+    def load_token_usage(self, workflow_id: str) -> dict[str, dict[str, int]]:
+        return json.loads(json.dumps(self.token_usage))
+
     def load_patch_files(self, workflow_id: str) -> list[dict]:
         artifacts = [
             {"file_name": file_name, "artifact_type": "patch", "content": patch}
@@ -477,6 +489,10 @@ class FakeExtractionService:
         self.request = {"data_package_id": data_package_id}
         return TaskStatus.UNKNOWN, None
 
+    async def get_token_usage(self, data_package_id: str) -> dict:
+        self.request = {"data_package_id": data_package_id}
+        return {"agents": {}}
+
     async def get_patch_artifacts(self, data_package_id: str) -> dict:
         self.request = {"data_package_id": data_package_id}
         return {"patches": [], "quality_reports": [], "unmapped_facts": []}
@@ -541,6 +557,11 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
             output_repository.saved["initial_context"].device_model,  # type: ignore[index]
             "GC-42",
         )
+        self.assertIn("initial_context", output_repository.token_usage)
+        self.assertGreater(
+            output_repository.token_usage["initial_context"]["total_tokens"],
+            0,
+        )
 
     async def test_extract_initial_draft_loads_context_profile_and_persists_draft(self):
         datasource_service = FakeDataSourceService(make_data_package())
@@ -576,6 +597,20 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(profile_repository.requested_schema_identifier, "test-profile")
         self.assertEqual(result["title"], "Gas chromatography dataset for sample-a")
         self.assertEqual(output_repository.initial_draft, INITIAL_DRAFT_OUTPUT)
+        self.assertIn("initial_draft", output_repository.token_usage)
+        self.assertGreater(
+            output_repository.token_usage["initial_draft"]["total_tokens"],
+            0,
+        )
+        usage_summary = await service.get_token_usage("package-id")
+        self.assertEqual(
+            usage_summary["agents"]["initial_draft"]["operation_count"],
+            1,
+        )
+        self.assertGreater(
+            usage_summary["agents"]["initial_draft"]["average_total_tokens_per_operation"],
+            0,
+        )
         self.assertIsNone(task_registry.get_task_info(task_name))
 
     async def test_extract_initial_draft_requires_existing_initial_context(self):
@@ -846,6 +881,13 @@ class InitialContextExtractionServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("patch_quality", token_usage["agents"])
         self.assertGreater(
             token_usage["combined"]["average_total_tokens_per_patch"],
+            0,
+        )
+        workflow_usage = await service.get_token_usage("package-id")
+        self.assertIn("patch_discovery", workflow_usage["agents"])
+        self.assertIn("schema_patch_writer", workflow_usage["agents"])
+        self.assertGreater(
+            workflow_usage["combined"]["average_total_tokens_per_operation"],
             0,
         )
 
@@ -1783,6 +1825,28 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
 
         self.assertEqual(loaded, state)
 
+    def test_token_usage_round_trip(self):
+        usage = {
+            "initial_context": {
+                "input_tokens": 10,
+                "output_tokens": 5,
+                "total_tokens": 15,
+                "requests": 1,
+                "operation_count": 1,
+                "patch_count": 0,
+            }
+        }
+        with TemporaryDirectory() as temporary_directory:
+            repository = FileSystemExtractionOutputRepository(Path(temporary_directory))
+
+            repository.save_token_usage(
+                workflow_id="package-id",
+                token_usage=usage,
+            )
+            loaded = repository.load_token_usage("package-id")
+
+        self.assertEqual(loaded, usage)
+
     def test_missing_initial_context_raises_file_not_found(self):
         with TemporaryDirectory() as temporary_directory:
             repository = FileSystemExtractionOutputRepository(Path(temporary_directory))
@@ -1916,6 +1980,16 @@ class InitialContextExtractionApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"status": "unknown", "progress": None})
+
+    def test_token_usage_endpoint_returns_usage_summary(self):
+        service = FakeExtractionService(INITIAL_DRAFT_OUTPUT)
+        client = self.make_client(service)
+
+        response = client.get("/api/v1/extraction/package-id/token-usage")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"agents": {}})
+        self.assertEqual(service.request["data_package_id"], "package-id")  # type: ignore[index]
 
     def test_patch_artifact_endpoints_return_lists(self):
         service = FakeExtractionService(INITIAL_DRAFT_OUTPUT)

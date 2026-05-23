@@ -151,6 +151,14 @@ async def get_patch_progress(
     return PatchProgressResponse(status=status, progress=progress)
 
 
+@router.get("/{data_package_id}/token-usage")
+async def get_token_usage(
+    data_package_id: str,
+    extraction_service: ExtractionService = Depends(get_extraction_service),
+) -> dict[str, Any]:
+    return await extraction_service.get_token_usage(data_package_id=data_package_id)
+
+
 @router.get("/patch-draft/{data_package_id}/artifacts")
 async def get_patch_artifacts(
     data_package_id: str,
