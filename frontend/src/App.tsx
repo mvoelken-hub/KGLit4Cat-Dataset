@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { chunkDataPackage, deleteDataPackage, getChunkStatus, getDataPackageChunks, getFileEntryContent, listDataPackages, uploadDataPackage } from './api/datasources';
 import {
@@ -18,14 +18,14 @@ import {
   setProtectedFields as apiSetProtectedFields,
 } from './api/extraction';
 import { deleteProfile, getProfileJsonSchema, listProfiles, registerProfile } from './api/profiles';
-import { getLlmBudget, type LlmBudget } from './api/system';
+import { getLlmBudget, getOllamaConfig, updateOllamaRuntimeConfig, type LlmBudget, type OllamaConfig } from './api/system';
 import { JsonEditor, type JsonObject, type JsonPatchMarker, type JsonSchemaDocument, type JsonValue, setValueAtPath } from './components/JsonEditor';
 import { ChunkingDialog } from './components/ChunkingDialog';
 import { VocabularyPanel } from './components/VocabularyPanel';
 import type { ChunkRequestResponse, ChunkResponse, DataPackageResponse, FileEntryResponse, InitialContext, ProfileManifestResponse, TextQualityConfig } from './api/types';
 import type { PatchArtifacts, PatchProgress, PatchReviewState, PatchTaskStatus, PatchTokenUsage, PatchTokenUsageEntry } from './api/extraction';
 
-type BusyKey = 'upload' | 'chunk' | 'context' | 'draft' | 'patch' | 'load' | 'profile' | 'profile-delete' | 'dataset-delete';
+type BusyKey = 'upload' | 'chunk' | 'context' | 'draft' | 'patch' | 'load' | 'profile' | 'profile-delete' | 'dataset-delete' | 'ollama';
 type ReviewItem = JsonPatchMarker & { kind: 'matched' | 'unmapped'; targetPath?: string; fact?: string; reason?: string; outcome?: string; resolutionNote?: string };
 
 const emptyReviewState: PatchReviewState = {
@@ -520,6 +520,146 @@ function TokenUsageSummary({
   );
 }
 
+function formatMemory(value?: number | null): string {
+  if (!value || !Number.isFinite(value)) return 'N/A';
+  return `${Math.round(value / 1024 / 1024).toLocaleString()} MB`;
+}
+
+function OllamaSettingsPanel({
+  config,
+  budget,
+  tokenUsage,
+  patchTokenUsage,
+  busy,
+  onApply,
+  onRefresh,
+}: {
+  config: OllamaConfig | null;
+  budget: LlmBudget | null;
+  tokenUsage: PatchTokenUsage | null;
+  patchTokenUsage?: PatchTokenUsage | null;
+  busy: boolean;
+  onApply: (values: {
+    chat_model: string;
+    embedding_model: string;
+    max_context_length: number;
+    embedding_batch_size: number;
+    embedding_num_gpu: number;
+  }) => void;
+  onRefresh: () => void;
+}) {
+  const runtime = config?.runtime;
+  const combinedUsage = patchTokenUsage?.combined ?? tokenUsage?.combined ?? null;
+  const averageInput = combinedUsage ? requestAverage(combinedUsage, 'input') : 0;
+  const [chatModel, setChatModel] = useState('');
+  const [embeddingModel, setEmbeddingModel] = useState('');
+  const [maxContextLength, setMaxContextLength] = useState(8192);
+  const [embeddingBatchSize, setEmbeddingBatchSize] = useState(32);
+  const [embeddingNumGpu, setEmbeddingNumGpu] = useState(-1);
+
+  useEffect(() => {
+    if (!runtime) return;
+    setChatModel(runtime.chat_model);
+    setEmbeddingModel(runtime.embedding_model);
+    setMaxContextLength(runtime.max_context_length);
+    setEmbeddingBatchSize(runtime.embedding_batch_size);
+    setEmbeddingNumGpu(runtime.embedding_num_gpu);
+  }, [runtime]);
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    onApply({
+      chat_model: chatModel.trim(),
+      embedding_model: embeddingModel.trim(),
+      max_context_length: Math.max(512, maxContextLength),
+      embedding_batch_size: Math.max(1, embeddingBatchSize),
+      embedding_num_gpu: embeddingNumGpu,
+    });
+  }
+
+  return (
+    <section className="ollama-panel" aria-label="Ollama runtime settings">
+      <div className="ollama-panel-header">
+        <div>
+          <span>Ollama</span>
+          <strong>{config?.host.base_url ?? 'Unavailable'}</strong>
+        </div>
+        <button className="ghost small" type="button" onClick={onRefresh} disabled={busy}>Refresh</button>
+      </div>
+
+      <div className="ollama-status-grid">
+        <div>
+          <span>Host mode</span>
+          <strong>{config ? (config.host.is_local ? 'Local host' : 'Remote host') : 'Unknown'}</strong>
+          <small>{config?.host.server_settings_note ?? 'Runtime options apply to future calls only.'}</small>
+        </div>
+        <div>
+          <span>Server memory settings</span>
+          <strong>flash {String(config?.host.flash_attention ?? false)} / KV {config?.host.kv_cache_type ?? 'unknown'}</strong>
+          <small>Change these on the Ollama host, not from the UI.</small>
+        </div>
+        <div>
+          <span>Context budget</span>
+          <strong>{formatTokenCount(budget?.input_token_budget ?? runtime?.input_token_budget)} input tokens</strong>
+          <small>{formatTokenCount(budget?.max_context_length ?? runtime?.max_context_length)} total context tokens</small>
+        </div>
+        <div>
+          <span>Recent average input</span>
+          <strong>{formatTokenCount(averageInput)} tokens</strong>
+          <small>{averageInput && runtime && averageInput > runtime.input_token_budget * 0.8 ? 'Lower context usage before starting the next run.' : 'Use chunks per turn to tune call size.'}</small>
+        </div>
+      </div>
+
+      <form className="ollama-runtime-form" onSubmit={submit}>
+        <label>
+          <span>Chat model</span>
+          <input value={chatModel} onChange={(event) => setChatModel(event.target.value)} disabled={!runtime || busy} />
+        </label>
+        <label>
+          <span>Embedding model</span>
+          <input value={embeddingModel} onChange={(event) => setEmbeddingModel(event.target.value)} disabled={!runtime || busy} />
+        </label>
+        <label>
+          <span>Max context</span>
+          <input type="number" min={512} step={512} value={maxContextLength} onChange={(event) => setMaxContextLength(parseInt(event.target.value, 10) || 512)} disabled={!runtime || busy} />
+        </label>
+        <label>
+          <span>Embedding batch</span>
+          <input type="number" min={1} value={embeddingBatchSize} onChange={(event) => setEmbeddingBatchSize(parseInt(event.target.value, 10) || 1)} disabled={!runtime || busy} />
+        </label>
+        <label>
+          <span>Embedding GPU</span>
+          <select value={embeddingNumGpu} onChange={(event) => setEmbeddingNumGpu(parseInt(event.target.value, 10))} disabled={!runtime || busy}>
+            <option value={-1}>Auto</option>
+            <option value={0}>CPU only</option>
+            <option value={1}>1 GPU layer</option>
+            <option value={8}>8 GPU layers</option>
+            <option value={16}>16 GPU layers</option>
+          </select>
+        </label>
+        <button type="submit" disabled={!runtime || busy}>Apply runtime settings</button>
+      </form>
+
+      <div className="ollama-loaded-models">
+        <span>Loaded models</span>
+        {!config?.running.available && <small>{config?.running.error?.message ?? 'Could not inspect loaded Ollama models.'}</small>}
+        {config?.running.available && !config.running.models.length && <small>No models are currently resident.</small>}
+        {config?.running.models.map((model, index) => (
+          <small key={model.model || index}>
+            {model.model || 'unknown'} - VRAM {formatMemory(model.size_vram)} / total {formatMemory(model.size)}
+          </small>
+        ))}
+        {config?.running.available && (
+          <small>
+            Chat {config.running.chat_model_loaded ? 'resident' : 'not resident'}; embedding {config.running.embedding_model_loaded ? 'resident' : 'not resident'}.
+          </small>
+        )}
+      </div>
+      <p className="muted">Runtime edits affect future SIMONE calls only and reset when the API restarts.</p>
+    </section>
+  );
+}
+
 function FileViewer({ file, content, chunksByFile, onClose }: {
   file: FileEntryResponse;
   content: string;
@@ -612,6 +752,7 @@ export function App() {
   const [patchArtifacts, setPatchArtifacts] = useState<PatchArtifacts | null>(null);
   const [tokenUsage, setTokenUsage] = useState<PatchTokenUsage | null>(null);
   const [llmBudget, setLlmBudget] = useState<LlmBudget | null>(null);
+  const [ollamaConfig, setOllamaConfig] = useState<OllamaConfig | null>(null);
   const [activeProfileSchema, setActiveProfileSchema] = useState<JsonSchemaDocument | null>(null);
   const [patchReviewState, setPatchReviewState] = useState<PatchReviewState>(emptyReviewState);
   const [busy, setBusy] = useState<BusyKey | null>('load');
@@ -675,8 +816,9 @@ export function App() {
   async function refresh() {
     setBusy('load');
     try {
-      const [nextPackages, nextProfiles, nextBudget] = await Promise.all([listDataPackages(), listProfiles(), getLlmBudget()]);
+      const [nextPackages, nextProfiles, nextBudget, nextOllamaConfig] = await Promise.all([listDataPackages(), listProfiles(), getLlmBudget(), getOllamaConfig()]);
       setLlmBudget(nextBudget);
+      setOllamaConfig(nextOllamaConfig);
       const storedPackageId = readStoredSelectedPackageId();
       setPackages(nextPackages);
       setProfiles(nextProfiles);
@@ -1000,6 +1142,41 @@ export function App() {
       setMessage('Initial context extracted.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Context extraction failed.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function refreshOllamaConfig() {
+    setBusy('ollama');
+    try {
+      const [nextConfig, nextBudget] = await Promise.all([getOllamaConfig(), getLlmBudget()]);
+      setOllamaConfig(nextConfig);
+      setLlmBudget(nextBudget);
+      setMessage('Ollama runtime settings refreshed.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not refresh Ollama settings.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function applyOllamaRuntimeConfig(values: {
+    chat_model: string;
+    embedding_model: string;
+    max_context_length: number;
+    embedding_batch_size: number;
+    embedding_num_gpu: number;
+  }) {
+    setBusy('ollama');
+    try {
+      const updated = await updateOllamaRuntimeConfig(values);
+      const nextBudget = await getLlmBudget();
+      setOllamaConfig(updated);
+      setLlmBudget(nextBudget);
+      setMessage('Ollama runtime settings updated for future calls.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not update Ollama runtime settings.');
     } finally {
       setBusy(null);
     }
@@ -1495,6 +1672,16 @@ export function App() {
               )}
               <TokenUsageSummary tokenUsage={tokenUsage} averageUnit="operation" heading="Extraction token usage" agentKeys={['initial_context']} budget={llmBudget} />
           </StepPanel>
+
+          <OllamaSettingsPanel
+            config={ollamaConfig}
+            budget={llmBudget}
+            tokenUsage={tokenUsage}
+            patchTokenUsage={patchProgress?.token_usage}
+            busy={busy === 'ollama'}
+            onApply={(values) => void applyOllamaRuntimeConfig(values)}
+            onRefresh={() => void refreshOllamaConfig()}
+          />
 
           <StepPanel
             number="03"

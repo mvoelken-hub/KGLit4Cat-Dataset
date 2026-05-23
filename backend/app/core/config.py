@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     ollama_embed_dimensions: int = 768
     embedding_batch_size: int = 32
     max_context_length: int = 8192
+    ollama_flash_attention: bool = False
+    ollama_kv_cache_type: str = "f16"
+    ollama_embed_num_gpu: int = -1  # -1 = auto (all layers on GPU), 0 = CPU only
 
     @computed_field
     @property

@@ -15,6 +15,10 @@ class FakeSettings:
     max_context_length = 64000
 
 
+class FakeCpuEmbeddingSettings(FakeSettings):
+    ollama_embed_num_gpu = 0
+
+
 class FakeAsyncOllamaApi:
     def __init__(self):
         self.embed_calls: list[dict] = []
@@ -143,6 +147,29 @@ class OllamaClientWrapperAsyncTests(unittest.IsolatedAsyncioTestCase):
                 "dimensions": FakeSettings.ollama_embed_dimensions,
                 "truncate": False,
             },
+        )
+
+    async def test_get_embeddings_can_force_cpu_embedding(self):
+        logger = FakeLogger()
+        client = OllamaClientWrapper(FakeCpuEmbeddingSettings(), logger)  # type: ignore[arg-type]
+        embedding_client = FakeAsyncOllamaApi()
+        client.embedding_client = embedding_client  # type: ignore[assignment]
+
+        await client.get_embeddings(["one"])
+
+        self.assertEqual(embedding_client.embed_calls[0]["options"], {"num_gpu": 0})
+
+    def test_update_runtime_config_rebuilds_agent_model(self):
+        client = OllamaClientWrapper(FakeSettings(), getLogger(__name__))  # type: ignore[arg-type]
+
+        client.update_runtime_config(chat_model="runtime-chat", max_context_length=2048, embed_num_gpu=0)
+
+        self.assertEqual(client.chat_model, "runtime-chat")
+        self.assertEqual(client.max_context_length, 2048)
+        self.assertEqual(client.embed_num_gpu, 0)
+        self.assertEqual(
+            client.agent_model.settings,
+            {"extra_body": {"num_ctx": 2048}},
         )
 
     async def test_change_embedding_model_returns_new_model_when_verification_succeeds(self):

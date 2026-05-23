@@ -1377,9 +1377,11 @@ class ExtractionService:
                 entry[key] = entry.get(key, 0) + value
 
     def _token_budget(self) -> TokenBudget:
-        max_context_length = getattr(self.settings, "max_context_length", None)
-        if max_context_length is None and self.ollama_client is not None:
+        max_context_length = None
+        if self.ollama_client is not None:
             max_context_length = getattr(self.ollama_client, "max_context_length", None)
+        if max_context_length is None:
+            max_context_length = getattr(self.settings, "max_context_length", None)
         return budget_from_context_length(max_context_length)
 
     @classmethod
