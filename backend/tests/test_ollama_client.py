@@ -47,6 +47,10 @@ class FakeAsyncOllamaApi:
     async def pull(self, **kwargs):
         self.pull_calls.append(kwargs)
 
+    async def generate(self, **kwargs):
+        self.chat_calls.append(kwargs)
+        return SimpleNamespace(load_duration=123_000_000, eval_count=1)
+
     async def show(self, **kwargs):
         self.show_calls.append(kwargs)
         return SimpleNamespace(model=kwargs["model"])
@@ -132,6 +136,17 @@ class OllamaClientWrapperAsyncTests(unittest.IsolatedAsyncioTestCase):
             [{"model": "embed-test"}, {"model": "chat-test"}],
         )
         self.assertIn("Pulled Ollama model: chat-test", logger.info_messages)
+
+    async def test_ping_chat_model_uses_non_empty_prompt_for_load_timing(self):
+        client, _, model_client, _, _ = self.make_client()
+
+        result = await client.ping_model("chat-test", num_ctx=8192)
+
+        self.assertTrue(result["success"])
+        self.assertTrue(model_client.chat_calls[0]["prompt"].startswith("ping"))
+        self.assertEqual(model_client.chat_calls[0]["keep_alive"], -1)
+        self.assertEqual(model_client.chat_calls[0]["options"], {"num_ctx": 8192})
+        self.assertEqual(result["load_duration_ns"], 123_000_000)
 
     async def test_get_embeddings_uses_dimensions_and_no_truncation(self):
         client, _, _, embedding_client, _ = self.make_client()

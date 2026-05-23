@@ -18,7 +18,17 @@ import {
   setProtectedFields as apiSetProtectedFields,
 } from './api/extraction';
 import { deleteProfile, getProfileJsonSchema, listProfiles, registerProfile } from './api/profiles';
-import { getLlmBudget, getOllamaConfig, updateOllamaRuntimeConfig, type LlmBudget, type OllamaConfig } from './api/system';
+import {
+  getLlmBudget,
+  getOllamaConfig,
+  pullOllamaModel,
+  removeOllamaModel,
+  runOllamaPerformanceTest,
+  updateOllamaRuntimeConfig,
+  type LlmBudget,
+  type OllamaConfig,
+  type OllamaPerformanceTest,
+} from './api/system';
 import { JsonEditor, type JsonObject, type JsonPatchMarker, type JsonSchemaDocument, type JsonValue, setValueAtPath } from './components/JsonEditor';
 import { ChunkingDialog } from './components/ChunkingDialog';
 import { VocabularyPanel } from './components/VocabularyPanel';
@@ -525,6 +535,12 @@ function formatMemory(value?: number | null): string {
   return `${Math.round(value / 1024 / 1024).toLocaleString()} MB`;
 }
 
+function formatDuration(value?: number | null): string {
+  if (value == null || !Number.isFinite(value)) return 'N/A';
+  if (value >= 1000) return `${(value / 1000).toFixed(1)} s`;
+  return `${Math.round(value)} ms`;
+}
+
 function OllamaSettingsPanel({
   config,
   budget,
@@ -533,6 +549,9 @@ function OllamaSettingsPanel({
   busy,
   onApply,
   onRefresh,
+  onPullModel,
+  onRemoveModel,
+  onRunPerformanceTest,
 }: {
   config: OllamaConfig | null;
   budget: LlmBudget | null;
@@ -547,6 +566,14 @@ function OllamaSettingsPanel({
     embedding_num_gpu: number;
   }) => void;
   onRefresh: () => void;
+  onPullModel: (model: string) => Promise<void>;
+  onRemoveModel: (model: string) => Promise<void>;
+  onRunPerformanceTest: (values: {
+    chat_model: string;
+    embedding_model: string;
+    max_context_length: number;
+    embedding_num_gpu: number;
+  }) => Promise<OllamaPerformanceTest>;
 }) {
   const runtime = config?.runtime;
   const combinedUsage = patchTokenUsage?.combined ?? tokenUsage?.combined ?? null;
@@ -557,6 +584,9 @@ function OllamaSettingsPanel({
   const [embeddingBatchSize, setEmbeddingBatchSize] = useState(32);
   const [embeddingNumGpu, setEmbeddingNumGpu] = useState(-1);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [pullModelName, setPullModelName] = useState('');
+  const [performanceTest, setPerformanceTest] = useState<OllamaPerformanceTest | null>(null);
+  const [localMessage, setLocalMessage] = useState('');
 
   useEffect(() => {
     if (!runtime) return;
@@ -578,12 +608,83 @@ function OllamaSettingsPanel({
     });
   }
 
+  async function runSwitchTest() {
+    if (!runtime) return;
+    setLocalMessage('');
+    try {
+      const result = await onRunPerformanceTest({
+        chat_model: chatModel.trim(),
+        embedding_model: embeddingModel.trim(),
+        max_context_length: Math.max(512, maxContextLength),
+        embedding_num_gpu: embeddingNumGpu,
+      });
+      setPerformanceTest(result);
+      setLocalMessage('Switch test completed.');
+    } catch (error) {
+      setLocalMessage(error instanceof Error ? error.message : 'Switch test failed.');
+    }
+  }
+
+  async function pullModel(event: FormEvent) {
+    event.preventDefault();
+    const model = pullModelName.trim();
+    if (!model) return;
+    const host = config?.host.base_url ?? 'the configured Ollama host';
+    if (!window.confirm(`Pull ${model} on ${host}? This mutates the Ollama host.`)) return;
+    setLocalMessage('');
+    try {
+      await onPullModel(model);
+      setPullModelName('');
+      setLocalMessage(`Pull requested for ${model}.`);
+    } catch (error) {
+      setLocalMessage(error instanceof Error ? error.message : 'Could not pull model.');
+    }
+  }
+
+  async function removeModel(model: string) {
+    const host = config?.host.base_url ?? 'the configured Ollama host';
+    if (!window.confirm(`Remove ${model} from ${host}? This mutates the Ollama host.`)) return;
+    setLocalMessage('');
+    try {
+      await onRemoveModel(model);
+      setLocalMessage(`Removed ${model}.`);
+    } catch (error) {
+      setLocalMessage(error instanceof Error ? error.message : 'Could not remove model.');
+    }
+  }
+
+  const availableModels = config?.models.models ?? [];
+  const chatModelOptions = Array.from(new Set([
+    chatModel,
+    ...availableModels
+      .filter((model) => model.kind !== 'embedding')
+      .map((model) => model.model || model.name || '')
+      .filter(Boolean),
+  ])).filter(Boolean);
+  const embeddingModelOptions = Array.from(new Set([
+    embeddingModel,
+    ...availableModels
+      .filter((model) => model.kind === 'embedding')
+      .map((model) => model.model || model.name || '')
+      .filter(Boolean),
+  ])).filter(Boolean);
+  const selectedChatModelInfo = availableModels.find((model) => (model.model || model.name) === chatModel);
+  const selectedChatModelName = chatModel.toLowerCase();
+  const selectedChatModelSize = selectedChatModelInfo?.size ?? null;
+  const selectedChatModelIsCloud = Boolean(selectedChatModelInfo?.is_cloud) || selectedChatModelName.includes('cloud') || selectedChatModelSize === 0;
+  const showPerformanceTest = Boolean(runtime && !selectedChatModelIsCloud);
+
+  useEffect(() => {
+    if (selectedChatModelIsCloud) setPerformanceTest(null);
+  }, [selectedChatModelIsCloud]);
+
   return (
     <section className="ollama-panel" aria-label="Ollama runtime settings">
       <div className="ollama-panel-header">
         <div>
           <span>Ollama</span>
           <strong>{config?.host.base_url ?? 'Unavailable'}</strong>
+          {config && <small className="ollama-mode-chip">{config.host.is_local ? 'Local' : 'Remote'}</small>}
         </div>
         <button
           className="ghost small"
@@ -622,13 +723,15 @@ function OllamaSettingsPanel({
                 <div>
                   <span>Host mode</span>
                   <strong>{config ? (config.host.is_local ? 'Local host' : 'Remote host') : 'Unknown'}</strong>
-                  <small>{config?.host.server_settings_note ?? 'Runtime options apply to future calls only.'}</small>
+                  <small>{config?.host.is_local ? config.host.server_settings_note : 'Remote mode shows runtime controls and Ollama API diagnostics only.'}</small>
                 </div>
-                <div>
-                  <span>Server memory settings</span>
-                  <strong>flash {String(config?.host.flash_attention ?? false)} / KV {config?.host.kv_cache_type ?? 'unknown'}</strong>
-                  <small>Change these on the Ollama host, not from the UI.</small>
-                </div>
+                {config?.host.is_local && (
+                  <div>
+                    <span>Server memory settings</span>
+                    <strong>flash {String(config.host.flash_attention ?? false)} / KV {config.host.kv_cache_type ?? 'unknown'}</strong>
+                    <small>Change these on the Ollama host, not from the UI.</small>
+                  </div>
+                )}
                 <div>
                   <span>Context budget</span>
                   <strong>{formatTokenCount(budget?.input_token_budget ?? runtime?.input_token_budget)} input tokens</strong>
@@ -639,16 +742,29 @@ function OllamaSettingsPanel({
                   <strong>{formatTokenCount(averageInput)} tokens</strong>
                   <small>{averageInput && runtime && averageInput > runtime.input_token_budget * 0.8 ? 'Lower context usage before starting the next run.' : 'Use chunks per turn to tune call size.'}</small>
                 </div>
+                <div>
+                  <span>Diagnostics</span>
+                  <strong>{config?.diagnostics.status ?? 'unknown'}</strong>
+                  <small>{config?.diagnostics.summary ?? 'Run the switch test for residency guidance.'}</small>
+                </div>
               </div>
 
               <form className="ollama-runtime-form" onSubmit={submit}>
                 <label>
                   <span>Chat model</span>
-                  <input value={chatModel} onChange={(event) => setChatModel(event.target.value)} disabled={!runtime || busy} />
+                  <select value={chatModel} onChange={(event) => setChatModel(event.target.value)} disabled={!runtime || busy || chatModelOptions.length === 0}>
+                    {chatModelOptions.map((model) => (
+                      <option key={model} value={model}>{model}</option>
+                    ))}
+                  </select>
                 </label>
                 <label>
                   <span>Embedding model</span>
-                  <input value={embeddingModel} onChange={(event) => setEmbeddingModel(event.target.value)} disabled={!runtime || busy} />
+                  <select value={embeddingModel} onChange={(event) => setEmbeddingModel(event.target.value)} disabled={!runtime || busy || embeddingModelOptions.length === 0}>
+                    {embeddingModelOptions.map((model) => (
+                      <option key={model} value={model}>{model}</option>
+                    ))}
+                  </select>
                 </label>
                 <label>
                   <span>Max context</span>
@@ -663,13 +779,55 @@ function OllamaSettingsPanel({
                   <select value={embeddingNumGpu} onChange={(event) => setEmbeddingNumGpu(parseInt(event.target.value, 10))} disabled={!runtime || busy}>
                     <option value={-1}>Auto</option>
                     <option value={0}>CPU only</option>
-                    <option value={1}>1 GPU layer</option>
-                    <option value={8}>8 GPU layers</option>
-                    <option value={16}>16 GPU layers</option>
+                    <option value={999}>GPU only</option>
                   </select>
                 </label>
                 <button type="submit" disabled={!runtime || busy}>Apply runtime settings</button>
               </form>
+
+              {showPerformanceTest && (
+                <div className="ollama-test-panel">
+                  <div className="ollama-section-header">
+                    <div>
+                      <span>Performance test</span>
+                      <strong>Embedding/chat switch test</strong>
+                    </div>
+                    <button className="ghost small" type="button" onClick={() => void runSwitchTest()} disabled={!runtime || busy}>
+                      Run switch test
+                    </button>
+                  </div>
+                  <small>Loads embedding -{'>'} chat -{'>'} embedding -{'>'} chat to detect reload pressure.</small>
+                  {performanceTest && (
+                    <div className="ollama-test-result">
+                      <strong>{performanceTest.diagnostics.summary}</strong>
+                      <div className="ollama-test-steps">
+                        {performanceTest.steps.map((step) => (
+                          <div key={step.key}>
+                            <span>{step.label}</span>
+                            <strong>{step.success ? formatDuration(step.load_duration_ms) : 'failed'}</strong>
+                            <small>{step.success ? `${step.snapshot.models.length} loaded after call` : step.error}</small>
+                          </div>
+                        ))}
+                      </div>
+                      {performanceTest.diagnostics.recommendations.length > 0 && (
+                        <div className="ollama-recommendations">
+                          {performanceTest.diagnostics.recommendations.map((recommendation) => (
+                            <small key={recommendation}>{recommendation}</small>
+                          ))}
+                          <div className="ollama-recommendation-actions">
+                            <button className="ghost small" type="button" onClick={() => setEmbeddingNumGpu(0)} disabled={busy}>
+                              Set embeddings to CPU
+                            </button>
+                            <button className="ghost small" type="button" onClick={() => setEmbeddingBatchSize(Math.max(1, Math.floor(embeddingBatchSize / 2)))} disabled={busy}>
+                              Halve embed batch
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="ollama-loaded-models">
                 <span>Loaded models</span>
@@ -677,7 +835,9 @@ function OllamaSettingsPanel({
                 {config?.running.available && !config.running.models.length && <small>No models are currently resident.</small>}
                 {config?.running.models.map((model, index) => (
                   <small key={model.model || index}>
-                    {model.model || 'unknown'} - VRAM {formatMemory(model.size_vram)} / total {formatMemory(model.size)}
+                    {model.model || 'unknown'} - {model.processor ? `Processor ${model.processor}` : `VRAM ${formatMemory(model.size_vram)} / total ${formatMemory(model.size)}`}
+                    {model.processor ? ` - VRAM ${formatMemory(model.size_vram)} / total ${formatMemory(model.size)}` : ''}
+                    {model.context_length ? ` - context ${formatTokenCount(model.context_length)}` : ''}
                   </small>
                 ))}
                 {config?.running.available && (
@@ -686,7 +846,60 @@ function OllamaSettingsPanel({
                   </small>
                 )}
               </div>
-              <p className="muted">Runtime edits affect future SIMONE calls only and reset when the API restarts.</p>
+
+              <div className="ollama-model-overview">
+                <div className="ollama-section-header">
+                  <div>
+                    <span>Available models</span>
+                    <strong>{config?.models.available ? `${availableModels.length} installed` : 'Unavailable'}</strong>
+                  </div>
+                </div>
+                {!config?.models.available && <small>{config?.models.error?.message ?? 'Could not inspect installed models.'}</small>}
+                <form className="ollama-pull-form" onSubmit={(event) => void pullModel(event)}>
+                  <input
+                    value={pullModelName}
+                    onChange={(event) => setPullModelName(event.target.value)}
+                    placeholder="model:tag"
+                    disabled={busy}
+                  />
+                  <button type="submit" disabled={busy || !pullModelName.trim()}>Pull model</button>
+                </form>
+                {availableModels.length > 0 && (
+                  <div className="ollama-model-list">
+                    {availableModels.map((model, index) => {
+                      const name = model.model || model.name || '';
+                      const canUseAsChat = model.kind !== 'embedding';
+                      const canUseAsEmbedding = model.kind === 'embedding';
+                      return (
+                        <div className="ollama-model-row" key={name || index}>
+                          <div>
+                            <strong>{name || 'unknown'}</strong>
+                            <small>
+                              {formatMemory(model.size)}
+                              {model.details?.parameter_size ? ` - ${model.details.parameter_size}` : ''}
+                              {model.details?.quantization_level ? ` - ${model.details.quantization_level}` : ''}
+                              {model.kind ? ` - ${model.kind}` : ''}
+                              {model.is_cloud ? ' - Cloud' : ''}
+                            </small>
+                          </div>
+                          <div className="ollama-model-actions">
+                            {canUseAsChat && (
+                              <button className="ghost small" type="button" onClick={() => setChatModel(name)} disabled={!name || busy}>Chat</button>
+                            )}
+                            {canUseAsEmbedding && (
+                              <button className="ghost small" type="button" onClick={() => setEmbeddingModel(name)} disabled={!name || busy}>Embed</button>
+                            )}
+                            <button className="ghost small danger-button" type="button" onClick={() => void removeModel(name)} disabled={!name || busy}>Remove</button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {localMessage && <p className="muted">{localMessage}</p>}
+              <p className="muted">ℹ️ Runtime edits affect future SIMONE calls only and reset when the API restarts.</p>
             </div>
           </div>
         </div>
@@ -1217,6 +1430,57 @@ export function App() {
     }
   }
 
+  async function pullOllamaModelFromUi(model: string) {
+    setBusy('ollama');
+    try {
+      await pullOllamaModel(model);
+      const nextConfig = await getOllamaConfig();
+      setOllamaConfig(nextConfig);
+      setMessage(`Pull requested for ${model} on the configured Ollama host.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not pull Ollama model.');
+      throw error;
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function removeOllamaModelFromUi(model: string) {
+    setBusy('ollama');
+    try {
+      await removeOllamaModel(model);
+      const nextConfig = await getOllamaConfig();
+      setOllamaConfig(nextConfig);
+      setMessage(`Removed ${model} from the configured Ollama host.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not remove Ollama model.');
+      throw error;
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function runOllamaSwitchTest(values: {
+    chat_model: string;
+    embedding_model: string;
+    max_context_length: number;
+    embedding_num_gpu: number;
+  }) {
+    setBusy('ollama');
+    try {
+      const result = await runOllamaPerformanceTest(values);
+      const nextConfig = await getOllamaConfig();
+      setOllamaConfig(nextConfig);
+      setMessage('Ollama switch test completed.');
+      return result;
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not run Ollama switch test.');
+      throw error;
+    } finally {
+      setBusy(null);
+    }
+  }
+
   function onContextChange(update: (current: InitialContext) => InitialContext) {
     if (!context || !selectedPackageId) return;
     const packageId = selectedPackageId;
@@ -1581,6 +1845,9 @@ export function App() {
                 busy={busy === 'ollama'}
                 onApply={(values) => void applyOllamaRuntimeConfig(values)}
                 onRefresh={() => void refreshOllamaConfig()}
+                onPullModel={(model) => pullOllamaModelFromUi(model)}
+                onRemoveModel={(model) => removeOllamaModelFromUi(model)}
+                onRunPerformanceTest={(values) => runOllamaSwitchTest(values)}
               />
               <VocabularyPanel onError={setMessage} />
             </>

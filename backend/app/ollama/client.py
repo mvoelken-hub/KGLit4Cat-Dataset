@@ -149,7 +149,7 @@ class OllamaClientWrapper:
             else:
                 response = await self.model_client.generate(
                     model=model_name,
-                    prompt="",
+                    prompt="ping... just respond with 'ok' to confirm you're alive.",
                     keep_alive=-1,
                     options=options if options else None,
                 )

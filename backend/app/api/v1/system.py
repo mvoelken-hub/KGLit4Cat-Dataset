@@ -14,6 +14,14 @@ from app.dependencies import (
 )
 from app.neo4j.driver import Neo4jDriver
 from app.ollama.client import OllamaClientWrapper
+from app.ollama.runtime import (
+    apply_runtime_config,
+    available_model_summary,
+    clean_model_name,
+    format_ollama_error,
+    ollama_config_payload,
+    run_performance_test,
+)
 
 from app.api.v1.schemas import (
     TaskResponse,
@@ -28,6 +36,17 @@ class OllamaRuntimeConfigPatch(BaseModel):
     embedding_model: str | None = Field(None, min_length=1)
     max_context_length: int | None = Field(None, ge=512, le=262144)
     embedding_batch_size: int | None = Field(None, ge=1, le=2048)
+    embedding_num_gpu: int | None = Field(None, ge=-1, le=999)
+
+
+class OllamaModelRequest(BaseModel):
+    model: str = Field(..., min_length=1)
+
+
+class OllamaPerformanceTestRequest(BaseModel):
+    chat_model: str | None = Field(None, min_length=1)
+    embedding_model: str | None = Field(None, min_length=1)
+    max_context_length: int | None = Field(None, ge=512, le=262144)
     embedding_num_gpu: int | None = Field(None, ge=-1, le=999)
 
 #region --- Helper functions for health checks and task serialization ---
@@ -151,92 +170,12 @@ async def get_llm_budget(
     }
 
 
-def _is_local_ollama(settings: Settings) -> bool:
-    hostname = getattr(settings, "ollama_hostname", None)
-    return not hostname or str(hostname).strip().lower() in {"localhost", "127.0.0.1", "::1"}
-
-
-def _embedding_gpu_label(value: int) -> str:
-    if value == -1:
-        return "auto"
-    if value == 0:
-        return "cpu"
-    return f"{value} layers"
-
-
-async def _running_model_summary(ollama_client: OllamaClientWrapper) -> dict[str, Any]:
-    try:
-        running = await ollama_client.list_running_models()
-    except Exception as exc:
-        return {
-            "available": False,
-            "error": _format_check_error(exc),
-            "models": [],
-        }
-
-    models = []
-    for item in getattr(running, "models", []) or []:
-        models.append(
-            {
-                "model": getattr(item, "model", None),
-                "size": getattr(item, "size", None),
-                "size_vram": getattr(item, "size_vram", None),
-                "expires_at": getattr(item, "expires_at", None),
-            }
-        )
-    return {
-        "available": True,
-        "models": models,
-    }
-
-
-def _ollama_config_payload(settings: Settings, ollama_client: OllamaClientWrapper, running: dict[str, Any]) -> dict[str, Any]:
-    max_context_length = int(getattr(ollama_client, "max_context_length", settings.max_context_length))
-    input_token_budget = int(max_context_length * 0.75)
-    embedding_num_gpu = int(getattr(ollama_client, "embed_num_gpu", getattr(settings, "ollama_embed_num_gpu", -1)))
-    chat_model = getattr(ollama_client, "chat_model", settings.ollama_chat_model)
-    embedding_model = getattr(ollama_client, "embed_model", settings.ollama_embed_model)
-    running_models = running.get("models", []) if running.get("available") else []
-    loaded_names = {item.get("model") for item in running_models if isinstance(item, dict)}
-    return {
-        "host": {
-            "base_url": settings.ollama_base_url,
-            "is_local": _is_local_ollama(settings),
-            "server_settings_note": "Server-side Ollama settings must be changed on the Ollama host.",
-            "flash_attention": getattr(settings, "ollama_flash_attention", False),
-            "kv_cache_type": getattr(settings, "ollama_kv_cache_type", "f16"),
-        },
-        "runtime": {
-            "chat_model": chat_model,
-            "embedding_model": embedding_model,
-            "max_context_length": max_context_length,
-            "input_token_budget": input_token_budget,
-            "input_target_ratio": 0.75,
-            "embedding_batch_size": settings.embedding_batch_size,
-            "embedding_num_gpu": embedding_num_gpu,
-            "embedding_gpu_label": _embedding_gpu_label(embedding_num_gpu),
-            "resets_on_api_restart": True,
-        },
-        "running": {
-            **running,
-            "chat_model_loaded": chat_model in loaded_names,
-            "embedding_model_loaded": embedding_model in loaded_names,
-        },
-        "warnings": [
-            "Runtime changes apply only to future SIMONE calls and reset when the API restarts.",
-            "Lower context length or chunks per turn when average input tokens approach the input budget.",
-            "Use embedding_num_gpu=0 or a lower embedding batch size if embeddings cause repeated GPU offloads.",
-        ],
-    }
-
-
 @router.get("/ollama-config")
 async def get_ollama_config(
     settings: Settings = Depends(get_settings),
     ollama_client: OllamaClientWrapper = Depends(get_ollama_client),
 ):
-    running = await _running_model_summary(ollama_client)
-    return _ollama_config_payload(settings, ollama_client, running)
+    return await ollama_config_payload(settings, ollama_client)
 
 
 @router.patch("/ollama-config/runtime")
@@ -251,25 +190,67 @@ async def update_ollama_runtime_config(
             updates[key] = updates[key].strip()
             if not updates[key]:
                 raise HTTPException(status_code=422, detail=f"{key} cannot be blank")
-    if "chat_model" in updates:
-        settings.ollama_chat_model = updates["chat_model"]
-    if "embedding_model" in updates:
-        settings.ollama_embed_model = updates["embedding_model"]
-    if "max_context_length" in updates:
-        settings.max_context_length = updates["max_context_length"]
-    if "embedding_batch_size" in updates:
-        settings.embedding_batch_size = updates["embedding_batch_size"]
-    if "embedding_num_gpu" in updates:
-        settings.ollama_embed_num_gpu = updates["embedding_num_gpu"]
+    apply_runtime_config(settings, ollama_client, updates)
+    return await ollama_config_payload(settings, ollama_client)
 
-    ollama_client.update_runtime_config(
-        chat_model=updates.get("chat_model"),
-        embed_model=updates.get("embedding_model"),
-        max_context_length=updates.get("max_context_length"),
-        embed_num_gpu=updates.get("embedding_num_gpu"),
-    )
-    running = await _running_model_summary(ollama_client)
-    return _ollama_config_payload(settings, ollama_client, running)
+
+@router.get("/ollama-models")
+async def get_ollama_models(
+    ollama_client: OllamaClientWrapper = Depends(get_ollama_client),
+):
+    return await available_model_summary(ollama_client)
+
+
+@router.post("/ollama-models/pull")
+async def pull_ollama_model(
+    request: OllamaModelRequest,
+    ollama_client: OllamaClientWrapper = Depends(get_ollama_client),
+):
+    try:
+        model = clean_model_name(request.model)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
+        await ollama_client.pull_models([model])
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=format_ollama_error(exc)) from exc
+    return await available_model_summary(ollama_client)
+
+
+@router.delete("/ollama-models/{model:path}")
+async def delete_ollama_model(
+    model: str,
+    ollama_client: OllamaClientWrapper = Depends(get_ollama_client),
+):
+    try:
+        model = clean_model_name(model)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
+        await ollama_client.delete_model(model)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=format_ollama_error(exc)) from exc
+    return await available_model_summary(ollama_client)
+
+
+@router.post("/ollama-config/runtime/performance-test")
+async def run_ollama_performance_test(
+    request: OllamaPerformanceTestRequest | None = None,
+    settings: Settings = Depends(get_settings),
+    ollama_client: OllamaClientWrapper = Depends(get_ollama_client),
+):
+    request = request or OllamaPerformanceTestRequest()
+    try:
+        return await run_performance_test(
+            settings,
+            ollama_client,
+            chat_model=request.chat_model,
+            embedding_model=request.embedding_model,
+            max_context_length=request.max_context_length,
+            embedding_num_gpu=request.embedding_num_gpu,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/tasks", response_model=list[TaskResponse])

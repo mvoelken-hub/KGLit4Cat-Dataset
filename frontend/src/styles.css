@@ -119,6 +119,7 @@ h2 { margin: 0; font-size: clamp(1.6rem, 3vw, 2.6rem); letter-spacing: -0.04em; 
 .ollama-panel-header { display: flex; justify-content: space-between; gap: 12px; align-items: start; }
 .ollama-panel-header span, .ollama-summary-grid span, .ollama-status-grid span, .ollama-runtime-form span, .ollama-loaded-models > span { display: block; color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 5px; }
 .ollama-panel-header strong { display: block; word-break: break-word; }
+.ollama-mode-chip { display: inline-flex; margin-top: 6px; border: 1px solid var(--line); border-radius: 999px; padding: 0.2rem 0.5rem; color: var(--muted); font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
 .ollama-summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .ollama-summary-grid > div { min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 0.8rem; background: rgba(255, 255, 255, 0.48); }
 .ollama-summary-grid strong { display: block; font-size: 0.95rem; line-height: 1.35; word-break: break-word; }
@@ -132,6 +133,26 @@ h2 { margin: 0; font-size: clamp(1.6rem, 3vw, 2.6rem); letter-spacing: -0.04em; 
 .ollama-runtime-form input, .ollama-runtime-form select { border-radius: 0.65rem; padding: 0.55rem 0.65rem; }
 .ollama-runtime-form button { white-space: nowrap; padding: 0.58rem 0.85rem; }
 .ollama-loaded-models { display: grid; gap: 2px; padding-top: 8px; border-top: 1px solid var(--line); }
+.ollama-section-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ollama-section-header span, .ollama-test-panel > small, .ollama-model-overview > small { display: block; color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 5px; }
+.ollama-section-header strong { display: block; line-height: 1.35; }
+.ollama-test-panel, .ollama-model-overview { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 0.8rem; background: rgba(255, 255, 255, 0.48); }
+.ollama-test-result { display: grid; gap: 10px; }
+.ollama-test-result > strong { line-height: 1.4; }
+.ollama-test-steps { display: grid; grid-template-columns: repeat(4, minmax(112px, 1fr)); gap: 7px; }
+.ollama-test-steps > div { min-width: 0; border: 1px solid var(--line); border-radius: 0.65rem; padding: 8px; background: rgba(255,255,255,0.58); }
+.ollama-test-steps span { display: block; color: var(--muted); font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; line-height: 1.25; }
+.ollama-test-steps strong, .ollama-test-steps small, .ollama-recommendations small { display: block; overflow-wrap: anywhere; }
+.ollama-test-steps small, .ollama-recommendations small { color: var(--muted); line-height: 1.45; margin-top: 4px; }
+.ollama-recommendations { display: grid; gap: 6px; border-top: 1px solid var(--line); padding-top: 10px; }
+.ollama-recommendation-actions, .ollama-model-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.ollama-pull-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.ollama-pull-form input { min-width: 0; border-radius: 0.65rem; padding: 0.55rem 0.65rem; }
+.ollama-pull-form button { white-space: nowrap; padding: 0.58rem 0.85rem; }
+.ollama-model-list { display: grid; gap: 8px; max-height: 280px; overflow: auto; padding-right: 4px; }
+.ollama-model-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px; border: 1px solid var(--line); border-radius: 0.7rem; background: rgba(255,255,255,0.58); }
+.ollama-model-row strong, .ollama-model-row small { display: block; overflow-wrap: anywhere; }
+.ollama-model-row small { color: var(--muted); line-height: 1.4; margin-top: 4px; }
 .rail .ollama-panel { padding: 16px; background: var(--panel); }
 .rail .ollama-panel-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
 .rail .ollama-panel-header > div { min-width: 0; }
@@ -401,7 +422,8 @@ button.small { padding: 0.4rem 0.7rem; font-size: 0.78rem; }
   .rail { position: static; }
   .context-grid { grid-template-columns: 1fr; }
   .ollama-status-grid, .ollama-runtime-form { grid-template-columns: 1fr; }
-  .ollama-dialog .ollama-status-grid, .ollama-dialog .ollama-runtime-form { grid-template-columns: 1fr; }
+  .ollama-dialog .ollama-status-grid, .ollama-dialog .ollama-runtime-form, .ollama-test-steps, .ollama-model-row, .ollama-pull-form { grid-template-columns: 1fr; }
+  .ollama-model-actions, .ollama-recommendation-actions { display: grid; grid-template-columns: 1fr; }
   .ollama-panel-header { flex-direction: column; }
   .vocab-detail-grid { grid-template-columns: 1fr; }
   .vocab-query-form { grid-template-columns: 1fr; }
