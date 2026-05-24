@@ -1,6 +1,6 @@
 # Replace Pydantic AI with Custom Structured Completion Module
 
-**Status:** Planning  
+**Status:** Phase 1 complete — Phase 2 domain migration pending  
 **Created:** 2026-05-24  
 **Last updated:** 2026-05-24
 
@@ -91,17 +91,19 @@ This eliminates all tool calling and makes every LLM interaction a single `/api/
 
 ```
 app/ollama/
-├── __init__.py          # Re-export public API
-├── client.py            # OllamaClientWrapper (existing, unchanged except removing pydantic_ai)
+├── __init__.py          # Re-export public API ✅
+├── client.py            # OllamaClientWrapper (unchanged except `ollama_client` property + pydantic_ai still present)
 ├── runtime.py           # Model management, diagnostics (existing, unchanged)
-├── completion.py        # NEW: generate_structured() — single /api/generate call + retry + parse
-├── errors.py            # NEW: CompletionError, ModelRetry
-└── usage.py             # NEW: RunUsage dataclass
+├── completion.py        # ✅ NEW: generate_structured() — single /api/generate call + retry + parse
+├── errors.py            # ✅ NEW: CompletionError, ModelRetry
+└── usage.py             # ✅ NEW: RunUsage dataclass
 ```
 
 No `tools.py` — tool calling is removed entirely.  
 No `output.py` — schema formatting and output parsing live in `completion.py`.  
 No `Agent` class — `generate_structured()` is a plain async function, not a class with decorators.
+
+*(Phase 2 note: `client.py` still builds `self.agent_model` because the domain layer still references it. That will be removed in Phase 2f.)*
 
 ### Key design decisions
 
@@ -121,7 +123,7 @@ No `Agent` class — `generate_structured()` is a plain async function, not a cl
 
 **Branch:** `feature/custom-ollama-agent`
 
-#### 1a. `app/ollama/errors.py`
+#### 1a. `app/ollama/errors.py` ✅
 
 ```python
 class CompletionError(Exception):
@@ -137,7 +139,7 @@ class MaxRetriesExceeded(CompletionError):
     """Exhausted output_retries without valid output."""
 ```
 
-#### 1b. `app/ollama/usage.py`
+#### 1b. `app/ollama/usage.py` ✅
 
 ```python
 @dataclass
@@ -153,7 +155,7 @@ class RunUsage:
 - Drop-in replacement for `pydantic_ai.result.RunUsage` (subset used: `input_tokens`, `output_tokens`, `requests`, `details`)
 - `BudgetedUsage` in `token_budget.py` uses `getattr(self._usage, name)` — works with any object that has these attributes
 
-#### 1c. `app/ollama/completion.py`
+#### 1c. `app/ollama/completion.py` ✅
 
 Core function — the entire module in one file:
 
@@ -252,28 +254,45 @@ class CompletionResult(Generic[T]):
 
 That's it. The entire pydantic-ai `Agent` class, `PromptedOutput`, `StructuredDict`, `RunContext`, decorators, and tool calling — all replaced by one async function.
 
-#### 1d. `client.py` changes
+#### 1d. `client.py` changes ✅ (partial)
 
-- Remove `from pydantic_ai.models.ollama import OllamaModel` and `from pydantic_ai.providers.ollama import OllamaProvider`
-- Remove `agent_model` property and `_build_agent_model()` method
-- Expose `ollama_client: AsyncClient` property for `generate_structured()` to use
-- Keep all other functionality (embeddings, model management, etc.) unchanged
+- ✅ **Added** `ollama_client` property returning `self.chat_client` (the underlying `AsyncClient`) for `generate_structured()` to consume
+- ⏳ **Deferred** removal of `OllamaModel`/`OllamaProvider` imports and `agent_model` — the domain layer (`extraction_service.py`) still references `self.ollama_client.agent_model`. Will be removed in Phase 2f once all domain code migrates to passing model name strings.
+- All other functionality (embeddings, model management, etc.) unchanged
 
-#### 1e. Write comprehensive tests
+#### 1e. Comprehensive tests ✅
 
-- `tests/test_ollama_completion.py` — test `generate_structured()` with mocked responses
-  - Happy path: valid JSON → parsed Pydantic model
-  - Happy path: dict output_type → raw dict
-  - Retry on JSON decode failure
-  - Retry on Pydantic validation failure  
-  - `MaxRetriesExceeded` after exhausting retries
-  - Token usage accumulation across retries
-  - Markdown fence stripping
-  - `think` parameter passthrough
-- `tests/test_ollama_usage.py` — test `RunUsage` compatibility with `BudgetedUsage`
-  - Attribute access (`input_tokens`, `output_tokens`, `requests`)
-  - `merge()` accumulation
-  - `getattr()` compatibility (used by `BudgetedUsage`)
+- ✅ `tests/test_ollama_completion.py` — 25 tests covering:
+  - Happy path: valid JSON → parsed Pydantic model ✅
+  - Happy path: dict output_type → raw dict ✅
+  - Retry on JSON decode failure ✅
+  - Retry on Pydantic validation failure ✅
+  - `MaxRetriesExceeded` after exhausting retries ✅
+  - Empty response retry ✅
+  - Token usage accumulation across retries ✅
+  - Markdown fence stripping ✅
+  - `think` / `temperature` / `seed` / `num_ctx` / `keep_alive` passthrough ✅
+  - `BudgetedUsage` `getattr` compatibility ✅
+  - `RunUsage.merge()` and `__add__` ✅
+  - `RunUsage.from_ollama_response()` ✅
+
+**Note:** `tests/test_ollama_usage.py` was merged into `test_ollama_completion.py` (single file is sufficient for the small surface). `test_ollama_client.py` still passes (14 tests) — it tests the existing client and still references `agent_model` (expected until Phase 2f).
+
+---
+
+### Pitfalls & Deviations (from actual implementation)
+
+**1d — `client.py`:** Did not remove pydantic-ai imports yet because `extraction_service.py` still reads `self.ollama_client.agent_model`. Removing it now would break the app. The plan now is: keep `_build_agent_model()` and `agent_model` alive through Phase 2, remove them in Phase 2f when the final pydantic-ai cleanup happens.
+
+**1c — `completion.py` signature vs. plan:** Added `num_ctx` and `keep_alive` parameters beyond what the original plan specified. They are essential for runtime control (context length) and for integration with the existing `OllamaClientWrapper` (which sets `keep_alive=-1` for warm caches). Also added `from_ollama_response()` classmethod to `RunUsage` so callers can build usage from responses directly.
+
+**1c — `_strip_markdown_fences()` implementation:** The spec used `split('\n', 1)[1]` which was fragile for edge cases like nested or partial fences. Implemented a regex-based `_MARKDOWN_FENCE_RE` that handles ` ```json`, ` ``` `, stray backticks, and no fences gracefully.
+
+**1e — test file consolidation:** The spec suggested `test_ollama_usage.py` as a separate file, but since `RunUsage` is small, all its tests were folded into `test_ollama_completion.py` under the `RunUsageTests` class. BudgetedUsage compatibility is verified directly in `test_budgeted_usage_getattr_compat`.
+
+**1c — Error propagation:** The spec's `CompletionError(str(e)) from e` pattern is applied throughout: `Ollama API errors` → `CompletionError`, late parsing/validation errors → `OutputParsingError`, exhausted retries → `MaxRetriesExceeded`. This matches the `extraction.py` API layer mapping (Phase 2e) which expects `CompletionError` → HTTP 502.
+
+---
 
 ### Phase 2: Migrate domain layer (sequential, one completion at a time)
 

@@ -1,0 +1,44 @@
+"""Token usage tracking for structured completions.
+
+Drop-in replacement for pydantic_ai.result.RunUsage (subset used by BudgetedUsage).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
+
+
+@dataclass
+class RunUsage:
+    """Aggregated token usage across one or more completion attempts."""
+
+    requests: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    details: dict[str, int] = field(default_factory=dict)
+
+    def merge(self, other: RunUsage) -> RunUsage:
+        """Return a new RunUsage combining self + other."""
+        merged_details: dict[str, int] = {}
+        for d in (self.details, other.details):
+            for key, value in d.items():
+                merged_details[key] = merged_details.get(key, 0) + value
+        return RunUsage(
+            requests=self.requests + other.requests,
+            input_tokens=self.input_tokens + other.input_tokens,
+            output_tokens=self.output_tokens + other.output_tokens,
+            details=merged_details,
+        )
+
+    def __add__(self, other: RunUsage) -> RunUsage:
+        return self.merge(other)
+
+    @classmethod
+    def from_ollama_response(cls, response: Any) -> RunUsage:
+        """Create RunUsage from an ollama GenerateResponse object."""
+        return cls(
+            requests=1,
+            input_tokens=getattr(response, "prompt_eval_count", 0) or 0,
+            output_tokens=getattr(response, "eval_count", 0) or 0,
+        )

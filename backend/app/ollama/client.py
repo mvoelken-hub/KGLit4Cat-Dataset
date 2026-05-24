@@ -218,6 +218,14 @@ class OllamaClientWrapper:
             await self.verify_chat()
             return await self.chat_client.show(model=previous_model)
 
+    @property
+    def ollama_client(self) -> ollama.AsyncClient:
+        """The underlying ollama.AsyncClient for direct /api/generate calls.
+
+        Used by generate_structured() in the custom completion module.
+        """
+        return self.chat_client
+
     async def get_embeddings(self, input: list[str]) -> list[Embedding]:
         options: dict[str, object] = {}
         if self.embed_num_gpu != -1:
