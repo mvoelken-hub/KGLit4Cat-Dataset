@@ -30,7 +30,8 @@ ENV_EXAMPLE = REPO_ROOT / ".env.example"
 COMPOSE_PROD = REPO_ROOT / "docker-compose.yml"
 
 API_URL = "http://127.0.0.1:8000/docs"
-HEALTH_URL = "http://127.0.0.1:8000/api/v1/health"
+API_BASE = "http://127.0.0.1:8000/api/v1"
+HEALTH_URL = f"{API_BASE}/health"
 NEO4J_BROWSER_URL = "http://127.0.0.1:7474/browser/"
 NEO4J_DATA_DIR = REPO_ROOT / "data" / "docker" / "neo4j" / "data"
 NEO4J_BACKUP_DIR = REPO_ROOT / ".backups" / "neo4j"
@@ -432,6 +433,63 @@ def _get_json_url(url: str, timeout: int = 5) -> tuple[int | None, dict[str, obj
         return exc.code, payload, None
     except Exception as exc:
         return None, None, f"{type(exc).__name__}: {exc}"
+
+
+def _post_json_url(url: str, data: dict[str, object] | None = None, method: str = "POST", timeout: int = 120) -> tuple[int | None, dict[str, object] | None, str | None]:
+    """Send a JSON request to a URL and return (status_code, parsed_json, error_string)."""
+    try:
+        body = json.dumps(data).encode("utf-8") if data else None
+        req = urllib.request.Request(url, data=body, method=method, headers={"Content-Type": "application/json", "Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status, json.loads(resp.read().decode("utf-8")), None
+    except urllib.error.HTTPError as exc:
+        try:
+            payload = json.loads(exc.read().decode("utf-8"))
+        except Exception:
+            payload = None
+        return exc.code, payload, None
+    except Exception as exc:
+        return None, None, f"{type(exc).__name__}: {exc}"
+
+
+def _api_is_reachable() -> bool:
+    """Check if the SIMONE API is reachable."""
+    try:
+        req = urllib.request.Request(HEALTH_URL, method="HEAD")
+        with urllib.request.urlopen(req, timeout=3):
+            return True
+    except Exception:
+        return False
+
+
+def _api_get_ollama_config() -> tuple[dict[str, object] | None, str | None]:
+    """Fetch the full Ollama config from the running API. Returns (config_dict, error)."""
+    status, payload, error = _get_json_url(f"{API_BASE}/ollama-config", timeout=30)
+    if error:
+        return None, error
+    if status and 200 <= status < 300 and isinstance(payload, dict):
+        return payload, None
+    return None, f"HTTP {status}"
+
+
+def _api_patch_runtime(patch: dict[str, object]) -> tuple[dict[str, object] | None, str | None]:
+    """Patch Ollama runtime config via the API. Returns (updated_config, error)."""
+    status, payload, error = _post_json_url(f"{API_BASE}/ollama-config/runtime", data=patch, method="PATCH", timeout=30)
+    if error:
+        return None, error
+    if status and 200 <= status < 300 and isinstance(payload, dict):
+        return payload, None
+    return None, f"HTTP {status}"
+
+
+def _api_run_performance_test(patch: dict[str, object] | None = None) -> tuple[dict[str, object] | None, str | None]:
+    """Run the Ollama performance test via the API. Returns (result_dict, error)."""
+    status, payload, error = _post_json_url(f"{API_BASE}/ollama-config/runtime/performance-test", data=patch, method="POST", timeout=300)
+    if error:
+        return None, error
+    if status and 200 <= status < 300 and isinstance(payload, dict):
+        return payload, None
+    return None, f"HTTP {status}"
 
 
 def _is_ollama_chat_unauthorized(health_payload: dict[str, object] | None) -> bool:
@@ -1024,7 +1082,7 @@ def _print_initial_vocab_info() -> None:
 def models(
     start_services: bool = typer.Option(True, "--start-services/--no-start-services", help="Start local Ollama before interacting"),
 ) -> None:
-    """Interactively manage Ollama models: list, inspect, pull, remove, or set as configured model."""
+    """Interactively manage Ollama models and runtime configuration."""
     os.environ["APP_ENV"] = "development"
     _ensure_env_file(ENV_FILE, ENV_EXAMPLE)
     env_values = _read_env_file(ENV_FILE)
@@ -1099,7 +1157,7 @@ def models(
             typer.echo("No models downloaded yet.")
 
         typer.echo("")
-        typer.echo("Actions: [i] inspect  [p] pull  [r] remove  [s] set as  [g] fit check  [q] quit")
+        typer.echo("Actions: [i] inspect  [l] loaded  [c] config  [t] test  [d] diagnostics  [p] pull  [r] remove  [s] set as  [g] fit check  [x] server  [q] quit")
         action = typer.prompt("Choose action", default="q").strip().lower()
 
         if action in ("q", "quit", ""):
@@ -1108,6 +1166,18 @@ def models(
 
         elif action in ("i", "inspect"):
             _models_action_inspect(model_settings, listed, loop)
+
+        elif action in ("l", "loaded"):
+            _models_action_loaded(model_settings, loop)
+
+        elif action in ("c", "config"):
+            _models_action_config(model_settings, env_values, loop)
+
+        elif action in ("t", "test"):
+            _models_action_test(model_settings, loop)
+
+        elif action in ("d", "diag", "diagnostics"):
+            _models_action_diagnostics(model_settings, loop)
 
         elif action in ("p", "pull"):
             if not local_ollama:
@@ -1137,6 +1207,9 @@ def models(
                 typer.echo("")
                 continue
             _models_action_gpu(model_settings, loop)
+
+        elif action in ("x", "server"):
+            _models_action_server(env_values)
 
         else:
             typer.echo(f"Unknown action: {action}")
@@ -1272,9 +1345,11 @@ def _models_action_set(model_settings, listed, env_values: dict[str, str]) -> No
     if role in ("e", "embedding", "embed"):
         env_key = "OLLAMA_EMBED_MODEL"
         role_label = "embedding"
+        patch_key = "embedding_model"
     elif role in ("c", "chat"):
         env_key = "OLLAMA_CHAT_MODEL"
         role_label = "chat"
+        patch_key = "chat_model"
     else:
         typer.echo(f"Unknown role: {role}. Use 'embedding' or 'chat'.", err=True)
         return
@@ -1283,7 +1358,20 @@ def _models_action_set(model_settings, listed, env_values: dict[str, str]) -> No
     env_values[env_key] = model_name
     os.environ[env_key] = model_name
     typer.echo(f"Set {model_name} as the {role_label} model in .env ({env_key}={model_name}).")
-    typer.echo("Restart the API for the change to take effect.")
+
+    # Try to hot-reload via API
+    api_config, api_error = _api_get_ollama_config()
+    if api_config is not None:
+        patch = {patch_key: model_name}
+        updated, err = _api_patch_runtime(patch)
+        if err:
+            typer.echo(f"  Could not apply to running API: {err}", err=True)
+            typer.echo("  Restart the API for the change to take effect.")
+        else:
+            typer.echo(typer.style("  Applied to running API (hot-reload).", fg=typer.colors.GREEN))
+            typer.echo("  Note: Runtime changes reset when the API restarts. .env values persist.")
+    else:
+        typer.echo("  API is not reachable. Restart the API for the change to take effect.")
 
 
 def _models_action_gpu(model_settings, loop) -> None:
@@ -1392,6 +1480,571 @@ def _models_action_gpu(model_settings, loop) -> None:
 
     typer.echo("")
     typer.echo("No models were unloaded by this check.")
+
+
+def _models_action_loaded(model_settings, loop) -> None:
+    """Show currently loaded (running) Ollama models with VRAM and processor info."""
+    from app.ollama.client import OllamaClientWrapper
+    from app.ollama.runtime import running_model_summary, model_name
+    from app.core.logging import logger
+
+    async def _run():
+        client = OllamaClientWrapper(model_settings, logger)
+        try:
+            return await running_model_summary(client)
+        finally:
+            await client.close()
+
+    try:
+        running = loop.run_until_complete(_run())
+    except Exception as exc:
+        typer.echo(f"Failed to list running models: {type(exc).__name__}: {exc}", err=True)
+        return
+
+    if not running.get("available"):
+        error = running.get("error", {})
+        msg = error.get("message", str(error)) if isinstance(error, dict) else str(error)
+        typer.echo(f"Could not inspect running models: {msg}", err=True)
+        return
+
+    models = running.get("models", [])
+    if not models:
+        typer.echo("No models are currently loaded in GPU memory.")
+        return
+
+    typer.echo("Currently loaded models:")
+    typer.echo(f"  {'Model':<40} {'VRAM':>10} {'Total':>10} {'Processor':<20} {'Context':>10}")
+    typer.echo(f"  {'---':<40} {'---':>10} {'---':>10} {'---':<20} {'---':>10}")
+    for m in models:
+        name = m.get("model") or m.get("name") or "unknown"
+        size_vram = m.get("size_vram")
+        size_total = m.get("size")
+        vram_str = f"{size_vram / 1024 / 1024:.0f} MB" if size_vram else "N/A"
+        total_str = f"{size_total / 1024 / 1024:.0f} MB" if size_total else "N/A"
+        processor = m.get("processor", "unknown")
+        ctx = m.get("context_length")
+        ctx_str = str(ctx) if ctx else "N/A"
+        typer.echo(f"  {name:<40} {vram_str:>10} {total_str:>10} {processor:<20} {ctx_str:>10}")
+
+    # Show configured model residency
+    chat_model = model_settings.ollama_chat_model
+    embed_model = model_settings.ollama_embed_model
+    loaded_names = {model_name(m) for m in models if isinstance(m, dict)}
+    chat_loaded = chat_model in loaded_names
+    embed_loaded = embed_model in loaded_names
+    typer.echo("")
+    typer.echo(f"  Chat model ({chat_model}):      {'resident' if chat_loaded else 'not resident'}")
+    typer.echo(f"  Embedding model ({embed_model}): {'resident' if embed_loaded else 'not resident'}")
+
+
+def _models_action_config(model_settings, env_values: dict[str, str], loop) -> None:
+    """Show and edit Ollama runtime configuration."""
+
+    # Try API first for live runtime values
+    api_config, api_error = _api_get_ollama_config()
+    api_reachable = api_config is not None
+
+    if api_reachable and api_config:
+        runtime = api_config.get("runtime", {})
+        chat_model = runtime.get("chat_model", model_settings.ollama_chat_model)
+        embed_model = runtime.get("embedding_model", model_settings.ollama_embed_model)
+        max_ctx = runtime.get("max_context_length", model_settings.max_context_length)
+        embed_batch = runtime.get("embedding_batch_size", model_settings.embedding_batch_size)
+        embed_num_gpu = runtime.get("embedding_num_gpu", model_settings.ollama_embed_num_gpu)
+        input_budget = runtime.get("input_token_budget", int(max_ctx * 0.75))
+        host_info = api_config.get("host", {})
+        is_local = host_info.get("is_local", False)
+        flash_attn = host_info.get("flash_attention")
+        kv_cache = host_info.get("kv_cache_type")
+    else:
+        chat_model = model_settings.ollama_chat_model
+        embed_model = model_settings.ollama_embed_model
+        max_ctx = model_settings.max_context_length
+        embed_batch = model_settings.embedding_batch_size
+        embed_num_gpu = model_settings.ollama_embed_num_gpu
+        input_budget = int(max_ctx * 0.75)
+        is_local = _is_local_host(env_values.get("OLLAMA_HOSTNAME"))
+        flash_attn = model_settings.ollama_flash_attention
+        kv_cache = model_settings.ollama_kv_cache_type
+
+    embed_gpu_label = "auto (all GPU)" if embed_num_gpu == -1 else ("CPU only" if embed_num_gpu == 0 else f"{embed_num_gpu} layers")
+
+    typer.echo("Current Ollama runtime configuration:")
+    typer.echo(f"  Chat model:            {chat_model}")
+    typer.echo(f"  Embedding model:       {embed_model}")
+    typer.echo(f"  Max context length:     {max_ctx}")
+    typer.echo(f"  Input token budget:    {input_budget} (75% of context)")
+    typer.echo(f"  Embedding batch size:  {embed_batch}")
+    typer.echo(f"  Embedding GPU:         {embed_num_gpu} ({embed_gpu_label})")
+    if is_local:
+        typer.echo(f"  Flash attention:       {flash_attn}  (server-side)")
+        typer.echo(f"  KV cache type:         {kv_cache}  (server-side)")
+    else:
+        typer.echo(f"  Host mode:             Remote")
+    if not api_reachable:
+        typer.echo("")
+        typer.echo(typer.style("  Note: API is not reachable. Showing .env values; runtime values may differ.", fg=typer.colors.YELLOW))
+
+    typer.echo("")
+    typer.echo("Edit which value?")
+    typer.echo("  [1] Chat model")
+    typer.echo("  [2] Embedding model")
+    typer.echo("  [3] Max context length")
+    typer.echo("  [4] Embedding batch size")
+    typer.echo("  [5] Embedding GPU layers")
+    typer.echo("  [a] Apply all changes to running API (hot-reload)")
+    typer.echo("  [q] Back to model list")
+
+    choice = typer.prompt("Choose", default="q").strip().lower()
+
+    if choice in ("q", ""):
+        return
+
+    patch: dict[str, object] = {}
+
+    if choice == "1":
+        new_val = typer.prompt("Chat model name", default=chat_model).strip()
+        if new_val and new_val != chat_model:
+            patch["chat_model"] = new_val
+            _write_env_value(ENV_FILE, "OLLAMA_CHAT_MODEL", new_val)
+            env_values["OLLAMA_CHAT_MODEL"] = new_val
+            os.environ["OLLAMA_CHAT_MODEL"] = new_val
+            typer.echo(f"  Written OLLAMA_CHAT_MODEL={new_val} to .env")
+    elif choice == "2":
+        new_val = typer.prompt("Embedding model name", default=embed_model).strip()
+        if new_val and new_val != embed_model:
+            patch["embedding_model"] = new_val
+            _write_env_value(ENV_FILE, "OLLAMA_EMBED_MODEL", new_val)
+            env_values["OLLAMA_EMBED_MODEL"] = new_val
+            os.environ["OLLAMA_EMBED_MODEL"] = new_val
+            typer.echo(f"  Written OLLAMA_EMBED_MODEL={new_val} to .env")
+    elif choice == "3":
+        new_val = typer.prompt("Max context length", type=int, default=max_ctx)
+        if new_val != max_ctx:
+            patch["max_context_length"] = new_val
+            _write_env_value(ENV_FILE, "MAX_CONTEXT_LENGTH", str(new_val))
+            env_values["MAX_CONTEXT_LENGTH"] = str(new_val)
+            os.environ["MAX_CONTEXT_LENGTH"] = str(new_val)
+            typer.echo(f"  Written MAX_CONTEXT_LENGTH={new_val} to .env")
+    elif choice == "4":
+        new_val = typer.prompt("Embedding batch size", type=int, default=embed_batch)
+        if new_val != embed_batch:
+            patch["embedding_batch_size"] = new_val
+            _write_env_value(ENV_FILE, "EMBEDDING_BATCH_SIZE", str(new_val))
+            env_values["EMBEDDING_BATCH_SIZE"] = str(new_val)
+            os.environ["EMBEDDING_BATCH_SIZE"] = str(new_val)
+            typer.echo(f"  Written EMBEDDING_BATCH_SIZE={new_val} to .env")
+    elif choice == "5":
+        typer.echo("  Embedding GPU layers: -1 = auto (all GPU), 0 = CPU only, N = N layers on GPU")
+        new_val = typer.prompt("Embedding GPU layers", type=int, default=embed_num_gpu)
+        if new_val != embed_num_gpu:
+            patch["embedding_num_gpu"] = new_val
+            _write_env_value(ENV_FILE, "OLLAMA_EMBED_NUM_GPU", str(new_val))
+            env_values["OLLAMA_EMBED_NUM_GPU"] = str(new_val)
+            os.environ["OLLAMA_EMBED_NUM_GPU"] = str(new_val)
+            typer.echo(f"  Written OLLAMA_EMBED_NUM_GPU={new_val} to .env")
+    elif choice == "a":
+        # Apply all pending .env changes to the running API
+        if not api_reachable:
+            typer.echo("API is not reachable. Cannot apply changes to running API.", err=True)
+            return
+        # Build patch from current .env values
+        patch["chat_model"] = env_values.get("OLLAMA_CHAT_MODEL", chat_model)
+        patch["embedding_model"] = env_values.get("OLLAMA_EMBED_MODEL", embed_model)
+        patch["max_context_length"] = int(env_values.get("MAX_CONTEXT_LENGTH", str(max_ctx)))
+        patch["embedding_batch_size"] = int(env_values.get("EMBEDDING_BATCH_SIZE", str(embed_batch)))
+        patch["embedding_num_gpu"] = int(env_values.get("OLLAMA_EMBED_NUM_GPU", str(embed_num_gpu)))
+    else:
+        typer.echo(f"Unknown choice: {choice}")
+        return
+
+    # Apply patch to running API if there are changes and API is reachable
+    if patch and api_reachable:
+        typer.echo("Applying runtime changes to running API ...")
+        updated, err = _api_patch_runtime(patch)
+        if err:
+            typer.echo(f"  Failed to apply to API: {err}", err=True)
+            typer.echo("  Changes are saved in .env and will take effect on API restart.")
+        else:
+            typer.echo(typer.style("  Applied to running API (hot-reload).", fg=typer.colors.GREEN))
+            typer.echo("  Note: Runtime changes reset when the API restarts. .env values persist.")
+    elif patch and not api_reachable:
+        typer.echo("API is not reachable. Changes saved to .env will take effect on next API start.")
+
+
+def _models_action_test(model_settings, loop) -> None:
+    """Run the embedding/chat switch test to check GPU residency under load."""
+    from app.ollama.client import OllamaClientWrapper
+    from app.ollama.runtime import run_performance_test
+
+    # Try API first
+    api_reachable = _api_is_reachable()
+
+    chat_model = model_settings.ollama_chat_model
+    embed_model = model_settings.ollama_embed_model
+    max_ctx = model_settings.max_context_length
+    embed_num_gpu = model_settings.ollama_embed_num_gpu
+
+    typer.echo("Switch test - loads embed → chat → embed → chat to detect reload pressure.")
+    typer.echo(f"  Chat model:       {chat_model}")
+    typer.echo(f"  Embedding model:  {embed_model}")
+    typer.echo(f"  Max context:       {max_ctx}")
+    typer.echo(f"  Embedding GPU:     {embed_num_gpu}")
+    typer.echo("")
+
+    if api_reachable:
+        typer.echo("API is reachable. Running switch test via API ...")
+        result, err = _api_run_performance_test({
+            "chat_model": chat_model,
+            "embedding_model": embed_model,
+            "max_context_length": max_ctx,
+            "embedding_num_gpu": embed_num_gpu,
+        })
+        if err:
+            typer.echo(f"API switch test failed: {err}", err=True)
+            typer.echo("Falling back to direct Ollama client ...")
+            api_reachable = False
+        else:
+            # Display API results
+            runtime_info = result.get("runtime", {})
+            typer.echo(f"  Chat model:       {runtime_info.get('chat_model', chat_model)}")
+            typer.echo(f"  Embedding model:  {runtime_info.get('embedding_model', embed_model)}")
+            typer.echo(f"  Max context:      {runtime_info.get('max_context_length', max_ctx)}")
+            typer.echo(f"  Embedding GPU:    {runtime_info.get('embedding_num_gpu', embed_num_gpu)}")
+            typer.echo("")
+
+            initial = result.get("initial", {})
+            if initial.get("available") and initial.get("models"):
+                typer.echo("Models loaded before test:")
+                for m in initial.get("models", []):
+                    name = m.get("model") or m.get("name") or "unknown"
+                    vram = m.get("size_vram")
+                    total = m.get("size")
+                    vram_str = f"{vram / 1024 / 1024:.0f} MB" if vram else "N/A"
+                    total_str = f"{total / 1024 / 1024:.0f} MB" if total else "N/A"
+                    proc = m.get("processor", "unknown")
+                    typer.echo(f"  {name}  VRAM: {vram_str}  Total: {total_str}  Processor: {proc}")
+            typer.echo("")
+
+            steps = result.get("steps", [])
+            for step in steps:
+                label = step.get("label", step.get("key", ""))
+                model = step.get("model", "")
+                success = step.get("success", False)
+                load_ms = step.get("load_duration_ms")
+                error_msg = step.get("error")
+                snapshot = step.get("snapshot", {})
+                loaded_count = len(snapshot.get("models", [])) if snapshot.get("available") else "?"
+
+                status_str = typer.style("OK", fg=typer.colors.GREEN) if success else typer.style("FAILED", fg=typer.colors.RED)
+                load_str = f"{load_ms:.0f} ms" if load_ms is not None else "N/A"
+                typer.echo(f"  {label} ({model}): {status_str}  load: {load_str}  models after: {loaded_count}")
+                if error_msg:
+                    typer.echo(f"    Error: {error_msg}")
+
+            diagnostics = result.get("diagnostics", {})
+            diag_status = diagnostics.get("status", "unknown")
+            diag_summary = diagnostics.get("summary", "")
+            recommendations = diagnostics.get("recommendations", [])
+
+            typer.echo("")
+            color = typer.colors.GREEN if diag_status == "ok" else (typer.colors.YELLOW if diag_status in ("partial", "chat-pressure") else typer.colors.RED)
+            typer.echo(f"Diagnostics: {typer.style(diag_status, fg=color)}")
+            typer.echo(f"  {diag_summary}")
+            if recommendations:
+                typer.echo("  Recommendations:")
+                for rec in recommendations:
+                    typer.echo(f"    - {rec}")
+
+            both_resident = diagnostics.get("both_resident_after_final")
+            if both_resident is not None:
+                typer.echo(f"  Both models resident after final step: {typer.style(str(both_resident), fg=typer.colors.GREEN if both_resident else typer.colors.RED)}")
+            return
+
+    # Fallback: direct Ollama client
+    if not api_reachable:
+        typer.echo("API is not reachable. Running switch test directly via Ollama ...")
+
+        async def _run_direct():
+            from app.core.logging import logger as _logger
+            client = OllamaClientWrapper(model_settings, _logger)
+            try:
+                return await run_performance_test(
+                    model_settings,
+                    client,
+                    chat_model=chat_model,
+                    embedding_model=embed_model,
+                    max_context_length=max_ctx,
+                    embedding_num_gpu=embed_num_gpu,
+                )
+            finally:
+                await client.close()
+
+        try:
+            result = loop.run_until_complete(_run_direct())
+        except Exception as exc:
+            typer.echo(f"Switch test failed: {type(exc).__name__}: {exc}", err=True)
+            return
+
+        runtime_info = result.get("runtime", {})
+        typer.echo(f"  Chat model:       {runtime_info.get('chat_model', chat_model)}")
+        typer.echo(f"  Embedding model:  {runtime_info.get('embedding_model', embed_model)}")
+        typer.echo(f"  Max context:      {runtime_info.get('max_context_length', max_ctx)}")
+        typer.echo(f"  Embedding GPU:    {runtime_info.get('embedding_num_gpu', embed_num_gpu)}")
+        typer.echo("")
+
+        initial = result.get("initial", {})
+        if initial.get("available") and initial.get("models"):
+            typer.echo("Models loaded before test:")
+            for m in initial.get("models", []):
+                name = m.get("model") or m.get("name") or "unknown"
+                vram = m.get("size_vram")
+                total = m.get("size")
+                vram_str = f"{vram / 1024 / 1024:.0f} MB" if vram else "N/A"
+                total_str = f"{total / 1024 / 1024:.0f} MB" if total else "N/A"
+                proc = m.get("processor", "unknown")
+                typer.echo(f"  {name}  VRAM: {vram_str}  Total: {total_str}  Processor: {proc}")
+        typer.echo("")
+
+        steps = result.get("steps", [])
+        for step in steps:
+            label = step.get("label", step.get("key", ""))
+            model = step.get("model", "")
+            success = step.get("success", False)
+            load_ms = step.get("load_duration_ms")
+            error_msg = step.get("error")
+            snapshot = step.get("snapshot", {})
+            loaded_count = len(snapshot.get("models", [])) if snapshot.get("available") else "?"
+
+            status_str = typer.style("OK", fg=typer.colors.GREEN) if success else typer.style("FAILED", fg=typer.colors.RED)
+            load_str = f"{load_ms:.0f} ms" if load_ms is not None else "N/A"
+            typer.echo(f"  {label} ({model}): {status_str}  load: {load_str}  models after: {loaded_count}")
+            if error_msg:
+                typer.echo(f"    Error: {error_msg}")
+
+        diagnostics = result.get("diagnostics", {})
+        diag_status = diagnostics.get("status", "unknown")
+        diag_summary = diagnostics.get("summary", "")
+        recommendations = diagnostics.get("recommendations", [])
+
+        typer.echo("")
+        color = typer.colors.GREEN if diag_status == "ok" else (typer.colors.YELLOW if diag_status in ("partial", "chat-pressure") else typer.colors.RED)
+        typer.echo(f"Diagnostics: {typer.style(diag_status, fg=color)}")
+        typer.echo(f"  {diag_summary}")
+        if recommendations:
+            typer.echo("  Recommendations:")
+            for rec in recommendations:
+                typer.echo(f"    - {rec}")
+
+        both_resident = diagnostics.get("both_resident_after_final")
+        if both_resident is not None:
+            typer.echo(f"  Both models resident after final step: {typer.style(str(both_resident), fg=typer.colors.GREEN if both_resident else typer.colors.RED)}")
+
+
+def _models_action_diagnostics(model_settings, loop) -> None:
+    """Show Ollama diagnostics: loaded models, residency, and context budget."""
+    from app.ollama.client import OllamaClientWrapper
+    from app.ollama.runtime import running_model_summary, diagnose_ollama_runtime
+
+    # Try API first
+    api_config, api_error = _api_get_ollama_config()
+    api_reachable = api_config is not None
+
+    if api_reachable and api_config:
+        runtime = api_config.get("runtime", {})
+        running_data = api_config.get("running", {})
+        diagnostics = api_config.get("diagnostics", {})
+        host_info = api_config.get("host", {})
+        warnings = api_config.get("warnings", [])
+
+        typer.echo("Ollama diagnostics (from running API):")
+        typer.echo("")
+        typer.echo(f"  Host:              {host_info.get('base_url', 'unknown')}")
+        typer.echo(f"  Host mode:         {'Local' if host_info.get('is_local') else 'Remote'}")
+        if host_info.get("is_local"):
+            typer.echo(f"  Flash attention:   {host_info.get('flash_attention', 'unknown')}")
+            typer.echo(f"  KV cache type:     {host_info.get('kv_cache_type', 'unknown')}")
+        typer.echo("")
+        typer.echo("  Runtime configuration:")
+        typer.echo(f"    Chat model:            {runtime.get('chat_model', 'unknown')}")
+        typer.echo(f"    Embedding model:      {runtime.get('embedding_model', 'unknown')}")
+        typer.echo(f"    Max context length:    {runtime.get('max_context_length', 'unknown')}")
+        typer.echo(f"    Input token budget:   {runtime.get('input_token_budget', 'unknown')} (75% of context)")
+        typer.echo(f"    Embedding batch size: {runtime.get('embedding_batch_size', 'unknown')}")
+        typer.echo(f"    Embedding GPU:        {runtime.get('embedding_gpu_label', 'unknown')} ({runtime.get('embedding_num_gpu', 'unknown')})")
+        typer.echo(f"    Resets on restart:    {runtime.get('resets_on_api_restart', True)}")
+        typer.echo("")
+
+        # Loaded models
+        if running_data.get("available"):
+            models = running_data.get("models", [])
+            if models:
+                typer.echo("  Loaded models:")
+                for m in models:
+                    name = m.get("model") or m.get("name") or "unknown"
+                    vram = m.get("size_vram")
+                    total = m.get("size")
+                    vram_str = f"{vram / 1024 / 1024:.0f} MB" if vram else "N/A"
+                    total_str = f"{total / 1024 / 1024:.0f} MB" if total else "N/A"
+                    proc = m.get("processor", "unknown")
+                    ctx = m.get("context_length")
+                    ctx_str = str(ctx) if ctx else "N/A"
+                    typer.echo(f"    {name}  VRAM: {vram_str}  Total: {total_str}  Processor: {proc}  Context: {ctx_str}")
+            else:
+                typer.echo("  No models currently loaded.")
+        else:
+            err = running_data.get("error", {})
+            msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+            typer.echo(f"  Could not inspect loaded models: {msg}")
+
+        typer.echo("")
+        typer.echo(f"  Chat model loaded:      {running_data.get('chat_model_loaded', '?')}")
+        typer.echo(f"  Embedding model loaded: {running_data.get('embedding_model_loaded', '?')}")
+        typer.echo(f"  Both models loaded:     {running_data.get('both_configured_models_loaded', '?')}")
+
+        # Diagnostics
+        diag_status = diagnostics.get("status", "unknown")
+        diag_summary = diagnostics.get("summary", "")
+        recommendations = diagnostics.get("recommendations", [])
+        color = typer.colors.GREEN if diag_status == "ok" else (typer.colors.YELLOW if diag_status in ("partial", "chat-pressure") else typer.colors.RED)
+        typer.echo("")
+        typer.echo(f"  Diagnostics: {typer.style(diag_status, fg=color)}")
+        typer.echo(f"    {diag_summary}")
+        if recommendations:
+            typer.echo("    Recommendations:")
+            for rec in recommendations:
+                typer.echo(f"      - {rec}")
+
+        if warnings:
+            typer.echo("")
+            typer.echo("  Warnings:")
+            for w in warnings:
+                typer.echo(f"    - {w}")
+        return
+
+    # Fallback: direct Ollama client
+    typer.echo("API is not reachable. Querying Ollama directly ...")
+
+    async def _run():
+        from app.core.logging import logger as _logger
+        client = OllamaClientWrapper(model_settings, _logger)
+        try:
+            running = await running_model_summary(client)
+            return running
+        finally:
+            await client.close()
+
+    try:
+        running = loop.run_until_complete(_run())
+    except Exception as exc:
+        typer.echo(f"Failed to query Ollama: {type(exc).__name__}: {exc}", err=True)
+        return
+
+    chat_model = model_settings.ollama_chat_model
+    embed_model = model_settings.ollama_embed_model
+
+    typer.echo("")
+    typer.echo("Ollama diagnostics (direct query):")
+    typer.echo(f"  Chat model:       {chat_model}")
+    typer.echo(f"  Embedding model:  {embed_model}")
+    typer.echo(f"  Max context:      {model_settings.max_context_length}")
+    typer.echo(f"  Embedding GPU:   {model_settings.ollama_embed_num_gpu}")
+    typer.echo("")
+
+    if running.get("available"):
+        models = running.get("models", [])
+        if models:
+            typer.echo("  Loaded models:")
+            for m in models:
+                name = m.get("model") or m.get("name") or "unknown"
+                vram = m.get("size_vram")
+                total = m.get("size")
+                vram_str = f"{vram / 1024 / 1024:.0f} MB" if vram else "N/A"
+                total_str = f"{total / 1024 / 1024:.0f} MB" if total else "N/A"
+                proc = m.get("processor", "unknown")
+                typer.echo(f"    {name}  VRAM: {vram_str}  Total: {total_str}  Processor: {proc}")
+        else:
+            typer.echo("  No models currently loaded.")
+    else:
+        err = running.get("error", {})
+        msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+        typer.echo(f"  Could not inspect loaded models: {msg}")
+
+    diagnostics = diagnose_ollama_runtime(chat_model, embed_model, running)
+    diag_status = diagnostics.get("status", "unknown")
+    diag_summary = diagnostics.get("summary", "")
+    recommendations = diagnostics.get("recommendations", [])
+    color = typer.colors.GREEN if diag_status == "ok" else (typer.colors.YELLOW if diag_status in ("partial", "chat-pressure") else typer.colors.RED)
+    typer.echo("")
+    typer.echo(f"  Diagnostics: {typer.style(diag_status, fg=color)}")
+    typer.echo(f"    {diag_summary}")
+    if recommendations:
+        typer.echo("    Recommendations:")
+        for rec in recommendations:
+            typer.echo(f"      - {rec}")
+
+
+def _models_action_server(env_values: dict[str, str]) -> None:
+    """Show and configure server-side Ollama settings (flash attention, KV cache type)."""
+    local_ollama = _is_local_host(env_values.get("OLLAMA_HOSTNAME"))
+    if not local_ollama:
+        typer.echo("Server-side configuration is only available when Ollama is local/Docker.")
+        typer.echo("Change these settings on the Ollama host directly.")
+        return
+
+    current_flash = env_values.get("OLLAMA_FLASH_ATTENTION", "1")
+    current_kv = env_values.get("OLLAMA_KV_CACHE_TYPE", "q8_0")
+
+    typer.echo("Ollama server-side configuration (requires container restart):")
+    typer.echo(f"  OLLAMA_FLASH_ATTENTION = {current_flash}  (enables Flash Attention, reduces memory at larger contexts)")
+    typer.echo(f"  OLLAMA_KV_CACHE_TYPE    = {current_kv}  (KV cache quantization: f16=default, q8_0=half memory, q4_0=quarter memory)")
+    typer.echo("")
+    typer.echo("These are Docker container environment variables. Changes require restarting the Ollama container.")
+    typer.echo("")
+    typer.echo("  [1] Change OLLAMA_FLASH_ATTENTION")
+    typer.echo("  [2] Change OLLAMA_KV_CACHE_TYPE")
+    typer.echo("  [r] Restart Ollama container to apply changes")
+    typer.echo("  [q] Back to model list")
+
+    choice = typer.prompt("Choose", default="q").strip().lower()
+
+    if choice in ("q", ""):
+        return
+
+    if choice == "1":
+        new_val = typer.prompt("OLLAMA_FLASH_ATTENTION (0 or 1)", default=current_flash).strip()
+        if new_val not in ("0", "1"):
+            typer.echo("Value must be 0 or 1.", err=True)
+            return
+        _write_env_value(ENV_FILE, "OLLAMA_FLASH_ATTENTION", new_val)
+        env_values["OLLAMA_FLASH_ATTENTION"] = new_val
+        os.environ["OLLAMA_FLASH_ATTENTION"] = new_val
+        typer.echo(f"  Set OLLAMA_FLASH_ATTENTION={new_val} in .env")
+        typer.echo("  Restart the Ollama container to apply: use [r] here or 'simone host --ollama'")
+
+    elif choice == "2":
+        typer.echo("  Options: f16 (default, highest quality), q8_0 (half memory), q4_0 (quarter memory, lowest quality)")
+        new_val = typer.prompt("OLLAMA_KV_CACHE_TYPE", default=current_kv).strip()
+        if new_val not in ("f16", "q8_0", "q4_0"):
+            typer.echo("Warning: Unrecognized KV cache type. Common values are f16, q8_0, q4_0.", err=True)
+        _write_env_value(ENV_FILE, "OLLAMA_KV_CACHE_TYPE", new_val)
+        env_values["OLLAMA_KV_CACHE_TYPE"] = new_val
+        os.environ["OLLAMA_KV_CACHE_TYPE"] = new_val
+        typer.echo(f"  Set OLLAMA_KV_CACHE_TYPE={new_val} in .env")
+        typer.echo("  Restart the Ollama container to apply: use [r] here or 'simone host --ollama'")
+
+    elif choice == "r":
+        if not _docker_available():
+            typer.echo("Docker is not available. Cannot restart Ollama container.", err=True)
+            return
+        if not typer.confirm("Restart the Ollama container? This will unload all models.", default=False):
+            typer.echo("Cancelled.")
+            return
+        typer.echo("Restarting Ollama container ...")
+        _run(_build_compose_cmd(ENV_FILE, [COMPOSE_PROD], action="restart", services=["ollama"]), cwd=REPO_ROOT, check=False)
+        typer.echo("Ollama container restarted. Models will need to be reloaded.")
+    else:
+        typer.echo(f"Unknown choice: {choice}")
 
 
 def _bootstrap_vocabs(foreground: bool, start_services: bool) -> None:
