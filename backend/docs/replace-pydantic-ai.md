@@ -6,7 +6,9 @@
 
 ## Goal
 
-Remove the `pydantic-ai` dependency entirely. Replace it with a custom lightweight agent module in `app/ollama/` that directly calls Ollama's `/api/chat` (with tool calling) and `/api/generate` (with `format` parameter) endpoints, handling structured output, tool calling, retry logic, context injection, and token usage observation natively.
+Remove the `pydantic-ai` dependency entirely. Replace it with a custom lightweight agent module in `app/ollama/` that calls Ollama's `/api/generate` endpoint (with `format` parameter for structured output), handling output parsing, retry logic, context injection, and token usage observation natively.
+
+**No tool calling — all agents use single-turn `/api/generate`.** The previous `initial_context` agent's two tools (`list_dataset_files`, `read_file_content`) are replaced by a new **file ranking agent** + caller-side pre-fetching (see §File Ranking below).
 
 ## Why
 
@@ -33,37 +35,53 @@ Remove the `pydantic-ai` dependency entirely. Replace it with a custom lightweig
 
 ### Agent usage patterns
 
-| Agent | Factory | Output Type | Tools | Dynamic Instructions | `deps_type` |
-|-------|---------|-------------|-------|---------------------|-------------|
-| Initial Context | `create_initial_context_agent()` | `PromptedOutput(InitialContext)` | 2 (`list_dataset_files`, `read_file_content`) | No (static instructions) | `InitialContextDeps` |
-| Patch Draft | `create_patch_draft_agent()` | `PromptedOutput(FieldPatchResult)` | No | Yes (`@agent.instructions`) | `PatchDraftDeps` |
-| Patch Discovery | `create_patch_discovery_agent()` | `PromptedOutput(PatchDiscoveryResult)` | No | Yes | `PatchDiscoveryDeps` |
-| Schema Patch | `create_schema_patch_agent()` | `PromptedOutput(SchemaPatchResult)` | No | Yes | `SchemaPatchDeps` |
-| Schema Repair | `create_schema_repair_agent()` | `PromptedOutput(SchemaPatchResult)` | No | Yes | `SchemaRepairDeps` |
-| Patch Quality | `create_patch_quality_agent()` | `PromptedOutput(PatchQualityReport)` | No | Yes | `PatchQualityDeps` |
-| Review Resolution | `create_patch_review_resolution_agent()` | `PromptedOutput(PatchReviewResolution)` | No | Yes | `PatchReviewResolutionDeps` |
-| Schema Validated | `create_schema_validated_agent()` | `StructuredDict+PromptedOutput` or fallback `PromptedOutput(dict)` | No | Static (or schema-in-text fallback) | `deps_type` param |
+| Agent | Factory | Output Type | Dynamic Instructions | `deps_type` |
+|-------|---------|-------------|---------------------|-------------|
+| File Ranking | `create_file_ranking_agent()` **NEW** | `FileRankingResult` **NEW** | Yes (file list + metadata) | `FileRankingDeps` **NEW** |
+| Initial Context | `create_initial_context_agent()` → refactor | `PromptedOutput(InitialContext)` → direct | Yes (pre-read files) | `InitialContextDeps` (simplified) |
+| Patch Draft | `create_patch_draft_agent()` | `PromptedOutput(FieldPatchResult)` → direct | Yes | `PatchDraftDeps` |
+| Patch Discovery | `create_patch_discovery_agent()` | `PromptedOutput(PatchDiscoveryResult)` → direct | Yes | `PatchDiscoveryDeps` |
+| Schema Patch | `create_schema_patch_agent()` | `PromptedOutput(SchemaPatchResult)` → direct | Yes | `SchemaPatchDeps` |
+| Schema Repair | `create_schema_repair_agent()` | `PromptedOutput(SchemaPatchResult)` → direct | Yes | `SchemaRepairDeps` |
+| Patch Quality | `create_patch_quality_agent()` | `PromptedOutput(PatchQualityReport)` → direct | Yes | `PatchQualityDeps` |
+| Review Resolution | `create_patch_review_resolution_agent()` | `PromptedOutput(PatchReviewResolution)` → direct | Yes | `PatchReviewResolutionDeps` |
+| Schema Validated | `create_schema_validated_agent()` | `StructuredDict+PromptedOutput` → direct | Static or schema-in-text | `deps_type` param |
+
+**No agent uses tools.** All agents are single-turn `/api/generate` calls with `format` parameter.
 
 ### What `Agent.run()` provides that we need to replicate
 
-1. **System message injection** — `instructions` param on `Agent()` constructor
-2. **Dynamic instructions** — `@agent.instructions` callbacks that receive deps and return context strings
-3. **Tool registration + routing** — `@agent.tool` decorated functions with deps access; model calls tools, results fed back
-4. **Output parsing** — `PromptedOutput` → JSON schema description in system prompt, parse response text as JSON, validate against schema
-5. **Output retries** — `output_retries` param, `ModelRetry` exception triggers re-prompt with error message
-6. **Token usage** — `result.usage` returns `RunUsage` with `input_tokens`, `output_tokens`, `requests`, `details`
-7. **Model settings** — `temperature`, `seed` per agent
-8. **Error handling** — `AgentRunError` wraps model/structured output failures
+1. **System message injection** — `instructions` param → Ollama `system` field
+2. **Dynamic instructions** — callbacks that receive deps and return context strings
+3. **Output parsing** — `PromptedOutput` → `/api/generate` `format` param with JSON schema; parse + validate
+4. **Output retries** — `output_retries` param; `ModelRetry` re-prompts with error appended
+5. **Token usage** — `prompt_eval_count` / `eval_count` from Ollama response
+6. **Model settings** — `temperature`, `seed` → Ollama `options`
+7. **Error handling** — `AgentRunError` wraps model/output failures
 
 ### What we do NOT need from Pydantic AI
 
 - Streaming (`run_stream`)
 - Conversation history (`message_history`)
-- Multi-turn beyond tool-return loop
+- Tool calling (removed — replaced by file ranking agent + pre-fetch)
 - `NativeOutput` (tested: worse than PromptedOutput for self-hosted Ollama)
-- `@agent.output_validator` — only used by `create_schema_validated_agent()` which we'll handle directly
+- `@agent.output_validator` — only used by `create_schema_validated_agent()`, we'll handle directly
 - Graph/agent orchestration features
 - Dependency injection beyond what a simple dataclass carries
+- `/api/chat` endpoint entirely (all agents use `/api/generate`)
+
+### File Ranking (NEW)
+
+The previous `initial_context` agent used two tools (`list_dataset_files`, `read_file_content`) in a multi-turn loop to discover and read files. This is replaced by:
+
+1. **File ranking agent** — a new single-turn `/api/generate` call that receives a file list (paths + extensions + sizes) and returns a ranked list by metadata potential.
+   - Input: file paths with extension and size hints
+   - Output: `FileRankingResult` — ranked list of file paths with relevance scores and brief reasoning
+   - Ranked output also flows into the **patching pipeline** — files are chunked and processed in rank order
+
+2. **Caller-side file reading** — the service layer reads top-N files (by ranking) and injects their content directly into the initial context agent's prompt, exactly like how other agents already receive context via dynamic instructions.
+
+This eliminates all tool calling and makes every agent a single `/api/generate` call.
 
 ---
 
@@ -76,21 +94,22 @@ app/ollama/
 ├── __init__.py          # Re-export public API
 ├── client.py            # OllamaClientWrapper (existing, unchanged except removing pydantic_ai)
 ├── runtime.py           # Model management, diagnostics (existing, unchanged)
-├── agent.py             # NEW: Agent class replacing pydantic_ai.Agent
+├── agent.py             # NEW: Agent class — single-turn /api/generate only
 ├── output.py            # NEW: Output parsing, schema formatting, validation
-├── tools.py             # NEW: Tool definition, calling, result handling
 ├── retry.py             # NEW: ModelRetry exception, retry loop logic
 ├── usage.py             # NEW: RunUsage dataclass, token counting
 └── errors.py            # NEW: AgentRunError and custom error types
 ```
 
+No `tools.py` — tool calling is removed entirely.
+
 ### Key design decisions
 
-1. **Dual API routing:** Agents without tools → `/api/generate` with `format` param (minimal token overhead). Agents with tools → `/api/chat` with tool definitions (required for tool calling protocol).
-2. **Pyantic models stay:** Output types remain Pydantic `BaseModel` subclasses. We parse the LLM response JSON and validate with `model.model_validate()`. `StructuredDict` is replaced with plain JSON schema validation.
-3. **Tool calling protocol:** Ollama's `/api/chat` endpoint natively supports tool definitions and tool results. We'll parse tool call responses, execute tool functions, and feed results back — exactly like pydantic-ai but without the abstraction overhead.
-4. **ModelRetry as exception:** Keep the same pattern — `ModelRetry(message)` raised in validation/retry callbacks triggers a re-prompt with the error message appended.
-5. **Token usage via Ollama response metadata:** Both `/api/generate` and `/api/chat` return `prompt_eval_count` and `eval_count` fields. We map these to `input_tokens` / `output_tokens`.
+1. **Single endpoint:** All agents use `/api/generate` with `format` param. No `/api/chat`, no tool calling.
+2. **Pydantic models stay:** Output types remain Pydantic `BaseModel` subclasses. We extract JSON schema from them for the `format` param, then parse the LLM response with `model.model_validate()`. `StructuredDict` is replaced with plain JSON schema validation.
+3. **ModelRetry as exception:** Keep the same pattern — `ModelRetry(message)` raised in validation/retry callbacks triggers a re-prompt with the error message appended to the prompt.
+4. **Token usage via Ollama response metadata:** `/api/generate` returns `prompt_eval_count` and `eval_count`. We map these to `input_tokens` / `output_tokens`.
+5. **File ranking replaces tool-calling file reading:** New `create_file_ranking_agent()` produces a ranked file list; the service layer pre-reads top-N files and injects content into the initial context agent's prompt.
 
 ---
 
@@ -181,7 +200,7 @@ from typing import Any, Callable, Generic, TypeVar
 class AgentConfig:
     model: str
     system_prompt: str | None = None
-    output_type: Any = str  # Pydantic model, dict schema, or str
+    output_type: Any = str  # Pydantic model class, dict (for raw JSON schema), or str
     output_name: str | None = None
     output_description: str | None = None
     output_retries: int = 2
@@ -189,32 +208,27 @@ class AgentConfig:
     seed: int = 42
     max_context_length: int = 8192
     think: bool = False  # For qwen3.5 etc
-    
+
 class Agent(Generic[DepsT, OutputT]):
+    """Single-turn /api/generate agent. No tool calling."""
+    
     def __init__(self, config: AgentConfig):
         self._config = config
-        self._tools: list[ToolDefinition] = []
         self._dynamic_instructions: list[Callable[[DepsT], str]] = []
-    
-    def tool(self, fn):
-        """Decorator: register a tool function. Mirrors pydantic_ai @agent.tool."""
     
     def instructions(self, fn):
         """Decorator: register dynamic instructions callback. Mirrors @agent.instructions."""
+        self._dynamic_instructions.append(fn)
+        return fn
     
     async def run(self, prompt: str, *, deps: DepsT = None) -> AgentResult[OutputT]:
-        """Main execution loop.
+        """Execute a single /api/generate call with format param.
         
-        For agents WITHOUT tools:
-          - Use /api/generate with format={json_schema}
-          - Parse response, validate output
-          - Retry on ModelRetry up to output_retries times
-        
-        For agents WITH tools:
-          - Use /api/chat with tool definitions
-          - Loop: send messages → receive tool calls → execute tools → send results
-          - After tool loop completes, parse final output
-          - Retry on ModelRetry
+        1. Build system message from static instructions + dynamic instructions(deps)
+        2. Call /api/generate with format=JSON schema
+        3. Parse response into output_type
+        4. On ModelRetry: append error to prompt, retry up to output_retries
+        5. Return AgentResult(output, usage)
         """
 
 @dataclass
@@ -223,79 +237,41 @@ class AgentResult(Generic[OutputT]):
     usage: RunUsage
 ```
 
-**Key implementation details for `/api/generate` path (extraction agents):**
+**`_run_generate` implementation sketch:**
 
 ```python
 async def _run_generate(self, prompt: str, deps: Any) -> AgentResult:
-    """Agent path via /api/generate — no tool calling, minimal token overhead."""
+    """All agents use /api/generate — no tool calling, no chat loop."""
     schema = format_json_schema(self._config.output_type)
     system_msg = self._build_system_message(deps)
-    
-    response = await self._ollama_client.chat_client.generate(
-        model=self._config.model,
-        prompt=prompt,  # Actually we need to prepend system + schema
-        system=system_msg,  # Ollama supports system param
-        format=schema,  # Structured output!
-        options={"temperature": self._config.temperature, "seed": self._config.seed, "num_ctx": self._config.max_context_length},
-        think=self._config.think,
-    )
-    
-    output = parse_structured_output(response.response, self._config.output_type)
-    usage = RunUsage(
-        input_tokens=getattr(response, 'prompt_eval_count', 0) or 0,
-        output_tokens=getattr(response, 'eval_count', 0) or 0,
-        requests=1,
-    )
-    return AgentResult(output=output, usage=usage)
-```
-
-**Key implementation details for `/api/chat` path (tool-using agents):**
-
-```python
-async def _run_chat(self, prompt: str, deps: Any) -> AgentResult:
-    """Agent path via /api/chat — supports tool calling."""
-    import ollama
-    
-    system_msg = self._build_system_message(deps)
-    messages = [ollama.Message(role="system", content=system_msg),
-                ollama.Message(role="user", content=prompt)]
-    tools = build_ollama_tools(self._tools)
+    current_prompt = prompt
     
     total_usage = RunUsage()
     
     for attempt in range(self._config.output_retries + 1):
-        response = await self._ollama_client.chat_client.chat(
+        response = await self._ollama_client.chat_client.generate(
             model=self._config.model,
-            messages=messages,
-            tools=tools if tools else None,
-            options={"temperature": self._config.temperature, "seed": self._config.seed, "num_ctx": self._config.max_context_length},
+            prompt=current_prompt,
+            system=system_msg,
+            format=schema,
+            options={
+                "temperature": self._config.temperature,
+                "seed": self._config.seed,
+                "num_ctx": self._config.max_context_length,
+            },
+            think=self._config.think,
         )
         
         total_usage.input_tokens += getattr(response, 'prompt_eval_count', 0) or 0
         total_usage.output_tokens += getattr(response, 'eval_count', 0) or 0
         total_usage.requests += 1
         
-        # Check for tool calls
-        msg = response.message
-        if msg.tool_calls:
-            messages.append(msg)
-            for tc in msg.tool_calls:
-                result = self._execute_tool(tc.function.name, tc.function.arguments, deps)
-                messages.append(ollama.Message(
-                    role="tool",
-                    content=result,
-                    tool_call_id=...,
-                ))
-            continue  # Loop back with tool results
-        
-        # No tool calls — parse as final output
         try:
-            output = parse_structured_output(msg.content, self._config.output_type)
+            output = parse_structured_output(response.response, self._config.output_type)
             return AgentResult(output=output, usage=total_usage)
         except (json.JSONDecodeError, ValidationError) as e:
             if attempt < self._config.output_retries:
-                messages.append(ollama.Message(role="assistant", content=msg.content))
-                messages.append(ollama.Message(role="user", content=f"Error: {e}. Please try again."))
+                current_prompt = f"{current_prompt}\n\nError: {e}. Please return valid JSON."
                 continue
             raise OutputParsingError(str(e)) from e
     
@@ -322,7 +298,7 @@ async def _run_chat(self, prompt: str, deps: Any) -> AgentResult:
 
 ### Phase 2: Migrate agent factories to use custom Agent (dual path)
 
-**Goal:** Every agent factory has been rewritten to use `app.ollama.agent.Agent` instead of `pydantic_ai.Agent`. Existing tests pass.
+**Goal:** Every agent factory has been rewritten to use `app.ollama.agent.Agent` instead of `pydantic_ai.Agent`. Existing tests pass. Tool calling removed; file ranking agent added.
 
 #### 2a. `agents.py` refactoring
 
@@ -334,33 +310,51 @@ async def _run_chat(self, prompt: str, deps: Any) -> AgentResult:
 - `validate_json_output_against_schema()` → keep as-is (uses `jsonschema`, not pydantic-ai)
 - `ModelRetry` → import from `app.ollama.errors`
 
-#### 2b. `initial_context.py` refactoring
+#### 2b. NEW `file_ranking.py`
+
+- Create `FileRankingResult` Pydantic model — ranked file list with relevance scores and reasoning
+- Create `FileRankingDeps` dataclass — file list with extensions and sizes
+- Create `create_file_ranking_agent()` → `Agent` with `FileRankingResult` output type
+- Instructions: rank files by metadata potential (README, instrument exports, tables, etc.)
+
+#### 2c. `initial_context.py` refactoring
 
 - Replace `pydantic_ai.Agent` with `app.ollama.agent.Agent`
-- Replace `@agent.tool` decorator with new `@agent.tool` (same API, different implementation)
-- Replace `RunContext[InitialContextDeps]` — new Agent's tool functions receive deps directly
-- `result.output` and `result.usage` — same attribute names on `AgentResult`
+- **Remove `@agent.tool` decorators** — `list_dataset_files` and `read_file_content` are replaced by file ranking + pre-fetch
+- Replace `RunContext[InitialContextDeps]` — dynamic instructions receive deps directly
+- `extract_initial_context_from_data_package()` refactored:
+  1. Call `create_file_ranking_agent()` to rank files
+  2. Read top-N files using existing `list_initial_context_dataset_files()` / `read_initial_context_file_content()` in caller
+  3. Call `create_initial_context_agent()` with pre-read content injected via dynamic instructions
+- Remove `files_read` tracking from `InitialContextDeps` (no longer needed)
 
-#### 2c. `patch_draft.py`, `patch_quality.py`, `review_resolution.py` refactoring
+#### 2d. `patch_draft.py`, `patch_quality.py`, `review_resolution.py` refactoring
 
 - Replace `@agent.instructions` with new `@agent.instructions`
 - Replace `RunContext[Deps]` — function signatures become `(deps: DepsT) -> str`
-- Same pattern for all 6 agent factories
+- Same pattern for all agent factories
 
-#### 2d. `extraction.py` (API layer)
+#### 2e. `extraction.py` (API layer)
 
 - Replace `from pydantic_ai.exceptions import AgentRunError` with `from app.ollama.errors import AgentRunError`
 - Error handling stays the same
 
-#### 2e. Update test files
+#### 2f. `client.py` changes
+
+- Remove `from pydantic_ai.models.ollama import OllamaModel` and `from pydantic_ai.providers.ollama import OllamaProvider`
+- Remove `_build_agent_model()` and `agent_model` attribute
+- Agent factories receive model name string from `OllamaClientWrapper.chat_model` instead of pydantic-ai model object
+
+#### 2g. Update test files
 
 - `test_extraction_agents.py`: Remove `TestModel` import, replace with mock Agent or mock Ollama responses
 - `test_patch_quality.py`: Same
-- `test_initial_context_extraction.py`: Same
+- `test_initial_context_extraction.py`: Same; add tests for file ranking flow
 - `test_ollama_client.py`: Remove `OllamaModel`/`OllamaProvider` assertions
 - Add new test file for `app/ollama/agent.py`
+- Add new test file for `file_ranking.py`
 
-#### 2f. Integration test
+#### 2h. Integration test
 
 - Run full end-to-end extraction with a connected Ollama instance (or mock)
 - Verify token usage reporting still works
@@ -416,4 +410,4 @@ This document is the living source of truth. Update it as implementation progres
 | Pydantic AI `NativeOutput` | 3,953 | Partial | 221s |
 | Pydantic AI `PromptedOutput` | **timeout** | — | >600s |
 
-**Target:** All extraction agents (no tools) → `/api/generate` with `format` (~143 tokens). Initial context agent (has tools) → `/api/chat` with native tool calling.
+**Target:** All agents → `/api/generate` with `format` (~143 tokens each).
