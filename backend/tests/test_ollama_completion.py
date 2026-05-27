@@ -10,7 +10,13 @@ from unittest import IsolatedAsyncioTestCase
 
 from pydantic import BaseModel
 
-from app.ollama.completion import CompletionResult, _extract_json_schema, _strip_markdown_fences, generate_structured
+from app.ollama.completion import (
+    CompletionResult,
+    _extract_json_schema,
+    _strip_markdown_fences,
+    generate_structured,
+    repair_structured_output,
+)
 from app.ollama.errors import CompletionError, EmptyResponseError, MaxRetriesExceeded, OutputParsingError
 from app.ollama.usage import RunUsage
 
@@ -307,6 +313,38 @@ class GenerateStructuredRetryTests(IsolatedAsyncioTestCase):
         self.assertEqual(client.call_index, 3)
         self.assertIsInstance(error.exception.last_error, OutputParsingError)
         self.assertEqual(error.exception.details["last_error_type"], "OutputParsingError")
+        self.assertEqual(error.exception.failed_response, "still bad")
+
+    async def test_failed_response_can_be_repaired_later(self):
+        first_pass = FakeOllamaClient([
+            FakeGenerateResponse(response="bad json", prompt_eval_count=10, eval_count=5),
+        ])
+
+        with self.assertRaises(MaxRetriesExceeded) as error:
+            await generate_structured(
+                first_pass,
+                model="test-model",
+                system="Be precise.",
+                prompt="Return JSON.",
+                output_type=SimpleOutput,
+                retries=0,
+            )
+
+        repair_client = FakeOllamaClient([
+            FakeGenerateResponse(response='{"answer": "fixed", "score": 1}'),
+        ])
+
+        result = await repair_structured_output(
+            repair_client,
+            model="test-model",
+            failed_response=error.exception.failed_response or "",
+            error=error.exception.last_error or error.exception,
+            output_type=SimpleOutput,
+        )
+
+        self.assertEqual(result.output.answer, "fixed")
+        self.assertIn("bad json", repair_client.calls[0]["prompt"])
+        self.assertNotIn("Return JSON.", repair_client.calls[0]["prompt"])
 
     async def test_usage_accumulates_across_retries(self):
         client = FakeOllamaClient([

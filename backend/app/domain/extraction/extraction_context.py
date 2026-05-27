@@ -2,7 +2,7 @@ from difflib import SequenceMatcher
 from hashlib import sha1
 import re
 from typing import TypeVar
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -25,30 +25,59 @@ class DataGeneratingActivity(BaseModel):
     keywords: list[str] = Field(default_factory=list, description="List of keywords associated with the activity.")
     has_quantitative_attributes: list[Quantity] = Field(default_factory=list, description="List of quantitative attributes associated with the activity.")
     has_qualitative_attributes: list[QualitativeAttribute] = Field(default_factory=list, description="List of qualitative attributes associated with the activity.")
+
+class Method(BaseModel):
+    """A method, Plan, Sequence, or Protocol that has been used in the experiment."""
+    identifier: str = Field(..., description="Unique identifier for the method.")
+    description: str = Field(..., description="Description of the method.")
+    keywords: list[str] = Field(default_factory=list, description="List of keywords associated with the method.")
+    has_quantitative_attributes: list[Quantity] = Field(default_factory=list, description="List of quantitative attributes associated with the method.")
+    has_qualitative_attributes: list[QualitativeAttribute] = Field(default_factory=list, description="List of qualitative attributes associated with the method.")
     
 class EvaluatedEntity(BaseModel):
     """An entity that has been evaluated."""
     identifier: str = Field(..., description="Unique identifier for the entity.")
     description: str = Field(..., description="Description of the entity.")
-    keywords: list[str] = Field(default_factory=list, description="List of keywords associated with the entity.")
+    type: str = Field(..., description="Type of the entity (e.g., sample, model).")
     has_quantitative_attributes: list[Quantity] = Field(default_factory=list, description="List of quantitative attributes associated with the entity.")
     has_qualitative_attributes: list[QualitativeAttribute] = Field(default_factory=list, description="List of qualitative attributes associated with the entity.")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _default_type(cls, data):
+        if isinstance(data, dict) and not data.get("type"):
+            return {**data, "type": "unknown"}
+        return data
 
 class AgenticEntity(BaseModel):
     """An entity that has agency, meaning it can perform activities."""
     identifier: str = Field(..., description="Unique identifier for the agentic entity.")
     description: str = Field(..., description="Description of the agentic entity.")
-    keywords: list[str] = Field(default_factory=list, description="List of keywords associated with the agentic entity.")
+    type: str = Field(..., description="Type of the agentic entity (e.g., person, organization).")
     has_quantitative_attributes: list[Quantity] = Field(default_factory=list, description="List of quantitative attributes associated with the agentic entity.")
     has_qualitative_attributes: list[QualitativeAttribute] = Field(default_factory=list, description="List of qualitative attributes associated with the agentic entity.")
 
-class Dataset(BaseModel):
-    """A dataset that has been generated."""
-    identifier: str = Field(..., description="Unique identifier for the dataset.")
-    description: str = Field(..., description="Description of the dataset.")
-    keywords: list[str] = Field(default_factory=list, description="List of keywords associated with the dataset.")
-    has_quantitative_attributes: list[Quantity] = Field(default_factory=list, description="List of quantitative attributes associated with the dataset.")
-    has_qualitative_attributes: list[QualitativeAttribute] = Field(default_factory=list, description="List of qualitative attributes associated with the dataset.")
+    @model_validator(mode="before")
+    @classmethod
+    def _default_type(cls, data):
+        if isinstance(data, dict) and not data.get("type"):
+            return {**data, "type": "unknown"}
+        return data
+
+class Resource(BaseModel):
+    """Resource from a dataset. Could be either a file or a dataset-level resource."""
+    identifier: str = Field(..., description="Unique identifier for the resource.")
+    type: str = Field(..., description="Type of the resource (e.g., file, dataset).")
+    description: str = Field(..., description="Description of the resource.")
+    has_quantitative_attributes: list[Quantity] = Field(default_factory=list, description="List of quantitative attributes associated with the resource.")
+    has_qualitative_attributes: list[QualitativeAttribute] = Field(default_factory=list, description="List of qualitative attributes associated with the resource.")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _default_type(cls, data):
+        if isinstance(data, dict) and not data.get("type"):
+            return {**data, "type": "unknown"}
+        return data
 
 
 class ExtractionContext(BaseModel):
@@ -56,18 +85,21 @@ class ExtractionContext(BaseModel):
     data_generating_activities: list[DataGeneratingActivity] = Field(default_factory=list, description="List of data-generating activities.")
     evaluated_entities: list[EvaluatedEntity] = Field(default_factory=list, description="List of evaluated entities.")
     agentic_entities: list[AgenticEntity] = Field(default_factory=list, description="List of agentic entities.")
-    datasets: list[Dataset] = Field(default_factory=list, description="List of datasets that have been generated.")
+    resources: list[Resource] = Field(default_factory=list, description="List of resources that have been generated.")
+    methods: list[Method] = Field(default_factory=list, description="List of methods that have been used in the experiment.")
 
 
 EXTRACTION_CONTEXT_SYSTEM_PROMPT = f"""
 You are an expert for extracting structured metadata about scientific experiments from unstructured text.
 You receive a content chunk from a file in a research data package, and your task is to extract structured information about the experimental context, including:
-- Data-generating activities (processes that produce information about other activities or entities)
+- Data-generating activities (processes that produce information about other activities or entities; do not treat parameter names / headers as activities)
 - Evaluated entities (entities that have been evaluated in the experiment)
 - Agentic entities (entities that have agency and can perform activities)
-- Datasets that have been generated
-For each entity or activity, extract any quantitative attributes (measured or calculated quantities) and qualitative attributes (observed characteristics) that are mentioned in the text.
+- Resources that have been generated
+- Methods that have been used in the experiment
+For each class, extract any quantitative attributes (measured or calculated quantities) and qualitative attributes (observed characteristics) that are mentioned in the text.
 Return only a valid ExtractionContext JSON object with the extracted information.
+Use this output schema: {ExtractionContext.model_json_schema()}
 Focus on extracting as much metadata as possible from one specific chunk. Work at a low level; your individual result will later be combined with the results of several such extraction steps, so you don't need to try to guess the overall context.
 """
 
@@ -99,7 +131,8 @@ def merge_extraction_context_results(
         merged_context.data_generating_activities.extend(context.data_generating_activities)
         merged_context.evaluated_entities.extend(context.evaluated_entities)
         merged_context.agentic_entities.extend(context.agentic_entities)
-        merged_context.datasets.extend(context.datasets)
+        merged_context.resources.extend(context.resources)
+        merged_context.methods.extend(context.methods)
     return deduplicate_extraction_context_items(merged_context)
 
 def deduplicate_extraction_context_items(
@@ -109,7 +142,8 @@ def deduplicate_extraction_context_items(
         data_generating_activities=deduplicate_list(context.data_generating_activities),
         evaluated_entities=deduplicate_list(context.evaluated_entities),
         agentic_entities=deduplicate_list(context.agentic_entities),
-        datasets=deduplicate_list(context.datasets),
+        resources=deduplicate_list(context.resources),
+        methods=deduplicate_list(context.methods),
     )
 
 # Helper

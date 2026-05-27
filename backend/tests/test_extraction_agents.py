@@ -51,10 +51,10 @@ class ExtractionDomainTests(unittest.TestCase):
     def test_merge_extraction_context_deduplicates_items(self):
         first = ExtractionContext.model_validate(
             {
-                "datasets": [
+                "methods": [
                     {
-                        "identifier": "sample-data",
-                        "description": "Dataset about sample A.",
+                        "identifier": "sample-method",
+                        "description": "Method for sample A.",
                         "keywords": ["sample"],
                     }
                 ]
@@ -62,10 +62,10 @@ class ExtractionDomainTests(unittest.TestCase):
         )
         second = ExtractionContext.model_validate(
             {
-                "datasets": [
+                "methods": [
                     {
-                        "identifier": "sample data",
-                        "description": "Dataset about sample A with more detail.",
+                        "identifier": "sample method",
+                        "description": "Method for sample A with more detail.",
                         "keywords": ["experiment"],
                     }
                 ]
@@ -74,8 +74,8 @@ class ExtractionDomainTests(unittest.TestCase):
 
         merged = merge_extraction_context_results([first, second])
 
-        self.assertEqual(len(merged.datasets), 1)
-        self.assertEqual(merged.datasets[0].keywords, ["experiment", "sample"])
+        self.assertEqual(len(merged.methods), 1)
+        self.assertEqual(merged.methods[0].keywords, ["experiment", "sample"])
 
     def test_qudt_query_builders_target_expected_types(self):
         quantity = Quantity(
@@ -96,4 +96,3 @@ class ExtractionDomainTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

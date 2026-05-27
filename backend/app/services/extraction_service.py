@@ -48,8 +48,8 @@ from app.domain.extraction import (
 )
 from app.domain.profiles import remove_null_values, validation_schema_for_target_class
 from app.domain.semantics import VocabQuery, VocabQueryResult
-from app.ollama.completion import generate_structured
-from app.ollama.errors import CompletionError
+from app.ollama.completion import generate_structured, repair_structured_output
+from app.ollama.errors import CompletionError, MaxRetriesExceeded
 from app.repositories.extraction_output_repository import ExtractionOutputRepository
 
 if TYPE_CHECKING:
@@ -276,6 +276,7 @@ class ExtractionService:
         self._update_progress(data_package_id, progress)
 
         progress.stage = "chunk_extraction"
+        chunk_repairs: list[tuple[ExtractionChunkResult, MaxRetriesExceeded]] = []
         for chunk_result, chunk in zip(state.chunk_results, ordered_chunks):
             if chunk_result.status == "completed" and chunk_result.extraction_context is not None:
                 continue
@@ -302,8 +303,30 @@ class ExtractionService:
                         )
                     ),
                     output_type=ExtractionContext,
+                    retries=0,
                     num_ctx=self.ollama_client.max_context_length,
                 )
+            except MaxRetriesExceeded as exc:
+                self._record_workflow_token_usage(
+                    data_package_id=data_package_id,
+                    agent_name="chunk_extraction",
+                    usage=exc.usage,
+                )
+                chunk_result.status = "failed"
+                chunk_result.error = f"Queued for repair after first-pass extraction: {exc}"
+                chunk_result.response_duration_ms = self._usage_float(
+                    exc.usage,
+                    "response_duration_ms",
+                )
+                chunk_result.context_tokens = self._usage_int(exc.usage, "input_tokens")
+                progress.current_chunk = None
+                progress.chunk_results = state.chunk_results
+                self._save_run_state(data_package_id, state)
+                self._update_progress(data_package_id, progress)
+                if exc.failed_response:
+                    chunk_repairs.append((chunk_result, exc))
+                    continue
+                raise
             except Exception as exc:
                 chunk_result.status = "failed"
                 chunk_result.error = str(exc)
@@ -325,6 +348,60 @@ class ExtractionService:
                 "response_duration_ms",
             )
             chunk_result.context_tokens = self._usage_int(result.usage, "input_tokens")
+            self._save_run_state(data_package_id, state)
+
+            partial_context = self._merged_completed_chunk_context(state)
+            self.output_repository.save_extraction_context(
+                workflow_id=data_package_id,
+                extraction_context=partial_context,
+            )
+            progress.processed_chunks = self._completed_chunk_count(state)
+            progress.interim_context = partial_context
+            progress.current_chunk = None
+            progress.chunk_results = state.chunk_results
+            self._update_progress(data_package_id, progress)
+
+        if chunk_repairs:
+            progress.stage = "chunk_repair"
+            self._update_progress(data_package_id, progress)
+        for chunk_result, failure in chunk_repairs:
+            chunk_result.status = "running"
+            chunk_result.error = None
+            progress.current_chunk = self._chunk_ref(chunk_result)
+            progress.chunk_results = state.chunk_results
+            self._save_run_state(data_package_id, state)
+            self._update_progress(data_package_id, progress)
+
+            try:
+                repair = await repair_structured_output(
+                    self.ollama_client,
+                    model=self.ollama_client.chat_model,
+                    failed_response=failure.failed_response or "",
+                    error=failure.last_error or failure,
+                    output_type=ExtractionContext,
+                    num_ctx=self.ollama_client.max_context_length,
+                )
+            except Exception as exc:
+                chunk_result.status = "failed"
+                chunk_result.error = str(exc)
+                progress.current_chunk = None
+                progress.chunk_results = state.chunk_results
+                self._save_run_state(data_package_id, state)
+                self._update_progress(data_package_id, progress)
+                raise
+
+            self._record_workflow_token_usage(
+                data_package_id=data_package_id,
+                agent_name="chunk_extraction_repair",
+                usage=repair.usage,
+            )
+            chunk_result.status = "completed"
+            chunk_result.extraction_context = repair.output
+            chunk_result.response_duration_ms = self._usage_float(
+                repair.usage,
+                "response_duration_ms",
+            )
+            chunk_result.context_tokens = self._usage_int(repair.usage, "input_tokens")
             self._save_run_state(data_package_id, state)
 
             partial_context = self._merged_completed_chunk_context(state)
@@ -893,7 +970,8 @@ class ExtractionService:
             context.data_generating_activities
             + context.evaluated_entities
             + context.agentic_entities
-            + context.datasets
+            + context.resources
+            + context.methods
         ):
             quantities.extend(item.has_quantitative_attributes)
         return quantities
@@ -905,7 +983,8 @@ class ExtractionService:
             context.data_generating_activities
             + context.evaluated_entities
             + context.agentic_entities
-            + context.datasets
+            + context.resources
+            + context.methods
         ):
             attributes.extend(item.has_qualitative_attributes)
         return attributes

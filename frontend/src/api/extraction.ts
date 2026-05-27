@@ -279,11 +279,11 @@ export async function resolvePatchReview(input: {
 }
 
 export function initialContextFromExtractionContext(context: Record<string, unknown>): InitialContext {
-  const datasets = arrayOfRecords(context.datasets);
+  const resources = arrayOfRecords(context.resources);
   const activities = arrayOfRecords(context.data_generating_activities);
   const entities = arrayOfRecords(context.evaluated_entities);
   const agents = arrayOfRecords(context.agentic_entities);
-  const dataset = datasets[0] || {};
+  const dataset = resources.find((resource) => stringValue(resource.type)?.toLowerCase() === 'dataset') || resources[0] || {};
   return {
     dataset_title: stringValue(dataset.identifier) || null,
     dataset_description: stringValue(dataset.description) || null,

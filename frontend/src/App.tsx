@@ -181,7 +181,8 @@ function ExtractionContextResultView({ context }: { context?: Record<string, unk
   if (!context) return <p className="muted">No extraction result is available for this chunk yet.</p>;
 
   const sections = [
-    { key: 'datasets', label: 'Datasets' },
+    { key: 'resources', label: 'Resources' },
+    { key: 'methods', label: 'Methods' },
     { key: 'data_generating_activities', label: 'Activities' },
     { key: 'evaluated_entities', label: 'Entities' },
     { key: 'agentic_entities', label: 'Agents' },
@@ -643,6 +644,7 @@ const tokenUsageLabels: Record<string, string> = {
   initial_context: 'Context extraction',
   file_ranking: 'File ranking',
   chunk_extraction: 'Chunk extraction',
+  chunk_extraction_repair: 'Chunk extraction repair',
   quantity_vocab_selection: 'Quantity vocabulary',
   qualitative_vocab_selection: 'Qualitative vocabulary',
   profile_projection: 'Profile projection',
@@ -2253,7 +2255,7 @@ export function App() {
                 tokenUsage={tokenUsage}
                 averageUnit="operation"
                 heading="Extraction context token usage"
-                agentKeys={['file_ranking', 'chunk_extraction', 'quantity_vocab_selection', 'qualitative_vocab_selection', 'profile_projection']}
+                agentKeys={['file_ranking', 'chunk_extraction', 'chunk_extraction_repair', 'quantity_vocab_selection', 'qualitative_vocab_selection', 'profile_projection']}
                 budget={llmBudget}
               />
               <p className="context-window-advice">

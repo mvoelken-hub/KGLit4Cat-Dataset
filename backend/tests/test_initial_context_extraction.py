@@ -14,6 +14,7 @@ from app.domain.extraction import (
     RankedFile,
 )
 from app.ollama.completion import CompletionResult
+from app.ollama.errors import MaxRetriesExceeded, OutputParsingError
 from app.ollama.usage import RunUsage
 from app.services.extraction_service import ExtractionService
 
@@ -172,11 +173,11 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             CompletionResult(
                 output=ExtractionContext.model_validate(
                     {
-                        "datasets": [
+                        "resources": [
                             {
-                                "identifier": "dataset-one",
-                                "description": "First partial dataset.",
-                                "keywords": ["one"],
+                                "identifier": "alpha-resource",
+                                "type": "dataset",
+                                "description": "Alpha catalyst metadata.",
                             }
                         ]
                     }
@@ -186,11 +187,11 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             CompletionResult(
                 output=ExtractionContext.model_validate(
                     {
-                        "datasets": [
+                        "resources": [
                             {
-                                "identifier": "dataset-two",
-                                "description": "Second partial dataset.",
-                                "keywords": ["two"],
+                                "identifier": "beta-spectrum",
+                                "type": "dataset",
+                                "description": "Beta NMR spectrum file.",
                             }
                         ]
                     }
@@ -217,8 +218,8 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNotNone(output_repository.context)
         self.assertGreaterEqual(len(output_repository.contexts), 2)
-        self.assertEqual(output_repository.contexts[0].datasets[0].identifier, "dataset-one")
-        self.assertEqual(len(output_repository.contexts[1].datasets), 2)
+        self.assertEqual(output_repository.contexts[0].resources[0].identifier, "alpha-resource")
+        self.assertEqual(len(output_repository.contexts[1].resources), 2)
         self.assertIsNotNone(output_repository.result)
         self.assertEqual(output_repository.result.document["id"], "dataset")
         self.assertIn("chunk_extraction", output_repository.token_usage)
@@ -229,9 +230,10 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             workflow_id="package-id",
             extraction_context=ExtractionContext.model_validate(
                 {
-                    "datasets": [
+                    "resources": [
                         {
                             "identifier": "interim-dataset",
+                            "type": "dataset",
                             "description": "Persisted partial context.",
                         }
                     ]
@@ -248,9 +250,92 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(progress.stage, "interim_context")
         self.assertIsNotNone(progress.interim_context)
         self.assertEqual(
-            progress.interim_context.datasets[0].identifier,
+            progress.interim_context.resources[0].identifier,
             "interim-dataset",
         )
+
+    async def test_chunk_repairs_run_after_first_pass_extraction_calls(self):
+        service, task_registry, output_repository = make_service(
+            [[make_chunk(0, "sample one"), make_chunk(1, "sample two")]]
+        )
+        call_order: list[str] = []
+        chunk_outputs = [
+            CompletionResult(
+                output=ExtractionContext.model_validate(
+                    {
+                        "resources": [
+                            {
+                                "identifier": "resource-one",
+                                "type": "dataset",
+                                "description": "First partial resource.",
+                            }
+                        ]
+                    }
+                ),
+                usage=RunUsage(requests=1, input_tokens=20, output_tokens=5),
+            ),
+            MaxRetriesExceeded(
+                last_error=OutputParsingError("bad json"),
+                failed_response='{"resources": [',
+                usage=RunUsage(requests=1, input_tokens=21, output_tokens=4),
+            ),
+        ]
+
+        async def fake_generate(*_args, **kwargs):
+            output_type = kwargs["output_type"]
+            if output_type is FileRankingResult:
+                call_order.append("rank")
+                return CompletionResult(
+                    output=FileRankingResult(files=[RankedFile(rank=1, file_path="README.md")]),
+                    usage=RunUsage(requests=1, input_tokens=10, output_tokens=2),
+                )
+            if output_type is ExtractionContext:
+                call_order.append(f"extract:{len(call_order)}")
+                output = chunk_outputs.pop(0)
+                if isinstance(output, Exception):
+                    raise output
+                return output
+            call_order.append("profile")
+            return CompletionResult(
+                output={"id": "dataset"},
+                usage=RunUsage(requests=1, input_tokens=30, output_tokens=8),
+            )
+
+        async def fake_repair(*_args, **_kwargs):
+            call_order.append("repair")
+            return CompletionResult(
+                output=ExtractionContext.model_validate(
+                    {
+                        "resources": [
+                            {
+                                "identifier": "resource-two",
+                                "type": "dataset",
+                                "description": "Repaired resource.",
+                            }
+                        ]
+                    }
+                ),
+                usage=RunUsage(requests=1, input_tokens=12, output_tokens=3),
+            )
+
+        with (
+            patch("app.services.extraction_service.generate_structured", side_effect=fake_generate),
+            patch("app.services.extraction_service.repair_structured_output", side_effect=fake_repair),
+        ):
+            result, status = await service.run_extraction(
+                data_package_id="package-id",
+                profile_identifier="profile",
+            )
+            self.assertIsNone(result)
+            self.assertEqual(status, TaskStatus.RUNNING)
+            await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
+
+        self.assertEqual(call_order, ["rank", "extract:1", "extract:2", "repair", "profile"])
+        self.assertEqual(
+            [resource.identifier for resource in output_repository.context.resources],
+            ["resource-one", "resource-two"],
+        )
+        self.assertIn("chunk_extraction_repair", output_repository.token_usage)
 
     async def test_resume_reuses_completed_chunk_results(self):
         service, task_registry, output_repository = make_service(
@@ -269,9 +354,10 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                         status="completed",
                         extraction_context=ExtractionContext.model_validate(
                             {
-                                "datasets": [
+                                "resources": [
                                     {
                                         "identifier": "already-extracted",
+                                        "type": "dataset",
                                         "description": "Persisted alpha catalyst result.",
                                     }
                                 ]
@@ -292,9 +378,10 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             CompletionResult(
                 output=ExtractionContext.model_validate(
                     {
-                        "datasets": [
+                        "resources": [
                             {
                                 "identifier": "resumed-chunk",
+                                "type": "dataset",
                                 "description": "NMR spectrum details.",
                             }
                         ]
@@ -329,7 +416,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             ["completed", "completed"],
         )
         self.assertEqual(
-            [dataset.identifier for dataset in output_repository.context.datasets],
+            [resource.identifier for resource in output_repository.context.resources],
             ["already-extracted", "resumed-chunk"],
         )
 

@@ -2,6 +2,8 @@
 
 from typing import Any
 
+from app.ollama.usage import RunUsage
+
 
 class CompletionError(Exception):
     """Base error for structured completion failures."""
@@ -34,10 +36,16 @@ class MaxRetriesExceeded(CompletionError):
         message: str = "Max retries exceeded",
         details: dict[str, Any] | None = None,
         last_error: Exception | None = None,
+        failed_response: str | None = None,
+        usage: RunUsage | None = None,
     ):
         details = dict(details or {})
         if last_error is not None:
             details.setdefault("last_error_type", type(last_error).__name__)
             details.setdefault("last_error", str(last_error))
+        if failed_response is not None:
+            details.setdefault("failed_response", failed_response)
         super().__init__(message, details)
         self.last_error = last_error
+        self.failed_response = failed_response
+        self.usage = usage or RunUsage()

@@ -105,6 +105,20 @@ def _max_retries_exceeded(last_error: Exception | None) -> MaxRetriesExceeded:
     )
 
 
+def _structured_failure(
+    last_error: Exception | None,
+    *,
+    failed_response: str,
+    usage: RunUsage,
+) -> MaxRetriesExceeded:
+    return MaxRetriesExceeded(
+        "Max retries exceeded while generating structured output",
+        last_error=last_error,
+        failed_response=failed_response,
+        usage=usage,
+    )
+
+
 def _repair_prompt(*, failed_response: str, error: Exception) -> str:
     """Build a narrow correction prompt from only the bad output and error."""
     response = failed_response if failed_response else "[empty response]"
@@ -250,7 +264,7 @@ async def generate_structured(
                 current_prompt = _repair_prompt(failed_response=raw, error=last_error)
                 current_model = repair_model or model
                 continue
-            raise _max_retries_exceeded(last_error) from e
+            raise _structured_failure(last_error, failed_response=raw, usage=total_usage) from e
 
         # Validate against Pydantic model if provided
         if isinstance(output_type, type) and issubclass(output_type, BaseModel):
@@ -263,7 +277,7 @@ async def generate_structured(
                     current_prompt = _repair_prompt(failed_response=raw, error=last_error)
                     current_model = repair_model or model
                     continue
-                raise _max_retries_exceeded(last_error) from e
+                raise _structured_failure(last_error, failed_response=raw, usage=total_usage) from e
             return CompletionResult(output=validated, usage=total_usage)
 
         # Raw dict schema output validated with jsonschema.
@@ -278,7 +292,76 @@ async def generate_structured(
                     current_prompt = _repair_prompt(failed_response=raw, error=last_error)
                     current_model = repair_model or model
                     continue
-                raise _max_retries_exceeded(last_error) from last_error
+                raise _structured_failure(last_error, failed_response=raw, usage=total_usage) from last_error
         return CompletionResult(output=parsed, usage=total_usage)
 
     raise _max_retries_exceeded(last_error)
+
+
+@overload
+async def repair_structured_output(
+    client: OllamaClientWrapper,
+    *,
+    model: str,
+    failed_response: str,
+    error: Exception,
+    output_type: type[ModelT],
+    retries: int = 2,
+    temperature: float = 0.0,
+    seed: int = 42,
+    think: ThinkMode = False,
+    num_ctx: int | None = None,
+    keep_alive: float | str | None = -1,
+    repair_model: str | None = None,
+) -> CompletionResult[ModelT]: ...
+
+
+@overload
+async def repair_structured_output(
+    client: OllamaClientWrapper,
+    *,
+    model: str,
+    failed_response: str,
+    error: Exception,
+    output_type: JsonSchema,
+    retries: int = 2,
+    temperature: float = 0.0,
+    seed: int = 42,
+    think: ThinkMode = False,
+    num_ctx: int | None = None,
+    keep_alive: float | str | None = -1,
+    repair_model: str | None = None,
+) -> CompletionResult[Any]:
+    ...
+
+
+async def repair_structured_output(
+    client: OllamaClientWrapper,
+    *,
+    model: str,
+    failed_response: str,
+    error: Exception,
+    output_type: type[BaseModel] | JsonSchema,
+    retries: int = 2,
+    temperature: float = 0.0,
+    seed: int = 42,
+    think: ThinkMode = False,
+    num_ctx: int | None = None,
+    keep_alive: float | str | None = -1,
+    repair_model: str | None = None,
+) -> CompletionResult[Any]:
+    """Repair a previously failed structured output without rerunning the task prompt."""
+    return await generate_structured(
+        client,
+        model=repair_model or model,
+        system=_REPAIR_SYSTEM_PROMPT,
+        prompt=_repair_prompt(failed_response=failed_response, error=error),
+        output_type=output_type,
+        retries=retries,
+        temperature=temperature,
+        seed=seed,
+        think=think,
+        num_ctx=num_ctx,
+        keep_alive=keep_alive,
+        repair_model=repair_model,
+    )
