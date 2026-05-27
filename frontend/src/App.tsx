@@ -611,11 +611,11 @@ function ExtractionContextOverview({
                         </span>
                       </summary>
                       {chunk.status === 'failed' && chunk.error && <p className="warning">{chunk.error}</p>}
-                      {chunk.status === 'completed' && (
+                      {(chunk.status === 'completed' || chunkText) && (
                         <div className="chunk-call-meta">
-                          {chunk.context_tokens ? <span>{formatTokenCount(chunk.context_tokens)} context tokens</span> : null}
-                          {chunk.response_duration_ms ? <span>{formatDuration(chunk.response_duration_ms)} response generation</span> : null}
-                          <button className="small ghost" type="button" onClick={() => setTraceChunk({ chunk, content: chunkText })}>View chunk text</button>
+                          {chunk.status === 'completed' && chunk.context_tokens ? <span>{formatTokenCount(chunk.context_tokens)} context tokens</span> : null}
+                          {chunk.status === 'completed' && chunk.response_duration_ms ? <span>{formatDuration(chunk.response_duration_ms)} response generation</span> : null}
+                          {chunkText ? <button className="small ghost" type="button" onClick={() => setTraceChunk({ chunk, content: chunkText })}>View chunk text</button> : null}
                         </div>
                       )}
                       <ExtractionContextResultView context={chunk.extraction_context} />
