@@ -285,6 +285,7 @@ textarea.json-editor-input { resize: vertical; min-height: 80px; }
 .token-usage-row small { color: var(--muted); font-size: 0.74rem; line-height: 1.35; }
 .token-usage-row.warning small:last-child { color: var(--warn); font-weight: 700; }
 .token-usage-row.danger small:last-child { color: #bc392b; font-weight: 700; }
+.context-window-advice { margin: 10px 0 0; padding: 9px 10px; border: 1px solid rgba(202, 116, 6, 0.38); border-radius: 8px; background: rgba(255, 248, 234, 0.78); color: var(--ink); font-size: 0.78rem; line-height: 1.4; }
 .resolution-log { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, 0.62); }
 .resolution-log > span { display: block; margin-bottom: 6px; color: var(--muted); font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; }
 .resolution-log ol { margin: 0; padding-left: 18px; display: grid; gap: 4px; }

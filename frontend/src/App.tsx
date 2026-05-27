@@ -2256,6 +2256,9 @@ export function App() {
                 agentKeys={['file_ranking', 'chunk_extraction', 'quantity_vocab_selection', 'qualitative_vocab_selection', 'profile_projection']}
                 budget={llmBudget}
               />
+              <p className="context-window-advice">
+                If extraction reaches or overuses the context window, rerun chunking with smaller chunks before extracting again. Lower the semantic chunking threshold in the chunking configuration to reduce chunk sizes.
+              </p>
           </StepPanel>
 
           <StepPanel
