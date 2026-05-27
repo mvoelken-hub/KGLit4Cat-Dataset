@@ -55,7 +55,7 @@ class FakeAsyncOllamaApi:
         self.show_calls.append(kwargs)
         return SimpleNamespace(model=kwargs["model"])
 
-    async def aclose(self):
+    async def close(self):
         self.closed = True
 
 
@@ -145,7 +145,7 @@ class OllamaClientWrapperAsyncTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["success"])
         self.assertTrue(model_client.chat_calls[0]["prompt"].startswith("ping"))
         self.assertEqual(model_client.chat_calls[0]["keep_alive"], -1)
-        self.assertEqual(model_client.chat_calls[0]["options"], {"num_ctx": 8192})
+        self.assertEqual(model_client.chat_calls[0]["options"].model_dump(exclude_none=True), {"num_ctx": 8192})
         self.assertEqual(result["load_duration_ns"], 123_000_000)
 
     async def test_get_embeddings_uses_dimensions_and_no_truncation(self):
@@ -172,7 +172,7 @@ class OllamaClientWrapperAsyncTests(unittest.IsolatedAsyncioTestCase):
 
         await client.get_embeddings(["one"])
 
-        self.assertEqual(embedding_client.embed_calls[0]["options"], {"num_gpu": 0})
+        self.assertEqual(embedding_client.embed_calls[0]["options"].model_dump(exclude_none=True), {"num_gpu": 0})
 
     def test_update_runtime_config_rebuilds_agent_model(self):
         client = OllamaClientWrapper(FakeSettings(), getLogger(__name__))  # type: ignore[arg-type]

@@ -6,7 +6,8 @@ Drop-in replacement for pydantic_ai.result.RunUsage (subset used by BudgetedUsag
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+
+import ollama
 
 
 @dataclass
@@ -35,10 +36,10 @@ class RunUsage:
         return self.merge(other)
 
     @classmethod
-    def from_ollama_response(cls, response: Any) -> RunUsage:
+    def from_ollama_response(cls, response: ollama.GenerateResponse) -> RunUsage:
         """Create RunUsage from an ollama GenerateResponse object."""
         return cls(
             requests=1,
-            input_tokens=getattr(response, "prompt_eval_count", 0) or 0,
-            output_tokens=getattr(response, "eval_count", 0) or 0,
+            input_tokens=response.prompt_eval_count or 0,
+            output_tokens=response.eval_count or 0,
         )

@@ -10,8 +10,18 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Generic,
+    Literal,
+    TypeAlias,
+    TypeVar,
+    cast,
+    overload,
+)
 
+import ollama
 from jsonschema.exceptions import SchemaError
 from jsonschema.validators import validator_for
 from pydantic import BaseModel, ValidationError as PydanticValidationError
@@ -22,7 +32,10 @@ from app.ollama.usage import RunUsage
 if TYPE_CHECKING:
     from app.ollama.client import OllamaClientWrapper
 
+JsonSchema: TypeAlias = dict[str, Any]
+ThinkMode: TypeAlias = bool | Literal["low", "medium", "high"] | None
 T = TypeVar("T")
+ModelT = TypeVar("ModelT", bound=BaseModel)
 
 # Regex to strip markdown JSON fences (```json ... ```)
 _MARKDOWN_FENCE_RE = re.compile(r"^```(?:json)?\s*\n?|\n?```\s*$")
@@ -50,7 +63,7 @@ def _strip_markdown_fences(text: str) -> str:
     return cleaned
 
 
-def _extract_json_schema(output_type: type[BaseModel] | dict[str, Any]) -> dict[str, Any]:
+def _extract_json_schema(output_type: type[BaseModel] | JsonSchema) -> JsonSchema:
     """Extract a JSON Schema dict from a Pydantic model class or return a dict as-is."""
     if isinstance(output_type, type) and issubclass(output_type, BaseModel):
         return output_type.model_json_schema()
@@ -59,7 +72,7 @@ def _extract_json_schema(output_type: type[BaseModel] | dict[str, Any]) -> dict[
     raise CompletionError(f"Unsupported output_type: {output_type!r}")
 
 
-def _json_schema_validator(json_schema: dict[str, Any]):
+def _json_schema_validator(json_schema: JsonSchema):
     """Build a JSON Schema validator, failing fast for invalid schemas."""
     try:
         validator_class = validator_for(json_schema)
@@ -108,17 +121,54 @@ def _repair_prompt(*, failed_response: str, error: Exception) -> str:
     )
 
 
+@overload
 async def generate_structured(
     client: OllamaClientWrapper,
     *,
     model: str,
     system: str,
     prompt: str,
-    output_type: type[BaseModel] | dict[str, Any],
+    output_type: type[ModelT],
     retries: int = 2,
     temperature: float = 0.0,
     seed: int = 42,
-    think: bool = False,
+    think: ThinkMode = False,
+    num_ctx: int | None = None,
+    keep_alive: float | str | None = -1,
+    repair_model: str | None = None,
+) -> CompletionResult[ModelT]: ...
+
+
+@overload
+async def generate_structured(
+    client: OllamaClientWrapper,
+    *,
+    model: str,
+    system: str,
+    prompt: str,
+    output_type: JsonSchema,
+    retries: int = 2,
+    temperature: float = 0.0,
+    seed: int = 42,
+    think: ThinkMode = False,
+    num_ctx: int | None = None,
+    keep_alive: float | str | None = -1,
+    repair_model: str | None = None,
+) -> CompletionResult[Any]:
+    ...
+
+
+async def generate_structured(
+    client: OllamaClientWrapper,
+    *,
+    model: str,
+    system: str,
+    prompt: str,
+    output_type: type[BaseModel] | JsonSchema,
+    retries: int = 2,
+    temperature: float = 0.0,
+    seed: int = 42,
+    think: ThinkMode = False,
     num_ctx: int | None = None,
     keep_alive: float | str | None = -1,
     repair_model: str | None = None,
@@ -151,9 +201,11 @@ async def generate_structured(
     schema = _extract_json_schema(output_type)
     raw_schema_validator = _json_schema_validator(schema) if isinstance(output_type, dict) else None
 
-    options: dict[str, Any] = {"temperature": temperature, "seed": seed}
-    if num_ctx is not None:
-        options["num_ctx"] = num_ctx
+    options = ollama.Options(
+        temperature=temperature,
+        seed=seed,
+        num_ctx=num_ctx,
+    )
 
     current_prompt = prompt
     current_system = system
@@ -164,24 +216,25 @@ async def generate_structured(
 
     for attempt in range(retries + 1):
         try:
-            response = await client.ollama_client.generate(
-                model=current_model,
-                prompt=current_prompt,
-                system=current_system,
-                format=schema,
-                options=options,
-                think=think,
-                keep_alive=keep_alive,
+            response = cast(
+                ollama.GenerateResponse,
+                await client.ollama_client.generate(
+                    model=current_model,
+                    prompt=current_prompt,
+                    system=current_system,
+                    format=schema,
+                    options=options,
+                    think=think,
+                    keep_alive=keep_alive,
+                ),
             )
         except Exception as e:
             raise CompletionError(f"Ollama API error: {e}") from e
 
         # Accumulate token usage from Ollama response metadata
-        total_usage.requests += 1
-        total_usage.input_tokens += getattr(response, "prompt_eval_count", 0) or 0
-        total_usage.output_tokens += getattr(response, "eval_count", 0) or 0
+        total_usage = total_usage + RunUsage.from_ollama_response(response)
 
-        raw = getattr(response, "response", "")
+        raw = response.response or ""
         if not raw:
             raise EmptyResponseError()
 

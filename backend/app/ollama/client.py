@@ -80,10 +80,9 @@ class OllamaClientWrapper:
         self.logger.info(f"Stopped chat model: {self.chat_model}")
 
     async def close(self) -> None:
-
-        await self.model_client._client.aclose()
-        await self.embedding_client._client.aclose()
-        await self.chat_client._client.aclose()
+        await self.model_client.close()
+        await self.embedding_client.close()
+        await self.chat_client.close()
         self.logger.info("Closed Ollama clients")
 
     async def verify_embedding(self) -> bool:
@@ -122,7 +121,13 @@ class OllamaClientWrapper:
     async def list_running_models(self) -> ollama.ProcessResponse:
         return await self.model_client.ps()
 
-    async def ping_model(self, model_name: str, num_ctx: int | None = None, is_embedding: bool = False, num_gpu: int | None = None) -> dict[str, object]:
+    async def ping_model(
+        self,
+        model_name: str,
+        num_ctx: int | None = None,
+        is_embedding: bool = False,
+        num_gpu: int | None = None,
+    ) -> dict[str, object]:
         """Load a model into GPU memory to check if it fits.
 
         Uses keep_alive=-1 to keep the model loaded so VRAM can be inspected.
@@ -131,18 +136,18 @@ class OllamaClientWrapper:
         Returns a dict with 'success' (bool), 'model' (str), 'error' (str|None),
         'load_duration_ns' (int|None), and 'eval_count' (int|None).
         """
-        options: dict[str, object] = {}
-        if num_ctx is not None:
-            options["num_ctx"] = num_ctx
-        if num_gpu is not None:
-            options["num_gpu"] = num_gpu
+        options = (
+            ollama.Options(num_ctx=num_ctx, num_gpu=num_gpu)
+            if num_ctx is not None or num_gpu is not None
+            else None
+        )
         try:
             if is_embedding:
                 response = await self.model_client.embed(
                     model=model_name,
                     input=["ping"],
                     keep_alive=-1,
-                    options=options if options else None,
+                    options=options,
                 )
                 load_duration = response.load_duration
                 eval_count = None  # embed responses don't have eval_count
@@ -151,7 +156,7 @@ class OllamaClientWrapper:
                     model=model_name,
                     prompt="ping... just respond with 'ok' to confirm you're alive.",
                     keep_alive=-1,
-                    options=options if options else None,
+                    options=options,
                 )
                 load_duration = response.load_duration
                 eval_count = response.eval_count
@@ -227,18 +232,26 @@ class OllamaClientWrapper:
         return self.chat_client
 
     async def get_embeddings(self, input: list[str]) -> list[Embedding]:
-        options: dict[str, object] = {}
-        if self.embed_num_gpu != -1:
-            options["num_gpu"] = self.embed_num_gpu
-        kwargs: dict[str, object] = {
-            "model": self.embed_model,
-            "input": input,
-            "dimensions": self.embed_dimensions,
-            "truncate": False,
-        }
-        if options:
-            kwargs["options"] = options
-        response = await self.embedding_client.embed(**kwargs)
-        return response.embeddings # type: ignore
+        options = (
+            ollama.Options(num_gpu=self.embed_num_gpu)
+            if self.embed_num_gpu != -1
+            else None
+        )
+        if options is None:
+            response = await self.embedding_client.embed(
+                model=self.embed_model,
+                input=input,
+                dimensions=self.embed_dimensions,
+                truncate=False,
+            )
+        else:
+            response = await self.embedding_client.embed(
+                model=self.embed_model,
+                input=input,
+                dimensions=self.embed_dimensions,
+                truncate=False,
+                options=options,
+            )
+        return [list(embedding) for embedding in response.embeddings]
 
 ollama_client = OllamaClientWrapper(settings=settings, logger=logger)

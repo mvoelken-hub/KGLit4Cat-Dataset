@@ -187,9 +187,10 @@ class GenerateStructuredHappyPathTests(IsolatedAsyncioTestCase):
         self.assertEqual(call["system"], "sys")
         self.assertEqual(call["prompt"], "prompt")
         self.assertIsInstance(call["format"], dict)
-        self.assertEqual(call["options"]["temperature"], 0.7)
-        self.assertEqual(call["options"]["seed"], 123)
-        self.assertEqual(call["options"]["num_ctx"], 4096)
+        self.assertEqual(
+            call["options"].model_dump(exclude_none=True),
+            {"num_ctx": 4096, "seed": 123, "temperature": 0.7},
+        )
         self.assertTrue(call["think"])
         self.assertEqual(call["keep_alive"], 300)
 
@@ -428,6 +429,12 @@ class GenerateStructuredRetryTests(IsolatedAsyncioTestCase):
 
 
 class CompletionErrorTests(unittest.TestCase):
+    def test_package_all_contains_existing_exports_only(self):
+        import app.ollama as ollama_module
+
+        for name in ollama_module.__all__:
+            self.assertTrue(hasattr(ollama_module, name), name)
+
     def test_message_and_details(self):
         err = CompletionError("boom", {"key": "value"})
         self.assertEqual(str(err), "boom")

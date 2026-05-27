@@ -56,7 +56,7 @@ Target state: all 8 LLM interactions follow the same pattern: build system messa
 2. **Output parsing** — `format` param with JSON schema; parse JSON + validate against Pydantic model or raw JSON Schema
 3. **Output repair retries** — on parse/validation failure, send only the failed response plus error to a repair prompt
 4. **Token usage** — `prompt_eval_count` / `eval_count` from Ollama response
-5. **Model settings** — `temperature`, `seed` → Ollama `options`
+5. **Model settings** — `temperature`, `seed`, `num_ctx` via `ollama.Options`
 
 ### What we do NOT need from Pydantic AI
 
@@ -92,10 +92,10 @@ This removes the remaining tool-calling path and makes every LLM interaction a s
 ```
 app/ollama/
 ├── __init__.py          # Re-export public API ✅
-├── client.py            # OllamaClientWrapper (unchanged except `ollama_client` property + pydantic_ai still present)
+├── client.py            # OllamaClientWrapper + public AsyncClient access + typed Ollama options
 ├── runtime.py           # Model management, diagnostics (existing, unchanged)
 ├── completion.py        # ✅ NEW: generate_structured() — single /api/generate call + retry + parse
-├── errors.py            # ✅ NEW: CompletionError, ModelRetry
+├── errors.py            # ✅ NEW: CompletionError, OutputParsingError, EmptyResponseError, MaxRetriesExceeded
 └── usage.py             # ✅ NEW: RunUsage dataclass
 ```
 
@@ -131,9 +131,6 @@ No `Agent` class — `generate_structured()` is a plain async function, not a cl
 class CompletionError(Exception):
     """Base error for structured completion failures."""
 
-class ModelRetry(CompletionError):
-    """Signal that model output should be retried or repaired."""
-
 class OutputParsingError(CompletionError):
     """JSON decode or schema validation failure."""
 
@@ -160,121 +157,51 @@ class RunUsage:
 - Drop-in replacement for `pydantic_ai.result.RunUsage` (subset used: `input_tokens`, `output_tokens`, `requests`, `details`)
 - `BudgetedUsage` in `token_budget.py` uses `getattr(self._usage, name)` — works with any object that has these attributes
 
-#### 1c. `app/ollama/completion.py` ✅
+#### 1c. `app/ollama/completion.py` [done]
 
-Condensed core function shape. The implementation also includes helpers for markdown fence stripping, raw JSON Schema validation, and exhausted-retry error details:
+Current public surface:
 
 ```python
-from pydantic import BaseModel
-from app.ollama.client import OllamaClientWrapper
-
 async def generate_structured(
     client: OllamaClientWrapper,
     *,
     model: str,
     system: str,
     prompt: str,
-    output_type: type[BaseModel] | dict,
+    output_type: type[BaseModel] | dict[str, Any],
     retries: int = 2,
     temperature: float = 0.0,
     seed: int = 42,
-    think: bool = False,
+    think: bool | Literal["low", "medium", "high"] | None = False,
+    num_ctx: int | None = None,
+    keep_alive: float | str | None = -1,
     repair_model: str | None = None,
-) -> CompletionResult:
-    """Single /api/generate call with format=json_schema, parse + validate + retry.
-    
-    Args:
-        client: OllamaClientWrapper instance
-        model: Ollama model name (e.g. "qwen3.5:4b")
-        system: System message (static + dynamic context combined)
-        prompt: User message (the extraction instruction)
-        output_type: Pydantic model class for structured output, or dict for raw JSON Schema validation
-        retries: Max repair attempts on parse/validation failure
-        temperature: Sampling temperature
-        seed: Reproducibility seed
-        think: Enable thinking mode (for qwen3.5 etc)
-    
-    Returns:
-        CompletionResult with validated output and token usage.
-    
-    Raises:
-        MaxRetriesExceeded: If retries are exhausted after parse/validation failures
-        CompletionError: For Ollama API errors
-    """
-    # 1. Extract JSON schema from output_type
-    if isinstance(output_type, type) and issubclass(output_type, BaseModel):
-        schema = output_type.model_json_schema()
-    elif isinstance(output_type, dict):
-        schema = output_type
-    else:
-        raise CompletionError(f"Unsupported output_type: {output_type}")
-    
-    # 2. Attempt completion with retry loop
-    current_prompt = prompt
-    current_system = system
-    current_model = model
-    total_usage = RunUsage()
-    
-    for attempt in range(retries + 1):
-        response = await client.ollama_client.generate(
-            model=current_model,
-            prompt=current_prompt,
-            system=current_system,
-            format=schema,
-            options={"temperature": temperature, "seed": seed},
-            think=think,
-        )
-        
-        total_usage.input_tokens += getattr(response, 'prompt_eval_count', 0) or 0
-        total_usage.output_tokens += getattr(response, 'eval_count', 0) or 0
-        total_usage.requests += 1
-        
-        try:
-            raw = response.response
-            # Strip markdown fences if present
-            if raw.startswith("```"):
-                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0]
-            
-            parsed = json.loads(raw)
-            
-            if isinstance(output_type, type) and issubclass(output_type, BaseModel):
-                output = output_type.model_validate(parsed)
-            else:
-                output = validate_json_schema(parsed, schema)
-            
-            return CompletionResult(output=output, usage=total_usage)
-        
-        except (json.JSONDecodeError, ValidationError, JsonSchemaValidationError) as e:
-            if attempt < retries:
-                current_system = REPAIR_SYSTEM_PROMPT
-                current_prompt = build_repair_prompt(
-                    failed_response=raw,
-                    error=OutputParsingError(str(e)),
-                )
-                current_model = repair_model or model
-                continue
-            raise MaxRetriesExceeded(last_error=OutputParsingError(str(e))) from e
-    
-    raise MaxRetriesExceeded(last_error=last_error)
-
-
-@dataclass
-class CompletionResult(Generic[T]):
-    output: T
-    usage: RunUsage
+) -> CompletionResult[Any]: ...
 ```
+
+Implementation decisions:
+
+- Extracts JSON Schema from Pydantic `BaseModel` subclasses or accepts raw JSON Schema dicts directly.
+- Calls `client.ollama_client.generate(...)` with `format=schema`.
+- Uses `ollama.Options(temperature=..., seed=..., num_ctx=...)` for model options.
+- Casts the non-streaming response to `ollama.GenerateResponse`.
+- Tracks usage through `RunUsage.from_ollama_response(response)`.
+- Parses `response.response`, strips defensive markdown fences, and validates with either `model_validate()` or local `jsonschema` validation.
+- Empty response raises `EmptyResponseError` immediately.
+- Parse, Pydantic validation, and JSON Schema validation failures retry with the focused repair prompt. Exhausted retries raise `MaxRetriesExceeded`.
 
 This is the key replacement surface. The pydantic-ai `Agent` class, `PromptedOutput`, `StructuredDict`, `RunContext`, decorators, and tool calling disappear as domain call sites migrate to this function.
 
 #### 1d. `client.py` changes ✅ (partial)
 
 - ✅ **Added** `ollama_client` property returning `self.chat_client` (the underlying `AsyncClient`); `generate_structured()` accepts the wrapper and calls through this property
+- ✅ **Uses public Ollama package APIs** where the wrapper owns Ollama calls: `AsyncClient.close()`, `ollama.Options`, `ollama.GenerateResponse`, and `ollama.EmbedResponse.embeddings`.
 - ⏳ **Deferred** removal of `OllamaModel`/`OllamaProvider` imports and `agent_model` — the domain layer (`extraction_service.py`) still references `self.ollama_client.agent_model`. Will be removed in Phase 2g once all domain code migrates to passing model name strings.
-- All other functionality (embeddings, model management, etc.) unchanged
+- Embedding responses are converted from Ollama's `Sequence[Sequence[float]]` to `list[list[float]]`; no `type: ignore` remains.
 
 #### 1e. Comprehensive tests ✅
 
-- ✅ `tests/test_ollama_completion.py` — 31 tests covering:
+- ✅ `tests/test_ollama_completion.py` — 33 tests covering:
   - Happy path: valid JSON → parsed Pydantic model ✅
   - Happy path: dict output_type → JSON Schema validated raw dict ✅
   - Repair retry on JSON decode failure ✅
@@ -290,6 +217,7 @@ This is the key replacement surface. The pydantic-ai `Agent` class, `PromptedOut
   - `BudgetedUsage` `getattr` compatibility ✅
   - `RunUsage.merge()` and `__add__` ✅
   - `RunUsage.from_ollama_response()` ✅
+  - package `__all__` exports only defined symbols ✅
 
 **Note:** `tests/test_ollama_usage.py` was merged into `test_ollama_completion.py` (single file is sufficient for the small surface). `test_ollama_client.py` still passes (14 tests) — it tests the existing client and still references `agent_model` (expected until Phase 2g).
 
@@ -312,6 +240,15 @@ This is the key replacement surface. The pydantic-ai `Agent` class, `PromptedOut
 **1.5 — Repair retries instead of full regeneration:** Parse/validation retries no longer resend the original extraction prompt. The first call performs the task. Later attempts use a narrow repair system prompt with only the failed response and the validation error, plus the same `format` schema. This keeps overloaded extraction prompts out of the retry path and lets an optional `repair_model` handle correction.
 
 **1.5 — Empty output is terminal:** If Ollama returns no response text, there is nothing to repair. `generate_structured()` raises `EmptyResponseError` immediately so the domain/service layer can decide whether to abort, reschedule, or apply domain-specific fallback behavior.
+
+**1.5 — Wrapper cleanup before Phase 2:** The custom Ollama module should not duplicate package behavior. Current cleanup decisions:
+
+- `OllamaClientWrapper.close()` uses the public async `ollama.AsyncClient.close()` method.
+- Option payloads use `ollama.Options` instead of ad hoc dicts.
+- `generate_structured()` casts the non-streaming `/api/generate` result to `ollama.GenerateResponse` and reads `response.response` directly.
+- `RunUsage.from_ollama_response()` accepts an `ollama.GenerateResponse`.
+- `get_embeddings()` reads `ollama.EmbedResponse.embeddings` and converts the returned sequences to `list[list[float]]`.
+- `app/ollama/__init__.py` exports only custom symbols that actually exist. There is no custom `ModelRetry`; until Phase 2 removes it, `ModelRetry` remains only a pydantic-ai domain-layer concern.
 
 ---
 
@@ -458,7 +395,7 @@ uv run pytest
 
 ```python
 from app.ollama.completion import generate_structured, CompletionResult
-from app.ollama.errors import CompletionError, EmptyResponseError, ModelRetry, OutputParsingError, MaxRetriesExceeded
+from app.ollama.errors import CompletionError, EmptyResponseError, OutputParsingError, MaxRetriesExceeded
 from app.ollama.usage import RunUsage
 from app.ollama.client import OllamaClientWrapper
 ```

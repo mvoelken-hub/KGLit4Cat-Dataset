@@ -14,7 +14,6 @@ __all__ = [
     "CompletionResult",
     "CompletionError",
     "EmptyResponseError",
-    "ModelRetry",
     "OutputParsingError",
     "MaxRetriesExceeded",
     "RunUsage",
