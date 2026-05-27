@@ -13,6 +13,7 @@ import {
   getTokenUsage,
   initialContextFromExtractionContext,
   patchDraft,
+  pauseExtraction,
   runExtraction,
   saveDraft,
   saveInitialContext,
@@ -47,7 +48,7 @@ import type {
   RankedExtractionFile,
 } from './api/extraction';
 
-type BusyKey = 'upload' | 'chunk' | 'context' | 'draft' | 'patch' | 'load' | 'profile' | 'profile-delete' | 'dataset-delete' | 'ollama';
+type BusyKey = 'upload' | 'chunk' | 'context' | 'pause' | 'draft' | 'patch' | 'load' | 'profile' | 'profile-delete' | 'dataset-delete' | 'ollama';
 type ReviewItem = JsonPatchMarker & { kind: 'matched' | 'unmapped'; targetPath?: string; fact?: string; reason?: string; outcome?: string; resolutionNote?: string };
 
 const emptyReviewState: PatchReviewState = {
@@ -1964,6 +1965,29 @@ export function App() {
     }
   }
 
+  async function onPauseExtraction() {
+    if (!selectedPackageId || patchStatus !== 'running') return;
+    const packageId = selectedPackageId;
+    setBusy('pause');
+    try {
+      const { status, progress } = await pauseExtraction(packageId);
+      if (selectedPackageIdRef.current !== packageId) return;
+      setPatchStatus(status);
+      setPatchProgress(progress ? { ...progress } : null);
+      if (progress?.interim_context) {
+        setContext(initialContextFromExtractionContext(progress.interim_context));
+        setContextEditMode(true);
+      }
+      setTokenUsage(await getTokenUsage(packageId));
+      setMessage(status === 'cancelled' ? 'Extraction paused. Resume extraction to continue from saved chunks.' : 'Extraction is not running.');
+    } catch (error) {
+      if (selectedPackageIdRef.current !== packageId) return;
+      setMessage(error instanceof Error ? error.message : 'Failed to pause extraction.');
+    } finally {
+      if (selectedPackageIdRef.current === packageId) setBusy(null);
+    }
+  }
+
   async function refreshOllamaConfig() {
     setBusy('ollama');
     try {
@@ -2505,6 +2529,11 @@ export function App() {
                 <button onClick={() => void onContext()} disabled={!selectedPackageId || !!busy || isPatching}>
                   {isPatching ? 'Extraction running...' : busy === 'context' ? 'Extracting...' : hasPersistedExtractionState || context ? 'Re-extract context overview' : 'Extract context overview'}
                 </button>
+                {isPatching && (
+                  <button className="ghost" onClick={() => void onPauseExtraction()} disabled={!selectedPackageId || busy === 'pause'}>
+                    {busy === 'pause' ? 'Pausing...' : 'Pause extraction'}
+                  </button>
+                )}
                 {extractionCanResume && (
                   <button className="ghost" onClick={() => void onContext({ resume: true })} disabled={!selectedPackageId || !!busy || isPatching}>
                     Resume extraction

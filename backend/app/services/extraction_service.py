@@ -192,6 +192,49 @@ class ExtractionService:
                 progress.total_chunks = len(state.chunk_results)
         return task_info.status, progress
 
+    async def pause_extraction(
+        self,
+        *,
+        data_package_id: str,
+    ) -> tuple[TaskStatus, ExtractionRunProgress | None]:
+        if self.task_registry is None:
+            return TaskStatus.UNKNOWN, None
+
+        task_name = self._extraction_task_name(data_package_id)
+        task_info = self.task_registry.get_task_info(task_name)
+        if task_info is None or task_info.status != TaskStatus.RUNNING:
+            return await self.get_extraction_progress(data_package_id=data_package_id)
+
+        await self.task_registry.cancel_task(task_name)
+
+        state = self._load_run_state_or_none(data_package_id)
+        if state is None:
+            return await self.get_extraction_progress(data_package_id=data_package_id)
+
+        for chunk_result in state.chunk_results:
+            if chunk_result.status == "running":
+                chunk_result.status = "pending"
+                chunk_result.error = None
+        self._save_run_state(data_package_id, state)
+
+        progress = ExtractionRunProgress(
+            stage="paused",
+            processed_chunks=self._completed_chunk_count(state),
+            total_chunks=len(state.chunk_results),
+            interim_context=self._merged_completed_chunk_context_or_none(state)
+            or self._load_context_or_none(data_package_id),
+            ranked_files=state.ranked_files,
+            chunk_results=state.chunk_results,
+            current_chunk=None,
+            warnings=self._load_warnings_or_empty(data_package_id),
+        )
+        self._update_progress(data_package_id, progress)
+        next_task_info = self.task_registry.get_task_info(task_name)
+        return (
+            next_task_info.status if next_task_info else TaskStatus.CANCELLED,
+            progress,
+        )
+
     async def get_extraction_result(
         self,
         *,

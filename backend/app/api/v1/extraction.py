@@ -114,6 +114,17 @@ async def get_extraction_progress(
     return ExtractionProgressResponse(status=status_value, progress=progress)
 
 
+@router.post("/run/{data_package_id}/pause", response_model=ExtractionProgressResponse)
+async def pause_extraction(
+    data_package_id: str,
+    extraction_service: ExtractionService = Depends(get_extraction_service),
+) -> ExtractionProgressResponse:
+    status_value, progress = await extraction_service.pause_extraction(
+        data_package_id=data_package_id,
+    )
+    return ExtractionProgressResponse(status=status_value, progress=progress)
+
+
 @router.get("/result/{data_package_id}")
 async def get_extraction_result(
     data_package_id: str,

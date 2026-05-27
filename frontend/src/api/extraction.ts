@@ -157,6 +157,14 @@ export async function runExtraction(input: {
   }));
 }
 
+export async function pauseExtraction(data_package_id: string): Promise<{ status: PatchTaskStatus; progress?: ExtractionRunProgress | null }> {
+  const response = await fetch(apiBaseUrl + '/extraction/run/' + encodeURIComponent(data_package_id) + '/pause', {
+    method: 'POST',
+  });
+  const payload = await readJson(await response) as { status: PatchTaskStatus; progress?: ExtractionRunProgress | null };
+  return { status: payload.status, progress: payload.progress ?? null };
+}
+
 export async function getExtractionResult(data_package_id: string): Promise<ExtractionRunResult | null> {
   const response = await fetch(apiBaseUrl + '/extraction/result/' + encodeURIComponent(data_package_id));
   if (response.status === 404) return null;

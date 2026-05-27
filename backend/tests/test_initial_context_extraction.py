@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -369,6 +370,49 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [resource.identifier for resource in output_repository.context.resources],
             ["already-extracted", "resumed-chunk"],
+        )
+
+    async def test_pause_extraction_cancels_task_and_marks_running_chunk_pending(self):
+        service, task_registry, output_repository = make_service([[make_chunk()]])
+        extraction_started = asyncio.Event()
+
+        async def fake_generate(*_args, **kwargs):
+            output_type = kwargs["output_type"]
+            if output_type is FileRankingResult:
+                return CompletionResult(
+                    output=FileRankingResult(files=[RankedFile(rank=1, file_path="README.md")]),
+                    usage=RunUsage(requests=1, input_tokens=10, output_tokens=2),
+                )
+            if output_type is ExtractionContext:
+                extraction_started.set()
+                await asyncio.Event().wait()
+            return CompletionResult(
+                output={"id": "dataset"},
+                usage=RunUsage(requests=1, input_tokens=30, output_tokens=8),
+            )
+
+        with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
+            result, status = await service.run_extraction(
+                data_package_id="package-id",
+                profile_identifier="profile",
+            )
+            self.assertIsNone(result)
+            self.assertEqual(status, TaskStatus.RUNNING)
+            await asyncio.wait_for(extraction_started.wait(), timeout=2)
+
+            status, progress = await service.pause_extraction(data_package_id="package-id")
+
+        self.assertEqual(status, TaskStatus.CANCELLED)
+        self.assertIsNotNone(progress)
+        self.assertEqual(progress.stage, "paused")
+        self.assertIsNotNone(output_repository.run_state)
+        self.assertEqual(
+            [chunk.status for chunk in output_repository.run_state.chunk_results],
+            ["pending"],
+        )
+        self.assertEqual(
+            task_registry.get_task_info("extraction:run:package-id").status,
+            TaskStatus.CANCELLED,
         )
 
 
