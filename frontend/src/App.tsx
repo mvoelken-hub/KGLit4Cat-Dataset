@@ -194,6 +194,7 @@ function extractionContextTraceLabel(trace: { objectType: string; object: Record
 }
 
 function ExtractionContextResultView({ context }: { context?: Record<string, unknown> | null }) {
+  const [selectedTrace, setSelectedTrace] = useState<ReturnType<typeof extractionContextTraces>[number] | null>(null);
   if (!context) return <p className="muted">No extraction result is available for this chunk yet.</p>;
 
   const traces = extractionContextTraces(context);
@@ -205,8 +206,8 @@ function ExtractionContextResultView({ context }: { context?: Record<string, unk
     { key: 'agentic_entity', label: 'Agents' },
   ].map((section) => ({
     ...section,
-    items: traces.filter((trace) => trace.objectType === section.key).map((trace) => trace.object).filter((item): item is Record<string, unknown> => Boolean(item)),
-  })).filter((section) => section.items.length > 0);
+    traces: traces.filter((trace) => trace.objectType === section.key && trace.object),
+  })).filter((section) => section.traces.length > 0);
 
   if (!sections.length) {
     return <p className="muted">The model call completed, but this chunk did not yield structured extraction context items.</p>;
@@ -218,25 +219,111 @@ function ExtractionContextResultView({ context }: { context?: Record<string, unk
         <section key={section.key} className="extraction-result-section">
           <span>{section.label}</span>
           <div>
-            {section.items.map((item, index) => {
+            {section.traces.map((trace, index) => {
+              const item = trace.object as Record<string, unknown>;
               const keywords = extractionContextKeywords(item);
               return (
-                <div className="extraction-result-card" key={`${section.key}-${index}`}>
+                <button
+                  className="extraction-result-card"
+                  key={`${section.key}-${index}`}
+                  type="button"
+                  onClick={() => setSelectedTrace(trace)}
+                >
                   <strong>{extractionContextItemTitle(item, `${section.label} ${index + 1}`)}</strong>
-                  {extractionContextItemDescription(item) && <p>{extractionContextItemDescription(item)}</p>}
+                  {extractionContextItemDescription(item) && <span className="extraction-result-description">{extractionContextItemDescription(item)}</span>}
                   {keywords.length > 0 && (
-                    <div className="extraction-result-keywords">
+                    <span className="extraction-result-keywords">
                       {keywords.map((keyword) => <span key={keyword}>{keyword}</span>)}
-                    </div>
+                    </span>
                   )}
-                </div>
+                </button>
               );
             })}
           </div>
         </section>
       ))}
+      {selectedTrace && <ExtractionObjectModal trace={selectedTrace} onClose={() => setSelectedTrace(null)} />}
     </div>
   );
+}
+
+function ExtractionObjectModal({
+  trace,
+  onClose,
+}: {
+  trace: ReturnType<typeof extractionContextTraces>[number];
+  onClose: () => void;
+}) {
+  const itemTitle = trace.object ? extractionContextItemTitle(trace.object, 'Extracted object') : 'Extracted object';
+  return createPortal(
+    <div className="vocab-dialog-overlay" onClick={onClose}>
+      <div className="vocab-dialog extraction-object-dialog" onClick={(event) => event.stopPropagation()}>
+        <div className="vocab-dialog-header">
+          <div>
+            <span>{trace.objectType.replace(/_/g, ' ')}</span>
+            <strong>{itemTitle}</strong>
+          </div>
+          <button className="ghost" onClick={onClose}>Close</button>
+        </div>
+        <div className="vocab-dialog-body extraction-object-dialog-body">
+          <section>
+            <span>Extracted object</span>
+            <ExtractionFieldList value={trace.object ?? {}} />
+          </section>
+          <section>
+            <span>Trace</span>
+            <ExtractionFieldList value={{ object_type: trace.objectType, source_text: trace.sourceText }} />
+          </section>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+function ExtractionFieldList({ value }: { value: Record<string, unknown> }) {
+  const entries = Object.entries(value);
+  if (!entries.length) return <p className="muted">No fields.</p>;
+  return (
+    <dl className="extraction-field-list">
+      {entries.map(([key, fieldValue]) => (
+        <div key={key}>
+          <dt>{formatExtractionFieldLabel(key)}</dt>
+          <dd><ExtractionFieldValue value={fieldValue} /></dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function ExtractionFieldValue({ value }: { value: unknown }) {
+  if (Array.isArray(value)) {
+    if (!value.length) return <span className="muted">None</span>;
+    return (
+      <div className="extraction-field-array">
+        {value.map((item, index) => (
+          <section key={index}>
+            <span>{index + 1}</span>
+            {asRecord(item)
+              ? <ExtractionFieldList value={asRecord(item) as Record<string, unknown>} />
+              : <ExtractionFieldValue value={item} />}
+          </section>
+        ))}
+      </div>
+    );
+  }
+  const record = asRecord(value);
+  if (record) return <ExtractionFieldList value={record} />;
+  if (value === null || value === undefined || value === '') return <span className="muted">-</span>;
+  if (typeof value === 'boolean') return <span>{value ? 'true' : 'false'}</span>;
+  return <span>{String(value)}</span>;
+}
+
+function formatExtractionFieldLabel(value: string): string {
+  return value
+    .replace(/^has_/, '')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function ChunkTraceModal({
@@ -251,76 +338,99 @@ function ChunkTraceModal({
   onClose: () => void;
 }) {
   const [activePanel, setActivePanel] = useState<'chunk' | 'unmatched'>('chunk');
+  const [selectedTrace, setSelectedTrace] = useState<ReturnType<typeof extractionContextTraces>[number] | null>(null);
   const traces = extractionContextTraces(context);
   const segments = buildTraceSegments(content, traces);
   const matchedTraces = new Set(segments.flatMap((segment) => segment.traces));
   const unmatchedTraces = traces.filter((trace) => trace.sourceText && !matchedTraces.has(trace));
-  return createPortal(
-    <div className="vocab-dialog-overlay" onClick={onClose}>
-      <div className="vocab-dialog chunk-trace-dialog" onClick={(event) => event.stopPropagation()}>
-        <div className="vocab-dialog-header">
-          <strong>Chunk {chunk.chunk_index + 1}: {chunk.file_path}</strong>
-          <button className="ghost" onClick={onClose}>Close</button>
-        </div>
-        <div className="vocab-dialog-body chunk-trace-body">
-          <div className="chunk-trace-meta">
-            <span>Lines {chunk.start_idx}-{chunk.end_idx}</span>
-            {chunk.context_tokens ? <span>{formatTokenCount(chunk.context_tokens)} context tokens</span> : null}
-            {chunk.response_duration_ms ? <span>{formatDuration(chunk.response_duration_ms)} response generation</span> : null}
-          </div>
-          <div className="chunk-trace-tabs">
-            <button
-              className={activePanel === 'chunk' ? 'active' : ''}
-              type="button"
-              onClick={() => setActivePanel('chunk')}
-              aria-expanded={activePanel === 'chunk'}
-            >
-              Chunk text
-            </button>
-            {unmatchedTraces.length > 0 && (
-              <button
-                className={activePanel === 'unmatched' ? 'active' : ''}
-                type="button"
-                onClick={() => setActivePanel('unmatched')}
-                aria-expanded={activePanel === 'unmatched'}
-              >
-                Unmatched traces ({unmatchedTraces.length})
-              </button>
-            )}
-          </div>
-          {activePanel === 'chunk' && (
-            <pre className="chunk-trace-text">
-              {segments.map((segment, index) => segment.traces.length ? (
-                <span className={`chunk-trace-highlight ${segment.tooltipBelow ? 'below' : ''}`} key={index}>
-                  {segment.text}
-                  <span className="chunk-trace-tooltip">
-                    {segment.traces.map((trace, traceIndex) => (
-                      <span key={`${trace.objectType}-${traceIndex}`}>
-                        <strong>{extractionContextTraceLabel(trace)}</strong>
-                        {trace.object && extractionContextItemDescription(trace.object) ? <small>{extractionContextItemDescription(trace.object)}</small> : null}
-                      </span>
-                    ))}
-                  </span>
-                </span>
-              ) : <span key={index}>{segment.text}</span>)}
-            </pre>
-          )}
-          {activePanel === 'unmatched' && unmatchedTraces.length > 0 && (
-            <div className="chunk-unmatched-traces">
-              <div>
-                {unmatchedTraces.map((trace, index) => (
-                  <section key={`${trace.objectType}-${index}`}>
-                    <strong>{extractionContextTraceLabel(trace)}</strong>
-                    <small>{trace.sourceText}</small>
-                  </section>
-                ))}
-              </div>
+  return (
+    <>
+      {createPortal(
+        <div className="vocab-dialog-overlay" onClick={onClose}>
+          <div className="vocab-dialog chunk-trace-dialog" onClick={(event) => event.stopPropagation()}>
+            <div className="vocab-dialog-header">
+              <strong>Chunk {chunk.chunk_index + 1}: {chunk.file_path}</strong>
+              <button className="ghost" onClick={onClose}>Close</button>
             </div>
-          )}
-        </div>
-      </div>
-    </div>,
-    document.body,
+            <div className="vocab-dialog-body chunk-trace-body">
+              <div className="chunk-trace-meta">
+                <span>Lines {chunk.start_idx}-{chunk.end_idx}</span>
+                {chunk.context_tokens ? <span>{formatTokenCount(chunk.context_tokens)} context tokens</span> : null}
+                {chunk.response_duration_ms ? <span>{formatDuration(chunk.response_duration_ms)} response generation</span> : null}
+              </div>
+              <div className="chunk-trace-tabs">
+                <button
+                  className={activePanel === 'chunk' ? 'active' : ''}
+                  type="button"
+                  onClick={() => setActivePanel('chunk')}
+                  aria-expanded={activePanel === 'chunk'}
+                >
+                  Chunk text
+                </button>
+                {unmatchedTraces.length > 0 && (
+                  <button
+                    className={activePanel === 'unmatched' ? 'active' : ''}
+                    type="button"
+                    onClick={() => setActivePanel('unmatched')}
+                    aria-expanded={activePanel === 'unmatched'}
+                  >
+                    Unmatched traces ({unmatchedTraces.length})
+                  </button>
+                )}
+              </div>
+              {activePanel === 'chunk' && (
+                <pre className="chunk-trace-text">
+                  {segments.map((segment, index) => segment.traces.length ? (
+                    <span
+                      className={`chunk-trace-highlight ${segment.tooltipBelow ? 'below' : ''}`}
+                      key={index}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setSelectedTrace(segment.traces[0])}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          setSelectedTrace(segment.traces[0]);
+                        }
+                      }}
+                    >
+                      {segment.text}
+                      <span className="chunk-trace-tooltip">
+                        {segment.traces.map((trace, traceIndex) => (
+                          <span key={`${trace.objectType}-${traceIndex}`}>
+                            <strong>{extractionContextTraceLabel(trace)}</strong>
+                            {trace.object && extractionContextItemDescription(trace.object) ? <small>{extractionContextItemDescription(trace.object)}</small> : null}
+                          </span>
+                        ))}
+                      </span>
+                    </span>
+                  ) : <span key={index}>{segment.text}</span>)}
+                </pre>
+              )}
+              {activePanel === 'unmatched' && unmatchedTraces.length > 0 && (
+                <div className="chunk-unmatched-traces">
+                  <div>
+                    {unmatchedTraces.map((trace, index) => (
+                      <button
+                        className="chunk-unmatched-trace"
+                        key={`${trace.objectType}-${index}`}
+                        type="button"
+                        onClick={() => setSelectedTrace(trace)}
+                      >
+                        <strong>{extractionContextTraceLabel(trace)}</strong>
+                        <small>{trace.sourceText}</small>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+      {selectedTrace && <ExtractionObjectModal trace={selectedTrace} onClose={() => setSelectedTrace(null)} />}
+    </>
   );
 }
 
