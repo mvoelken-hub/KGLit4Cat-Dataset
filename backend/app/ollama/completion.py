@@ -10,17 +10,28 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import Any, Generic, TypeVar, get_args
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
-from pydantic import BaseModel, ValidationError
+from jsonschema.exceptions import SchemaError
+from jsonschema.validators import validator_for
+from pydantic import BaseModel, ValidationError as PydanticValidationError
 
-from app.ollama.errors import CompletionError, MaxRetriesExceeded, OutputParsingError
+from app.ollama.errors import CompletionError, EmptyResponseError, MaxRetriesExceeded, OutputParsingError
 from app.ollama.usage import RunUsage
+
+if TYPE_CHECKING:
+    from app.ollama.client import OllamaClientWrapper
 
 T = TypeVar("T")
 
 # Regex to strip markdown JSON fences (```json ... ```)
 _MARKDOWN_FENCE_RE = re.compile(r"^```(?:json)?\s*\n?|\n?```\s*$")
+_REPAIR_SYSTEM_PROMPT = (
+    "You repair malformed structured JSON. Preserve the factual content and "
+    "field values from the failed response. Do not solve the original task "
+    "again, do not infer new facts, and do not add commentary. Return only "
+    "the corrected JSON object."
+)
 
 
 @dataclass
@@ -48,8 +59,57 @@ def _extract_json_schema(output_type: type[BaseModel] | dict[str, Any]) -> dict[
     raise CompletionError(f"Unsupported output_type: {output_type!r}")
 
 
+def _json_schema_validator(json_schema: dict[str, Any]):
+    """Build a JSON Schema validator, failing fast for invalid schemas."""
+    try:
+        validator_class = validator_for(json_schema)
+        validator_class.check_schema(json_schema)
+        return validator_class(json_schema)
+    except SchemaError as e:
+        raise CompletionError(f"Invalid output JSON Schema: {e.message}") from e
+
+
+def _format_json_schema_validation_errors(validator: Any, output: Any) -> str:
+    """Return stable, readable validation errors for repair prompts."""
+    errors = sorted(validator.iter_errors(output), key=str)
+    return "\n".join(
+        f"{_format_json_path(error.absolute_path)}: {error.message} "
+        f"(schema: {_format_json_path(error.absolute_schema_path)})"
+        for error in errors
+    )
+
+
+def _format_json_path(path: Any) -> str:
+    result = "$"
+    for part in path:
+        result += f"[{part}]" if isinstance(part, int) else f".{part}"
+    return result
+
+
+def _max_retries_exceeded(last_error: Exception | None) -> MaxRetriesExceeded:
+    return MaxRetriesExceeded(
+        "Max retries exceeded while generating structured output",
+        last_error=last_error,
+    )
+
+
+def _repair_prompt(*, failed_response: str, error: Exception) -> str:
+    """Build a narrow correction prompt from only the bad output and error."""
+    response = failed_response if failed_response else "[empty response]"
+    return (
+        "The previous response failed JSON parsing or schema validation. "
+        "Repair only the JSON structure, field names, and value types needed "
+        "to satisfy the schema. Preserve the existing information from the "
+        "failed response. If a required field is missing and cannot be derived "
+        "from the failed response, use the least-informative schema-valid "
+        "value. Return only corrected JSON.\n\n"
+        f"Validation error:\n{error}\n\n"
+        f"Failed response:\n{response}"
+    )
+
+
 async def generate_structured(
-    client: Any,
+    client: OllamaClientWrapper,
     *,
     model: str,
     system: str,
@@ -61,49 +121,53 @@ async def generate_structured(
     think: bool = False,
     num_ctx: int | None = None,
     keep_alive: float | str | None = -1,
+    repair_model: str | None = None,
 ) -> CompletionResult[Any]:
     """Single /api/generate call with format=json_schema, parse + validate + retry.
 
     Args:
-        client: ollama.AsyncClient instance
+        client: OllamaClientWrapper instance
         model: Ollama model name (e.g. "qwen3.5:4b")
         system: System message (static + dynamic context combined)
         prompt: User message (the extraction instruction)
         output_type: Pydantic model class for structured output,
-                     or dict for raw JSON schema (BaseModel validation skipped)
-        retries: Max re-prompts on parse/validation failure
+                     or dict for raw JSON schema validation
+        retries: Max repair attempts on parse/validation failure
         temperature: Sampling temperature
         seed: Reproducibility seed
         think: Enable thinking mode (for qwen3.5 etc)
         num_ctx: Context window size; passed via options["num_ctx"].
                  If None, uses whatever the Ollama host has configured.
         keep_alive: How long to keep the model loaded. Default -1 = keep in RAM.
+        repair_model: Optional model name for repair attempts. Defaults to model.
 
     Returns:
         CompletionResult with validated output and token usage.
 
     Raises:
-        OutputParsingError: JSON decode or validation failure after all retries
-        MaxRetriesExceeded: If retries exhausted
+        MaxRetriesExceeded: JSON decode or validation failure after all retries
         CompletionError: For Ollama API errors
     """
     schema = _extract_json_schema(output_type)
+    raw_schema_validator = _json_schema_validator(schema) if isinstance(output_type, dict) else None
 
     options: dict[str, Any] = {"temperature": temperature, "seed": seed}
     if num_ctx is not None:
         options["num_ctx"] = num_ctx
 
     current_prompt = prompt
+    current_system = system
+    current_model = model
     total_usage = RunUsage()
 
     last_error: Exception | None = None
 
     for attempt in range(retries + 1):
         try:
-            response = await client.generate(
-                model=model,
+            response = await client.ollama_client.generate(
+                model=current_model,
                 prompt=current_prompt,
-                system=system,
+                system=current_system,
                 format=schema,
                 options=options,
                 think=think,
@@ -119,11 +183,7 @@ async def generate_structured(
 
         raw = getattr(response, "response", "")
         if not raw:
-            last_error = OutputParsingError("Empty response from model")
-            if attempt < retries:
-                current_prompt = f"{prompt}\n\nError: Model returned empty output. Please return valid JSON conforming to the schema."
-                continue
-            raise OutputParsingError(str(last_error)) from last_error
+            raise EmptyResponseError()
 
         # Strip markdown fences if present
         cleaned = _strip_markdown_fences(raw)
@@ -132,31 +192,41 @@ async def generate_structured(
         try:
             parsed = json.loads(cleaned)
         except json.JSONDecodeError as e:
-            last_error = e
+            last_error = OutputParsingError(str(e))
             if attempt < retries:
-                current_prompt = (
-                    f"{prompt}\n\nError: Invalid JSON — {e}. "
-                    "Please return ONLY valid JSON, no markdown fences, no commentary."
-                )
+                current_system = _REPAIR_SYSTEM_PROMPT
+                current_prompt = _repair_prompt(failed_response=raw, error=last_error)
+                current_model = repair_model or model
                 continue
-            raise OutputParsingError(str(e)) from e
+            raise _max_retries_exceeded(last_error) from e
 
         # Validate against Pydantic model if provided
         if isinstance(output_type, type) and issubclass(output_type, BaseModel):
             try:
                 validated = output_type.model_validate(parsed)
-            except ValidationError as e:
-                last_error = e
+            except PydanticValidationError as e:
+                last_error = OutputParsingError(str(e))
                 if attempt < retries:
-                    current_prompt = (
-                        f"{prompt}\n\nError: Schema validation failed — {e}. "
-                        "Please return valid JSON that matches the schema exactly."
-                    )
+                    current_system = _REPAIR_SYSTEM_PROMPT
+                    current_prompt = _repair_prompt(failed_response=raw, error=last_error)
+                    current_model = repair_model or model
                     continue
-                raise OutputParsingError(str(e)) from e
+                raise _max_retries_exceeded(last_error) from e
             return CompletionResult(output=validated, usage=total_usage)
 
-        # Raw dict output (no Pydantic validation)
+        # Raw dict schema output validated with jsonschema.
+        if raw_schema_validator is not None:
+            validation_errors = _format_json_schema_validation_errors(raw_schema_validator, parsed)
+            if validation_errors:
+                last_error = OutputParsingError(
+                    "Output did not match JSON Schema:\n" + validation_errors
+                )
+                if attempt < retries:
+                    current_system = _REPAIR_SYSTEM_PROMPT
+                    current_prompt = _repair_prompt(failed_response=raw, error=last_error)
+                    current_model = repair_model or model
+                    continue
+                raise _max_retries_exceeded(last_error) from last_error
         return CompletionResult(output=parsed, usage=total_usage)
 
-    raise MaxRetriesExceeded()
+    raise _max_retries_exceeded(last_error)

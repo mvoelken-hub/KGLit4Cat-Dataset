@@ -11,7 +11,7 @@ from unittest import IsolatedAsyncioTestCase
 from pydantic import BaseModel
 
 from app.ollama.completion import CompletionResult, _extract_json_schema, _strip_markdown_fences, generate_structured
-from app.ollama.errors import CompletionError, MaxRetriesExceeded, OutputParsingError
+from app.ollama.errors import CompletionError, EmptyResponseError, MaxRetriesExceeded, OutputParsingError
 from app.ollama.usage import RunUsage
 
 
@@ -41,6 +41,10 @@ class FakeOllamaClient:
         self.responses: list[FakeGenerateResponse] = responses or []
         self.calls: list[dict[str, Any]] = []
         self.call_index = 0
+
+    @property
+    def ollama_client(self) -> "FakeOllamaClient":
+        return self
 
     async def generate(self, **kwargs: Any) -> FakeGenerateResponse:
         self.calls.append(kwargs)
@@ -139,6 +143,27 @@ class GenerateStructuredHappyPathTests(IsolatedAsyncioTestCase):
         self.assertEqual(result.output, {"custom": "data", "count": 7})
         self.assertEqual(result.usage.requests, 1)
 
+    async def test_dict_output_type_validates_json_schema(self):
+        schema = {
+            "type": "object",
+            "properties": {"required_field": {"type": "string"}},
+            "required": ["required_field"],
+            "additionalProperties": False,
+        }
+        client = FakeOllamaClient([
+            FakeGenerateResponse(response='{"required_field": "present"}'),
+        ])
+
+        result = await generate_structured(
+            client,
+            model="test-model",
+            system="You are helpful.",
+            prompt="Give me data.",
+            output_type=schema,
+        )
+
+        self.assertEqual(result.output, {"required_field": "present"})
+
     async def test_passes_options_to_generate(self):
         client = FakeOllamaClient([
             FakeGenerateResponse(response='{"answer": "x", "score": 1}'),
@@ -236,8 +261,30 @@ class GenerateStructuredRetryTests(IsolatedAsyncioTestCase):
             retries=1,
         )
 
-        # Second call should include the error in the prompt
-        self.assertIn("Error:", client.calls[1]["prompt"])
+        # Second call should repair only the failed response, not redo the original task.
+        self.assertIn("Validation error:", client.calls[1]["prompt"])
+        self.assertIn("bad json", client.calls[1]["prompt"])
+        self.assertNotIn("Return JSON.", client.calls[1]["prompt"])
+        self.assertIn("repair", client.calls[1]["system"].lower())
+
+    async def test_repair_attempt_can_use_dedicated_repair_model(self):
+        client = FakeOllamaClient([
+            FakeGenerateResponse(response="bad json"),
+            FakeGenerateResponse(response='{"answer": "x", "score": 1}'),
+        ])
+
+        await generate_structured(
+            client,
+            model="primary-model",
+            system="Be precise.",
+            prompt="Return JSON.",
+            output_type=SimpleOutput,
+            retries=1,
+            repair_model="repair-model",
+        )
+
+        self.assertEqual(client.calls[0]["model"], "primary-model")
+        self.assertEqual(client.calls[1]["model"], "repair-model")
 
     async def test_max_retries_exceeded_on_persistent_failure(self):
         client = FakeOllamaClient([
@@ -246,7 +293,7 @@ class GenerateStructuredRetryTests(IsolatedAsyncioTestCase):
             FakeGenerateResponse(response="still bad"),
         ])
 
-        with self.assertRaises(OutputParsingError):
+        with self.assertRaises(MaxRetriesExceeded) as error:
             await generate_structured(
                 client,
                 model="test-model",
@@ -257,6 +304,8 @@ class GenerateStructuredRetryTests(IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(client.call_index, 3)
+        self.assertIsInstance(error.exception.last_error, OutputParsingError)
+        self.assertEqual(error.exception.details["last_error_type"], "OutputParsingError")
 
     async def test_usage_accumulates_across_retries(self):
         client = FakeOllamaClient([
@@ -278,29 +327,30 @@ class GenerateStructuredRetryTests(IsolatedAsyncioTestCase):
         self.assertEqual(result.usage.input_tokens, 37)  # 10 + 12 + 15
         self.assertEqual(result.usage.output_tokens, 19)  # 5 + 6 + 8
 
-    async def test_empty_response_retries(self):
+    async def test_empty_response_fails_without_repair(self):
         client = FakeOllamaClient([
             FakeGenerateResponse(response=""),
             FakeGenerateResponse(response='{"answer": "x", "score": 1}'),
         ])
 
-        result = await generate_structured(
-            client,
-            model="test-model",
-            system="Be precise.",
-            prompt="Return JSON.",
-            output_type=SimpleOutput,
-            retries=1,
-        )
+        with self.assertRaises(EmptyResponseError):
+            await generate_structured(
+                client,
+                model="test-model",
+                system="Be precise.",
+                prompt="Return JSON.",
+                output_type=SimpleOutput,
+                retries=1,
+            )
 
-        self.assertEqual(result.output.answer, "x")
+        self.assertEqual(client.call_index, 1)
 
     async def test_empty_response_with_no_retries_raises(self):
         client = FakeOllamaClient([
             FakeGenerateResponse(response=""),
         ])
 
-        with self.assertRaises(OutputParsingError):
+        with self.assertRaises(EmptyResponseError):
             await generate_structured(
                 client,
                 model="test-model",
@@ -309,6 +359,72 @@ class GenerateStructuredRetryTests(IsolatedAsyncioTestCase):
                 output_type=SimpleOutput,
                 retries=0,
             )
+
+    async def test_retry_on_json_schema_validation_error_for_dict_output_type(self):
+        schema = {
+            "type": "object",
+            "properties": {"required_field": {"type": "string"}},
+            "required": ["required_field"],
+            "additionalProperties": False,
+        }
+        client = FakeOllamaClient([
+            FakeGenerateResponse(response="{}"),
+            FakeGenerateResponse(response='{"required_field": "fixed"}'),
+        ])
+
+        result = await generate_structured(
+            client,
+            model="test-model",
+            system="Be precise.",
+            prompt="Return JSON.",
+            output_type=schema,
+            retries=1,
+        )
+
+        self.assertEqual(result.output, {"required_field": "fixed"})
+        self.assertEqual(result.usage.requests, 2)
+        self.assertIn("Validation error:", client.calls[1]["prompt"])
+        self.assertIn("Failed response:\n{}", client.calls[1]["prompt"])
+
+    async def test_max_retries_exceeded_on_persistent_json_schema_validation_error(self):
+        schema = {
+            "type": "object",
+            "properties": {"required_field": {"type": "string"}},
+            "required": ["required_field"],
+        }
+        client = FakeOllamaClient([
+            FakeGenerateResponse(response="{}"),
+            FakeGenerateResponse(response="{}"),
+        ])
+
+        with self.assertRaises(MaxRetriesExceeded) as error:
+            await generate_structured(
+                client,
+                model="test-model",
+                system="Be precise.",
+                prompt="Return JSON.",
+                output_type=schema,
+                retries=1,
+            )
+
+        self.assertEqual(client.call_index, 2)
+        self.assertIn("required_field", str(error.exception.last_error))
+
+    async def test_invalid_json_schema_raises_completion_error_before_calling_model(self):
+        client = FakeOllamaClient([
+            FakeGenerateResponse(response='{"x": 1}'),
+        ])
+
+        with self.assertRaises(CompletionError):
+            await generate_structured(
+                client,
+                model="test-model",
+                system="Be precise.",
+                prompt="Return JSON.",
+                output_type={"type": "not-a-json-schema-type"},
+            )
+
+        self.assertEqual(client.calls, [])
 
 
 class CompletionErrorTests(unittest.TestCase):
@@ -320,6 +436,19 @@ class CompletionErrorTests(unittest.TestCase):
     def test_model_retry_inheritance(self):
         err = MaxRetriesExceeded()
         self.assertIsInstance(err, CompletionError)
+
+    def test_empty_response_error_inheritance(self):
+        err = EmptyResponseError()
+        self.assertIsInstance(err, OutputParsingError)
+        self.assertIsInstance(err, CompletionError)
+        self.assertEqual(str(err), "Empty response from model")
+
+    def test_max_retries_exceeded_carries_last_error_details(self):
+        cause = OutputParsingError("bad json")
+        err = MaxRetriesExceeded(last_error=cause)
+        self.assertIs(err.last_error, cause)
+        self.assertEqual(err.details["last_error_type"], "OutputParsingError")
+        self.assertEqual(err.details["last_error"], "bad json")
 
 
 class RunUsageTests(unittest.TestCase):
