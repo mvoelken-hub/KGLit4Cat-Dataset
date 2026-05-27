@@ -136,6 +136,24 @@ def make_chunk(start_idx: int = 0, content: str = "sample measured at 20 C") -> 
     )
 
 
+def resource_context(identifier: str, description: str) -> ExtractionContext:
+    return ExtractionContext.model_validate(
+        {
+            "extraction_objects": [
+                {
+                    "object_type": "resource",
+                    "extracted_object": {
+                        "identifier": identifier,
+                        "type": "dataset",
+                        "description": description,
+                    },
+                    "source_text": description,
+                }
+            ]
+        }
+    )
+
+
 def make_service(chunks_by_file: list[list[ContentChunk]]):
     task_registry = TaskRegistry(SimpleNamespace(), FakeLogger())  # type: ignore[arg-type]
     output_repository = FakeOutputRepository()
@@ -171,31 +189,11 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 usage=RunUsage(requests=1, input_tokens=10, output_tokens=2),
             ),
             CompletionResult(
-                output=ExtractionContext.model_validate(
-                    {
-                        "resources": [
-                            {
-                                "identifier": "alpha-resource",
-                                "type": "dataset",
-                                "description": "Alpha catalyst metadata.",
-                            }
-                        ]
-                    }
-                ),
+                output=resource_context("alpha-resource", "Alpha catalyst metadata."),
                 usage=RunUsage(requests=1, input_tokens=20, output_tokens=5),
             ),
             CompletionResult(
-                output=ExtractionContext.model_validate(
-                    {
-                        "resources": [
-                            {
-                                "identifier": "beta-spectrum",
-                                "type": "dataset",
-                                "description": "Beta NMR spectrum file.",
-                            }
-                        ]
-                    }
-                ),
+                output=resource_context("beta-spectrum", "Beta NMR spectrum file."),
                 usage=RunUsage(requests=1, input_tokens=20, output_tokens=5),
             ),
             CompletionResult(
@@ -228,17 +226,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         service, _, output_repository = make_service([[make_chunk()]])
         output_repository.save_extraction_context(
             workflow_id="package-id",
-            extraction_context=ExtractionContext.model_validate(
-                {
-                    "resources": [
-                        {
-                            "identifier": "interim-dataset",
-                            "type": "dataset",
-                            "description": "Persisted partial context.",
-                        }
-                    ]
-                }
-            ),
+            extraction_context=resource_context("interim-dataset", "Persisted partial context."),
         )
 
         status, progress = await service.get_extraction_progress(
@@ -261,22 +249,12 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         call_order: list[str] = []
         chunk_outputs = [
             CompletionResult(
-                output=ExtractionContext.model_validate(
-                    {
-                        "resources": [
-                            {
-                                "identifier": "resource-one",
-                                "type": "dataset",
-                                "description": "First partial resource.",
-                            }
-                        ]
-                    }
-                ),
+                output=resource_context("resource-one", "First partial resource."),
                 usage=RunUsage(requests=1, input_tokens=20, output_tokens=5),
             ),
             MaxRetriesExceeded(
                 last_error=OutputParsingError("bad json"),
-                failed_response='{"resources": [',
+                failed_response='{"extraction_objects": [',
                 usage=RunUsage(requests=1, input_tokens=21, output_tokens=4),
             ),
         ]
@@ -304,17 +282,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         async def fake_repair(*_args, **_kwargs):
             call_order.append("repair")
             return CompletionResult(
-                output=ExtractionContext.model_validate(
-                    {
-                        "resources": [
-                            {
-                                "identifier": "resource-two",
-                                "type": "dataset",
-                                "description": "Repaired resource.",
-                            }
-                        ]
-                    }
-                ),
+                output=resource_context("resource-two", "Repaired resource."),
                 usage=RunUsage(requests=1, input_tokens=12, output_tokens=3),
             )
 
@@ -352,16 +320,9 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                         start_idx=0,
                         end_idx=0,
                         status="completed",
-                        extraction_context=ExtractionContext.model_validate(
-                            {
-                                "resources": [
-                                    {
-                                        "identifier": "already-extracted",
-                                        "type": "dataset",
-                                        "description": "Persisted alpha catalyst result.",
-                                    }
-                                ]
-                            }
+                        extraction_context=resource_context(
+                            "already-extracted",
+                            "Persisted alpha catalyst result.",
                         ),
                     ),
                     ExtractionChunkResult(
@@ -376,17 +337,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         )
         outputs = [
             CompletionResult(
-                output=ExtractionContext.model_validate(
-                    {
-                        "resources": [
-                            {
-                                "identifier": "resumed-chunk",
-                                "type": "dataset",
-                                "description": "NMR spectrum details.",
-                            }
-                        ]
-                    }
-                ),
+                output=resource_context("resumed-chunk", "NMR spectrum details."),
                 usage=RunUsage(requests=1, input_tokens=20, output_tokens=5),
             ),
             CompletionResult(

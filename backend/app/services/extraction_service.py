@@ -30,7 +30,7 @@ from app.domain.extraction import (
     FileRankingResult,
     QualitativeAttribute,
     QualitativeAttributeNormalization,
-    Quantity,
+    QuantitativeAttribute,
     QuantityNormalization,
     VocabularyCandidateSelection,
     VocabularyFallbackQuery,
@@ -684,7 +684,7 @@ class ExtractionService:
         self,
         *,
         data_package_id: str,
-        quantity: Quantity,
+        quantity: QuantitativeAttribute,
         warnings: list[str],
     ) -> QuantityNormalization:
         quantity_kind = await self._select_term_with_fallback(
@@ -964,29 +964,17 @@ class ExtractionService:
         return list(by_uri.values())
 
     @staticmethod
-    def _all_quantities(context: ExtractionContext) -> list[Quantity]:
-        quantities: list[Quantity] = []
-        for item in (
-            context.data_generating_activities
-            + context.evaluated_entities
-            + context.agentic_entities
-            + context.resources
-            + context.methods
-        ):
-            quantities.extend(item.has_quantitative_attributes)
+    def _all_quantities(context: ExtractionContext) -> list[QuantitativeAttribute]:
+        quantities: list[QuantitativeAttribute] = []
+        for trace in context.extraction_objects:
+            quantities.extend(trace.extracted_object.has_quantitative_attributes)
         return quantities
 
     @staticmethod
     def _all_qualitative_attributes(context: ExtractionContext) -> list[QualitativeAttribute]:
         attributes: list[QualitativeAttribute] = []
-        for item in (
-            context.data_generating_activities
-            + context.evaluated_entities
-            + context.agentic_entities
-            + context.resources
-            + context.methods
-        ):
-            attributes.extend(item.has_qualitative_attributes)
+        for trace in context.extraction_objects:
+            attributes.extend(trace.extracted_object.has_qualitative_attributes)
         return attributes
 
     def _load_result_or_none(self, data_package_id: str) -> ExtractionRunResult | None:

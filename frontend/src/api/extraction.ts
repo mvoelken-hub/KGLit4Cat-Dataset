@@ -279,10 +279,15 @@ export async function resolvePatchReview(input: {
 }
 
 export function initialContextFromExtractionContext(context: Record<string, unknown>): InitialContext {
-  const resources = arrayOfRecords(context.resources);
-  const activities = arrayOfRecords(context.data_generating_activities);
-  const entities = arrayOfRecords(context.evaluated_entities);
-  const agents = arrayOfRecords(context.agentic_entities);
+  const traces = arrayOfRecords(context.extraction_objects);
+  const objectsByType = (type: string) => traces
+    .filter((trace) => stringValue(trace.object_type) === type)
+    .map((trace) => recordValue(trace.extracted_object))
+    .filter((item): item is Record<string, unknown> => Boolean(item));
+  const resources = objectsByType('resource');
+  const activities = objectsByType('data_generating_activity');
+  const entities = objectsByType('evaluated_entity');
+  const agents = objectsByType('agentic_entity');
   const dataset = resources.find((resource) => stringValue(resource.type)?.toLowerCase() === 'dataset') || resources[0] || {};
   return {
     dataset_title: stringValue(dataset.identifier) || null,
@@ -313,6 +318,10 @@ export function initialContextFromExtractionContext(context: Record<string, unkn
     keywords: stringArray(dataset.keywords),
     summary: stringValue(dataset.description) || 'Extraction context generated.',
   };
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
 function emptyInitialContext(summary: string): InitialContext {

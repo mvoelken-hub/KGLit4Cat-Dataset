@@ -5,7 +5,7 @@ from app.domain.extraction import (
     ExtractionContext,
     FileContext,
     FileRankingResult,
-    Quantity,
+    QuantitativeAttribute,
     RankedFile,
     build_extraction_context_prompt,
     build_file_ranking_prompt,
@@ -51,22 +51,30 @@ class ExtractionDomainTests(unittest.TestCase):
     def test_merge_extraction_context_deduplicates_items(self):
         first = ExtractionContext.model_validate(
             {
-                "methods": [
+                "extraction_objects": [
                     {
-                        "identifier": "sample-method",
-                        "description": "Method for sample A.",
-                        "keywords": ["sample"],
+                        "object_type": "method",
+                        "extracted_object": {
+                            "identifier": "sample-method",
+                            "description": "Method for sample A.",
+                            "keywords": ["sample"],
+                        },
+                        "source_text": "Method for sample A.",
                     }
                 ]
             }
         )
         second = ExtractionContext.model_validate(
             {
-                "methods": [
+                "extraction_objects": [
                     {
-                        "identifier": "sample method",
-                        "description": "Method for sample A with more detail.",
-                        "keywords": ["experiment"],
+                        "object_type": "method",
+                        "extracted_object": {
+                            "identifier": "sample method",
+                            "description": "Method for sample A with more detail.",
+                            "keywords": ["experiment"],
+                        },
+                        "source_text": "Method for sample A with more detail.",
                     }
                 ]
             }
@@ -78,7 +86,7 @@ class ExtractionDomainTests(unittest.TestCase):
         self.assertEqual(merged.methods[0].keywords, ["experiment", "sample"])
 
     def test_qudt_query_builders_target_expected_types(self):
-        quantity = Quantity(
+        quantity = QuantitativeAttribute(
             identifier="temperature",
             value="20",
             unit="C",

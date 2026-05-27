@@ -177,18 +177,34 @@ function extractionContextKeywords(item: Record<string, unknown>): string[] {
     : [];
 }
 
+function extractionContextTraces(context?: Record<string, unknown> | null) {
+  return asRecordArray(context?.extraction_objects)
+    .map((trace) => ({
+      objectType: String(trace.object_type || 'unknown'),
+      sourceText: typeof trace.source_text === 'string' ? trace.source_text : '',
+      object: asRecord(trace.extracted_object),
+    }))
+    .filter((trace) => trace.object);
+}
+
+function extractionContextTraceLabel(trace: { objectType: string; object: Record<string, unknown> | null }) {
+  const label = trace.object ? extractionContextItemTitle(trace.object, 'Extracted object') : 'Extracted object';
+  return `${trace.objectType.replace(/_/g, ' ')}: ${label}`;
+}
+
 function ExtractionContextResultView({ context }: { context?: Record<string, unknown> | null }) {
   if (!context) return <p className="muted">No extraction result is available for this chunk yet.</p>;
 
+  const traces = extractionContextTraces(context);
   const sections = [
-    { key: 'resources', label: 'Resources' },
-    { key: 'methods', label: 'Methods' },
-    { key: 'data_generating_activities', label: 'Activities' },
-    { key: 'evaluated_entities', label: 'Entities' },
-    { key: 'agentic_entities', label: 'Agents' },
+    { key: 'resource', label: 'Resources' },
+    { key: 'method', label: 'Methods' },
+    { key: 'data_generating_activity', label: 'Activities' },
+    { key: 'evaluated_entity', label: 'Entities' },
+    { key: 'agentic_entity', label: 'Agents' },
   ].map((section) => ({
     ...section,
-    items: asRecordArray(context[section.key]),
+    items: traces.filter((trace) => trace.objectType === section.key).map((trace) => trace.object).filter((item): item is Record<string, unknown> => Boolean(item)),
   })).filter((section) => section.items.length > 0);
 
   if (!sections.length) {
@@ -222,6 +238,133 @@ function ExtractionContextResultView({ context }: { context?: Record<string, unk
   );
 }
 
+function ChunkTraceModal({
+  chunk,
+  content,
+  context,
+  onClose,
+}: {
+  chunk: ExtractionChunkResult;
+  content: string;
+  context?: Record<string, unknown> | null;
+  onClose: () => void;
+}) {
+  const [activePanel, setActivePanel] = useState<'chunk' | 'unmatched'>('chunk');
+  const traces = extractionContextTraces(context);
+  const segments = buildTraceSegments(content, traces);
+  const matchedTraces = new Set(segments.flatMap((segment) => segment.traces));
+  const unmatchedTraces = traces.filter((trace) => trace.sourceText && !matchedTraces.has(trace));
+  return createPortal(
+    <div className="vocab-dialog-overlay" onClick={onClose}>
+      <div className="vocab-dialog chunk-trace-dialog" onClick={(event) => event.stopPropagation()}>
+        <div className="vocab-dialog-header">
+          <strong>Chunk {chunk.chunk_index + 1}: {chunk.file_path}</strong>
+          <button className="ghost" onClick={onClose}>Close</button>
+        </div>
+        <div className="vocab-dialog-body chunk-trace-body">
+          <div className="chunk-trace-meta">
+            <span>Lines {chunk.start_idx}-{chunk.end_idx}</span>
+            {chunk.context_tokens ? <span>{formatTokenCount(chunk.context_tokens)} context tokens</span> : null}
+            {chunk.response_duration_ms ? <span>{formatDuration(chunk.response_duration_ms)} response generation</span> : null}
+          </div>
+          <div className="chunk-trace-tabs">
+            <button
+              className={activePanel === 'chunk' ? 'active' : ''}
+              type="button"
+              onClick={() => setActivePanel('chunk')}
+              aria-expanded={activePanel === 'chunk'}
+            >
+              Chunk text
+            </button>
+            {unmatchedTraces.length > 0 && (
+              <button
+                className={activePanel === 'unmatched' ? 'active' : ''}
+                type="button"
+                onClick={() => setActivePanel('unmatched')}
+                aria-expanded={activePanel === 'unmatched'}
+              >
+                Unmatched traces ({unmatchedTraces.length})
+              </button>
+            )}
+          </div>
+          {activePanel === 'chunk' && (
+            <pre className="chunk-trace-text">
+              {segments.map((segment, index) => segment.traces.length ? (
+                <span className={`chunk-trace-highlight ${segment.tooltipBelow ? 'below' : ''}`} key={index}>
+                  {segment.text}
+                  <span className="chunk-trace-tooltip">
+                    {segment.traces.map((trace, traceIndex) => (
+                      <span key={`${trace.objectType}-${traceIndex}`}>
+                        <strong>{extractionContextTraceLabel(trace)}</strong>
+                        {trace.object && extractionContextItemDescription(trace.object) ? <small>{extractionContextItemDescription(trace.object)}</small> : null}
+                      </span>
+                    ))}
+                  </span>
+                </span>
+              ) : <span key={index}>{segment.text}</span>)}
+            </pre>
+          )}
+          {activePanel === 'unmatched' && unmatchedTraces.length > 0 && (
+            <div className="chunk-unmatched-traces">
+              <div>
+                {unmatchedTraces.map((trace, index) => (
+                  <section key={`${trace.objectType}-${index}`}>
+                    <strong>{extractionContextTraceLabel(trace)}</strong>
+                    <small>{trace.sourceText}</small>
+                  </section>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+function buildTraceSegments(content: string, traces: ReturnType<typeof extractionContextTraces>) {
+  const lowerContent = content.toLowerCase();
+  const sixthLineStart = nthLineStart(content, 6);
+  const matches = traces
+    .flatMap((trace) => {
+      const sourceText = trace.sourceText.trim();
+      if (!sourceText) return [];
+      const exactStart = content.indexOf(sourceText);
+      const start = exactStart >= 0 ? exactStart : lowerContent.indexOf(sourceText.toLowerCase());
+      return start >= 0 ? [{ start, end: start + sourceText.length, trace }] : [];
+    })
+    .sort((left, right) => left.start - right.start || right.end - left.end);
+  const segments: Array<{ text: string; traces: typeof traces; tooltipBelow?: boolean }> = [];
+  let cursor = 0;
+  for (const match of matches) {
+    if (match.start < cursor) {
+      const previous = segments[segments.length - 1];
+      if (previous?.traces.length && match.end <= cursor) previous.traces.push(match.trace);
+      continue;
+    }
+    if (match.start > cursor) segments.push({ text: content.slice(cursor, match.start), traces: [] });
+    segments.push({
+      text: content.slice(match.start, match.end),
+      traces: [match.trace],
+      tooltipBelow: match.start <= sixthLineStart,
+    });
+    cursor = match.end;
+  }
+  if (cursor < content.length) segments.push({ text: content.slice(cursor), traces: [] });
+  return segments.length ? segments : [{ text: content || 'No chunk text available.', traces: [] }];
+}
+
+function nthLineStart(content: string, lineNumber: number) {
+  let index = 0;
+  for (let line = 1; line < lineNumber; line += 1) {
+    const next = content.indexOf('\n', index);
+    if (next < 0) return content.length;
+    index = next + 1;
+  }
+  return index;
+}
+
 function ExtractionContextOverview({
   rankedFiles,
   chunkResults,
@@ -239,6 +382,7 @@ function ExtractionContextOverview({
   progress?: PatchProgress | null;
   status?: PatchTaskStatus | null;
 }) {
+  const [traceChunk, setTraceChunk] = useState<{ chunk: ExtractionChunkResult; content: string } | null>(null);
   const resultByKey = new Map(chunkResults.map((chunk) => [chunkResultKey(chunk), chunk]));
   const packageFileByPath = new Map(packageFiles.map((file) => [file.file_path, file]));
   const chunkGroupsByPath = new Map(
@@ -327,6 +471,8 @@ function ExtractionContextOverview({
                 {chunkCards.length ? chunkCards.map((chunk) => {
                   const running = chunk.status === 'running' || (currentChunk && chunkResultKey(currentChunk) === chunkResultKey(chunk));
                   const statusClass = running ? 'running' : chunk.status === 'completed' ? 'completed' : chunk.status === 'failed' ? 'failed' : 'pending';
+                  const sourceChunk = (chunkGroupsByPath.get(chunk.file_path) ?? []).find((item) => chunkResultKey(item) === chunkResultKey(chunk));
+                  const chunkText = sourceChunk?.content ?? '';
                   return (
                     <details className={`extraction-chunk-card ${statusClass}`} key={chunkResultKey(chunk)} open={running ? true : undefined}>
                       <summary>
@@ -344,6 +490,7 @@ function ExtractionContextOverview({
                         <div className="chunk-call-meta">
                           {chunk.context_tokens ? <span>{formatTokenCount(chunk.context_tokens)} context tokens</span> : null}
                           {chunk.response_duration_ms ? <span>{formatDuration(chunk.response_duration_ms)} response generation</span> : null}
+                          <button className="small ghost" type="button" onClick={() => setTraceChunk({ chunk, content: chunkText })}>View chunk text</button>
                         </div>
                       )}
                       <ExtractionContextResultView context={chunk.extraction_context} />
@@ -357,6 +504,14 @@ function ExtractionContextOverview({
           );
         })}
       </div>
+      {traceChunk && (
+        <ChunkTraceModal
+          chunk={traceChunk.chunk}
+          content={traceChunk.content}
+          context={traceChunk.chunk.extraction_context}
+          onClose={() => setTraceChunk(null)}
+        />
+      )}
     </div>
   );
 }

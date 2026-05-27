@@ -1,12 +1,14 @@
 from difflib import SequenceMatcher
 from hashlib import sha1
 import re
-from typing import TypeVar
+from typing import Literal, TypeVar
 from pydantic import BaseModel, Field, model_validator
 
 T = TypeVar("T", bound=BaseModel)
 
-class Quantity(BaseModel):
+# Attribute classes
+
+class QuantitativeAttribute(BaseModel):
     """A quantity that has been measured, calculated, or selected."""
     identifier: str = Field(..., description="Unique identifier for the quantity.")
     value: str = Field(..., description="Numerical value of the quantity.")
@@ -18,12 +20,14 @@ class QualitativeAttribute(BaseModel):
     title: str = Field(..., description="Descriptive title of the qualitative attribute.")
     value: str = Field(..., description="Literal value of the qualitative attribute.")
 
+# Extraction classes
+
 class DataGeneratingActivity(BaseModel):
     """An Activity (process) that has the objective to produce information (in form of a dataset) about another Activity or Entity."""
     identifier: str = Field(..., description="Unique identifier for the activity.")
     description: str = Field(..., description="Description of the activity.")
     keywords: list[str] = Field(default_factory=list, description="List of keywords associated with the activity.")
-    has_quantitative_attributes: list[Quantity] = Field(default_factory=list, description="List of quantitative attributes associated with the activity.")
+    has_quantitative_attributes: list[QuantitativeAttribute] = Field(default_factory=list, description="List of quantitative attributes associated with the activity.")
     has_qualitative_attributes: list[QualitativeAttribute] = Field(default_factory=list, description="List of qualitative attributes associated with the activity.")
 
 class Method(BaseModel):
@@ -31,7 +35,7 @@ class Method(BaseModel):
     identifier: str = Field(..., description="Unique identifier for the method.")
     description: str = Field(..., description="Description of the method.")
     keywords: list[str] = Field(default_factory=list, description="List of keywords associated with the method.")
-    has_quantitative_attributes: list[Quantity] = Field(default_factory=list, description="List of quantitative attributes associated with the method.")
+    has_quantitative_attributes: list[QuantitativeAttribute] = Field(default_factory=list, description="List of quantitative attributes associated with the method.")
     has_qualitative_attributes: list[QualitativeAttribute] = Field(default_factory=list, description="List of qualitative attributes associated with the method.")
     
 class EvaluatedEntity(BaseModel):
@@ -39,7 +43,7 @@ class EvaluatedEntity(BaseModel):
     identifier: str = Field(..., description="Unique identifier for the entity.")
     description: str = Field(..., description="Description of the entity.")
     type: str = Field(..., description="Type of the entity (e.g., sample, model).")
-    has_quantitative_attributes: list[Quantity] = Field(default_factory=list, description="List of quantitative attributes associated with the entity.")
+    has_quantitative_attributes: list[QuantitativeAttribute] = Field(default_factory=list, description="List of quantitative attributes associated with the entity.")
     has_qualitative_attributes: list[QualitativeAttribute] = Field(default_factory=list, description="List of qualitative attributes associated with the entity.")
 
     @model_validator(mode="before")
@@ -54,7 +58,7 @@ class AgenticEntity(BaseModel):
     identifier: str = Field(..., description="Unique identifier for the agentic entity.")
     description: str = Field(..., description="Description of the agentic entity.")
     type: str = Field(..., description="Type of the agentic entity (e.g., person, organization).")
-    has_quantitative_attributes: list[Quantity] = Field(default_factory=list, description="List of quantitative attributes associated with the agentic entity.")
+    has_quantitative_attributes: list[QuantitativeAttribute] = Field(default_factory=list, description="List of quantitative attributes associated with the agentic entity.")
     has_qualitative_attributes: list[QualitativeAttribute] = Field(default_factory=list, description="List of qualitative attributes associated with the agentic entity.")
 
     @model_validator(mode="before")
@@ -69,7 +73,7 @@ class Resource(BaseModel):
     identifier: str = Field(..., description="Unique identifier for the resource.")
     type: str = Field(..., description="Type of the resource (e.g., file, dataset).")
     description: str = Field(..., description="Description of the resource.")
-    has_quantitative_attributes: list[Quantity] = Field(default_factory=list, description="List of quantitative attributes associated with the resource.")
+    has_quantitative_attributes: list[QuantitativeAttribute] = Field(default_factory=list, description="List of quantitative attributes associated with the resource.")
     has_qualitative_attributes: list[QualitativeAttribute] = Field(default_factory=list, description="List of qualitative attributes associated with the resource.")
 
     @model_validator(mode="before")
@@ -78,15 +82,88 @@ class Resource(BaseModel):
         if isinstance(data, dict) and not data.get("type"):
             return {**data, "type": "unknown"}
         return data
+    
+ExtractionObject = DataGeneratingActivity | EvaluatedEntity | AgenticEntity | Resource | Method
+ExtractionObjectType = Literal[
+    "data_generating_activity",
+    "evaluated_entity",
+    "agentic_entity",
+    "resource",
+    "method",
+]
+
+class TracedExtractionObject(BaseModel):
+    """A traced extraction object pairs an extracted class instance with the specific text snippet from which it was extracted, to provide traceability."""
+    object_type: ExtractionObjectType = Field(..., description="Type of extracted object.")
+    extracted_object: ExtractionObject = Field(..., description="The extracted object (e.g., DataGeneratingActivity, EvaluatedEntity, AgenticEntity, Resource, Method).")
+    source_text: str = Field(..., description="The specific text snippet from which the object was extracted.")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _parse_object_by_type(cls, data):
+        if not isinstance(data, dict):
+            return data
+        object_type = data.get("object_type")
+        extracted_object = data.get("extracted_object")
+        if not isinstance(extracted_object, dict):
+            return data
+        model_by_type = {
+            "data_generating_activity": DataGeneratingActivity,
+            "evaluated_entity": EvaluatedEntity,
+            "agentic_entity": AgenticEntity,
+            "resource": Resource,
+            "method": Method,
+        }
+        model = model_by_type.get(object_type)
+        if model is None:
+            return data
+        return {**data, "extracted_object": model.model_validate(extracted_object)}
 
 
 class ExtractionContext(BaseModel):
     """Context for metadata extraction, including activities, entities, datasets, and quantities."""
-    data_generating_activities: list[DataGeneratingActivity] = Field(default_factory=list, description="List of data-generating activities.")
-    evaluated_entities: list[EvaluatedEntity] = Field(default_factory=list, description="List of evaluated entities.")
-    agentic_entities: list[AgenticEntity] = Field(default_factory=list, description="List of agentic entities.")
-    resources: list[Resource] = Field(default_factory=list, description="List of resources that have been generated.")
-    methods: list[Method] = Field(default_factory=list, description="List of methods that have been used in the experiment.")
+    extraction_objects: list[TracedExtractionObject] = Field(default_factory=list, description="List of extracted objects with traceability.")
+
+    @property
+    def data_generating_activities(self) -> list[DataGeneratingActivity]:
+        return self._objects_of_type(DataGeneratingActivity)
+
+    @property
+    def evaluated_entities(self) -> list[EvaluatedEntity]:
+        return self._objects_of_type(EvaluatedEntity)
+
+    @property
+    def agentic_entities(self) -> list[AgenticEntity]:
+        return self._objects_of_type(AgenticEntity)
+
+    @property
+    def resources(self) -> list[Resource]:
+        return self._objects_of_type(Resource)
+
+    @property
+    def methods(self) -> list[Method]:
+        return self._objects_of_type(Method)
+
+    def _objects_of_type(self, object_type: type[T]) -> list[T]:
+        return [
+            trace.extracted_object
+            for trace in self.extraction_objects
+            if isinstance(trace.extracted_object, object_type)
+        ]
+
+
+def extraction_object_type(item: ExtractionObject) -> str:
+    if isinstance(item, DataGeneratingActivity):
+        return "data_generating_activity"
+    if isinstance(item, EvaluatedEntity):
+        return "evaluated_entity"
+    if isinstance(item, AgenticEntity):
+        return "agentic_entity"
+    if isinstance(item, Resource):
+        return "resource"
+    if isinstance(item, Method):
+        return "method"
+    return "unknown"
 
 
 EXTRACTION_CONTEXT_SYSTEM_PROMPT = f"""
@@ -100,6 +177,7 @@ You receive a content chunk from a file in a research data package, and your tas
 For each class, extract any quantitative attributes (measured or calculated quantities) and qualitative attributes (observed characteristics) that are mentioned in the text.
 Return only a valid ExtractionContext JSON object with the extracted information.
 Use this output schema: {ExtractionContext.model_json_schema()}
+For each extraction_objects item, set object_type to the exact class label and set source_text to a short exact substring copied verbatim from the chunk that supports the extracted object. Do not paraphrase source_text.
 Focus on extracting as much metadata as possible from one specific chunk. Work at a low level; your individual result will later be combined with the results of several such extraction steps, so you don't need to try to guess the overall context.
 """
 
@@ -128,22 +206,14 @@ def merge_extraction_context_results(
 ) -> ExtractionContext:
     merged_context = ExtractionContext()
     for context in context_list:
-        merged_context.data_generating_activities.extend(context.data_generating_activities)
-        merged_context.evaluated_entities.extend(context.evaluated_entities)
-        merged_context.agentic_entities.extend(context.agentic_entities)
-        merged_context.resources.extend(context.resources)
-        merged_context.methods.extend(context.methods)
+        merged_context.extraction_objects.extend(context.extraction_objects)
     return deduplicate_extraction_context_items(merged_context)
 
 def deduplicate_extraction_context_items(
     context: ExtractionContext
 ) -> ExtractionContext:
     return ExtractionContext(
-        data_generating_activities=deduplicate_list(context.data_generating_activities),
-        evaluated_entities=deduplicate_list(context.evaluated_entities),
-        agentic_entities=deduplicate_list(context.agentic_entities),
-        resources=deduplicate_list(context.resources),
-        methods=deduplicate_list(context.methods),
+        extraction_objects=deduplicate_list(context.extraction_objects)
     )
 
 # Helper
@@ -172,6 +242,11 @@ def string_sim(a: str, b: str) -> float:
 def are_probably_same_item(a: BaseModel, b: BaseModel) -> bool:
     ad = a.model_dump()
     bd = b.model_dump()
+    if isinstance(a, TracedExtractionObject) and isinstance(b, TracedExtractionObject):
+        if a.object_type != b.object_type:
+            return False
+        ad = a.extracted_object.model_dump()
+        bd = b.extracted_object.model_dump()
 
     a_id = norm_text(ad.get("identifier", ""))
     b_id = norm_text(bd.get("identifier", ""))
@@ -204,6 +279,16 @@ def are_probably_same_item(a: BaseModel, b: BaseModel) -> bool:
 
 
 def merge_items(a: T, b: T) -> T:
+    if isinstance(a, TracedExtractionObject) and isinstance(b, TracedExtractionObject):
+        merged_object = merge_items(a.extracted_object, b.extracted_object)
+        source_texts = list(dict.fromkeys(text for text in (a.source_text, b.source_text) if text))
+        source_text = "\n...\n".join(source_texts)
+        return type(a)(
+            object_type=a.object_type,
+            extracted_object=merged_object,
+            source_text=source_text,
+        )
+
     data = a.model_dump()
     other = b.model_dump()
 

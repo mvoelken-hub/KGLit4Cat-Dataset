@@ -4,7 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.domain.extraction.extraction_context import QualitativeAttribute, Quantity
+from app.domain.extraction.extraction_context import QualitativeAttribute, QuantitativeAttribute
 from app.domain.semantics import VocabQuery
 
 
@@ -51,7 +51,7 @@ class VocabularyTermMapping(BaseModel):
 
 
 class QuantityNormalization(BaseModel):
-    quantity: Quantity
+    quantity: QuantitativeAttribute
     quantity_kind: VocabularyTermMapping | None = None
     unit: VocabularyTermMapping | None = None
 
@@ -79,7 +79,7 @@ Use the source value and local context only. Return only JSON.
 """
 
 
-def build_quantity_kind_vocab_query(quantity: Quantity) -> VocabQuery:
+def build_quantity_kind_vocab_query(quantity: QuantitativeAttribute) -> VocabQuery:
     query_text = " ".join(
         part
         for part in (quantity.quantity_kind, quantity.identifier, quantity.unit)
@@ -96,7 +96,7 @@ def build_quantity_kind_vocab_query(quantity: Quantity) -> VocabQuery:
     )
 
 
-def build_unit_vocab_query(quantity: Quantity) -> VocabQuery:
+def build_unit_vocab_query(quantity: QuantitativeAttribute) -> VocabQuery:
     query_text = " ".join(
         part
         for part in (quantity.unit, quantity.quantity_kind, quantity.identifier)
@@ -164,4 +164,3 @@ def build_fallback_query_prompt(
         f"{failed_candidates}\n\n"
         "Create a better short vector/fulltext query for the same vocabulary."
     )
-
