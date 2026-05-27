@@ -324,15 +324,13 @@ function ChunkTraceModal({
 }
 
 function buildTraceSegments(content: string, traces: ReturnType<typeof extractionContextTraces>) {
-  const lowerContent = content.toLowerCase();
   const sixthLineStart = nthLineStart(content, 6);
   const matches = traces
     .flatMap((trace) => {
       const sourceText = trace.sourceText.trim();
       if (!sourceText) return [];
-      const exactStart = content.indexOf(sourceText);
-      const start = exactStart >= 0 ? exactStart : lowerContent.indexOf(sourceText.toLowerCase());
-      return start >= 0 ? [{ start, end: start + sourceText.length, trace }] : [];
+      const match = findTraceRange(content, sourceText);
+      return match ? [{ ...match, trace }] : [];
     })
     .sort((left, right) => left.start - right.start || right.end - left.end);
   const segments: Array<{ text: string; traces: typeof traces; tooltipBelow?: boolean }> = [];
@@ -353,6 +351,133 @@ function buildTraceSegments(content: string, traces: ReturnType<typeof extractio
   }
   if (cursor < content.length) segments.push({ text: content.slice(cursor), traces: [] });
   return segments.length ? segments : [{ text: content || 'No chunk text available.', traces: [] }];
+}
+
+function findTraceRange(content: string, sourceText: string): { start: number; end: number } | null {
+  const candidates = uniqueStrings([
+    sourceText.trim(),
+    decodeTraceEscapes(sourceText.trim()),
+    stripTracePromptMetadata(sourceText),
+    decodeTraceEscapes(stripTracePromptMetadata(sourceText)),
+  ]).filter((candidate) => candidate.length > 0);
+
+  for (const candidate of candidates) {
+    const direct = findDirectRange(content, candidate);
+    if (direct) return direct;
+  }
+  for (const candidate of candidates) {
+    const flexible = findFlexibleWhitespaceRange(content, candidate);
+    if (flexible) return flexible;
+  }
+  for (const candidate of candidates) {
+    const lineSequence = findLineSequenceRange(content, candidate);
+    if (lineSequence) return lineSequence;
+  }
+  return null;
+}
+
+function findDirectRange(content: string, sourceText: string): { start: number; end: number } | null {
+  const exactStart = content.indexOf(sourceText);
+  if (exactStart >= 0) return { start: exactStart, end: exactStart + sourceText.length };
+  const caseInsensitiveStart = content.toLowerCase().indexOf(sourceText.toLowerCase());
+  return caseInsensitiveStart >= 0 ? { start: caseInsensitiveStart, end: caseInsensitiveStart + sourceText.length } : null;
+}
+
+function findFlexibleWhitespaceRange(content: string, sourceText: string, fromIndex = 0): { start: number; end: number } | null {
+  const normalizedContent = normalizeTraceSearchText(content.slice(fromIndex), true);
+  const normalizedSource = normalizeTraceSearchText(sourceText, false);
+  if (normalizedSource.text.length < 3) return null;
+  const normalizedStart = normalizedContent.text.indexOf(normalizedSource.text);
+  if (normalizedStart < 0) return null;
+  return {
+    start: fromIndex + (normalizedContent.startMap[normalizedStart] ?? 0),
+    end: fromIndex + (normalizedContent.endMap[normalizedStart + normalizedSource.text.length - 1] ?? content.length),
+  };
+}
+
+function findLineSequenceRange(content: string, sourceText: string): { start: number; end: number } | null {
+  const lines = sourceText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !isTracePromptMetadataLine(line));
+  if (lines.length < 2 || lines.join('').length < 24) return null;
+
+  let firstStart: number | null = null;
+  let lastEnd = 0;
+  let searchFrom = 0;
+  for (const line of lines) {
+    const relativeDirect = findDirectRange(content.slice(searchFrom), line);
+    const match = relativeDirect
+      ? { start: searchFrom + relativeDirect.start, end: searchFrom + relativeDirect.end }
+      : findFlexibleWhitespaceRange(content, line, searchFrom);
+    if (!match) return null;
+    firstStart ??= match.start;
+    lastEnd = match.end;
+    searchFrom = match.end;
+  }
+  return firstStart === null ? null : { start: firstStart, end: lastEnd };
+}
+
+function normalizeTraceSearchText(value: string, keepMap: boolean) {
+  const textParts: string[] = [];
+  const startMap: number[] = [];
+  const endMap: number[] = [];
+  let whitespaceStart: number | null = null;
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    if (/\s/.test(character)) {
+      whitespaceStart ??= index;
+      continue;
+    }
+    if (whitespaceStart !== null) {
+      textParts.push(' ');
+      if (keepMap) {
+        startMap.push(whitespaceStart);
+        endMap.push(index);
+      }
+      whitespaceStart = null;
+    }
+    textParts.push(character.toLowerCase());
+    if (keepMap) {
+      startMap.push(index);
+      endMap.push(index + 1);
+    }
+  }
+  if (whitespaceStart !== null) {
+    textParts.push(' ');
+    if (keepMap) {
+      startMap.push(whitespaceStart);
+      endMap.push(value.length);
+    }
+  }
+
+  let start = 0;
+  let end = textParts.length;
+  while (start < end && textParts[start] === ' ') start += 1;
+  while (end > start && textParts[end - 1] === ' ') end -= 1;
+  return {
+    text: textParts.slice(start, end).join(''),
+    startMap: keepMap ? startMap.slice(start, end) : [],
+    endMap: keepMap ? endMap.slice(start, end) : [],
+  };
+}
+
+function stripTracePromptMetadata(sourceText: string): string {
+  const lines = sourceText.split(/\r?\n/).filter((line) => !isTracePromptMetadataLine(line.trim()));
+  const stripped = lines.join('\n').trim();
+  return stripped || sourceText.trim();
+}
+
+function isTracePromptMetadataLine(line: string): boolean {
+  return /^(Dataset name:|File path:|Line-Index-Span:|Chunk content \(after text-quality line filtering\):)/i.test(line);
+}
+
+function decodeTraceEscapes(value: string): string {
+  return value.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\\t/g, '\t');
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)];
 }
 
 function nthLineStart(content: string, lineNumber: number) {
