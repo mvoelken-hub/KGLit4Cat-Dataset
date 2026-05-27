@@ -50,9 +50,12 @@ from app.domain.extraction.vocabulary import (
 
 from app.domain.extraction.workflow import (
     ChunkingRequiredError,
+    ExtractionChunkRef,
+    ExtractionChunkResult,
     ExtractionResultNotFoundError,
     ExtractionRunProgress,
     ExtractionRunResult,
+    ExtractionRunState,
     ExtractionValidationError,
 )
 
@@ -96,8 +99,11 @@ __all__ = [
     "build_quantity_kind_vocab_query",
     "build_unit_vocab_query",
     "ChunkingRequiredError",
+    "ExtractionChunkRef",
+    "ExtractionChunkResult",
     "ExtractionResultNotFoundError",
     "ExtractionRunProgress",
     "ExtractionRunResult",
+    "ExtractionRunState",
     "ExtractionValidationError",
 ]

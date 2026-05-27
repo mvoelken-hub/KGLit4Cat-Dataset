@@ -89,6 +89,7 @@ async def run_extraction(
             data_package_id=request.data_package_id,
             profile_identifier=request.profile_identifier,
             qualitative_vocab_identifiers=request.qualitative_vocab_identifiers,
+            resume=request.resume,
         )
         _, progress = await extraction_service.get_extraction_progress(
             data_package_id=request.data_package_id,
@@ -134,4 +135,3 @@ async def get_token_usage(
     extraction_service: ExtractionService = Depends(get_extraction_service),
 ) -> dict[str, Any]:
     return await extraction_service.get_token_usage(data_package_id=data_package_id)
-

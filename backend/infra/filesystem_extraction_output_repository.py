@@ -3,11 +3,12 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from app.domain.extraction import ExtractionContext, ExtractionRunResult
+from app.domain.extraction import ExtractionContext, ExtractionRunResult, ExtractionRunState
 
 
 EXTRACTION_CONTEXT_FILE = "extraction_context.json"
 EXTRACTION_RESULT_FILE = "extraction_result.json"
+EXTRACTION_RUN_STATE_FILE = "extraction_run_state.json"
 EXTRACTION_WARNINGS_FILE = "extraction_warnings.json"
 TOKEN_USAGE_FILE = "token_usage.json"
 
@@ -53,6 +54,25 @@ class FileSystemExtractionOutputRepository:
                 f"Extraction result output not found for workflow '{workflow_id}'."
             )
         return ExtractionRunResult.model_validate(self._read_json_file(path))
+
+    def save_extraction_run_state(
+        self,
+        *,
+        workflow_id: str,
+        state: ExtractionRunState,
+    ) -> None:
+        self._write_json_file(
+            self._workflow_dir(workflow_id) / EXTRACTION_RUN_STATE_FILE,
+            state.model_dump(mode="json"),
+        )
+
+    def load_extraction_run_state(self, workflow_id: str) -> ExtractionRunState:
+        path = self._workflow_dir(workflow_id) / EXTRACTION_RUN_STATE_FILE
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Extraction run state not found for workflow '{workflow_id}'."
+            )
+        return ExtractionRunState.model_validate(self._read_json_file(path))
 
     def save_extraction_warnings(
         self,
@@ -104,6 +124,8 @@ class FileSystemExtractionOutputRepository:
                     "total_tokens",
                     "requests",
                     "operation_count",
+                    "response_duration_ms",
+                    "total_duration_ms",
                 )
             }
         return result
@@ -137,4 +159,3 @@ class FileSystemExtractionOutputRepository:
             return int(value or 0)
         except (TypeError, ValueError):
             return 0
-

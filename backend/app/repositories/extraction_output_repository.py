@@ -1,6 +1,6 @@
 from typing import Protocol
 
-from app.domain.extraction import ExtractionContext, ExtractionRunResult
+from app.domain.extraction import ExtractionContext, ExtractionRunResult, ExtractionRunState
 
 
 class ExtractionOutputRepository(Protocol):
@@ -24,6 +24,17 @@ class ExtractionOutputRepository(Protocol):
         ...
 
     def load_extraction_result(self, workflow_id: str) -> ExtractionRunResult:
+        ...
+
+    def save_extraction_run_state(
+        self,
+        *,
+        workflow_id: str,
+        state: ExtractionRunState,
+    ) -> None:
+        ...
+
+    def load_extraction_run_state(self, workflow_id: str) -> ExtractionRunState:
         ...
 
     def save_extraction_warnings(
@@ -50,4 +61,3 @@ class ExtractionOutputRepository(Protocol):
 
     def clear_extraction_run(self, workflow_id: str) -> None:
         ...
-

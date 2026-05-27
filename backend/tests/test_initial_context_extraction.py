@@ -6,8 +6,10 @@ from app.core.task_registry import TaskRegistry, TaskStatus
 from app.domain.datasources import ContentChunk, DataPackage, FileEntry
 from app.domain.extraction import (
     ChunkingRequiredError,
+    ExtractionChunkResult,
     ExtractionContext,
     ExtractionRunResult,
+    ExtractionRunState,
     FileRankingResult,
     RankedFile,
 )
@@ -73,6 +75,7 @@ class FakeOutputRepository:
         self.context: ExtractionContext | None = None
         self.contexts: list[ExtractionContext] = []
         self.result: ExtractionRunResult | None = None
+        self.run_state: ExtractionRunState | None = None
         self.warnings: list[str] = []
         self.token_usage: dict[str, dict[str, int]] = {}
 
@@ -93,6 +96,14 @@ class FakeOutputRepository:
             raise FileNotFoundError
         return self.result
 
+    def save_extraction_run_state(self, *, workflow_id: str, state: ExtractionRunState):
+        self.run_state = state
+
+    def load_extraction_run_state(self, workflow_id: str) -> ExtractionRunState:
+        if self.run_state is None:
+            raise FileNotFoundError
+        return self.run_state
+
     def save_extraction_warnings(self, *, workflow_id: str, warnings: list[str]):
         self.warnings = warnings
 
@@ -109,6 +120,7 @@ class FakeOutputRepository:
         self.context = None
         self.contexts = []
         self.result = None
+        self.run_state = None
         self.warnings = []
         self.token_usage = {}
 
@@ -238,6 +250,87 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             progress.interim_context.datasets[0].identifier,
             "interim-dataset",
+        )
+
+    async def test_resume_reuses_completed_chunk_results(self):
+        service, task_registry, output_repository = make_service(
+            [[make_chunk(0, "sample one"), make_chunk(1, "sample two")]]
+        )
+        output_repository.save_extraction_run_state(
+            workflow_id="package-id",
+            state=ExtractionRunState(
+                ranked_files=[RankedFile(rank=1, file_path="README.md")],
+                chunk_results=[
+                    ExtractionChunkResult(
+                        chunk_index=0,
+                        file_path="README.md",
+                        start_idx=0,
+                        end_idx=0,
+                        status="completed",
+                        extraction_context=ExtractionContext.model_validate(
+                            {
+                                "datasets": [
+                                    {
+                                        "identifier": "already-extracted",
+                                        "description": "Persisted alpha catalyst result.",
+                                    }
+                                ]
+                            }
+                        ),
+                    ),
+                    ExtractionChunkResult(
+                        chunk_index=1,
+                        file_path="README.md",
+                        start_idx=1,
+                        end_idx=1,
+                        status="pending",
+                    ),
+                ],
+            ),
+        )
+        outputs = [
+            CompletionResult(
+                output=ExtractionContext.model_validate(
+                    {
+                        "datasets": [
+                            {
+                                "identifier": "resumed-chunk",
+                                "description": "NMR spectrum details.",
+                            }
+                        ]
+                    }
+                ),
+                usage=RunUsage(requests=1, input_tokens=20, output_tokens=5),
+            ),
+            CompletionResult(
+                output={"id": "dataset"},
+                usage=RunUsage(requests=1, input_tokens=30, output_tokens=8),
+            ),
+        ]
+
+        async def fake_generate(*_args, **_kwargs):
+            return outputs.pop(0)
+
+        with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
+            result, status = await service.run_extraction(
+                data_package_id="package-id",
+                profile_identifier="profile",
+                resume=True,
+            )
+            self.assertIsNone(result)
+            self.assertEqual(status, TaskStatus.RUNNING)
+            await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
+
+        self.assertEqual(outputs, [])
+        self.assertIsNotNone(output_repository.result)
+        self.assertIsNotNone(output_repository.run_state)
+        self.assertEqual(
+            [chunk.status for chunk in output_repository.run_state.chunk_results],
+            ["completed", "completed"],
+        )
+        self.assertEqual(
+            [dataset.identifier for dataset in output_repository.context.datasets],
+            ["already-extracted", "resumed-chunk"],
         )
 
 

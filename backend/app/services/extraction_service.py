@@ -17,11 +17,14 @@ from app.domain.extraction import (
     VOCAB_FALLBACK_QUERY_SYSTEM_PROMPT,
     ChunkContext,
     ChunkingRequiredError,
+    ExtractionChunkRef,
+    ExtractionChunkResult,
     ExtractionContext,
     ExtractionNormalization,
     ExtractionResultNotFoundError,
     ExtractionRunProgress,
     ExtractionRunResult,
+    ExtractionRunState,
     ExtractionValidationError,
     FileContext,
     FileRankingResult,
@@ -81,6 +84,7 @@ class ExtractionService:
         data_package_id: str,
         profile_identifier: str,
         qualitative_vocab_identifiers: list[str] | None = None,
+        resume: bool = False,
     ) -> tuple[ExtractionRunResult | None, TaskStatus]:
         self._require_runtime_dependencies()
         assert self.datasource_service is not None
@@ -108,12 +112,14 @@ class ExtractionService:
             if result is not None:
                 return result, TaskStatus.COMPLETED
 
-        self.output_repository.clear_extraction_run(data_package_id)
+        if not resume:
+            self.output_repository.clear_extraction_run(data_package_id)
         await self.task_registry.create_task(
             coro=self._run_extraction_task(
                 data_package_id=data_package_id,
                 profile_identifier=profile_identifier,
                 qualitative_vocab_identifiers=qualitative_vocab_identifiers,
+                resume=resume,
             ),
             type=TaskType.WORKFLOW,
             name=task_name,
@@ -131,18 +137,31 @@ class ExtractionService:
             self._extraction_task_name(data_package_id)
         )
         if task_info is None:
+            state = self._load_run_state_or_none(data_package_id)
             result = self._load_result_or_none(data_package_id)
             if result is not None:
                 return TaskStatus.COMPLETED, ExtractionRunProgress(
                     stage="completed",
+                    processed_chunks=self._completed_chunk_count(state) if state else 0,
+                    total_chunks=len(state.chunk_results) if state else 0,
                     interim_context=result.extraction_context,
+                    ranked_files=state.ranked_files if state else [],
+                    chunk_results=state.chunk_results if state else [],
                     warnings=list(result.warnings),
                 )
             interim_context = self._load_context_or_none(data_package_id)
-            if interim_context is not None:
+            if interim_context is not None or state is not None:
                 return TaskStatus.UNKNOWN, ExtractionRunProgress(
                     stage="interim_context",
-                    interim_context=interim_context,
+                    processed_chunks=self._completed_chunk_count(state) if state else 0,
+                    total_chunks=len(state.chunk_results) if state else 0,
+                    interim_context=interim_context or (
+                        self._merged_completed_chunk_context_or_none(state)
+                        if state
+                        else None
+                    ),
+                    ranked_files=state.ranked_files if state else [],
+                    chunk_results=state.chunk_results if state else [],
                     warnings=self._load_warnings_or_empty(data_package_id),
                 )
             return TaskStatus.UNKNOWN, None
@@ -151,8 +170,26 @@ class ExtractionService:
             if task_info.progress
             else None
         )
+        if progress is None:
+            state = self._load_run_state_or_none(data_package_id)
+            if state is not None:
+                progress = ExtractionRunProgress(
+                    stage="interim_context",
+                    processed_chunks=self._completed_chunk_count(state),
+                    total_chunks=len(state.chunk_results),
+                    interim_context=self._merged_completed_chunk_context_or_none(state),
+                    ranked_files=state.ranked_files,
+                    chunk_results=state.chunk_results,
+                )
         if progress is not None and progress.interim_context is None:
             progress.interim_context = self._load_context_or_none(data_package_id)
+        if progress is not None and not progress.chunk_results:
+            state = self._load_run_state_or_none(data_package_id)
+            if state is not None:
+                progress.ranked_files = state.ranked_files
+                progress.chunk_results = state.chunk_results
+                progress.processed_chunks = self._completed_chunk_count(state)
+                progress.total_chunks = len(state.chunk_results)
         return task_info.status, progress
 
     async def get_extraction_result(
@@ -182,6 +219,7 @@ class ExtractionService:
         data_package_id: str,
         profile_identifier: str,
         qualitative_vocab_identifiers: list[str] | None,
+        resume: bool = False,
     ) -> ExtractionRunResult:
         self._require_runtime_dependencies()
         assert self.datasource_service is not None
@@ -204,50 +242,103 @@ class ExtractionService:
             )
 
         warnings: list[str] = []
+        persisted_state = (
+            self._load_run_state_or_none(data_package_id)
+            if resume
+            else None
+        )
         progress = ExtractionRunProgress(
             stage="file_ranking",
             total_chunks=sum(len(chunks) for chunks in chunks_by_file),
+            ranked_files=persisted_state.ranked_files if persisted_state else [],
+            chunk_results=persisted_state.chunk_results if persisted_state else [],
         )
         self._update_progress(data_package_id, progress)
 
-        ranking = await self._rank_files(data_package_id, data_package, warnings)
+        ranking = (
+            FileRankingResult(files=persisted_state.ranked_files)
+            if persisted_state and persisted_state.ranked_files
+            else await self._rank_files(data_package_id, data_package, warnings)
+        )
         ordered_chunks = self._ordered_chunks(chunks_by_file, ranking)
+        state = self._prepare_run_state(
+            ranking=ranking,
+            ordered_chunks=ordered_chunks,
+            persisted_state=persisted_state,
+        )
+        self._save_run_state(data_package_id, state)
 
-        contexts: list[ExtractionContext] = []
+        progress.ranked_files = state.ranked_files
+        progress.chunk_results = state.chunk_results
+        progress.total_chunks = len(state.chunk_results)
+        progress.processed_chunks = self._completed_chunk_count(state)
+        progress.interim_context = self._merged_completed_chunk_context_or_none(state)
+        self._update_progress(data_package_id, progress)
+
         progress.stage = "chunk_extraction"
-        for chunk in ordered_chunks:
-            result = await generate_structured(
-                self.ollama_client,
-                model=self.ollama_client.chat_model,
-                system=EXTRACTION_CONTEXT_SYSTEM_PROMPT,
-                prompt=build_extraction_context_prompt(
-                    ChunkContext(
-                        content=chunk.content,
-                        start_idx=chunk.start_idx,
-                        end_idx=chunk.end_idx,
-                        file_path=chunk.file_path,
-                        data_package_name=data_package.file_name,
-                    )
-                ),
-                output_type=ExtractionContext,
-                num_ctx=self.ollama_client.max_context_length,
-            )
+        for chunk_result, chunk in zip(state.chunk_results, ordered_chunks):
+            if chunk_result.status == "completed" and chunk_result.extraction_context is not None:
+                continue
+
+            chunk_result.status = "running"
+            chunk_result.error = None
+            progress.current_chunk = self._chunk_ref(chunk_result)
+            progress.chunk_results = state.chunk_results
+            self._save_run_state(data_package_id, state)
+            self._update_progress(data_package_id, progress)
+
+            try:
+                result = await generate_structured(
+                    self.ollama_client,
+                    model=self.ollama_client.chat_model,
+                    system=EXTRACTION_CONTEXT_SYSTEM_PROMPT,
+                    prompt=build_extraction_context_prompt(
+                        ChunkContext(
+                            content=chunk.content,
+                            start_idx=chunk.start_idx,
+                            end_idx=chunk.end_idx,
+                            file_path=chunk.file_path,
+                            data_package_name=data_package.file_name,
+                        )
+                    ),
+                    output_type=ExtractionContext,
+                    num_ctx=self.ollama_client.max_context_length,
+                )
+            except Exception as exc:
+                chunk_result.status = "failed"
+                chunk_result.error = str(exc)
+                progress.current_chunk = None
+                progress.chunk_results = state.chunk_results
+                self._save_run_state(data_package_id, state)
+                self._update_progress(data_package_id, progress)
+                raise
+
             self._record_workflow_token_usage(
                 data_package_id=data_package_id,
                 agent_name="chunk_extraction",
                 usage=result.usage,
             )
-            contexts.append(result.output)
-            partial_context = merge_extraction_context_results(contexts)
+            chunk_result.status = "completed"
+            chunk_result.extraction_context = result.output
+            chunk_result.response_duration_ms = self._usage_float(
+                result.usage,
+                "response_duration_ms",
+            )
+            chunk_result.context_tokens = self._usage_int(result.usage, "input_tokens")
+            self._save_run_state(data_package_id, state)
+
+            partial_context = self._merged_completed_chunk_context(state)
             self.output_repository.save_extraction_context(
                 workflow_id=data_package_id,
                 extraction_context=partial_context,
             )
-            progress.processed_chunks += 1
+            progress.processed_chunks = self._completed_chunk_count(state)
             progress.interim_context = partial_context
+            progress.current_chunk = None
+            progress.chunk_results = state.chunk_results
             self._update_progress(data_package_id, progress)
 
-        extraction_context = merge_extraction_context_results(contexts)
+        extraction_context = self._merged_completed_chunk_context(state)
         self.output_repository.save_extraction_context(
             workflow_id=data_package_id,
             extraction_context=extraction_context,
@@ -387,6 +478,90 @@ class ExtractionService:
                 chunk.start_idx,
             ),
         )
+
+    @classmethod
+    def _prepare_run_state(
+        cls,
+        *,
+        ranking: FileRankingResult,
+        ordered_chunks: list[ContentChunk],
+        persisted_state: ExtractionRunState | None,
+    ) -> ExtractionRunState:
+        persisted_by_key = {
+            cls._chunk_result_key(result): result
+            for result in (persisted_state.chunk_results if persisted_state else [])
+        }
+        chunk_results: list[ExtractionChunkResult] = []
+        for index, chunk in enumerate(ordered_chunks):
+            existing = persisted_by_key.get(cls._chunk_key(chunk))
+            if existing and existing.status == "completed" and existing.extraction_context is not None:
+                chunk_results.append(
+                    existing.model_copy(
+                        update={
+                            "chunk_index": index,
+                            "status": "completed",
+                            "error": None,
+                        }
+                    )
+                )
+                continue
+
+            chunk_results.append(
+                ExtractionChunkResult(
+                    chunk_index=index,
+                    file_path=chunk.file_path,
+                    start_idx=chunk.start_idx,
+                    end_idx=chunk.end_idx,
+                    status="pending",
+                )
+            )
+
+        return ExtractionRunState(
+            ranked_files=ranking.files,
+            chunk_results=chunk_results,
+        )
+
+    @staticmethod
+    def _chunk_key(chunk: ContentChunk) -> tuple[str, int, int]:
+        return (chunk.file_path, chunk.start_idx, chunk.end_idx)
+
+    @staticmethod
+    def _chunk_result_key(result: ExtractionChunkResult) -> tuple[str, int, int]:
+        return (result.file_path, result.start_idx, result.end_idx)
+
+    @staticmethod
+    def _chunk_ref(result: ExtractionChunkResult) -> ExtractionChunkRef:
+        return ExtractionChunkRef(
+            chunk_index=result.chunk_index,
+            file_path=result.file_path,
+            start_idx=result.start_idx,
+            end_idx=result.end_idx,
+        )
+
+    @staticmethod
+    def _completed_chunk_contexts(state: ExtractionRunState) -> list[ExtractionContext]:
+        return [
+            result.extraction_context
+            for result in state.chunk_results
+            if result.status == "completed" and result.extraction_context is not None
+        ]
+
+    @classmethod
+    def _completed_chunk_count(cls, state: ExtractionRunState) -> int:
+        return len(cls._completed_chunk_contexts(state))
+
+    @classmethod
+    def _merged_completed_chunk_context(cls, state: ExtractionRunState) -> ExtractionContext:
+        return merge_extraction_context_results(cls._completed_chunk_contexts(state))
+
+    @classmethod
+    def _merged_completed_chunk_context_or_none(
+        cls,
+        state: ExtractionRunState,
+    ) -> ExtractionContext | None:
+        if cls._completed_chunk_count(state) == 0:
+            return None
+        return cls._merged_completed_chunk_context(state)
 
     async def _normalize_context(
         self,
@@ -751,6 +926,26 @@ class ExtractionService:
         except FileNotFoundError:
             return None
 
+    def _load_run_state_or_none(self, data_package_id: str) -> ExtractionRunState | None:
+        if self.output_repository is None:
+            return None
+        try:
+            return self.output_repository.load_extraction_run_state(data_package_id)
+        except FileNotFoundError:
+            return None
+
+    def _save_run_state(
+        self,
+        data_package_id: str,
+        state: ExtractionRunState,
+    ) -> None:
+        if self.output_repository is None:
+            return
+        self.output_repository.save_extraction_run_state(
+            workflow_id=data_package_id,
+            state=state,
+        )
+
     def _load_warnings_or_empty(self, data_package_id: str) -> list[str]:
         if self.output_repository is None:
             return []
@@ -801,19 +996,35 @@ class ExtractionService:
                 "total_tokens": 0,
                 "requests": 0,
                 "operation_count": 0,
+                "response_duration_ms": 0,
+                "total_duration_ms": 0,
             },
         )
+        for key in (
+            "input_tokens",
+            "output_tokens",
+            "total_tokens",
+            "requests",
+            "operation_count",
+            "response_duration_ms",
+            "total_duration_ms",
+        ):
+            entry.setdefault(key, 0)
         input_tokens = self._usage_int(usage, "input_tokens")
         output_tokens = self._usage_int(usage, "output_tokens")
         total_tokens = self._usage_int(usage, "total_tokens") or (
             input_tokens + output_tokens
         )
         requests = self._usage_int(usage, "requests")
+        response_duration_ms = self._usage_int(usage, "response_duration_ms")
+        total_duration_ms = self._usage_int(usage, "total_duration_ms")
         entry["input_tokens"] += input_tokens
         entry["output_tokens"] += output_tokens
         entry["total_tokens"] += total_tokens
         entry["requests"] += requests
         entry["operation_count"] += 1
+        entry["response_duration_ms"] += response_duration_ms
+        entry["total_duration_ms"] += total_duration_ms
         self.output_repository.save_token_usage(
             workflow_id=data_package_id,
             token_usage=totals,
@@ -826,6 +1037,14 @@ class ExtractionService:
         except (TypeError, ValueError):
             return 0
 
+    @staticmethod
+    def _usage_float(usage: Any, field_name: str) -> float | None:
+        try:
+            value = float(getattr(usage, field_name, 0) or 0)
+        except (TypeError, ValueError):
+            return None
+        return value if value > 0 else None
+
     @classmethod
     def _token_usage_summary(
         cls,
@@ -836,7 +1055,14 @@ class ExtractionService:
             for agent_name, values in totals.items()
             if any(
                 values.get(key, 0)
-                for key in ("input_tokens", "output_tokens", "total_tokens", "requests")
+                for key in (
+                    "input_tokens",
+                    "output_tokens",
+                    "total_tokens",
+                    "requests",
+                    "response_duration_ms",
+                    "total_duration_ms",
+                )
             )
         }
         if not agents:
@@ -847,6 +1073,8 @@ class ExtractionService:
             "total_tokens": sum(item["total_tokens"] for item in agents.values()),
             "requests": sum(item["requests"] for item in agents.values()),
             "operation_count": sum(item["operation_count"] for item in agents.values()),
+            "response_duration_ms": sum(item["response_duration_ms"] for item in agents.values()),
+            "total_duration_ms": sum(item["total_duration_ms"] for item in agents.values()),
         }
         return {
             "agents": agents,
@@ -860,18 +1088,26 @@ class ExtractionService:
         input_tokens = int(values.get("input_tokens", 0))
         output_tokens = int(values.get("output_tokens", 0))
         total_tokens = int(values.get("total_tokens", 0))
+        response_duration_ms = int(values.get("response_duration_ms", 0))
+        total_duration_ms = int(values.get("total_duration_ms", 0))
         return {
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
             "total_tokens": total_tokens,
             "requests": int(values.get("requests", 0)),
             "operation_count": operation_count,
+            "response_duration_ms": response_duration_ms,
+            "total_duration_ms": total_duration_ms,
             "average_input_tokens_per_operation": round(input_tokens / operation_count, 2),
             "average_output_tokens_per_operation": round(output_tokens / operation_count, 2),
             "average_total_tokens_per_operation": round(total_tokens / operation_count, 2),
+            "average_response_duration_ms_per_operation": round(response_duration_ms / operation_count, 2),
+            "average_total_duration_ms_per_operation": round(total_duration_ms / operation_count, 2),
             "average_input_tokens_per_request": round(input_tokens / requests, 2),
             "average_output_tokens_per_request": round(output_tokens / requests, 2),
             "average_total_tokens_per_request": round(total_tokens / requests, 2),
+            "average_response_duration_ms_per_request": round(response_duration_ms / requests, 2),
+            "average_total_duration_ms_per_request": round(total_duration_ms / requests, 2),
         }
 
     @staticmethod

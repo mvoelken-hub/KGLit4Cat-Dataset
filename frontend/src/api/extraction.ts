@@ -10,15 +10,21 @@ export type PatchTokenUsageEntry = {
   requests: number;
   operation_count?: number;
   patch_count?: number;
+  response_duration_ms?: number;
+  total_duration_ms?: number;
   average_input_tokens_per_operation?: number;
   average_output_tokens_per_operation?: number;
   average_total_tokens_per_operation?: number;
+  average_response_duration_ms_per_operation?: number;
+  average_total_duration_ms_per_operation?: number;
   average_input_tokens_per_patch?: number;
   average_output_tokens_per_patch?: number;
   average_total_tokens_per_patch?: number;
   average_input_tokens_per_request?: number;
   average_output_tokens_per_request?: number;
   average_total_tokens_per_request?: number;
+  average_response_duration_ms_per_request?: number;
+  average_total_duration_ms_per_request?: number;
 };
 
 export type PatchTokenUsage = {
@@ -33,7 +39,30 @@ export type ExtractionRunProgress = {
   normalized_quantities: number;
   normalized_qualitative_attributes: number;
   interim_context?: Record<string, unknown> | null;
+  ranked_files?: RankedExtractionFile[];
+  chunk_results?: ExtractionChunkResult[];
+  current_chunk?: ExtractionChunkRef | null;
   warnings: string[];
+};
+
+export type RankedExtractionFile = {
+  rank: number;
+  file_path: string;
+};
+
+export type ExtractionChunkRef = {
+  chunk_index: number;
+  file_path: string;
+  start_idx: number;
+  end_idx: number;
+};
+
+export type ExtractionChunkResult = ExtractionChunkRef & {
+  status: 'pending' | 'running' | 'completed' | 'failed' | string;
+  extraction_context?: Record<string, unknown> | null;
+  error?: string | null;
+  response_duration_ms?: number | null;
+  context_tokens?: number | null;
 };
 
 export type PatchProgress = ExtractionRunProgress & {
@@ -119,6 +148,7 @@ export async function runExtraction(input: {
   data_package_id: string;
   profile_identifier: string;
   qualitative_vocab_identifiers?: string[] | null;
+  resume?: boolean;
 }): Promise<ExtractionRunResponse> {
   return readJson(await fetch(apiBaseUrl + '/extraction/run', {
     method: 'POST',

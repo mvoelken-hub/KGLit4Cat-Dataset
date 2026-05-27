@@ -35,7 +35,17 @@ import { JsonEditor, type JsonObject, type JsonPatchMarker, type JsonSchemaDocum
 import { ChunkingDialog } from './components/ChunkingDialog';
 import { VocabularyPanel } from './components/VocabularyPanel';
 import type { ChunkRequestResponse, ChunkResponse, DataPackageResponse, FileEntryResponse, InitialContext, ProfileManifestResponse, TextQualityConfig } from './api/types';
-import type { PatchArtifacts, PatchProgress, PatchReviewState, PatchTaskStatus, PatchTokenUsage, PatchTokenUsageEntry } from './api/extraction';
+import type {
+  ExtractionChunkRef,
+  ExtractionChunkResult,
+  PatchArtifacts,
+  PatchProgress,
+  PatchReviewState,
+  PatchTaskStatus,
+  PatchTokenUsage,
+  PatchTokenUsageEntry,
+  RankedExtractionFile,
+} from './api/extraction';
 
 type BusyKey = 'upload' | 'chunk' | 'context' | 'draft' | 'patch' | 'load' | 'profile' | 'profile-delete' | 'dataset-delete' | 'ollama';
 type ReviewItem = JsonPatchMarker & { kind: 'matched' | 'unmapped'; targetPath?: string; fact?: string; reason?: string; outcome?: string; resolutionNote?: string };
@@ -143,6 +153,209 @@ function PersistedContextChips({ label, values }: { label: string; values: strin
       ) : (
         <strong>-</strong>
       )}
+    </div>
+  );
+}
+
+function chunkResultKey(chunk: Pick<ExtractionChunkResult, 'file_path' | 'start_idx' | 'end_idx'>): string {
+  return `${chunk.file_path}:${chunk.start_idx}:${chunk.end_idx}`;
+}
+
+function extractionContextItemTitle(item: Record<string, unknown>, fallback: string): string {
+  return String(item.identifier || item.title || item.label || fallback);
+}
+
+function extractionContextItemDescription(item: Record<string, unknown>): string | null {
+  const value = item.description || item.value;
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
+function extractionContextKeywords(item: Record<string, unknown>): string[] {
+  const value = item.keywords;
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === 'string' && Boolean(entry.trim()))
+    : [];
+}
+
+function ExtractionContextResultView({ context }: { context?: Record<string, unknown> | null }) {
+  if (!context) return <p className="muted">No extraction result is available for this chunk yet.</p>;
+
+  const sections = [
+    { key: 'datasets', label: 'Datasets' },
+    { key: 'data_generating_activities', label: 'Activities' },
+    { key: 'evaluated_entities', label: 'Entities' },
+    { key: 'agentic_entities', label: 'Agents' },
+  ].map((section) => ({
+    ...section,
+    items: asRecordArray(context[section.key]),
+  })).filter((section) => section.items.length > 0);
+
+  if (!sections.length) {
+    return <p className="muted">The model call completed, but this chunk did not yield structured extraction context items.</p>;
+  }
+
+  return (
+    <div className="extraction-context-results">
+      {sections.map((section) => (
+        <section key={section.key} className="extraction-result-section">
+          <span>{section.label}</span>
+          <div>
+            {section.items.map((item, index) => {
+              const keywords = extractionContextKeywords(item);
+              return (
+                <div className="extraction-result-card" key={`${section.key}-${index}`}>
+                  <strong>{extractionContextItemTitle(item, `${section.label} ${index + 1}`)}</strong>
+                  {extractionContextItemDescription(item) && <p>{extractionContextItemDescription(item)}</p>}
+                  {keywords.length > 0 && (
+                    <div className="extraction-result-keywords">
+                      {keywords.map((keyword) => <span key={keyword}>{keyword}</span>)}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function ExtractionContextOverview({
+  rankedFiles,
+  chunkResults,
+  currentChunk,
+  chunksByFile,
+  packageFiles,
+  progress,
+  status,
+}: {
+  rankedFiles: RankedExtractionFile[];
+  chunkResults: ExtractionChunkResult[];
+  currentChunk?: ExtractionChunkRef | null;
+  chunksByFile: ChunkResponse[][];
+  packageFiles: FileEntryResponse[];
+  progress?: PatchProgress | null;
+  status?: PatchTaskStatus | null;
+}) {
+  const resultByKey = new Map(chunkResults.map((chunk) => [chunkResultKey(chunk), chunk]));
+  const packageFileByPath = new Map(packageFiles.map((file) => [file.file_path, file]));
+  const chunkGroupsByPath = new Map(
+    chunksByFile
+      .map((group): [string, ChunkResponse[]] => [group[0]?.file_path ?? '', group])
+      .filter(([filePath]) => Boolean(filePath)),
+  );
+  const rankedFilePaths = rankedFiles
+    .slice()
+    .sort((left, right) => left.rank - right.rank)
+    .map((file) => file.file_path);
+  const fallbackFilePaths = [
+    ...packageFiles.map((file) => file.file_path),
+    ...chunksByFile.map((group) => group[0]?.file_path).filter((filePath): filePath is string => Boolean(filePath)),
+    ...chunkResults.map((chunk) => chunk.file_path),
+  ];
+  const filePaths = Array.from(new Set([...rankedFilePaths, ...fallbackFilePaths]));
+  const totalChunks = progress?.total_chunks || chunkResults.length || chunksByFile.flat().length;
+  const completedChunks = chunkResults.filter((chunk) => chunk.status === 'completed').length;
+  const runningChunks = chunkResults.filter((chunk) => chunk.status === 'running').length;
+  const failedChunks = chunkResults.filter((chunk) => chunk.status === 'failed').length;
+
+  if (!filePaths.length) {
+    return (
+      <div className="extraction-overview-empty">
+        <strong>No extraction context overview yet.</strong>
+        <p>Create chunks before starting extraction context extraction.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="extraction-overview">
+      <div className="extraction-overview-summary">
+        <div>
+          <span>Status</span>
+          <strong>{formatExtractionStage(status || 'unknown')}</strong>
+        </div>
+        <div>
+          <span>Chunks</span>
+          <strong>{completedChunks}/{totalChunks || 0} extracted</strong>
+        </div>
+        <div>
+          <span>Current stage</span>
+          <strong>{formatExtractionStage(progress?.stage || 'not started')}</strong>
+        </div>
+        <div>
+          <span>Queue</span>
+          <strong>{runningChunks ? `${runningChunks} running` : failedChunks ? `${failedChunks} failed` : `${Math.max(0, (totalChunks || 0) - completedChunks)} pending`}</strong>
+        </div>
+      </div>
+
+      <div className="ranked-file-list">
+        {filePaths.map((filePath, fileIndex) => {
+          const rank = rankedFiles.find((file) => file.file_path === filePath)?.rank ?? fileIndex + 1;
+          const file = packageFileByPath.get(filePath);
+          const chunks = chunkGroupsByPath.get(filePath) ?? [];
+          const persistedChunks = chunkResults.filter((chunk) => chunk.file_path === filePath);
+          const chunkCards = chunks.length
+            ? chunks.map((chunk, index) => {
+              const result = resultByKey.get(chunkResultKey(chunk));
+              const fallbackChunk: ExtractionChunkResult = {
+                chunk_index: index,
+                file_path: chunk.file_path,
+                start_idx: chunk.start_idx,
+                end_idx: chunk.end_idx,
+                status: 'pending',
+                extraction_context: null,
+              };
+              return result ?? fallbackChunk;
+            })
+            : persistedChunks;
+          const hasRunningChunk = chunkCards.some((chunk) => chunk.status === 'running' || (currentChunk && chunkResultKey(currentChunk) === chunkResultKey(chunk)));
+
+          return (
+            <details className="ranked-file" key={filePath} open={hasRunningChunk || fileIndex === 0 ? true : undefined}>
+              <summary>
+                <span className="rank-badge">#{rank}</span>
+                <strong>{filePath}</strong>
+                <small>
+                  {chunkCards.length} chunk{chunkCards.length === 1 ? '' : 's'}
+                  {file ? ` - ${formatBytes(file.byte_size)}` : ''}
+                </small>
+              </summary>
+              <div className="extraction-chunk-list">
+                {chunkCards.length ? chunkCards.map((chunk) => {
+                  const running = chunk.status === 'running' || (currentChunk && chunkResultKey(currentChunk) === chunkResultKey(chunk));
+                  const statusClass = running ? 'running' : chunk.status === 'completed' ? 'completed' : chunk.status === 'failed' ? 'failed' : 'pending';
+                  return (
+                    <details className={`extraction-chunk-card ${statusClass}`} key={chunkResultKey(chunk)} open={running ? true : undefined}>
+                      <summary>
+                        <div>
+                          <strong>Chunk {chunk.chunk_index + 1}</strong>
+                          <small>Lines {chunk.start_idx}-{chunk.end_idx}</small>
+                        </div>
+                        <span className="chunk-status">
+                          {running && <i aria-hidden="true" />}
+                          {running ? 'extracting' : chunk.status}
+                        </span>
+                      </summary>
+                      {chunk.status === 'failed' && chunk.error && <p className="warning">{chunk.error}</p>}
+                      {chunk.status === 'completed' && (
+                        <div className="chunk-call-meta">
+                          {chunk.context_tokens ? <span>{formatTokenCount(chunk.context_tokens)} context tokens</span> : null}
+                          {chunk.response_duration_ms ? <span>{formatDuration(chunk.response_duration_ms)} response generation</span> : null}
+                        </div>
+                      )}
+                      <ExtractionContextResultView context={chunk.extraction_context} />
+                    </details>
+                  );
+                }) : (
+                  <p className="muted">No chunks are available for this ranked file.</p>
+                )}
+              </div>
+            </details>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -427,7 +640,12 @@ function ResolutionLogList({ entries }: { entries: string[] }) {
 }
 
 const tokenUsageLabels: Record<string, string> = {
-  initial_context: 'Initial context',
+  initial_context: 'Context extraction',
+  file_ranking: 'File ranking',
+  chunk_extraction: 'Chunk extraction',
+  quantity_vocab_selection: 'Quantity vocabulary',
+  qualitative_vocab_selection: 'Qualitative vocabulary',
+  profile_projection: 'Profile projection',
   patch_discovery: 'Patch discovery',
   schema_patch_writer: 'Schema patch writer',
   schema_repair: 'Schema repair',
@@ -490,7 +708,20 @@ function TokenUsageSummary({
     .filter(([key]) => !allowedAgents || allowedAgents.has(key))
     .filter(([, usage]) => usage.total_tokens > 0)
     .sort(([left], [right]) => {
-      const order = ['initial_context', 'patch_discovery', 'schema_patch_writer', 'schema_repair', 'patch_extraction', 'patch_quality', 'auto_resolve'];
+      const order = [
+        'file_ranking',
+        'chunk_extraction',
+        'quantity_vocab_selection',
+        'qualitative_vocab_selection',
+        'profile_projection',
+        'initial_context',
+        'patch_discovery',
+        'schema_patch_writer',
+        'schema_repair',
+        'patch_extraction',
+        'patch_quality',
+        'auto_resolve',
+      ];
       return (order.indexOf(left) === -1 ? order.length : order.indexOf(left))
         - (order.indexOf(right) === -1 ? order.length : order.indexOf(right));
     });
@@ -516,14 +747,20 @@ function TokenUsageSummary({
         {rows.map((row) => (
           <div className={`token-usage-row ${row.key === 'combined' ? 'combined' : ''} ${usageBudgetState(row.usage, budget)}`} key={row.key}>
             <strong>{row.label}</strong>
-            <span>{formatTokenCount(usageAverage(row.usage, averageUnit, 'total'))} avg total / {averageUnit === 'patch' ? 'patch' : 'run'}</span>
+            <span>{formatTokenCount(usageAverage(row.usage, averageUnit, 'total'))} avg total / {averageUnit === 'patch' ? 'patch' : 'operation'}</span>
             <small>
-              {formatTokenCount(requestAverage(row.usage, 'input'))} input / {formatTokenCount(requestAverage(row.usage, 'output'))} output avg per model call
+              {formatTokenCount(requestAverage(row.usage, 'input'))} context tokens / {formatTokenCount(requestAverage(row.usage, 'output'))} output avg per model call
               {' - '}
               {formatTokenCount(requestAverage(row.usage, 'total'))} total avg per model call
               {' - '}
               {formatTokenCount(row.usage.requests)} model call{row.usage.requests === 1 ? '' : 's'}
             </small>
+            {(row.usage.average_response_duration_ms_per_request || row.usage.response_duration_ms) ? (
+              <small>
+                {formatDuration(row.usage.average_response_duration_ms_per_request ?? row.usage.response_duration_ms)} avg response generation
+                {(row.usage.average_total_duration_ms_per_request || row.usage.total_duration_ms) ? ` - ${formatDuration(row.usage.average_total_duration_ms_per_request ?? row.usage.total_duration_ms)} avg total request` : ''}
+              </small>
+            ) : null}
             {budget?.max_context_length ? (
               <small>
                 limit: {formatTokenCount(budget.max_context_length)} input tokens
@@ -1068,6 +1305,21 @@ export function App() {
   const extractionProgressLabel = patchProgress
     ? `${formatExtractionStage(patchProgress.stage)}${patchProgress.total_chunks ? ` - ${patchProgress.processed_chunks}/${patchProgress.total_chunks} chunks` : ''}`
     : '';
+  const hasPersistedExtractionState = Boolean(
+    patchProgress?.interim_context
+    || patchProgress?.chunk_results?.some((chunk) => chunk.status === 'completed' || chunk.extraction_context),
+  );
+  const extractionCanResume = Boolean(
+    selectedPackageId
+    && selectedProfile
+    && !busy
+    && !isPatching
+    && (
+      patchStatus === 'cancelled'
+      || patchStatus === 'crashed'
+      || (patchStatus === 'unknown' && hasPersistedExtractionState)
+    ),
+  );
   const reviewItems = useMemo(() => buildReviewItems(patchArtifacts, patchReviewState), [patchArtifacts, patchReviewState]);
   const unresolvedReviewItems = reviewItems.filter((item) => !item.resolved);
   const patchMarkers = unresolvedReviewItems;
@@ -1393,7 +1645,7 @@ export function App() {
     setFileContent(null);
   }
 
-  async function onContext() {
+  async function onContext(options: { resume?: boolean } = {}) {
     if (!selectedPackageId) return;
     const packageId = selectedPackageId;
     setBusy('context');
@@ -1407,7 +1659,11 @@ export function App() {
       setDraft(null);
       setPatchArtifacts(null);
       setPatchProgress(null);
-      const response = await runExtraction({ data_package_id: packageId, profile_identifier: selectedProfile });
+      const response = await runExtraction({
+        data_package_id: packageId,
+        profile_identifier: selectedProfile,
+        resume: options.resume,
+      });
       if (selectedPackageIdRef.current !== packageId) return;
       const nextContext = response.result?.extraction_context || response.progress?.interim_context;
       if (nextContext) {
@@ -1418,7 +1674,7 @@ export function App() {
       setPatchStatus(response.status);
       setPatchProgress(response.progress ? { ...response.progress } : null);
       setTokenUsage(await getTokenUsage(packageId));
-      setMessage(response.status === 'running' ? 'Extraction is running.' : 'Extraction completed.');
+      setMessage(response.status === 'running' ? (options.resume ? 'Extraction resumed.' : 'Extraction is running.') : 'Extraction completed.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Context extraction failed.');
     } finally {
@@ -1521,10 +1777,10 @@ export function App() {
     saveContextTimeoutRef.current = setTimeout(async () => {
       try {
         await saveInitialContext(packageId, updated);
-        if (selectedPackageIdRef.current === packageId) setMessage('Initial context saved.');
+        if (selectedPackageIdRef.current === packageId) setMessage('Extraction context saved.');
       } catch (error) {
         if (selectedPackageIdRef.current === packageId) {
-          setMessage(error instanceof Error ? error.message : 'Failed to save initial context.');
+          setMessage(error instanceof Error ? error.message : 'Failed to save extraction context.');
         }
       }
     }, 800);
@@ -1960,25 +2216,18 @@ export function App() {
 
           <StepPanel
             number="02"
-            title="Determine initial context"
-            description="Extract high-level context, likely metadata sources, keywords, file relationships, and evidence from the package."
-            actions={context && (
-              <button
-                type="button"
-                className={`context-edit-toggle ${contextEditMode ? 'active' : 'ghost'}`}
-                onClick={() => setContextEditMode((value) => !value)}
-                disabled={!!busy || isPatching}
-                aria-pressed={contextEditMode}
-                title={contextEditMode ? 'Disable edit mode' : 'Enable edit mode'}
-              >
-                Edit mode
-              </button>
-            )}
+            title="Extraction context overview"
+            description="Rank files, extract structured context from each chunk, and track extraction results as they are produced."
           >
               <div className="actions">
                 <button onClick={() => void onContext()} disabled={!selectedPackageId || !!busy || isPatching}>
-                  {isPatching ? 'Extraction running...' : busy === 'context' ? 'Extracting...' : context ? 'Re-extract and remove old context' : 'Extract new context'}
+                  {isPatching ? 'Extraction running...' : busy === 'context' ? 'Extracting...' : hasPersistedExtractionState || context ? 'Re-extract context overview' : 'Extract context overview'}
                 </button>
+                {extractionCanResume && (
+                  <button className="ghost" onClick={() => void onContext({ resume: true })} disabled={!selectedPackageId || !!busy || isPatching}>
+                    Resume extraction
+                  </button>
+                )}
               </div>
               {patchStatus === 'running' && patchProgress && (
                 <div className="patch-progress context-progress">
@@ -1991,69 +2240,19 @@ export function App() {
                   )}
                 </div>
               )}
-              {context && (
-                <div className="context-grid">
-                  {contextEditMode ? (
-                    <>
-                      <EditableContextField
-                        label="Dataset"
-                        value={context.dataset_title ?? ''}
-                        onChange={(value) => onContextChange((current) => updateContextDatasetTitle(current, value))}
-                      />
-                      <EditableContextField
-                        label="Technique"
-                        value={context.activities?.[0]?.technique ?? contextTechnique(context) ?? ''}
-                        onChange={(value) => onContextChange((current) => updateContextTechnique(current, value))}
-                      />
-                      <EditableContextField
-                        label="Agents"
-                        value={context.agents?.[0]?.name ?? ''}
-                        onChange={(value) => onContextChange((current) => updateContextAgentName(current, value))}
-                      />
-                      <EditableContextField
-                        label="Entities"
-                        value={contextEntitiesInput(context)}
-                        onChange={(value) => onContextChange((current) => updateContextEntities(current, value))}
-                      />
-                      <EditableContextField
-                        label="Activities"
-                        value={context.activities?.[0]?.label ?? contextActivityLabel(context) ?? ''}
-                        onChange={(value) => onContextChange((current) => updateContextActivityLabel(current, value))}
-                      />
-                      <EditableContextField
-                        label="Model"
-                        value={context.agents?.[0]?.model ?? ''}
-                        onChange={(value) => onContextChange((current) => updateContextAgentModel(current, value))}
-                      />
-                      <EditableContextTextArea
-                        label="Description"
-                        value={context.dataset_description ?? context.summary ?? ''}
-                        onChange={(value) => onContextChange((current) => updateContextDescription(current, value))}
-                      />
-                      <EditableContextField
-                        label="Keywords"
-                        value={context.keywords.join(', ')}
-                        onChange={(value) => onContextChange((current) => updateContextKeywords(current, value))}
-                      />
-                    </>
-                  ) : (
-                    <>
-                      <PersistedContextField label="Dataset" value={context.dataset_title} />
-                      <PersistedContextField label="Technique" value={contextTechnique(context)} />
-                      <PersistedContextField label="Agents" value={contextAgentLabel(context)} />
-                      <PersistedContextField label="Entities" value={contextEntityLabel(context)} />
-                      <PersistedContextField label="Activities" value={contextActivityLabel(context)} />
-                      <PersistedContextField label="Model" value={context.agents?.[0]?.model} />
-                      <PersistedContextField label="Description" value={context.dataset_description || context.summary} wide />
-                      <PersistedContextChips label="Keywords" values={context.keywords} />
-                    </>
-                  )}
-                </div>
-              )}
+              <ExtractionContextOverview
+                rankedFiles={patchProgress?.ranked_files ?? []}
+                chunkResults={patchProgress?.chunk_results ?? []}
+                currentChunk={patchProgress?.current_chunk ?? null}
+                chunksByFile={chunksByFile}
+                packageFiles={selectedPackage?.files ?? []}
+                progress={patchProgress}
+                status={patchStatus}
+              />
               <TokenUsageSummary
                 tokenUsage={tokenUsage}
                 averageUnit="operation"
-                heading="Extraction token usage"
+                heading="Extraction context token usage"
                 agentKeys={['file_ranking', 'chunk_extraction', 'quantity_vocab_selection', 'qualitative_vocab_selection', 'profile_projection']}
                 budget={llmBudget}
               />

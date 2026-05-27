@@ -111,6 +111,42 @@ h2 { margin: 0; font-size: clamp(1.6rem, 3vw, 2.6rem); letter-spacing: -0.04em; 
 .summary-box, .chips { grid-column: 1 / -1; color: var(--muted); line-height: 1.6; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chips span { border: 1px solid var(--line); border-radius: 999px; padding: 0.36rem 0.66rem; color: var(--accent-dark); background: #f5f5f5; }
+.extraction-overview { display: grid; gap: 14px; margin-top: 16px; }
+.extraction-overview-empty { display: grid; gap: 5px; padding: 14px; border: 1px dashed var(--line); border-radius: 8px; background: rgba(255,255,255,0.44); }
+.extraction-overview-empty p { margin: 0; }
+.extraction-overview-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.extraction-overview-summary > div { min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,0.54); }
+.extraction-overview-summary span, .extraction-result-section > span { display: block; color: var(--muted); font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 5px; }
+.extraction-overview-summary strong { display: block; overflow-wrap: anywhere; font-size: 0.92rem; }
+.ranked-file-list { display: grid; gap: 9px; }
+.ranked-file { border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,0.46); overflow: hidden; }
+.ranked-file > summary { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 12px; cursor: pointer; list-style: none; }
+.ranked-file > summary::-webkit-details-marker, .extraction-chunk-card > summary::-webkit-details-marker { display: none; }
+.ranked-file > summary strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ranked-file > summary small { color: var(--muted); white-space: nowrap; }
+.rank-badge { display: inline-flex; min-width: 34px; height: 26px; align-items: center; justify-content: center; border: 1px solid var(--accent); border-radius: 999px; color: var(--accent-dark); background: rgba(99, 154, 0, 0.1); font-size: 0.76rem; font-weight: 800; }
+.extraction-chunk-list { display: grid; gap: 8px; padding: 0 12px 12px; }
+.extraction-chunk-card { border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,0.68); overflow: hidden; }
+.extraction-chunk-card.pending { opacity: 0.58; background: rgba(232,232,232,0.52); }
+.extraction-chunk-card.running { border-color: rgba(202, 116, 6, 0.54); background: rgba(255,248,234,0.76); }
+.extraction-chunk-card.completed { border-color: rgba(99, 154, 0, 0.34); }
+.extraction-chunk-card.failed { border-color: rgba(188, 57, 43, 0.58); background: rgba(255,239,236,0.8); }
+.extraction-chunk-card > summary { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 10px 12px; cursor: pointer; list-style: none; }
+.extraction-chunk-card > summary strong, .extraction-chunk-card > summary small { display: block; }
+.extraction-chunk-card > summary small { color: var(--muted); margin-top: 2px; }
+.chunk-status { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 0.76rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap; }
+.chunk-status i { width: 13px; height: 13px; border: 2px solid rgba(202,116,6,0.32); border-top-color: var(--warn); border-radius: 50%; animation: spin 780ms linear infinite; }
+.chunk-call-meta { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 10px; }
+.chunk-call-meta span { border: 1px solid var(--line); border-radius: 999px; padding: 0.24rem 0.5rem; color: var(--muted); background: rgba(255,255,255,0.66); font-size: 0.74rem; }
+.extraction-context-results { display: grid; gap: 10px; padding: 0 12px 12px; }
+.extraction-result-section { display: grid; gap: 6px; }
+.extraction-result-section > div { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
+.extraction-result-card { display: grid; gap: 5px; min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,0.62); }
+.extraction-result-card strong { overflow-wrap: anywhere; font-size: 0.86rem; }
+.extraction-result-card p { margin: 0; color: var(--muted); font-size: 0.78rem; line-height: 1.4; overflow-wrap: anywhere; }
+.extraction-result-keywords { display: flex; flex-wrap: wrap; gap: 5px; }
+.extraction-result-keywords span { border: 1px solid rgba(99,154,0,0.26); border-radius: 999px; padding: 0.16rem 0.42rem; color: var(--accent-dark); background: rgba(246,250,239,0.72); font-size: 0.68rem; }
+@keyframes spin { to { transform: rotate(360deg); } }
 .json-panel { max-height: 520px; max-width: 100%; overflow: auto; padding: 18px; border: 1px solid var(--line); border-radius: 1rem; background: #1e1e1e; color: #f0f0f0; font-family: 'Courier New', monospace; font-size: 0.86rem; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
 .ok { color: var(--ok) !important; }
 .warning { color: var(--warn) !important; }
@@ -421,6 +457,9 @@ button.small { padding: 0.4rem 0.7rem; font-size: 0.78rem; }
   .hero, .layout { grid-template-columns: 1fr; }
   .rail { position: static; }
   .context-grid { grid-template-columns: 1fr; }
+  .extraction-overview-summary { grid-template-columns: 1fr 1fr; }
+  .ranked-file > summary { grid-template-columns: auto minmax(0, 1fr); }
+  .ranked-file > summary small { grid-column: 2; white-space: normal; }
   .ollama-status-grid, .ollama-runtime-form { grid-template-columns: 1fr; }
   .ollama-dialog .ollama-status-grid, .ollama-dialog .ollama-runtime-form, .ollama-test-steps, .ollama-model-row, .ollama-pull-form { grid-template-columns: 1fr; }
   .ollama-model-actions, .ollama-recommendation-actions { display: grid; grid-template-columns: 1fr; }

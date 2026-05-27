@@ -14,6 +14,8 @@ class RunUsage:
     requests: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
+    response_duration_ms: int = 0
+    total_duration_ms: int = 0
     details: dict[str, int] = field(default_factory=dict)
 
     def merge(self, other: RunUsage) -> RunUsage:
@@ -26,6 +28,8 @@ class RunUsage:
             requests=self.requests + other.requests,
             input_tokens=self.input_tokens + other.input_tokens,
             output_tokens=self.output_tokens + other.output_tokens,
+            response_duration_ms=self.response_duration_ms + other.response_duration_ms,
+            total_duration_ms=self.total_duration_ms + other.total_duration_ms,
             details=merged_details,
         )
 
@@ -39,4 +43,19 @@ class RunUsage:
             requests=1,
             input_tokens=response.prompt_eval_count or 0,
             output_tokens=response.eval_count or 0,
+            response_duration_ms=_nanoseconds_to_milliseconds(
+                getattr(response, "eval_duration", 0) or 0
+            ),
+            total_duration_ms=_nanoseconds_to_milliseconds(
+                getattr(response, "total_duration", 0) or 0
+            ),
         )
+
+
+def _nanoseconds_to_milliseconds(value: int | float | None) -> int:
+    if not value:
+        return 0
+    try:
+        return round(float(value) / 1_000_000)
+    except (TypeError, ValueError):
+        return 0

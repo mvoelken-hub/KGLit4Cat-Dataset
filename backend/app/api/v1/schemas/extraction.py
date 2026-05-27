@@ -20,6 +20,10 @@ class ExtractionRunRequest(BaseModel):
         default=None,
         description="Vocabulary identifiers to use for qualitative attribute normalization.",
     )
+    resume: bool = Field(
+        default=False,
+        description="Resume from persisted extraction context state instead of clearing previous partial results.",
+    )
 
 
 class ExtractionRunResponse(BaseModel):
@@ -51,4 +55,3 @@ def _extraction_run_response(
 
 def _extraction_result_response(result: ExtractionRunResult) -> ExtractionResultResponse:
     return ExtractionResultResponse.model_validate(result.model_dump(mode="json"))
-
