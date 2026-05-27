@@ -1,7 +1,5 @@
 import httpx
 import ollama
-from pydantic_ai.models.ollama import OllamaModel
-from pydantic_ai.providers.ollama import OllamaProvider
 
 from app.core.config import Settings, settings
 from logging import Logger
@@ -26,18 +24,6 @@ class OllamaClientWrapper:
         self.max_context_length = settings.max_context_length
 
         self._base_url = settings.ollama_base_url
-        self._build_agent_model()
-
-    def _build_agent_model(self) -> None:
-        self.agent_model = OllamaModel(
-            self.chat_model,
-            provider=OllamaProvider(base_url=self._base_url+"/v1"),
-            settings={
-                "extra_body": {
-                    "num_ctx": self.max_context_length,
-                },
-            },
-        )
 
     def update_runtime_config(
         self,
@@ -55,7 +41,6 @@ class OllamaClientWrapper:
             self.max_context_length = max_context_length
         if embed_num_gpu is not None:
             self.embed_num_gpu = embed_num_gpu
-        self._build_agent_model()
 
     async def stop_all_models(self) -> None:
         await self.stop_embedding_model()

@@ -2,16 +2,18 @@ import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } 
 import { createPortal } from 'react-dom';
 import { chunkDataPackage, deleteDataPackage, getChunkStatus, getDataPackageChunks, getFileEntryContent, listDataPackages, uploadDataPackage } from './api/datasources';
 import {
-  extractInitialContext,
   extractInitialDraft,
   getExistingInitialContext,
   getExistingInitialDraft,
+  getExtractionResult,
   getPatchArtifacts,
   getPatchProgress,
   getPatchReviewState,
   getProtectedFields,
   getTokenUsage,
+  initialContextFromExtractionContext,
   patchDraft,
+  runExtraction,
   saveDraft,
   saveInitialContext,
   savePatchReviewState,
@@ -71,6 +73,12 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024) return bytes + ' B';
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
   return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+}
+
+function formatExtractionStage(stage: string): string {
+  return stage
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function EditableContextField({
@@ -1054,6 +1062,12 @@ export function App() {
   const progressBatchNo = patchProgress?.batch_no ?? 0;
   const progressTotalBatches = patchProgress?.total_batches ?? 0;
   const progressPercent = progressTotalBatches > 0 ? Math.min(100, Math.round((progressBatchNo / progressTotalBatches) * 100)) : 0;
+  const extractionProgressPercent = patchProgress?.total_chunks
+    ? Math.min(100, Math.round((patchProgress.processed_chunks / patchProgress.total_chunks) * 100))
+    : 0;
+  const extractionProgressLabel = patchProgress
+    ? `${formatExtractionStage(patchProgress.stage)}${patchProgress.total_chunks ? ` - ${patchProgress.processed_chunks}/${patchProgress.total_chunks} chunks` : ''}`
+    : '';
   const reviewItems = useMemo(() => buildReviewItems(patchArtifacts, patchReviewState), [patchArtifacts, patchReviewState]);
   const unresolvedReviewItems = reviewItems.filter((item) => !item.resolved);
   const patchMarkers = unresolvedReviewItems;
@@ -1381,17 +1395,34 @@ export function App() {
 
   async function onContext() {
     if (!selectedPackageId) return;
+    const packageId = selectedPackageId;
     setBusy('context');
     try {
-      const result = await extractInitialContext({ data_package_id: selectedPackageId });
-      setContext(result);
-      setContextEditMode(true);
-      setTokenUsage(await getTokenUsage(selectedPackageId));
-      setMessage('Initial context extracted.');
+      if (!selectedProfile) {
+        setMessage('Select a profile before running extraction.');
+        return;
+      }
+      setContext(null);
+      setContextEditMode(false);
+      setDraft(null);
+      setPatchArtifacts(null);
+      setPatchProgress(null);
+      const response = await runExtraction({ data_package_id: packageId, profile_identifier: selectedProfile });
+      if (selectedPackageIdRef.current !== packageId) return;
+      const nextContext = response.result?.extraction_context || response.progress?.interim_context;
+      if (nextContext) {
+        setContext(initialContextFromExtractionContext(nextContext));
+        setContextEditMode(response.status !== 'running');
+      }
+      if (response.result) setDraft(response.result.document);
+      setPatchStatus(response.status);
+      setPatchProgress(response.progress ? { ...response.progress } : null);
+      setTokenUsage(await getTokenUsage(packageId));
+      setMessage(response.status === 'running' ? 'Extraction is running.' : 'Extraction completed.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Context extraction failed.');
     } finally {
-      setBusy(null);
+      if (selectedPackageIdRef.current === packageId) setBusy(null);
     }
   }
 
@@ -1567,18 +1598,37 @@ export function App() {
 
   async function onShowPatchArtifacts() {
     if (!selectedPackageId) return;
+    const packageId = selectedPackageId;
     try {
       const [{ status, progress }, artifacts, reviewState] = await Promise.all([
-        getPatchProgress(selectedPackageId),
-        getPatchArtifacts(selectedPackageId),
-        getPatchReviewState(selectedPackageId),
+        getPatchProgress(packageId),
+        getPatchArtifacts(packageId),
+        getPatchReviewState(packageId),
       ]);
+      if (selectedPackageIdRef.current !== packageId) return;
+      const completedResult = status === 'completed'
+        ? await getExtractionResult(packageId)
+        : null;
+      if (selectedPackageIdRef.current !== packageId) return;
       setPatchStatus(status);
       setPatchProgress(progress || null);
+      if (completedResult) {
+        setContext(initialContextFromExtractionContext(completedResult.extraction_context));
+        setDraft(completedResult.document);
+        setContextEditMode(true);
+      } else if (progress?.interim_context) {
+        setContext(initialContextFromExtractionContext(progress.interim_context));
+        setContextEditMode(false);
+      }
       setPatchArtifacts(artifacts);
       setPatchReviewState(reviewState);
-      setTokenUsage(await getTokenUsage(selectedPackageId));
-      setMessage(hasPatchArtifacts(artifacts) ? 'Loaded existing patch artifacts.' : 'No existing patch artifacts found.');
+      const nextTokenUsage = completedResult?.token_usage ?? await getTokenUsage(packageId);
+      setTokenUsage(nextTokenUsage);
+      if (status === 'running') {
+        setMessage('Extraction is running.');
+      } else {
+        setMessage(hasPatchArtifacts(artifacts) ? 'Loaded existing patch artifacts.' : 'No existing patch artifacts found.');
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Failed to load patch artifacts.');
     }
@@ -1685,7 +1735,13 @@ export function App() {
           ? await getDataPackageChunks(packageId)
           : [];
         if (selectedPackageIdRef.current !== packageId) return;
-        if (ctx) setContext(ctx);
+        const progressContext = progress?.interim_context
+          ? initialContextFromExtractionContext(progress.interim_context)
+          : null;
+        if (ctx || progressContext) {
+          setContext(ctx ?? progressContext);
+          setContextEditMode(status !== 'running');
+        }
         if (draftResult) setDraft(draftResult);
         setProtectedFields(fields);
         setPatchStatus(status);
@@ -1716,7 +1772,7 @@ export function App() {
 
   useEffect(() => {
     if (!selectedPackageId || patchStatus !== 'running') return;
-    const interval = setInterval(() => void onShowPatchArtifacts(), 30000);
+    const interval = setInterval(() => void onShowPatchArtifacts(), 5000);
     return () => clearInterval(interval);
   }, [patchStatus, selectedPackageId]);
 
@@ -1911,7 +1967,7 @@ export function App() {
                 type="button"
                 className={`context-edit-toggle ${contextEditMode ? 'active' : 'ghost'}`}
                 onClick={() => setContextEditMode((value) => !value)}
-                disabled={!!busy}
+                disabled={!!busy || isPatching}
                 aria-pressed={contextEditMode}
                 title={contextEditMode ? 'Disable edit mode' : 'Enable edit mode'}
               >
@@ -1920,8 +1976,21 @@ export function App() {
             )}
           >
               <div className="actions">
-                <button onClick={() => void onContext()} disabled={!selectedPackageId || !!busy}>{busy === 'context' ? 'Extracting...' : context ? 'Re-extract and remove old context' : 'Extract new context'}</button>
+                <button onClick={() => void onContext()} disabled={!selectedPackageId || !!busy || isPatching}>
+                  {isPatching ? 'Extraction running...' : busy === 'context' ? 'Extracting...' : context ? 'Re-extract and remove old context' : 'Extract new context'}
+                </button>
               </div>
+              {patchStatus === 'running' && patchProgress && (
+                <div className="patch-progress context-progress">
+                  <div className="patch-progress-header">
+                    <span>Status: <strong>{formatExtractionStage(patchStatus)}</strong></span>
+                    {extractionProgressLabel && <span>{extractionProgressLabel}</span>}
+                  </div>
+                  {patchProgress.total_chunks > 0 && (
+                    <div className="patch-progress-track" aria-hidden="true"><div style={{ width: `${extractionProgressPercent}%` }} /></div>
+                  )}
+                </div>
+              )}
               {context && (
                 <div className="context-grid">
                   {contextEditMode ? (
@@ -1981,7 +2050,13 @@ export function App() {
                   )}
                 </div>
               )}
-              <TokenUsageSummary tokenUsage={tokenUsage} averageUnit="operation" heading="Extraction token usage" agentKeys={['initial_context']} budget={llmBudget} />
+              <TokenUsageSummary
+                tokenUsage={tokenUsage}
+                averageUnit="operation"
+                heading="Extraction token usage"
+                agentKeys={['file_ranking', 'chunk_extraction', 'quantity_vocab_selection', 'qualitative_vocab_selection', 'profile_projection']}
+                budget={llmBudget}
+              />
           </StepPanel>
 
           <StepPanel

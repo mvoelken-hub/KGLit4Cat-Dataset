@@ -67,8 +67,7 @@ You receive a content chunk from a file in a research data package, and your tas
 - Agentic entities (entities that have agency and can perform activities)
 - Datasets that have been generated
 For each entity or activity, extract any quantitative attributes (measured or calculated quantities) and qualitative attributes (observed characteristics) that are mentioned in the text.
-Return only an ExtractionContext JSON object with the extracted information. Follow this schema:
-{ExtractionContext.model_json_schema()}\n
+Return only a valid ExtractionContext JSON object with the extracted information.
 Focus on extracting as much metadata as possible from one specific chunk. Work at a low level; your individual result will later be combined with the results of several such extraction steps, so you don't need to try to guess the overall context.
 """
 
@@ -89,7 +88,7 @@ def build_extraction_context_prompt(
         f"{dataset_line}"
         f"File path: {chunk_context.file_path} Line-Index-Span: {chunk_context.start_idx}-{chunk_context.end_idx}\n"
         f"Chunk content (after text-quality line filtering):\n{chunk_context.content}\n"
-        "Extract structured metadata about the experimental context from this chunk, following the rules in the system prompt and using the ExtractionContext schema."
+        "Extract structured metadata about the experimental context from this chunk."
     )
 
 def merge_extraction_context_results(

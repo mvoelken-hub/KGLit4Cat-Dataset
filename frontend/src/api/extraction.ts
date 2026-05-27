@@ -9,7 +9,7 @@ export type PatchTokenUsageEntry = {
   total_tokens: number;
   requests: number;
   operation_count?: number;
-  patch_count: number;
+  patch_count?: number;
   average_input_tokens_per_operation?: number;
   average_output_tokens_per_operation?: number;
   average_total_tokens_per_operation?: number;
@@ -19,12 +19,6 @@ export type PatchTokenUsageEntry = {
   average_input_tokens_per_request?: number;
   average_output_tokens_per_request?: number;
   average_total_tokens_per_request?: number;
-  estimated_input_tokens?: number;
-  input_token_budget?: number;
-  max_context_length?: number;
-  split_count?: number;
-  compaction_count?: number;
-  average_estimated_input_tokens_per_request?: number;
 };
 
 export type PatchTokenUsage = {
@@ -32,7 +26,17 @@ export type PatchTokenUsage = {
   combined?: PatchTokenUsageEntry;
 };
 
-export type PatchProgress = {
+export type ExtractionRunProgress = {
+  stage: string;
+  processed_chunks: number;
+  total_chunks: number;
+  normalized_quantities: number;
+  normalized_qualitative_attributes: number;
+  interim_context?: Record<string, unknown> | null;
+  warnings: string[];
+};
+
+export type PatchProgress = ExtractionRunProgress & {
   batch_no?: number;
   total_batches?: number;
   file_name?: string;
@@ -44,6 +48,19 @@ export type PatchProgress = {
   resolution_resolved_count?: number;
   resolution_unresolved_item_ids?: string[];
   token_usage?: PatchTokenUsage;
+};
+
+export type ExtractionRunResult = {
+  document: Record<string, unknown>;
+  extraction_context: Record<string, unknown>;
+  warnings: string[];
+  token_usage: PatchTokenUsage;
+};
+
+export type ExtractionRunResponse = {
+  status: PatchTaskStatus;
+  result?: ExtractionRunResult | null;
+  progress?: ExtractionRunProgress | null;
 };
 
 export type PatchArtifact = {
@@ -98,55 +115,62 @@ export type PatchReviewResolutionResponse = {
   token_usage?: PatchTokenUsage | null;
 };
 
-export async function getExistingInitialContext(data_package_id: string): Promise<InitialContext | null> {
-  const response = await fetch(apiBaseUrl + '/extraction/initial-context/' + encodeURIComponent(data_package_id));
-  if (response.status === 404) return null;
-  return readJson(await response);
-}
-
-export async function getExistingInitialDraft(data_package_id: string): Promise<object | null> {
-  const response = await fetch(apiBaseUrl + '/extraction/initial-draft/' + encodeURIComponent(data_package_id));
-  if (response.status === 404) return null;
-  return readJson(await response);
-}
-
-export async function extractInitialContext(input: {
+export async function runExtraction(input: {
   data_package_id: string;
-  max_files_to_read?: number;
-  max_chars_per_file?: number;
-}): Promise<InitialContext> {
-  return readJson(await fetch(apiBaseUrl + '/extraction/initial-context', {
+  profile_identifier: string;
+  qualitative_vocab_identifiers?: string[] | null;
+}): Promise<ExtractionRunResponse> {
+  return readJson(await fetch(apiBaseUrl + '/extraction/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   }));
 }
 
-export async function saveInitialContext(data_package_id: string, context: InitialContext): Promise<InitialContext> {
-  return readJson(await fetch(apiBaseUrl + '/extraction/initial-context/' + encodeURIComponent(data_package_id), {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(context),
-  }));
+export async function getExtractionResult(data_package_id: string): Promise<ExtractionRunResult | null> {
+  const response = await fetch(apiBaseUrl + '/extraction/result/' + encodeURIComponent(data_package_id));
+  if (response.status === 404) return null;
+  return readJson(await response);
+}
+
+export async function getExistingInitialContext(data_package_id: string): Promise<InitialContext | null> {
+  const result = await getExtractionResult(data_package_id);
+  return result ? initialContextFromExtractionContext(result.extraction_context) : null;
+}
+
+export async function getExistingInitialDraft(data_package_id: string): Promise<object | null> {
+  const result = await getExtractionResult(data_package_id);
+  return result?.document ?? null;
+}
+
+export async function extractInitialContext(input: {
+  data_package_id: string;
+  profile_identifier: string;
+}): Promise<InitialContext> {
+  const response = await runExtraction({
+    data_package_id: input.data_package_id,
+    profile_identifier: input.profile_identifier,
+  });
+  const context = response.result?.extraction_context || response.progress?.interim_context;
+  return context
+    ? initialContextFromExtractionContext(context)
+    : emptyInitialContext('Extraction is running.');
+}
+
+export async function saveInitialContext(_data_package_id: string, context: InitialContext): Promise<InitialContext> {
+  return context;
 }
 
 export async function extractInitialDraft(input: {
   data_package_id: string;
   profile_identifier: string;
 }): Promise<object> {
-  return readJson(await fetch(apiBaseUrl + '/extraction/initial-draft', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  }));
+  const response = await runExtraction(input);
+  return response.result?.document ?? {};
 }
 
-export async function saveDraft(data_package_id: string, draft: object): Promise<object> {
-  return readJson(await fetch(apiBaseUrl + '/extraction/initial-draft/' + encodeURIComponent(data_package_id), {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ data_package_id, draft }),
-  }));
+export async function saveDraft(_data_package_id: string, draft: object): Promise<object> {
+  return draft;
 }
 
 export async function patchDraft(input: {
@@ -155,31 +179,28 @@ export async function patchDraft(input: {
   num_chunks_per_turn: number;
   auto_resolve: boolean;
 }): Promise<PatchDraftResponse> {
-  return readJson(await fetch(apiBaseUrl + '/extraction/patch-draft', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  }));
-}
-
-export async function getProtectedFields(data_package_id: string): Promise<string[]> {
-  const response = await fetch(apiBaseUrl + '/extraction/initial-draft/' + encodeURIComponent(data_package_id) + '/protected-fields');
-  if (!response.ok) return [];
-  return readJson(await response);
-}
-
-export async function setProtectedFields(data_package_id: string, fields: string[]): Promise<string[]> {
-  const response = await fetch(apiBaseUrl + '/extraction/initial-draft/' + encodeURIComponent(data_package_id) + '/protected-fields', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fields }),
+  const response = await runExtraction({
+    data_package_id: input.data_package_id,
+    profile_identifier: input.profile_identifier,
   });
-  return readJson(await response);
+  return {
+    draft: response.result?.document ?? {},
+    status: response.status,
+  };
+}
+
+export async function getProtectedFields(_data_package_id: string): Promise<string[]> {
+  return [];
+}
+
+export async function setProtectedFields(_data_package_id: string, fields: string[]): Promise<string[]> {
+  return fields;
 }
 
 export async function getPatchProgress(data_package_id: string): Promise<{ status: PatchTaskStatus; progress?: PatchProgress | null }> {
-  const response = await fetch(apiBaseUrl + '/extraction/patch-draft/' + encodeURIComponent(data_package_id) + '/progress');
-  return readJson(await response);
+  const response = await fetch(apiBaseUrl + '/extraction/run/' + encodeURIComponent(data_package_id) + '/progress');
+  const payload = await readJson(await response) as { status: PatchTaskStatus; progress?: ExtractionRunProgress | null };
+  return { status: payload.status, progress: payload.progress ? { ...payload.progress } : null };
 }
 
 export async function getTokenUsage(data_package_id: string): Promise<PatchTokenUsage> {
@@ -187,38 +208,28 @@ export async function getTokenUsage(data_package_id: string): Promise<PatchToken
   return readJson(await response);
 }
 
-export async function getPatchArtifacts(data_package_id: string): Promise<PatchArtifacts> {
-  const response = await fetch(apiBaseUrl + '/extraction/patch-draft/' + encodeURIComponent(data_package_id) + '/artifacts');
-  return readJson(await response);
+export async function getPatchArtifacts(_data_package_id: string): Promise<PatchArtifacts> {
+  return { patches: [], quality_reports: [], unmapped_facts: [] };
 }
 
-export async function getPatchFiles(data_package_id: string): Promise<PatchArtifact[]> {
-  const response = await fetch(apiBaseUrl + '/extraction/patch-draft/' + encodeURIComponent(data_package_id) + '/patches');
-  return readJson(await response);
+export async function getPatchFiles(_data_package_id: string): Promise<PatchArtifact[]> {
+  return [];
 }
 
-export async function getPatchQualityReports(data_package_id: string): Promise<PatchArtifact[]> {
-  const response = await fetch(apiBaseUrl + '/extraction/patch-draft/' + encodeURIComponent(data_package_id) + '/quality-reports');
-  return readJson(await response);
+export async function getPatchQualityReports(_data_package_id: string): Promise<PatchArtifact[]> {
+  return [];
 }
 
-export async function getUnmappedFacts(data_package_id: string): Promise<PatchArtifact[]> {
-  const response = await fetch(apiBaseUrl + '/extraction/patch-draft/' + encodeURIComponent(data_package_id) + '/unmapped-facts');
-  return readJson(await response);
+export async function getUnmappedFacts(_data_package_id: string): Promise<PatchArtifact[]> {
+  return [];
 }
 
-export async function getPatchReviewState(data_package_id: string): Promise<PatchReviewState> {
-  const response = await fetch(apiBaseUrl + '/extraction/patch-draft/' + encodeURIComponent(data_package_id) + '/review-state');
-  return readJson(await response);
+export async function getPatchReviewState(_data_package_id: string): Promise<PatchReviewState> {
+  return emptyReviewState();
 }
 
-export async function savePatchReviewState(data_package_id: string, reviewState: PatchReviewState): Promise<PatchReviewState> {
-  const response = await fetch(apiBaseUrl + '/extraction/patch-draft/' + encodeURIComponent(data_package_id) + '/review-state', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(reviewState),
-  });
-  return readJson(await response);
+export async function savePatchReviewState(_data_package_id: string, reviewState: PatchReviewState): Promise<PatchReviewState> {
+  return reviewState;
 }
 
 export async function resolvePatchReview(input: {
@@ -226,13 +237,89 @@ export async function resolvePatchReview(input: {
   profile_identifier: string;
   review_items: PatchReviewResolutionItem[];
 }): Promise<PatchReviewResolutionResponse> {
-  const response = await fetch(apiBaseUrl + '/extraction/patch-draft/' + encodeURIComponent(input.data_package_id) + '/resolve-review', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      profile_identifier: input.profile_identifier,
-      review_items: input.review_items,
-    }),
-  });
-  return readJson(await response);
+  return {
+    draft: {},
+    review_state: emptyReviewState(),
+    resolved_count: 0,
+    unresolved_item_ids: input.review_items.map((item) => item.id),
+    validation_errors: [],
+    resolution_decisions: [],
+    resolution_log: ['Manual patch review was removed from the extraction workflow.'],
+  };
+}
+
+export function initialContextFromExtractionContext(context: Record<string, unknown>): InitialContext {
+  const datasets = arrayOfRecords(context.datasets);
+  const activities = arrayOfRecords(context.data_generating_activities);
+  const entities = arrayOfRecords(context.evaluated_entities);
+  const agents = arrayOfRecords(context.agentic_entities);
+  const dataset = datasets[0] || {};
+  return {
+    dataset_title: stringValue(dataset.identifier) || null,
+    dataset_description: stringValue(dataset.description) || null,
+    entities: entities.map((entity) => ({
+      label: stringValue(entity.identifier) || stringValue(entity.description) || 'Entity',
+      role: 'unknown',
+      identifier: stringValue(entity.identifier) || null,
+      evidence: stringValue(entity.description) || null,
+      confidence: null,
+    })),
+    agents: agents.map((agent) => ({
+      name: stringValue(agent.identifier) || 'Agent',
+      role: 'unknown',
+      model: null,
+      evidence: stringValue(agent.description) || null,
+      confidence: null,
+    })),
+    activities: activities.map((activity) => ({
+      label: stringValue(activity.identifier) || null,
+      technique: null,
+      agent_names: [],
+      evidence: stringValue(activity.description) || null,
+      confidence: null,
+    })),
+    file_relationships: [],
+    metadata_sources: [],
+    keywords: stringArray(dataset.keywords),
+    summary: stringValue(dataset.description) || 'Extraction context generated.',
+  };
+}
+
+function emptyInitialContext(summary: string): InitialContext {
+  return {
+    dataset_title: null,
+    dataset_description: null,
+    entities: [],
+    agents: [],
+    activities: [],
+    file_relationships: [],
+    metadata_sources: [],
+    keywords: [],
+    summary,
+  };
+}
+
+function emptyReviewState(): PatchReviewState {
+  return {
+    resolved_item_ids: [],
+    unmapped_assignments: {},
+    resolution_notes: {},
+    resolved_at: {},
+  };
+}
+
+function arrayOfRecords(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
+    : [];
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string' && Boolean(item.trim()))
+    : [];
 }

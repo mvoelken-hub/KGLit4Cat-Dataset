@@ -1,50 +1,59 @@
 from __future__ import annotations
 
-import copy
 import asyncio
-import json
-import logging
-from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
-from app.core.task_registry import TaskInfo, TaskRegistry, TaskStatus, TaskType
 from app.core.config import Settings
+from app.core.task_registry import TaskRegistry, TaskStatus, TaskType
+from app.domain.datasources import ContentChunk
 from app.domain.extraction import (
+    DEFAULT_QUALITATIVE_VOCAB_IDENTIFIERS,
+    EXTRACTION_CONTEXT_SYSTEM_PROMPT,
+    FILE_RANKING_SYSTEM_PROMPT,
+    PROFILE_PROJECTION_SYSTEM_PROMPT,
+    QUDT_QUANTITY_KIND_VOCAB,
+    QUDT_UNIT_VOCAB,
+    VOCAB_CANDIDATE_SELECTION_SYSTEM_PROMPT,
+    VOCAB_FALLBACK_QUERY_SYSTEM_PROMPT,
+    ChunkContext,
     ChunkingRequiredError,
-    InitialContextRequiredError,
-    InitialContext,
-    PatchDraftPrerequisiteError,
-    PatchRecord,
-    apply_merge_patch,
-    extract_initial_context_from_data_package,
-    initialize_draft_from_initial_context,
-    patch_draft_from_content_chunks,
+    ExtractionContext,
+    ExtractionNormalization,
+    ExtractionResultNotFoundError,
+    ExtractionRunProgress,
+    ExtractionRunResult,
+    ExtractionValidationError,
+    FileContext,
+    FileRankingResult,
+    QualitativeAttribute,
+    QualitativeAttributeNormalization,
+    Quantity,
+    QuantityNormalization,
+    VocabularyCandidateSelection,
+    VocabularyFallbackQuery,
+    VocabularyTermMapping,
+    build_candidate_selection_prompt,
+    build_extraction_context_prompt,
+    build_fallback_query_prompt,
+    build_file_ranking_prompt,
+    build_profile_projection_prompt,
+    build_qualitative_vocab_query,
+    build_quantity_kind_vocab_query,
+    build_unit_vocab_query,
+    fallback_file_ranking,
+    merge_extraction_context_results,
 )
-from app.domain.extraction.review_resolution import (
-    PatchReviewDecision,
-    PatchReviewItem,
-    PatchReviewResolution,
-    resolve_patch_review_items,
-)
-from app.domain.extraction.sanitizers import sanitize_document_against_schema
-from app.domain.extraction.sanitizers import normalize_review_draft
-from app.domain.extraction.schema_utils import json_pointer_top_level_field, slice_profile_json_schema
-from app.domain.extraction.token_budget import (
-    BudgetedUsage,
-    TokenBudget,
-    budget_from_context_length,
-)
-from app.domain.profiles import validate_document_against_profile
+from app.domain.profiles import remove_null_values, validation_schema_for_target_class
+from app.domain.semantics import VocabQuery, VocabQueryResult
+from app.ollama.completion import generate_structured
+from app.ollama.errors import CompletionError
 from app.repositories.extraction_output_repository import ExtractionOutputRepository
 
 if TYPE_CHECKING:
     from app.ollama.client import OllamaClientWrapper
     from app.services.datasource_service import DataSourceService
     from app.services.profile_service import ProfileService
-
-
-logger = logging.getLogger(__name__)
-RESOLVED_REVIEW_OUTCOMES = {"included", "already_present", "excluded"}
+    from app.services.semantic_service import SemanticService
 
 
 class ExtractionService:
@@ -56,6 +65,7 @@ class ExtractionService:
         ollama_client: OllamaClientWrapper | None = None,
         output_repository: ExtractionOutputRepository | None = None,
         task_registry: TaskRegistry | None = None,
+        semantic_service: SemanticService | None = None,
     ):
         self.profile_service = profile_service
         self.settings = settings
@@ -63,1259 +73,101 @@ class ExtractionService:
         self.ollama_client = ollama_client
         self.output_repository = output_repository
         self.task_registry = task_registry
+        self.semantic_service = semantic_service
 
-    async def extract_initial_context(
-        self,
-        *,
-        data_package_id: str,
-        max_files_to_read: int = 12,
-        max_chars_per_file: int = 3000,
-    ) -> InitialContext:
-        if self.datasource_service is None or self.ollama_client is None:
-            raise RuntimeError(
-                "ExtractionService requires datasource_service and ollama_client "
-                "to run extraction agents."
-            )
-
-        data_package = self.datasource_service.get_data_package(data_package_id)
-
-        def record_token_usage(agent_name: str, usage: Any, operation_count: int = 1) -> None:
-            self._record_workflow_token_usage(
-                data_package_id=data_package_id,
-                agent_name=agent_name,
-                usage=usage,
-                operation_count=operation_count,
-            )
-
-        initial_context = await extract_initial_context_from_data_package(
-            data_package=data_package,
-            model=self.ollama_client.agent_model,
-            max_files_to_read=max_files_to_read,
-            max_chars_per_file=max_chars_per_file,
-            token_budget=self._token_budget(),
-            on_token_usage=record_token_usage,
-        )
-        if self.output_repository is not None:
-            self.output_repository.save_initial_context(
-                workflow_id=data_package_id,
-                initial_context=initial_context,
-            )
-        return initial_context
-
-    async def extract_initial_draft(
+    async def run_extraction(
         self,
         *,
         data_package_id: str,
         profile_identifier: str,
-    ) -> dict[str, Any]:
-        if (
-            self.datasource_service is None
-            or self.output_repository is None
-        ):
-            raise RuntimeError(
-                "ExtractionService requires datasource_service and "
-                "output_repository to initialize drafts."
-            )
-
-        data_package = self.datasource_service.get_data_package(data_package_id)
-        profile_manifest = self.profile_service.get_profile(profile_identifier)
-        profile_json_schema = self.profile_service.load_json_schema(profile_identifier)
-        try:
-            initial_context = self.output_repository.load_initial_context(data_package_id)
-        except FileNotFoundError as exc:
-            raise InitialContextRequiredError(
-                "Initial context output not found for workflow "
-                f"'{data_package_id}'. Run /api/v1/extraction/initial-context "
-                "before /api/v1/extraction/initial-draft."
-            ) from exc
-
-        initial_draft = await initialize_draft_from_initial_context(
-            initial_context=initial_context,
-            data_package=data_package,
-            profile_manifest=profile_manifest,
-            profile_json_schema=profile_json_schema,
-        )
-        initial_draft = normalize_review_draft(
-            initial_draft,
-            dataset_id=str(initial_draft.get("id") or data_package_id),
-        )
-        self.output_repository.save_initial_draft(
-            workflow_id=data_package_id,
-            initial_draft=initial_draft,
-        )
-        self.output_repository.clear_patch_artifacts(workflow_id=data_package_id)
-        if self.task_registry is not None:
-            await self.task_registry.remove_task(
-                self._patch_draft_task_name(data_package_id),
-            )
-        return initial_draft
-
-    async def patch_initial_draft(
-        self,
-        *,
-        data_package_id: str,
-        profile_identifier: str,
-        num_chunks_per_turn: int = 1,
-        auto_resolve: bool = False,
-    ) -> tuple[dict[str, Any], TaskStatus]:
-        if (
-            self.datasource_service is None
-            or self.ollama_client is None
-            or self.output_repository is None
-            or self.task_registry is None
-        ):
-            raise RuntimeError(
-                "ExtractionService requires datasource_service, ollama_client, "
-                "output_repository, and task_registry to run extraction agents."
-            )
-
-        try:
-            initial_draft = self.output_repository.load_initial_draft(data_package_id)
-        except FileNotFoundError as exc:
-            raise PatchDraftPrerequisiteError(
-                "Patch extraction requires existing initial_context.json and "
-                "initial_draft.json workflow outputs. Run /api/v1/extraction/"
-                "initial-context and /api/v1/extraction/initial-draft first."
-            ) from exc
-
-        task_name = self._patch_draft_task_name(data_package_id)
-        task_info: TaskInfo | None = self.task_registry.get_task_info(task_name)
-
-        if (
-            task_info is None
-            or task_info.status in {TaskStatus.CANCELLED, TaskStatus.CRASHED}
-            or self._is_stale_completed_patch_task(data_package_id, task_info)
-        ):
-            # Validate prerequisites before creating the background task so request
-            # errors are still returned directly by this endpoint.
-            try:
-                self.output_repository.load_initial_context(data_package_id)
-            except FileNotFoundError as exc:
-                raise PatchDraftPrerequisiteError(
-                    "Patch extraction requires existing initial_context.json and "
-                    "initial_draft.json workflow outputs. Run /api/v1/extraction/"
-                    "initial-context and /api/v1/extraction/initial-draft first."
-                ) from exc
-
-            self.datasource_service.get_data_package(data_package_id)
-            self.profile_service.get_profile(profile_identifier)
-            self.profile_service.load_json_schema(profile_identifier)
-
-            content_chunks_by_file = self.datasource_service.get_completed_content_chunks_by_file(
-                data_package_id
-            )
-            if not content_chunks_by_file:
-                raise ChunkingRequiredError(
-                    "Patch extraction requires completed datasource chunking. "
-                    "Run /api/v1/datasources/chunk until it returns completed chunks first."
-                )
-
-            current_draft = self._load_current_draft_or_initial(
-                data_package_id=data_package_id,
-                initial_draft=initial_draft,
-            )
-            self.output_repository.save_draft(
-                workflow_id=data_package_id,
-                draft=current_draft,
-            )
-            await self.task_registry.create_task(
-                coro=self._run_patch_initial_draft(
-                    data_package_id=data_package_id,
-                    profile_identifier=profile_identifier,
-                    num_chunks_per_turn=num_chunks_per_turn,
-                    auto_resolve=auto_resolve,
-                ),
-                type=TaskType.WORKFLOW,
-                name=task_name,
-            )
-            return self.output_repository.load_draft(data_package_id), TaskStatus.RUNNING
-
-        current_draft = self._load_current_draft_or_initial(
-            data_package_id=data_package_id,
-            initial_draft=initial_draft,
-        )
-        return current_draft, task_info.status
-
-    async def _run_patch_initial_draft(
-        self,
-        *,
-        data_package_id: str,
-        profile_identifier: str,
-        num_chunks_per_turn: int = 1,
-        auto_resolve: bool = False,
-    ) -> dict[str, Any]:
-        if (
-            self.datasource_service is None
-            or self.ollama_client is None
-            or self.output_repository is None
-        ):
-            raise RuntimeError(
-                "ExtractionService requires datasource_service, ollama_client, "
-                "and output_repository to run extraction agents."
-            )
+        qualitative_vocab_identifiers: list[str] | None = None,
+    ) -> tuple[ExtractionRunResult | None, TaskStatus]:
+        self._require_runtime_dependencies()
+        assert self.datasource_service is not None
+        assert self.output_repository is not None
+        assert self.task_registry is not None
 
         self.datasource_service.get_data_package(data_package_id)
-        profile_manifest = self.profile_service.get_profile(profile_identifier)
-        profile_json_schema = self.profile_service.load_json_schema(profile_identifier)
+        self.profile_service.get_profile(profile_identifier)
+        self.profile_service.load_json_schema(profile_identifier)
 
-        try:
-            initial_context = self.output_repository.load_initial_context(data_package_id)
-            initial_draft = self.output_repository.load_initial_draft(data_package_id)
-        except FileNotFoundError as exc:
-            raise PatchDraftPrerequisiteError(
-                "Patch extraction requires existing initial_context.json and "
-                "initial_draft.json workflow outputs. Run /api/v1/extraction/"
-                "initial-context and /api/v1/extraction/initial-draft first."
-            ) from exc
-
-        content_chunks_by_file = self.datasource_service.get_completed_content_chunks_by_file(
+        chunks_by_file = self.datasource_service.get_completed_content_chunks_by_file(
             data_package_id
         )
-        if not content_chunks_by_file:
+        if not chunks_by_file:
             raise ChunkingRequiredError(
-                "Patch extraction requires completed datasource chunking. "
-                "Run /api/v1/datasources/chunk until it returns completed chunks first."
+                "Extraction requires completed datasource chunking. Run chunking first."
             )
 
-        current_draft = self._load_current_draft_or_initial(
-            data_package_id=data_package_id,
-            initial_draft=initial_draft,
-        )
-        self.output_repository.save_draft(
-            workflow_id=data_package_id,
-            draft=current_draft,
-        )
+        task_name = self._extraction_task_name(data_package_id)
+        task_info = self.task_registry.get_task_info(task_name)
+        if task_info is not None and task_info.status == TaskStatus.RUNNING:
+            return self._load_result_or_none(data_package_id), TaskStatus.RUNNING
+        if task_info is not None and task_info.status == TaskStatus.COMPLETED:
+            result = self._load_result_or_none(data_package_id)
+            if result is not None:
+                return result, TaskStatus.COMPLETED
 
-        protected_fields = self.output_repository.load_protected_fields(data_package_id)
-        resolver_task: asyncio.Task[dict[str, Any] | None] | None = None
-        token_usage_totals: dict[str, dict[str, int]] = {}
-
-        def load_protected_fields() -> list[str]:
-            return self.output_repository.load_protected_fields(data_package_id) # type: ignore
-
-        def record_token_usage(agent_name: str, usage: Any, patch_count: int = 1) -> None:
-            self._record_patch_token_usage(
-                token_usage_totals,
-                agent_name=agent_name,
-                usage=usage,
-                patch_count=patch_count,
-            )
-            self._record_workflow_token_usage(
-                data_package_id=data_package_id,
-                agent_name=agent_name,
-                usage=usage,
-                operation_count=1,
-            )
-            self._update_patch_token_usage_progress(
-                data_package_id=data_package_id,
-                token_usage=token_usage_totals,
-            )
-
-        def start_auto_resolve() -> None:
-            nonlocal resolver_task
-            if not auto_resolve:
-                return
-            if resolver_task is not None and not resolver_task.done():
-                return
-            resolver_task = asyncio.create_task(
-                self._auto_resolve_review_items(
-                    data_package_id=data_package_id,
-                    profile_identifier=profile_identifier,
-                    on_token_usage=record_token_usage,
-                ),
-                name=f"resolving:review:{data_package_id}",
-            )
-
-        async def finish_auto_resolve() -> None:
-            nonlocal resolver_task
-            if not auto_resolve:
-                return
-            if resolver_task is not None:
-                await resolver_task
-                resolver_task = None
-            await self._auto_resolve_review_items(
+        self.output_repository.clear_extraction_run(data_package_id)
+        await self.task_registry.create_task(
+            coro=self._run_extraction_task(
                 data_package_id=data_package_id,
                 profile_identifier=profile_identifier,
-                on_token_usage=record_token_usage,
-            )
-
-        async def save_progress(
-            draft: dict[str, Any],
-            patch_record: PatchRecord,
-            batch_no: int,
-            total_batches: int,
-        ) -> None:
-            self._save_patch_progress(
-                workflow_id=data_package_id,
-                draft=draft,
-                patch_record=patch_record,
-                batch_no=batch_no,
-                total_batches=total_batches,
-                token_usage=self._patch_token_usage_summary(token_usage_totals),
-            )
-            start_auto_resolve()
-
-        result = await patch_draft_from_content_chunks(
-            initial_context=initial_context,
-            initial_draft=current_draft,
-            content_chunks_by_file=content_chunks_by_file,
-            profile_manifest=profile_manifest,
-            profile_json_schema=profile_json_schema,
-            model=self.ollama_client.agent_model,
-            num_chunks_per_turn=num_chunks_per_turn,
-            on_patch_processed=save_progress,
-            protected_fields=protected_fields,
-            protected_fields_loader=load_protected_fields,
-            completed_patch_file_names=self.output_repository.load_completed_patch_file_names(
-                data_package_id,
+                qualitative_vocab_identifiers=qualitative_vocab_identifiers,
             ),
-            token_budget=self._token_budget(),
-            on_token_usage=record_token_usage,
+            type=TaskType.WORKFLOW,
+            name=task_name,
         )
-        patching_draft = normalize_review_draft(
-            result.draft,
-            dataset_id=str(result.draft.get("id") or data_package_id),
-        )
-        next_draft = patching_draft
-        if auto_resolve:
-            latest_draft = self._load_latest_draft_for_resolution(
-                data_package_id=data_package_id,
-                fallback=current_draft,
-            )
-            if latest_draft != current_draft:
-                patching_delta = self._json_merge_patch_diff(current_draft, patching_draft)
-                next_draft = apply_merge_patch(latest_draft, patching_delta)
-                validation = validate_document_against_profile(
-                    document=next_draft,
-                    json_schema=profile_json_schema,
-                    target_class=profile_manifest.target_class,
-                )
-                if not validation.valid:
-                    next_draft = patching_draft
+        return None, TaskStatus.RUNNING
 
-        self.output_repository.save_draft(
-            workflow_id=data_package_id,
-            draft=next_draft,
-        )
-
-        await finish_auto_resolve()
-        if auto_resolve:
-            try:
-                next_draft = self.output_repository.load_draft(data_package_id)
-            except FileNotFoundError:
-                next_draft = normalize_review_draft(
-                    result.draft,
-                    dataset_id=str(result.draft.get("id") or data_package_id),
-                )
-
-        return next_draft
-
-    async def _auto_resolve_review_items(
+    async def get_extraction_progress(
         self,
         *,
         data_package_id: str,
-        profile_identifier: str,
-        on_token_usage: Callable[[str, Any, int], None] | None = None,
-    ) -> dict[str, Any] | None:
-        """Automatically resolve unresolved review items from saved patch artifacts."""
-        resolution_log: list[str] = []
+    ) -> tuple[TaskStatus, ExtractionRunProgress | None]:
+        if self.task_registry is None:
+            return TaskStatus.UNKNOWN, None
+        task_info = self.task_registry.get_task_info(
+            self._extraction_task_name(data_package_id)
+        )
+        if task_info is None:
+            result = self._load_result_or_none(data_package_id)
+            if result is not None:
+                return TaskStatus.COMPLETED, ExtractionRunProgress(
+                    stage="completed",
+                    interim_context=result.extraction_context,
+                    warnings=list(result.warnings),
+                )
+            interim_context = self._load_context_or_none(data_package_id)
+            if interim_context is not None:
+                return TaskStatus.UNKNOWN, ExtractionRunProgress(
+                    stage="interim_context",
+                    interim_context=interim_context,
+                    warnings=self._load_warnings_or_empty(data_package_id),
+                )
+            return TaskStatus.UNKNOWN, None
+        progress = (
+            ExtractionRunProgress.model_validate(task_info.progress)
+            if task_info.progress
+            else None
+        )
+        if progress is not None and progress.interim_context is None:
+            progress.interim_context = self._load_context_or_none(data_package_id)
+        return task_info.status, progress
 
-        def update_progress(
-            result: dict[str, Any] | None = None,
-            *,
-            active: bool = True,
-        ) -> None:
-            self._update_patch_resolution_progress(
-                data_package_id=data_package_id,
-                resolution_log=resolution_log,
-                resolution_result=result,
-                resolution_active=active,
-            )
-
-        update_progress(active=True)
-
-        if (
-            self.ollama_client is None
-            or self.output_repository is None
-        ):
-            self._record_resolution_log(
-                resolution_log,
-                data_package_id,
-                "Auto-resolve skipped because the resolver dependencies are unavailable.",
-            )
-            update_progress(active=False)
-            return None
-
+    async def get_extraction_result(
+        self,
+        *,
+        data_package_id: str,
+    ) -> ExtractionRunResult:
+        if self.output_repository is None:
+            raise ExtractionResultNotFoundError("Extraction output repository is unavailable.")
         try:
-            current_draft = self.output_repository.load_draft(data_package_id)
-        except FileNotFoundError:
-            current_draft = self.output_repository.load_initial_draft(data_package_id)
-
-        profile_manifest = self.profile_service.get_profile(profile_identifier)
-        profile_json_schema = self.profile_service.load_json_schema(profile_identifier)
-        current_draft = sanitize_document_against_schema(
-            document=current_draft,
-            json_schema=profile_json_schema,
-            target_class=profile_manifest.target_class,
-        )
-        current_draft = normalize_review_draft(
-            current_draft,
-            dataset_id=str(current_draft.get("id") or data_package_id),
-        )
-
-        existing_state = self.output_repository.load_patch_review_state(data_package_id)
-        artifacts = await self.get_patch_artifacts(data_package_id)
-        review_items = self._build_patch_review_items_from_artifacts(
-            artifacts=artifacts,
-            existing_state=existing_state,
-        )
-
-        if not review_items:
-            self._record_resolution_log(
-                resolution_log,
-                data_package_id,
-                "Auto-resolve found no unresolved patch review items.",
-            )
-            update_progress(active=False)
-            return None
-
-        parsed_items = [PatchReviewItem.model_validate(item) for item in review_items]
-        result = await self._resolve_and_persist_review_items(
-            data_package_id=data_package_id,
-            current_draft=current_draft,
-            parsed_items=parsed_items,
-            profile_manifest=profile_manifest,
-            profile_json_schema=profile_json_schema,
-            existing_review_state=existing_state,
-            resolution_log=resolution_log,
-            progress_callback=update_progress,
-            on_token_usage=on_token_usage,
-        )
-        update_progress(result, active=False)
-        return result
-
-    def _build_patch_review_items_from_artifacts(
-        self,
-        *,
-        artifacts: dict[str, Any],
-        existing_state: dict[str, Any],
-    ) -> list[dict[str, Any]]:
-        resolved_ids = set(existing_state.get("resolved_item_ids", []))
-        rating_by_patch_and_field: dict[str, dict[str, Any]] = {}
-
-        for report in self._record_list(artifacts.get("quality_reports", [])):
-            base_name = self._patch_artifact_base_name(str(report.get("file_name") or ""))
-            report_content = self._record(report.get("content")) or {}
-            for rating in self._record_list(report_content.get("candidate_ratings")):
-                field_path = str(rating.get("field_path") or "")
-                if field_path:
-                    rating_by_patch_and_field[f"{base_name}:{field_path}"] = rating
-
-        review_items: list[dict[str, Any]] = []
-        for artifact in self._record_list(artifacts.get("patches", [])):
-            if artifact.get("artifact_type") != "candidates":
-                continue
-            file_name = str(artifact.get("file_name") or "")
-            base_name = self._patch_artifact_base_name(file_name)
-            for candidate_index, candidate in enumerate(self._record_list(artifact.get("content"))):
-                path = str(candidate.get("field_path") or "")
-                if not path:
-                    continue
-                confidence = candidate.get("confidence")
-                confidence_value = (
-                    float(confidence)
-                    if isinstance(confidence, (int, float)) and not isinstance(confidence, bool)
-                    else None
-                )
-                rating = rating_by_patch_and_field.get(f"{base_name}:{path}", {})
-                decision = str(rating.get("decision") or "")
-                issues = [
-                    self._format_quality_issue(issue)
-                    for issue in self._record_list(rating.get("issues"))
-                ]
-                needs_review = (
-                    confidence_value is None
-                    or confidence_value < 0.8
-                    or decision != "accept"
-                    or len(issues) > 0
-                )
-                if not needs_review:
-                    continue
-                item_id = self._matched_review_item_id(base_name, path, candidate_index)
-                if item_id in resolved_ids:
-                    continue
-                detail_parts = [
-                    self._confidence_label(confidence_value),
-                    f"Decision: {decision}" if decision else "",
-                    f"{len(issues)} issue{'s' if len(issues) != 1 else ''}" if issues else "",
-                    str(candidate.get("reasoning") or ""),
-                ]
-                review_items.append({
-                    "id": item_id,
-                    "kind": "matched",
-                    "path": path,
-                    "detail": " - ".join(part for part in detail_parts if part),
-                    "issues": issues,
-                    "evidence": self._text_list(candidate.get("source_evidence")),
-                    "patch": candidate.get("patch") if isinstance(candidate.get("patch"), dict) else {},
-                    "confidence": confidence_value,
-                    "file_name": file_name,
-                })
-
-        for fact in self._record_list(artifacts.get("unmapped_facts", [])):
-            item_id = self._unmapped_review_item_id(fact)
-            if item_id in resolved_ids:
-                continue
-            source_hint = str(fact.get("source_hint") or "")
-            review_items.append({
-                "id": item_id,
-                "kind": "unmapped",
-                "path": "Unassigned",
-                "detail": str(fact.get("fact") or fact.get("reason") or "Unmapped source fact"),
-                "issues": [],
-                "evidence": [source_hint] if source_hint else [],
-                "fact": str(fact.get("fact") or ""),
-                "reason": str(fact.get("reason") or ""),
-                "file_name": str(fact.get("file_name") or ""),
-            })
-
-        return review_items
-
-    async def _resolve_and_persist_review_items(
-        self,
-        *,
-        data_package_id: str,
-        current_draft: dict[str, Any],
-        parsed_items: list[PatchReviewItem],
-        profile_manifest: Any,
-        profile_json_schema: dict[str, Any],
-        existing_review_state: dict[str, Any],
-        resolution_log: list[str],
-        progress_callback: Callable[[], None] | None = None,
-        on_token_usage: Callable[[str, Any, int], None] | None = None,
-    ) -> dict[str, Any]:
-        if self.ollama_client is None or self.output_repository is None:
-            raise RuntimeError(
-                "ExtractionService requires ollama_client and output_repository "
-                "to run the patch review resolution agent."
-            )
-
-        kind_counts = {
-            "matched": sum(1 for item in parsed_items if item.kind == "matched"),
-            "unmapped": sum(1 for item in parsed_items if item.kind == "unmapped"),
-        }
-        self._record_resolution_log(
-            resolution_log,
-            data_package_id,
-            "Starting review resolution for "
-            f"{len(parsed_items)} items: {kind_counts['matched']} matched, "
-            f"{kind_counts['unmapped']} unmapped.",
-        )
-        if progress_callback:
-            progress_callback()
-
-        resolution = await self._resolve_review_items_in_budgeted_batches(
-            current_draft=current_draft,
-            review_items=parsed_items,
-            profile_manifest=profile_manifest,
-            profile_json_schema=profile_json_schema,
-            existing_review_state=existing_review_state,
-            on_token_usage=on_token_usage,
-        )
-        self._record_resolution_log(
-            resolution_log,
-            data_package_id,
-            f"Review agent returned {len(resolution.item_decisions)} decisions.",
-        )
-        if progress_callback:
-            progress_callback()
-
-        next_draft = resolution.final_draft or current_draft
-        validation = validate_document_against_profile(
-            document=next_draft,
-            json_schema=profile_json_schema,
-            target_class=profile_manifest.target_class,
-        )
-        if not validation.valid:
-            validation_errors = [
-                f"{issue.path}: {issue.message}" for issue in validation.errors
-            ]
-            self._record_resolution_log(
-                resolution_log,
-                data_package_id,
-                f"Final draft failed schema validation with {len(validation_errors)} errors; review state was not changed.",
-            )
-            if progress_callback:
-                progress_callback()
-            return {
-                "draft": current_draft,
-                "review_state": existing_review_state,
-                "resolved_count": 0,
-                "unresolved_item_ids": [item.id for item in parsed_items],
-                "validation_errors": validation_errors,
-                "resolution_decisions": [],
-                "resolution_log": resolution_log,
-            }
-
-        self._record_resolution_log(
-            resolution_log,
-            data_package_id,
-            "Final draft passed schema validation.",
-        )
-
-        latest_draft = self._load_latest_draft_for_resolution(
-            data_package_id=data_package_id,
-            fallback=current_draft,
-        )
-        if latest_draft != current_draft:
-            draft_patch = self._json_merge_patch_diff(current_draft, next_draft)
-            next_draft = apply_merge_patch(latest_draft, draft_patch)
-            rebased_validation = validate_document_against_profile(
-                document=next_draft,
-                json_schema=profile_json_schema,
-                target_class=profile_manifest.target_class,
-            )
-            if not rebased_validation.valid:
-                validation_errors = [
-                    f"{issue.path}: {issue.message}"
-                    for issue in rebased_validation.errors
-                ]
-                self._record_resolution_log(
-                    resolution_log,
-                    data_package_id,
-                    "Rebased resolver changes failed schema validation with "
-                    f"{len(validation_errors)} errors; review state was not changed.",
-                )
-                if progress_callback:
-                    progress_callback()
-                return {
-                    "draft": latest_draft,
-                    "review_state": existing_review_state,
-                    "resolved_count": 0,
-                    "unresolved_item_ids": [item.id for item in parsed_items],
-                    "validation_errors": validation_errors,
-                    "resolution_decisions": [],
-                    "resolution_log": resolution_log,
-                }
-            self._record_resolution_log(
-                resolution_log,
-                data_package_id,
-                "Rebased resolver draft changes onto the latest patching draft.",
-            )
-
-        requested_item_ids = {item.id for item in parsed_items}
-        decisions_by_id = self._review_decisions_by_id(
-            resolution.item_decisions,
-            requested_item_ids,
-        )
-        decisions_by_id, synthesized_count = self._normalize_review_decisions(
-            decisions_by_id=decisions_by_id,
-            parsed_items=parsed_items,
-        )
-        if synthesized_count:
-            self._record_resolution_log(
-                resolution_log,
-                data_package_id,
-                f"Converted {synthesized_count} missing or unresolved decisions to excluded.",
-            )
-
-        outcome_counts = {
-            outcome: sum(
-                1 for decision in decisions_by_id.values()
-                if decision.outcome == outcome
-            )
-            for outcome in sorted(RESOLVED_REVIEW_OUTCOMES)
-        }
-        self._record_resolution_log(
-            resolution_log,
-            data_package_id,
-            "Decision counts: "
-            f"{outcome_counts.get('included', 0)} included, "
-            f"{outcome_counts.get('already_present', 0)} already present, "
-            f"{outcome_counts.get('excluded', 0)} excluded.",
-        )
-
-        resolved_now = list(decisions_by_id)
-        resolved_ids = list(dict.fromkeys([
-            *existing_review_state.get("resolved_item_ids", []),
-            *resolved_now,
-        ]))
-        resolved_id_set = set(resolved_ids)
-        remaining_unresolved_ids = [
-            item.id for item in parsed_items if item.id not in resolved_id_set
-        ]
-        resolved_at = dict(existing_review_state.get("resolved_at", {}))
-        timestamp = datetime.now(UTC).isoformat()
-        for item_id in resolved_now:
-            resolved_at.setdefault(item_id, timestamp)
-        next_state = {
-            "resolved_item_ids": resolved_ids,
-            "unmapped_assignments": {
-                **dict(existing_review_state.get("unmapped_assignments", {})),
-                **resolution.unmapped_assignments,
-            },
-            "resolution_notes": {
-                **dict(existing_review_state.get("resolution_notes", {})),
-                **{
-                    item_id: self._format_review_decision_note(decision)
-                    for item_id, decision in decisions_by_id.items()
-                },
-            },
-            "resolved_at": resolved_at,
-        }
-        self.output_repository.save_draft(
-            workflow_id=data_package_id,
-            draft=next_draft,
-        )
-        self.output_repository.save_initial_draft(
-            workflow_id=data_package_id,
-            initial_draft=next_draft,
-        )
-        self.output_repository.save_patch_review_state(
-            workflow_id=data_package_id,
-            review_state=next_state,
-        )
-        self._record_resolution_log(
-            resolution_log,
-            data_package_id,
-            f"Saved review state with {len(resolved_ids)} total resolved item IDs; "
-            f"{len(remaining_unresolved_ids)} submitted items remain unresolved.",
-        )
-        if progress_callback:
-            progress_callback()
-
-        return {
-            "draft": next_draft,
-            "review_state": next_state,
-            "resolved_count": len(resolved_now),
-            "unresolved_item_ids": remaining_unresolved_ids,
-            "validation_errors": [],
-            "resolution_decisions": [
-                decision.model_dump(mode="json")
-                for decision in decisions_by_id.values()
-            ],
-            "resolution_log": resolution_log,
-        }
-
-    async def _resolve_review_items_in_budgeted_batches(
-        self,
-        *,
-        current_draft: dict[str, Any],
-        review_items: list[PatchReviewItem],
-        profile_manifest: Any,
-        profile_json_schema: dict[str, Any],
-        existing_review_state: dict[str, Any],
-        on_token_usage: Callable[[str, Any, int], None] | None,
-    ) -> PatchReviewResolution:
-        if self.ollama_client is None:
-            raise RuntimeError("ExtractionService requires ollama_client.")
-
-        token_budget = self._token_budget()
-        batches = self._budgeted_review_item_batches(
-            current_draft=current_draft,
-            review_items=review_items,
-            profile_manifest=profile_manifest,
-            profile_json_schema=profile_json_schema,
-            existing_review_state=existing_review_state,
-            token_budget=token_budget,
-        )
-        next_draft = copy.deepcopy(current_draft)
-        decisions: list[PatchReviewDecision] = []
-        unmapped_assignments: dict[str, str] = {}
-
-        for batch_index, batch in enumerate(batches, start=1):
-            prompt_draft = self._resolver_draft_slice(next_draft, batch)
-            prompt_schema = self._resolver_schema_slice(
-                profile_json_schema=profile_json_schema,
-                profile_manifest=profile_manifest,
-                review_items=batch,
-            )
-            prompt_review_state = self._resolver_review_state_slice(
-                existing_review_state,
-                batch,
-            )
-            budget_metadata = token_budget.metadata(
-                estimated_input_tokens=self._estimate_review_resolution_tokens(
-                    current_draft=prompt_draft,
-                    review_items=batch,
-                    profile_manifest=profile_manifest,
-                    profile_json_schema=prompt_schema,
-                    existing_review_state=prompt_review_state,
-                    token_budget=token_budget,
-                ),
-                split_count=max(0, len(batches) - 1),
-            )
-
-            def record_budgeted_usage(
-                agent_name: str,
-                usage: Any,
-                patch_count: int = 1,
-            ) -> None:
-                if on_token_usage is not None:
-                    on_token_usage(
-                        agent_name,
-                        BudgetedUsage(usage, budget_metadata),
-                        patch_count,
-                    )
-
-            result = await resolve_patch_review_items(
-                current_draft=prompt_draft,
-                review_items=batch,
-                profile_manifest=profile_manifest,
-                profile_json_schema=prompt_schema,
-                existing_review_state=prompt_review_state,
-                model=self.ollama_client.agent_model,
-                on_token_usage=record_budgeted_usage,
-            )
-            if result.draft_patch:
-                next_draft = apply_merge_patch(next_draft, result.draft_patch)
-            elif result.final_draft:
-                draft_patch = self._json_merge_patch_diff(prompt_draft, result.final_draft)
-                next_draft = apply_merge_patch(next_draft, draft_patch)
-            decisions.extend(result.item_decisions)
-            unmapped_assignments.update(result.unmapped_assignments)
-            existing_review_state = {
-                **existing_review_state,
-                "resolved_item_ids": list(
-                    dict.fromkeys(
-                        [
-                            *existing_review_state.get("resolved_item_ids", []),
-                            *(decision.id for decision in result.item_decisions),
-                        ]
-                    )
-                ),
-                "unmapped_assignments": {
-                    **dict(existing_review_state.get("unmapped_assignments", {})),
-                    **unmapped_assignments,
-                },
-                "resolver_batch": batch_index,
-            }
-
-        return PatchReviewResolution(
-            final_draft=next_draft,
-            item_decisions=decisions,
-            unmapped_assignments=unmapped_assignments,
-        )
-
-    @staticmethod
-    def _resolver_draft_slice(
-        current_draft: dict[str, Any],
-        review_items: list[PatchReviewItem],
-    ) -> dict[str, Any]:
-        fields = ExtractionService._review_item_top_level_fields(review_items)
-        if not fields:
-            return copy.deepcopy(current_draft)
-        result = {
-            field: copy.deepcopy(current_draft[field])
-            for field in fields
-            if field in current_draft
-        }
-        if "id" in current_draft:
-            result.setdefault("id", current_draft["id"])
-        return result
-
-    @staticmethod
-    def _resolver_schema_slice(
-        *,
-        profile_json_schema: dict[str, Any],
-        profile_manifest: Any,
-        review_items: list[PatchReviewItem],
-    ) -> dict[str, Any]:
-        fields = ExtractionService._review_item_top_level_fields(review_items)
-        if not fields:
-            return profile_json_schema
-        return slice_profile_json_schema(
-            profile_json_schema=profile_json_schema,
-            target_class=profile_manifest.target_class,
-            field_names=fields,
-        )
-
-    @staticmethod
-    def _resolver_review_state_slice(
-        existing_review_state: dict[str, Any],
-        review_items: list[PatchReviewItem],
-    ) -> dict[str, Any]:
-        item_ids = {item.id for item in review_items}
-        return {
-            "resolved_item_ids": [
-                item_id
-                for item_id in existing_review_state.get("resolved_item_ids", [])
-                if item_id in item_ids
-            ],
-            "unmapped_assignments": {
-                item_id: value
-                for item_id, value in dict(
-                    existing_review_state.get("unmapped_assignments", {})
-                ).items()
-                if item_id in item_ids
-            },
-            "resolution_notes": {
-                item_id: value
-                for item_id, value in dict(
-                    existing_review_state.get("resolution_notes", {})
-                ).items()
-                if item_id in item_ids
-            },
-        }
-
-    @staticmethod
-    def _review_item_top_level_fields(review_items: list[PatchReviewItem]) -> list[str]:
-        fields: list[str] = []
-        for item in review_items:
-            candidates = [item.path]
-            if item.patch:
-                candidates.extend(str(key) for key in item.patch)
-            for candidate in candidates:
-                field = (
-                    json_pointer_top_level_field(candidate)
-                    if candidate.startswith("/")
-                    else candidate.split(".", 1)[0]
-                )
-                if field and field not in fields:
-                    fields.append(field)
-        return fields
-
-    def _budgeted_review_item_batches(
-        self,
-        *,
-        current_draft: dict[str, Any],
-        review_items: list[PatchReviewItem],
-        profile_manifest: Any,
-        profile_json_schema: dict[str, Any],
-        existing_review_state: dict[str, Any],
-        token_budget: TokenBudget,
-    ) -> list[list[PatchReviewItem]]:
-        batches: list[list[PatchReviewItem]] = []
-        current_batch: list[PatchReviewItem] = []
-        for item in review_items:
-            candidate_batch = [*current_batch, item]
-            estimate = self._estimate_review_resolution_tokens(
-                current_draft=current_draft,
-                review_items=candidate_batch,
-                profile_manifest=profile_manifest,
-                profile_json_schema=profile_json_schema,
-                existing_review_state=existing_review_state,
-                token_budget=token_budget,
-            )
-            if current_batch and estimate > token_budget.input_token_budget:
-                batches.append(current_batch)
-                current_batch = [item]
-            else:
-                current_batch = candidate_batch
-        if current_batch:
-            batches.append(current_batch)
-        return batches or [[]]
-
-    @staticmethod
-    def _estimate_review_resolution_tokens(
-        *,
-        current_draft: dict[str, Any],
-        review_items: list[PatchReviewItem],
-        profile_manifest: Any,
-        profile_json_schema: dict[str, Any],
-        existing_review_state: dict[str, Any],
-        token_budget: TokenBudget,
-    ) -> int:
-        prompt_context = "".join(
-            [
-                f"Profile identifier:\n{profile_manifest.identifier}\n\n",
-                f"Target class:\n{profile_manifest.target_class}\n\n",
-                "Profile JSON Schema:\n",
-                json.dumps(profile_json_schema, indent=2, ensure_ascii=False),
-                "\n\nCurrent draft JSON:\n",
-                json.dumps(current_draft, indent=2, ensure_ascii=False),
-                "\n\nExisting review state JSON:\n",
-                json.dumps(existing_review_state, indent=2, ensure_ascii=False),
-                "\n\nUnresolved review items JSON:\n",
-                json.dumps(
-                    [item.model_dump(mode="json") for item in review_items],
-                    indent=2,
-                    ensure_ascii=False,
-                ),
-            ]
-        )
-        return token_budget.estimate_text_tokens(prompt_context)
-
-    def _save_patch_progress(
-        self,
-        *,
-        workflow_id: str,
-        draft: dict[str, Any],
-        patch_record: PatchRecord,
-        batch_no: int,
-        total_batches: int,
-        token_usage: dict[str, Any] | None = None,
-    ) -> None:
-        if self.output_repository is None:
-            raise RuntimeError("ExtractionService requires output_repository.")
-
-        self.output_repository.save_draft(
-            workflow_id=workflow_id,
-            draft=normalize_review_draft(
-                draft,
-                dataset_id=str(draft.get("id") or workflow_id),
-            ),
-        )
-
-        # Update task registry progress
-        if self.task_registry is not None:
-            task_name = self._patch_draft_task_name(workflow_id)
-            task_info = self.task_registry.get_task_info(task_name)
-            progress = dict(task_info.progress or {}) if task_info else {}
-            progress.update(
-                {
-                    "batch_no": batch_no,
-                    "total_batches": total_batches,
-                    "file_name": patch_record.file_name,
-                    "accepted_fields": patch_record.accepted_fields,
-                    "total_candidates": len(patch_record.candidates),
-                    "validation_errors": patch_record.validation_errors or [],
-                }
-            )
-            if token_usage and token_usage.get("agents"):
-                progress["token_usage"] = token_usage
-            self.task_registry.update_progress(
-                task_name,
-                progress,
-            )
-
-        # Save the field-level candidates for revision agent support.
-        if patch_record.candidates:
-            self.output_repository.save_candidates(
-                workflow_id=workflow_id,
-                patch_file_name=patch_record.file_name,
-                candidates=patch_record.candidates,
-            )
-
-        # Always save the merged patch as the canonical patch file.
-        self.output_repository.save_patch(
-            workflow_id=workflow_id,
-            patch_file_name=patch_record.file_name,
-            patch=patch_record.merged_patch,
-        )
-
-        if patch_record.accepted_fields:
-            # Save the accepted merged patch (may differ from raw if revised).
-            self.output_repository.save_accepted_patch(
-                workflow_id=workflow_id,
-                patch_file_name=patch_record.file_name,
-                patch=patch_record.merged_patch,
-            )
-
-        if patch_record.quality_report is not None:
-            self.output_repository.save_quality_report(
-                workflow_id=workflow_id,
-                patch_file_name=patch_record.file_name,
-                quality_report=patch_record.quality_report,
-            )
-
-        if (
-            patch_record.quality_report is not None
-            and patch_record.quality_report.unmapped_facts
-        ):
-            self.output_repository.save_unmapped_facts(
-                workflow_id=workflow_id,
-                patch_file_name=patch_record.file_name,
-                unmapped_facts=patch_record.quality_report.unmapped_facts,
-            )
-
-    def _load_current_draft_or_initial(
-        self,
-        *,
-        data_package_id: str,
-        initial_draft: dict[str, Any],
-    ) -> dict[str, Any]:
-        if self.output_repository is None:
-            raise RuntimeError("ExtractionService requires output_repository.")
-
-        try:
-            return self.output_repository.load_draft(data_package_id)
-        except FileNotFoundError:
-            return copy.deepcopy(initial_draft)
-
-    @staticmethod
-    def _patch_draft_task_name(data_package_id: str) -> str:
-        return f"patching:draft:{data_package_id}"
-
-    def _is_stale_completed_patch_task(
-        self,
-        data_package_id: str,
-        task_info: TaskInfo | None,
-    ) -> bool:
-        if (
-            task_info is None
-            or task_info.status != TaskStatus.COMPLETED
-            or self.output_repository is None
-        ):
-            return False
-        return not self.output_repository.load_completed_patch_file_names(data_package_id)
-
-    async def get_existing_initial_context(
-        self,
-        *,
-        data_package_id: str,
-    ) -> InitialContext | None:
-        if self.output_repository is None:
-            return None
-        try:
-            return self.output_repository.load_initial_context(data_package_id)
-        except FileNotFoundError:
-            return None
-
-    async def save_initial_context(
-        self,
-        *,
-        data_package_id: str,
-        initial_context: InitialContext,
-    ) -> None:
-        if self.output_repository is None:
-            raise RuntimeError(
-                "ExtractionService requires output_repository to save initial context."
-            )
-        self.output_repository.save_initial_context(
-            workflow_id=data_package_id,
-            initial_context=initial_context,
-        )
-
-    async def get_existing_initial_draft(
-        self,
-        *,
-        data_package_id: str,
-    ) -> dict[str, Any] | None:
-        if self.output_repository is None:
-            return None
-        try:
-            return self.output_repository.load_initial_draft(data_package_id)
-        except FileNotFoundError:
-            return None
-
-    async def save_initial_draft(
-        self,
-        *,
-        data_package_id: str,
-        draft: dict[str, Any],
-    ) -> None:
-        if self.output_repository is None:
-            raise RuntimeError(
-                "ExtractionService requires output_repository to save drafts."
-            )
-        self.output_repository.save_initial_draft(
-            workflow_id=data_package_id,
-            initial_draft=normalize_review_draft(
-                draft,
-                dataset_id=str(draft.get("id") or data_package_id),
-            ),
-        )
-
-    async def get_protected_fields(self, data_package_id: str) -> list[str]:
-        if self.output_repository is None:
-            return []
-        return self.output_repository.load_protected_fields(data_package_id)
-
-    async def set_protected_fields(
-        self,
-        *,
-        data_package_id: str,
-        protected_fields: list[str],
-    ) -> None:
-        if self.output_repository is None:
-            return
-        self.output_repository.save_protected_fields(
-            workflow_id=data_package_id,
-            protected_fields=protected_fields,
-        )
-
-    async def get_patch_review_state(self, data_package_id: str) -> dict[str, Any]:
-        if self.output_repository is None:
-            return {
-                "resolved_item_ids": [],
-                "unmapped_assignments": {},
-                "resolution_notes": {},
-                "resolved_at": {},
-            }
-        return self.output_repository.load_patch_review_state(data_package_id)
-
-    async def save_patch_review_state(
-        self,
-        *,
-        data_package_id: str,
-        review_state: dict[str, Any],
-    ) -> dict[str, Any]:
-        if self.output_repository is None:
-            return review_state
-        normalized = {
-            "resolved_item_ids": list(review_state.get("resolved_item_ids", [])),
-            "unmapped_assignments": dict(review_state.get("unmapped_assignments", {})),
-            "resolution_notes": dict(review_state.get("resolution_notes", {})),
-            "resolved_at": dict(review_state.get("resolved_at", {})),
-        }
-        self.output_repository.save_patch_review_state(
-            workflow_id=data_package_id,
-            review_state=normalized,
-        )
-        return normalized
-
-    async def resolve_patch_review_items(
-        self,
-        *,
-        data_package_id: str,
-        profile_identifier: str,
-        review_items: list[dict[str, Any]],
-    ) -> dict[str, Any]:
-        if self.ollama_client is None or self.output_repository is None:
-            raise RuntimeError(
-                "ExtractionService requires ollama_client and output_repository "
-                "to run the patch review resolution agent."
-            )
-
-        profile_manifest = self.profile_service.get_profile(profile_identifier)
-        profile_json_schema = self.profile_service.load_json_schema(profile_identifier)
-        try:
-            current_draft = self.output_repository.load_draft(data_package_id)
-        except FileNotFoundError:
-            current_draft = self.output_repository.load_initial_draft(data_package_id)
-        current_draft = sanitize_document_against_schema(
-            document=current_draft,
-            json_schema=profile_json_schema,
-            target_class=profile_manifest.target_class,
-        )
-        current_draft = normalize_review_draft(
-            current_draft,
-            dataset_id=str(current_draft.get("id") or data_package_id),
-        )
-
-        existing_state = self.output_repository.load_patch_review_state(data_package_id)
-        parsed_items = [PatchReviewItem.model_validate(item) for item in review_items]
-        token_usage_totals: dict[str, dict[str, int]] = {}
-
-        def record_token_usage(agent_name: str, usage: Any, operation_count: int = 1) -> None:
-            self._record_token_usage(
-                token_usage_totals,
-                agent_name=agent_name,
-                usage=usage,
-                operation_count=operation_count,
-            )
-            self._record_workflow_token_usage(
-                data_package_id=data_package_id,
-                agent_name=agent_name,
-                usage=usage,
-                operation_count=1,
-            )
-
-        result = await self._resolve_and_persist_review_items(
-            data_package_id=data_package_id,
-            current_draft=current_draft,
-            parsed_items=parsed_items,
-            profile_manifest=profile_manifest,
-            profile_json_schema=profile_json_schema,
-            existing_review_state=existing_state,
-            resolution_log=[],
-            on_token_usage=record_token_usage,
-        )
-        token_usage = self._token_usage_summary(token_usage_totals)
-        if token_usage.get("agents"):
-            result["token_usage"] = token_usage
-        return result
+            return self.output_repository.load_extraction_result(data_package_id)
+        except FileNotFoundError as exc:
+            raise ExtractionResultNotFoundError(
+                f"Extraction result not found for workflow '{data_package_id}'."
+            ) from exc
 
     async def get_token_usage(self, data_package_id: str) -> dict[str, Any]:
         if self.output_repository is None:
@@ -1324,81 +176,611 @@ class ExtractionService:
             self.output_repository.load_token_usage(data_package_id)
         )
 
-    @classmethod
-    def _record_token_usage(
-        cls,
-        totals: dict[str, dict[str, int]],
+    async def _run_extraction_task(
+        self,
         *,
-        agent_name: str,
-        usage: Any,
-        operation_count: int = 1,
-        patch_count: int | None = None,
-    ) -> None:
-        input_tokens = cls._usage_int(usage, "input_tokens")
-        output_tokens = cls._usage_int(usage, "output_tokens")
-        total_tokens = cls._usage_int(usage, "total_tokens") or (
-            input_tokens + output_tokens
-        )
-        requests = cls._usage_int(usage, "requests")
-        if not any((input_tokens, output_tokens, total_tokens, requests)):
-            return
+        data_package_id: str,
+        profile_identifier: str,
+        qualitative_vocab_identifiers: list[str] | None,
+    ) -> ExtractionRunResult:
+        self._require_runtime_dependencies()
+        assert self.datasource_service is not None
+        assert self.ollama_client is not None
+        assert self.output_repository is not None
 
-        entry = totals.setdefault(
-            agent_name,
-            {
-                "input_tokens": 0,
-                "output_tokens": 0,
-                "total_tokens": 0,
-                "requests": 0,
-                "operation_count": 0,
-                "patch_count": 0,
-            },
+        data_package = self.datasource_service.get_data_package(data_package_id)
+        profile_manifest = self.profile_service.get_profile(profile_identifier)
+        profile_json_schema = self.profile_service.load_json_schema(profile_identifier)
+        validation_schema = validation_schema_for_target_class(
+            json_schema=profile_json_schema,
+            target_class=profile_manifest.target_class,
         )
-        entry["input_tokens"] += input_tokens
-        entry["output_tokens"] += output_tokens
-        entry["total_tokens"] += total_tokens
-        entry["requests"] += requests
-        entry["operation_count"] += max(1, operation_count)
-        if patch_count is not None:
-            entry["patch_count"] += max(1, patch_count)
-        for key in (
-            "estimated_input_tokens",
-            "input_token_budget",
-            "max_context_length",
-            "split_count",
-            "compaction_count",
-        ):
-            value = cls._usage_int(usage, key)
-            if not value:
+        chunks_by_file = self.datasource_service.get_completed_content_chunks_by_file(
+            data_package_id
+        )
+        if not chunks_by_file:
+            raise ChunkingRequiredError(
+                "Extraction requires completed datasource chunking. Run chunking first."
+            )
+
+        warnings: list[str] = []
+        progress = ExtractionRunProgress(
+            stage="file_ranking",
+            total_chunks=sum(len(chunks) for chunks in chunks_by_file),
+        )
+        self._update_progress(data_package_id, progress)
+
+        ranking = await self._rank_files(data_package_id, data_package, warnings)
+        ordered_chunks = self._ordered_chunks(chunks_by_file, ranking)
+
+        contexts: list[ExtractionContext] = []
+        progress.stage = "chunk_extraction"
+        for chunk in ordered_chunks:
+            result = await generate_structured(
+                self.ollama_client,
+                model=self.ollama_client.chat_model,
+                system=EXTRACTION_CONTEXT_SYSTEM_PROMPT,
+                prompt=build_extraction_context_prompt(
+                    ChunkContext(
+                        content=chunk.content,
+                        start_idx=chunk.start_idx,
+                        end_idx=chunk.end_idx,
+                        file_path=chunk.file_path,
+                        data_package_name=data_package.file_name,
+                    )
+                ),
+                output_type=ExtractionContext,
+                num_ctx=self.ollama_client.max_context_length,
+            )
+            self._record_workflow_token_usage(
+                data_package_id=data_package_id,
+                agent_name="chunk_extraction",
+                usage=result.usage,
+            )
+            contexts.append(result.output)
+            partial_context = merge_extraction_context_results(contexts)
+            self.output_repository.save_extraction_context(
+                workflow_id=data_package_id,
+                extraction_context=partial_context,
+            )
+            progress.processed_chunks += 1
+            progress.interim_context = partial_context
+            self._update_progress(data_package_id, progress)
+
+        extraction_context = merge_extraction_context_results(contexts)
+        self.output_repository.save_extraction_context(
+            workflow_id=data_package_id,
+            extraction_context=extraction_context,
+        )
+
+        progress.stage = "vocabulary_normalization"
+        progress.interim_context = extraction_context
+        self._update_progress(data_package_id, progress)
+        normalization = await self._normalize_context(
+            data_package_id=data_package_id,
+            extraction_context=extraction_context,
+            qualitative_vocab_identifiers=qualitative_vocab_identifiers,
+            warnings=warnings,
+        )
+        progress.normalized_quantities = len(normalization.quantities)
+        progress.normalized_qualitative_attributes = len(
+            normalization.qualitative_attributes
+        )
+        progress.warnings = list(warnings)
+        self._update_progress(data_package_id, progress)
+
+        progress.stage = "profile_projection"
+        progress.interim_context = extraction_context
+        self._update_progress(data_package_id, progress)
+        projection = await generate_structured(
+            self.ollama_client,
+            model=self.ollama_client.chat_model,
+            system=PROFILE_PROJECTION_SYSTEM_PROMPT,
+            prompt=build_profile_projection_prompt(
+                data_package_id=data_package_id,
+                profile_identifier=profile_identifier,
+                profile_target_class=profile_manifest.target_class,
+                extraction_context=extraction_context,
+                normalization=normalization,
+                warnings=warnings,
+                profile_schema=validation_schema,
+            ),
+            output_type=validation_schema,
+            num_ctx=self.ollama_client.max_context_length,
+        )
+        self._record_workflow_token_usage(
+            data_package_id=data_package_id,
+            agent_name="profile_projection",
+            usage=projection.usage,
+        )
+
+        clean_document = remove_null_values(projection.output)
+        validation = self.profile_service.validate_document(
+            identifier=profile_identifier,
+            document=clean_document,
+        )
+        if not validation.valid:
+            errors = [
+                f"{issue.path}: {issue.message}"
+                for issue in validation.errors
+            ]
+            raise ExtractionValidationError(errors)
+
+        token_usage = await self.get_token_usage(data_package_id)
+        result = ExtractionRunResult(
+            document=clean_document,
+            extraction_context=extraction_context,
+            warnings=warnings,
+            token_usage=token_usage,
+        )
+        self.output_repository.save_extraction_warnings(
+            workflow_id=data_package_id,
+            warnings=warnings,
+        )
+        self.output_repository.save_extraction_result(
+            workflow_id=data_package_id,
+            result=result,
+        )
+        progress.stage = "completed"
+        progress.interim_context = extraction_context
+        progress.warnings = warnings
+        self._update_progress(data_package_id, progress)
+        return result
+
+    async def _rank_files(
+        self,
+        data_package_id: str,
+        data_package: Any,
+        warnings: list[str],
+    ) -> FileRankingResult:
+        assert self.ollama_client is not None
+        files = [
+            FileContext(file_path=file.file_path, byte_size=len(file.raw_content))
+            for file in data_package.files
+        ]
+        try:
+            result = await generate_structured(
+                self.ollama_client,
+                model=self.ollama_client.chat_model,
+                system=FILE_RANKING_SYSTEM_PROMPT,
+                prompt=build_file_ranking_prompt(files, data_package.file_name),
+                output_type=FileRankingResult,
+                num_ctx=self.ollama_client.max_context_length,
+            )
+            self._record_workflow_token_usage(
+                data_package_id=data_package_id,
+                agent_name="file_ranking",
+                usage=result.usage,
+            )
+            allowed_paths = {file.file_path for file in files}
+            ranked = [
+                item
+                for item in result.output.files
+                if item.file_path in allowed_paths
+            ]
+            missing = [
+                file
+                for file in files
+                if file.file_path not in {item.file_path for item in ranked}
+            ]
+            fallback_tail = fallback_file_ranking(missing).files
+            return FileRankingResult(files=ranked + fallback_tail)
+        except CompletionError as exc:
+            warnings.append(f"File ranking fell back to heuristics: {exc}")
+            return fallback_file_ranking(files)
+
+    @staticmethod
+    def _ordered_chunks(
+        chunks_by_file: list[list[ContentChunk]],
+        ranking: FileRankingResult,
+    ) -> list[ContentChunk]:
+        rank_by_path = {
+            item.file_path: item.rank
+            for item in ranking.files
+        }
+        chunks = [chunk for group in chunks_by_file for chunk in group]
+        return sorted(
+            chunks,
+            key=lambda chunk: (
+                rank_by_path.get(chunk.file_path, 10_000),
+                chunk.file_path,
+                chunk.start_idx,
+            ),
+        )
+
+    async def _normalize_context(
+        self,
+        *,
+        data_package_id: str,
+        extraction_context: ExtractionContext,
+        qualitative_vocab_identifiers: list[str] | None,
+        warnings: list[str],
+    ) -> ExtractionNormalization:
+        quantities = self._all_quantities(extraction_context)
+        qualitative_attributes = self._all_qualitative_attributes(extraction_context)
+
+        quantity_results = await asyncio.gather(
+            *[
+                self._normalize_quantity(
+                    data_package_id=data_package_id,
+                    quantity=quantity,
+                    warnings=warnings,
+                )
+                for quantity in quantities
+            ]
+        )
+        qualitative_results = await asyncio.gather(
+            *[
+                self._normalize_qualitative_attribute(
+                    data_package_id=data_package_id,
+                    attribute=attribute,
+                    vocab_identifiers=(
+                        qualitative_vocab_identifiers
+                        or DEFAULT_QUALITATIVE_VOCAB_IDENTIFIERS
+                    ),
+                    warnings=warnings,
+                )
+                for attribute in qualitative_attributes
+            ]
+        )
+        return ExtractionNormalization(
+            quantities=quantity_results,
+            qualitative_attributes=qualitative_results,
+        )
+
+    async def _normalize_quantity(
+        self,
+        *,
+        data_package_id: str,
+        quantity: Quantity,
+        warnings: list[str],
+    ) -> QuantityNormalization:
+        quantity_kind = await self._select_term_with_fallback(
+            data_package_id=data_package_id,
+            vocabulary_identifier=QUDT_QUANTITY_KIND_VOCAB,
+            source_value=quantity.quantity_kind,
+            source_context=quantity.model_dump(mode="json"),
+            query=build_quantity_kind_vocab_query(quantity),
+            agent_name="quantity_vocab_selection",
+            warnings=warnings,
+        )
+        unit = await self._select_term_with_fallback(
+            data_package_id=data_package_id,
+            vocabulary_identifier=QUDT_UNIT_VOCAB,
+            source_value=quantity.unit,
+            source_context=quantity.model_dump(mode="json"),
+            query=build_unit_vocab_query(quantity),
+            agent_name="quantity_vocab_selection",
+            warnings=warnings,
+        )
+        if quantity_kind is None and quantity.quantity_kind:
+            warnings.append(
+                f"Quantity '{quantity.identifier}' kept raw quantity kind '{quantity.quantity_kind}'."
+            )
+            quantity_kind = VocabularyTermMapping(
+                source_value=quantity.quantity_kind,
+                reason="No QUDT quantity-kind candidate selected; raw value retained.",
+            )
+        if unit is None and quantity.unit:
+            warnings.append(
+                f"Quantity '{quantity.identifier}' kept raw unit '{quantity.unit}'."
+            )
+            unit = VocabularyTermMapping(
+                source_value=quantity.unit,
+                reason="No QUDT unit candidate selected; raw value retained.",
+            )
+        return QuantityNormalization(
+            quantity=quantity,
+            quantity_kind=quantity_kind,
+            unit=unit,
+        )
+
+    async def _normalize_qualitative_attribute(
+        self,
+        *,
+        data_package_id: str,
+        attribute: QualitativeAttribute,
+        vocab_identifiers: list[str],
+        warnings: list[str],
+    ) -> QualitativeAttributeNormalization:
+        if self.semantic_service is None:
+            warnings.append(
+                f"Qualitative attribute '{attribute.title}' was not normalized because semantic service is unavailable."
+            )
+            return QualitativeAttributeNormalization(attribute=attribute)
+
+        source_value = f"{attribute.title}: {attribute.value}".strip(": ")
+        candidates: list[dict[str, Any]] = []
+        for vocab_identifier in vocab_identifiers:
+            try:
+                vocab_info = await self.semantic_service.get_vocabulary(vocab_identifier)
+            except Exception as exc:
+                warnings.append(f"Vocabulary '{vocab_identifier}' unavailable: {exc}")
                 continue
-            if key in {"input_token_budget", "max_context_length"}:
-                entry[key] = max(entry.get(key, 0), value)
-            else:
-                entry[key] = entry.get(key, 0) + value
+            if vocab_info is None:
+                warnings.append(f"Vocabulary '{vocab_identifier}' is not registered.")
+                continue
+            for term_scheme in vocab_info.vocab_term_schemes:
+                query = build_qualitative_vocab_query(
+                    attribute,
+                    rdf_type=term_scheme.rdf_type,
+                )
+                candidates.extend(
+                    await self._query_candidate_records(
+                        vocabulary_identifier=vocab_identifier,
+                        query=query,
+                        warnings=warnings,
+                    )
+                )
 
-    def _token_budget(self) -> TokenBudget:
-        max_context_length = None
-        if self.ollama_client is not None:
-            max_context_length = getattr(self.ollama_client, "max_context_length", None)
-        if max_context_length is None:
-            max_context_length = getattr(self.settings, "max_context_length", None)
-        return budget_from_context_length(max_context_length)
+        mapping = await self._select_from_candidates(
+            data_package_id=data_package_id,
+            agent_name="qualitative_vocab_selection",
+            source_value=source_value,
+            source_context=attribute.model_dump(mode="json"),
+            candidates=self._deduplicate_candidates(candidates),
+            warnings=warnings,
+        )
+        if mapping is None:
+            warnings.append(
+                f"Qualitative attribute '{attribute.title}' kept raw value '{attribute.value}'."
+            )
+        return QualitativeAttributeNormalization(attribute=attribute, term=mapping)
 
-    @classmethod
-    def _record_patch_token_usage(
-        cls,
-        totals: dict[str, dict[str, int]],
+    async def _select_term_with_fallback(
+        self,
         *,
+        data_package_id: str,
+        vocabulary_identifier: str,
+        source_value: str,
+        source_context: dict[str, Any],
+        query: VocabQuery,
         agent_name: str,
-        usage: Any,
-        patch_count: int = 1,
-    ) -> None:
-        cls._record_token_usage(
-            totals,
+        warnings: list[str],
+    ) -> VocabularyTermMapping | None:
+        candidates = await self._query_candidate_records(
+            vocabulary_identifier=vocabulary_identifier,
+            query=query,
+            warnings=warnings,
+        )
+        mapping = await self._select_from_candidates(
+            data_package_id=data_package_id,
             agent_name=agent_name,
-            usage=usage,
-            operation_count=1,
-            patch_count=patch_count,
+            source_value=source_value,
+            source_context=source_context,
+            candidates=candidates,
+            warnings=warnings,
+        )
+        if mapping is not None:
+            return mapping
+        fallback = await self._build_fallback_query(
+            data_package_id=data_package_id,
+            agent_name=agent_name,
+            source_value=source_value,
+            source_context=source_context,
+            failed_candidates=candidates,
+            warnings=warnings,
+        )
+        if fallback is None:
+            return None
+        fallback_query = query.model_copy(
+            update={
+                "vector_query": fallback.vector_query or query.vector_query,
+                "fulltext_query": fallback.fulltext_query or query.fulltext_query,
+            }
+        )
+        fallback_candidates = await self._query_candidate_records(
+            vocabulary_identifier=vocabulary_identifier,
+            query=fallback_query,
+            warnings=warnings,
+        )
+        return await self._select_from_candidates(
+            data_package_id=data_package_id,
+            agent_name=agent_name,
+            source_value=source_value,
+            source_context=source_context,
+            candidates=fallback_candidates,
+            warnings=warnings,
+        )
+
+    async def _query_candidate_records(
+        self,
+        *,
+        vocabulary_identifier: str,
+        query: VocabQuery,
+        warnings: list[str],
+    ) -> list[dict[str, Any]]:
+        if self.semantic_service is None:
+            warnings.append("Vocabulary normalization skipped because semantic service is unavailable.")
+            return []
+        try:
+            result = await self.semantic_service.query_vocabulary(
+                vocabulary_identifier,
+                query,
+            )
+        except Exception as exc:
+            warnings.append(
+                f"Vocabulary query failed for '{vocabulary_identifier}' ({query.rdf_type}): {exc}"
+            )
+            return []
+        return self._candidate_records(result)
+
+    @staticmethod
+    def _candidate_records(result: VocabQueryResult) -> list[dict[str, Any]]:
+        records: list[dict[str, Any]] = []
+        for uri, resource in result.resources.items():
+            records.append(
+                {
+                    "uri": uri,
+                    "vocabulary_identifier": result.identifier,
+                    "rdf_type": result.rdf_type,
+                    "title": _resource_title(resource.properties),
+                    "rdf_types": resource.rdf_types,
+                    "properties": resource.properties,
+                }
+            )
+        return records
+
+    async def _select_from_candidates(
+        self,
+        *,
+        data_package_id: str,
+        agent_name: str,
+        source_value: str,
+        source_context: dict[str, Any],
+        candidates: list[dict[str, Any]],
+        warnings: list[str],
+    ) -> VocabularyTermMapping | None:
+        if not candidates:
+            return None
+        assert self.ollama_client is not None
+        result = await generate_structured(
+            self.ollama_client,
+            model=self.ollama_client.chat_model,
+            system=VOCAB_CANDIDATE_SELECTION_SYSTEM_PROMPT,
+            prompt=build_candidate_selection_prompt(
+                source_value=source_value,
+                source_context=source_context,
+                candidates=candidates,
+            ),
+            output_type=VocabularyCandidateSelection,
+            num_ctx=self.ollama_client.max_context_length,
+        )
+        self._record_workflow_token_usage(
+            data_package_id=data_package_id,
+            agent_name=agent_name,
+            usage=result.usage,
+        )
+        selected = result.output.selected_uri
+        if selected is None:
+            return None
+        candidate = next((item for item in candidates if item.get("uri") == selected), None)
+        if candidate is None:
+            warnings.append(f"Vocabulary selector returned unknown URI '{selected}'.")
+            return None
+        return VocabularyTermMapping(
+            source_value=source_value,
+            vocabulary_identifier=candidate.get("vocabulary_identifier"),
+            rdf_type=candidate.get("rdf_type"),
+            selected_uri=selected,
+            selected_title=candidate.get("title"),
+            confidence=result.output.confidence,
+            reason=result.output.reason,
+        )
+
+    async def _build_fallback_query(
+        self,
+        *,
+        data_package_id: str,
+        agent_name: str,
+        source_value: str,
+        source_context: dict[str, Any],
+        failed_candidates: list[dict[str, Any]],
+        warnings: list[str],
+    ) -> VocabularyFallbackQuery | None:
+        assert self.ollama_client is not None
+        try:
+            result = await generate_structured(
+                self.ollama_client,
+                model=self.ollama_client.chat_model,
+                system=VOCAB_FALLBACK_QUERY_SYSTEM_PROMPT,
+                prompt=build_fallback_query_prompt(
+                    source_value=source_value,
+                    source_context=source_context,
+                    failed_candidates=failed_candidates,
+                ),
+                output_type=VocabularyFallbackQuery,
+                num_ctx=self.ollama_client.max_context_length,
+            )
+        except CompletionError as exc:
+            warnings.append(f"Fallback vocabulary query generation failed: {exc}")
+            return None
+        self._record_workflow_token_usage(
+            data_package_id=data_package_id,
+            agent_name=agent_name,
+            usage=result.usage,
+        )
+        return result.output
+
+    @staticmethod
+    def _deduplicate_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        by_uri: dict[str, dict[str, Any]] = {}
+        for candidate in candidates:
+            uri = candidate.get("uri")
+            if isinstance(uri, str) and uri not in by_uri:
+                by_uri[uri] = candidate
+        return list(by_uri.values())
+
+    @staticmethod
+    def _all_quantities(context: ExtractionContext) -> list[Quantity]:
+        quantities: list[Quantity] = []
+        for item in (
+            context.data_generating_activities
+            + context.evaluated_entities
+            + context.agentic_entities
+            + context.datasets
+        ):
+            quantities.extend(item.has_quantitative_attributes)
+        return quantities
+
+    @staticmethod
+    def _all_qualitative_attributes(context: ExtractionContext) -> list[QualitativeAttribute]:
+        attributes: list[QualitativeAttribute] = []
+        for item in (
+            context.data_generating_activities
+            + context.evaluated_entities
+            + context.agentic_entities
+            + context.datasets
+        ):
+            attributes.extend(item.has_qualitative_attributes)
+        return attributes
+
+    def _load_result_or_none(self, data_package_id: str) -> ExtractionRunResult | None:
+        if self.output_repository is None:
+            return None
+        try:
+            return self.output_repository.load_extraction_result(data_package_id)
+        except FileNotFoundError:
+            return None
+
+    def _load_context_or_none(self, data_package_id: str) -> ExtractionContext | None:
+        if self.output_repository is None:
+            return None
+        try:
+            return self.output_repository.load_extraction_context(data_package_id)
+        except FileNotFoundError:
+            return None
+
+    def _load_warnings_or_empty(self, data_package_id: str) -> list[str]:
+        if self.output_repository is None:
+            return []
+        try:
+            return self.output_repository.load_extraction_warnings(data_package_id)
+        except FileNotFoundError:
+            return []
+
+    def _require_runtime_dependencies(self) -> None:
+        if (
+            self.datasource_service is None
+            or self.ollama_client is None
+            or self.output_repository is None
+            or self.task_registry is None
+        ):
+            raise RuntimeError(
+                "ExtractionService requires datasource_service, ollama_client, "
+                "output_repository, and task_registry to run extraction."
+            )
+
+    def _update_progress(
+        self,
+        data_package_id: str,
+        progress: ExtractionRunProgress,
+    ) -> None:
+        if self.task_registry is None:
+            return
+        self.task_registry.update_progress(
+            self._extraction_task_name(data_package_id),
+            progress.model_dump(mode="json"),
         )
 
     def _record_workflow_token_usage(
@@ -1407,17 +789,31 @@ class ExtractionService:
         data_package_id: str,
         agent_name: str,
         usage: Any,
-        operation_count: int = 1,
     ) -> None:
         if self.output_repository is None:
             return
         totals = self.output_repository.load_token_usage(data_package_id)
-        self._record_token_usage(
-            totals,
-            agent_name=agent_name,
-            usage=usage,
-            operation_count=operation_count,
+        entry = totals.setdefault(
+            agent_name,
+            {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 0,
+                "requests": 0,
+                "operation_count": 0,
+            },
         )
+        input_tokens = self._usage_int(usage, "input_tokens")
+        output_tokens = self._usage_int(usage, "output_tokens")
+        total_tokens = self._usage_int(usage, "total_tokens") or (
+            input_tokens + output_tokens
+        )
+        requests = self._usage_int(usage, "requests")
+        entry["input_tokens"] += input_tokens
+        entry["output_tokens"] += output_tokens
+        entry["total_tokens"] += total_tokens
+        entry["requests"] += requests
+        entry["operation_count"] += 1
         self.output_repository.save_token_usage(
             workflow_id=data_package_id,
             token_usage=totals,
@@ -1425,9 +821,8 @@ class ExtractionService:
 
     @staticmethod
     def _usage_int(usage: Any, field_name: str) -> int:
-        value = getattr(usage, field_name, 0)
         try:
-            return int(value or 0)
+            return int(getattr(usage, field_name, 0) or 0)
         except (TypeError, ValueError):
             return 0
 
@@ -1446,407 +841,57 @@ class ExtractionService:
         }
         if not agents:
             return {"agents": {}}
-
-        combined_values = {
+        combined = {
             "input_tokens": sum(item["input_tokens"] for item in agents.values()),
             "output_tokens": sum(item["output_tokens"] for item in agents.values()),
             "total_tokens": sum(item["total_tokens"] for item in agents.values()),
             "requests": sum(item["requests"] for item in agents.values()),
             "operation_count": sum(item["operation_count"] for item in agents.values()),
-            "estimated_input_tokens": sum(
-                int(item.get("estimated_input_tokens", 0)) for item in agents.values()
-            ),
-            "input_token_budget": max(
-                int(item.get("input_token_budget", 0)) for item in agents.values()
-            ),
-            "max_context_length": max(
-                int(item.get("max_context_length", 0)) for item in agents.values()
-            ),
-            "split_count": sum(int(item.get("split_count", 0)) for item in agents.values()),
-            "compaction_count": sum(
-                int(item.get("compaction_count", 0)) for item in agents.values()
-            ),
         }
         return {
             "agents": agents,
-            "combined": cls._token_usage_entry_summary(combined_values),
+            "combined": cls._token_usage_entry_summary(combined),
         }
-
-    @classmethod
-    def _patch_token_usage_summary(
-        cls,
-        totals: dict[str, dict[str, int]],
-    ) -> dict[str, Any]:
-        agents = {
-            agent_name: cls._patch_token_usage_entry_summary(values)
-            for agent_name, values in totals.items()
-            if any(
-                values.get(key, 0)
-                for key in ("input_tokens", "output_tokens", "total_tokens", "requests")
-            )
-        }
-        if not agents:
-            return {"agents": {}}
-
-        combined_values = {
-            "input_tokens": sum(item["input_tokens"] for item in agents.values()),
-            "output_tokens": sum(item["output_tokens"] for item in agents.values()),
-            "total_tokens": sum(item["total_tokens"] for item in agents.values()),
-            "requests": sum(item["requests"] for item in agents.values()),
-            "patch_count": max(item["patch_count"] for item in agents.values()),
-            "estimated_input_tokens": sum(
-                int(item.get("estimated_input_tokens", 0)) for item in agents.values()
-            ),
-            "input_token_budget": max(
-                int(item.get("input_token_budget", 0)) for item in agents.values()
-            ),
-            "max_context_length": max(
-                int(item.get("max_context_length", 0)) for item in agents.values()
-            ),
-            "split_count": sum(int(item.get("split_count", 0)) for item in agents.values()),
-            "compaction_count": sum(
-                int(item.get("compaction_count", 0)) for item in agents.values()
-            ),
-        }
-        return {
-            "agents": agents,
-            "combined": cls._patch_token_usage_entry_summary(combined_values),
-        }
-
-    @classmethod
-    def _token_usage_entry_summary(
-        cls,
-        values: dict[str, int],
-    ) -> dict[str, int | float]:
-        return cls._token_usage_entry_summary_for_count(
-            values,
-            count_key="operation_count",
-            average_suffix="operation",
-        )
 
     @staticmethod
-    def _patch_token_usage_entry_summary(values: dict[str, int]) -> dict[str, int | float]:
-        return ExtractionService._token_usage_entry_summary_for_count(
-            values,
-            count_key="patch_count",
-            average_suffix="patch",
-        )
-
-    @staticmethod
-    def _token_usage_entry_summary_for_count(
-        values: dict[str, int],
-        *,
-        count_key: str,
-        average_suffix: str,
-    ) -> dict[str, int | float]:
+    def _token_usage_entry_summary(values: dict[str, int]) -> dict[str, int | float]:
         operation_count = max(1, int(values.get("operation_count", 0)))
-        patch_count = max(1, int(values.get("patch_count", 0)))
+        requests = max(1, int(values.get("requests", 0)))
         input_tokens = int(values.get("input_tokens", 0))
         output_tokens = int(values.get("output_tokens", 0))
         total_tokens = int(values.get("total_tokens", 0))
-        denominator = max(1, int(values.get(count_key, 0)))
-        requests = max(1, int(values.get("requests", 0)))
-        summary: dict[str, int | float] = {
+        return {
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
             "total_tokens": total_tokens,
             "requests": int(values.get("requests", 0)),
             "operation_count": operation_count,
-            "patch_count": patch_count,
-            f"average_input_tokens_per_{average_suffix}": round(input_tokens / denominator, 2),
-            f"average_output_tokens_per_{average_suffix}": round(output_tokens / denominator, 2),
-            f"average_total_tokens_per_{average_suffix}": round(total_tokens / denominator, 2),
+            "average_input_tokens_per_operation": round(input_tokens / operation_count, 2),
+            "average_output_tokens_per_operation": round(output_tokens / operation_count, 2),
+            "average_total_tokens_per_operation": round(total_tokens / operation_count, 2),
             "average_input_tokens_per_request": round(input_tokens / requests, 2),
             "average_output_tokens_per_request": round(output_tokens / requests, 2),
             "average_total_tokens_per_request": round(total_tokens / requests, 2),
         }
-        for key in (
-            "estimated_input_tokens",
-            "input_token_budget",
-            "max_context_length",
-            "split_count",
-            "compaction_count",
-        ):
-            value = int(values.get(key, 0))
-            if value:
-                summary[key] = value
-        if values.get("estimated_input_tokens"):
-            summary["average_estimated_input_tokens_per_request"] = round(
-                int(values["estimated_input_tokens"]) / requests,
-                2,
-            )
-        return summary
-
-    def _update_patch_token_usage_progress(
-        self,
-        *,
-        data_package_id: str,
-        token_usage: dict[str, dict[str, int]],
-    ) -> None:
-        if self.task_registry is None:
-            return
-        task_name = self._patch_draft_task_name(data_package_id)
-        task_info = self.task_registry.get_task_info(task_name)
-        if task_info is None:
-            return
-        progress = dict(task_info.progress or {})
-        summary = self._patch_token_usage_summary(token_usage)
-        if summary.get("agents"):
-            progress["token_usage"] = summary
-            self.task_registry.update_progress(task_name, progress)
 
     @staticmethod
-    def _record(value: Any) -> dict[str, Any] | None:
-        return value if isinstance(value, dict) else None
+    def _extraction_task_name(data_package_id: str) -> str:
+        return f"extraction:run:{data_package_id}"
 
-    @classmethod
-    def _record_list(cls, value: Any) -> list[dict[str, Any]]:
-        if not isinstance(value, list):
-            return []
-        return [
-            item
-            for item in (cls._record(item) for item in value)
-            if item is not None
-        ]
 
-    @staticmethod
-    def _text_list(value: Any) -> list[str]:
-        if not isinstance(value, list):
-            return []
-        return [text for text in (str(item) for item in value) if text]
-
-    @staticmethod
-    def _confidence_label(confidence: float | None) -> str:
-        if confidence is None:
-            return "unknown confidence"
-        return f"{round(confidence * 100)}% confidence"
-
-    @staticmethod
-    def _patch_artifact_base_name(file_name: str) -> str:
-        suffixes = [
-            ".quality_report.json",
-            ".candidates.json",
-            ".accepted.json",
-            ".raw.json",
-            ".unmapped_facts.json",
-        ]
-        for suffix in suffixes:
-            if file_name.endswith(suffix):
-                return f"{file_name[:-len(suffix)]}.json"
-        return file_name
-
-    @staticmethod
-    def _matched_review_item_id(base_name: str, path: str, index: int) -> str:
-        return f"matched:{base_name}:{path}:{index}"
-
-    @staticmethod
-    def _unmapped_review_item_id(fact: dict[str, Any]) -> str:
-        key = "|".join(
-            str(fact.get(field) or "")
-            for field in ("file_name", "fact", "reason", "source_hint")
-        )
-        return f"unmapped:{key}"
-
-    @staticmethod
-    def _format_quality_issue(issue: dict[str, Any]) -> str:
-        parts = [
-            str(issue.get("issue_type") or ""),
-            f"({issue.get('severity')})" if issue.get("severity") else "",
-            str(issue.get("explanation") or ""),
-            (
-                f"Suggested field: {issue.get('suggested_target_path')}"
-                if issue.get("suggested_target_path")
-                else ""
-            ),
-        ]
-        return " ".join(part for part in parts if part)
-
-    def _load_latest_draft_for_resolution(
-        self,
-        *,
-        data_package_id: str,
-        fallback: dict[str, Any],
-    ) -> dict[str, Any]:
-        if self.output_repository is None:
-            return fallback
-        try:
-            return self.output_repository.load_draft(data_package_id)
-        except FileNotFoundError:
-            return fallback
-
-    @classmethod
-    def _json_merge_patch_diff(cls, before: Any, after: Any) -> dict[str, Any]:
-        if before == after:
-            return {}
-        if isinstance(before, dict) and isinstance(after, dict):
-            patch: dict[str, Any] = {}
-            for key in before.keys() - after.keys():
-                patch[key] = None
-            for key, after_value in after.items():
-                before_value = before.get(key)
-                if key not in before or before_value != after_value:
-                    if isinstance(before_value, dict) and isinstance(after_value, dict):
-                        nested_patch = cls._json_merge_patch_diff(
-                            before_value,
-                            after_value,
-                        )
-                        if nested_patch:
-                            patch[key] = nested_patch
-                    else:
-                        patch[key] = copy.deepcopy(after_value)
-            return patch
-        return copy.deepcopy(after) if isinstance(after, dict) else {}
-
-    @staticmethod
-    def _normalize_review_decisions(
-        *,
-        decisions_by_id: dict[str, PatchReviewDecision],
-        parsed_items: list[PatchReviewItem],
-    ) -> tuple[dict[str, PatchReviewDecision], int]:
-        normalized: dict[str, PatchReviewDecision] = {}
-        synthesized_count = 0
-        for item in parsed_items:
-            decision = decisions_by_id.get(item.id)
-            target_path = None if item.path == "Unassigned" else item.path
-            if decision is None:
-                synthesized_count += 1
-                normalized[item.id] = PatchReviewDecision(
-                    id=item.id,
-                    outcome="excluded",
-                    note=(
-                        "The resolution agent did not return a decision for this "
-                        "item, so it was excluded to complete delegated review "
-                        "without applying unsupported metadata."
-                    ),
-                    target_path=target_path,
-                )
-            elif decision.outcome == "unresolved":
-                synthesized_count += 1
-                normalized[item.id] = PatchReviewDecision(
-                    id=item.id,
-                    outcome="excluded",
-                    note=(
-                        "The resolution agent marked this item unresolved, so it "
-                        "was excluded to complete delegated review. Agent note: "
-                        f"{decision.note}"
-                    ),
-                    target_path=decision.target_path or target_path,
-                )
-            else:
-                normalized[item.id] = decision
-        return normalized, synthesized_count
-
-    @staticmethod
-    def _record_resolution_log(
-        resolution_log: list[str],
-        data_package_id: str,
-        message: str,
-    ) -> None:
-        logger.info(
-            "Patch review resolution for %s - %s",
-            data_package_id,
-            message,
-        )
-        resolution_log.append(message)
-
-    def _update_patch_resolution_progress(
-        self,
-        *,
-        data_package_id: str,
-        resolution_log: list[str],
-        resolution_result: dict[str, Any] | None = None,
-        resolution_active: bool | None = None,
-    ) -> None:
-        if self.task_registry is None:
-            return
-        task_info = self.task_registry.get_task_info(
-            self._patch_draft_task_name(data_package_id),
-        )
-        if task_info is None:
-            return
-        progress = dict(task_info.progress or {})
-        progress["resolution_log"] = list(resolution_log)
-        if resolution_active is not None:
-            progress["resolution_active"] = resolution_active
-        if resolution_result is not None:
-            progress["resolution_resolved_count"] = resolution_result.get(
-                "resolved_count",
-                0,
-            )
-            progress["resolution_unresolved_item_ids"] = list(
-                resolution_result.get("unresolved_item_ids", []),
-            )
-        self.task_registry.update_progress(
-            self._patch_draft_task_name(data_package_id),
-            progress,
-        )
-
-    @staticmethod
-    def _review_decisions_by_id(
-        decisions: list[PatchReviewDecision],
-        requested_item_ids: set[str],
-    ) -> dict[str, PatchReviewDecision]:
-        result: dict[str, PatchReviewDecision] = {}
-        for decision in decisions:
-            if decision.id in requested_item_ids and decision.id not in result:
-                result[decision.id] = decision
-        return result
-
-    @staticmethod
-    def _format_review_decision_note(decision: PatchReviewDecision) -> str:
-        target = f" Target: {decision.target_path}." if decision.target_path else ""
-        return f"{decision.outcome}: {decision.note}{target}"
-
-    async def get_patch_progress(
-        self,
-        data_package_id: str,
-    ) -> tuple[TaskStatus, dict[str, Any] | None]:
-        if self.task_registry is None:
-            return TaskStatus.UNKNOWN, None
-        task_name = self._patch_draft_task_name(data_package_id)
-        task_info = self.task_registry.get_task_info(task_name)
-        if task_info is None:
-            return TaskStatus.UNKNOWN, None
-        if self._is_stale_completed_patch_task(data_package_id, task_info):
-            return TaskStatus.UNKNOWN, None
-        return task_info.status, task_info.progress
-
-    async def get_patch_artifacts(
-        self,
-        data_package_id: str,
-    ) -> dict[str, Any]:
-        if self.output_repository is None:
-            return {"patches": [], "quality_reports": [], "unmapped_facts": []}
-        return {
-            "patches": self.output_repository.load_patch_files(data_package_id),
-            "quality_reports": self.output_repository.load_patch_quality_reports(
-                data_package_id,
-            ),
-            "unmapped_facts": self.output_repository.load_unmapped_facts(
-                data_package_id,
-            ),
-        }
-
-    async def get_patch_files(
-        self,
-        data_package_id: str,
-    ) -> list[dict[str, Any]]:
-        if self.output_repository is None:
-            return []
-        return self.output_repository.load_patch_files(data_package_id)
-
-    async def get_patch_quality_reports(
-        self,
-        data_package_id: str,
-    ) -> list[dict[str, Any]]:
-        if self.output_repository is None:
-            return []
-        return self.output_repository.load_patch_quality_reports(data_package_id)
-
-    async def get_unmapped_facts(
-        self,
-        data_package_id: str,
-    ) -> list[dict[str, Any]]:
-        if self.output_repository is None:
-            return []
-        return self.output_repository.load_unmapped_facts(data_package_id)
+def _resource_title(properties: dict[str, Any]) -> str | None:
+    for key in (
+        "label",
+        "prefLabel",
+        "preferred_label",
+        "title",
+        "name",
+        "symbol",
+        "ucumCode",
+    ):
+        value = properties.get(key)
+        if isinstance(value, str) and value:
+            return value
+        if isinstance(value, list) and value:
+            return str(value[0])
+    return None

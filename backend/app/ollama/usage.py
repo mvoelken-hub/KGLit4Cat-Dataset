@@ -1,7 +1,4 @@
-"""Token usage tracking for structured completions.
-
-Drop-in replacement for pydantic_ai.result.RunUsage (subset used by BudgetedUsage).
-"""
+"""Token usage tracking for structured completions."""
 
 from __future__ import annotations
 

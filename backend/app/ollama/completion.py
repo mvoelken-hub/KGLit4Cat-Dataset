@@ -1,8 +1,7 @@
 """Core structured completion via Ollama /api/generate.
 
-Replaces pydantic-ai Agent.run() with a single async function that calls
-Ollama's /api/generate endpoint directly, using the `format` parameter
-for JSON schema validation.
+Provides one async function for schema-bound structured output through
+Ollama's `format` parameter.
 """
 
 from __future__ import annotations

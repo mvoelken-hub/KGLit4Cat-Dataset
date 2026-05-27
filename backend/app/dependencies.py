@@ -38,28 +38,12 @@ from infra.filesystem_profile_repository import FileSystemProfileRepository
 from infra.filesystem_extraction_output_repository import FileSystemExtractionOutputRepository
 from app.services.extraction_service import ExtractionService
 from app.services.profile_service import ProfileService
+from infra.neo4j_semantic_graph_repository import Neo4jSemanticGraphRepository
+from app.services.semantic_service import SemanticService
 
 profile_repository = FileSystemProfileRepository(settings.dcat_profiles_dir)
 profile_service = ProfileService(profile_repository)
 extraction_output_repository = FileSystemExtractionOutputRepository(settings.output_dir)
-extraction_service = ExtractionService(
-    profile_service,
-    settings,
-    datasource_service,
-    ollama_client,
-    extraction_output_repository,
-    task_registry,
-)
-
-def get_profile_service() -> ProfileService:
-    return profile_service
-
-def get_extraction_service() -> ExtractionService:
-    return extraction_service
-
-
-from infra.neo4j_semantic_graph_repository import Neo4jSemanticGraphRepository
-from app.services.semantic_service import SemanticService
 
 semantic_graph_repository = Neo4jSemanticGraphRepository(neo4j_driver, ollama_client)
 semantic_service = SemanticService(
@@ -68,6 +52,23 @@ semantic_service = SemanticService(
     ollama_client,
     task_registry
 )
+
+extraction_service = ExtractionService(
+    profile_service,
+    settings,
+    datasource_service,
+    ollama_client,
+    extraction_output_repository,
+    task_registry,
+    semantic_service,
+)
+
+def get_profile_service() -> ProfileService:
+    return profile_service
+
+def get_extraction_service() -> ExtractionService:
+    return extraction_service
+
 
 def get_semantic_service() -> SemanticService:
     return semantic_service

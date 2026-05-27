@@ -1,118 +1,40 @@
-from typing import Any, Protocol
+from typing import Protocol
 
-from app.domain.extraction import InitialContext
-from app.domain.extraction.artifacts import PatchCandidate
-from app.domain.extraction.patch_quality import PatchQualityReport, UnmappedFact
+from app.domain.extraction import ExtractionContext, ExtractionRunResult
 
 
 class ExtractionOutputRepository(Protocol):
-    def save_initial_context(
+    def save_extraction_context(
         self,
         *,
         workflow_id: str,
-        initial_context: InitialContext,
+        extraction_context: ExtractionContext,
     ) -> None:
         ...
 
-    def load_initial_context(self, workflow_id: str) -> InitialContext:
+    def load_extraction_context(self, workflow_id: str) -> ExtractionContext:
         ...
 
-    def save_initial_draft(
+    def save_extraction_result(
         self,
         *,
         workflow_id: str,
-        initial_draft: dict[str, Any],
+        result: ExtractionRunResult,
     ) -> None:
         ...
 
-    def load_initial_draft(self, workflow_id: str) -> dict[str, Any]:
+    def load_extraction_result(self, workflow_id: str) -> ExtractionRunResult:
         ...
 
-    def save_draft(
+    def save_extraction_warnings(
         self,
         *,
         workflow_id: str,
-        draft: dict[str, Any],
+        warnings: list[str],
     ) -> None:
         ...
 
-    def load_draft(self, workflow_id: str) -> dict[str, Any]:
-        ...
-
-    def save_patch(
-        self,
-        *,
-        workflow_id: str,
-        patch_file_name: str,
-        patch: dict[str, Any],
-    ) -> None:
-        ...
-
-    def save_raw_patch(
-        self,
-        *,
-        workflow_id: str,
-        patch_file_name: str,
-        patch: dict[str, Any],
-    ) -> None:
-        ...
-
-    def save_accepted_patch(
-        self,
-        *,
-        workflow_id: str,
-        patch_file_name: str,
-        patch: dict[str, Any],
-    ) -> None:
-        ...
-
-    def save_candidates(
-        self,
-        *,
-        workflow_id: str,
-        patch_file_name: str,
-        candidates: list[PatchCandidate],
-    ) -> None:
-        ...
-
-    def save_quality_report(
-        self,
-        *,
-        workflow_id: str,
-        patch_file_name: str,
-        quality_report: PatchQualityReport,
-    ) -> None:
-        ...
-
-    def save_unmapped_facts(
-        self,
-        *,
-        workflow_id: str,
-        patch_file_name: str,
-        unmapped_facts: list[UnmappedFact],
-    ) -> None:
-        ...
-
-    def save_protected_fields(
-        self,
-        *,
-        workflow_id: str,
-        protected_fields: list[str],
-    ) -> None:
-        ...
-
-    def load_protected_fields(self, workflow_id: str) -> list[str]:
-        ...
-
-    def save_patch_review_state(
-        self,
-        *,
-        workflow_id: str,
-        review_state: dict[str, Any],
-    ) -> None:
-        ...
-
-    def load_patch_review_state(self, workflow_id: str) -> dict[str, Any]:
+    def load_extraction_warnings(self, workflow_id: str) -> list[str]:
         ...
 
     def save_token_usage(
@@ -126,17 +48,6 @@ class ExtractionOutputRepository(Protocol):
     def load_token_usage(self, workflow_id: str) -> dict[str, dict[str, int]]:
         ...
 
-    def load_patch_files(self, workflow_id: str) -> list[dict[str, Any]]:
+    def clear_extraction_run(self, workflow_id: str) -> None:
         ...
 
-    def load_completed_patch_file_names(self, workflow_id: str) -> set[str]:
-        ...
-
-    def load_patch_quality_reports(self, workflow_id: str) -> list[dict[str, Any]]:
-        ...
-
-    def load_unmapped_facts(self, workflow_id: str) -> list[dict[str, Any]]:
-        ...
-
-    def clear_patch_artifacts(self, workflow_id: str) -> None:
-        ...

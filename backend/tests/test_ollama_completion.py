@@ -481,17 +481,6 @@ class RunUsageTests(unittest.TestCase):
         c = a.merge(b)
         self.assertEqual(c.details, {"a": 1, "b": 5, "c": 4})
 
-    def test_budgeted_usage_getattr_compat(self):
-        """BudgetedUsage uses getattr on the wrapped usage object."""
-        from app.domain.extraction.token_budget import BudgetedUsage
-
-        usage = RunUsage(requests=1, input_tokens=100, output_tokens=20)
-        budgeted = BudgetedUsage(usage, {"estimated_input_tokens": 80})
-        self.assertEqual(budgeted.requests, 1)
-        self.assertEqual(budgeted.input_tokens, 100)
-        self.assertEqual(budgeted.output_tokens, 20)
-        self.assertEqual(budgeted.estimated_input_tokens, 80)
-
     def test_from_ollama_response(self):
         resp = FakeGenerateResponse(response="", prompt_eval_count=55, eval_count=12)
         usage = RunUsage.from_ollama_response(resp)

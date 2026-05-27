@@ -1,8 +1,10 @@
 from pydantic import BaseModel, Field
 
+
 class FileContext(BaseModel):
     file_path: str = Field(..., description="Path to the file within the data package.")
     byte_size: int | None = Field(None, description="Size of the file in bytes, if available.")
+
 
 class RankedFile(BaseModel):
     """
@@ -12,12 +14,17 @@ class RankedFile(BaseModel):
     rank: int = Field(..., description="1-based rank of the file, with 1 being the most relevant.", ge=1)
     file_path: str = Field(..., description="Path to the file within the data package.")
 
-FileRankingResult = list[RankedFile]
+
+class FileRankingResult(BaseModel):
+    files: list[RankedFile] = Field(
+        default_factory=list,
+        description="Ranked files, sorted from most to least relevant.",
+    )
 
 FILE_RANKING_SYSTEM_PROMPT = """
 You rank files from a research data package for initial metadata extraction.
 
-Return only a FileRankingResult JSON object. Rank files by their likelihood of
+Return only JSON. Rank files by their likelihood of
 containing dataset-level metadata, experimental context, sample descriptions,
 instrument details, acquisition methods, processing notes, or relationships
 between files.
@@ -58,10 +65,12 @@ def fallback_file_ranking(
 ) -> FileRankingResult:
     scored_files = [(file, _fallback_score(file)) for file in files]
     scored_files.sort(key=lambda x: x[1], reverse=True)
-    return [
-        RankedFile(rank=i + 1, file_path=file.file_path)
-        for i, (file, score) in enumerate(scored_files)
-    ]
+    return FileRankingResult(
+        files=[
+            RankedFile(rank=i + 1, file_path=file.file_path)
+            for i, (file, score) in enumerate(scored_files)
+        ]
+    )
 
 def _fallback_score(file: FileContext) -> float:
     text = f"{file.file_path}".lower()

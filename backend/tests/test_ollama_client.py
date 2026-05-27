@@ -2,8 +2,6 @@ import unittest
 from logging import getLogger
 from types import SimpleNamespace
 
-from pydantic_ai.models.ollama import OllamaModel
-
 from app.ollama.client import OllamaClientWrapper
 
 
@@ -72,23 +70,16 @@ class FakeLogger:
 
 
 class OllamaClientWrapperTests(unittest.TestCase):
-    def test_exposes_pydantic_ai_agent_model(self):
+    def test_exposes_direct_ollama_client(self):
         client = OllamaClientWrapper(FakeSettings(), getLogger(__name__))  # type: ignore[arg-type]
 
-        self.assertIsInstance(client.agent_model, OllamaModel)
         self.assertEqual(client.chat_model, "chat-test")
-        self.assertIn(
-            "http://localhost:11433/v1",
-            str(client.agent_model.__dict__["_provider"]),
-        )
+        self.assertIs(client.ollama_client, client.chat_client)
 
-    def test_configures_agent_model_context_length(self):
+    def test_configures_context_length(self):
         client = OllamaClientWrapper(FakeSettings(), getLogger(__name__))  # type: ignore[arg-type]
 
-        self.assertEqual(
-            client.agent_model.settings,
-            {"extra_body": {"num_ctx": FakeSettings.max_context_length}},
-        )
+        self.assertEqual(client.max_context_length, FakeSettings.max_context_length)
 
 
 class OllamaClientWrapperAsyncTests(unittest.IsolatedAsyncioTestCase):
@@ -174,7 +165,7 @@ class OllamaClientWrapperAsyncTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(embedding_client.embed_calls[0]["options"].model_dump(exclude_none=True), {"num_gpu": 0})
 
-    def test_update_runtime_config_rebuilds_agent_model(self):
+    def test_update_runtime_config_updates_models_and_limits(self):
         client = OllamaClientWrapper(FakeSettings(), getLogger(__name__))  # type: ignore[arg-type]
 
         client.update_runtime_config(chat_model="runtime-chat", max_context_length=2048, embed_num_gpu=0)
@@ -182,10 +173,6 @@ class OllamaClientWrapperAsyncTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.chat_model, "runtime-chat")
         self.assertEqual(client.max_context_length, 2048)
         self.assertEqual(client.embed_num_gpu, 0)
-        self.assertEqual(
-            client.agent_model.settings,
-            {"extra_body": {"num_ctx": 2048}},
-        )
 
     async def test_change_embedding_model_returns_new_model_when_verification_succeeds(self):
         client, _, model_client, embedding_client, _ = self.make_client()

@@ -1,4 +1,4 @@
-from file_ranking import (
+from app.domain.extraction.file_ranking import (
     FileContext,
     FileRankingResult,
     RankedFile,
@@ -7,12 +7,53 @@ from file_ranking import (
     FILE_RANKING_SYSTEM_PROMPT,
 )
 
-from extraction_context import (
-    ExtractionContext,
+from app.domain.extraction.extraction_context import (
+    AgenticEntity,
     ChunkContext,
+    DataGeneratingActivity,
+    Dataset,
+    EvaluatedEntity,
+    ExtractionContext,
+    QualitativeAttribute,
+    Quantity,
     build_extraction_context_prompt,
+    merge_extraction_context_results,
     merge_items,
     EXTRACTION_CONTEXT_SYSTEM_PROMPT,
+)
+
+from app.domain.extraction.profile_projection import (
+    PROFILE_PROJECTION_SYSTEM_PROMPT,
+    build_profile_projection_prompt,
+)
+
+from app.domain.extraction.vocabulary import (
+    DEFAULT_QUALITATIVE_VOCAB_IDENTIFIERS,
+    QUDT_QUANTITY_KIND_RDF_TYPE,
+    QUDT_QUANTITY_KIND_VOCAB,
+    QUDT_UNIT_RDF_TYPE,
+    QUDT_UNIT_VOCAB,
+    ExtractionNormalization,
+    QualitativeAttributeNormalization,
+    QuantityNormalization,
+    VocabularyCandidateSelection,
+    VocabularyFallbackQuery,
+    VocabularyTermMapping,
+    VOCAB_CANDIDATE_SELECTION_SYSTEM_PROMPT,
+    VOCAB_FALLBACK_QUERY_SYSTEM_PROMPT,
+    build_candidate_selection_prompt,
+    build_fallback_query_prompt,
+    build_qualitative_vocab_query,
+    build_quantity_kind_vocab_query,
+    build_unit_vocab_query,
+)
+
+from app.domain.extraction.workflow import (
+    ChunkingRequiredError,
+    ExtractionResultNotFoundError,
+    ExtractionRunProgress,
+    ExtractionRunResult,
+    ExtractionValidationError,
 )
 
 __all__ = [
@@ -22,9 +63,41 @@ __all__ = [
     "fallback_file_ranking",
     "build_file_ranking_prompt",
     "FILE_RANKING_SYSTEM_PROMPT",
+    "AgenticEntity",
     "ExtractionContext",
     "ChunkContext",
+    "DataGeneratingActivity",
+    "Dataset",
+    "EvaluatedEntity",
+    "QualitativeAttribute",
+    "Quantity",
     "build_extraction_context_prompt",
+    "merge_extraction_context_results",
     "merge_items",
     "EXTRACTION_CONTEXT_SYSTEM_PROMPT",
+    "PROFILE_PROJECTION_SYSTEM_PROMPT",
+    "build_profile_projection_prompt",
+    "DEFAULT_QUALITATIVE_VOCAB_IDENTIFIERS",
+    "QUDT_QUANTITY_KIND_RDF_TYPE",
+    "QUDT_QUANTITY_KIND_VOCAB",
+    "QUDT_UNIT_RDF_TYPE",
+    "QUDT_UNIT_VOCAB",
+    "ExtractionNormalization",
+    "QualitativeAttributeNormalization",
+    "QuantityNormalization",
+    "VocabularyCandidateSelection",
+    "VocabularyFallbackQuery",
+    "VocabularyTermMapping",
+    "VOCAB_CANDIDATE_SELECTION_SYSTEM_PROMPT",
+    "VOCAB_FALLBACK_QUERY_SYSTEM_PROMPT",
+    "build_candidate_selection_prompt",
+    "build_fallback_query_prompt",
+    "build_qualitative_vocab_query",
+    "build_quantity_kind_vocab_query",
+    "build_unit_vocab_query",
+    "ChunkingRequiredError",
+    "ExtractionResultNotFoundError",
+    "ExtractionRunProgress",
+    "ExtractionRunResult",
+    "ExtractionValidationError",
 ]
