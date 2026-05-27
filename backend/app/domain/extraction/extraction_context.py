@@ -178,7 +178,7 @@ For each class, extract any quantitative attributes (measured or calculated quan
 Return only a valid ExtractionContext JSON object with the extracted information.
 Use this output schema: {ExtractionContext.model_json_schema()}
 For each extraction_objects item, set object_type to the exact class label and set source_text to a short exact substring copied verbatim from the chunk that supports the extracted object. Do not paraphrase source_text.
-Focus on extracting as much metadata as possible from one specific chunk. Work at a low level; your individual result will later be combined with the results of several such extraction steps, so you don't need to try to guess the overall context.
+Focus on extracting as much metadata as possible from one specific chunk. Work at a low level. Look at each line individually and in context.
 """
 
 class ChunkContext(BaseModel):
