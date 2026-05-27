@@ -23,7 +23,7 @@ class QualitativeAttribute(BaseModel):
 # Extraction classes
 
 class DataGeneratingActivity(BaseModel):
-    """An Activity (process) that has the objective to produce information (in form of a dataset) about another Activity or Entity."""
+    """An experimental, measurement, acquisition, or processing activity that produces data about a target entity."""
     identifier: str = Field(..., description="Unique identifier for the activity.")
     description: str = Field(..., description="Description of the activity.")
     keywords: list[str] = Field(default_factory=list, description="List of keywords associated with the activity.")
@@ -31,7 +31,7 @@ class DataGeneratingActivity(BaseModel):
     has_qualitative_attributes: list[QualitativeAttribute] = Field(default_factory=list, description="List of qualitative attributes associated with the activity.")
 
 class Method(BaseModel):
-    """A method, Plan, Sequence, or Protocol that has been used in the experiment."""
+    """A method, plan, protocol, pulse sequence, acquisition procedure, processing routine, or instrument procedure used in the experiment."""
     identifier: str = Field(..., description="Unique identifier for the method.")
     description: str = Field(..., description="Description of the method.")
     keywords: list[str] = Field(default_factory=list, description="List of keywords associated with the method.")
@@ -39,7 +39,7 @@ class Method(BaseModel):
     has_qualitative_attributes: list[QualitativeAttribute] = Field(default_factory=list, description="List of qualitative attributes associated with the method.")
     
 class EvaluatedEntity(BaseModel):
-    """An entity that has been evaluated."""
+    """The actual target entity evaluated by a data-generating activity, such as a sample, material, catalyst, specimen, model, or subject."""
     identifier: str = Field(..., description="Unique identifier for the entity.")
     description: str = Field(..., description="Description of the entity.")
     type: str = Field(..., description="Type of the entity (e.g., sample, model).")
@@ -54,7 +54,7 @@ class EvaluatedEntity(BaseModel):
         return data
 
 class AgenticEntity(BaseModel):
-    """An entity that has agency, meaning it can perform activities."""
+    """An entity with agency that can perform activities, such as a person, organization, instrument, or software system."""
     identifier: str = Field(..., description="Unique identifier for the agentic entity.")
     description: str = Field(..., description="Description of the agentic entity.")
     type: str = Field(..., description="Type of the agentic entity (e.g., person, organization).")
@@ -69,7 +69,7 @@ class AgenticEntity(BaseModel):
         return data
 
 class Resource(BaseModel):
-    """Resource from a dataset. Could be either a file or a dataset-level resource."""
+    """A dataset resource or generated output, such as a file, dataset, spectrum, peak table, image, report, checksum, or data artifact."""
     identifier: str = Field(..., description="Unique identifier for the resource.")
     type: str = Field(..., description="Type of the resource (e.g., file, dataset).")
     description: str = Field(..., description="Description of the resource.")
@@ -169,36 +169,40 @@ def extraction_object_type(item: ExtractionObject) -> str:
 EXTRACTION_CONTEXT_SYSTEM_PROMPT = f"""
 You are an expert for extracting structured metadata about scientific experiments from unstructured text.
 You receive a content chunk from a file in a research data package, and your task is to extract structured information about the experimental context, including:
-- Data-generating activities (processes that produce information about other activities or entities; do not treat parameter names / headers as activities)
-- Evaluated entities (entities that have been evaluated in the experiment)
-- Agentic entities (entities that have agency and can perform activities)
-- Resources that have been generated
-- Methods that have been used in the experiment
-For each class, extract any quantitative attributes (measured or calculated quantities) and qualitative attributes (observed characteristics) that are mentioned in the text.
+- Data-generating activities: measurement, acquisition, analysis, processing, or generation runs that produce information about a target.
+- Evaluated entities: only the actual target of observation or evaluation, such as a sample, material, catalyst, specimen, model, or subject. Do not use evaluated_entity as a fallback class.
+- Agentic entities: people, organizations, instruments, or software systems that perform or control activities.
+- Resources: files, datasets, spectra, peak tables, images, reports, checksums, and generated data artifacts.
+- Methods: protocols, plans, pulse sequences, acquisition procedures, processing routines, and instrument procedures.
+Attach quantitative attributes (measured or calculated quantities) and qualitative attributes (observed characteristics, settings, labels, and modes) to the nearest meaningful activity, method, resource, or evaluated entity.
+Do not create standalone extraction objects for low-level parameter names, header fields, table-schema rows, internal format declarations, checksums, dates, software versions, numeric settings, solvents, nuclei, frequencies, delays, averages, or acquisition modes unless the text clearly presents them as a real activity, method, resource, agent, or evaluated target.
+If a line only contains technical metadata and cannot be attached usefully to a meaningful object, skip it.
 Return only a valid ExtractionContext JSON object with the extracted information.
 Use this output schema: {ExtractionContext.model_json_schema()}
-For each extraction_objects item, set object_type to the exact class label and set source_text to a short exact substring copied verbatim from the chunk that supports the extracted object. Do not paraphrase source_text.
-Focus on extracting as much metadata as possible from one specific chunk. Work at a low level. Look at each line individually and in context.
+For each extraction_objects item, set object_type to the exact class label and set source_text to a short exact substring copied verbatim from the chunk that supports the extracted object. Do not paraphrase source_text. Use the metadata to get a sense of the overall context, but do not extract information from it.
+Work from the chunk content only. Inspect lines individually as evidence, but consolidate related lines into a small number of meaningful experimental objects instead of producing one object per header or parameter line.
 """
 
-class ChunkContext(BaseModel):
-    content: str
+class ChunkMetadata(BaseModel):
     start_idx: int = Field(..., ge=0, description="Start line index of the chunk in the original file")
     end_idx: int = Field(..., ge=0, description="End line index of the chunk in the original file")
     file_path: str = Field(..., description="Path to the file from which the chunk was extracted")
     data_package_name: str = Field(..., description="Identifier of the data package to which the file belongs")
+    initial_extraction_context: ExtractionContext | None = Field(None, description="Aggregated extraction context from previous chunks of the same file, if available. This can provide additional context for extraction, but may also contain noise.")
 
+class ChunkContext(BaseModel):
+    content: str
+    metadata: ChunkMetadata
 
 def build_extraction_context_prompt(
         chunk_context: ChunkContext
 ) -> str:
     
-    dataset_line = f"Dataset name: {chunk_context.data_package_name}\n" if chunk_context.data_package_name else ""
     return (
-        f"{dataset_line}"
-        f"File path: {chunk_context.file_path} Line-Index-Span: {chunk_context.start_idx}-{chunk_context.end_idx}\n"
-        f"Chunk content (after text-quality line filtering):\n{chunk_context.content}\n"
-        "Extract structured metadata about the experimental context from this chunk."
+        "Chunk context metadata:\n"
+        f"{chunk_context.metadata.model_dump_json()}\n\n"
+        f"Chunk content (residual lines after text-quality filtering):\n{chunk_context.content}\n"
+        "Extract structured metadata about the experimental context from the **chunk content**."
     )
 
 def merge_extraction_context_results(

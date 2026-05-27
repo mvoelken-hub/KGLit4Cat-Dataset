@@ -16,6 +16,7 @@ from app.domain.extraction import (
     VOCAB_CANDIDATE_SELECTION_SYSTEM_PROMPT,
     VOCAB_FALLBACK_QUERY_SYSTEM_PROMPT,
     ChunkContext,
+    ChunkMetadata,
     ChunkingRequiredError,
     ExtractionChunkRef,
     ExtractionChunkResult,
@@ -339,10 +340,16 @@ class ExtractionService:
                     prompt=build_extraction_context_prompt(
                         ChunkContext(
                             content=chunk.content,
-                            start_idx=chunk.start_idx,
-                            end_idx=chunk.end_idx,
-                            file_path=chunk.file_path,
-                            data_package_name=data_package.file_name,
+                            metadata=ChunkMetadata(
+                                start_idx=chunk.start_idx,
+                                end_idx=chunk.end_idx,
+                                file_path=chunk.file_path,
+                                data_package_name=data_package.file_name,
+                                initial_extraction_context=self._merged_completed_chunk_context_or_none(
+                                    state,
+                                    file_path=chunk.file_path,
+                                ),
+                            ),
                         )
                     ),
                     output_type=ExtractionContext,
@@ -659,11 +666,17 @@ class ExtractionService:
         )
 
     @staticmethod
-    def _completed_chunk_contexts(state: ExtractionRunState) -> list[ExtractionContext]:
+    def _completed_chunk_contexts(
+        state: ExtractionRunState,
+        *,
+        file_path: str | None = None,
+    ) -> list[ExtractionContext]:
         return [
             result.extraction_context
             for result in state.chunk_results
-            if result.status == "completed" and result.extraction_context is not None
+            if result.status == "completed"
+            and result.extraction_context is not None
+            and (file_path is None or result.file_path == file_path)
         ]
 
     @classmethod
@@ -671,17 +684,27 @@ class ExtractionService:
         return len(cls._completed_chunk_contexts(state))
 
     @classmethod
-    def _merged_completed_chunk_context(cls, state: ExtractionRunState) -> ExtractionContext:
-        return merge_extraction_context_results(cls._completed_chunk_contexts(state))
+    def _merged_completed_chunk_context(
+        cls,
+        state: ExtractionRunState,
+        *,
+        file_path: str | None = None,
+    ) -> ExtractionContext:
+        return merge_extraction_context_results(
+            cls._completed_chunk_contexts(state, file_path=file_path)
+        )
 
     @classmethod
     def _merged_completed_chunk_context_or_none(
         cls,
         state: ExtractionRunState,
+        *,
+        file_path: str | None = None,
     ) -> ExtractionContext | None:
-        if cls._completed_chunk_count(state) == 0:
+        contexts = cls._completed_chunk_contexts(state, file_path=file_path)
+        if not contexts:
             return None
-        return cls._merged_completed_chunk_context(state)
+        return merge_extraction_context_results(contexts)
 
     async def _normalize_context(
         self,

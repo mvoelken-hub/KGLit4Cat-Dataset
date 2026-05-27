@@ -10,6 +10,7 @@ from app.domain.extraction.file_ranking import (
 from app.domain.extraction.extraction_context import (
     AgenticEntity,
     ChunkContext,
+    ChunkMetadata,
     DataGeneratingActivity,
     EvaluatedEntity,
     ExtractionContext,
@@ -71,6 +72,7 @@ __all__ = [
     "AgenticEntity",
     "ExtractionContext",
     "ChunkContext",
+    "ChunkMetadata",
     "DataGeneratingActivity",
     "EvaluatedEntity",
     "Method",

@@ -2,6 +2,8 @@ import unittest
 
 from app.domain.extraction import (
     ChunkContext,
+    ChunkMetadata,
+    EXTRACTION_CONTEXT_SYSTEM_PROMPT,
     ExtractionContext,
     FileContext,
     FileRankingResult,
@@ -37,16 +39,27 @@ class ExtractionDomainTests(unittest.TestCase):
         prompt = build_extraction_context_prompt(
             ChunkContext(
                 content="temperature 20 C",
-                start_idx=4,
-                end_idx=6,
-                file_path="metadata.txt",
-                data_package_name="package",
+                metadata=ChunkMetadata(
+                    start_idx=4,
+                    end_idx=6,
+                    file_path="metadata.txt",
+                    data_package_name="package",
+                ),
             )
         )
 
+        self.assertIn("Chunk context metadata:", prompt)
+        self.assertIn("Chunk content", prompt)
         self.assertIn("metadata.txt", prompt)
-        self.assertIn("4-6", prompt)
+        self.assertIn('"start_idx":4', prompt)
+        self.assertIn('"end_idx":6', prompt)
         self.assertIn("temperature 20 C", prompt)
+
+    def test_extraction_system_prompt_limits_evaluated_entity_fallback(self):
+        self.assertIn("Do not use evaluated_entity as a fallback class", EXTRACTION_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("Attach quantitative attributes", EXTRACTION_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("skip it", EXTRACTION_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("instead of producing one object per header or parameter line", EXTRACTION_CONTEXT_SYSTEM_PROMPT)
 
     def test_merge_extraction_context_deduplicates_items(self):
         first = ExtractionContext.model_validate(

@@ -372,6 +372,45 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             ["already-extracted", "resumed-chunk"],
         )
 
+    async def test_chunk_initial_context_is_scoped_to_same_file(self):
+        state = ExtractionRunState(
+            chunk_results=[
+                ExtractionChunkResult(
+                    chunk_index=0,
+                    file_path="README.md",
+                    start_idx=0,
+                    end_idx=0,
+                    status="completed",
+                    extraction_context=resource_context(
+                        "readme-context",
+                        "README context.",
+                    ),
+                ),
+                ExtractionChunkResult(
+                    chunk_index=1,
+                    file_path="data.csv",
+                    start_idx=0,
+                    end_idx=0,
+                    status="completed",
+                    extraction_context=resource_context(
+                        "data-context",
+                        "Data file context.",
+                    ),
+                ),
+            ],
+        )
+
+        context = ExtractionService._merged_completed_chunk_context_or_none(
+            state,
+            file_path="data.csv",
+        )
+
+        self.assertIsNotNone(context)
+        self.assertEqual(
+            [resource.identifier for resource in context.resources],
+            ["data-context"],
+        )
+
     async def test_pause_extraction_cancels_task_and_marks_running_chunk_pending(self):
         service, task_registry, output_repository = make_service([[make_chunk()]])
         extraction_started = asyncio.Event()
