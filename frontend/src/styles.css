@@ -130,15 +130,24 @@ h2 { margin: 0; font-size: clamp(1.6rem, 3vw, 2.6rem); letter-spacing: -0.04em; 
 .extraction-chunk-card.pending { opacity: 0.58; background: rgba(232,232,232,0.52); }
 .extraction-chunk-card.running { border-color: rgba(202, 116, 6, 0.54); background: rgba(255,248,234,0.76); }
 .extraction-chunk-card.completed { border-color: rgba(99, 154, 0, 0.34); }
+.extraction-chunk-card.completed.token-warning { border-color: rgba(202, 116, 6, 0.64); background: rgba(255,248,234,0.72); }
+.extraction-chunk-card.completed.token-danger { border-color: rgba(188, 57, 43, 0.66); background: rgba(255,239,236,0.82); }
+.extraction-chunk-card.completed.empty { border-style: dashed; }
 .extraction-chunk-card.failed { border-color: rgba(188, 57, 43, 0.58); background: rgba(255,239,236,0.8); }
 .extraction-chunk-card > summary { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 10px 12px; cursor: pointer; list-style: none; }
 .extraction-chunk-card > summary strong, .extraction-chunk-card > summary small { display: block; }
 .extraction-chunk-card > summary small { color: var(--muted); margin-top: 2px; }
 .chunk-status { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 0.76rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap; }
+.chunk-status.empty { color: var(--warn); }
 .chunk-status i { width: 13px; height: 13px; border: 2px solid rgba(202,116,6,0.32); border-top-color: var(--warn); border-radius: 50%; animation: spin 780ms linear infinite; }
 .chunk-call-meta { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 10px; }
 .chunk-call-meta span { border: 1px solid var(--line); border-radius: 999px; padding: 0.24rem 0.5rem; color: var(--muted); background: rgba(255,255,255,0.66); font-size: 0.74rem; }
+.extraction-chunk-card.token-warning .chunk-call-meta span.response-generation { background: #fef9ef; }
+.chunk-call-meta span.response-generation { padding-top: 0.49rem; padding-bottom: 0.49rem; }
+.chunk-call-meta span.warning { padding-top: 0.5525rem; padding-bottom: 0.5525rem; border-color: rgba(202, 116, 6, 0.62); color: var(--warn) !important; background: rgba(255,248,234,0.92); font-weight: 800; }
+.chunk-call-meta span.danger { border-color: rgba(188, 57, 43, 0.66); color: #bc392b !important; background: rgba(255,239,236,0.94); font-weight: 800; }
 .chunk-call-meta button { padding: 0.24rem 0.5rem; font-size: 0.74rem; line-height: 1.2; }
+.extraction-chunk-card > p.muted { padding-left: 10px; }
 .extraction-context-results { display: grid; gap: 10px; padding: 0 12px 12px; }
 .extraction-result-section { display: grid; gap: 6px; }
 .extraction-result-section > div { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
@@ -301,6 +310,8 @@ textarea.json-editor-input { resize: vertical; min-height: 80px; }
 .token-usage-row small { color: var(--muted); font-size: 0.74rem; line-height: 1.35; }
 .token-usage-row.warning small:last-child { color: var(--warn); font-weight: 700; }
 .token-usage-row.danger small:last-child { color: #bc392b; font-weight: 700; }
+.token-usage-row .token-usage-note.warning { color: var(--warn); font-weight: 800; }
+.token-usage-row .token-usage-note.danger { color: #bc392b; font-weight: 800; }
 .context-window-advice { margin: 10px 0 0; padding: 9px 10px; border: 1px solid rgba(202, 116, 6, 0.38); border-radius: 8px; background: rgba(255, 248, 234, 0.78); color: var(--ink); font-size: 0.78rem; line-height: 1.4; }
 .resolution-log { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, 0.62); }
 .resolution-log > span { display: block; margin-bottom: 6px; color: var(--muted); font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; }

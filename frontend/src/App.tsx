@@ -188,6 +188,10 @@ function extractionContextTraces(context?: Record<string, unknown> | null) {
     .filter((trace) => trace.object);
 }
 
+function extractionContextHasStructuredItems(context?: Record<string, unknown> | null): boolean {
+  return extractionContextTraces(context).some((trace) => trace.object);
+}
+
 function extractionContextTraceLabel(trace: { objectType: string; object: Record<string, unknown> | null }) {
   const label = trace.object ? extractionContextItemTitle(trace.object, 'Extracted object') : 'Extracted object';
   return `${trace.objectType.replace(/_/g, ' ')}: ${label}`;
@@ -209,7 +213,7 @@ function ExtractionContextResultView({ context }: { context?: Record<string, unk
     traces: traces.filter((trace) => trace.objectType === section.key && trace.object),
   })).filter((section) => section.traces.length > 0);
 
-  if (!sections.length) {
+  if (!extractionContextHasStructuredItems(context)) {
     return <p className="muted">The model call completed, but this chunk did not yield structured extraction context items.</p>;
   }
 
@@ -609,6 +613,8 @@ function ExtractionContextOverview({
   packageFiles,
   progress,
   status,
+  budget,
+  tokenUsageSummary,
 }: {
   rankedFiles: RankedExtractionFile[];
   chunkResults: ExtractionChunkResult[];
@@ -617,6 +623,8 @@ function ExtractionContextOverview({
   packageFiles: FileEntryResponse[];
   progress?: PatchProgress | null;
   status?: PatchTaskStatus | null;
+  budget?: LlmBudget | null;
+  tokenUsageSummary?: ReactNode;
 }) {
   const [traceChunk, setTraceChunk] = useState<{ chunk: ExtractionChunkResult; content: string } | null>(null);
   const resultByKey = new Map(chunkResults.map((chunk) => [chunkResultKey(chunk), chunk]));
@@ -671,6 +679,8 @@ function ExtractionContextOverview({
         </div>
       </div>
 
+      {tokenUsageSummary}
+
       <div className="ranked-file-list">
         {filePaths.map((filePath, fileIndex) => {
           const rank = rankedFiles.find((file) => file.file_path === filePath)?.rank ?? fileIndex + 1;
@@ -706,26 +716,50 @@ function ExtractionContextOverview({
               <div className="extraction-chunk-list">
                 {chunkCards.length ? chunkCards.map((chunk) => {
                   const running = chunk.status === 'running' || (currentChunk && chunkResultKey(currentChunk) === chunkResultKey(chunk));
+                  const emptyExtractionResult = chunk.status === 'completed' && !extractionContextHasStructuredItems(chunk.extraction_context);
                   const statusClass = running ? 'running' : chunk.status === 'completed' ? 'completed' : chunk.status === 'failed' ? 'failed' : 'pending';
+                  const maxContextLength = budget?.max_context_length ?? 0;
+                  const reachedTokenLimit = chunk.status === 'completed'
+                    && typeof chunk.context_tokens === 'number'
+                    && maxContextLength > 0
+                    && chunk.context_tokens >= maxContextLength;
+                  const nearTokenLimit = chunk.status === 'completed'
+                    && typeof chunk.context_tokens === 'number'
+                    && maxContextLength > 0
+                    && chunk.context_tokens >= maxContextLength * 0.9
+                    && !reachedTokenLimit;
                   const sourceChunk = (chunkGroupsByPath.get(chunk.file_path) ?? []).find((item) => chunkResultKey(item) === chunkResultKey(chunk));
                   const chunkText = sourceChunk?.content ?? '';
                   return (
-                    <details className={`extraction-chunk-card ${statusClass}`} key={chunkResultKey(chunk)} open={running ? true : undefined}>
+                    <details className={`extraction-chunk-card ${statusClass} ${emptyExtractionResult ? 'empty' : ''} ${nearTokenLimit ? 'token-warning' : ''} ${reachedTokenLimit ? 'token-danger' : ''}`} key={chunkResultKey(chunk)} open={running ? true : undefined}>
                       <summary>
                         <div>
                           <strong>Chunk {chunk.chunk_index + 1}</strong>
                           <small>Lines {chunk.start_idx}-{chunk.end_idx}</small>
                         </div>
-                        <span className="chunk-status">
+                        <span className={`chunk-status ${emptyExtractionResult ? 'empty' : ''}`}>
                           {running && <i aria-hidden="true" />}
-                          {running ? 'extracting' : chunk.status}
+                          {running ? 'extracting' : emptyExtractionResult ? 'empty' : chunk.status}
                         </span>
                       </summary>
                       {chunk.status === 'failed' && chunk.error && <p className="warning">{chunk.error}</p>}
                       {(chunk.status === 'completed' || chunkText) && (
                         <div className="chunk-call-meta">
-                          {chunk.status === 'completed' && chunk.context_tokens ? <span>{formatTokenCount(chunk.context_tokens)} context tokens</span> : null}
-                          {chunk.status === 'completed' && chunk.response_duration_ms ? <span>{formatDuration(chunk.response_duration_ms)} response generation</span> : null}
+                          {chunk.status === 'completed' && chunk.context_tokens ? (
+                            <span
+                              className={reachedTokenLimit ? 'danger' : nearTokenLimit ? 'warning' : undefined}
+                              title={
+                                reachedTokenLimit && budget?.max_context_length
+                                  ? `Uses 100% or more of the ${formatTokenCount(budget.max_context_length)} token limit.`
+                                  : nearTokenLimit && budget?.max_context_length
+                                    ? `Uses at least 90% of the ${formatTokenCount(budget.max_context_length)} token limit.`
+                                    : undefined
+                              }
+                            >
+                              {formatTokenCount(chunk.context_tokens)} context tokens{reachedTokenLimit ? ' - limit reached' : nearTokenLimit ? ' - near limit' : ''}
+                            </span>
+                          ) : null}
+                          {chunk.status === 'completed' && chunk.response_duration_ms ? <span className="response-generation">{formatDuration(chunk.response_duration_ms)} response generation</span> : null}
                           {chunkText ? <button className="small ghost" type="button" onClick={() => setTraceChunk({ chunk, content: chunkText })}>View chunk text</button> : null}
                         </div>
                       )}
@@ -1089,12 +1123,14 @@ function TokenUsageSummary({
   heading = 'Token usage',
   agentKeys,
   budget,
+  notesByAgent,
 }: {
   tokenUsage?: PatchTokenUsage | null;
   averageUnit?: 'patch' | 'operation';
   heading?: string;
   agentKeys?: string[];
   budget?: LlmBudget | null;
+  notesByAgent?: Record<string, { tone: 'warning' | 'danger'; message: string }>;
 }) {
   const allowedAgents = agentKeys ? new Set(agentKeys) : null;
   const agentEntries = Object.entries(tokenUsage?.agents ?? {})
@@ -1159,6 +1195,11 @@ function TokenUsageSummary({
                 limit: {formatTokenCount(budget.max_context_length)} input tokens
                 {usageBudgetState(row.usage, budget) === 'warning' && ' - Average input per model call is near the configured context window.'}
                 {usageBudgetState(row.usage, budget) === 'danger' && ' - Average input per model call exceeds the configured context window.'}
+              </small>
+            ) : null}
+            {notesByAgent?.[row.key] ? (
+              <small className={`token-usage-note ${notesByAgent[row.key].tone}`}>
+                {notesByAgent[row.key].message}
               </small>
             ) : null}
           </div>
@@ -1692,6 +1733,25 @@ export function App() {
   const progressBatchNo = patchProgress?.batch_no ?? 0;
   const progressTotalBatches = patchProgress?.total_batches ?? 0;
   const progressPercent = progressTotalBatches > 0 ? Math.min(100, Math.round((progressBatchNo / progressTotalBatches) * 100)) : 0;
+  const extractionLimitReachedChunkCount = useMemo(() => {
+    const maxContextLength = llmBudget?.max_context_length ?? 0;
+    if (maxContextLength <= 0) return 0;
+    return (patchProgress?.chunk_results ?? []).filter((chunk) => (
+      chunk.status === 'completed'
+      && typeof chunk.context_tokens === 'number'
+      && chunk.context_tokens >= maxContextLength
+    )).length;
+  }, [llmBudget?.max_context_length, patchProgress?.chunk_results]);
+  const extractionTokenUsageNotes = useMemo(() => (
+    extractionLimitReachedChunkCount > 0
+      ? {
+        chunk_extraction: {
+          tone: 'danger' as const,
+          message: `${extractionLimitReachedChunkCount} chunk${extractionLimitReachedChunkCount === 1 ? '' : 's'} reached 100% or more of the context token limit.`,
+        },
+      }
+      : undefined
+  ), [extractionLimitReachedChunkCount]);
   const extractionProgressPercent = patchProgress?.total_chunks
     ? Math.min(100, Math.round((patchProgress.processed_chunks / patchProgress.total_chunks) * 100))
     : 0;
@@ -2669,13 +2729,17 @@ export function App() {
                 packageFiles={selectedPackage?.files ?? []}
                 progress={patchProgress}
                 status={patchStatus}
-              />
-              <TokenUsageSummary
-                tokenUsage={tokenUsage}
-                averageUnit="operation"
-                heading="Extraction context token usage"
-                agentKeys={['file_ranking', 'chunk_extraction', 'chunk_extraction_repair', 'quantity_vocab_selection', 'qualitative_vocab_selection', 'profile_projection']}
                 budget={llmBudget}
+                tokenUsageSummary={(
+                  <TokenUsageSummary
+                    tokenUsage={tokenUsage}
+                    averageUnit="operation"
+                    heading="Extraction context token usage"
+                    agentKeys={['file_ranking', 'chunk_extraction', 'chunk_extraction_repair', 'quantity_vocab_selection', 'qualitative_vocab_selection', 'profile_projection']}
+                    budget={llmBudget}
+                    notesByAgent={extractionTokenUsageNotes}
+                  />
+                )}
               />
               <p className="context-window-advice">
                 If extraction reaches or overuses the context window, rerun chunking with smaller chunks before extracting again. Lower the semantic chunking threshold in the chunking configuration to reduce chunk sizes.
