@@ -44,6 +44,7 @@ from app.domain.extraction import (
     build_qualitative_vocab_query,
     build_quantity_kind_vocab_query,
     build_unit_vocab_query,
+    cap_extraction_context_for_prompt,
     fallback_file_ranking,
     merge_extraction_context_results,
 )
@@ -345,9 +346,10 @@ class ExtractionService:
                                 end_idx=chunk.end_idx,
                                 file_path=chunk.file_path,
                                 data_package_name=data_package.file_name,
-                                initial_extraction_context=self._merged_completed_chunk_context_or_none(
+                                initial_extraction_context=self._initial_extraction_context_for_prompt(
                                     state,
                                     file_path=chunk.file_path,
+                                    current_chunk_index=chunk_result.chunk_index,
                                 ),
                             ),
                         )
@@ -705,6 +707,117 @@ class ExtractionService:
         if not contexts:
             return None
         return merge_extraction_context_results(contexts)
+
+    def _initial_extraction_context_for_prompt(
+        self,
+        state: ExtractionRunState,
+        *,
+        file_path: str,
+        current_chunk_index: int,
+    ) -> ExtractionContext | None:
+        context_results = self._completed_chunk_results(
+            state,
+            file_path=file_path,
+            before_chunk_index=current_chunk_index,
+        )
+        if not context_results:
+            return None
+        context = merge_extraction_context_results(
+            [
+                result.extraction_context
+                for result in context_results
+                if result.extraction_context is not None
+            ]
+        )
+        previous_result = self._latest_completed_chunk_result_with_tokens(
+            state,
+            file_path=file_path,
+            before_chunk_index=current_chunk_index,
+        )
+        threshold = self._initial_extraction_context_token_threshold()
+        if (
+            previous_result is None
+            or previous_result.context_tokens is None
+            or previous_result.context_tokens <= threshold
+        ):
+            return context
+
+        previous_context_results = self._completed_chunk_results(
+            state,
+            file_path=file_path,
+            before_chunk_index=previous_result.chunk_index,
+        )
+        if not previous_context_results:
+            return context
+        previous_context = merge_extraction_context_results(
+            [
+                result.extraction_context
+                for result in previous_context_results
+                if result.extraction_context is not None
+            ]
+        )
+        previous_context_chars = len(previous_context.model_dump_json())
+        if previous_context_chars <= 0:
+            return context
+
+        target_chars = int(
+            previous_context_chars
+            * threshold
+            / max(1, previous_result.context_tokens)
+        )
+        return cap_extraction_context_for_prompt(
+            context,
+            max_json_chars=target_chars,
+        )
+
+    @staticmethod
+    def _completed_chunk_results(
+        state: ExtractionRunState,
+        *,
+        file_path: str,
+        before_chunk_index: int,
+    ) -> list[ExtractionChunkResult]:
+        return [
+            result
+            for result in state.chunk_results
+            if result.status == "completed"
+            and result.extraction_context is not None
+            and result.file_path == file_path
+            and result.chunk_index < before_chunk_index
+        ]
+
+    @classmethod
+    def _latest_completed_chunk_result_with_tokens(
+        cls,
+        state: ExtractionRunState,
+        *,
+        file_path: str,
+        before_chunk_index: int,
+    ) -> ExtractionChunkResult | None:
+        results = [
+            result
+            for result in cls._completed_chunk_results(
+                state,
+                file_path=file_path,
+                before_chunk_index=before_chunk_index,
+            )
+            if result.context_tokens is not None
+        ]
+        return max(results, key=lambda result: result.chunk_index, default=None)
+
+    def _initial_extraction_context_token_threshold(self) -> int:
+        configured_threshold = getattr(
+            self.settings,
+            "initial_extraction_context_token_threshold",
+            None,
+        )
+        if configured_threshold is not None:
+            return max(0, int(configured_threshold))
+        max_context_length = (
+            getattr(self.ollama_client, "max_context_length", None)
+            or getattr(self.settings, "max_context_length", 8192)
+        )
+        return max(1, int(max_context_length * 0.75))
 
     async def _normalize_context(
         self,

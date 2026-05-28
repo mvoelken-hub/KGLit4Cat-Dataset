@@ -411,6 +411,70 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             ["data-context"],
         )
 
+    async def test_chunk_initial_context_for_prompt_is_full_when_previous_usage_is_under_threshold(self):
+        service, _, _ = make_service([[make_chunk()]])
+        service.settings.initial_extraction_context_token_threshold = 100
+        state = ExtractionRunState(
+            chunk_results=[
+                ExtractionChunkResult(
+                    chunk_index=index,
+                    file_path="README.md",
+                    start_idx=index,
+                    end_idx=index,
+                    status="completed",
+                    context_tokens=20,
+                    extraction_context=resource_context(
+                        f"resource-{index}",
+                        f"Verbose metadata context {index} " * 10,
+                    ),
+                )
+                for index in range(4)
+            ],
+        )
+
+        context = service._initial_extraction_context_for_prompt(
+            state,
+            file_path="README.md",
+            current_chunk_index=4,
+        )
+
+        self.assertIsNotNone(context)
+        self.assertEqual(
+            [resource.identifier for resource in context.resources],
+            ["resource-0", "resource-1", "resource-2", "resource-3"],
+        )
+
+    async def test_chunk_initial_context_for_prompt_is_capped_after_high_previous_usage(self):
+        service, _, _ = make_service([[make_chunk()]])
+        service.settings.initial_extraction_context_token_threshold = 50
+        state = ExtractionRunState(
+            chunk_results=[
+                ExtractionChunkResult(
+                    chunk_index=index,
+                    file_path="README.md",
+                    start_idx=index,
+                    end_idx=index,
+                    status="completed",
+                    context_tokens=100 if index == 3 else 20,
+                    extraction_context=resource_context(
+                        f"resource-{index}",
+                        f"Verbose metadata context {index} " * 10,
+                    ),
+                )
+                for index in range(4)
+            ],
+        )
+
+        context = service._initial_extraction_context_for_prompt(
+            state,
+            file_path="README.md",
+            current_chunk_index=4,
+        )
+
+        self.assertIsNotNone(context)
+        self.assertLess(len(context.resources), 4)
+        self.assertEqual(context.resources[-1].identifier, "resource-3")
+
     async def test_pause_extraction_cancels_task_and_marks_running_chunk_pending(self):
         service, task_registry, output_repository = make_service([[make_chunk()]])
         extraction_started = asyncio.Event()

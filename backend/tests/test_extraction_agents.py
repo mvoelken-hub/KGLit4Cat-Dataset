@@ -13,6 +13,7 @@ from app.domain.extraction import (
     build_file_ranking_prompt,
     build_quantity_kind_vocab_query,
     build_unit_vocab_query,
+    cap_extraction_context_for_prompt,
     fallback_file_ranking,
     merge_extraction_context_results,
 )
@@ -97,6 +98,42 @@ class ExtractionDomainTests(unittest.TestCase):
 
         self.assertEqual(len(merged.methods), 1)
         self.assertEqual(merged.methods[0].keywords, ["experiment", "sample"])
+
+    def test_cap_extraction_context_for_prompt_keeps_recent_compact_objects(self):
+        context = ExtractionContext.model_validate(
+            {
+                "extraction_objects": [
+                    {
+                        "object_type": "resource",
+                        "extracted_object": {
+                            "identifier": f"resource-{index}",
+                            "type": "dataset",
+                            "description": "long description " * 20,
+                        },
+                        "source_text": "long source text " * 20,
+                    }
+                    for index in range(4)
+                ]
+            }
+        )
+
+        recent_two = ExtractionContext(
+            extraction_objects=context.extraction_objects[-2:]
+        )
+        capped = cap_extraction_context_for_prompt(
+            context,
+            max_json_chars=len(recent_two.model_dump_json()),
+        )
+
+        self.assertIsNotNone(capped)
+        self.assertEqual(
+            [resource.identifier for resource in capped.resources],
+            ["resource-2", "resource-3"],
+        )
+        self.assertLessEqual(
+            len(capped.model_dump_json()),
+            len(recent_two.model_dump_json()),
+        )
 
     def test_qudt_query_builders_target_expected_types(self):
         quantity = QuantitativeAttribute(

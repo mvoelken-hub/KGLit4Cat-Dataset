@@ -220,6 +220,102 @@ def deduplicate_extraction_context_items(
         extraction_objects=deduplicate_list(context.extraction_objects)
     )
 
+
+def cap_extraction_context_for_prompt(
+    context: ExtractionContext,
+    *,
+    max_json_chars: int,
+) -> ExtractionContext | None:
+    if max_json_chars <= 0 or not context.extraction_objects:
+        return None
+    if len(context.model_dump_json()) <= max_json_chars:
+        return context
+
+    capped_objects: list[TracedExtractionObject] = []
+    for trace in reversed(context.extraction_objects):
+        candidate_objects = [trace, *capped_objects]
+        candidate = ExtractionContext(extraction_objects=candidate_objects)
+        if len(candidate.model_dump_json()) <= max_json_chars:
+            capped_objects = candidate_objects
+            continue
+
+        if capped_objects:
+            continue
+
+        truncated = _fit_traced_extraction_object(
+            trace,
+            max_json_chars=max_json_chars,
+        )
+        if truncated is not None:
+            capped_objects = [truncated]
+        break
+
+    if not capped_objects:
+        return None
+    return ExtractionContext(extraction_objects=capped_objects)
+
+
+def _fit_traced_extraction_object(
+    trace: TracedExtractionObject,
+    *,
+    max_json_chars: int,
+) -> TracedExtractionObject | None:
+    low = 0
+    high = max(
+        len(getattr(trace.extracted_object, "description", "")),
+        len(trace.source_text),
+    )
+    best: TracedExtractionObject | None = None
+    while low <= high:
+        mid = (low + high) // 2
+        candidate_trace = _truncate_traced_extraction_object(
+            trace,
+            max_text_chars=mid,
+        )
+        candidate_context = ExtractionContext(extraction_objects=[candidate_trace])
+        if len(candidate_context.model_dump_json()) <= max_json_chars:
+            best = candidate_trace
+            low = mid + 1
+        else:
+            high = mid - 1
+    return best
+
+
+def _truncate_traced_extraction_object(
+    trace: TracedExtractionObject,
+    *,
+    max_text_chars: int,
+) -> TracedExtractionObject:
+    extracted_object = trace.extracted_object
+    updates = {}
+    if hasattr(extracted_object, "description"):
+        updates["description"] = _truncate_text(
+            extracted_object.description,
+            max_text_chars=max_text_chars,
+        )
+    if hasattr(extracted_object, "keywords"):
+        updates["keywords"] = extracted_object.keywords[:10]
+
+    return trace.model_copy(
+        update={
+            "extracted_object": extracted_object.model_copy(update=updates),
+            "source_text": _truncate_text(
+                trace.source_text,
+                max_text_chars=max_text_chars,
+            ),
+        }
+    )
+
+
+def _truncate_text(text: str, *, max_text_chars: int) -> str:
+    if max_text_chars <= 0:
+        return ""
+    if len(text) <= max_text_chars:
+        return text
+    if max_text_chars <= 3:
+        return text[:max_text_chars]
+    return text[: max_text_chars - 3].rstrip() + "..."
+
 # Helper
 
 def norm_text(s: str) -> str:
