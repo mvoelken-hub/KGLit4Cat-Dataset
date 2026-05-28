@@ -119,6 +119,18 @@ You can choose Docker frontend mode directly:
 simone dev --no-npm
 ```
 
+To attach both local API and frontend logs to the terminal where you ran the command, use:
+
+```bash
+simone dev -fg
+```
+
+With local npm frontend mode, Vite and Uvicorn both write to the same terminal. To use the Docker frontend and follow its logs instead, combine it with Docker frontend mode:
+
+```bash
+simone dev -fg --no-npm
+```
+
 
 ### Infrastructure Mode
 

@@ -839,6 +839,11 @@ def up(
 @app.command()
 def dev(
     no_npm: bool = typer.Option(False, "--no-npm", help="Run the frontend in Docker instead of requiring local npm"),
+    fg: bool = typer.Option(
+        False,
+        "-fg",
+        help="Attach local API and frontend logs to this terminal instead of opening dev windows",
+    ),
 ) -> None:
     """Start SIMONE in development mode (API locally; local services as needed)."""
     os.environ["APP_ENV"] = "development"
@@ -893,32 +898,78 @@ def dev(
         raise typer.Exit(1)
 
     typer.echo("")
-    # Start local API in a new visible terminal window
-    api_cmd = (
-        "$env:APP_ENV='development'; uv run --env-file ../.env uvicorn app.main:fastapi_app "
-        '--host 127.0.0.1 --port 8000 --reload'
-    )
     existing_api = _find_pids_by_cmdline("uvicorn app.main:fastapi_app") or _find_pids_by_window_title("SIMONE API")
-    if existing_api:
-        typer.echo("Local API is already running (PID " + str(existing_api) + "). Skipping.")
-    else:
-        typer.echo("Starting local API with hot reload ...")
-        if sys.platform == "win32":
-            subprocess.Popen(
-                ["cmd", "/c", "start", "SIMONE API", "powershell", "-ExecutionPolicy", "Bypass", "-Command", api_cmd],
-                cwd=str(BACKEND_DIR),
-                creationflags=subprocess.CREATE_NEW_CONSOLE,
+    existing_frontend = _find_pids_by_cmdline("npm run dev") or _find_pids_by_cmdline("vite") or _find_pids_by_window_title("SIMONE Frontend")
+
+    if fg:
+        if existing_api:
+            typer.echo("Local API is already running (PID " + str(existing_api) + "). API logs are not attached.")
+            return
+
+        frontend_process: subprocess.Popen | None = None
+        frontend_log_process: subprocess.Popen | None = None
+        try:
+            if use_docker_frontend:
+                typer.echo("Attaching Docker frontend logs in this terminal ...")
+                frontend_log_process = subprocess.Popen(
+                    _compose_base_cmd(ENV_FILE, compose_files) + ["logs", "-f", "frontend"],
+                    cwd=str(REPO_ROOT),
+                )
+            elif existing_frontend:
+                typer.echo("Local frontend is already running (PID " + str(existing_frontend) + "). Frontend logs are not attached.")
+            else:
+                npm_cmd = "npm.cmd" if sys.platform == "win32" else "npm"
+                typer.echo("Starting local frontend dev server in this terminal ...")
+                frontend_process = subprocess.Popen(
+                    [npm_cmd, "run", "dev", "--", "--host", "127.0.0.1"],
+                    cwd=str(FRONTEND_DIR),
+                )
+
+            _wait_for_url(
+                _frontend_url(env_values),
+                timeout=60,
+                label="Frontend",
+                verbose=False,
+                env_file=ENV_FILE if use_docker_frontend else None,
+                compose_files=compose_files if use_docker_frontend else None,
+                log_services=["frontend"] if use_docker_frontend else None,
             )
-        else:
-            subprocess.Popen(
-                "APP_ENV=development uv run --env-file ../.env uvicorn app.main:fastapi_app --host 127.0.0.1 --port 8000 --reload",
+            _print_links()
+
+            typer.echo("Starting local API with hot reload in this terminal. Press Ctrl+C to stop foreground services.")
+            process_env = os.environ.copy()
+            process_env.update(env_values)
+            process_env["APP_ENV"] = "development"
+            result = subprocess.run(
+                [
+                    "uv",
+                    "run",
+                    "--env-file",
+                    "../.env",
+                    "uvicorn",
+                    "app.main:fastapi_app",
+                    "--host",
+                    "127.0.0.1",
+                    "--port",
+                    "8000",
+                    "--reload",
+                ],
                 cwd=str(BACKEND_DIR),
-                shell=True,
+                env=process_env,
             )
+            if result.returncode != 0:
+                raise typer.Exit(result.returncode)
+            return
+        except KeyboardInterrupt:
+            typer.echo("Stopping foreground dev services ...")
+            raise typer.Exit(130)
+        finally:
+            for process in (frontend_process, frontend_log_process):
+                if process is not None and process.poll() is None:
+                    process.terminate()
 
     if not use_docker_frontend:
         # Start local frontend in a new visible terminal window
-        existing_frontend = _find_pids_by_cmdline("npm run dev") or _find_pids_by_cmdline("vite") or _find_pids_by_window_title("SIMONE Frontend")
         if existing_frontend:
             typer.echo("Local frontend is already running (PID " + str(existing_frontend) + "). Skipping.")
         else:
@@ -938,6 +989,28 @@ def dev(
                 )
     else:
         pass
+
+    # Start local API in a new visible terminal window
+    api_cmd = (
+        "$env:APP_ENV='development'; uv run --env-file ../.env uvicorn app.main:fastapi_app "
+        '--host 127.0.0.1 --port 8000 --reload'
+    )
+    if existing_api:
+        typer.echo("Local API is already running (PID " + str(existing_api) + "). Skipping.")
+    else:
+        typer.echo("Starting local API with hot reload ...")
+        if sys.platform == "win32":
+            subprocess.Popen(
+                ["cmd", "/c", "start", "SIMONE API", "powershell", "-ExecutionPolicy", "Bypass", "-Command", api_cmd],
+                cwd=str(BACKEND_DIR),
+                creationflags=subprocess.CREATE_NEW_CONSOLE,
+            )
+        else:
+            subprocess.Popen(
+                "APP_ENV=development uv run --env-file ../.env uvicorn app.main:fastapi_app --host 127.0.0.1 --port 8000 --reload",
+                cwd=str(BACKEND_DIR),
+                shell=True,
+            )
 
     api_ready = _wait_for_url(API_URL, timeout=120, label="API", verbose=False)
     _wait_for_url(
