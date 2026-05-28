@@ -840,7 +840,7 @@ const QUALITATIVE_VOCAB_QUERY_FIELDS: VocabQueryNumericField[] = [
   { key: 'vector_top_k', label: 'Vector top K' },
   { key: 'fulltext_top_k', label: 'Full-text top K' },
   { key: 'seed_top_k', label: 'Seed top K' },
-  { key: 'max_hops', label: 'Max hops' },
+  { key: 'max_hops', label: 'Max hops', min: '0' },
   { key: 'max_statements_per_seed', label: 'Statements / seed' },
   { key: 'vector_weight', label: 'Vector weight', step: '0.1', min: '0.1' },
   { key: 'fulltext_weight', label: 'Full-text weight', step: '0.1', min: '0.1' },
@@ -851,11 +851,16 @@ const QUANTITATIVE_VOCAB_QUERY_FIELDS: VocabQueryNumericField[] = [
   { key: 'quantitative_vector_top_k', label: 'Vector top K' },
   { key: 'quantitative_fulltext_top_k', label: 'Full-text top K' },
   { key: 'quantitative_seed_top_k', label: 'Seed top K' },
-  { key: 'quantitative_max_hops', label: 'Max hops' },
+  { key: 'quantitative_max_hops', label: 'Max hops', min: '0' },
   { key: 'quantitative_max_statements_per_seed', label: 'Statements / seed' },
   { key: 'quantitative_vector_weight', label: 'Vector weight', step: '0.1', min: '0.1' },
   { key: 'quantitative_fulltext_weight', label: 'Full-text weight', step: '0.1', min: '0.1' },
   { key: 'quantitative_rrf_k', label: 'RRF K' },
+];
+
+const VOCAB_QUERY_NUMERIC_FIELDS = [
+  ...QUALITATIVE_VOCAB_QUERY_FIELDS,
+  ...QUANTITATIVE_VOCAB_QUERY_FIELDS,
 ];
 
 const QUANTITATIVE_VOCAB_QUERY_DEFAULTS = {
@@ -887,7 +892,7 @@ function VocabQueryConfigPanel({
 }: {
   config: ExtractionVocabQueryConfig;
   disabled?: boolean;
-  onApply?: (config: ExtractionVocabQueryConfig) => void;
+  onApply?: (config: ExtractionVocabQueryConfig) => Promise<void> | void;
   onRerunAll?: () => void;
 }) {
   const [draft, setDraft] = useState(normalizeVocabQueryConfig(config));
@@ -896,11 +901,15 @@ function VocabQueryConfigPanel({
   const [selectedVocabIdentifier, setSelectedVocabIdentifier] = useState('');
   const [vocabListMessage, setVocabListMessage] = useState('');
   const [modalMode, setModalMode] = useState<VocabQueryConfigMode | null>(null);
+  const [applyMessage, setApplyMessage] = useState('');
   useEffect(() => {
     const normalized = normalizeVocabQueryConfig(config);
     setDraft(normalized);
     setVocabOptions((current) => Array.from(new Set([...current, ...normalized.qualitative_vocab_identifiers])));
   }, [config]);
+  useEffect(() => {
+    setApplyMessage('');
+  }, [modalMode]);
   useEffect(() => {
     if (modalMode !== 'qualitative') return;
     let cancelled = false;
@@ -924,6 +933,34 @@ function VocabQueryConfigPanel({
   const setNumber = (key: keyof ExtractionVocabQueryConfig, value: string) => {
     const parsed = Number(value);
     setDraft((current) => ({ ...current, [key]: Number.isFinite(parsed) ? parsed : 0 }));
+  };
+  const validateDraft = () => {
+    for (const field of VOCAB_QUERY_NUMERIC_FIELDS) {
+      const value = draft[field.key];
+      const min = Number(field.min ?? '1');
+      if (typeof value !== 'number' || !Number.isFinite(value) || value < min) {
+        return `${field.label} must be ${field.min ?? '1'} or greater.`;
+      }
+      if ((field.step ?? '1') === '1' && !Number.isInteger(value)) {
+        return `${field.label} must be a whole number.`;
+      }
+    }
+    return '';
+  };
+  const applyDraft = async () => {
+    if (!onApply) return;
+    const validationError = validateDraft();
+    if (validationError) {
+      setApplyMessage(validationError);
+      return;
+    }
+    setApplyMessage('');
+    try {
+      await onApply(draft);
+      setModalMode(null);
+    } catch (error) {
+      setApplyMessage(error instanceof Error ? error.message : 'Failed to update vocabulary query configuration.');
+    }
   };
   const toggleVocab = (identifier: string, checked: boolean) => {
     setDraft((current) => ({
@@ -1068,15 +1105,13 @@ function VocabQueryConfigPanel({
                   className="ghost"
                   type="button"
                   disabled={disabled || !onApply}
-                  onClick={() => {
-                    onApply?.(draft);
-                    setModalMode(null);
-                  }}
+                  onClick={() => void applyDraft()}
                 >
                   Apply
                 </button>
                 <button type="button" disabled={disabled || !onRerunAll} onClick={() => onRerunAll?.()}>Rerun vocabulary queries</button>
               </div>
+              {applyMessage && <p className="warning vocab-query-config-message">{applyMessage}</p>}
             </div>
           </div>
         </div>,
@@ -3001,6 +3036,7 @@ export function App() {
     } catch (error) {
       if (selectedPackageIdRef.current !== packageId) return;
       setMessage(error instanceof Error ? error.message : 'Failed to update vocabulary query configuration.');
+      throw error;
     } finally {
       if (selectedPackageIdRef.current === packageId) setBusy(null);
     }

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from dataclasses import dataclass
 from hashlib import sha1
@@ -289,7 +290,11 @@ class ExtractionService:
     ) -> ExtractionRunProgress:
         if self.output_repository is None:
             raise ExtractionResultNotFoundError("Extraction output repository is unavailable.")
-        state = self.output_repository.load_extraction_run_state(data_package_id)
+        state = self._load_run_state_or_none(data_package_id)
+        if state is None:
+            raise ValueError(
+                "Cannot update vocabulary query configuration because the extraction run state is missing or unreadable."
+            )
         state.vocab_query_config = config
         self._save_run_state(data_package_id, state)
         return ExtractionRunProgress(
@@ -311,7 +316,11 @@ class ExtractionService:
     ) -> ExtractionRunResult:
         self._require_runtime_dependencies()
         assert self.output_repository is not None
-        state = self.output_repository.load_extraction_run_state(data_package_id)
+        state = self._load_run_state_or_none(data_package_id)
+        if state is None:
+            raise ValueError(
+                "Cannot rerun vocabulary queries because the extraction run state is missing or unreadable."
+            )
         profile_identifier = state.profile_identifier
         if not profile_identifier:
             raise ValueError("Cannot rerun vocabulary queries because this extraction run has no profile identifier.")
@@ -2003,7 +2012,7 @@ class ExtractionService:
             return None
         try:
             return self.output_repository.load_extraction_run_state(data_package_id)
-        except FileNotFoundError:
+        except (FileNotFoundError, json.JSONDecodeError):
             return None
 
     def _save_run_state(

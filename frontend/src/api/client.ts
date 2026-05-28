@@ -15,11 +15,28 @@ export async function readJson<T>(response: Response): Promise<T> {
   const payload = text ? JSON.parse(text) : undefined;
 
   if (!response.ok) {
-    const message = payload && typeof payload === 'object' && 'detail' in payload ? String(payload.detail) : response.statusText;
+    const message = payload && typeof payload === 'object' && 'detail' in payload
+      ? formatApiDetail((payload as { detail: unknown }).detail)
+      : response.statusText;
     throw new ApiError(message, response.status);
   }
 
   return payload as T;
+}
+
+function formatApiDetail(detail: unknown): string {
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    const messages = detail.map((item) => {
+      if (!item || typeof item !== 'object') return String(item);
+      const record = item as Record<string, unknown>;
+      const path = Array.isArray(record.loc) ? record.loc.join('.') : '';
+      const message = typeof record.msg === 'string' ? record.msg : JSON.stringify(record);
+      return path ? `${path}: ${message}` : message;
+    });
+    return messages.join('; ');
+  }
+  return JSON.stringify(detail);
 }
 
 export function buildQuery(params: Record<string, string | number | boolean | undefined>): string {

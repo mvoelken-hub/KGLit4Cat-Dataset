@@ -34,7 +34,7 @@ class VocabQueryRequest(BaseModel):
     vector_top_k: int = Field(default=10, ge=1)
     fulltext_top_k: int = Field(default=10, ge=1)
     seed_top_k: int = Field(default=5, ge=1)
-    max_hops: int = Field(default=1, ge=1)
+    max_hops: int = Field(default=1, ge=0)
     max_statements_per_seed: int = Field(default=50, ge=1)
     vector_weight: float = Field(default=1.0, gt=0)
     fulltext_weight: float = Field(default=1.0, gt=0)

@@ -187,6 +187,22 @@ class Neo4jSemanticGraphRepositoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(statements[0].predicate, "skos__broader")
         self.assertEqual(statements[0].object_uri, "urn:parent")
 
+    async def test_graph_expansion_skips_relationship_query_when_max_hops_is_zero(self):
+        driver = QueryReturningNeo4jDriver([])
+        repository = Neo4jSemanticGraphRepository(driver, FakeOllamaClient())
+
+        statements = await repository.expand_vocab_graph(
+            identifier="urn:vocab",
+            seed_uris=["urn:seed"],
+            allowed_rel_types=["skos__broader"],
+            traversal_direction="outgoing",
+            max_hops=0,
+            max_statements_per_seed=7,
+        )
+
+        self.assertEqual(statements, [])
+        self.assertEqual(driver.queries, [])
+
     async def test_get_vocab_resources_normalizes_neo4j_temporal_properties(self):
         driver = QueryReturningNeo4jDriver([
             {

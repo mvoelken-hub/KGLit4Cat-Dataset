@@ -311,7 +311,7 @@ class Neo4jSemanticGraphRepository:
         max_hops: int,
         max_statements_per_seed: int,
     ) -> list[VocabGraphStatement]:
-        if not seed_uris or not allowed_rel_types:
+        if not seed_uris or not allowed_rel_types or max_hops <= 0:
             return []
 
         path_pattern = self._expansion_path_pattern(traversal_direction, max_hops)

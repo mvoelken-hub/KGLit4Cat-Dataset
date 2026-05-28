@@ -1,5 +1,7 @@
 import json
+import os
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -152,8 +154,24 @@ class FileSystemExtractionOutputRepository:
     @staticmethod
     def _write_json_file(path: Path, content: Any) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w", encoding="utf-8") as file:
-            json.dump(content, file, ensure_ascii=False, indent=2)
+        temp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                "w",
+                encoding="utf-8",
+                dir=path.parent,
+                prefix=f".{path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as file:
+                temp_path = Path(file.name)
+                json.dump(content, file, ensure_ascii=False, indent=2)
+                file.flush()
+                os.fsync(file.fileno())
+            os.replace(temp_path, path)
+        finally:
+            if temp_path is not None and temp_path.exists():
+                temp_path.unlink(missing_ok=True)
 
     @staticmethod
     def _safe_int(value: Any) -> int:
