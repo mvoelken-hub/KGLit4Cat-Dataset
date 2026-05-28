@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -168,7 +169,7 @@ class FileSystemExtractionOutputRepository:
                 json.dump(content, file, ensure_ascii=False, indent=2)
                 file.flush()
                 os.fsync(file.fileno())
-            os.replace(temp_path, path)
+            _atomic_replace(temp_path, path)
         finally:
             if temp_path is not None and temp_path.exists():
                 temp_path.unlink(missing_ok=True)
@@ -179,3 +180,21 @@ class FileSystemExtractionOutputRepository:
             return int(value or 0)
         except (TypeError, ValueError):
             return 0
+
+
+def _atomic_replace(src: Path, dst: Path, *, retries: int = 5, delay: float = 0.15) -> None:
+    """Replace *dst* with *src* atomically, retrying on Windows PermissionError.
+
+    On Windows, ``os.replace`` can fail with ``PermissionError`` when another
+    process (antivirus scanner, search indexer, concurrent reader, etc.) still
+    holds an open handle on the destination file.  Retrying with a short back-
+    off gives the other process time to release the handle.
+    """
+    for attempt in range(retries):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if attempt == retries - 1:
+                raise
+            time.sleep(delay * (attempt + 1))
