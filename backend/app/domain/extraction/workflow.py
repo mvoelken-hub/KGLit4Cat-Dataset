@@ -36,7 +36,7 @@ class ExtractionVocabQueryConfig(BaseModel):
     fulltext_top_k: int = Field(default=12, ge=1)
     seed_top_k: int = Field(default=6, ge=1)
     max_hops: int = Field(default=1, ge=0)
-    max_statements_per_seed: int = Field(default=50, ge=1)
+    max_statements_per_seed: int = Field(default=12, ge=1)
     traversal_direction: str = "undirected"
     vector_weight: float = Field(default=1.0, gt=0)
     fulltext_weight: float = Field(default=1.0, gt=0)
@@ -44,8 +44,8 @@ class ExtractionVocabQueryConfig(BaseModel):
     quantitative_vector_top_k: int = Field(default=12, ge=1)
     quantitative_fulltext_top_k: int = Field(default=12, ge=1)
     quantitative_seed_top_k: int = Field(default=6, ge=1)
-    quantitative_max_hops: int = Field(default=1, ge=0)
-    quantitative_max_statements_per_seed: int = Field(default=50, ge=1)
+    quantitative_max_hops: int = Field(default=0, ge=0)
+    quantitative_max_statements_per_seed: int = Field(default=12, ge=1)
     quantitative_traversal_direction: str = "undirected"
     quantitative_vector_weight: float = Field(default=1.0, gt=0)
     quantitative_fulltext_weight: float = Field(default=1.0, gt=0)

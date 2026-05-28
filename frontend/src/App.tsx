@@ -867,8 +867,8 @@ const QUANTITATIVE_VOCAB_QUERY_DEFAULTS = {
   quantitative_vector_top_k: 12,
   quantitative_fulltext_top_k: 12,
   quantitative_seed_top_k: 6,
-  quantitative_max_hops: 1,
-  quantitative_max_statements_per_seed: 50,
+  quantitative_max_hops: 0,
+  quantitative_max_statements_per_seed: 12,
   quantitative_traversal_direction: 'undirected',
   quantitative_vector_weight: 1,
   quantitative_fulltext_weight: 1,
@@ -902,10 +902,37 @@ function VocabQueryConfigPanel({
   const [vocabListMessage, setVocabListMessage] = useState('');
   const [modalMode, setModalMode] = useState<VocabQueryConfigMode | null>(null);
   const [applyMessage, setApplyMessage] = useState('');
+  const prevConfigRef = useRef(normalizeVocabQueryConfig(config));
   useEffect(() => {
     const normalized = normalizeVocabQueryConfig(config);
-    setDraft(normalized);
-    setVocabOptions((current) => Array.from(new Set([...current, ...normalized.qualitative_vocab_identifiers])));
+    const prev = prevConfigRef.current;
+    const changed = (
+      prev.qualitative_vocab_identifiers.length !== normalized.qualitative_vocab_identifiers.length
+      || prev.qualitative_vocab_identifiers.some((v, i) => v !== normalized.qualitative_vocab_identifiers[i])
+      || prev.vector_top_k !== normalized.vector_top_k
+      || prev.fulltext_top_k !== normalized.fulltext_top_k
+      || prev.seed_top_k !== normalized.seed_top_k
+      || prev.max_hops !== normalized.max_hops
+      || prev.max_statements_per_seed !== normalized.max_statements_per_seed
+      || prev.traversal_direction !== normalized.traversal_direction
+      || prev.vector_weight !== normalized.vector_weight
+      || prev.fulltext_weight !== normalized.fulltext_weight
+      || prev.rrf_k !== normalized.rrf_k
+      || prev.quantitative_vector_top_k !== normalized.quantitative_vector_top_k
+      || prev.quantitative_fulltext_top_k !== normalized.quantitative_fulltext_top_k
+      || prev.quantitative_seed_top_k !== normalized.quantitative_seed_top_k
+      || prev.quantitative_max_hops !== normalized.quantitative_max_hops
+      || prev.quantitative_max_statements_per_seed !== normalized.quantitative_max_statements_per_seed
+      || prev.quantitative_traversal_direction !== normalized.quantitative_traversal_direction
+      || prev.quantitative_vector_weight !== normalized.quantitative_vector_weight
+      || prev.quantitative_fulltext_weight !== normalized.quantitative_fulltext_weight
+      || prev.quantitative_rrf_k !== normalized.quantitative_rrf_k
+    );
+    if (changed) {
+      setDraft(normalized);
+      setVocabOptions((current) => Array.from(new Set([...current, ...normalized.qualitative_vocab_identifiers])));
+    }
+    prevConfigRef.current = normalized;
   }, [config]);
   useEffect(() => {
     setApplyMessage('');
@@ -957,6 +984,7 @@ function VocabQueryConfigPanel({
     setApplyMessage('');
     try {
       await onApply(draft);
+      prevConfigRef.current = normalizeVocabQueryConfig(draft);
       setModalMode(null);
     } catch (error) {
       setApplyMessage(error instanceof Error ? error.message : 'Failed to update vocabulary query configuration.');

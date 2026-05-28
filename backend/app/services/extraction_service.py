@@ -207,14 +207,15 @@ class ExtractionService:
                 )
         if progress is not None and progress.interim_context is None:
             progress.interim_context = self._load_context_or_none(data_package_id)
-        if progress is not None and not progress.chunk_results:
+        if progress is not None:
             state = self._load_run_state_or_none(data_package_id)
             if state is not None:
-                progress.ranked_files = state.ranked_files
-                progress.chunk_results = state.chunk_results
                 progress.vocab_query_config = state.vocab_query_config
-                progress.processed_chunks = self._completed_chunk_count(state)
-                progress.total_chunks = len(state.chunk_results)
+                if not progress.chunk_results:
+                    progress.ranked_files = state.ranked_files
+                    progress.chunk_results = state.chunk_results
+                    progress.processed_chunks = self._completed_chunk_count(state)
+                    progress.total_chunks = len(state.chunk_results)
         return task_info.status, progress
 
     async def pause_extraction(

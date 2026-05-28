@@ -27,6 +27,23 @@ from app.domain.semantics.controlled_vocabularies import VocabTermScheme
 
 VOCAB_INDEX_PREFIX = "vocab"
 
+LUCENE_SPECIAL_CHARS = r'+-&&||!(){}[]^"~*?:\/'
+
+def escape_lucene_query(text: str) -> str:
+    """Escape Lucene special characters in a fulltext query string.
+
+    Neo4j's ``db.index.fulltext.queryNodes`` uses Lucene query syntax.
+    Characters such as ``^``, ``:``, ``/`` have special meaning and must be
+    escaped with a backslash when they should be treated as literals.
+    """
+    result: list[str] = []
+    for ch in text:
+        if ch in LUCENE_SPECIAL_CHARS:
+            result.append("\\")
+        result.append(ch)
+    return "".join(result)
+
+
 class Neo4jSemanticGraphRepository:
     def __init__(self, neo4j_driver: Neo4jDriver, ollama_client: OllamaClientWrapper):
         self._neo4j_driver = neo4j_driver
@@ -276,6 +293,7 @@ class Neo4jSemanticGraphRepository:
         top_k: int,
     ) -> list[VocabSearchCandidate]:
         index_name = self.get_index_name(rdf_type, "FULLTEXT")
+        escaped_query = escape_lucene_query(query_text)
         result = await self._neo4j_driver.query(
             """
             CALL db.index.fulltext.queryNodes($indexName, $queryText, { limit: $limit })
@@ -288,7 +306,7 @@ class Neo4jSemanticGraphRepository:
             parameters={
                 "identifier": identifier,
                 "indexName": index_name,
-                "queryText": query_text,
+                "queryText": escaped_query,
                 "limit": top_k,
             },
         )

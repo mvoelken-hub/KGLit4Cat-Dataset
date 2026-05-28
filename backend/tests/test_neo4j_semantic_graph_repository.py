@@ -4,7 +4,7 @@ from neo4j.time import Date as Neo4jDate
 from rdflib import Graph
 
 from app.domain.semantics import VocabSchemeInfo
-from infra.neo4j_semantic_graph_repository import Neo4jSemanticGraphRepository
+from infra.neo4j_semantic_graph_repository import Neo4jSemanticGraphRepository, escape_lucene_query
 
 
 class FakeNode(dict):
@@ -156,6 +156,34 @@ class Neo4jSemanticGraphRepositoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(parameters["queryText"], "temperature")
         self.assertEqual(candidates[0].source, "fulltext")
 
+    async def test_fulltext_candidate_query_escapes_lucene_special_characters(self):
+        driver = QueryReturningNeo4jDriver([{"uri": "urn:term", "score": 8.0}])
+        repository = Neo4jSemanticGraphRepository(driver, FakeOllamaClient())
+
+        candidates = await repository.query_vocab_fulltext_candidates(
+            identifier="urn:vocab",
+            rdf_type="skos__Concept",
+            query_text="nucleus: ^1H",
+            top_k=5,
+        )
+
+        _, parameters = driver.queries[0]
+        self.assertEqual(parameters["queryText"], r"nucleus\: \^1H")
+
+    async def test_fulltext_candidate_query_escapes_forward_slash(self):
+        driver = QueryReturningNeo4jDriver([{"uri": "urn:term", "score": 8.0}])
+        repository = Neo4jSemanticGraphRepository(driver, FakeOllamaClient())
+
+        candidates = await repository.query_vocab_fulltext_candidates(
+            identifier="urn:vocab",
+            rdf_type="skos__Concept",
+            query_text="Compression Mode: diff/dup",
+            top_k=5,
+        )
+
+        _, parameters = driver.queries[0]
+        self.assertEqual(parameters["queryText"], r"Compression Mode\: diff\/dup")
+
     async def test_graph_expansion_honors_direction_allowed_relationships_and_internal_exclusion(self):
         driver = QueryReturningNeo4jDriver([
             {
@@ -221,6 +249,44 @@ class Neo4jSemanticGraphRepositoryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(resources[0].properties["dcterms__created"], "2026-05-18")
         self.assertEqual(resources[0].properties["nested"]["date"], "2026-05-19")
+
+
+class EscapeLuceneQueryTests(unittest.TestCase):
+    def test_plain_text_unchanged(self):
+        self.assertEqual(escape_lucene_query("temperature"), "temperature")
+
+    def test_escapes_caret(self):
+        self.assertEqual(escape_lucene_query("^1H"), r"\^1H")
+
+    def test_escapes_colon(self):
+        self.assertEqual(escape_lucene_query("nucleus: ^1H"), r"nucleus\: \^1H")
+
+    def test_escapes_forward_slash(self):
+        self.assertEqual(escape_lucene_query("diff/dup"), r"diff\/dup")
+
+    def test_escapes_plus_minus(self):
+        self.assertEqual(escape_lucene_query("a+b-c"), r"a\+b\-c")
+
+    def test_escapes_parentheses_and_brackets(self):
+        self.assertEqual(escape_lucene_query("(test){val}[x]"), r"\(test\)\{val\}\[x\]")
+
+    def test_escapes_wildcards(self):
+        self.assertEqual(escape_lucene_query("test*test?test"), r"test\*test\?test")
+
+    def test_escapes_tilde_and_quotes(self):
+        self.assertEqual(escape_lucene_query('test~"val"'), r"test\~\"val\"")
+
+    def test_escapes_double_ampersand_and_pipe(self):
+        self.assertEqual(escape_lucene_query("a&&b||c"), r"a\&\&b\|\|c")
+
+    def test_escapes_exclamation_mark(self):
+        self.assertEqual(escape_lucene_query("!test"), r"\!test")
+
+    def test_escapes_backslash(self):
+        self.assertEqual(escape_lucene_query(r"path\to\file"), r"path\\to\\file")
+
+    def test_empty_string(self):
+        self.assertEqual(escape_lucene_query(""), "")
 
 
 if __name__ == "__main__":
