@@ -1,4 +1,4 @@
-import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { type FormEvent, type PointerEvent, type ReactNode, type WheelEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { chunkDataPackage, deleteDataPackage, getChunkStatus, getDataPackageChunks, getFileEntryContent, listDataPackages, uploadDataPackage } from './api/datasources';
 import {
@@ -39,7 +39,7 @@ import { listVocabularies } from './api/semantic';
 import { JsonEditor, type JsonObject, type JsonPatchMarker, type JsonSchemaDocument, type JsonValue, setValueAtPath } from './components/JsonEditor';
 import { ChunkingDialog } from './components/ChunkingDialog';
 import { VocabularyPanel } from './components/VocabularyPanel';
-import type { ChunkRequestResponse, ChunkResponse, DataPackageResponse, FileEntryResponse, InitialContext, ProfileManifestResponse, TextQualityConfig } from './api/types';
+import type { ChunkRequestResponse, ChunkResponse, DataPackageResponse, FileEntryResponse, InitialContext, ProfileManifestResponse, TextQualityConfig, VocabQueryResult } from './api/types';
 import type {
   ExtractionChunkRef,
   ExtractionChunkResult,
@@ -1122,6 +1122,7 @@ function VocabQueryTraceList({
               {query.error && <p className="warning">{query.error}</p>}
               <JsonDetails title="Query input" value={query.query} />
               <JsonDetails title="Source context" value={query.source_context} />
+              {query.result && <VocabQueryGraphPanel result={query.result} />}
               <JsonDetails title="Full query result" value={query.result ?? null} />
             </div>
           </details>
@@ -1161,6 +1162,223 @@ function VocabQueryTraceModal({
   );
 }
 
+type VocabGraphNode = {
+  uri: string;
+  resource: VocabQueryResult['resources'][string] | null;
+  seed: VocabQueryResult['seeds'][number] | null;
+  x: number;
+  y: number;
+};
+
+type VocabGraphEdge = {
+  id: string;
+  source: string;
+  target: string;
+  predicate: string;
+};
+
+const vocabGraphBaseViewBox = { x: 0, y: 0, width: 900, height: 440 };
+
+function VocabQueryGraphPanel({ result }: { result: Record<string, unknown> }) {
+  const vocabResult = useMemo(() => coerceVocabQueryResult(result), [result]);
+  const graph = useMemo(() => vocabResult ? buildVocabGraph(vocabResult) : null, [vocabResult]);
+  const [selectedUri, setSelectedUri] = useState(defaultVocabGraphSelection(graph));
+  const [viewBox, setViewBox] = useState(vocabGraphBaseViewBox);
+  const [dragging, setDragging] = useState(false);
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const dragStartRef = useRef<{ clientX: number; clientY: number; viewBox: typeof vocabGraphBaseViewBox; moved: boolean; targetUri: string | null } | null>(null);
+
+  useEffect(() => {
+    setSelectedUri((current) => graph?.nodes.some((node) => node.uri === current) ? current : defaultVocabGraphSelection(graph));
+    setViewBox(vocabGraphBaseViewBox);
+  }, [graph]);
+
+  if (!graph?.nodes.length) return null;
+
+  const selectedNode = graph.nodes.find((node) => node.uri === selectedUri) ?? graph.nodes[0];
+
+  function zoomAt(clientX: number, clientY: number, scale: number) {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setViewBox((current) => {
+      const nextWidth = Math.min(vocabGraphBaseViewBox.width / 0.7, Math.max(vocabGraphBaseViewBox.width / 2.2, current.width / scale));
+      const nextHeight = Math.min(vocabGraphBaseViewBox.height / 0.7, Math.max(vocabGraphBaseViewBox.height / 2.2, current.height / scale));
+      const pointerX = current.x + ((clientX - rect.left) / rect.width) * current.width;
+      const pointerY = current.y + ((clientY - rect.top) / rect.height) * current.height;
+      const ratioX = (pointerX - current.x) / current.width;
+      const ratioY = (pointerY - current.y) / current.height;
+      return {
+        x: pointerX - ratioX * nextWidth,
+        y: pointerY - ratioY * nextHeight,
+        width: nextWidth,
+        height: nextHeight,
+      };
+    });
+  }
+
+  function onGraphWheel(event: WheelEvent<Element>) {
+    if (!event.ctrlKey) return;
+    event.preventDefault();
+    zoomAt(event.clientX, event.clientY, event.deltaY < 0 ? 1.16 : 1 / 1.16);
+  }
+
+  function onGraphPointerDown(event: PointerEvent<SVGSVGElement>) {
+    if (event.button !== 0) return;
+    const target = event.target instanceof Element ? event.target.closest<SVGGElement>('.vocab-graph-node') : null;
+    dragStartRef.current = { clientX: event.clientX, clientY: event.clientY, viewBox, moved: false, targetUri: target?.dataset.uri ?? null };
+    setDragging(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function onGraphPointerMove(event: PointerEvent<SVGSVGElement>) {
+    const drag = dragStartRef.current;
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!drag || !rect) return;
+    if ((event.buttons & 1) !== 1) {
+      dragStartRef.current = null;
+      setDragging(false);
+      return;
+    }
+    const deltaX = event.clientX - drag.clientX;
+    const deltaY = event.clientY - drag.clientY;
+    if (Math.abs(deltaX) > 2 || Math.abs(deltaY) > 2) drag.moved = true;
+    setViewBox({
+      ...drag.viewBox,
+      x: drag.viewBox.x - (deltaX / rect.width) * drag.viewBox.width,
+      y: drag.viewBox.y - (deltaY / rect.height) * drag.viewBox.height,
+    });
+  }
+
+  function onGraphPointerUp(event: PointerEvent<SVGSVGElement>) {
+    const drag = dragStartRef.current;
+    if (drag && !drag.moved && drag.targetUri) {
+      setSelectedUri(drag.targetUri);
+    }
+    dragStartRef.current = null;
+    setDragging(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }
+
+  function zoomAtCenter(scale: number) {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, scale);
+  }
+
+  return (
+    <details className="vocab-graph-details" open>
+      <summary>Node graph</summary>
+      <div className="vocab-graph-panel">
+        <div className={`vocab-graph-canvas ${dragging ? 'dragging' : ''}`} role="img" aria-label="Vocabulary query graph" onWheel={onGraphWheel}>
+          <svg
+            ref={svgRef}
+            viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
+            onPointerDown={onGraphPointerDown}
+            onPointerMove={onGraphPointerMove}
+            onPointerUp={onGraphPointerUp}
+            onPointerCancel={onGraphPointerUp}
+          >
+            <defs>
+              <marker id="vocab-graph-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" />
+              </marker>
+            </defs>
+            {graph.edges.map((edge) => {
+              const source = graph.nodeMap.get(edge.source);
+              const target = graph.nodeMap.get(edge.target);
+              if (!source || !target) return null;
+              const edgePath = directedEdgePath(source, target);
+              const midX = (edgePath.x1 + edgePath.x2) / 2;
+              const midY = (edgePath.y1 + edgePath.y2) / 2;
+              const showLabel = edge.source === selectedNode.uri || edge.target === selectedNode.uri;
+              return (
+                <g key={edge.id} className="vocab-graph-edge">
+                  <line x1={edgePath.x1} y1={edgePath.y1} x2={edgePath.x2} y2={edgePath.y2} />
+                  {showLabel && <text x={midX} y={midY}>{compactPredicate(edge.predicate)}</text>}
+                </g>
+              );
+            })}
+            {graph.nodes.map((node) => {
+              const selected = node.uri === selectedNode.uri;
+              const radius = vocabGraphNodeRadius(node);
+              const labelLines = vocabNodeLabelLines(node, radius);
+              return (
+                <g
+                  key={node.uri}
+                  className={`vocab-graph-node ${node.seed ? 'seed' : ''} ${selected ? 'selected' : ''}`}
+                  data-uri={node.uri}
+                  transform={`translate(${node.x} ${node.y})`}
+                  onClick={() => setSelectedUri(node.uri)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      setSelectedUri(node.uri);
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
+                >
+                  <circle r={radius} />
+                  <text className={labelLines.length > 1 ? 'multiline' : ''}>
+                    {labelLines.map((line, index) => (
+                      <tspan key={`${line}-${index}`} x="0" dy={index === 0 ? labelDy(labelLines.length) : '1.05em'}>{line}</tspan>
+                    ))}
+                  </text>
+                </g>
+              );
+            })}
+          </svg>
+          <div className="vocab-graph-controls" aria-label="Graph controls">
+            <button className="ghost small" type="button" onClick={() => zoomAtCenter(1.18)}>+</button>
+            <button className="ghost small" type="button" onClick={() => zoomAtCenter(1 / 1.18)}>-</button>
+            <button className="ghost small" type="button" onClick={() => setViewBox(vocabGraphBaseViewBox)}>Fit</button>
+          </div>
+        </div>
+        <aside className="vocab-graph-inspector">
+          <div className="vocab-graph-inspector-heading">
+            <span>Node properties</span>
+            <strong>{vocabNodeTitle(selectedNode)}</strong>
+          </div>
+          <div className="vocab-graph-labels">
+            {selectedNode.seed && <span>Seed</span>}
+            {(selectedNode.resource?.rdf_types ?? []).map((rdfType) => <span key={rdfType}>{compactPredicate(rdfType)}</span>)}
+          </div>
+          <dl>
+            <div>
+              <dt>uri</dt>
+              <dd>{selectedNode.uri}</dd>
+            </div>
+            {selectedNode.seed && (
+              <>
+                <div>
+                  <dt>rrf score</dt>
+                  <dd>{formatScore(selectedNode.seed.rrf_score)}</dd>
+                </div>
+                <div>
+                  <dt>vector rank</dt>
+                  <dd>{selectedNode.seed.vector_rank ?? '-'}</dd>
+                </div>
+                <div>
+                  <dt>fulltext rank</dt>
+                  <dd>{selectedNode.seed.fulltext_rank ?? '-'}</dd>
+                </div>
+              </>
+            )}
+            {Object.entries(selectedNode.resource?.properties ?? {}).map(([key, value]) => (
+              <div key={key}>
+                <dt>{compactPredicate(key)}</dt>
+                <dd>{propertyPreview(value)}</dd>
+              </div>
+            ))}
+          </dl>
+        </aside>
+      </div>
+    </details>
+  );
+}
+
 function JsonDetails({ title, value }: { title: string; value: unknown }) {
   return (
     <details className="json-details">
@@ -1168,6 +1386,180 @@ function JsonDetails({ title, value }: { title: string; value: unknown }) {
       <pre>{JSON.stringify(value, null, 2)}</pre>
     </details>
   );
+}
+
+function buildVocabGraph(result: VocabQueryResult) {
+  const seedMap = new Map(result.seeds.map((seed) => [seed.uri, seed]));
+  const edgeUris = new Set<string>();
+  const edges: VocabGraphEdge[] = result.graph_statements.map((statement, index) => {
+    edgeUris.add(statement.subject_uri);
+    edgeUris.add(statement.object_uri);
+    return {
+      id: `${statement.subject_uri}-${statement.predicate}-${statement.object_uri}-${index}`,
+      source: statement.subject_uri,
+      target: statement.object_uri,
+      predicate: statement.predicate,
+    };
+  });
+  const uris = Array.from(new Set([
+    ...result.seeds.map((seed) => seed.uri),
+    ...Object.keys(result.resources),
+    ...edgeUris,
+  ]));
+  const seedUris = new Set(result.seeds.map((seed) => seed.uri));
+  const centerX = 450;
+  const centerY = 220;
+  const seedCount = Math.max(1, result.seeds.length);
+  const nodes: VocabGraphNode[] = uris.map((uri, index) => {
+    const seedIndex = result.seeds.findIndex((seed) => seed.uri === uri);
+    const isSeed = seedIndex >= 0;
+    const nonSeedIndex = Math.max(0, index - result.seeds.length);
+    const angle = isSeed
+      ? ((Math.PI * 2) / seedCount) * seedIndex - Math.PI / 2
+      : ((Math.PI * 2) / Math.max(1, uris.length - result.seeds.length)) * nonSeedIndex - Math.PI / 2;
+    const radius = isSeed ? (seedCount === 1 ? 0 : 86) : 132 + (nonSeedIndex % 3) * 52;
+    return {
+      uri,
+      resource: result.resources[uri] ?? null,
+      seed: seedMap.get(uri) ?? null,
+      x: centerX + Math.cos(angle) * radius,
+      y: centerY + Math.sin(angle) * radius,
+    };
+  }).sort((left, right) => Number(seedUris.has(left.uri)) - Number(seedUris.has(right.uri)));
+  const nodeMap = new Map(nodes.map((node) => [node.uri, node]));
+  return { nodes, edges, nodeMap };
+}
+
+function defaultVocabGraphSelection(graph: ReturnType<typeof buildVocabGraph> | null): string {
+  return graph?.nodes.find((node) => node.seed)?.uri ?? graph?.nodes[0]?.uri ?? '';
+}
+
+function vocabGraphNodeRadius(node: VocabGraphNode): number {
+  return node.seed ? 22 : 17;
+}
+
+function directedEdgePath(source: VocabGraphNode, target: VocabGraphNode) {
+  const deltaX = target.x - source.x;
+  const deltaY = target.y - source.y;
+  const length = Math.hypot(deltaX, deltaY) || 1;
+  const unitX = deltaX / length;
+  const unitY = deltaY / length;
+  const sourceRadius = vocabGraphNodeRadius(source) + 2;
+  const targetRadius = vocabGraphNodeRadius(target) + 7;
+  return {
+    x1: source.x + unitX * sourceRadius,
+    y1: source.y + unitY * sourceRadius,
+    x2: target.x - unitX * targetRadius,
+    y2: target.y - unitY * targetRadius,
+  };
+}
+
+function coerceVocabQueryResult(value: Record<string, unknown>): VocabQueryResult | null {
+  const resources = asRecord(value.resources);
+  if (!resources) return null;
+  const seeds = asRecordArray(value.seeds).map((seed) => ({
+    uri: String(seed.uri || ''),
+    rdf_type: String(seed.rdf_type || ''),
+    rrf_score: typeof seed.rrf_score === 'number' ? seed.rrf_score : 0,
+    vector_score: typeof seed.vector_score === 'number' ? seed.vector_score : null,
+    vector_rank: typeof seed.vector_rank === 'number' ? seed.vector_rank : null,
+    fulltext_score: typeof seed.fulltext_score === 'number' ? seed.fulltext_score : null,
+    fulltext_rank: typeof seed.fulltext_rank === 'number' ? seed.fulltext_rank : null,
+  })).filter((seed) => seed.uri);
+  const graphStatements = asRecordArray(value.graph_statements).map((statement) => ({
+    subject_uri: String(statement.subject_uri || ''),
+    predicate: String(statement.predicate || ''),
+    object_uri: String(statement.object_uri || ''),
+  })).filter((statement) => statement.subject_uri && statement.object_uri);
+  const typedResources = Object.fromEntries(Object.entries(resources).map(([uri, resourceValue]) => {
+    const resource = asRecord(resourceValue);
+    const properties = asRecord(resource?.properties) ?? {};
+    return [uri, {
+      uri: String(resource?.uri || uri),
+      rdf_types: Array.isArray(resource?.rdf_types) ? resource.rdf_types.map(String) : [],
+      properties,
+    }];
+  }));
+  return {
+    identifier: String(value.identifier || ''),
+    rdf_type: String(value.rdf_type || ''),
+    seeds,
+    graph_statements: graphStatements,
+    resources: typedResources,
+  };
+}
+
+function vocabNodeLabelLines(node: VocabGraphNode, radius: number): string[] {
+  const title = vocabNodeTitle(node);
+  const words = title.split(/\s+/).filter(Boolean);
+  const maxChars = radius >= 22 ? 9 : 7;
+  if (!words.length) return [trimNodeLabel(compactPredicate(node.uri), maxChars)];
+
+  const lines: string[] = [];
+  let current = '';
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word;
+    if (next.length <= maxChars) {
+      current = next;
+      continue;
+    }
+    if (current) lines.push(current);
+    current = word;
+    if (lines.length === 2) break;
+  }
+  if (current && lines.length < 2) lines.push(current);
+  return lines.slice(0, 2).map((line) => trimNodeLabel(line, maxChars));
+}
+
+function trimNodeLabel(value: string, maxChars: number): string {
+  return value.length > maxChars ? `${value.slice(0, Math.max(1, maxChars - 2))}..` : value;
+}
+
+function labelDy(lineCount: number): string {
+  return lineCount > 1 ? '-0.3em' : '0.32em';
+}
+
+function vocabNodeTitle(node: VocabGraphNode): string {
+  const label = findVocabPropertyLabel(node.resource);
+  return label || compactPredicate(node.uri);
+}
+
+function findVocabPropertyLabel(resource: VocabQueryResult['resources'][string] | null): string | null {
+  if (!resource) return null;
+  const labelKeys = ['preflabel', 'label', 'title', 'name'];
+  for (const [key, value] of Object.entries(resource.properties)) {
+    const normalized = key.toLowerCase().replace(/[_:-]/g, '');
+    if (!labelKeys.some((labelKey) => normalized.endsWith(labelKey))) continue;
+    if (typeof value === 'string' && value.trim()) return value;
+    if (Array.isArray(value)) {
+      const first = value.find((item) => typeof item === 'string' && item.trim());
+      if (typeof first === 'string') return first;
+    }
+  }
+  return null;
+}
+
+function compactPredicate(value: string): string {
+  const hash = value.lastIndexOf('#');
+  const slash = value.lastIndexOf('/');
+  const colon = value.lastIndexOf(':');
+  const index = Math.max(hash, slash, colon);
+  return index >= 0 ? value.slice(index + 1) || value : value;
+}
+
+function propertyPreview(value: unknown): string {
+  if (Array.isArray(value)) {
+    const preview = value.slice(0, 4).map(propertyPreview).join(', ');
+    return value.length > 4 ? `${preview}, ... ${value.length - 4} more` : preview || '-';
+  }
+  if (value && typeof value === 'object') return JSON.stringify(value);
+  if (value === null || value === undefined || value === '') return '-';
+  const text = String(value);
+  return text.length > 360 ? `${text.slice(0, 360)}...` : text;
+}
+
+function formatScore(value?: number | null): string {
+  return typeof value === 'number' ? value.toFixed(4) : '-';
 }
 
 function StepPanel({
