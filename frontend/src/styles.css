@@ -184,7 +184,17 @@ h2 { margin: 0; font-size: clamp(1.6rem, 3vw, 2.6rem); letter-spacing: -0.04em; 
 .chunk-vocab-query-dialog .vocab-dialog-header strong { display: block; overflow-wrap: anywhere; font-size: 1rem; line-height: 1.25; }
 .chunk-vocab-query-dialog-body { min-height: 0; overflow: hidden; display: grid; }
 .chunk-vocab-query-dialog-body .chunk-vocab-query-section { min-height: 0; padding: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+.chunk-vocab-query-dialog-body .chunk-vocab-query-groups { min-height: 0; overflow-y: auto; overflow-x: hidden; padding-right: 2px; display: grid; gap: 12px; align-content: start; }
+.chunk-vocab-query-dialog-body .chunk-vocab-query-group { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, 0.58); }
+.chunk-vocab-query-dialog-body .chunk-vocab-query-group.quantitative { border-color: rgba(0, 120, 180, 0.34); background: rgba(238, 248, 252, 0.78); }
+.chunk-vocab-query-dialog-body .chunk-vocab-query-group.qualitative { border-color: rgba(99, 154, 0, 0.28); background: rgba(248, 251, 242, 0.74); }
+.chunk-vocab-query-dialog-body .chunk-vocab-query-group-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.chunk-vocab-query-dialog-body .chunk-vocab-query-group-heading span { display: block; color: var(--muted); font-size: 0.66rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
+.chunk-vocab-query-dialog-body .chunk-vocab-query-group-heading strong { display: block; font-size: 0.96rem; overflow-wrap: anywhere; }
+.chunk-vocab-query-dialog-body .chunk-vocab-query-group-heading small { flex-shrink: 0; color: var(--muted); font-size: 0.76rem; font-weight: 700; text-align: right; }
+.chunk-vocab-query-empty { margin: 0; padding: 9px 10px; border: 1px dashed var(--line); border-radius: 7px; background: rgba(255, 255, 255, 0.5); }
 .chunk-vocab-query-dialog-body .chunk-vocab-query-list { min-height: 0; overflow-y: auto; overflow-x: hidden; padding-right: 2px; display: flex; flex-direction: column; gap: 10px; }
+.chunk-vocab-query-dialog-body .chunk-vocab-query-group .chunk-vocab-query-list { overflow: visible; padding-right: 0; }
 .chunk-vocab-query-dialog-body .chunk-vocab-query { background: #fff; flex: 0 0 auto; }
 .chunk-vocab-query-dialog-body .chunk-vocab-query > summary { min-height: 58px; padding: 13px 14px; }
 .chunk-vocab-query-dialog-body .chunk-vocab-query > summary strong { font-size: 0.95rem; line-height: 1.25; }

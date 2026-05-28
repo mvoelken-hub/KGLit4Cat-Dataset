@@ -1097,14 +1097,69 @@ function VocabQueryTraceList({
   const completed = queries.filter((query) => query.status === 'completed').length;
   const failed = queries.filter((query) => query.status === 'failed').length;
   const running = queries.filter((query) => query.status === 'running').length;
+  const quantitativeQueries = queries.filter((query) => query.kind === 'quantity_kind' || query.kind === 'unit');
+  const qualitativeQueries = queries.filter((query) => query.kind === 'qualitative_attribute');
+  const otherQueries = queries.filter((query) => !quantitativeQueries.includes(query) && !qualitativeQueries.includes(query));
+  const queryGroups = [
+    { key: 'quantitative', title: 'Quantitative queries', description: 'Quantity kinds and units', queries: quantitativeQueries },
+    { key: 'qualitative', title: 'Qualitative queries', description: 'Descriptive attribute terms', queries: qualitativeQueries },
+    ...(otherQueries.length ? [{ key: 'other', title: 'Other queries', description: 'Additional vocabulary lookups', queries: otherQueries }] : []),
+  ];
+  const queryStatusSummary = (groupQueries: ExtractionVocabQueryRecord[]) => {
+    const groupCompleted = groupQueries.filter((query) => query.status === 'completed').length;
+    const groupRunning = groupQueries.filter((query) => query.status === 'running').length;
+    const groupFailed = groupQueries.filter((query) => query.status === 'failed').length;
+    return `${groupCompleted}/${groupQueries.length} completed${groupRunning ? `, ${groupRunning} running` : ''}${groupFailed ? `, ${groupFailed} failed` : ''}`;
+  };
+  const renderQuery = (query: ExtractionVocabQueryRecord) => (
+    <details className={`chunk-vocab-query ${query.status}`} key={query.query_id}>
+      <summary>
+        <div>
+          <strong>{formatExtractionStage(query.kind)}</strong>
+          <small>{query.source_value} · {query.vocabulary_identifier} · {query.rdf_type}</small>
+        </div>
+        <span>{query.status}</span>
+      </summary>
+      <div className="chunk-vocab-query-body">
+        <div className="chunk-call-meta">
+          {query.duration_ms ? <span>{formatDuration(query.duration_ms)} query time</span> : null}
+          {query.result ? <span>{Object.keys(asRecord(query.result.resources) ?? {}).length} resources</span> : null}
+          <button className="small ghost" type="button" disabled={!onRerun} onClick={() => onRerun?.(query.query_id)}>Rerun query</button>
+        </div>
+        {query.error && <p className="warning">{query.error}</p>}
+        <JsonDetails title="Query input" value={query.query} />
+        <JsonDetails title="Source context" value={query.source_context} />
+        {query.result && <VocabQueryGraphPanel result={query.result} />}
+        <JsonDetails title="Full query result" value={query.result ?? null} />
+      </div>
+    </details>
+  );
   return (
     <section className="chunk-vocab-query-section">
       <div className="chunk-vocab-query-heading">
         <span>Vocabulary queries</span>
         <strong>{completed}/{queries.length} completed{running ? `, ${running} running` : ''}{failed ? `, ${failed} failed` : ''}</strong>
       </div>
+      <div className="chunk-vocab-query-groups">
+        {queryGroups.map((group) => (
+          <section className={`chunk-vocab-query-group ${group.key}`} key={group.key}>
+            <div className="chunk-vocab-query-group-heading">
+              <div>
+                <span>{group.description}</span>
+                <strong>{group.title}</strong>
+              </div>
+              <small>{queryStatusSummary(group.queries)}</small>
+            </div>
+            {group.queries.length ? (
+              <div className="chunk-vocab-query-list">
+                {group.queries.map(renderQuery)}
+              </div>
+            ) : <p className="muted chunk-vocab-query-empty">No queries in this group for the current chunk.</p>}
+          </section>
+        ))}
+      </div>
       <div className="chunk-vocab-query-list">
-        {queries.map((query) => (
+        {false && queries.map((query) => (
           <details className={`chunk-vocab-query ${query.status}`} key={query.query_id}>
             <summary>
               <div>
