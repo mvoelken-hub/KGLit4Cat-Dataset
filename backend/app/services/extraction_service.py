@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import time
+from dataclasses import dataclass
+from hashlib import sha1
 from typing import TYPE_CHECKING, Any
 
 from app.core.config import Settings
@@ -27,6 +30,8 @@ from app.domain.extraction import (
     ExtractionRunResult,
     ExtractionRunState,
     ExtractionValidationError,
+    ExtractionVocabQueryConfig,
+    ExtractionVocabQueryRecord,
     FileContext,
     FileRankingResult,
     QualitativeAttribute,
@@ -59,6 +64,19 @@ if TYPE_CHECKING:
     from app.services.datasource_service import DataSourceService
     from app.services.profile_service import ProfileService
     from app.services.semantic_service import SemanticService
+
+
+@dataclass
+class _QuantityCandidateDiscovery:
+    quantity: QuantitativeAttribute
+    quantity_kind_query_id: str
+    unit_query_id: str
+
+
+@dataclass
+class _QualitativeCandidateDiscovery:
+    attribute: QualitativeAttribute
+    query_ids: list[str]
 
 
 class ExtractionService:
@@ -147,6 +165,7 @@ class ExtractionService:
                     processed_chunks=self._completed_chunk_count(state) if state else 0,
                     total_chunks=len(state.chunk_results) if state else 0,
                     interim_context=result.extraction_context,
+                    vocab_query_config=state.vocab_query_config if state else self._default_vocab_query_config(None),
                     ranked_files=state.ranked_files if state else [],
                     chunk_results=state.chunk_results if state else [],
                     warnings=list(result.warnings),
@@ -162,6 +181,7 @@ class ExtractionService:
                         if state
                         else None
                     ),
+                    vocab_query_config=state.vocab_query_config if state else self._default_vocab_query_config(None),
                     ranked_files=state.ranked_files if state else [],
                     chunk_results=state.chunk_results if state else [],
                     warnings=self._load_warnings_or_empty(data_package_id),
@@ -180,6 +200,7 @@ class ExtractionService:
                     processed_chunks=self._completed_chunk_count(state),
                     total_chunks=len(state.chunk_results),
                     interim_context=self._merged_completed_chunk_context_or_none(state),
+                    vocab_query_config=state.vocab_query_config,
                     ranked_files=state.ranked_files,
                     chunk_results=state.chunk_results,
                 )
@@ -190,6 +211,7 @@ class ExtractionService:
             if state is not None:
                 progress.ranked_files = state.ranked_files
                 progress.chunk_results = state.chunk_results
+                progress.vocab_query_config = state.vocab_query_config
                 progress.processed_chunks = self._completed_chunk_count(state)
                 progress.total_chunks = len(state.chunk_results)
         return task_info.status, progress
@@ -225,6 +247,7 @@ class ExtractionService:
             total_chunks=len(state.chunk_results),
             interim_context=self._merged_completed_chunk_context_or_none(state)
             or self._load_context_or_none(data_package_id),
+            vocab_query_config=state.vocab_query_config,
             ranked_files=state.ranked_files,
             chunk_results=state.chunk_results,
             current_chunk=None,
@@ -256,6 +279,73 @@ class ExtractionService:
             return {"agents": {}}
         return self._token_usage_summary(
             self.output_repository.load_token_usage(data_package_id)
+        )
+
+    async def update_vocab_query_config(
+        self,
+        *,
+        data_package_id: str,
+        config: ExtractionVocabQueryConfig,
+    ) -> ExtractionRunProgress:
+        if self.output_repository is None:
+            raise ExtractionResultNotFoundError("Extraction output repository is unavailable.")
+        state = self.output_repository.load_extraction_run_state(data_package_id)
+        state.vocab_query_config = config
+        self._save_run_state(data_package_id, state)
+        return ExtractionRunProgress(
+            stage="vocabulary_config_updated",
+            processed_chunks=self._completed_chunk_count(state),
+            total_chunks=len(state.chunk_results),
+            interim_context=self._merged_completed_chunk_context_or_none(state),
+            vocab_query_config=state.vocab_query_config,
+            ranked_files=state.ranked_files,
+            chunk_results=state.chunk_results,
+            warnings=self._load_warnings_or_empty(data_package_id),
+        )
+
+    async def rerun_vocab_queries(
+        self,
+        *,
+        data_package_id: str,
+        query_id: str | None = None,
+    ) -> ExtractionRunResult:
+        self._require_runtime_dependencies()
+        assert self.output_repository is not None
+        state = self.output_repository.load_extraction_run_state(data_package_id)
+        profile_identifier = state.profile_identifier
+        if not profile_identifier:
+            raise ValueError("Cannot rerun vocabulary queries because this extraction run has no profile identifier.")
+        warnings = self._load_warnings_or_empty(data_package_id)
+        records = [
+            record
+            for chunk_result in state.chunk_results
+            for record in chunk_result.vocab_queries
+            if query_id is None or record.query_id == query_id
+        ]
+        if query_id is not None and not records:
+            raise ValueError(f"Vocabulary query '{query_id}' was not found.")
+        for record in records:
+            configured_query = self._configured_vocab_query(
+                record.query,
+                state.vocab_query_config,
+                group="quantitative" if record.kind in {"quantity_kind", "unit"} else "qualitative",
+            )
+            record.query = configured_query
+            record.rdf_type = configured_query.rdf_type
+            await self._run_vocab_query_record(
+                data_package_id=data_package_id,
+                record=record,
+                vocabulary_identifier=record.vocabulary_identifier,
+                query=configured_query,
+                on_progress=lambda: self._save_run_state(data_package_id, state),
+                warnings=warnings,
+            )
+        self._save_run_state(data_package_id, state)
+        return await self._rerun_vocab_downstream(
+            data_package_id=data_package_id,
+            profile_identifier=profile_identifier,
+            state=state,
+            warnings=warnings,
         )
 
     async def _run_extraction_task(
@@ -297,6 +387,11 @@ class ExtractionService:
             total_chunks=sum(len(chunks) for chunks in chunks_by_file),
             ranked_files=persisted_state.ranked_files if persisted_state else [],
             chunk_results=persisted_state.chunk_results if persisted_state else [],
+            vocab_query_config=(
+                persisted_state.vocab_query_config
+                if persisted_state
+                else self._default_vocab_query_config(qualitative_vocab_identifiers)
+            ),
         )
         self._update_progress(data_package_id, progress)
 
@@ -310,11 +405,14 @@ class ExtractionService:
             ranking=ranking,
             ordered_chunks=ordered_chunks,
             persisted_state=persisted_state,
+            profile_identifier=profile_identifier,
+            vocab_query_config=progress.vocab_query_config,
         )
         self._save_run_state(data_package_id, state)
 
         progress.ranked_files = state.ranked_files
         progress.chunk_results = state.chunk_results
+        progress.vocab_query_config = state.vocab_query_config
         progress.total_chunks = len(state.chunk_results)
         progress.processed_chunks = self._completed_chunk_count(state)
         progress.interim_context = self._merged_completed_chunk_context_or_none(state)
@@ -322,100 +420,155 @@ class ExtractionService:
 
         progress.stage = "chunk_extraction"
         chunk_repairs: list[tuple[ExtractionChunkResult, MaxRetriesExceeded]] = []
-        for chunk_result, chunk in zip(state.chunk_results, ordered_chunks):
-            if chunk_result.status == "completed" and chunk_result.extraction_context is not None:
-                continue
+        vocab_query_semaphore = asyncio.Semaphore(self._vocab_query_concurrency())
+        candidate_tasks: list[asyncio.Task[_QuantityCandidateDiscovery | _QualitativeCandidateDiscovery]] = []
 
-            chunk_result.status = "running"
-            chunk_result.error = None
-            progress.current_chunk = self._chunk_ref(chunk_result)
+        def persist_vocab_progress() -> None:
             progress.chunk_results = state.chunk_results
+            progress.vocab_query_config = state.vocab_query_config
             self._save_run_state(data_package_id, state)
             self._update_progress(data_package_id, progress)
 
-            try:
-                result = await generate_structured(
-                    self.ollama_client,
-                    model=self.ollama_client.chat_model,
-                    system=EXTRACTION_CONTEXT_SYSTEM_PROMPT,
-                    prompt=build_extraction_context_prompt(
-                        ChunkContext(
-                            content=chunk.content,
-                            metadata=ChunkMetadata(
-                                start_idx=chunk.start_idx,
-                                end_idx=chunk.end_idx,
-                                file_path=chunk.file_path,
-                                data_package_name=data_package.file_name,
-                                initial_extraction_context=self._initial_extraction_context_for_prompt(
-                                    state,
-                                    file_path=chunk.file_path,
-                                    current_chunk_index=chunk_result.chunk_index,
-                                ),
-                            ),
+        def schedule_candidate_discovery(chunk_result: ExtractionChunkResult) -> None:
+            context = chunk_result.extraction_context
+            if context is None:
+                return
+            for quantity in self._all_quantities(context):
+                candidate_tasks.append(
+                    asyncio.create_task(
+                        self._discover_quantity_candidates(
+                            chunk_result=chunk_result,
+                            quantity=quantity,
+                            state=state,
+                            data_package_id=data_package_id,
+                            query_semaphore=vocab_query_semaphore,
+                            on_progress=persist_vocab_progress,
+                            warnings=warnings,
                         )
-                    ),
-                    output_type=ExtractionContext,
-                    retries=0,
-                    num_ctx=self.ollama_client.max_context_length,
+                    )
                 )
-            except MaxRetriesExceeded as exc:
+            for attribute in self._all_qualitative_attributes(context):
+                candidate_tasks.append(
+                    asyncio.create_task(
+                        self._discover_qualitative_attribute_candidates(
+                            chunk_result=chunk_result,
+                            attribute=attribute,
+                            vocab_identifiers=(
+                                state.vocab_query_config.qualitative_vocab_identifiers
+                            ),
+                            state=state,
+                            data_package_id=data_package_id,
+                            query_semaphore=vocab_query_semaphore,
+                            on_progress=persist_vocab_progress,
+                            warnings=warnings,
+                        )
+                    )
+                )
+
+        for chunk_result in state.chunk_results:
+            if chunk_result.status == "completed":
+                schedule_candidate_discovery(chunk_result)
+
+        try:
+            for chunk_result, chunk in zip(state.chunk_results, ordered_chunks):
+                if chunk_result.status == "completed" and chunk_result.extraction_context is not None:
+                    continue
+
+                chunk_result.status = "running"
+                chunk_result.error = None
+                progress.current_chunk = self._chunk_ref(chunk_result)
+                progress.chunk_results = state.chunk_results
+                self._save_run_state(data_package_id, state)
+                self._update_progress(data_package_id, progress)
+
+                try:
+                    result = await generate_structured(
+                        self.ollama_client,
+                        model=self.ollama_client.chat_model,
+                        system=EXTRACTION_CONTEXT_SYSTEM_PROMPT,
+                        prompt=build_extraction_context_prompt(
+                            ChunkContext(
+                                content=chunk.content,
+                                metadata=ChunkMetadata(
+                                    start_idx=chunk.start_idx,
+                                    end_idx=chunk.end_idx,
+                                    file_path=chunk.file_path,
+                                    data_package_name=data_package.file_name,
+                                    initial_extraction_context=self._initial_extraction_context_for_prompt(
+                                        state,
+                                        file_path=chunk.file_path,
+                                        current_chunk_index=chunk_result.chunk_index,
+                                    ),
+                                ),
+                            )
+                        ),
+                        output_type=ExtractionContext,
+                        retries=0,
+                        num_ctx=self.ollama_client.max_context_length,
+                    )
+                except MaxRetriesExceeded as exc:
+                    self._record_workflow_token_usage(
+                        data_package_id=data_package_id,
+                        agent_name="chunk_extraction",
+                        usage=exc.usage,
+                    )
+                    chunk_result.status = "failed"
+                    chunk_result.error = f"Queued for repair after first-pass extraction: {exc}"
+                    chunk_result.response_duration_ms = self._usage_float(
+                        exc.usage,
+                        "response_duration_ms",
+                    )
+                    chunk_result.context_tokens = self._usage_int(exc.usage, "input_tokens")
+                    progress.current_chunk = None
+                    progress.chunk_results = state.chunk_results
+                    self._save_run_state(data_package_id, state)
+                    self._update_progress(data_package_id, progress)
+                    if exc.failed_response:
+                        chunk_repairs.append((chunk_result, exc))
+                        continue
+                    raise
+                except Exception as exc:
+                    chunk_result.status = "failed"
+                    chunk_result.error = str(exc)
+                    progress.current_chunk = None
+                    progress.chunk_results = state.chunk_results
+                    self._save_run_state(data_package_id, state)
+                    self._update_progress(data_package_id, progress)
+                    raise
+
                 self._record_workflow_token_usage(
                     data_package_id=data_package_id,
                     agent_name="chunk_extraction",
-                    usage=exc.usage,
+                    usage=result.usage,
                 )
-                chunk_result.status = "failed"
-                chunk_result.error = f"Queued for repair after first-pass extraction: {exc}"
+                chunk_result.status = "completed"
+                chunk_result.extraction_context = result.output
                 chunk_result.response_duration_ms = self._usage_float(
-                    exc.usage,
+                    result.usage,
                     "response_duration_ms",
                 )
-                chunk_result.context_tokens = self._usage_int(exc.usage, "input_tokens")
+                chunk_result.context_tokens = self._usage_int(result.usage, "input_tokens")
+                self._save_run_state(data_package_id, state)
+                schedule_candidate_discovery(chunk_result)
+
+                partial_context = self._merged_completed_chunk_context(state)
+                self.output_repository.save_extraction_context(
+                    workflow_id=data_package_id,
+                    extraction_context=partial_context,
+                )
+                progress.processed_chunks = self._completed_chunk_count(state)
+                progress.interim_context = partial_context
                 progress.current_chunk = None
                 progress.chunk_results = state.chunk_results
-                self._save_run_state(data_package_id, state)
                 self._update_progress(data_package_id, progress)
-                if exc.failed_response:
-                    chunk_repairs.append((chunk_result, exc))
-                    continue
-                raise
-            except Exception as exc:
-                chunk_result.status = "failed"
-                chunk_result.error = str(exc)
-                progress.current_chunk = None
-                progress.chunk_results = state.chunk_results
-                self._save_run_state(data_package_id, state)
+
+            if chunk_repairs:
+                progress.stage = "chunk_repair"
                 self._update_progress(data_package_id, progress)
-                raise
+        except asyncio.CancelledError:
+            await self._cancel_candidate_tasks(candidate_tasks)
+            raise
 
-            self._record_workflow_token_usage(
-                data_package_id=data_package_id,
-                agent_name="chunk_extraction",
-                usage=result.usage,
-            )
-            chunk_result.status = "completed"
-            chunk_result.extraction_context = result.output
-            chunk_result.response_duration_ms = self._usage_float(
-                result.usage,
-                "response_duration_ms",
-            )
-            chunk_result.context_tokens = self._usage_int(result.usage, "input_tokens")
-            self._save_run_state(data_package_id, state)
-
-            partial_context = self._merged_completed_chunk_context(state)
-            self.output_repository.save_extraction_context(
-                workflow_id=data_package_id,
-                extraction_context=partial_context,
-            )
-            progress.processed_chunks = self._completed_chunk_count(state)
-            progress.interim_context = partial_context
-            progress.current_chunk = None
-            progress.chunk_results = state.chunk_results
-            self._update_progress(data_package_id, progress)
-
-        if chunk_repairs:
-            progress.stage = "chunk_repair"
-            self._update_progress(data_package_id, progress)
         for chunk_result, failure in chunk_repairs:
             chunk_result.status = "running"
             chunk_result.error = None
@@ -455,6 +608,7 @@ class ExtractionService:
             )
             chunk_result.context_tokens = self._usage_int(repair.usage, "input_tokens")
             self._save_run_state(data_package_id, state)
+            schedule_candidate_discovery(chunk_result)
 
             partial_context = self._merged_completed_chunk_context(state)
             self.output_repository.save_extraction_context(
@@ -476,12 +630,16 @@ class ExtractionService:
         progress.stage = "vocabulary_normalization"
         progress.interim_context = extraction_context
         self._update_progress(data_package_id, progress)
-        normalization = await self._normalize_context(
-            data_package_id=data_package_id,
-            extraction_context=extraction_context,
-            qualitative_vocab_identifiers=qualitative_vocab_identifiers,
-            warnings=warnings,
-        )
+        try:
+            normalization = await self._normalize_from_candidate_tasks(
+                data_package_id=data_package_id,
+                state=state,
+                candidate_tasks=candidate_tasks,
+                warnings=warnings,
+            )
+        except asyncio.CancelledError:
+            await self._cancel_candidate_tasks(candidate_tasks)
+            raise
         progress.normalized_quantities = len(normalization.quantities)
         progress.normalized_qualitative_attributes = len(
             normalization.qualitative_attributes
@@ -492,54 +650,14 @@ class ExtractionService:
         progress.stage = "profile_projection"
         progress.interim_context = extraction_context
         self._update_progress(data_package_id, progress)
-        projection = await generate_structured(
-            self.ollama_client,
-            model=self.ollama_client.chat_model,
-            system=PROFILE_PROJECTION_SYSTEM_PROMPT,
-            prompt=build_profile_projection_prompt(
-                data_package_id=data_package_id,
-                profile_identifier=profile_identifier,
-                profile_target_class=profile_manifest.target_class,
-                extraction_context=extraction_context,
-                normalization=normalization,
-                warnings=warnings,
-                profile_schema=validation_schema,
-            ),
-            output_type=validation_schema,
-            num_ctx=self.ollama_client.max_context_length,
-        )
-        self._record_workflow_token_usage(
+        result = await self._project_and_save_result(
             data_package_id=data_package_id,
-            agent_name="profile_projection",
-            usage=projection.usage,
-        )
-
-        clean_document = remove_null_values(projection.output)
-        validation = self.profile_service.validate_document(
-            identifier=profile_identifier,
-            document=clean_document,
-        )
-        if not validation.valid:
-            errors = [
-                f"{issue.path}: {issue.message}"
-                for issue in validation.errors
-            ]
-            raise ExtractionValidationError(errors)
-
-        token_usage = await self.get_token_usage(data_package_id)
-        result = ExtractionRunResult(
-            document=clean_document,
+            profile_identifier=profile_identifier,
+            profile_target_class=profile_manifest.target_class,
             extraction_context=extraction_context,
+            normalization=normalization,
+            validation_schema=validation_schema,
             warnings=warnings,
-            token_usage=token_usage,
-        )
-        self.output_repository.save_extraction_warnings(
-            workflow_id=data_package_id,
-            warnings=warnings,
-        )
-        self.output_repository.save_extraction_result(
-            workflow_id=data_package_id,
-            result=result,
         )
         progress.stage = "completed"
         progress.interim_context = extraction_context
@@ -589,6 +707,113 @@ class ExtractionService:
             warnings.append(f"File ranking fell back to heuristics: {exc}")
             return fallback_file_ranking(files)
 
+    async def _rerun_vocab_downstream(
+        self,
+        *,
+        data_package_id: str,
+        profile_identifier: str,
+        state: ExtractionRunState,
+        warnings: list[str],
+    ) -> ExtractionRunResult:
+        profile_manifest = self.profile_service.get_profile(profile_identifier)
+        profile_json_schema = self.profile_service.load_json_schema(profile_identifier)
+        validation_schema = validation_schema_for_target_class(
+            json_schema=profile_json_schema,
+            target_class=profile_manifest.target_class,
+        )
+        extraction_context = self._merged_completed_chunk_context(state)
+        normalization = await self._normalize_from_state_vocab_queries(
+            data_package_id=data_package_id,
+            state=state,
+            warnings=warnings,
+        )
+        result = await self._project_and_save_result(
+            data_package_id=data_package_id,
+            profile_identifier=profile_identifier,
+            profile_target_class=profile_manifest.target_class,
+            extraction_context=extraction_context,
+            normalization=normalization,
+            validation_schema=validation_schema,
+            warnings=warnings,
+        )
+        if self.task_registry is not None:
+            self.task_registry.update_progress(
+                self._extraction_task_name(data_package_id),
+                ExtractionRunProgress(
+                    stage="completed",
+                    processed_chunks=self._completed_chunk_count(state),
+                    total_chunks=len(state.chunk_results),
+                    normalized_quantities=len(normalization.quantities),
+                    normalized_qualitative_attributes=len(normalization.qualitative_attributes),
+                    interim_context=extraction_context,
+                    vocab_query_config=state.vocab_query_config,
+                    ranked_files=state.ranked_files,
+                    chunk_results=state.chunk_results,
+                    warnings=warnings,
+                ).model_dump(mode="json"),
+            )
+        return result
+
+    async def _project_and_save_result(
+        self,
+        *,
+        data_package_id: str,
+        profile_identifier: str,
+        profile_target_class: str,
+        extraction_context: ExtractionContext,
+        normalization: ExtractionNormalization,
+        validation_schema: dict[str, Any],
+        warnings: list[str],
+    ) -> ExtractionRunResult:
+        assert self.ollama_client is not None
+        assert self.output_repository is not None
+        projection = await generate_structured(
+            self.ollama_client,
+            model=self.ollama_client.chat_model,
+            system=PROFILE_PROJECTION_SYSTEM_PROMPT,
+            prompt=build_profile_projection_prompt(
+                data_package_id=data_package_id,
+                profile_identifier=profile_identifier,
+                profile_target_class=profile_target_class,
+                extraction_context=extraction_context,
+                normalization=normalization,
+                warnings=warnings,
+                profile_schema=validation_schema,
+            ),
+            output_type=validation_schema,
+            num_ctx=self.ollama_client.max_context_length,
+        )
+        self._record_workflow_token_usage(
+            data_package_id=data_package_id,
+            agent_name="profile_projection",
+            usage=projection.usage,
+        )
+        clean_document = remove_null_values(projection.output)
+        validation = self.profile_service.validate_document(
+            identifier=profile_identifier,
+            document=clean_document,
+        )
+        if not validation.valid:
+            raise ExtractionValidationError(
+                [f"{issue.path}: {issue.message}" for issue in validation.errors]
+            )
+        token_usage = await self.get_token_usage(data_package_id)
+        result = ExtractionRunResult(
+            document=clean_document,
+            extraction_context=extraction_context,
+            warnings=warnings,
+            token_usage=token_usage,
+        )
+        self.output_repository.save_extraction_warnings(
+            workflow_id=data_package_id,
+            warnings=warnings,
+        )
+        self.output_repository.save_extraction_result(
+            workflow_id=data_package_id,
+            result=result,
+        )
+        return result
+
     @staticmethod
     def _ordered_chunks(
         chunks_by_file: list[list[ContentChunk]],
@@ -615,6 +840,8 @@ class ExtractionService:
         ranking: FileRankingResult,
         ordered_chunks: list[ContentChunk],
         persisted_state: ExtractionRunState | None,
+        profile_identifier: str,
+        vocab_query_config: ExtractionVocabQueryConfig,
     ) -> ExtractionRunState:
         persisted_by_key = {
             cls._chunk_result_key(result): result
@@ -646,6 +873,12 @@ class ExtractionService:
             )
 
         return ExtractionRunState(
+            profile_identifier=profile_identifier,
+            vocab_query_config=(
+                persisted_state.vocab_query_config
+                if persisted_state
+                else vocab_query_config
+            ),
             ranked_files=ranking.files,
             chunk_results=chunk_results,
         )
@@ -859,6 +1092,367 @@ class ExtractionService:
             qualitative_attributes=qualitative_results,
         )
 
+    async def _normalize_from_candidate_tasks(
+        self,
+        *,
+        data_package_id: str,
+        state: ExtractionRunState,
+        candidate_tasks: list[asyncio.Task[_QuantityCandidateDiscovery | _QualitativeCandidateDiscovery]],
+        warnings: list[str],
+    ) -> ExtractionNormalization:
+        if not candidate_tasks:
+            return ExtractionNormalization()
+        discoveries = await asyncio.gather(*candidate_tasks)
+        selection_semaphore = asyncio.Semaphore(self._vocab_selection_llm_concurrency())
+        quantity_discoveries = [
+            item for item in discoveries if isinstance(item, _QuantityCandidateDiscovery)
+        ]
+        qualitative_discoveries = [
+            item for item in discoveries if isinstance(item, _QualitativeCandidateDiscovery)
+        ]
+
+        if self._vocab_selection_parallel_enabled():
+            quantity_results = await asyncio.gather(
+                *[
+                    self._normalize_quantity_from_candidates(
+                        data_package_id=data_package_id,
+                        state=state,
+                        discovery=discovery,
+                        selection_semaphore=selection_semaphore,
+                        warnings=warnings,
+                    )
+                    for discovery in quantity_discoveries
+                ]
+            )
+            qualitative_results = await asyncio.gather(
+                *[
+                    self._normalize_qualitative_attribute_from_candidates(
+                        data_package_id=data_package_id,
+                        state=state,
+                        discovery=discovery,
+                        selection_semaphore=selection_semaphore,
+                        warnings=warnings,
+                    )
+                    for discovery in qualitative_discoveries
+                ]
+            )
+        else:
+            quantity_results = []
+            for discovery in quantity_discoveries:
+                quantity_results.append(
+                    await self._normalize_quantity_from_candidates(
+                        data_package_id=data_package_id,
+                        state=state,
+                        discovery=discovery,
+                        selection_semaphore=selection_semaphore,
+                        warnings=warnings,
+                    )
+                )
+            qualitative_results = []
+            for discovery in qualitative_discoveries:
+                qualitative_results.append(
+                    await self._normalize_qualitative_attribute_from_candidates(
+                        data_package_id=data_package_id,
+                        state=state,
+                        discovery=discovery,
+                        selection_semaphore=selection_semaphore,
+                        warnings=warnings,
+                    )
+                )
+
+        return ExtractionNormalization(
+            quantities=quantity_results,
+            qualitative_attributes=qualitative_results,
+        )
+
+    async def _normalize_from_state_vocab_queries(
+        self,
+        *,
+        data_package_id: str,
+        state: ExtractionRunState,
+        warnings: list[str],
+    ) -> ExtractionNormalization:
+        quantity_groups: dict[str, dict[str, Any]] = {}
+        qualitative_discoveries: list[_QualitativeCandidateDiscovery] = []
+        for chunk_result in state.chunk_results:
+            for record in chunk_result.vocab_queries:
+                if record.kind in {"quantity_kind", "unit"}:
+                    key = repr(sorted(record.source_context.items()))
+                    group = quantity_groups.setdefault(
+                        key,
+                        {"source_context": record.source_context, "quantity_kind": None, "unit": None},
+                    )
+                    group[record.kind] = record.query_id
+                elif record.kind == "qualitative_attribute":
+                    try:
+                        attribute = QualitativeAttribute.model_validate(record.source_context)
+                    except Exception:
+                        continue
+                    existing = next(
+                        (
+                            discovery
+                            for discovery in qualitative_discoveries
+                            if discovery.attribute == attribute
+                        ),
+                        None,
+                    )
+                    if existing is None:
+                        qualitative_discoveries.append(
+                            _QualitativeCandidateDiscovery(
+                                attribute=attribute,
+                                query_ids=[record.query_id],
+                            )
+                        )
+                    else:
+                        existing.query_ids.append(record.query_id)
+
+        quantity_discoveries: list[_QuantityCandidateDiscovery] = []
+        for group in quantity_groups.values():
+            try:
+                quantity = QuantitativeAttribute.model_validate(group["source_context"])
+            except Exception:
+                continue
+            if group.get("quantity_kind") and group.get("unit"):
+                quantity_discoveries.append(
+                    _QuantityCandidateDiscovery(
+                        quantity=quantity,
+                        quantity_kind_query_id=group["quantity_kind"],
+                        unit_query_id=group["unit"],
+                    )
+                )
+
+        selection_semaphore = asyncio.Semaphore(self._vocab_selection_llm_concurrency())
+        quantity_results = [
+            await self._normalize_quantity_from_candidates(
+                data_package_id=data_package_id,
+                state=state,
+                discovery=discovery,
+                selection_semaphore=selection_semaphore,
+                warnings=warnings,
+            )
+            for discovery in quantity_discoveries
+        ]
+        qualitative_results = [
+            await self._normalize_qualitative_attribute_from_candidates(
+                data_package_id=data_package_id,
+                state=state,
+                discovery=discovery,
+                selection_semaphore=selection_semaphore,
+                warnings=warnings,
+            )
+            for discovery in qualitative_discoveries
+        ]
+        return ExtractionNormalization(
+            quantities=quantity_results,
+            qualitative_attributes=qualitative_results,
+        )
+
+    async def _discover_quantity_candidates(
+        self,
+        *,
+        chunk_result: ExtractionChunkResult,
+        quantity: QuantitativeAttribute,
+        state: ExtractionRunState,
+        data_package_id: str,
+        query_semaphore: asyncio.Semaphore,
+        on_progress: Any,
+        warnings: list[str],
+    ) -> _QuantityCandidateDiscovery:
+        kind_query = self._configured_vocab_query(
+            build_quantity_kind_vocab_query(quantity),
+            state.vocab_query_config,
+            group="quantitative",
+        )
+        unit_query = self._configured_vocab_query(
+            build_unit_vocab_query(quantity),
+            state.vocab_query_config,
+            group="quantitative",
+        )
+        kind_record = self._ensure_vocab_query_record(
+            chunk_result=chunk_result,
+            kind="quantity_kind",
+            source_value=quantity.quantity_kind,
+            source_context=quantity.model_dump(mode="json"),
+            vocabulary_identifier=QUDT_QUANTITY_KIND_VOCAB,
+            query=kind_query,
+        )
+        unit_record = self._ensure_vocab_query_record(
+            chunk_result=chunk_result,
+            kind="unit",
+            source_value=quantity.unit,
+            source_context=quantity.model_dump(mode="json"),
+            vocabulary_identifier=QUDT_UNIT_VOCAB,
+            query=unit_query,
+        )
+        on_progress()
+        async with query_semaphore:
+            await self._run_vocab_query_record(
+                data_package_id=data_package_id,
+                record=kind_record,
+                vocabulary_identifier=QUDT_QUANTITY_KIND_VOCAB,
+                query=kind_query,
+                on_progress=on_progress,
+                warnings=warnings,
+            )
+        async with query_semaphore:
+            await self._run_vocab_query_record(
+                data_package_id=data_package_id,
+                record=unit_record,
+                vocabulary_identifier=QUDT_UNIT_VOCAB,
+                query=unit_query,
+                on_progress=on_progress,
+                warnings=warnings,
+            )
+        return _QuantityCandidateDiscovery(
+            quantity=quantity,
+            quantity_kind_query_id=kind_record.query_id,
+            unit_query_id=unit_record.query_id,
+        )
+
+    async def _discover_qualitative_attribute_candidates(
+        self,
+        *,
+        chunk_result: ExtractionChunkResult,
+        attribute: QualitativeAttribute,
+        vocab_identifiers: list[str],
+        state: ExtractionRunState,
+        data_package_id: str,
+        query_semaphore: asyncio.Semaphore,
+        on_progress: Any,
+        warnings: list[str],
+    ) -> _QualitativeCandidateDiscovery:
+        if self.semantic_service is None:
+            warnings.append(
+                f"Qualitative attribute '{attribute.title}' was not normalized because semantic service is unavailable."
+            )
+            return _QualitativeCandidateDiscovery(attribute=attribute, query_ids=[])
+
+        query_ids: list[str] = []
+        for vocab_identifier in vocab_identifiers:
+            try:
+                vocab_info = await self.semantic_service.get_vocabulary(vocab_identifier)
+            except Exception as exc:
+                warnings.append(f"Vocabulary '{vocab_identifier}' unavailable: {exc}")
+                continue
+            if vocab_info is None:
+                warnings.append(f"Vocabulary '{vocab_identifier}' is not registered.")
+                continue
+            for term_scheme in vocab_info.vocab_term_schemes:
+                query = self._configured_vocab_query(
+                    build_qualitative_vocab_query(
+                        attribute,
+                        rdf_type=term_scheme.rdf_type,
+                    ),
+                    state.vocab_query_config,
+                )
+                record = self._ensure_vocab_query_record(
+                    chunk_result=chunk_result,
+                    kind="qualitative_attribute",
+                    source_value=f"{attribute.title}: {attribute.value}".strip(": "),
+                    source_context=attribute.model_dump(mode="json"),
+                    vocabulary_identifier=vocab_identifier,
+                    query=query,
+                )
+                query_ids.append(record.query_id)
+                on_progress()
+                async with query_semaphore:
+                    await self._run_vocab_query_record(
+                        data_package_id=data_package_id,
+                        record=record,
+                        vocabulary_identifier=vocab_identifier,
+                        query=query,
+                        on_progress=on_progress,
+                        warnings=warnings,
+                    )
+        return _QualitativeCandidateDiscovery(attribute=attribute, query_ids=query_ids)
+
+    async def _normalize_quantity_from_candidates(
+        self,
+        *,
+        data_package_id: str,
+        state: ExtractionRunState,
+        discovery: _QuantityCandidateDiscovery,
+        selection_semaphore: asyncio.Semaphore,
+        warnings: list[str],
+    ) -> QuantityNormalization:
+        quantity = discovery.quantity
+        kind_record = self._find_vocab_query_record(state, discovery.quantity_kind_query_id)
+        unit_record = self._find_vocab_query_record(state, discovery.unit_query_id)
+        quantity_kind = await self._select_term_with_fallback_candidates(
+            data_package_id=data_package_id,
+            vocabulary_identifier=QUDT_QUANTITY_KIND_VOCAB,
+            source_value=quantity.quantity_kind,
+            source_context=quantity.model_dump(mode="json"),
+            query=kind_record.query if kind_record else build_quantity_kind_vocab_query(quantity),
+            initial_candidates=self._candidate_records(kind_record.result) if kind_record and kind_record.result else [],
+            agent_name="quantity_vocab_selection",
+            selection_semaphore=selection_semaphore,
+            warnings=warnings,
+        )
+        unit = await self._select_term_with_fallback_candidates(
+            data_package_id=data_package_id,
+            vocabulary_identifier=QUDT_UNIT_VOCAB,
+            source_value=quantity.unit,
+            source_context=quantity.model_dump(mode="json"),
+            query=unit_record.query if unit_record else build_unit_vocab_query(quantity),
+            initial_candidates=self._candidate_records(unit_record.result) if unit_record and unit_record.result else [],
+            agent_name="quantity_vocab_selection",
+            selection_semaphore=selection_semaphore,
+            warnings=warnings,
+        )
+        if quantity_kind is None and quantity.quantity_kind:
+            warnings.append(
+                f"Quantity '{quantity.identifier}' kept raw quantity kind '{quantity.quantity_kind}'."
+            )
+            quantity_kind = VocabularyTermMapping(
+                source_value=quantity.quantity_kind,
+                reason="No QUDT quantity-kind candidate selected; raw value retained.",
+            )
+        if unit is None and quantity.unit:
+            warnings.append(
+                f"Quantity '{quantity.identifier}' kept raw unit '{quantity.unit}'."
+            )
+            unit = VocabularyTermMapping(
+                source_value=quantity.unit,
+                reason="No QUDT unit candidate selected; raw value retained.",
+            )
+        return QuantityNormalization(
+            quantity=quantity,
+            quantity_kind=quantity_kind,
+            unit=unit,
+        )
+
+    async def _normalize_qualitative_attribute_from_candidates(
+        self,
+        *,
+        data_package_id: str,
+        state: ExtractionRunState,
+        discovery: _QualitativeCandidateDiscovery,
+        selection_semaphore: asyncio.Semaphore,
+        warnings: list[str],
+    ) -> QualitativeAttributeNormalization:
+        attribute = discovery.attribute
+        source_value = f"{attribute.title}: {attribute.value}".strip(": ")
+        candidates: list[dict[str, Any]] = []
+        for query_id in discovery.query_ids:
+            record = self._find_vocab_query_record(state, query_id)
+            if record and record.result:
+                candidates.extend(self._candidate_records(record.result))
+        mapping = await self._select_from_candidates_with_semaphore(
+            data_package_id=data_package_id,
+            agent_name="qualitative_vocab_selection",
+            source_value=source_value,
+            source_context=attribute.model_dump(mode="json"),
+            candidates=self._deduplicate_candidates(candidates),
+            selection_semaphore=selection_semaphore,
+            warnings=warnings,
+        )
+        if mapping is None:
+            warnings.append(
+                f"Qualitative attribute '{attribute.title}' kept raw value '{attribute.value}'."
+            )
+        return QualitativeAttributeNormalization(attribute=attribute, term=mapping)
+
     async def _normalize_quantity(
         self,
         *,
@@ -950,6 +1544,7 @@ class ExtractionService:
             source_value=source_value,
             source_context=attribute.model_dump(mode="json"),
             candidates=self._deduplicate_candidates(candidates),
+            selection_semaphore=asyncio.Semaphore(self._vocab_selection_llm_concurrency()),
             warnings=warnings,
         )
         if mapping is None:
@@ -974,12 +1569,38 @@ class ExtractionService:
             query=query,
             warnings=warnings,
         )
+        return await self._select_term_with_fallback_candidates(
+            data_package_id=data_package_id,
+            vocabulary_identifier=vocabulary_identifier,
+            source_value=source_value,
+            source_context=source_context,
+            query=query,
+            initial_candidates=candidates,
+            agent_name=agent_name,
+            selection_semaphore=asyncio.Semaphore(self._vocab_selection_llm_concurrency()),
+            warnings=warnings,
+        )
+
+    async def _select_term_with_fallback_candidates(
+        self,
+        *,
+        data_package_id: str,
+        vocabulary_identifier: str,
+        source_value: str,
+        source_context: dict[str, Any],
+        query: VocabQuery,
+        initial_candidates: list[dict[str, Any]],
+        agent_name: str,
+        selection_semaphore: asyncio.Semaphore,
+        warnings: list[str],
+    ) -> VocabularyTermMapping | None:
         mapping = await self._select_from_candidates(
             data_package_id=data_package_id,
             agent_name=agent_name,
             source_value=source_value,
             source_context=source_context,
-            candidates=candidates,
+            candidates=initial_candidates,
+            selection_semaphore=selection_semaphore,
             warnings=warnings,
         )
         if mapping is not None:
@@ -989,7 +1610,8 @@ class ExtractionService:
             agent_name=agent_name,
             source_value=source_value,
             source_context=source_context,
-            failed_candidates=candidates,
+            failed_candidates=initial_candidates,
+            selection_semaphore=selection_semaphore,
             warnings=warnings,
         )
         if fallback is None:
@@ -1011,6 +1633,7 @@ class ExtractionService:
             source_value=source_value,
             source_context=source_context,
             candidates=fallback_candidates,
+            selection_semaphore=selection_semaphore,
             warnings=warnings,
         )
 
@@ -1036,6 +1659,119 @@ class ExtractionService:
             return []
         return self._candidate_records(result)
 
+    async def _run_vocab_query_record(
+        self,
+        *,
+        data_package_id: str,
+        record: ExtractionVocabQueryRecord,
+        vocabulary_identifier: str,
+        query: VocabQuery,
+        on_progress: Any | None,
+        warnings: list[str],
+    ) -> None:
+        if self.semantic_service is None:
+            record.status = "failed"
+            record.error = "Vocabulary normalization skipped because semantic service is unavailable."
+            warnings.append(record.error)
+            if on_progress:
+                on_progress()
+            return
+        record.status = "running"
+        record.error = None
+        record.result = None
+        started = time.perf_counter()
+        if on_progress:
+            on_progress()
+        try:
+            record.result = await self.semantic_service.query_vocabulary(
+                vocabulary_identifier,
+                query,
+            )
+            record.status = "completed"
+            record.duration_ms = round((time.perf_counter() - started) * 1000, 2)
+        except Exception as exc:
+            record.status = "failed"
+            record.error = str(exc)
+            record.duration_ms = round((time.perf_counter() - started) * 1000, 2)
+            warnings.append(
+                f"Vocabulary query failed for '{vocabulary_identifier}' ({query.rdf_type}): {exc}"
+            )
+        if on_progress:
+            on_progress()
+
+    def _ensure_vocab_query_record(
+        self,
+        *,
+        chunk_result: ExtractionChunkResult,
+        kind: str,
+        source_value: str,
+        source_context: dict[str, Any],
+        vocabulary_identifier: str,
+        query: VocabQuery,
+    ) -> ExtractionVocabQueryRecord:
+        query_id = self._vocab_query_id(
+            chunk_result=chunk_result,
+            kind=kind,
+            source_value=source_value,
+            vocabulary_identifier=vocabulary_identifier,
+            rdf_type=query.rdf_type,
+        )
+        existing = next(
+            (record for record in chunk_result.vocab_queries if record.query_id == query_id),
+            None,
+        )
+        if existing is not None:
+            existing.source_context = source_context
+            existing.query = query
+            existing.vocabulary_identifier = vocabulary_identifier
+            existing.rdf_type = query.rdf_type
+            return existing
+        record = ExtractionVocabQueryRecord(
+            query_id=query_id,
+            kind=kind,
+            source_value=source_value,
+            source_context=source_context,
+            vocabulary_identifier=vocabulary_identifier,
+            rdf_type=query.rdf_type,
+            query=query,
+        )
+        chunk_result.vocab_queries.append(record)
+        return record
+
+    @staticmethod
+    def _find_vocab_query_record(
+        state: ExtractionRunState,
+        query_id: str,
+    ) -> ExtractionVocabQueryRecord | None:
+        for chunk_result in state.chunk_results:
+            for record in chunk_result.vocab_queries:
+                if record.query_id == query_id:
+                    return record
+        return None
+
+    @staticmethod
+    def _vocab_query_id(
+        *,
+        chunk_result: ExtractionChunkResult,
+        kind: str,
+        source_value: str,
+        vocabulary_identifier: str,
+        rdf_type: str,
+    ) -> str:
+        raw = "|".join(
+            str(part)
+            for part in (
+                chunk_result.file_path,
+                chunk_result.start_idx,
+                chunk_result.end_idx,
+                kind,
+                source_value,
+                vocabulary_identifier,
+                rdf_type,
+            )
+        )
+        return sha1(raw.encode("utf-8")).hexdigest()
+
     @staticmethod
     def _candidate_records(result: VocabQueryResult) -> list[dict[str, Any]]:
         records: list[dict[str, Any]] = []
@@ -1060,10 +1796,22 @@ class ExtractionService:
         source_value: str,
         source_context: dict[str, Any],
         candidates: list[dict[str, Any]],
+        selection_semaphore: asyncio.Semaphore | None = None,
         warnings: list[str],
     ) -> VocabularyTermMapping | None:
         if not candidates:
             return None
+        if selection_semaphore is not None:
+            async with selection_semaphore:
+                return await self._select_from_candidates(
+                    data_package_id=data_package_id,
+                    agent_name=agent_name,
+                    source_value=source_value,
+                    source_context=source_context,
+                    candidates=candidates,
+                    selection_semaphore=None,
+                    warnings=warnings,
+                )
         assert self.ollama_client is not None
         result = await generate_structured(
             self.ollama_client,
@@ -1099,6 +1847,27 @@ class ExtractionService:
             reason=result.output.reason,
         )
 
+    async def _select_from_candidates_with_semaphore(
+        self,
+        *,
+        data_package_id: str,
+        agent_name: str,
+        source_value: str,
+        source_context: dict[str, Any],
+        candidates: list[dict[str, Any]],
+        selection_semaphore: asyncio.Semaphore,
+        warnings: list[str],
+    ) -> VocabularyTermMapping | None:
+        return await self._select_from_candidates(
+            data_package_id=data_package_id,
+            agent_name=agent_name,
+            source_value=source_value,
+            source_context=source_context,
+            candidates=candidates,
+            selection_semaphore=selection_semaphore,
+            warnings=warnings,
+        )
+
     async def _build_fallback_query(
         self,
         *,
@@ -1107,8 +1876,20 @@ class ExtractionService:
         source_value: str,
         source_context: dict[str, Any],
         failed_candidates: list[dict[str, Any]],
+        selection_semaphore: asyncio.Semaphore | None = None,
         warnings: list[str],
     ) -> VocabularyFallbackQuery | None:
+        if selection_semaphore is not None:
+            async with selection_semaphore:
+                return await self._build_fallback_query(
+                    data_package_id=data_package_id,
+                    agent_name=agent_name,
+                    source_value=source_value,
+                    source_context=source_context,
+                    failed_candidates=failed_candidates,
+                    selection_semaphore=None,
+                    warnings=warnings,
+                )
         assert self.ollama_client is not None
         try:
             result = await generate_structured(
@@ -1141,6 +1922,51 @@ class ExtractionService:
             if isinstance(uri, str) and uri not in by_uri:
                 by_uri[uri] = candidate
         return list(by_uri.values())
+
+    @staticmethod
+    def _default_vocab_query_config(
+        qualitative_vocab_identifiers: list[str] | None,
+    ) -> ExtractionVocabQueryConfig:
+        return ExtractionVocabQueryConfig(
+            qualitative_vocab_identifiers=(
+                qualitative_vocab_identifiers or DEFAULT_QUALITATIVE_VOCAB_IDENTIFIERS
+            )
+        )
+
+    @staticmethod
+    def _configured_vocab_query(
+        query: VocabQuery,
+        config: ExtractionVocabQueryConfig,
+        *,
+        group: str = "qualitative",
+    ) -> VocabQuery:
+        if group == "quantitative":
+            return query.model_copy(
+                update={
+                    "vector_top_k": config.quantitative_vector_top_k,
+                    "fulltext_top_k": config.quantitative_fulltext_top_k,
+                    "seed_top_k": config.quantitative_seed_top_k,
+                    "max_hops": config.quantitative_max_hops,
+                    "max_statements_per_seed": config.quantitative_max_statements_per_seed,
+                    "traversal_direction": config.quantitative_traversal_direction,
+                    "vector_weight": config.quantitative_vector_weight,
+                    "fulltext_weight": config.quantitative_fulltext_weight,
+                    "rrf_k": config.quantitative_rrf_k,
+                }
+            )
+        return query.model_copy(
+            update={
+                "vector_top_k": config.vector_top_k,
+                "fulltext_top_k": config.fulltext_top_k,
+                "seed_top_k": config.seed_top_k,
+                "max_hops": config.max_hops,
+                "max_statements_per_seed": config.max_statements_per_seed,
+                "traversal_direction": config.traversal_direction,
+                "vector_weight": config.vector_weight,
+                "fulltext_weight": config.fulltext_weight,
+                "rrf_k": config.rrf_k,
+            }
+        )
 
     @staticmethod
     def _all_quantities(context: ExtractionContext) -> list[QuantitativeAttribute]:
@@ -1242,6 +2068,8 @@ class ExtractionService:
                 "total_tokens": 0,
                 "requests": 0,
                 "operation_count": 0,
+                "prompt_eval_duration_ms": 0,
+                "load_duration_ms": 0,
                 "response_duration_ms": 0,
                 "total_duration_ms": 0,
             },
@@ -1252,6 +2080,8 @@ class ExtractionService:
             "total_tokens",
             "requests",
             "operation_count",
+            "prompt_eval_duration_ms",
+            "load_duration_ms",
             "response_duration_ms",
             "total_duration_ms",
         ):
@@ -1262,6 +2092,8 @@ class ExtractionService:
             input_tokens + output_tokens
         )
         requests = self._usage_int(usage, "requests")
+        prompt_eval_duration_ms = self._usage_int(usage, "prompt_eval_duration_ms")
+        load_duration_ms = self._usage_int(usage, "load_duration_ms")
         response_duration_ms = self._usage_int(usage, "response_duration_ms")
         total_duration_ms = self._usage_int(usage, "total_duration_ms")
         entry["input_tokens"] += input_tokens
@@ -1269,6 +2101,8 @@ class ExtractionService:
         entry["total_tokens"] += total_tokens
         entry["requests"] += requests
         entry["operation_count"] += 1
+        entry["prompt_eval_duration_ms"] += prompt_eval_duration_ms
+        entry["load_duration_ms"] += load_duration_ms
         entry["response_duration_ms"] += response_duration_ms
         entry["total_duration_ms"] += total_duration_ms
         self.output_repository.save_token_usage(
@@ -1306,6 +2140,8 @@ class ExtractionService:
                     "output_tokens",
                     "total_tokens",
                     "requests",
+                    "prompt_eval_duration_ms",
+                    "load_duration_ms",
                     "response_duration_ms",
                     "total_duration_ms",
                 )
@@ -1319,6 +2155,8 @@ class ExtractionService:
             "total_tokens": sum(item["total_tokens"] for item in agents.values()),
             "requests": sum(item["requests"] for item in agents.values()),
             "operation_count": sum(item["operation_count"] for item in agents.values()),
+            "prompt_eval_duration_ms": sum(item["prompt_eval_duration_ms"] for item in agents.values()),
+            "load_duration_ms": sum(item["load_duration_ms"] for item in agents.values()),
             "response_duration_ms": sum(item["response_duration_ms"] for item in agents.values()),
             "total_duration_ms": sum(item["total_duration_ms"] for item in agents.values()),
         }
@@ -1334,6 +2172,8 @@ class ExtractionService:
         input_tokens = int(values.get("input_tokens", 0))
         output_tokens = int(values.get("output_tokens", 0))
         total_tokens = int(values.get("total_tokens", 0))
+        prompt_eval_duration_ms = int(values.get("prompt_eval_duration_ms", 0))
+        load_duration_ms = int(values.get("load_duration_ms", 0))
         response_duration_ms = int(values.get("response_duration_ms", 0))
         total_duration_ms = int(values.get("total_duration_ms", 0))
         return {
@@ -1342,19 +2182,55 @@ class ExtractionService:
             "total_tokens": total_tokens,
             "requests": int(values.get("requests", 0)),
             "operation_count": operation_count,
+            "prompt_eval_duration_ms": prompt_eval_duration_ms,
+            "load_duration_ms": load_duration_ms,
             "response_duration_ms": response_duration_ms,
             "total_duration_ms": total_duration_ms,
+            "prompt_eval_tokens_per_second": round(
+                input_tokens / (prompt_eval_duration_ms / 1000),
+                2,
+            )
+            if prompt_eval_duration_ms > 0
+            else 0.0,
             "average_input_tokens_per_operation": round(input_tokens / operation_count, 2),
             "average_output_tokens_per_operation": round(output_tokens / operation_count, 2),
             "average_total_tokens_per_operation": round(total_tokens / operation_count, 2),
+            "average_prompt_eval_duration_ms_per_operation": round(prompt_eval_duration_ms / operation_count, 2),
+            "average_load_duration_ms_per_operation": round(load_duration_ms / operation_count, 2),
             "average_response_duration_ms_per_operation": round(response_duration_ms / operation_count, 2),
             "average_total_duration_ms_per_operation": round(total_duration_ms / operation_count, 2),
             "average_input_tokens_per_request": round(input_tokens / requests, 2),
             "average_output_tokens_per_request": round(output_tokens / requests, 2),
             "average_total_tokens_per_request": round(total_tokens / requests, 2),
+            "average_prompt_eval_duration_ms_per_request": round(prompt_eval_duration_ms / requests, 2),
+            "average_load_duration_ms_per_request": round(load_duration_ms / requests, 2),
             "average_response_duration_ms_per_request": round(response_duration_ms / requests, 2),
             "average_total_duration_ms_per_request": round(total_duration_ms / requests, 2),
         }
+
+    def _vocab_query_concurrency(self) -> int:
+        return max(1, int(getattr(self.settings, "extraction_vocab_query_concurrency", 4) or 4))
+
+    def _vocab_selection_llm_concurrency(self) -> int:
+        return max(1, int(getattr(self.settings, "vocab_selection_llm_concurrency", 1) or 1))
+
+    def _vocab_selection_parallel_enabled(self) -> bool:
+        return (
+            str(getattr(self.settings, "vocab_selection_parallel_mode", "conservative"))
+            .strip()
+            .lower()
+            == "parallel"
+        )
+
+    @staticmethod
+    async def _cancel_candidate_tasks(
+        candidate_tasks: list[asyncio.Task[_QuantityCandidateDiscovery | _QualitativeCandidateDiscovery]],
+    ) -> None:
+        pending = [task for task in candidate_tasks if not task.done()]
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
     @staticmethod
     def _extraction_task_name(data_package_id: str) -> str:

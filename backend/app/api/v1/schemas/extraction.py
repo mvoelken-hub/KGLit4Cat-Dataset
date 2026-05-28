@@ -7,6 +7,7 @@ from app.domain.extraction import (
     ExtractionContext,
     ExtractionRunProgress,
     ExtractionRunResult,
+    ExtractionVocabQueryConfig,
 )
 
 
@@ -35,6 +36,10 @@ class ExtractionRunResponse(BaseModel):
 class ExtractionProgressResponse(BaseModel):
     status: TaskStatus
     progress: ExtractionRunProgress | None = None
+
+
+class VocabQueryConfigUpdateRequest(ExtractionVocabQueryConfig):
+    pass
 
 
 class ExtractionResultResponse(BaseModel):

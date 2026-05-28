@@ -29,6 +29,7 @@ from app.api.v1.schemas.extraction import (
     ExtractionResultResponse,
     ExtractionRunRequest,
     ExtractionRunResponse,
+    VocabQueryConfigUpdateRequest,
     _extraction_result_response,
     _extraction_run_response,
 )
@@ -66,6 +67,7 @@ __all__ = [
     "ExtractionResultResponse",
     "ExtractionRunRequest",
     "ExtractionRunResponse",
+    "VocabQueryConfigUpdateRequest",
     "JsonLdExportResponse",
     "ProfileDocumentRequest",
     "ProfileManifestResponse",

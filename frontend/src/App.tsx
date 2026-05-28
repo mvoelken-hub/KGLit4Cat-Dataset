@@ -14,11 +14,14 @@ import {
   initialContextFromExtractionContext,
   patchDraft,
   pauseExtraction,
+  rerunAllVocabQueries,
+  rerunVocabQuery,
   runExtraction,
   saveDraft,
   saveInitialContext,
   savePatchReviewState,
   setProtectedFields as apiSetProtectedFields,
+  updateVocabQueryConfig,
 } from './api/extraction';
 import { deleteProfile, getProfileJsonSchema, listProfiles, registerProfile } from './api/profiles';
 import {
@@ -32,6 +35,7 @@ import {
   type OllamaConfig,
   type OllamaPerformanceTest,
 } from './api/system';
+import { listVocabularies } from './api/semantic';
 import { JsonEditor, type JsonObject, type JsonPatchMarker, type JsonSchemaDocument, type JsonValue, setValueAtPath } from './components/JsonEditor';
 import { ChunkingDialog } from './components/ChunkingDialog';
 import { VocabularyPanel } from './components/VocabularyPanel';
@@ -39,6 +43,8 @@ import type { ChunkRequestResponse, ChunkResponse, DataPackageResponse, FileEntr
 import type {
   ExtractionChunkRef,
   ExtractionChunkResult,
+  ExtractionVocabQueryConfig,
+  ExtractionVocabQueryRecord,
   PatchArtifacts,
   PatchProgress,
   PatchReviewState,
@@ -615,6 +621,10 @@ function ExtractionContextOverview({
   status,
   budget,
   tokenUsageSummary,
+  packageId,
+  onUpdateVocabQueryConfig,
+  onRerunAllVocabQueries,
+  onRerunVocabQuery,
 }: {
   rankedFiles: RankedExtractionFile[];
   chunkResults: ExtractionChunkResult[];
@@ -625,8 +635,13 @@ function ExtractionContextOverview({
   status?: PatchTaskStatus | null;
   budget?: LlmBudget | null;
   tokenUsageSummary?: ReactNode;
+  packageId?: string;
+  onUpdateVocabQueryConfig?: (config: ExtractionVocabQueryConfig) => void;
+  onRerunAllVocabQueries?: () => void;
+  onRerunVocabQuery?: (queryId: string) => void;
 }) {
   const [traceChunk, setTraceChunk] = useState<{ chunk: ExtractionChunkResult; content: string } | null>(null);
+  const [vocabTraceChunk, setVocabTraceChunk] = useState<ExtractionChunkResult | null>(null);
   const resultByKey = new Map(chunkResults.map((chunk) => [chunkResultKey(chunk), chunk]));
   const packageFileByPath = new Map(packageFiles.map((file) => [file.file_path, file]));
   const chunkGroupsByPath = new Map(
@@ -681,6 +696,15 @@ function ExtractionContextOverview({
 
       {tokenUsageSummary}
 
+      {progress?.vocab_query_config && (
+        <VocabQueryConfigPanel
+          config={progress.vocab_query_config}
+          disabled={!packageId}
+          onApply={onUpdateVocabQueryConfig}
+          onRerunAll={onRerunAllVocabQueries}
+        />
+      )}
+
       <div className="ranked-file-list">
         {filePaths.map((filePath, fileIndex) => {
           const rank = rankedFiles.find((file) => file.file_path === filePath)?.rank ?? fileIndex + 1;
@@ -728,6 +752,8 @@ function ExtractionContextOverview({
                     && maxContextLength > 0
                     && chunk.context_tokens >= maxContextLength * 0.9
                     && !reachedTokenLimit;
+                  const vocabQueries = chunk.vocab_queries ?? [];
+                  const completedVocabQueries = vocabQueries.filter((query) => query.status === 'completed').length;
                   const sourceChunk = (chunkGroupsByPath.get(chunk.file_path) ?? []).find((item) => chunkResultKey(item) === chunkResultKey(chunk));
                   const chunkText = sourceChunk?.content ?? '';
                   return (
@@ -761,6 +787,11 @@ function ExtractionContextOverview({
                           ) : null}
                           {chunk.status === 'completed' && chunk.response_duration_ms ? <span className="response-generation">{formatDuration(chunk.response_duration_ms)} response generation</span> : null}
                           {chunkText ? <button className="small ghost" type="button" onClick={() => setTraceChunk({ chunk, content: chunkText })}>View chunk text</button> : null}
+                          {vocabQueries.length ? (
+                            <button className="small ghost" type="button" onClick={() => setVocabTraceChunk(chunk)}>
+                              View vocab queries ({completedVocabQueries}/{vocabQueries.length})
+                            </button>
+                          ) : null}
                         </div>
                       )}
                       <ExtractionContextResultView context={chunk.extraction_context} />
@@ -782,7 +813,360 @@ function ExtractionContextOverview({
           onClose={() => setTraceChunk(null)}
         />
       )}
+      {vocabTraceChunk && (
+        <VocabQueryTraceModal
+          chunk={vocabTraceChunk}
+          onClose={() => setVocabTraceChunk(null)}
+          onRerun={onRerunVocabQuery}
+        />
+      )}
     </div>
+  );
+}
+
+const QUANTITATIVE_ATTRIBUTE_VOCABULARIES = [
+  { label: 'Quantity kinds', identifier: 'http://qudt.org/vocab/quantitykind' },
+  { label: 'Units', identifier: 'http://qudt.org/vocab/unit' },
+];
+
+type VocabQueryNumericField = {
+  key: keyof ExtractionVocabQueryConfig;
+  label: string;
+  step?: string;
+  min?: string;
+};
+
+const QUALITATIVE_VOCAB_QUERY_FIELDS: VocabQueryNumericField[] = [
+  { key: 'vector_top_k', label: 'Vector top K' },
+  { key: 'fulltext_top_k', label: 'Full-text top K' },
+  { key: 'seed_top_k', label: 'Seed top K' },
+  { key: 'max_hops', label: 'Max hops' },
+  { key: 'max_statements_per_seed', label: 'Statements / seed' },
+  { key: 'vector_weight', label: 'Vector weight', step: '0.1', min: '0.1' },
+  { key: 'fulltext_weight', label: 'Full-text weight', step: '0.1', min: '0.1' },
+  { key: 'rrf_k', label: 'RRF K' },
+];
+
+const QUANTITATIVE_VOCAB_QUERY_FIELDS: VocabQueryNumericField[] = [
+  { key: 'quantitative_vector_top_k', label: 'Vector top K' },
+  { key: 'quantitative_fulltext_top_k', label: 'Full-text top K' },
+  { key: 'quantitative_seed_top_k', label: 'Seed top K' },
+  { key: 'quantitative_max_hops', label: 'Max hops' },
+  { key: 'quantitative_max_statements_per_seed', label: 'Statements / seed' },
+  { key: 'quantitative_vector_weight', label: 'Vector weight', step: '0.1', min: '0.1' },
+  { key: 'quantitative_fulltext_weight', label: 'Full-text weight', step: '0.1', min: '0.1' },
+  { key: 'quantitative_rrf_k', label: 'RRF K' },
+];
+
+const QUANTITATIVE_VOCAB_QUERY_DEFAULTS = {
+  quantitative_vector_top_k: 12,
+  quantitative_fulltext_top_k: 12,
+  quantitative_seed_top_k: 6,
+  quantitative_max_hops: 1,
+  quantitative_max_statements_per_seed: 50,
+  quantitative_traversal_direction: 'undirected',
+  quantitative_vector_weight: 1,
+  quantitative_fulltext_weight: 1,
+  quantitative_rrf_k: 60,
+};
+
+type VocabQueryConfigMode = 'qualitative' | 'quantitative';
+
+function normalizeVocabQueryConfig(config: ExtractionVocabQueryConfig): ExtractionVocabQueryConfig {
+  return {
+    ...QUANTITATIVE_VOCAB_QUERY_DEFAULTS,
+    ...config,
+  };
+}
+
+function VocabQueryConfigPanel({
+  config,
+  disabled,
+  onApply,
+  onRerunAll,
+}: {
+  config: ExtractionVocabQueryConfig;
+  disabled?: boolean;
+  onApply?: (config: ExtractionVocabQueryConfig) => void;
+  onRerunAll?: () => void;
+}) {
+  const [draft, setDraft] = useState(normalizeVocabQueryConfig(config));
+  const [vocabOptions, setVocabOptions] = useState(config.qualitative_vocab_identifiers);
+  const [availableVocabularies, setAvailableVocabularies] = useState<string[]>([]);
+  const [selectedVocabIdentifier, setSelectedVocabIdentifier] = useState('');
+  const [vocabListMessage, setVocabListMessage] = useState('');
+  const [modalMode, setModalMode] = useState<VocabQueryConfigMode | null>(null);
+  useEffect(() => {
+    const normalized = normalizeVocabQueryConfig(config);
+    setDraft(normalized);
+    setVocabOptions((current) => Array.from(new Set([...current, ...normalized.qualitative_vocab_identifiers])));
+  }, [config]);
+  useEffect(() => {
+    if (modalMode !== 'qualitative') return;
+    let cancelled = false;
+    setVocabListMessage('Loading vocabularies...');
+    void (async () => {
+      try {
+        const next = await listVocabularies();
+        if (cancelled) return;
+        setAvailableVocabularies(next);
+        setVocabOptions((current) => Array.from(new Set([...current, ...next, ...draft.qualitative_vocab_identifiers])));
+        setSelectedVocabIdentifier((current) => current || next.find((identifier) => !draft.qualitative_vocab_identifiers.includes(identifier)) || '');
+        setVocabListMessage('');
+      } catch (error) {
+        if (!cancelled) setVocabListMessage(error instanceof Error ? error.message : 'Could not load vocabularies.');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [modalMode]);
+  const setNumber = (key: keyof ExtractionVocabQueryConfig, value: string) => {
+    const parsed = Number(value);
+    setDraft((current) => ({ ...current, [key]: Number.isFinite(parsed) ? parsed : 0 }));
+  };
+  const toggleVocab = (identifier: string, checked: boolean) => {
+    setDraft((current) => ({
+      ...current,
+      qualitative_vocab_identifiers: checked
+        ? Array.from(new Set([...current.qualitative_vocab_identifiers, identifier]))
+        : current.qualitative_vocab_identifiers.filter((item) => item !== identifier),
+    }));
+  };
+  const addVocabOption = () => {
+    const identifier = selectedVocabIdentifier.trim();
+    if (!identifier) return;
+    setVocabOptions((current) => Array.from(new Set([...current, identifier])));
+    setDraft((current) => ({
+      ...current,
+      qualitative_vocab_identifiers: Array.from(new Set([...current.qualitative_vocab_identifiers, identifier])),
+    }));
+    setSelectedVocabIdentifier('');
+  };
+  const addableVocabularies = availableVocabularies.filter((identifier) => !draft.qualitative_vocab_identifiers.includes(identifier));
+  const renderNumberFields = (fields: VocabQueryNumericField[]) => fields.map((field) => (
+    <label key={field.key}>
+      <span>{field.label}</span>
+      <input
+        type="number"
+        step={field.step ?? '1'}
+        min={field.min ?? '1'}
+        value={String(draft[field.key] ?? '')}
+        onChange={(event) => setNumber(field.key, event.target.value)}
+      />
+    </label>
+  ));
+  const qualitativeControls = (
+    <section className="vocab-query-config-section">
+      <div>
+        <span>Qualitative attribute queries</span>
+        <strong>Vocabulary terms for descriptive attributes</strong>
+      </div>
+      <div className="vocab-query-config-grid">
+        <section className="vocab-query-vocab-list">
+          <span>Qualitative vocabularies</span>
+          <div>
+            {vocabOptions.map((identifier) => (
+              <label key={identifier}>
+                <input
+                  type="checkbox"
+                  checked={draft.qualitative_vocab_identifiers.includes(identifier)}
+                  onChange={(event) => toggleVocab(identifier, event.target.checked)}
+                />
+                <span>{identifier}</span>
+              </label>
+            ))}
+          </div>
+          <div className="vocab-query-add-vocab">
+            <select value={selectedVocabIdentifier} onChange={(event) => setSelectedVocabIdentifier(event.target.value)}>
+              <option value="">Select vocabulary to add</option>
+              {addableVocabularies.map((identifier) => (
+                <option key={identifier} value={identifier}>{identifier}</option>
+              ))}
+            </select>
+            <button className="ghost small" type="button" disabled={!selectedVocabIdentifier} onClick={addVocabOption}>Add</button>
+          </div>
+          {vocabListMessage && <p className="muted vocab-query-config-message">{vocabListMessage}</p>}
+        </section>
+        {renderNumberFields(QUALITATIVE_VOCAB_QUERY_FIELDS)}
+        <label>
+          <span>Traversal</span>
+          <select
+            value={draft.traversal_direction}
+            onChange={(event) => setDraft((current) => ({ ...current, traversal_direction: event.target.value }))}
+          >
+            <option value="undirected">Undirected</option>
+            <option value="outgoing">Outgoing</option>
+            <option value="incoming">Incoming</option>
+          </select>
+        </label>
+      </div>
+    </section>
+  );
+  const quantitativeControls = (
+    <section className="vocab-query-config-section">
+      <div>
+        <span>Quantitative attribute queries</span>
+        <strong>Quantity-kind and unit candidate retrieval</strong>
+      </div>
+      <div className="vocab-query-config-grid">
+        <section className="vocab-query-vocab-list vocab-query-fixed-vocabs">
+          <span>Quantitative vocabularies</span>
+          <div>
+            {QUANTITATIVE_ATTRIBUTE_VOCABULARIES.map((vocabulary) => (
+              <label key={vocabulary.identifier}>
+                <input type="checkbox" checked readOnly />
+                <span>{vocabulary.label}: {vocabulary.identifier}</span>
+              </label>
+            ))}
+          </div>
+        </section>
+        {renderNumberFields(QUANTITATIVE_VOCAB_QUERY_FIELDS)}
+        <label>
+          <span>Traversal</span>
+          <select
+            value={draft.quantitative_traversal_direction}
+            onChange={(event) => setDraft((current) => ({ ...current, quantitative_traversal_direction: event.target.value }))}
+          >
+            <option value="undirected">Undirected</option>
+            <option value="outgoing">Outgoing</option>
+            <option value="incoming">Incoming</option>
+          </select>
+        </label>
+      </div>
+    </section>
+  );
+  return (
+    <>
+      <section className="vocab-query-config-panel compact">
+        <div>
+          <span>Vocabulary query configuration</span>
+          <strong>Run-wide parameters</strong>
+        </div>
+        <div>
+          <button className="ghost small" type="button" disabled={disabled} onClick={() => setModalMode('qualitative')}>Configure qualitative</button>
+          <button className="ghost small" type="button" disabled={disabled} onClick={() => setModalMode('quantitative')}>Configure quantitative</button>
+          <button className="small" type="button" disabled={disabled || !onRerunAll} onClick={() => onRerunAll?.()}>Rerun vocabulary queries</button>
+        </div>
+      </section>
+      {modalMode && createPortal(
+        <div className="vocab-dialog-overlay" onClick={() => setModalMode(null)}>
+          <div className="vocab-dialog vocab-query-config-dialog" onClick={(event) => event.stopPropagation()}>
+            <div className="vocab-dialog-header">
+              <div>
+                <span>{modalMode === 'qualitative' ? 'Qualitative query configuration' : 'Quantitative query configuration'}</span>
+                <strong>{modalMode === 'qualitative' ? 'Descriptive attribute parameters' : 'Quantity-kind and unit parameters'}</strong>
+              </div>
+              <button className="ghost" type="button" onClick={() => setModalMode(null)}>Close</button>
+            </div>
+            <div className="vocab-dialog-body vocab-query-config-body">
+              <div className="vocab-query-config-sections">
+                {modalMode === 'qualitative' ? qualitativeControls : quantitativeControls}
+              </div>
+              <div className="vocab-query-config-actions">
+                <button
+                  className="ghost"
+                  type="button"
+                  disabled={disabled || !onApply}
+                  onClick={() => {
+                    onApply?.(draft);
+                    setModalMode(null);
+                  }}
+                >
+                  Apply
+                </button>
+                <button type="button" disabled={disabled || !onRerunAll} onClick={() => onRerunAll?.()}>Rerun vocabulary queries</button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+    </>
+  );
+}
+
+function VocabQueryTraceList({
+  queries,
+  onRerun,
+}: {
+  queries: ExtractionVocabQueryRecord[];
+  onRerun?: (queryId: string) => void;
+}) {
+  if (!queries.length) return null;
+  const completed = queries.filter((query) => query.status === 'completed').length;
+  const failed = queries.filter((query) => query.status === 'failed').length;
+  const running = queries.filter((query) => query.status === 'running').length;
+  return (
+    <section className="chunk-vocab-query-section">
+      <div className="chunk-vocab-query-heading">
+        <span>Vocabulary queries</span>
+        <strong>{completed}/{queries.length} completed{running ? `, ${running} running` : ''}{failed ? `, ${failed} failed` : ''}</strong>
+      </div>
+      <div className="chunk-vocab-query-list">
+        {queries.map((query) => (
+          <details className={`chunk-vocab-query ${query.status}`} key={query.query_id}>
+            <summary>
+              <div>
+                <strong>{formatExtractionStage(query.kind)}</strong>
+                <small>{query.source_value} · {query.vocabulary_identifier} · {query.rdf_type}</small>
+              </div>
+              <span>{query.status}</span>
+            </summary>
+            <div className="chunk-vocab-query-body">
+              <div className="chunk-call-meta">
+                {query.duration_ms ? <span>{formatDuration(query.duration_ms)} query time</span> : null}
+                {query.result ? <span>{Object.keys(asRecord(query.result.resources) ?? {}).length} resources</span> : null}
+                <button className="small ghost" type="button" disabled={!onRerun} onClick={() => onRerun?.(query.query_id)}>Rerun query</button>
+              </div>
+              {query.error && <p className="warning">{query.error}</p>}
+              <JsonDetails title="Query input" value={query.query} />
+              <JsonDetails title="Source context" value={query.source_context} />
+              <JsonDetails title="Full query result" value={query.result ?? null} />
+            </div>
+          </details>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function VocabQueryTraceModal({
+  chunk,
+  onClose,
+  onRerun,
+}: {
+  chunk: ExtractionChunkResult;
+  onClose: () => void;
+  onRerun?: (queryId: string) => void;
+}) {
+  const queries = chunk.vocab_queries ?? [];
+  const completed = queries.filter((query) => query.status === 'completed').length;
+  return createPortal(
+    <div className="vocab-dialog-overlay" onClick={onClose}>
+      <div className="vocab-dialog chunk-vocab-query-dialog" onClick={(event) => event.stopPropagation()}>
+        <div className="vocab-dialog-header">
+          <div>
+            <span>Vocabulary queries</span>
+            <strong>Chunk {chunk.chunk_index + 1} - {completed}/{queries.length} completed</strong>
+          </div>
+          <button className="ghost" type="button" onClick={onClose}>Close</button>
+        </div>
+        <div className="vocab-dialog-body chunk-vocab-query-dialog-body">
+          <VocabQueryTraceList queries={queries} onRerun={onRerun} />
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+function JsonDetails({ title, value }: { title: string; value: unknown }) {
+  return (
+    <details className="json-details">
+      <summary>{title}</summary>
+      <pre>{JSON.stringify(value, null, 2)}</pre>
+    </details>
   );
 }
 
@@ -2158,6 +2542,48 @@ export function App() {
     }
   }
 
+  async function onUpdateVocabConfig(config: ExtractionVocabQueryConfig) {
+    if (!selectedPackageId) return;
+    const packageId = selectedPackageId;
+    setBusy('context');
+    try {
+      const { progress } = await updateVocabQueryConfig(packageId, config);
+      if (selectedPackageIdRef.current !== packageId) return;
+      setPatchProgress(progress ? { ...progress } : patchProgress);
+      setMessage('Vocabulary query configuration updated.');
+    } catch (error) {
+      if (selectedPackageIdRef.current !== packageId) return;
+      setMessage(error instanceof Error ? error.message : 'Failed to update vocabulary query configuration.');
+    } finally {
+      if (selectedPackageIdRef.current === packageId) setBusy(null);
+    }
+  }
+
+  async function onRerunVocabularyQueries(queryId?: string) {
+    if (!selectedPackageId) return;
+    const packageId = selectedPackageId;
+    setBusy('context');
+    try {
+      const result = queryId
+        ? await rerunVocabQuery(packageId, queryId)
+        : await rerunAllVocabQueries(packageId);
+      if (selectedPackageIdRef.current !== packageId) return;
+      setDraft(result.document);
+      setContext(initialContextFromExtractionContext(result.extraction_context));
+      setTokenUsage(result.token_usage);
+      const { status, progress } = await getPatchProgress(packageId);
+      if (selectedPackageIdRef.current !== packageId) return;
+      setPatchStatus(status);
+      setPatchProgress(progress ? { ...progress } : patchProgress);
+      setMessage(queryId ? 'Vocabulary query rerun completed.' : 'Vocabulary queries rerun completed.');
+    } catch (error) {
+      if (selectedPackageIdRef.current !== packageId) return;
+      setMessage(error instanceof Error ? error.message : 'Failed to rerun vocabulary queries.');
+    } finally {
+      if (selectedPackageIdRef.current === packageId) setBusy(null);
+    }
+  }
+
   async function refreshOllamaConfig() {
     setBusy('ollama');
     try {
@@ -2730,6 +3156,10 @@ export function App() {
                 progress={patchProgress}
                 status={patchStatus}
                 budget={llmBudget}
+                packageId={selectedPackageId}
+                onUpdateVocabQueryConfig={(config) => void onUpdateVocabConfig(config)}
+                onRerunAllVocabQueries={() => void onRerunVocabularyQueries()}
+                onRerunVocabQuery={(queryId) => void onRerunVocabularyQueries(queryId)}
                 tokenUsageSummary={(
                   <TokenUsageSummary
                     tokenUsage={tokenUsage}

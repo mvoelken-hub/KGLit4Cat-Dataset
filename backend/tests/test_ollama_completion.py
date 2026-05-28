@@ -38,6 +38,10 @@ class FakeGenerateResponse:
     response: str
     prompt_eval_count: int = 0
     eval_count: int = 0
+    prompt_eval_duration: int = 0
+    load_duration: int = 0
+    eval_duration: int = 0
+    total_duration: int = 0
 
 
 class FakeOllamaClient:
@@ -520,11 +524,19 @@ class RunUsageTests(unittest.TestCase):
         self.assertEqual(c.details, {"a": 1, "b": 5, "c": 4})
 
     def test_from_ollama_response(self):
-        resp = FakeGenerateResponse(response="", prompt_eval_count=55, eval_count=12)
+        resp = FakeGenerateResponse(
+            response="",
+            prompt_eval_count=55,
+            eval_count=12,
+            prompt_eval_duration=110_000_000,
+            load_duration=25_000_000,
+        )
         usage = RunUsage.from_ollama_response(resp)
         self.assertEqual(usage.requests, 1)
         self.assertEqual(usage.input_tokens, 55)
         self.assertEqual(usage.output_tokens, 12)
+        self.assertEqual(usage.prompt_eval_duration_ms, 110)
+        self.assertEqual(usage.load_duration_ms, 25)
 
 
 if __name__ == "__main__":

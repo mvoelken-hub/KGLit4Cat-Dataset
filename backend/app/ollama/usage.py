@@ -14,6 +14,8 @@ class RunUsage:
     requests: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
+    prompt_eval_duration_ms: int = 0
+    load_duration_ms: int = 0
     response_duration_ms: int = 0
     total_duration_ms: int = 0
     details: dict[str, int] = field(default_factory=dict)
@@ -28,6 +30,8 @@ class RunUsage:
             requests=self.requests + other.requests,
             input_tokens=self.input_tokens + other.input_tokens,
             output_tokens=self.output_tokens + other.output_tokens,
+            prompt_eval_duration_ms=self.prompt_eval_duration_ms + other.prompt_eval_duration_ms,
+            load_duration_ms=self.load_duration_ms + other.load_duration_ms,
             response_duration_ms=self.response_duration_ms + other.response_duration_ms,
             total_duration_ms=self.total_duration_ms + other.total_duration_ms,
             details=merged_details,
@@ -43,6 +47,12 @@ class RunUsage:
             requests=1,
             input_tokens=response.prompt_eval_count or 0,
             output_tokens=response.eval_count or 0,
+            prompt_eval_duration_ms=_nanoseconds_to_milliseconds(
+                getattr(response, "prompt_eval_duration", 0) or 0
+            ),
+            load_duration_ms=_nanoseconds_to_milliseconds(
+                getattr(response, "load_duration", 0) or 0
+            ),
             response_duration_ms=_nanoseconds_to_milliseconds(
                 getattr(response, "eval_duration", 0) or 0
             ),

@@ -124,6 +124,8 @@ class FileSystemExtractionOutputRepository:
                     "total_tokens",
                     "requests",
                     "operation_count",
+                    "prompt_eval_duration_ms",
+                    "load_duration_ms",
                     "response_duration_ms",
                     "total_duration_ms",
                 )

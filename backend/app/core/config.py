@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     embedding_batch_size: int = 32
     max_context_length: int = 8192
     initial_extraction_context_token_threshold: int | None = None
+    extraction_vocab_query_concurrency: int = 4
+    vocab_selection_llm_concurrency: int = 1
+    vocab_selection_parallel_mode: str = "conservative"
     ollama_flash_attention: bool = False
     ollama_kv_cache_type: str = "f16"
     ollama_embed_num_gpu: int = -1  # -1 = auto (all layers on GPU), 0 = CPU only

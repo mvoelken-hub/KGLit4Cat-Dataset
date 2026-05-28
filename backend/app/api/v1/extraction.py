@@ -2,10 +2,12 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from app.core.task_registry import TaskStatus
 from app.api.v1.schemas import (
     ExtractionProgressResponse,
     ExtractionRunRequest,
     ExtractionRunResponse,
+    VocabQueryConfigUpdateRequest,
     _extraction_result_response,
     _extraction_run_response,
 )
@@ -123,6 +125,52 @@ async def pause_extraction(
         data_package_id=data_package_id,
     )
     return ExtractionProgressResponse(status=status_value, progress=progress)
+
+
+@router.patch("/run/{data_package_id}/vocab-query-config", response_model=ExtractionProgressResponse)
+async def update_vocab_query_config(
+    data_package_id: str,
+    request: VocabQueryConfigUpdateRequest,
+    extraction_service: ExtractionService = Depends(get_extraction_service),
+) -> ExtractionProgressResponse:
+    try:
+        progress = await extraction_service.update_vocab_query_config(
+            data_package_id=data_package_id,
+            config=request,
+        )
+        return ExtractionProgressResponse(status=TaskStatus.UNKNOWN, progress=progress)
+    except Exception as exc:
+        _raise_extraction_error(exc)
+
+
+@router.post("/run/{data_package_id}/vocab-queries/rerun")
+async def rerun_vocab_queries(
+    data_package_id: str,
+    extraction_service: ExtractionService = Depends(get_extraction_service),
+):
+    try:
+        return _extraction_result_response(
+            await extraction_service.rerun_vocab_queries(data_package_id=data_package_id)
+        )
+    except Exception as exc:
+        _raise_extraction_error(exc)
+
+
+@router.post("/run/{data_package_id}/vocab-queries/{query_id}/rerun")
+async def rerun_vocab_query(
+    data_package_id: str,
+    query_id: str,
+    extraction_service: ExtractionService = Depends(get_extraction_service),
+):
+    try:
+        return _extraction_result_response(
+            await extraction_service.rerun_vocab_queries(
+                data_package_id=data_package_id,
+                query_id=query_id,
+            )
+        )
+    except Exception as exc:
+        _raise_extraction_error(exc)
 
 
 @router.get("/result/{data_package_id}")

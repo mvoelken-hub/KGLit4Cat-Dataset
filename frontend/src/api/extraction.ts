@@ -39,10 +39,33 @@ export type ExtractionRunProgress = {
   normalized_quantities: number;
   normalized_qualitative_attributes: number;
   interim_context?: Record<string, unknown> | null;
+  vocab_query_config?: ExtractionVocabQueryConfig;
   ranked_files?: RankedExtractionFile[];
   chunk_results?: ExtractionChunkResult[];
   current_chunk?: ExtractionChunkRef | null;
   warnings: string[];
+};
+
+export type ExtractionVocabQueryConfig = {
+  qualitative_vocab_identifiers: string[];
+  vector_top_k: number;
+  fulltext_top_k: number;
+  seed_top_k: number;
+  max_hops: number;
+  max_statements_per_seed: number;
+  traversal_direction: string;
+  vector_weight: number;
+  fulltext_weight: number;
+  rrf_k: number;
+  quantitative_vector_top_k: number;
+  quantitative_fulltext_top_k: number;
+  quantitative_seed_top_k: number;
+  quantitative_max_hops: number;
+  quantitative_max_statements_per_seed: number;
+  quantitative_traversal_direction: string;
+  quantitative_vector_weight: number;
+  quantitative_fulltext_weight: number;
+  quantitative_rrf_k: number;
 };
 
 export type RankedExtractionFile = {
@@ -63,6 +86,21 @@ export type ExtractionChunkResult = ExtractionChunkRef & {
   error?: string | null;
   response_duration_ms?: number | null;
   context_tokens?: number | null;
+  vocab_queries?: ExtractionVocabQueryRecord[];
+};
+
+export type ExtractionVocabQueryRecord = {
+  query_id: string;
+  kind: string;
+  source_value: string;
+  source_context: Record<string, unknown>;
+  vocabulary_identifier: string;
+  rdf_type: string;
+  query: Record<string, unknown>;
+  status: 'pending' | 'running' | 'completed' | 'failed' | string;
+  result?: Record<string, unknown> | null;
+  error?: string | null;
+  duration_ms?: number | null;
 };
 
 export type PatchProgress = ExtractionRunProgress & {
@@ -244,6 +282,30 @@ export async function getPatchProgress(data_package_id: string): Promise<{ statu
 export async function getTokenUsage(data_package_id: string): Promise<PatchTokenUsage> {
   const response = await fetch(apiBaseUrl + '/extraction/' + encodeURIComponent(data_package_id) + '/token-usage');
   return readJson(await response);
+}
+
+export async function updateVocabQueryConfig(
+  data_package_id: string,
+  config: ExtractionVocabQueryConfig,
+): Promise<{ status: PatchTaskStatus; progress?: ExtractionRunProgress | null }> {
+  const response = await fetch(apiBaseUrl + '/extraction/run/' + encodeURIComponent(data_package_id) + '/vocab-query-config', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  return readJson(await response);
+}
+
+export async function rerunAllVocabQueries(data_package_id: string): Promise<ExtractionRunResult> {
+  return readJson(await fetch(apiBaseUrl + '/extraction/run/' + encodeURIComponent(data_package_id) + '/vocab-queries/rerun', {
+    method: 'POST',
+  }));
+}
+
+export async function rerunVocabQuery(data_package_id: string, query_id: string): Promise<ExtractionRunResult> {
+  return readJson(await fetch(apiBaseUrl + '/extraction/run/' + encodeURIComponent(data_package_id) + '/vocab-queries/' + encodeURIComponent(query_id) + '/rerun', {
+    method: 'POST',
+  }));
 }
 
 export async function getPatchArtifacts(_data_package_id: string): Promise<PatchArtifacts> {

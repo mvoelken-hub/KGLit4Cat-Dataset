@@ -11,13 +11,17 @@ from app.domain.extraction import (
     ExtractionContext,
     ExtractionRunResult,
     ExtractionRunState,
+    ExtractionVocabQueryConfig,
+    ExtractionVocabQueryRecord,
     FileRankingResult,
     RankedFile,
+    VocabularyCandidateSelection,
 )
+from app.domain.semantics import CompactVocabResource, VocabQuery, VocabQueryResult, VocabSchemeInfo, VocabTermScheme
 from app.ollama.completion import CompletionResult
 from app.ollama.errors import MaxRetriesExceeded, OutputParsingError
 from app.ollama.usage import RunUsage
-from app.services.extraction_service import ExtractionService
+from app.services.extraction_service import ExtractionService, _QualitativeCandidateDiscovery
 
 
 class FakeLogger:
@@ -153,6 +157,58 @@ def resource_context(identifier: str, description: str) -> ExtractionContext:
             ]
         }
     )
+
+
+def qualitative_context(identifier: str, title: str, value: str) -> ExtractionContext:
+    return ExtractionContext.model_validate(
+        {
+            "extraction_objects": [
+                {
+                    "object_type": "resource",
+                    "extracted_object": {
+                        "identifier": identifier,
+                        "type": "dataset",
+                        "description": f"{title} {value}",
+                        "has_qualitative_attributes": [
+                            {"title": title, "value": value}
+                        ],
+                    },
+                    "source_text": f"{title} {value}",
+                }
+            ]
+        }
+    )
+
+
+class FakeSemanticService:
+    def __init__(self):
+        self.discovery_started = asyncio.Event()
+        self.query_calls: list[str] = []
+
+    async def get_vocabulary(self, identifier: str):
+        return VocabSchemeInfo(
+            identifier=identifier,
+            source=identifier,
+            rdf_format="text/turtle",
+            num_triples=1,
+            vocab_term_schemes=[
+                VocabTermScheme(
+                    rdf_type="skos__Concept",
+                    properties=["skos__prefLabel"],
+                    count=1,
+                )
+            ],
+        )
+
+    async def query_vocabulary(self, identifier: str, query):
+        self.query_calls.append(f"{identifier}:{query.rdf_type}")
+        self.discovery_started.set()
+        await asyncio.sleep(0.05)
+        return VocabQueryResult(
+            identifier=identifier,
+            rdf_type=query.rdf_type,
+            resources={},
+        )
 
 
 def make_service(chunks_by_file: list[list[ContentChunk]]):
@@ -371,6 +427,262 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             [resource.identifier for resource in output_repository.context.resources],
             ["already-extracted", "resumed-chunk"],
         )
+
+    async def test_vocab_candidate_discovery_starts_after_completed_chunk_before_all_chunks_finish(self):
+        service, task_registry, output_repository = make_service(
+            [[make_chunk(0, "sample one"), make_chunk(1, "sample two")]]
+        )
+        semantic_service = FakeSemanticService()
+        service.semantic_service = semantic_service  # type: ignore[assignment]
+        service.settings.extraction_vocab_query_concurrency = 1
+        call_order: list[str] = []
+
+        async def fake_generate(*_args, **kwargs):
+            output_type = kwargs["output_type"]
+            if output_type is FileRankingResult:
+                call_order.append("rank")
+                return CompletionResult(
+                    output=FileRankingResult(files=[RankedFile(rank=1, file_path="README.md")]),
+                    usage=RunUsage(requests=1),
+                )
+            if output_type is ExtractionContext:
+                if len([item for item in call_order if item.startswith("extract")]) == 1:
+                    await asyncio.wait_for(semantic_service.discovery_started.wait(), timeout=1)
+                    call_order.append("discovery-before-second-finished")
+                call_order.append("extract")
+                return CompletionResult(
+                    output=qualitative_context("sample", "phase", "liquid"),
+                    usage=RunUsage(requests=1),
+                )
+            call_order.append("profile")
+            return CompletionResult(output={"id": "dataset"}, usage=RunUsage(requests=1))
+
+        with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
+            await service.run_extraction(
+                data_package_id="package-id",
+                profile_identifier="profile",
+            )
+            await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
+
+        self.assertIn("discovery-before-second-finished", call_order)
+        self.assertGreaterEqual(len(semantic_service.query_calls), 1)
+        self.assertIsNotNone(output_repository.run_state)
+        vocab_queries = output_repository.run_state.chunk_results[0].vocab_queries
+        self.assertGreaterEqual(len(vocab_queries), 1)
+        self.assertEqual(vocab_queries[0].status, "completed")
+        self.assertIsNotNone(vocab_queries[0].query)
+        self.assertIsNotNone(vocab_queries[0].result)
+
+    async def test_vocab_query_config_update_persists_in_run_state_and_progress(self):
+        service, _, output_repository = make_service([[make_chunk()]])
+        output_repository.save_extraction_run_state(
+            workflow_id="package-id",
+            state=ExtractionRunState(
+                profile_identifier="profile",
+                chunk_results=[
+                    ExtractionChunkResult(
+                        chunk_index=0,
+                        file_path="README.md",
+                        start_idx=0,
+                        end_idx=0,
+                        status="completed",
+                        extraction_context=resource_context("resource", "Persisted result."),
+                    )
+                ],
+            ),
+        )
+
+        updated_config = output_repository.run_state.vocab_query_config.model_copy(
+            update={"vector_top_k": 3, "fulltext_top_k": 4}
+        )
+
+        progress = await service.update_vocab_query_config(
+            data_package_id="package-id",
+            config=updated_config,
+        )
+
+        self.assertEqual(output_repository.run_state.vocab_query_config.vector_top_k, 3)
+        self.assertEqual(progress.vocab_query_config.fulltext_top_k, 4)
+
+    async def test_quantitative_vocab_query_config_is_independent_from_qualitative_config(self):
+        config = ExtractionVocabQueryConfig(
+            vector_top_k=3,
+            fulltext_top_k=4,
+            seed_top_k=5,
+            quantitative_vector_top_k=13,
+            quantitative_fulltext_top_k=14,
+            quantitative_seed_top_k=15,
+            quantitative_max_hops=2,
+            quantitative_max_statements_per_seed=70,
+            quantitative_traversal_direction="outgoing",
+            quantitative_vector_weight=1.5,
+            quantitative_fulltext_weight=0.5,
+            quantitative_rrf_k=80,
+        )
+        query = VocabQuery(
+            rdf_type="qudt__QuantityKind",
+            vector_query="temperature",
+            fulltext_query="temperature",
+        )
+
+        qualitative_query = ExtractionService._configured_vocab_query(query, config)
+        quantitative_query = ExtractionService._configured_vocab_query(query, config, group="quantitative")
+
+        self.assertEqual(qualitative_query.vector_top_k, 3)
+        self.assertEqual(qualitative_query.fulltext_top_k, 4)
+        self.assertEqual(qualitative_query.seed_top_k, 5)
+        self.assertEqual(quantitative_query.vector_top_k, 13)
+        self.assertEqual(quantitative_query.fulltext_top_k, 14)
+        self.assertEqual(quantitative_query.seed_top_k, 15)
+        self.assertEqual(quantitative_query.max_hops, 2)
+        self.assertEqual(quantitative_query.max_statements_per_seed, 70)
+        self.assertEqual(quantitative_query.traversal_direction, "outgoing")
+        self.assertEqual(quantitative_query.vector_weight, 1.5)
+        self.assertEqual(quantitative_query.fulltext_weight, 0.5)
+        self.assertEqual(quantitative_query.rrf_k, 80)
+
+    async def test_vocab_selection_is_serial_in_conservative_mode(self):
+        service, _, _ = make_service([[make_chunk()]])
+        service.settings.vocab_selection_parallel_mode = "conservative"
+        service.settings.vocab_selection_llm_concurrency = 2
+        max_active = 0
+        active = 0
+        state = ExtractionRunState()
+
+        async def completed_discovery(index: int):
+            query_id = f"query-{index}"
+            state.chunk_results.append(
+                ExtractionChunkResult(
+                    chunk_index=index,
+                    file_path="README.md",
+                    start_idx=index,
+                    end_idx=index,
+                    status="completed",
+                    vocab_queries=[
+                        ExtractionVocabQueryRecord(
+                            query_id=query_id,
+                            kind="qualitative_attribute",
+                            source_value="phase: liquid",
+                            source_context={"title": "phase", "value": "liquid"},
+                            vocabulary_identifier="urn:vocab",
+                            rdf_type="skos__Concept",
+                            query=VocabQuery(rdf_type="skos__Concept", fulltext_query="phase liquid"),
+                            status="completed",
+                            result=VocabQueryResult(
+                                identifier="urn:vocab",
+                                rdf_type="skos__Concept",
+                                resources={
+                                    f"urn:candidate:{index}": CompactVocabResource(
+                                        uri=f"urn:candidate:{index}",
+                                        rdf_types=["skos__Concept"],
+                                        properties={"label": f"candidate {index}"},
+                                    )
+                                },
+                            ),
+                        )
+                    ],
+                )
+            )
+            return _QualitativeCandidateDiscovery(
+                attribute=qualitative_context(f"sample-{index}", "phase", "liquid")
+                .resources[0]
+                .has_qualitative_attributes[0],
+                query_ids=[query_id],
+            )
+
+        async def fake_generate(*_args, **kwargs):
+            nonlocal active, max_active
+            active += 1
+            max_active = max(max_active, active)
+            await asyncio.sleep(0.01)
+            active -= 1
+            return CompletionResult(
+                output=VocabularyCandidateSelection(selected_uri=None, confidence=0.0),
+                usage=RunUsage(requests=1),
+            )
+
+        tasks = [asyncio.create_task(completed_discovery(index)) for index in range(3)]
+        with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
+            normalization = await service._normalize_from_candidate_tasks(
+                data_package_id="package-id",
+                state=state,
+                candidate_tasks=tasks,
+                warnings=[],
+            )
+
+        self.assertEqual(max_active, 1)
+        self.assertEqual(len(normalization.qualitative_attributes), 3)
+
+    async def test_vocab_selection_parallel_mode_allows_overlapping_llm_calls(self):
+        service, _, _ = make_service([[make_chunk()]])
+        service.settings.vocab_selection_parallel_mode = "parallel"
+        service.settings.vocab_selection_llm_concurrency = 2
+        max_active = 0
+        active = 0
+        state = ExtractionRunState()
+
+        async def completed_discovery(index: int):
+            query_id = f"query-{index}"
+            state.chunk_results.append(
+                ExtractionChunkResult(
+                    chunk_index=index,
+                    file_path="README.md",
+                    start_idx=index,
+                    end_idx=index,
+                    status="completed",
+                    vocab_queries=[
+                        ExtractionVocabQueryRecord(
+                            query_id=query_id,
+                            kind="qualitative_attribute",
+                            source_value="phase: liquid",
+                            source_context={"title": "phase", "value": "liquid"},
+                            vocabulary_identifier="urn:vocab",
+                            rdf_type="skos__Concept",
+                            query=VocabQuery(rdf_type="skos__Concept", fulltext_query="phase liquid"),
+                            status="completed",
+                            result=VocabQueryResult(
+                                identifier="urn:vocab",
+                                rdf_type="skos__Concept",
+                                resources={
+                                    f"urn:candidate:{index}": CompactVocabResource(
+                                        uri=f"urn:candidate:{index}",
+                                        rdf_types=["skos__Concept"],
+                                        properties={"label": f"candidate {index}"},
+                                    )
+                                },
+                            ),
+                        )
+                    ],
+                )
+            )
+            return _QualitativeCandidateDiscovery(
+                attribute=qualitative_context(f"sample-{index}", "phase", "liquid")
+                .resources[0]
+                .has_qualitative_attributes[0],
+                query_ids=[query_id],
+            )
+
+        async def fake_generate(*_args, **_kwargs):
+            nonlocal active, max_active
+            active += 1
+            max_active = max(max_active, active)
+            await asyncio.sleep(0.03)
+            active -= 1
+            return CompletionResult(
+                output=VocabularyCandidateSelection(selected_uri=None, confidence=0.0),
+                usage=RunUsage(requests=1),
+            )
+
+        tasks = [asyncio.create_task(completed_discovery(index)) for index in range(3)]
+        with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
+            await service._normalize_from_candidate_tasks(
+                data_package_id="package-id",
+                state=state,
+                candidate_tasks=tasks,
+                warnings=[],
+            )
+
+        self.assertEqual(max_active, 2)
 
     async def test_chunk_initial_context_is_scoped_to_same_file(self):
         state = ExtractionRunState(
