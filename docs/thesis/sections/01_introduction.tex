@@ -1,0 +1,24 @@
+\label{chap:Introduction}
+
+This chapter introduces the motivation, problem statement, research questions, objectives, scope, and thesis structure.
+
+
+Describe why semantic metadata extraction from catalytic experiments matters for reuse, comparability, and Findable, Accessible, Interoperable, and Reusable (FAIR) data practices.
+
+Explain the gap between available experimental information and machine-actionable semantic metadata.
+
+State the central research question and supporting sub-questions.
+
+Define what this thesis covers and what is intentionally out of scope.
+
+Summarize the research and implementation strategy used in this thesis.
+
+Briefly describe the content of the following chapters.
+
+Introduce the abbreviations for LLM, FAIR, NFDI4Cat.
+
+Sample paragraphs:
+
+The FAIR principles describe research data that can be found, accessed, interpreted across systems, and reused in new contexts. For catalytic experiments, these principles are particularly demanding because data originate from heterogeneous instruments, reactor setups, material histories, and evaluation procedures. A dataset may be findable through a persistent identifier and still be difficult to reuse if the meaning of its columns, units, samples, or reaction conditions is only understandable from a human-readable lab note. FAIR catalysis data therefore require metadata that identify the relevant entities, preserve provenance, and express relations between materials, measurements, methods, and publications \cite{mendes2021opendata,mendes2025data}.
+
+NFDI4Cat addresses these requirements by developing infrastructure for catalysis-related sciences in which experimental data can be documented, exchanged, and interpreted across institutional and disciplinary boundaries. This includes repository concepts, metadata workflows, and ontology-based approaches for connecting catalysis and process research data \cite{nfdi4cat2024whitepaper,kushnarenko2025repo4cat}. Recent work around the Novel Materials Discovery Laboratory (NOMAD) and catalysis-specific plugins illustrates how domain metadata can be embedded into larger research-data platforms so that synthesis, characterization, and testing data become part of a coherent FAIR data environment \cite{schumann2025nomad}. NFDI4Cat-related work also emphasizes community vocabularies such as Voc4Cat, a catalysis vocabulary developed in the NFDI4Cat context, which provide controlled terms and definitions for catalysis workflows and can be queried or embedded in workflow tools \cite{veluvali2025bridging}. Such infrastructures depend on semantic models because interoperability cannot be achieved by file storage alone; it requires shared meaning for the terms and relations used in the data.

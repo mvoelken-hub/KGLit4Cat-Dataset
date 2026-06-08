@@ -1,0 +1,107 @@
+\begin{figure}[H]
+    \centering
+    \resizebox{\textwidth}{!}{%
+    \begin{tikzpicture}[
+        font=\normalfont,
+        >=Stealth,
+        usernode/.style={
+            rounded rectangle,
+            draw=blue!70!black,
+            fill=blue!6,
+            line width=0.9pt,
+            text width=1.85cm,
+            minimum height=0.9cm,
+            inner sep=4pt,
+            align=center,
+            font=\normalfont\small
+        },
+        processnode/.style={
+            rounded rectangle,
+            draw=green!45!black,
+            fill=green!8,
+            line width=1.0pt,
+            text width=2.25cm,
+            minimum height=0.95cm,
+            inner sep=4pt,
+            align=center,
+            font=\normalfont\small
+        },
+        contextnode/.style={
+            rounded rectangle,
+            draw=orange!80!black,
+            fill=orange!10,
+            line width=1.0pt,
+            text width=2.25cm,
+            minimum height=0.95cm,
+            inner sep=4pt,
+            align=center,
+            font=\normalfont\small
+        },
+        storenode/.style={
+            cylinder,
+            shape border rotate=90,
+            aspect=0.25,
+            draw=black!55,
+            fill=black!5,
+            line width=0.9pt,
+            text width=2.2cm,
+            minimum height=1.25cm,
+            inner sep=4pt,
+            align=center,
+            font=\normalfont\small
+        },
+        phasebox/.style={
+            rounded corners=8pt,
+            draw=black!25,
+            fill=black!2,
+            line width=0.8pt
+        },
+        phaselabel/.style={
+            font=\normalfont\bfseries,
+            text=black!75,
+            anchor=west
+        },
+        arrow/.style={->, line width=0.9pt, draw=black!65},
+        queryarrow/.style={->, line width=0.9pt, draw=blue!70!black},
+        retrievalarrow/.style={->, line width=0.9pt, draw=green!45!black},
+        dashedarrow/.style={->, dashed, line width=0.9pt, draw=black!55}
+    ]
+
+    \begin{scope}[on background layer]
+        \node[phasebox, minimum width=15.3cm, minimum height=1.85cm] at (0,-2.4) {};
+        \node[phasebox, minimum width=15.3cm, minimum height=2.25cm] at (0,0.8) {};
+    \end{scope}
+
+    \node[phaselabel] at (-7.45,1.85) {Inference time};
+    \node[phaselabel] at (-7.45,-1.55) {Indexing time};
+
+    \node[usernode] (query) at (-6.25,0.8) {User\\query};
+    \node[processnode] (retriever) at (-3.75,0.8) {Retriever};
+    \node[contextnode] (passages) at (-1.1,0.8) {Relevant\\passages};
+    \node[processnode] (prompt) at (1.65,0.8) {Prompt:\\query + context};
+    \node[processnode] (llm) at (4.4,0.8) {Generative\\LLM};
+    \node[contextnode] (answer) at (6.9,0.8) {Grounded\\answer};
+
+    \node[usernode] (docs) at (-6.25,-2.4) {Source\\documents};
+    \node[processnode] (chunking) at (-3.75,-2.4) {Chunking and\\preprocessing};
+    \node[processnode] (features) at (-1.1,-2.4) {Sparse or dense\\features};
+    \node[storenode] (index) at (1.65,-2.4) {External\\knowledge index};
+
+    \draw[queryarrow] (query) -- (retriever);
+    \draw[retrievalarrow] (retriever) -- (passages);
+    \draw[arrow] (passages) -- (prompt);
+    \draw[arrow] (prompt) -- (llm);
+    \draw[arrow] (llm) -- (answer);
+
+    \draw[arrow] (docs) -- (chunking);
+    \draw[arrow] (chunking) -- (features);
+    \draw[arrow] (features) -- (index);
+
+    \draw[retrievalarrow] (index.north) to[out=100,in=-70] (retriever.south);
+    \draw[dashedarrow] (query.south east) to[out=-35,in=185] (prompt.west);
+
+    \end{tikzpicture}%
+    }
+    \caption{Placeholder sketch of a retrieval-augmented generation architecture. Source documents are indexed for search; at inference time, a user query is used to retrieve relevant context, which is combined with the query before generation \cite{lewis2020retrieval}.}
+    \label{fig:rag-architecture-placeholder}
+\end{figure}

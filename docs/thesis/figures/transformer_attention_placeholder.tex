@@ -1,0 +1,87 @@
+\begin{figure}[H]
+    \centering
+    \resizebox{\textwidth}{!}{%
+    \begin{tikzpicture}[
+        font=\normalfont,
+        >=Stealth,
+        token/.style={
+            rounded rectangle,
+            draw=black!55,
+            fill=black!4,
+            line width=0.8pt,
+            minimum width=1.75cm,
+            minimum height=0.75cm,
+            align=center,
+            font=\normalfont\small
+        },
+        vector/.style={
+            rounded rectangle,
+            draw=blue!70!black,
+            fill=blue!6,
+            line width=0.9pt,
+            minimum width=2.15cm,
+            minimum height=0.75cm,
+            align=center,
+            font=\normalfont\small
+        },
+        block/.style={
+            rounded rectangle,
+            draw=green!45!black,
+            fill=green!7,
+            line width=1.0pt,
+            minimum width=3.0cm,
+            minimum height=0.95cm,
+            align=center,
+            font=\normalfont\small
+        },
+        outblock/.style={
+            rounded rectangle,
+            draw=orange!80!black,
+            fill=orange!9,
+            line width=1.0pt,
+            minimum width=2.6cm,
+            minimum height=0.85cm,
+            align=center,
+            font=\normalfont\small
+        },
+        arrow/.style={->, line width=0.9pt, draw=black!65},
+        attn/.style={->, line width=0.9pt, draw=red!70!black, bend left=28}
+    ]
+
+    \node[token] (tok1) at (-6.3,3.0) {Token 1};
+    \node[token] (tok2) at (-4.3,3.0) {Token 2};
+    \node[token] (tok3) at (-2.3,3.0) {Token 3};
+    \node[token] (tok4) at (-0.3,3.0) {Token 4};
+
+    \node[vector] (emb1) at (-6.3,1.55) {Embedding\\+ position};
+    \node[vector] (emb2) at (-4.3,1.55) {Embedding\\+ position};
+    \node[vector] (emb3) at (-2.3,1.55) {Embedding\\+ position};
+    \node[vector] (emb4) at (-0.3,1.55) {Embedding\\+ position};
+
+    \node[block] (qkv) at (3.0,1.55) {Query, key, value\\projections};
+    \node[block] (attention) at (3.0,-0.1) {Multi-head\\self-attention};
+    \node[block] (ffn) at (3.0,-1.75) {Feed-forward layer\\+ residual paths};
+    \node[outblock] (next) at (6.8,-1.75) {Next-token\\probabilities};
+
+    \draw[arrow] (tok1) -- (emb1);
+    \draw[arrow] (tok2) -- (emb2);
+    \draw[arrow] (tok3) -- (emb3);
+    \draw[arrow] (tok4) -- (emb4);
+
+    \draw[arrow] (emb1) -- (qkv);
+    \draw[arrow] (emb2) -- (qkv);
+    \draw[arrow] (emb3) -- (qkv);
+    \draw[arrow] (emb4) -- (qkv);
+    \draw[arrow] (qkv) -- (attention);
+    \draw[arrow] (attention) -- (ffn);
+    \draw[arrow] (ffn) -- (next);
+
+    \draw[attn] (tok1.north) to (tok3.north);
+    \draw[attn] (tok2.north) to (tok4.north);
+    \draw[attn] (tok4.north) to[bend left=42] (tok1.north);
+
+    \end{tikzpicture}%
+    }
+    \caption{Placeholder sketch of a transformer block and self-attention mechanism. Tokens are mapped to embeddings with positional information, transformed into query, key, and value vectors, and contextualised through multi-head self-attention before the decoder produces next-token probabilities \cite{vaswani2017attention}.}
+    \label{fig:transformer-attention-placeholder}
+\end{figure}

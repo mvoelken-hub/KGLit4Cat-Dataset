@@ -1,0 +1,19 @@
+\begin{table}[H]
+    \centering
+    \caption{Limitations of structured output approaches.}
+    \label{tab:structured-output-approaches}
+    \small
+    \renewcommand{\arraystretch}{1.2}
+    \begin{tabularx}{\textwidth}{
+        >{\raggedright\arraybackslash}p{0.28\textwidth}
+        >{\raggedright\arraybackslash}X
+    }
+        \toprule
+        Approach & Limitations \\
+        \midrule
+        Prompt instructions & Formatting is guided but not guaranteed; malformed structures or unsupported content can still occur and therefore have to be checked after generation \cite{dagdelen2024structured,caufield2024spires}. \\
+        Tool or function calling & The interface can enforce structure, but it does not by itself ensure that argument values are factually correct or grounded in the input \cite{caufield2024spires,rankovic2025uncertainty}. \\
+        Output parsing and validation & Validation can reject malformed records, but semantic errors may remain when the output is syntactically valid yet unsupported or inappropriate \cite{dagdelen2024structured,rankovic2025uncertainty}. \\
+        \bottomrule
+    \end{tabularx}
+\end{table}

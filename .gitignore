@@ -197,3 +197,18 @@ frontend/package-lock.json
 frontend/*.tsbuildinfo
 frontend/vite.config.js
 frontend/vite.config.d.ts
+
+# Thesis
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.run.xml
+*.synctex.gz
+*.bcf
+main.toc
+*.xdv
+main.log
+main.pdf
+latexmkrc

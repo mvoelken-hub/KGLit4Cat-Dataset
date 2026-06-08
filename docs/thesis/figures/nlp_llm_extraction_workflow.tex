@@ -1,0 +1,110 @@
+\begin{figure}[H]
+    \centering
+    \resizebox{\textwidth}{!}{%
+    \begin{tikzpicture}[
+        font=\normalfont,
+        >=Stealth,
+        stage/.style={
+            rounded corners=5pt,
+            draw=#1!70!black,
+            fill=#1!9,
+            line width=0.9pt,
+            minimum width=2.85cm,
+            minimum height=1.15cm,
+            align=center,
+            text width=2.65cm,
+            inner sep=5pt
+        },
+        smallstage/.style={
+            rounded corners=5pt,
+            draw=#1!70!black,
+            fill=#1!7,
+            line width=0.8pt,
+            minimum width=2.75cm,
+            minimum height=0.72cm,
+            align=center,
+            text width=2.55cm,
+            inner sep=4pt,
+            font=\normalfont\scriptsize
+        },
+        schema/.style={
+            rounded corners=5pt,
+            draw=black!45,
+            fill=black!3,
+            line width=0.8pt,
+            minimum width=8.4cm,
+            minimum height=0.9cm,
+            align=center,
+            text width=7.9cm,
+            inner sep=5pt,
+            font=\normalfont\small
+        },
+        note/.style={
+            rounded corners=5pt,
+            draw=red!65!black,
+            fill=red!5,
+            dashed,
+            line width=0.8pt,
+            minimum width=4.15cm,
+            minimum height=0.9cm,
+            align=left,
+            text width=3.85cm,
+            inner sep=5pt,
+            font=\normalfont\scriptsize
+        },
+        flow/.style={->, line width=0.9pt, draw=black!62},
+        support/.style={->, line width=0.8pt, draw=black!45},
+        feedback/.style={->, dashed, line width=0.9pt, draw=red!65!black}
+    ]
+
+    \node[stage=gray] (literature) at (-7.2,0) {
+        {\normalfont\bfseries\small Literature}\\[-1pt]
+        {\normalfont\scriptsize\color{black!82} papers, patents, supplementary information}
+    };
+    \node[stage=blue] (parsing) at (-3.8,0) {
+        {\normalfont\bfseries\small Parsing}\\[-1pt]
+        {\normalfont\scriptsize\color{black!82} PDF/XML/text cleanup, sectioning, tables}
+    };
+    \node[stage=green] (extraction) at (-0.35,0) {
+        {\normalfont\bfseries\small Extraction}\\[-1pt]
+        {\normalfont\scriptsize\color{black!82} NER, relation extraction, LLM schema filling}
+    };
+    \node[stage=orange] (grounding) at (3.1,0) {
+        {\normalfont\bfseries\small Grounding}\\[-1pt]
+        {\normalfont\scriptsize\color{black!82} identifiers, units, vocabularies, ontology terms}
+    };
+    \node[stage=purple] (records) at (6.55,0) {
+        {\normalfont\bfseries\small Records}\\[-1pt]
+        {\normalfont\scriptsize\color{black!82} schema-aligned metadata and candidate triples}
+    };
+
+    \draw[flow] (literature) -- (parsing);
+    \draw[flow] (parsing) -- (extraction);
+    \draw[flow] (extraction) -- (grounding);
+    \draw[flow] (grounding) -- (records);
+
+    \node[schema] (semantic) at (0.45,2.05) {
+        {\normalfont\bfseries\small Semantic constraints}\\[-1pt]
+        {\normalfont\scriptsize\color{black!82} ChemDCAT-AP, Voc4Cat, ChEBI/RXNO, LinkML schemas, SHACL validation}
+    };
+    \draw[support] (semantic.south) -- (extraction.north);
+    \draw[support] (semantic.south) -- (grounding.north);
+    \draw[support] (semantic.south east) -- (records.north);
+
+    \node[note] (limits) at (-4.6,-2.25) {
+        {\normalfont\bfseries Bottlenecks}\\[-1pt]
+        PDF layout, missing context, ambiguous catalyst names, publication bias
+    };
+    \node[note] (expert) at (4.6,-2.25) {
+        {\normalfont\bfseries Validation loop}\\[-1pt]
+        provenance checks, expert correction, grounded records
+    };
+    \draw[feedback] (records.south) |- (expert.east);
+    \draw[feedback] (expert.north) -- (grounding.south);
+    \draw[feedback] (expert.west) to[out=170,in=-35] (extraction.south);
+
+    \end{tikzpicture}%
+    }
+    \caption{Typical NLP and LLM-based workflow for turning catalysis literature into semantic metadata. Classical extraction components identify entities and relations, while LLM-based components support prompt-driven schema filling and retrieval-grounded interpretation. The extracted spans only become reusable research data after grounding against identifiers, vocabularies, schemas, provenance evidence, and expert validation \cite{zhang2022knowledge,dagdelen2024structured,caufield2024spires,walls2025catminer,diaz2025knowledgegraphs}.}
+    \label{fig:nlp-llm-extraction-workflow}
+\end{figure}

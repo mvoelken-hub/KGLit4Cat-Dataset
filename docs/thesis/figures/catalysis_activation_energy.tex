@@ -1,0 +1,40 @@
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}[
+        >=Latex,
+        scale=0.95,
+        every node/.style={font=\small}
+    ]
+        \draw[->, line width=0.8pt] (0,0) -- (8.2,0) node[below] {Reaction coordinate};
+        \draw[->, line width=0.8pt] (0,0) -- (0,4.5) node[above, anchor=east] {$E_\mathrm{G}$};
+
+        \draw[gray!35, dashed] (0.9,1.0) -- (7.4,1.0);
+        \draw[gray!35, dashed] (6.7,0.25) -- (7.6,0.45);
+
+        \coordinate (reactants) at (0.9,1.0);
+        \coordinate (products) at (7.4,0.45);
+        \coordinate (bluePeak) at (3.15,3.32);
+        \coordinate (redPeak) at (2.55,2.10);
+
+        \draw[blue!70!black, line width=1.3pt]
+            (reactants) .. controls (1.7,3.05) and (2.35,3.32) .. (bluePeak)
+            .. controls (3.85,3.32) and (4.35,2.25) .. (5.0,1.45)
+            .. controls (5.7,0.75) and (6.4,0.45) .. (products);
+        \draw[red!75!black, line width=1.3pt]
+            (reactants) .. controls (1.55,1.85) and (2.05,2.10) .. (redPeak)
+            .. controls (3.25,2.10) and (3.95,1.80) .. (4.7,1.45)
+            .. controls (5.5,0.85) and (6.4,0.45) .. (products);
+
+        \draw[<->, blue!70!black, line width=0.8pt] (bluePeak |- reactants) -- (bluePeak);
+        \draw[<->, red!75!black, line width=0.8pt] (redPeak |- reactants) -- (redPeak);
+        \draw[<->, gray!70!black, line width=0.8pt] (7.75,1.0) -- (7.75,0.45)
+            node[midway, right] {$\Delta G$};
+
+        \node[anchor=west] at (0.95,0.72) {Reactants};
+        \node[anchor=west] at (6.65,0.23) {Products};
+        \node[blue!70!black, anchor=west, fill=white, inner sep=1pt] at (3.32,3.18) {$E_{\mathrm{a}}$ without catalyst};
+        \node[red!75!black, anchor=east, fill=white, inner sep=1pt] at (2.42,1.72) {$E_{\mathrm{a}}$ with catalyst};
+    \end{tikzpicture}
+    \caption{Schematic reaction coordinate diagram illustrating catalyzed and uncatalyzed reaction pathways, adapted from \cite{job2021physikalische}.}
+    \label{fig:catalysis-activation-energy}
+\end{figure}

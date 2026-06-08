@@ -1,0 +1,87 @@
+% Figure 4.2: Overall staged workflow architecture.
+% Place this file in Simon/figures/ and include it via \input{figures/method_workflow_architecture}.
+\begin{tikzpicture}[
+    font=\small,
+    >=Stealth,
+    stage/.style={
+        draw=TUgreen!85!black,
+        fill=TUgreen!8,
+        very thick,
+        rounded corners=3pt,
+        minimum width=2.55cm,
+        minimum height=1.05cm,
+        align=center
+    },
+    data/.style={
+        draw=black!55,
+        fill=black!4,
+        thick,
+        rounded corners=3pt,
+        minimum width=2.55cm,
+        minimum height=1.05cm,
+        align=center
+    },
+    support/.style={
+        draw=blue!55!black,
+        fill=blue!5,
+        thick,
+        rounded corners=3pt,
+        minimum width=3.25cm,
+        minimum height=1.05cm,
+        align=center
+    },
+    output/.style={
+        draw=green!45!black,
+        fill=green!10,
+        very thick,
+        rounded corners=3pt,
+        minimum width=3.2cm,
+        minimum height=1.10cm,
+        align=center
+    },
+    arr/.style={->, very thick, black!65},
+    dashedarr/.style={->, thick, dashed, black!55}
+]
+
+% Main pipeline
+\node[data] (archive) {Dataset\\archive};
+\node[stage, right=0.50cm of archive] (ingest) {Ingestion +\\text extraction};
+\node[stage, right=0.50cm of ingest] (rank) {File\\ranking};
+\node[stage, right=0.50cm of rank] (chunk) {Semantic\\chunking};
+\node[stage, right=0.50cm of chunk] (extract) {Chunk-wise\\LLM extraction};
+\node[data, right=0.50cm of extract] (context) {Merged\\\texttt{ExtractionContext}};
+
+\draw[arr] (archive) -- (ingest);
+\draw[arr] (ingest) -- (rank);
+\draw[arr] (rank) -- (chunk);
+\draw[arr] (chunk) -- (extract);
+\draw[arr] (extract) -- (context);
+
+% Semantic grounding row
+\node[support, below=1.15cm of chunk] (vocabs) {Controlled vocabularies\\{\footnotesize QUDT, Voc4Cat, CHMO, nmrCV}};
+\node[stage, right=0.58cm of vocabs] (retrieval) {Hybrid candidate\\retrieval + graph context};
+\node[stage, right=0.58cm of retrieval] (selection) {LLM candidate\\selection};
+\node[data, right=0.58cm of selection] (normalization) {Normalization\\records};
+
+\draw[arr] (vocabs) -- (retrieval);
+\draw[arr] (retrieval) -- (selection);
+\draw[arr] (selection) -- (normalization);
+\draw[dashedarr] (context.south) |- (retrieval.north);
+
+% Projection row
+\node[support, below=1.10cm of retrieval] (profile) {Application profile\\{\footnotesize DCAT-AP+/LinkML schema}};
+\node[stage, right=0.72cm of profile] (projection) {Profile\\projection};
+\node[output, right=0.72cm of projection] (result) {Schema-valid\\semantic metadata};
+
+\draw[arr] (profile) -- (projection);
+\draw[arr] (projection) -- (result);
+\draw[dashedarr] (context.south east) |- (projection.north);
+\draw[dashedarr] (normalization.south) |- (projection.north);
+
+% Boundary label
+\draw[TUgreen!65!black, thick, rounded corners=6pt]
+    ($(archive.north west)+(-0.25,0.28)$) rectangle ($(result.south east)+(0.25,-0.32)$);
+\node[fill=white, text=TUgreen!45!black, font=\small\bfseries]
+    at ($(ingest.north)!0.5!(chunk.north)+(0,0.31)$) {SIMONE extraction workflow};
+
+\end{tikzpicture}

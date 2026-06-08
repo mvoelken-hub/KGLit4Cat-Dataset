@@ -1,0 +1,50 @@
+% Figure 4.1: Context-window bottleneck for a single-prompt extraction design.
+% Place this file in Simon/figures/ and include it via \input{figures/method_context_window}.
+\begin{tikzpicture}[
+    font=\small,
+    >=Stealth,
+    box/.style={
+        draw=TUgreen!85!black,
+        fill=TUgreen!8,
+        very thick,
+        rounded corners=3pt,
+        minimum width=2.85cm,
+        minimum height=1.65cm,
+        align=center
+    },
+    resource/.style={
+        draw=black!45,
+        fill=black!5,
+        thick,
+        rounded corners=3pt,
+        minimum width=2.85cm,
+        minimum height=1.65cm,
+        align=center
+    },
+    note/.style={
+        draw=black!45,
+        fill=black!3,
+        rounded corners=3pt,
+        align=center,
+        text width=13.2cm,
+        inner sep=6pt
+    }
+]
+
+\node[box] (task) {Task\\instructions};
+\node[box, right=0.45cm of task] (schema) {Target\\schema};
+\node[resource, right=0.45cm of schema] (raw) {Raw input\\dataset files};
+\node[resource, right=0.45cm of raw] (resources) {External\\resources\\{\footnotesize QUDT, Voc4Cat, CHMO, nmrCV}};
+\node[box, right=0.45cm of resources] (output) {Expected\\JSON output};
+
+\draw[TUgreen!85!black, very thick, rounded corners=8pt]
+    ($(task.north west)+(-0.25,0.35)$) rectangle ($(output.south east)+(0.25,-0.35)$);
+\node[fill=white, text=TUgreen!45!black, font=\small\bfseries]
+    at ($(schema.north)!0.5!(raw.north)+(0,0.35)$) {LLM context window};
+
+\node[note, below=0.95cm of raw] (note) {A monolithic prompt has to contain instructions, schema constraints, raw source text, vocabulary context, and the requested output at once. For heterogeneous research data packages this design does not scale, because the same context window must carry both evidence and semantic background.};
+
+\draw[->, thick, black!55] (raw.south) -- ++(0,-0.36) -| (note.north);
+\draw[->, thick, black!55] (resources.south) -- ++(0,-0.36) -| (note.north);
+
+\end{tikzpicture}

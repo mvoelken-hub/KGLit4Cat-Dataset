@@ -1,0 +1,56 @@
+\documentclass[a4paper,11pt]{report}
+\usepackage{packages/packages}
+
+\definecolor{TUgreen}{HTML}{84B818}
+
+\begin{document}
+
+\input{Frontpage/frontpage}
+\clearpage
+\null
+\thispagestyle{empty}
+\clearpage
+\pagenumbering{Roman}
+\setcounter{page}{3}
+\usefrontmatterstyle
+\tableofcontents
+\clearpage
+
+\chapter*{LIST OF SYMBOLS}
+\addcontentsline{toc}{chapter}{List of Symbols}
+\input{sections/symbols}
+\clearpage
+
+\chapter*{ABBREVIATIONS}
+\addcontentsline{toc}{chapter}{Abbreviations}
+\input{sections/abbreviations}
+\clearpage
+
+\pagenumbering{arabic}
+\usemainmatterstyle
+\chapter{Introduction}
+\input{sections/01_introduction}
+
+\chapter{Theoretical Background}
+\input{sections/02_theoretical_background}
+
+\chapter{Current State of Research}
+\input{sections/03_current_state_of_research}
+
+\chapter{Methodical Approach}
+\input{sections/04_methodical_approach}
+
+\chapter{Results and Evaluation}
+\input{sections/05_results_and_evaluation}
+
+\chapter{Conclusion and Outlook}
+\input{sections/06_conclusion_and_outlook}
+
+\printbibliography[title={Bibliography}]
+
+\appendix
+\input{appendix/appendix_a_prompts}
+\input{appendix/appendix_b_schema}
+\input{appendix/appendix_c_examples}
+
+\end{document}

@@ -1,0 +1,84 @@
+\begin{figure}[H]
+    \centering
+    \resizebox{\textwidth}{!}{%
+    \begin{tikzpicture}[
+        font=\normalfont,
+        >=Stealth,
+        stacklayer/.style={
+            rounded corners=5pt,
+            draw=#1!70!black,
+            fill=#1!10,
+            line width=0.9pt,
+            minimum width=12.5cm,
+            minimum height=1.18cm,
+            align=left,
+            text width=11.8cm,
+            inner xsep=7pt,
+            inner ysep=5pt
+        },
+        layerhead/.style={
+            font=\normalfont\bfseries\small,
+            text=black
+        },
+        layertext/.style={
+            font=\normalfont\scriptsize,
+            text=black!82
+        },
+        sidebox/.style={
+            rounded corners=5pt,
+            draw=red!65!black,
+            fill=red!5,
+            dashed,
+            line width=0.9pt,
+            align=left,
+            text width=3.55cm,
+            inner sep=6pt
+        },
+        arrowlabel/.style={
+            font=\normalfont\scriptsize,
+            fill=white,
+            inner sep=2pt,
+            text=black!75
+        }
+    ]
+
+    \node[stacklayer=gray] (infra) at (0,0) {
+        {\normalfont\bfseries\small Infrastructure and knowledge graphs}\\[-1pt]
+        {\normalfont\scriptsize\color{black!82} NFDI4Cat, Repo4Cat, search services, ChemKG-like graph integration}
+    };
+    \node[stacklayer=orange, above=0.18cm of infra] (profiles) {
+        {\normalfont\bfseries\small Repository metadata profiles}\\[-1pt]
+        {\normalfont\scriptsize\color{black!82} DCAT-AP+, ChemDCAT-AP, provenance patterns, dataset discovery}
+    };
+    \node[stacklayer=green, above=0.18cm of profiles] (ontologies) {
+        {\normalfont\bfseries\small Community vocabularies and domain ontologies}\\[-1pt]
+        {\normalfont\scriptsize\color{black!82} Voc4Cat, Metadata4Cat, Reac4Cat, Ontologies4Cat, OntoCAPE}
+    };
+    \node[stacklayer=blue, above=0.18cm of ontologies] (reporting) {
+        {\normalfont\bfseries\small Reporting standards and exchange formats}\\[-1pt]
+        {\normalfont\scriptsize\color{black!82} MIChI, STRENDA, EnzymeML, Data-Friendly Articles}
+    };
+
+    \draw[->, line width=0.9pt, black!55] (-6.75,3.9) -- (-6.75,-0.62)
+        node[arrowlabel, midway, rotate=90] {from experimental reporting to reusable data infrastructure};
+    \draw[->, line width=0.9pt, black!55] (6.75,-0.62) -- (6.75,3.9)
+        node[arrowlabel, midway, rotate=90] {increasing machine-actionability and semantic constraint};
+
+    \node[sidebox] (gap) at (8.55,1.65) {
+        {\normalfont\bfseries\small Integration gap}\\[2pt]
+        {\normalfont\scriptsize\color{black!82} uneven adoption\\
+        unreported context\\
+        ontology alignment\\
+        negative results}
+    };
+
+    \draw[red!65!black, dashed, line width=0.9pt]
+        (gap.west) -- (reporting.east);
+    \draw[red!65!black, dashed, line width=0.9pt]
+        (gap.west) -- (infra.east);
+
+    \end{tikzpicture}%
+    }
+    \caption{Layered view of current semantic data-model efforts in catalysis. Reporting standards define which experimental context should be captured; vocabularies and ontologies provide domain meaning; metadata profiles connect catalysis-specific descriptions to repository and catalogue standards; and infrastructure services make the resulting records findable, linkable, and queryable. The dashed side box marks the remaining operational gap caused by uneven adoption, unreported context, ontology alignment, and missing negative results across these layers \cite{wulf2021unified,nfdi4cat2024whitepaper,stroemert2026chemdcat,behr2024ontologies4cat,salim2026methane}.}
+    \label{fig:catalysis-semantic-stack}
+\end{figure}
