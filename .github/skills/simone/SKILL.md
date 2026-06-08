@@ -1,193 +1,148 @@
 ---
 name: simone
-description: "Use when working with the SIMONE (Semantic Inference Module for Ontology-driven Node Extraction) project. Covers the full-stack architecture: FastAPI backend with Pydantic AI agents, Neo4j graph database, Ollama LLM integration, React+Vite frontend, and Docker Compose infrastructure. Use for: adding API endpoints, modifying extraction workflows, frontend UI changes, Neo4j schema updates, or Docker configuration."
+description: Work with the SIMONE thesis prototype and thesis. Use when the user asks to start, verify, inspect, or manage the SIMONE stack; work on SIMONE backend/frontend/codebase tasks; inspect extraction artifacts, models, vocabularies, profiles, or runtime state; write or revise SIMONE thesis material; evaluate prototype/thesis alignment; design experiments or evaluation tables; use NotebookLM-grounded thesis synthesis; manage thesis citations, bibliography, literature status, or LaTeX/PDF build checks.
 ---
 
-# SIMONE Project Knowledge
+# SIMONE
 
-## Architecture Overview
+Use this skill for the local SIMONE repository:
 
-SIMONE is a metadata extraction pipeline that takes dataset archives (ZIP files), chunks them, extracts initial context via LLM agents, generates a DCAT-AP profile draft, and patches it against vocabulary-backed knowledge graphs.
+`C:\Users\simcl\Documents\GitHub\Semantic Inference Module for Ontology-driven Node Extraction (SIMONE)`
 
-### Stack
-- **Backend**: Python 3.11+, FastAPI, Pydantic AI, uv package manager
-- **Database**: Neo4j (with APOC plugin) for semantic graph storage
-- **LLM**: Ollama (local) with configurable embed/chat models
-- **Frontend**: React 19, TypeScript, Vite dev server, vanilla CSS (no framework)
-- **Infra**: Docker Compose (production + dev variants)
+SIMONE is a thesis prototype for LLM-assisted semantic metadata extraction from uploaded dataset archives. It combines a React/Vite frontend, a FastAPI backend, Neo4j-backed vocabulary search, Ollama-backed embedding/chat models, and a LaTeX thesis under `docs/thesis`.
 
-## Project Structure
+## Load The Right Reference
 
-```
-backend/
-  app/
-    api/v1/           # FastAPI routers (extraction, profiles, datasources, semantic, system)
-      schemas/        # Pydantic request/response models for all v1 endpoints
-    bootstrap.py      # Startup orchestration: pulls Ollama models, imports initial vocabularies
-    cli.py            # Typer CLI for Docker Compose management, backups, health checks
-    core/             # Config, logging, task registry, initial vocabularies
-    dependencies.py   # Manual DI container: instantiates singleton repositories and services
-    domain/           # Business logic: datasources, extraction agents, profiles, semantics
-    neo4j/            # Driver, indexes, types
-    ollama/           # Client wrapper
-    repositories/     # Protocol classes for persistence
-    services/         # Service layer orchestrating repositories and agents
-  infra/              # Filesystem and Neo4j implementations of repository protocols
-  tests/              # pytest suite
-frontend/
-  src/
-    api/              # API client functions (client, datasources, extraction, profiles, semantic, types)
-    components/       # Reusable UI components (ChunkingDialog, JsonEditor, VocabularyPanel)
-    App.tsx           # Main application shell
-    styles.css        # All styles in one file
-  vite.config.ts      # Vite config with /api/v1 proxy to localhost:8000
-```
+Keep this file as the router. Load only the relevant reference:
 
-## Key Backend Patterns
+- Runtime, ports, stack commands, and artifact locations: `references/codebase-map.md`
+- Backend/frontend architecture or implementation lookup: `references/codebase-map.md`
+- Extraction workflow order, implementation boundaries, or thesis-method accuracy: `references/simone-workflow.md`
+- Thesis objective, research questions, scope, contribution framing, or chapter status: `references/thesis-context.md`
+- Evaluation dataset, annotations, metrics, baselines, or remaining completeness gaps: `references/evaluation-plan.md`
+- NotebookLM, citation traceability, bibliography sync, literature status, or source-grounded prose: `references/notebooklm-workflow.md`
 
-### Extraction Workflow
-1. `POST /extraction/initial-context` — extracts high-level context from data package
-2. `POST /extraction/initial-draft` — generates DCAT-AP draft from context + profile schema
-3. `POST /extraction/patch-draft` — background task that patches draft against content chunks
+For implementation facts, trust the repo/code/docs over memory. Re-check `docs/WORKFLOW.md`, `docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md`, and source files when accuracy matters.
 
-### Repository Pattern
-All persistence goes through Protocol classes in `app/repositories/`, implemented in `infra/`:
-- `ExtractionOutputRepository` — saves/loads JSON artifacts per workflow_id
-- `DataSourceBlobRepository` — stores uploaded ZIP files
-- `ProfileRepository` — stores registered DCAT-AP profiles
-- `SemanticGraphRepository` — Neo4j graph operations (vocabularies, embeddings, queries)
+## Thesis Source Rule
 
-### Dependency Injection
-`backend/app/dependencies.py` acts as a manual DI container. It instantiates repository and service singletons at module import time (e.g., `datasource_blob_repository = FileSystemDataSourceBlobRepository(...)`) and provides getter functions used by FastAPI `Depends`.
+For substantial thesis prose, literature claims, citation support, chapter rewriting, or source-grounded interpretation:
 
-### Task Registry
-Long-running operations (chunking, patching) use `TaskRegistry` with `TaskStatus` enum:
-`running | completed | cancelled | crashed | unknown`
+1. Read `references/notebooklm-workflow.md`.
+2. Validate NotebookLM auth with real token fetch.
+3. Choose the focused thesis notebook for the topic.
+4. Ask NotebookLM for source-grounded context.
+5. Map NotebookLM source references to `docs/thesis/bibliography/references.bib`.
 
-## Key Frontend Patterns
+Local thesis files and BibTeX entries are useful for structure and style, but they are not a substitute for the NotebookLM pass unless the user explicitly authorizes a no-NotebookLM fallback for that turn.
 
-### API Client
-`frontend/src/api/client.ts` defines:
-- `apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api/v1'`
-- `readJson<T>()` — parses JSON, throws `ApiError` on non-ok responses
-- `buildQuery()` — helper for URLSearchParams
+Read-only implementation/prose alignment audits may rely on repo files, thesis files, and source code without NotebookLM. Switch to NotebookLM when the task judges literature-backed claims, adds/revises thesis prose, or needs citation support.
 
-Additional API modules:
-- `frontend/src/api/semantic.ts` — vocabulary import, embedding checks, vocabulary queries
-- `frontend/src/api/types.ts` — shared TypeScript types (TaskStatus, ChunkResponse, VocabQueryResult, etc.)
+If NotebookLM auth fails, try `.\scripts\notebooklm-local.ps1 login` yourself once with `SIMONE_NOTEBOOKLM_ALLOW_MUTATION=1`, then rerun the real token-fetch auth check before asking the user to intervene.
 
-### State Management
-Pure React hooks in `App.tsx`. No external state library.
-Key states: `packages`, `profiles`, `selectedPackageId`, `selectedProfile`, `context`, `draft`, `busy`, `message`
+Never print cookies, raw auth files, storage state, API keys, or Maton credentials.
 
-### Components
-- `JsonEditor.tsx` — Tree sidebar showing only containers (objects/arrays) with child counts; editable panel with form fields for strings, numbers, booleans; array items render as clickable cards; raw JSON toggle for reference; live updates via `onChange` callback
-- `ChunkingDialog.tsx` — Modal for configuring dataset chunking parameters (buffer window size, semantic threshold, text quality filters, protected lines)
-- `VocabularyPanel.tsx` — Modal for browsing/importing controlled vocabularies, checking embedding status, and running vocabulary queries
+## Preferred CLI Workflow
 
-### CSS Architecture
-All styles in `frontend/src/styles.css`. Uses CSS custom properties:
-```css
-:root {
-  --paper: #f4f0e8;
-  --ink: #17140f;
-  --muted: #6e675d;
-  --line: #d8d0c1;
-  --panel: rgba(255, 252, 246, 0.76);
-  --accent: #8d3f22;
-  --accent-dark: #582614;
-}
-```
+Run SIMONE commands from the repository root. Prefer the repo wrappers over hand-starting services.
 
-## Development Setup
+Windows:
 
-### Prerequisites
-- Node.js (v24+ recommended) — install via `winget install OpenJS.NodeJS.LTS`
-- Python 3.11+ with `uv` package manager
-- Docker Desktop
-
-### Start Backend (dev)
 ```powershell
-cd backend
-# Use the project .env file (the CLI creates it from .env.example on first use)
-uv run --env-file ../.env uvicorn app.main:fastapi_app --host 127.0.0.1 --port 8000 --reload
+.\simone.bat --help
+.\simone.bat status
+.\simone.bat dev
+.\simone.bat up
+.\simone.bat down
 ```
 
-### Start Frontend (dev)
+macOS/Linux:
+
+```bash
+./simone --help
+./simone status
+./simone dev
+./simone up
+./simone down
+```
+
+Use development mode for local code/thesis-adjacent work:
+
 ```powershell
-cd frontend
-npm install
-npx vite --port 3000
+.\simone.bat dev
 ```
-The Vite dev server proxies `/api/v1` to `http://127.0.0.1:8000`.
 
-#### Troubleshooting Frontend Startup
-- **Node.js not on PATH**: If `npx` or `npm` is not found, ensure Node.js is installed and on your PATH, or run Vite directly:
-  ```powershell
-  cd frontend
-  & "C:\Program Files\nodejs\node.exe" "node_modules\vite\bin\vite.js" --port 3000
-  ```
-- **PowerShell Execution Policy**: If `npm`/`npx` fails with a PSSecurityException, PowerShell script execution is disabled. Either run `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser` (requires admin), or use the direct `node.exe` command above.
+Use production mode for Docker API/frontend:
 
-### Start Full Stack (CLI)
 ```powershell
-# Production mode (API + frontend in Docker; Neo4j/Ollama in Docker unless .env points to remote hosts)
-simone up
-
-# Dev mode (API locally; Neo4j/Ollama in Docker unless .env points to remote hosts)
-simone dev
-
-# Dev mode with Docker frontend (no local npm needed)
-simone dev --no-npm
-
-# Infrastructure mode (only Neo4j/Ollama, no API/frontend — for remote host setups)
-simone host
-
-# Start only specific services
-simone host --neo4j
-simone host --ollama
+.\simone.bat up
+.\simone.bat up --build
 ```
 
-The CLI creates `.env` from `.env.example` on first use and sets `APP_ENV` automatically (`production` for `up` and `host`, `development` for `dev`). If `NEO4J_HOSTNAME` or `OLLAMA_HOSTNAME` in `.env` point to a remote host, the CLI skips the corresponding local Docker service.
+Use infrastructure-only mode for Neo4j/Ollama:
 
-## Common Tasks
+```powershell
+.\simone.bat host
+.\simone.bat host --neo4j
+.\simone.bat host --ollama
+```
 
-### Adding a New API Endpoint
-1. Add request/response schemas in `backend/app/api/v1/schemas/<domain>.py`
-2. Add route handler in `backend/app/api/v1/<domain>.py`
-3. Add service method in `backend/app/services/<domain>_service.py`
-4. Wire up dependency injection in `backend/app/dependencies.py` (instantiate repository/service singletons)
-5. Add frontend API function in `frontend/src/api/<domain>.ts`
-6. Update `frontend/src/App.tsx` to use it
+Stop local SIMONE services with:
 
-### Modifying the JsonEditor
-- Tree rendering: `TreeNode` component in `JsonEditor.tsx`
-- Field editors: `ValueEditor` component
-- Styles: `.json-editor-*` classes in `styles.css`
+```powershell
+.\simone.bat down
+```
 
-### Adding a New Step to the Workflow
-1. Add article in `App.tsx` workflow section
-2. Add handler function (e.g., `onNewStep()`)
-3. Add `BusyKey` variant if needed
-4. Add API function in `frontend/src/api/`
+If a service is already reachable, leave it running unless the user asks for restart.
 
-### Working with Vocabularies and Semantic Graph
-- Backend domain logic: `backend/app/domain/semantics/` (controlled_vocabularies.py, ontologies.py, rdf.py, vocab_queries.py)
-- Backend service: `backend/app/services/semantic_service.py`
-- Backend repository: `infra/neo4j_semantic_graph_repository.py`
-- Frontend API: `frontend/src/api/semantic.ts`
-- Frontend UI: `frontend/src/components/VocabularyPanel.tsx`
-- API endpoints: `backend/app/api/v1/semantic.py` (prefix `/semantic`)
-- Initial vocabularies loaded at startup are defined in `backend/app/core/initial_vocabs.py`
+## Common Checks
 
-## Environment Files
-- `.env.example` — template with shared defaults (hostnames, ports, model settings). No `APP_ENV` — the CLI sets it per command.
-- `.env` — runtime file created from `.env.example` by the CLI. Gitignored.
+After startup, verify:
 
-Host behavior: if `NEO4J_HOSTNAME` or `OLLAMA_HOSTNAME` is empty, `localhost`, or `127.0.0.1`, the CLI starts the corresponding Docker service. Remote host values are used directly and the local service is skipped.
+```powershell
+Invoke-WebRequest -Uri "http://127.0.0.1:3000/" -UseBasicParsing -TimeoutSec 5
+Invoke-WebRequest -Uri "http://127.0.0.1:8000/docs" -UseBasicParsing -TimeoutSec 5
+Invoke-WebRequest -Uri "http://127.0.0.1:8000/api/v1/health" -UseBasicParsing -TimeoutSec 10
+```
 
-## Important Notes
-- The frontend uses `"latest"` for all npm deps — `package-lock.json` is gitignored
-- Backend uses `uv.lock` (not committed, per Python library convention)
-- Neo4j password is only applied on first data directory initialization
-- Ollama models are pulled on first startup in production mode unless `SKIP_MODEL_PULL=true`
+Report:
+
+- Frontend: `http://127.0.0.1:3000/`
+- Backend docs: `http://127.0.0.1:8000/docs`
+- API health: `http://127.0.0.1:8000/api/v1/health`
+- Neo4j Browser: `http://127.0.0.1:7474/browser/` when Neo4j is local
+
+## Thesis And Literature Helpers
+
+Skill-local scripts:
+
+```powershell
+.\scripts\notebooklm-local.ps1 auth check --test --json
+.\scripts\notebooklm-local.ps1 list --json
+python .\scripts\audit-notebook-bib-sync.py --json
+python .\scripts\audit-literature-status.py --json
+python .\scripts\serpapi-scholar.py "FAIR catalysis metadata ontology" --num 5
+.\scripts\thesis-build-check.ps1
+```
+
+Run the build helper only when refreshing LaTeX build artifacts under `docs/thesis` is acceptable.
+
+## Testing And Verification
+
+Backend commands from `backend`:
+
+```powershell
+uv run pytest
+uv run pytest tests/test_extraction_agents.py
+uv run pytest tests/test_semantic_service_vocab_query.py
+uv run pytest --cov
+```
+
+Frontend commands from `frontend`:
+
+```powershell
+npm.cmd run build
+npm.cmd run dev -- --host 127.0.0.1
+```
+
+Use focused tests that match the edited layer. For frontend/API contract changes, run `npm.cmd run build`; for service/domain changes, prefer backend pytest.
