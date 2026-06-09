@@ -3,12 +3,13 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from app.core.task_registry import TaskRegistry, TaskStatus
+from app.core.task_registry import TaskRegistry, TaskStatus, TaskType
 from app.domain.datasources import ContentChunk, DataPackage, FileEntry
 from app.domain.extraction import (
     ChunkingRequiredError,
     ExtractionChunkResult,
     ExtractionContext,
+    ExtractionNormalization,
     ExtractionRunResult,
     ExtractionRunState,
     ExtractionVocabQueryConfig,
@@ -83,6 +84,22 @@ class FakeProfileService:
 
     def validate_document(self, *, identifier: str, document: dict):
         errors = [] if isinstance(document.get("id"), str) else [SimpleNamespace(path="$.id", message="required")]
+        return SimpleNamespace(valid=not errors, errors=errors)
+
+
+class TitleProfileService(FakeProfileService):
+    schema = {
+        "type": "object",
+        "required": ["title"],
+        "properties": {
+            "title": {"type": "string"},
+            "identifier": {"type": "string"},
+        },
+        "additionalProperties": True,
+    }
+
+    def validate_document(self, *, identifier: str, document: dict):
+        errors = [] if isinstance(document.get("title"), str) else [SimpleNamespace(path="$.title", message="required")]
         return SimpleNamespace(valid=not errors, errors=errors)
 
 
@@ -255,6 +272,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             semantic_chunking_threshold=80.0,
             replace_existing_chunks=True,
             resume=True,
+            force_rerun=False,
         )
         await task_registry.wait_for_task("workflow:complete:package-id")
 
@@ -282,6 +300,83 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 }
             ],
         )
+
+    async def test_complete_workflow_can_force_rerun_completed_package(self):
+        service, task_registry, output_repository = make_service([[make_chunk()]])
+        output_repository.result = ExtractionRunResult(
+            document={"id": "old"},
+            extraction_context=ExtractionContext(),
+        )
+        run_calls: list[dict] = []
+
+        async def fake_run_extraction(**kwargs):
+            run_calls.append(kwargs)
+            return None, TaskStatus.COMPLETED
+
+        service.run_extraction = fake_run_extraction  # type: ignore[method-assign]
+
+        async def completed_task():
+            return None
+
+        await task_registry.create_task(
+            completed_task(),
+            type=TaskType.WORKFLOW,
+            name="workflow:complete:package-id",
+        )
+        await task_registry.wait_for_task("workflow:complete:package-id")
+
+        status = await service.run_complete_workflow(
+            data_package_id="package-id",
+            profile_identifier="profile",
+            force_rerun=True,
+        )
+        await task_registry.wait_for_task("workflow:complete:package-id")
+
+        self.assertEqual(status, TaskStatus.RUNNING)
+        self.assertIsNone(output_repository.result)
+        self.assertEqual(
+            service.datasource_service.chunk_calls[0]["replace_existing_chunks"],  # type: ignore[union-attr]
+            False,
+        )
+        self.assertEqual(len(run_calls), 1)
+
+    async def test_profile_projection_falls_back_to_minimal_valid_document(self):
+        service, _, output_repository = make_service([[make_chunk()]])
+        service.profile_service = TitleProfileService()  # type: ignore[assignment]
+        context = ExtractionContext.model_validate(
+            {
+                "extraction_objects": [
+                    {
+                        "object_type": "evaluated_entity",
+                        "extracted_object": {
+                            "identifier": "SG-V4050",
+                            "description": "Sample SG-V4050",
+                            "type": "sample",
+                        },
+                        "source_text": "##TITLE=SG-V4050",
+                    }
+                ]
+            }
+        )
+        warnings: list[str] = []
+
+        with patch(
+            "app.services.extraction_service.generate_structured",
+            side_effect=MaxRetriesExceeded(),
+        ):
+            result = await service._project_and_save_result(
+                data_package_id="package-id",
+                profile_identifier="profile",
+                profile_target_class="Dataset",
+                extraction_context=context,
+                normalization=ExtractionNormalization(),
+                validation_schema=TitleProfileService.schema,
+                warnings=warnings,
+            )
+
+        self.assertEqual(result.document, {"title": "SG-V4050", "identifier": "package-id"})
+        self.assertIn("Profile projection fell back", result.warnings[0])
+        self.assertEqual(output_repository.result, result)
 
     async def test_run_extraction_requires_completed_chunks(self):
         service, _, _ = make_service([])

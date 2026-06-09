@@ -204,6 +204,10 @@ async def run_complete_workflow(
         default=False,
         description="Resume a persisted extraction run instead of clearing previous partial results.",
     ),
+    force_rerun: bool = Form(
+        default=False,
+        description="Clear persisted extraction artifacts and schedule a fresh complete workflow for the same deterministic package id.",
+    ),
     datasource_service: DataSourceService = Depends(get_datasource_service),
     extraction_service: ExtractionService = Depends(get_extraction_service),
 ) -> CompleteWorkflowRunResponse:
@@ -229,6 +233,7 @@ async def run_complete_workflow(
             semantic_chunking_threshold=semantic_chunking_threshold,
             replace_existing_chunks=replace_existing_chunks,
             resume=resume,
+            force_rerun=force_rerun,
         )
         _, progress = await extraction_service.get_extraction_progress(
             data_package_id=data_package.id,

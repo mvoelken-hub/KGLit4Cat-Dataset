@@ -2413,6 +2413,7 @@ def evaluation_run(
     semantic_chunking_threshold: int = typer.Option(95, "--semantic-chunking-threshold", help="Semantic chunking threshold from 0 to 100."),
     replace_existing_chunks: bool = typer.Option(False, "--replace-existing-chunks", help="Rebuild chunks for deterministic package ids."),
     resume: bool = typer.Option(False, "--resume", help="Resume any persisted extraction state for deterministic package ids."),
+    force_rerun: bool = typer.Option(False, "--force-rerun", help="Clear previous extraction artifacts before scheduling the complete workflow."),
 ) -> None:
     """Submit evaluation datasets to the complete workflow endpoint and score completed results."""
     from app.evaluation.runner import (
@@ -2449,6 +2450,7 @@ def evaluation_run(
             semantic_chunking_threshold=semantic_chunking_threshold,
             replace_existing_chunks=replace_existing_chunks,
             resume=resume,
+            force_rerun=force_rerun,
         )
         typer.echo(f"Completed: {run_dir.relative_to(REPO_ROOT)}")
 

@@ -149,20 +149,34 @@ def _score_attributes(
     for trace in context.extraction_objects:
         obj = trace.extracted_object
         for attr in getattr(obj, "has_quantitative_attributes", []):
+            title = " ".join(
+                str(part)
+                for part in (attr.identifier, attr.quantity_kind)
+                if part
+            )
             actual.append(
-                f"{trace.object_type} {attr.identifier} {attr.quantity_kind} {attr.value} {attr.unit}"
+                {
+                    "object_type": trace.object_type,
+                    "title": title,
+                    "value": str(attr.value),
+                    "text": f"{trace.object_type} {title} {attr.value} {attr.unit}",
+                }
             )
         for attr in getattr(obj, "has_qualitative_attributes", []):
-            actual.append(f"{trace.object_type} {attr.title} {attr.value}")
+            actual.append(
+                {
+                    "object_type": trace.object_type,
+                    "title": str(attr.title),
+                    "value": str(attr.value),
+                    "text": f"{trace.object_type} {attr.title} {attr.value}",
+                }
+            )
 
     matched_actual: set[int] = set()
     matches: list[AttributeMatch] = []
     true_positives = 0
     for expected in expected_attributes:
-        terms = [expected.title, expected.value, *expected.aliases]
-        if expected.object_type:
-            terms.append(expected.object_type)
-        index = _best_match_index(terms, actual, matched_actual)
+        index = _matching_attribute_index(expected, actual, matched_actual)
         if index is None:
             matches.append(AttributeMatch(expected=f"{expected.title}: {expected.value}"))
             continue
@@ -171,7 +185,7 @@ def _score_attributes(
         matches.append(
             AttributeMatch(
                 expected=f"{expected.title}: {expected.value}",
-                matched=actual[index],
+                matched=actual[index]["text"],
                 status="matched",
             )
         )
@@ -179,6 +193,33 @@ def _score_attributes(
     false_positives = max(0, len(actual) - len(matched_actual))
     false_negatives = max(0, len([item for item in expected_attributes if item.required]) - true_positives)
     return _metric_summary(true_positives, false_positives, false_negatives), matches
+
+
+def _matching_attribute_index(
+    expected: ReferenceAttribute,
+    actual: list[dict[str, str]],
+    matched_actual: set[int],
+) -> int | None:
+    best_index = None
+    best_score = 0.0
+    title_terms = [expected.title, *expected.aliases]
+    for index, candidate in enumerate(actual):
+        if index in matched_actual:
+            continue
+        if expected.object_type and candidate["object_type"] != expected.object_type:
+            continue
+        title_score = max(
+            (_similarity(term, candidate["title"]) for term in title_terms if term),
+            default=0.0,
+        )
+        value_score = _similarity(expected.value, candidate["value"])
+        if title_score < 0.62 or value_score < 0.62:
+            continue
+        score = (title_score + value_score) / 2
+        if score > best_score:
+            best_score = score
+            best_index = index
+    return best_index
 
 
 def _score_vocab_mappings(

@@ -11,6 +11,7 @@ This note compares the public-facing prototype claims in the README, workflow no
 | The workflow is traceable and reviewable. | Implemented at prototype level through chunk results, ranked files, extraction state, warnings, token usage, source-text evidence on extracted objects, and persisted artifacts under the runtime output directory. |
 | A user can run the workflow from start to finish. | Stepwise UI/API execution already existed, but `POST /api/v1/extraction/run` required completed chunks. A new automatic endpoint, `POST /api/v1/extraction/workflows/complete`, now uploads a ZIP package, starts chunking, waits for chunking, starts extraction, and lets the backend carry the workflow to a final result. |
 | The prototype is fully autonomous. | Not claimed as production autonomy. It still depends on registered profiles, reachable Neo4j/Ollama services, imported vocabularies, model authorization for the configured chat model, and successful schema validation. |
+| The thesis can claim extraction quality and semantic grounding quality. | Not yet substantiated. A post-fix `IR-IR.zip` run completed and validated, but the preliminary scorer reported object macro F1 `0.2667`, attribute F1 `0.0`, and vocabulary mapping F1 `0.0`; `1H_NMR-1H_NMR.zip` exceeded a one-hour timeout at `78/107` chunks. |
 
 ## Automatic Workflow Endpoint
 
@@ -29,6 +30,9 @@ Optional multipart fields:
 - `semantic_chunking_threshold`: chunking threshold from `0` to `100`, default `95`.
 - `replace_existing_chunks`: replace chunks for a package with the same deterministic id, default `false`.
 - `resume`: resume persisted extraction state, default `false`.
+- `force_rerun`: clear persisted extraction artifacts before scheduling the workflow, default `false`.
+
+For repeatable evaluation of deterministic package IDs, use `force_rerun=true` so older completed extraction artifacts do not mask current behavior.
 
 The response includes:
 

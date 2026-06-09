@@ -159,9 +159,11 @@ class ExtractionService:
         semantic_chunking_threshold: float = 95.0,
         replace_existing_chunks: bool = False,
         resume: bool = False,
+        force_rerun: bool = False,
     ) -> TaskStatus:
         self._require_runtime_dependencies()
         assert self.datasource_service is not None
+        assert self.output_repository is not None
         assert self.task_registry is not None
 
         self.datasource_service.get_data_package(data_package_id)
@@ -171,13 +173,22 @@ class ExtractionService:
         task_name = self._complete_workflow_task_name(data_package_id)
         task_info = self.task_registry.get_task_info(task_name)
         if task_info is not None and task_info.status == TaskStatus.RUNNING:
+            if force_rerun:
+                raise ValueError("Cannot force-rerun a complete workflow while it is already running.")
             return TaskStatus.RUNNING
-        if task_info is not None and task_info.status == TaskStatus.COMPLETED:
+        if (
+            not force_rerun
+            and task_info is not None
+            and task_info.status == TaskStatus.COMPLETED
+        ):
             if self._load_result_or_none(data_package_id) is not None:
                 return TaskStatus.COMPLETED
         if task_info is not None and task_info.status == TaskStatus.CRASHED:
             exception = task_info.task.exception()
             raise exception if exception else Exception("Complete workflow task crashed without an exception.")
+
+        if force_rerun:
+            self.output_repository.clear_extraction_run(data_package_id)
 
         await self.task_registry.create_task(
             coro=self._run_complete_workflow_task(
@@ -871,28 +882,39 @@ class ExtractionService:
     ) -> ExtractionRunResult:
         assert self.ollama_client is not None
         assert self.output_repository is not None
-        projection = await generate_structured(
-            self.ollama_client,
-            model=self.ollama_client.chat_model,
-            system=PROFILE_PROJECTION_SYSTEM_PROMPT,
-            prompt=build_profile_projection_prompt(
+        try:
+            projection = await generate_structured(
+                self.ollama_client,
+                model=self.ollama_client.chat_model,
+                system=PROFILE_PROJECTION_SYSTEM_PROMPT,
+                prompt=build_profile_projection_prompt(
+                    data_package_id=data_package_id,
+                    profile_identifier=profile_identifier,
+                    profile_target_class=profile_target_class,
+                    extraction_context=extraction_context,
+                    normalization=normalization,
+                    warnings=warnings,
+                    profile_schema=validation_schema,
+                ),
+                output_type=validation_schema,
+                num_ctx=self.ollama_client.max_context_length,
+            )
+            self._record_workflow_token_usage(
                 data_package_id=data_package_id,
-                profile_identifier=profile_identifier,
-                profile_target_class=profile_target_class,
+                agent_name="profile_projection",
+                usage=projection.usage,
+            )
+            clean_document = remove_null_values(projection.output)
+        except MaxRetriesExceeded as exc:
+            warnings.append(
+                "Profile projection fell back to a minimal schema-valid document "
+                f"after structured output failed: {exc}"
+            )
+            clean_document = self._fallback_profile_document(
+                data_package_id=data_package_id,
                 extraction_context=extraction_context,
-                normalization=normalization,
-                warnings=warnings,
-                profile_schema=validation_schema,
-            ),
-            output_type=validation_schema,
-            num_ctx=self.ollama_client.max_context_length,
-        )
-        self._record_workflow_token_usage(
-            data_package_id=data_package_id,
-            agent_name="profile_projection",
-            usage=projection.usage,
-        )
-        clean_document = remove_null_values(projection.output)
+                validation_schema=validation_schema,
+            )
         validation = self.profile_service.validate_document(
             identifier=profile_identifier,
             document=clean_document,
@@ -918,6 +940,50 @@ class ExtractionService:
             result=result,
         )
         return result
+
+    @classmethod
+    def _fallback_profile_document(
+        cls,
+        *,
+        data_package_id: str,
+        extraction_context: ExtractionContext,
+        validation_schema: dict[str, Any],
+    ) -> dict[str, Any]:
+        properties = cls._target_schema_properties(validation_schema)
+        title = cls._fallback_title(data_package_id, extraction_context)
+        document: dict[str, Any] = {"title": title}
+        if "identifier" in properties:
+            document["identifier"] = data_package_id
+        return document
+
+    @staticmethod
+    def _target_schema_properties(validation_schema: dict[str, Any]) -> dict[str, Any]:
+        ref = validation_schema.get("$ref")
+        if isinstance(ref, str) and ref.startswith("#/$defs/"):
+            target = ref.removeprefix("#/$defs/")
+            target_schema = validation_schema.get("$defs", {}).get(target, {})
+            if isinstance(target_schema, dict):
+                properties = target_schema.get("properties", {})
+                return properties if isinstance(properties, dict) else {}
+        properties = validation_schema.get("properties", {})
+        return properties if isinstance(properties, dict) else {}
+
+    @staticmethod
+    def _fallback_title(
+        data_package_id: str,
+        extraction_context: ExtractionContext,
+    ) -> str:
+        for object_type in ("evaluated_entity", "resource", "data_generating_activity", "method"):
+            for trace in extraction_context.extraction_objects:
+                if trace.object_type != object_type:
+                    continue
+                identifier = getattr(trace.extracted_object, "identifier", None)
+                if identifier:
+                    return str(identifier)
+                description = getattr(trace.extracted_object, "description", None)
+                if description:
+                    return str(description)
+        return f"SIMONE extraction result for {data_package_id}"
 
     @staticmethod
     def _ordered_chunks(

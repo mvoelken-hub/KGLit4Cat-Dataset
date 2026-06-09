@@ -131,6 +131,7 @@ def submit_complete_workflow(
     semantic_chunking_threshold: int = 95,
     replace_existing_chunks: bool = False,
     resume: bool = False,
+    force_rerun: bool = False,
     pause_on_timeout: bool = True,
 ) -> Path:
     status, payload = _post_multipart(
@@ -142,6 +143,7 @@ def submit_complete_workflow(
             "semantic_chunking_threshold": str(semantic_chunking_threshold),
             "replace_existing_chunks": str(replace_existing_chunks).lower(),
             "resume": str(resume).lower(),
+            "force_rerun": str(force_rerun).lower(),
         },
         file_field="file",
         file_path=dataset_path,
@@ -165,6 +167,7 @@ def submit_complete_workflow(
             "semantic_chunking_threshold": semantic_chunking_threshold,
             "replace_existing_chunks": replace_existing_chunks,
             "resume": resume,
+            "force_rerun": force_rerun,
         },
         git_commit=_git_commit(),
     )
