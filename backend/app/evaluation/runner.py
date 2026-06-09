@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from app.domain.datasources import DataPackage
-from app.evaluation.models import EvaluationRunManifest, load_reference
+from app.evaluation.models import EvaluationRunManifest, PartialEvaluationReport, load_reference
 from app.evaluation.scoring import (
     evaluate_extraction_result,
     load_result_artifacts,
@@ -45,6 +45,7 @@ def score_reference_directory(
     results_dir: Path,
 ) -> list[Path]:
     report_paths: list[Path] = []
+    partial_report_paths: list[Path] = []
     missing_outputs: list[dict[str, str]] = []
     for reference_path in sorted(reference_dir.glob("*.json")):
         reference = load_reference(reference_path)
@@ -58,6 +59,15 @@ def score_reference_directory(
                     "package_id": package_id,
                     "missing": str(result_path),
                 }
+            )
+            partial_report_paths.append(
+                write_partial_report(
+                    dataset_filename=reference.dataset_filename,
+                    package_id=package_id,
+                    run_dir=results_dir / package_id,
+                    outcome="missing_output",
+                    message=f"Completed extraction output is missing: {result_path}",
+                )
             )
             continue
         result, state = load_result_artifacts(output_dir=output_dir, package_id=package_id)
@@ -77,11 +87,15 @@ def score_reference_directory(
         json.dumps(missing_outputs, indent=2),
         encoding="utf-8",
     )
-    write_summary_tables(report_paths, results_dir)
+    write_summary_tables(report_paths, partial_report_paths, results_dir)
     return report_paths
 
 
-def write_summary_tables(report_paths: list[Path], results_dir: Path) -> None:
+def write_summary_tables(
+    report_paths: list[Path],
+    partial_report_paths: list[Path],
+    results_dir: Path,
+) -> None:
     rows = []
     for path in report_paths:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -113,6 +127,68 @@ def write_summary_tables(report_paths: list[Path], results_dir: Path) -> None:
         writer.writerows(rows)
     md_path = results_dir / "evaluation_summary.md"
     md_path.write_text(_summary_markdown(rows), encoding="utf-8")
+    write_partial_summary(partial_report_paths, results_dir)
+
+
+def write_partial_report(
+    *,
+    dataset_filename: str,
+    package_id: str,
+    run_dir: Path,
+    outcome: str,
+    message: str,
+) -> Path:
+    manifest = _load_manifest(run_dir / "manifest.json")
+    progress = _load_json_or_none(run_dir / "latest_progress.json") or {}
+    progress_body = progress.get("progress") if isinstance(progress.get("progress"), dict) else {}
+    total_chunks = _safe_int(progress_body.get("total_chunks"))
+    processed_chunks = _safe_int(progress_body.get("processed_chunks"))
+    warnings = progress_body.get("warnings")
+    report = PartialEvaluationReport(
+        dataset_filename=dataset_filename,
+        package_id=package_id,
+        manifest=manifest,
+        outcome=outcome,
+        status=str(progress.get("status") or "unknown"),
+        stage=progress_body.get("stage"),
+        processed_chunks=processed_chunks,
+        total_chunks=total_chunks,
+        completion_fraction=round(processed_chunks / total_chunks, 4) if total_chunks else 0.0,
+        warnings_count=len(warnings) if isinstance(warnings, list) else 0,
+        message=message,
+    )
+    run_dir.mkdir(parents=True, exist_ok=True)
+    path = run_dir / "partial_report.json"
+    path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+    return path
+
+
+def write_partial_summary(partial_report_paths: list[Path], results_dir: Path) -> None:
+    rows = []
+    for path in partial_report_paths:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        rows.append(
+            {
+                "dataset": payload["dataset_filename"],
+                "package_id": payload["package_id"],
+                "outcome": payload["outcome"],
+                "status": payload["status"],
+                "stage": payload.get("stage") or "",
+                "processed_chunks": payload["processed_chunks"],
+                "total_chunks": payload["total_chunks"],
+                "completion_fraction": payload["completion_fraction"],
+                "warnings_count": payload["warnings_count"],
+            }
+        )
+    csv_path = results_dir / "partial_evaluation_summary.csv"
+    with csv_path.open("w", encoding="utf-8", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=list(rows[0].keys()) if rows else ["dataset"])
+        writer.writeheader()
+        writer.writerows(rows)
+    (results_dir / "partial_evaluation_summary.md").write_text(
+        _partial_summary_markdown(rows),
+        encoding="utf-8",
+    )
 
 
 def submit_complete_workflow(
@@ -184,6 +260,13 @@ def submit_complete_workflow(
                 encoding="utf-8",
             )
             if progress_payload.get("status") == "crashed":
+                write_partial_report(
+                    dataset_filename=dataset_path.name,
+                    package_id=package_id,
+                    run_dir=run_dir,
+                    outcome="crashed",
+                    message=f"Extraction crashed for {dataset_path.name}.",
+                )
                 raise RuntimeError(f"Extraction crashed for {dataset_path.name}: {progress_payload}")
 
         result_status, result_payload = _get_json(result_url)
@@ -196,6 +279,13 @@ def submit_complete_workflow(
         time.sleep(poll_interval_seconds)
     if pause_on_timeout:
         _post_json(f"{api_base.rstrip('/')}/extraction/run/{package_id}/pause")
+    write_partial_report(
+        dataset_filename=dataset_path.name,
+        package_id=package_id,
+        run_dir=run_dir,
+        outcome="timeout",
+        message=f"Timed out after {timeout_seconds} seconds waiting for a complete workflow result.",
+    )
     raise TimeoutError(f"Timed out waiting for complete workflow result for {dataset_path.name}")
 
 
@@ -286,10 +376,39 @@ def _summary_markdown(rows: list[dict[str, Any]]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _partial_summary_markdown(rows: list[dict[str, Any]]) -> str:
+    if not rows:
+        return "# SIMONE Partial Evaluation Summary\n\nNo partial reports found.\n"
+    headers = list(rows[0].keys())
+    lines = [
+        "# SIMONE Partial Evaluation Summary",
+        "",
+        "| " + " | ".join(headers) + " |",
+        "| " + " | ".join("---" for _ in headers) + " |",
+    ]
+    for row in rows:
+        lines.append("| " + " | ".join(str(row[header]) for header in headers) + " |")
+    return "\n".join(lines) + "\n"
+
+
 def _load_manifest(path: Path) -> EvaluationRunManifest | None:
     if not path.exists():
         return None
     return EvaluationRunManifest.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+def _load_json_or_none(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return payload if isinstance(payload, dict) else None
+
+
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _git_commit() -> str | None:

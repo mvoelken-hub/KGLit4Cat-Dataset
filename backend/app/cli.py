@@ -2414,6 +2414,7 @@ def evaluation_run(
     replace_existing_chunks: bool = typer.Option(False, "--replace-existing-chunks", help="Rebuild chunks for deterministic package ids."),
     resume: bool = typer.Option(False, "--resume", help="Resume any persisted extraction state for deterministic package ids."),
     force_rerun: bool = typer.Option(False, "--force-rerun", help="Clear previous extraction artifacts before scheduling the complete workflow."),
+    stop_on_failure: bool = typer.Option(False, "--stop-on-failure", help="Stop the evaluation batch when a dataset times out or crashes."),
 ) -> None:
     """Submit evaluation datasets to the complete workflow endpoint and score completed results."""
     from app.evaluation.runner import (
@@ -2435,24 +2436,29 @@ def evaluation_run(
     for dataset_path in dataset_paths:
         resolved = dataset_path if dataset_path.is_absolute() else REPO_ROOT / dataset_path
         typer.echo(f"Submitting evaluation workflow: {resolved.name}")
-        run_dir = submit_complete_workflow(
-            api_base=api_base,
-            dataset_path=resolved,
-            profile_identifier=profile,
-            qualitative_vocab_identifiers=vocab_identifiers,
-            results_dir=REPO_ROOT / results_dir,
-            poll_interval_seconds=poll_interval,
-            timeout_seconds=timeout,
-            chat_model=env_values.get("OLLAMA_CHAT_MODEL"),
-            embedding_model=env_values.get("OLLAMA_EMBED_MODEL"),
-            max_context_length=int(env_values.get("MAX_CONTEXT_LENGTH", "0") or 0) or None,
-            buffer_window_size=buffer_window_size,
-            semantic_chunking_threshold=semantic_chunking_threshold,
-            replace_existing_chunks=replace_existing_chunks,
-            resume=resume,
-            force_rerun=force_rerun,
-        )
-        typer.echo(f"Completed: {run_dir.relative_to(REPO_ROOT)}")
+        try:
+            run_dir = submit_complete_workflow(
+                api_base=api_base,
+                dataset_path=resolved,
+                profile_identifier=profile,
+                qualitative_vocab_identifiers=vocab_identifiers,
+                results_dir=REPO_ROOT / results_dir,
+                poll_interval_seconds=poll_interval,
+                timeout_seconds=timeout,
+                chat_model=env_values.get("OLLAMA_CHAT_MODEL"),
+                embedding_model=env_values.get("OLLAMA_EMBED_MODEL"),
+                max_context_length=int(env_values.get("MAX_CONTEXT_LENGTH", "0") or 0) or None,
+                buffer_window_size=buffer_window_size,
+                semantic_chunking_threshold=semantic_chunking_threshold,
+                replace_existing_chunks=replace_existing_chunks,
+                resume=resume,
+                force_rerun=force_rerun,
+            )
+            typer.echo(f"Completed: {run_dir.relative_to(REPO_ROOT)}")
+        except (RuntimeError, TimeoutError) as exc:
+            typer.echo(f"Partial result recorded for {resolved.name}: {exc}", err=True)
+            if stop_on_failure:
+                raise
 
     typer.echo("Scoring completed evaluation outputs ...")
     reports = score_reference_directory(

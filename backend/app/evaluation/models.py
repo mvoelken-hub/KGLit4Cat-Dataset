@@ -86,5 +86,20 @@ class EvaluationReport(BaseModel):
     attribute_matches: list[AttributeMatch] = Field(default_factory=list)
 
 
+class PartialEvaluationReport(BaseModel):
+    dataset_filename: str
+    package_id: str
+    manifest: EvaluationRunManifest | None = None
+    outcome: Literal["missing_output", "timeout", "crashed"] = "missing_output"
+    status: str = "unknown"
+    stage: str | None = None
+    processed_chunks: int = 0
+    total_chunks: int = 0
+    completion_fraction: float = 0.0
+    warnings_count: int = 0
+    message: str = ""
+    generated_at: str = Field(default_factory=lambda: datetime.now().isoformat(timespec="seconds"))
+
+
 def load_reference(path: Path) -> EvaluationReference:
     return EvaluationReference.model_validate_json(path.read_text(encoding="utf-8"))

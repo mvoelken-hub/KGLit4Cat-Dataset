@@ -1,4 +1,8 @@
 import unittest
+import zipfile
+from io import BytesIO
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from app.domain.datasources import DataPackage, FileEntry
 from app.domain.extraction import (
@@ -19,6 +23,7 @@ from app.evaluation.models import (
     ReferenceVocabMapping,
 )
 from app.evaluation.scoring import evaluate_extraction_result
+from app.evaluation.runner import score_reference_directory
 from app.services.extraction_service import ExtractionService
 
 
@@ -146,6 +151,44 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(report.attribute_metrics.recall, 1.0)
         self.assertEqual(report.vocab_mapping_metrics.recall, 1.0)
         self.assertEqual(report.required_profile_field_coverage, 1.0)
+
+    def test_score_reference_directory_writes_partial_report_for_missing_output(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            reference_dir = root / "references"
+            dataset_dir = root / "datasets"
+            output_dir = root / "output"
+            results_dir = root / "results"
+            reference_dir.mkdir()
+            dataset_dir.mkdir()
+            dataset_path = dataset_dir / "IR-IR.zip"
+            zip_buffer = BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w") as archive:
+                archive.writestr("dataset_description.txt", "IR dataset")
+            dataset_path.write_bytes(zip_buffer.getvalue())
+            (reference_dir / "IR-IR.json").write_text(
+                '{"dataset_filename": "IR-IR.zip", "expected_objects": []}',
+                encoding="utf-8",
+            )
+
+            reports = score_reference_directory(
+                reference_dir=reference_dir,
+                dataset_dir=dataset_dir,
+                output_dir=output_dir,
+                results_dir=results_dir,
+            )
+
+            self.assertEqual(reports, [])
+            partial_reports = list(results_dir.glob("*/partial_report.json"))
+            self.assertEqual(len(partial_reports), 1)
+            self.assertIn(
+                '"outcome": "missing_output"',
+                partial_reports[0].read_text(encoding="utf-8"),
+            )
+            self.assertIn(
+                "missing_output",
+                (results_dir / "partial_evaluation_summary.md").read_text(encoding="utf-8"),
+            )
 
 
 if __name__ == "__main__":
