@@ -8,6 +8,7 @@ This note records the current evidence for the prototype claims after adding the
 - `simone evaluate run --force-rerun` clears stale extraction artifacts for deterministic package ids before scheduling a new run, which is needed when evaluating code changes against a package that already completed earlier.
 - `simone evaluate score` scores existing runtime outputs under `backend/.runtime/output` against reference annotations.
 - `simone evaluate score` also writes `partial_report.json` and partial summary tables for referenced packages that have no completed `extraction_result.json`, so timeouts and missing outputs become explicit evaluation evidence.
+- `simone evaluate score` writes a manual-reference baseline summary that counts the focused human annotation target used for scoring.
 - Reference annotations live under `data/evaluation/references` and cover expected files, objects, attributes, vocabulary mappings, and required projected profile fields.
 - The final extraction result now persists the normalization artifact, so vocabulary grounding can be scored after the workflow completes.
 - The extraction context now receives a deterministic resource inventory for every file in the uploaded package, including files that were not semantically interpreted by text extraction.
@@ -22,6 +23,10 @@ This note records the current evidence for the prototype claims after adding the
 
 The IR result shows that the complete endpoint can produce a schema-valid profile artifact and enough persisted state for scoring. The same result also shows that schema validity does not imply scientific or semantic quality: the reference method `IR`, expected qualitative mapping, and expected key attributes were not recovered by the current scorer.
 
+## Manual-Reference Baseline
+
+The current manual-reference target covers 5 datasets, 20 relevant files, 25 expected objects, 10 expected attributes, 5 expected vocabulary mappings, and 5 required profile fields. This is a focused fact-level comparison target, not a complete manual extraction baseline. It is useful for measuring whether SIMONE recovers selected thesis-relevant facts, but it does not yet represent expert-curated full metadata documents.
+
 ## Claim Support Assessment
 
 Supported at prototype level:
@@ -29,6 +34,7 @@ Supported at prototype level:
 - A non-UI complete workflow exists for upload, chunking, extraction, normalization, projection, validation, and result polling.
 - The prototype can persist traceable extraction artifacts and score them after completion.
 - The prototype can emit partial evaluation reports for missing, timed-out, or crashed workflows.
+- The prototype has a reproducible focused manual-reference comparison target for selected facts.
 - Schema-valid profile projection is reachable on at least one real package, `IR-IR.zip`.
 - File ranking and source trace capture are measurable rather than only described.
 
@@ -38,6 +44,7 @@ Not yet substantiated:
 - Robust vocabulary grounding quality. The first IR report produced no expected qualitative mapping hit.
 - Bounded runtime for NMR-style packages with many text-bearing files and repeated parameter blocks.
 - Dataset-level robustness across the current five-package reference set. Four of five references do not yet have completed outputs.
+- Equivalence to, or improvement over, a complete manual extraction baseline.
 - General claims about scientific correctness, FAIR metadata quality, or cross-dataset robustness.
 
 ## Next Evaluation Work

@@ -101,5 +101,16 @@ class PartialEvaluationReport(BaseModel):
     generated_at: str = Field(default_factory=lambda: datetime.now().isoformat(timespec="seconds"))
 
 
+class ManualReferenceBaselineReport(BaseModel):
+    dataset_count: int = 0
+    expected_object_count: int = 0
+    expected_attribute_count: int = 0
+    expected_vocab_mapping_count: int = 0
+    relevant_file_count: int = 0
+    required_profile_field_count: int = 0
+    per_dataset: list[dict[str, Any]] = Field(default_factory=list)
+    generated_at: str = Field(default_factory=lambda: datetime.now().isoformat(timespec="seconds"))
+
+
 def load_reference(path: Path) -> EvaluationReference:
     return EvaluationReference.model_validate_json(path.read_text(encoding="utf-8"))

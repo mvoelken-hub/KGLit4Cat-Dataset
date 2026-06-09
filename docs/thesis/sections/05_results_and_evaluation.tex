@@ -10,7 +10,7 @@ The main endpoint used for these runs is \texttt{POST /api/v1/extraction/workflo
 
 \section{Dataset or Experimental Sample}
 \label{sec:dataset-experimental-sample}
-The current reference set contains five packages from \texttt{data/datasets}: an IR package, a 1H NMR package, two 13C Gel-NMR packages, and one \texttt{new-SCR252\_A.zip} package. The annotations are focused references rather than exhaustive gold standards. They cover expected relevant files, selected resources, methods, entities, key attributes, vocabulary mappings, and required profile fields.
+The current reference set contains five packages from \texttt{data/datasets}: an IR package, a 1H NMR package, two 13C Gel-NMR packages, and one \texttt{new-SCR252\_A.zip} package. The annotations are focused references rather than exhaustive gold standards. They cover 20 relevant files, 25 expected objects, 10 expected attributes, 5 expected vocabulary mappings, and 5 required profile fields.
 
 \section{Metrics and Assessment Procedure}
 \label{sec:metrics-assessment-procedure}
@@ -61,13 +61,15 @@ The NMR run demonstrates a different failure mode. The package had a large numbe
 
 \section{Comparison with a Baseline or Manual Process}
 \label{sec:comparison-baseline-manual-process}
-No baseline has been completed yet. The current reference annotations function as a lightweight manual target for selected facts, but they are not a full manual extraction baseline. A defensible next step is to compare the staged SIMONE workflow against a single-prompt baseline or a manually curated extraction for the same small package set.
+The current comparison target is a focused manual-reference baseline. It consists of the selected human-authored facts listed above and is used to score whether SIMONE recovers thesis-relevant files, objects, attributes, vocabulary mappings, and profile fields. This baseline is deliberately narrower than a complete manual metadata extraction. It supports preliminary fact-level comparison, but it does not yet answer whether SIMONE is faster, more complete, or more accurate than expert curation of full metadata documents.
+
+A stronger next comparison would add either complete manually curated profile documents for the same packages or a single-prompt LLM baseline that skips semantic chunking and staged vocabulary grounding.
 
 This chapter interprets the results in relation to the research questions.
 
 \section{Interpretation of Main Findings}
 \label{sec:interpretation-main-findings}
-The current evidence supports claims about workflow architecture and observability more strongly than claims about extraction quality. SIMONE can execute an inspectable staged workflow from upload to validated profile output for at least one real package, and it can record intermediate evidence for incomplete runs. It cannot yet substantiate broad claims about accurate metadata extraction, reliable vocabulary grounding, or robust performance across heterogeneous spectroscopy packages.
+The current evidence supports claims about workflow architecture and observability more strongly than claims about extraction quality. SIMONE can execute an inspectable staged workflow from upload to validated profile output for at least one real package, compare that output against a focused manual-reference target, and record intermediate evidence for incomplete runs. It cannot yet substantiate broad claims about accurate metadata extraction, reliable vocabulary grounding, robust performance across heterogeneous spectroscopy packages, or superiority over manual curation.
 
 \section{Strengths of the Proposed Workflow}
 \label{sec:strengths-proposed-workflow}

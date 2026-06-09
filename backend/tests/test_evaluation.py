@@ -189,6 +189,14 @@ class EvaluationTests(unittest.TestCase):
                 "missing_output",
                 (results_dir / "partial_evaluation_summary.md").read_text(encoding="utf-8"),
             )
+            self.assertIn(
+                '"dataset_count": 1',
+                (results_dir / "manual_reference_baseline.json").read_text(encoding="utf-8"),
+            )
+            self.assertIn(
+                "expected objects: 0",
+                (results_dir / "manual_reference_baseline.md").read_text(encoding="utf-8"),
+            )
 
 
 if __name__ == "__main__":

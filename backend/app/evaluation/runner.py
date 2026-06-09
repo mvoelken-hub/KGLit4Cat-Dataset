@@ -12,7 +12,12 @@ from pathlib import Path
 from typing import Any
 
 from app.domain.datasources import DataPackage
-from app.evaluation.models import EvaluationRunManifest, PartialEvaluationReport, load_reference
+from app.evaluation.models import (
+    EvaluationRunManifest,
+    ManualReferenceBaselineReport,
+    PartialEvaluationReport,
+    load_reference,
+)
 from app.evaluation.scoring import (
     evaluate_extraction_result,
     load_result_artifacts,
@@ -88,7 +93,45 @@ def score_reference_directory(
         encoding="utf-8",
     )
     write_summary_tables(report_paths, partial_report_paths, results_dir)
+    write_manual_reference_baseline(reference_dir=reference_dir, results_dir=results_dir)
     return report_paths
+
+
+def write_manual_reference_baseline(
+    *,
+    reference_dir: Path,
+    results_dir: Path,
+) -> Path:
+    rows = []
+    for reference_path in sorted(reference_dir.glob("*.json")):
+        reference = load_reference(reference_path)
+        rows.append(
+            {
+                "dataset": reference.dataset_filename,
+                "relevant_files": len(reference.relevant_files),
+                "expected_objects": len(reference.expected_objects),
+                "expected_attributes": len(reference.expected_attributes),
+                "expected_vocab_mappings": len(reference.expected_vocab_mappings),
+                "required_profile_fields": len(reference.required_profile_fields),
+            }
+        )
+    report = ManualReferenceBaselineReport(
+        dataset_count=len(rows),
+        expected_object_count=sum(row["expected_objects"] for row in rows),
+        expected_attribute_count=sum(row["expected_attributes"] for row in rows),
+        expected_vocab_mapping_count=sum(row["expected_vocab_mappings"] for row in rows),
+        relevant_file_count=sum(row["relevant_files"] for row in rows),
+        required_profile_field_count=sum(row["required_profile_fields"] for row in rows),
+        per_dataset=rows,
+    )
+    results_dir.mkdir(parents=True, exist_ok=True)
+    json_path = results_dir / "manual_reference_baseline.json"
+    json_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+    (results_dir / "manual_reference_baseline.md").write_text(
+        _manual_reference_baseline_markdown(report),
+        encoding="utf-8",
+    )
+    return json_path
 
 
 def write_summary_tables(
@@ -388,6 +431,42 @@ def _partial_summary_markdown(rows: list[dict[str, Any]]) -> str:
     ]
     for row in rows:
         lines.append("| " + " | ".join(str(row[header]) for header in headers) + " |")
+    return "\n".join(lines) + "\n"
+
+
+def _manual_reference_baseline_markdown(report: ManualReferenceBaselineReport) -> str:
+    lines = [
+        "# SIMONE Manual Reference Baseline",
+        "",
+        "This is a coverage summary of the focused manual reference annotations. "
+        "It is a target for scoring selected facts, not a complete manual extraction baseline.",
+        "",
+        f"- datasets: {report.dataset_count}",
+        f"- relevant files: {report.relevant_file_count}",
+        f"- expected objects: {report.expected_object_count}",
+        f"- expected attributes: {report.expected_attribute_count}",
+        f"- expected vocabulary mappings: {report.expected_vocab_mapping_count}",
+        f"- required profile fields: {report.required_profile_field_count}",
+        "",
+        "| dataset | files | objects | attributes | vocab mappings | profile fields |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ]
+    for row in report.per_dataset:
+        lines.append(
+            "| "
+            + " | ".join(
+                str(row[key])
+                for key in (
+                    "dataset",
+                    "relevant_files",
+                    "expected_objects",
+                    "expected_attributes",
+                    "expected_vocab_mappings",
+                    "required_profile_fields",
+                )
+            )
+            + " |"
+        )
     return "\n".join(lines) + "\n"
 
 
