@@ -39,6 +39,8 @@ from app.domain.extraction import (
     QualitativeAttributeNormalization,
     QuantitativeAttribute,
     QuantityNormalization,
+    Resource,
+    TracedExtractionObject,
     VocabularyCandidateSelection,
     VocabularyFallbackQuery,
     VocabularyTermMapping,
@@ -720,7 +722,10 @@ class ExtractionService:
             progress.chunk_results = state.chunk_results
             self._update_progress(data_package_id, progress)
 
-        extraction_context = self._merged_completed_chunk_context(state)
+        extraction_context = self._context_with_resource_inventory(
+            data_package=data_package,
+            context=self._merged_completed_chunk_context(state),
+        )
         self.output_repository.save_extraction_context(
             workflow_id=data_package_id,
             extraction_context=extraction_context,
@@ -900,6 +905,7 @@ class ExtractionService:
         result = ExtractionRunResult(
             document=clean_document,
             extraction_context=extraction_context,
+            normalization=normalization,
             warnings=warnings,
             token_usage=token_usage,
         )
@@ -1026,6 +1032,45 @@ class ExtractionService:
     ) -> ExtractionContext:
         return merge_extraction_context_results(
             cls._completed_chunk_contexts(state, file_path=file_path)
+        )
+
+    @staticmethod
+    def _context_with_resource_inventory(
+        *,
+        data_package: Any,
+        context: ExtractionContext,
+    ) -> ExtractionContext:
+        existing_resource_ids = {
+            trace.extracted_object.identifier
+            for trace in context.extraction_objects
+            if trace.object_type == "resource"
+            and isinstance(trace.extracted_object, Resource)
+        }
+        inventory_objects = []
+        for file in data_package.files:
+            if file.file_path in existing_resource_ids:
+                continue
+            inventory_objects.append(
+                TracedExtractionObject(
+                    object_type="resource",
+                    extracted_object=Resource(
+                        identifier=file.file_path,
+                        type=getattr(getattr(file, "file_type", None), "value", "file"),
+                        description=(
+                            f"Package file '{file.file_path}' "
+                            f"({len(file.raw_content)} bytes, extension {file.file_extension})."
+                        ),
+                    ),
+                    source_text=file.file_path,
+                )
+            )
+        return context.model_copy(
+            update={
+                "extraction_objects": [
+                    *context.extraction_objects,
+                    *inventory_objects,
+                ]
+            }
         )
 
     @classmethod

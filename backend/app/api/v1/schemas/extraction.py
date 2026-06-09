@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from app.core.task_registry import TaskStatus
 from app.domain.extraction import (
     ExtractionContext,
+    ExtractionNormalization,
     ExtractionRunProgress,
     ExtractionRunResult,
     ExtractionVocabQueryConfig,
@@ -54,6 +55,7 @@ class VocabQueryConfigUpdateRequest(ExtractionVocabQueryConfig):
 class ExtractionResultResponse(BaseModel):
     document: dict[str, Any]
     extraction_context: ExtractionContext
+    normalization: ExtractionNormalization | None = None
     warnings: list[str] = Field(default_factory=list)
     token_usage: dict[str, Any] = Field(default_factory=dict)
 

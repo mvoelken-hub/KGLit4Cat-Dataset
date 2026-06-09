@@ -414,7 +414,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(call_order, ["rank", "extract:1", "extract:2", "repair", "profile"])
         self.assertEqual(
             [resource.identifier for resource in output_repository.context.resources],
-            ["resource-one", "resource-two"],
+            ["resource-one", "resource-two", "README.md"],
         )
         self.assertIn("chunk_extraction_repair", output_repository.token_usage)
 
@@ -481,7 +481,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             [resource.identifier for resource in output_repository.context.resources],
-            ["already-extracted", "resumed-chunk"],
+            ["already-extracted", "resumed-chunk", "README.md"],
         )
 
     async def test_vocab_candidate_discovery_starts_after_completed_chunk_before_all_chunks_finish(self):

@@ -1,0 +1,28 @@
+{
+  "dataset_filename": "IR-IR.zip",
+  "description": "IR package with Bruker ALPHA instrument metadata, DX/JDX resources, image preview, inference JSON, and dataset description.",
+  "relevant_files": [
+    "dataset_description.txt",
+    "SG-V4050.dx",
+    "SG-V4050.edit.jdx",
+    "SG-V4050.infer.json"
+  ],
+  "expected_objects": [
+    {"object_type": "resource", "label": "dataset_description.txt"},
+    {"object_type": "resource", "label": "SG-V4050.dx", "aliases": ["dx"]},
+    {"object_type": "resource", "label": "SG-V4050.edit.jdx", "aliases": ["jdx"]},
+    {"object_type": "agentic_entity", "label": "Bruker ALPHA", "aliases": ["ALPHA"]},
+    {"object_type": "method", "label": "IR", "aliases": ["infrared spectroscopy"]}
+  ],
+  "expected_attributes": [
+    {"title": "instrument", "value": "Bruker ALPHA", "object_type": "agentic_entity"},
+    {"title": "method", "value": "IR", "aliases": ["infrared"]}
+  ],
+  "expected_vocab_mappings": [
+    {"source_value": "IR", "mapping_type": "qualitative", "expected_unresolved": false}
+  ],
+  "required_profile_fields": ["title"],
+  "notes": [
+    "The inference JSON includes functional-group predictions, which can support qualitative error analysis but are not mandatory reference objects."
+  ]
+}

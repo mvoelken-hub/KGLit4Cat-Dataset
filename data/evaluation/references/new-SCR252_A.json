@@ -1,0 +1,28 @@
+{
+  "dataset_filename": "new-SCR252_A.zip",
+  "description": "NMR package with Bruker Avance II 400 metadata, JCAMP/JDX/image resources, inference JSON with shift predictions, and dataset description.",
+  "relevant_files": [
+    "dataset_description.txt",
+    "SCR252_A.jcamp",
+    "SCR252_A.edit.jdx",
+    "SCR252_A.infer.json"
+  ],
+  "expected_objects": [
+    {"object_type": "resource", "label": "dataset_description.txt"},
+    {"object_type": "resource", "label": "SCR252_A.jcamp", "aliases": ["jcamp"]},
+    {"object_type": "resource", "label": "SCR252_A.infer.json", "aliases": ["nmr prediction"]},
+    {"object_type": "agentic_entity", "label": "Bruker Avance II 400", "aliases": ["Avance II 400"]},
+    {"object_type": "method", "label": "NMR", "aliases": ["1H NMR", "nmr prediction"]}
+  ],
+  "expected_attributes": [
+    {"title": "instrument", "value": "Bruker Avance II 400", "object_type": "agentic_entity"},
+    {"title": "prediction status", "value": "NMR prediction success", "aliases": ["accept", "shift prediction"]}
+  ],
+  "expected_vocab_mappings": [
+    {"source_value": "NMR", "mapping_type": "qualitative", "expected_unresolved": false}
+  ],
+  "required_profile_fields": ["title"],
+  "notes": [
+    "The reference checks whether SIMONE captures prediction-result context, not individual atom shift assignments."
+  ]
+}

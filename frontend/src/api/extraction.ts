@@ -120,6 +120,7 @@ export type PatchProgress = ExtractionRunProgress & {
 export type ExtractionRunResult = {
   document: Record<string, unknown>;
   extraction_context: Record<string, unknown>;
+  normalization?: Record<string, unknown> | null;
   warnings: string[];
   token_usage: PatchTokenUsage;
 };

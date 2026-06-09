@@ -5,6 +5,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from app.domain.extraction.extraction_context import ExtractionContext
+from app.domain.extraction.vocabulary import ExtractionNormalization
 from app.domain.extraction.file_ranking import RankedFile
 from app.domain.semantics import VocabQuery, VocabQueryResult
 
@@ -99,5 +100,6 @@ class ExtractionRunProgress(BaseModel):
 class ExtractionRunResult(BaseModel):
     document: dict[str, Any]
     extraction_context: ExtractionContext
+    normalization: ExtractionNormalization | None = None
     warnings: list[str] = Field(default_factory=list)
     token_usage: dict[str, Any] = Field(default_factory=dict)

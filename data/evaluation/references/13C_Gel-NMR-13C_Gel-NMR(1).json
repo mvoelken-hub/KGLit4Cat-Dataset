@@ -1,0 +1,28 @@
+{
+  "dataset_filename": "13C_Gel-NMR-13C_Gel-NMR(1).zip",
+  "description": "13C gel NMR package with nested raw ZIP, spreadsheet metadata, DX/JDX/image resources, and dataset description.",
+  "relevant_files": [
+    "dataset_description.txt",
+    "SGV-2976_13C_NMR.xlsx",
+    "SG-V4053_10.dx",
+    "SG-V4053_10.zip"
+  ],
+  "expected_objects": [
+    {"object_type": "resource", "label": "dataset_description.txt"},
+    {"object_type": "resource", "label": "SGV-2976_13C_NMR.xlsx", "aliases": ["spreadsheet", "xlsx"]},
+    {"object_type": "resource", "label": "SG-V4053_10.zip", "aliases": ["nested archive", "raw archive"]},
+    {"object_type": "resource", "label": "SG-V4053_10.dx", "aliases": ["dx"]},
+    {"object_type": "method", "label": "13C NMR", "aliases": ["carbon 13 nmr"]}
+  ],
+  "expected_attributes": [
+    {"title": "nucleus", "value": "13C", "aliases": ["carbon 13"]},
+    {"title": "resource type", "value": "spreadsheet", "aliases": ["xlsx"]}
+  ],
+  "expected_vocab_mappings": [
+    {"source_value": "13C NMR", "mapping_type": "qualitative", "expected_unresolved": false}
+  ],
+  "required_profile_fields": ["title"],
+  "notes": [
+    "This package is included to test table extraction and retention of nested/raw resources."
+  ]
+}
