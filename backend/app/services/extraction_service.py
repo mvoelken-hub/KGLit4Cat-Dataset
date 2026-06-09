@@ -147,6 +147,95 @@ class ExtractionService:
         )
         return None, TaskStatus.RUNNING
 
+    async def run_complete_workflow(
+        self,
+        *,
+        data_package_id: str,
+        profile_identifier: str,
+        qualitative_vocab_identifiers: list[str] | None = None,
+        buffer_window_size: int = 1,
+        semantic_chunking_threshold: float = 95.0,
+        replace_existing_chunks: bool = False,
+        resume: bool = False,
+    ) -> TaskStatus:
+        self._require_runtime_dependencies()
+        assert self.datasource_service is not None
+        assert self.task_registry is not None
+
+        self.datasource_service.get_data_package(data_package_id)
+        self.profile_service.get_profile(profile_identifier)
+        self.profile_service.load_json_schema(profile_identifier)
+
+        task_name = self._complete_workflow_task_name(data_package_id)
+        task_info = self.task_registry.get_task_info(task_name)
+        if task_info is not None and task_info.status == TaskStatus.RUNNING:
+            return TaskStatus.RUNNING
+        if task_info is not None and task_info.status == TaskStatus.COMPLETED:
+            if self._load_result_or_none(data_package_id) is not None:
+                return TaskStatus.COMPLETED
+        if task_info is not None and task_info.status == TaskStatus.CRASHED:
+            exception = task_info.task.exception()
+            raise exception if exception else Exception("Complete workflow task crashed without an exception.")
+
+        await self.task_registry.create_task(
+            coro=self._run_complete_workflow_task(
+                data_package_id=data_package_id,
+                profile_identifier=profile_identifier,
+                qualitative_vocab_identifiers=qualitative_vocab_identifiers,
+                buffer_window_size=buffer_window_size,
+                semantic_chunking_threshold=semantic_chunking_threshold,
+                replace_existing_chunks=replace_existing_chunks,
+                resume=resume,
+            ),
+            type=TaskType.WORKFLOW,
+            name=task_name,
+        )
+        return TaskStatus.RUNNING
+
+    async def _run_complete_workflow_task(
+        self,
+        *,
+        data_package_id: str,
+        profile_identifier: str,
+        qualitative_vocab_identifiers: list[str] | None,
+        buffer_window_size: int,
+        semantic_chunking_threshold: float,
+        replace_existing_chunks: bool,
+        resume: bool,
+    ) -> None:
+        assert self.datasource_service is not None
+        assert self.task_registry is not None
+
+        _, chunk_status = await self.datasource_service.chunk_file_entries_in_data_package(
+            data_package_id=data_package_id,
+            buffer_window_size=buffer_window_size,
+            semantic_chunking_threshold=semantic_chunking_threshold,
+            replace_existing_chunks=replace_existing_chunks,
+        )
+        if chunk_status == TaskStatus.RUNNING:
+            await self.task_registry.wait_for_task(
+                self.datasource_service.chunk_task_name(data_package_id)
+            )
+
+        chunks_by_file = self.datasource_service.get_completed_content_chunks_by_file(
+            data_package_id
+        )
+        if not chunks_by_file:
+            raise ChunkingRequiredError(
+                "Complete workflow could not continue because chunking produced no completed chunks."
+            )
+
+        _, extraction_status = await self.run_extraction(
+            data_package_id=data_package_id,
+            profile_identifier=profile_identifier,
+            qualitative_vocab_identifiers=qualitative_vocab_identifiers,
+            resume=resume,
+        )
+        if extraction_status == TaskStatus.RUNNING:
+            await self.task_registry.wait_for_task(
+                self._extraction_task_name(data_package_id)
+            )
+
     async def get_extraction_progress(
         self,
         *,
@@ -2245,6 +2334,10 @@ class ExtractionService:
     @staticmethod
     def _extraction_task_name(data_package_id: str) -> str:
         return f"extraction:run:{data_package_id}"
+
+    @staticmethod
+    def _complete_workflow_task_name(data_package_id: str) -> str:
+        return f"workflow:complete:{data_package_id}"
 
 
 def _resource_title(properties: dict[str, Any]) -> str | None:

@@ -12,6 +12,7 @@ Within the thesis context, this prototype explores whether large language models
 
 The prototype aims to turn an uploaded dataset archive into a progressively refined metadata representation. It does this by extracting document content, deriving artifact context from the source material, generating an initial metadata draft, refining that draft iteratively, and enriching selected fields with vocabulary-backed semantic references.
 
+The active backend workflow is direct extraction, vocabulary normalization, profile projection, validation, and persistence. Some older "initial draft" and "patch review" names still exist in the frontend for compatibility, but manual patch review is no longer the active backend pipeline.
 
 ## Running the App
 
@@ -168,6 +169,21 @@ If both hostnames are set to remote addresses in `.env`, `simone host` exits wit
 | API Docs | http://127.0.0.1:8000/docs |
 | API Health | http://127.0.0.1:8000/api/v1/health |
 | Neo4j Browser | http://127.0.0.1:7474/browser/ |
+
+### Complete Workflow Endpoint
+
+After the API is running and a profile is registered, one multipart endpoint can upload a ZIP package and let the backend run chunking plus extraction automatically:
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/v1/extraction/workflows/complete" \
+  -F "file=@./my-dataset.zip" \
+  -F "profile_identifier=dcat-ap-plus"
+```
+
+The endpoint returns the deterministic data package id, workflow status, and URLs for polling progress and retrieving the final result:
+
+- `GET /api/v1/extraction/run/{data_package_id}/progress`
+- `GET /api/v1/extraction/result/{data_package_id}`
 
 ### Stop and Inspect
 

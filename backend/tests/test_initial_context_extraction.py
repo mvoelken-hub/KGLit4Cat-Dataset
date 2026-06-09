@@ -49,12 +49,22 @@ class FakeDataSourceService:
             ],
         )
         self.chunks_by_file = chunks_by_file
+        self.chunk_calls: list[dict] = []
+        self.chunk_status = TaskStatus.COMPLETED
 
     def get_data_package(self, _data_package_id: str) -> DataPackage:
         return self.data_package
 
     def get_completed_content_chunks_by_file(self, _data_package_id: str):
         return self.chunks_by_file
+
+    async def chunk_file_entries_in_data_package(self, **kwargs):
+        self.chunk_calls.append(kwargs)
+        return self.chunks_by_file, self.chunk_status
+
+    @staticmethod
+    def chunk_task_name(data_package_id: str) -> str:
+        return f"chunking:file_entries:{data_package_id}"
 
 
 class FakeProfileService:
@@ -227,6 +237,52 @@ def make_service(chunks_by_file: list[list[ContentChunk]]):
 
 
 class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
+    async def test_run_complete_workflow_chunks_then_starts_extraction(self):
+        service, task_registry, _ = make_service([[make_chunk()]])
+        run_calls: list[dict] = []
+
+        async def fake_run_extraction(**kwargs):
+            run_calls.append(kwargs)
+            return None, TaskStatus.COMPLETED
+
+        service.run_extraction = fake_run_extraction  # type: ignore[method-assign]
+
+        status = await service.run_complete_workflow(
+            data_package_id="package-id",
+            profile_identifier="profile",
+            qualitative_vocab_identifiers=["voc4cat"],
+            buffer_window_size=2,
+            semantic_chunking_threshold=80.0,
+            replace_existing_chunks=True,
+            resume=True,
+        )
+        await task_registry.wait_for_task("workflow:complete:package-id")
+
+        datasource_service = service.datasource_service
+        self.assertEqual(status, TaskStatus.RUNNING)
+        self.assertEqual(
+            datasource_service.chunk_calls,  # type: ignore[union-attr]
+            [
+                {
+                    "data_package_id": "package-id",
+                    "buffer_window_size": 2,
+                    "semantic_chunking_threshold": 80.0,
+                    "replace_existing_chunks": True,
+                }
+            ],
+        )
+        self.assertEqual(
+            run_calls,
+            [
+                {
+                    "data_package_id": "package-id",
+                    "profile_identifier": "profile",
+                    "qualitative_vocab_identifiers": ["voc4cat"],
+                    "resume": True,
+                }
+            ],
+        )
+
     async def test_run_extraction_requires_completed_chunks(self):
         service, _, _ = make_service([])
 

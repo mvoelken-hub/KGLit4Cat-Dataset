@@ -9,6 +9,7 @@ from app.domain.extraction import (
     ExtractionRunResult,
     ExtractionVocabQueryConfig,
 )
+from app.api.v1.schemas.datasources import DataPackageResponse
 
 
 class ExtractionRunRequest(BaseModel):
@@ -36,6 +37,14 @@ class ExtractionRunResponse(BaseModel):
 class ExtractionProgressResponse(BaseModel):
     status: TaskStatus
     progress: ExtractionRunProgress | None = None
+
+
+class CompleteWorkflowRunResponse(BaseModel):
+    status: TaskStatus
+    data_package: DataPackageResponse
+    progress: ExtractionRunProgress | None = None
+    progress_url: str
+    result_url: str
 
 
 class VocabQueryConfigUpdateRequest(ExtractionVocabQueryConfig):

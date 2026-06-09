@@ -34,6 +34,10 @@ class DataSourceService:
     def delete_data_package(self, id: str) -> None:
         self.blob_repository.delete_data_package(id)
 
+    @staticmethod
+    def chunk_task_name(data_package_id: str) -> str:
+        return f"chunking:file_entries:{data_package_id}"
+
     def get_file_entry(self, id: str, file_path: str) -> FileEntry:
         data_package = self.get_data_package(id)
         return data_package.get_file_entry(file_path)
@@ -48,7 +52,7 @@ class DataSourceService:
         self,
         data_package_id: str,
     ) -> list[list[ContentChunk]]:
-        task_name = f"chunking:file_entries:{data_package_id}"
+        task_name = self.chunk_task_name(data_package_id)
         task_info = self.task_registry.get_task_info(task_name)
         if task_info is not None and task_info.status != TaskStatus.COMPLETED:
             return []
@@ -56,7 +60,7 @@ class DataSourceService:
         return self._load_content_chunks_by_file(data_package_id)
 
     def get_chunk_task_status(self, data_package_id: str) -> TaskStatus:
-        task_name = f"chunking:file_entries:{data_package_id}"
+        task_name = self.chunk_task_name(data_package_id)
         task_info = self.task_registry.get_task_info(task_name)
         if task_info is not None:
             return task_info.status
@@ -92,7 +96,7 @@ class DataSourceService:
         text_quality_config: TextQualityConfig | None = None,
     ) -> tuple[list[list[ContentChunk]], TaskStatus]:
         
-        TASK_NAME = f"chunking:file_entries:{data_package_id}"
+        TASK_NAME = self.chunk_task_name(data_package_id)
 
         task_info: TaskInfo | None = self.task_registry.get_task_info(TASK_NAME)
 

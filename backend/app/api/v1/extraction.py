@@ -1,20 +1,26 @@
+import json
+from io import BytesIO
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 
 from app.core.task_registry import TaskStatus
 from app.api.v1.schemas import (
+    CompleteWorkflowRunResponse,
     ExtractionProgressResponse,
     ExtractionRunRequest,
     ExtractionRunResponse,
     VocabQueryConfigUpdateRequest,
+    _data_package_response,
     _extraction_result_response,
     _extraction_run_response,
 )
-from app.dependencies import get_extraction_service
+from app.dependencies import get_datasource_service, get_extraction_service
 from app.domain.datasources import (
     DataPackageIdNotFoundError,
     DataPackageZipNotFoundError,
+    InvalidDataPackageZipFileError,
+    MultipleDataPackageZipFilesError,
 )
 from app.domain.extraction import (
     ChunkingRequiredError,
@@ -28,6 +34,7 @@ from app.domain.profiles import (
     ProfileSourceError,
 )
 from app.ollama.errors import CompletionError
+from app.services.datasource_service import DataSourceService
 from app.services.extraction_service import ExtractionService
 
 
@@ -79,6 +86,29 @@ def _raise_extraction_error(exc: Exception) -> None:
             detail=str(exc),
         ) from exc
     raise exc
+
+
+def _parse_qualitative_vocab_identifiers(value: str | None) -> list[str] | None:
+    if value is None or not value.strip():
+        return None
+    stripped = value.strip()
+    try:
+        parsed = json.loads(stripped)
+    except json.JSONDecodeError:
+        parsed = [item.strip() for item in stripped.split(",")]
+    if not isinstance(parsed, list) or not all(isinstance(item, str) for item in parsed):
+        raise ValueError("qualitative_vocab_identifiers must be a JSON string array or a comma-separated string.")
+    identifiers = [item.strip() for item in parsed if item.strip()]
+    return identifiers or None
+
+
+def _raise_workflow_upload_error(exc: Exception) -> None:
+    if isinstance(exc, (InvalidDataPackageZipFileError, MultipleDataPackageZipFilesError)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    _raise_extraction_error(exc)
 
 
 @router.post("/run", response_model=ExtractionRunResponse)
@@ -141,6 +171,77 @@ async def update_vocab_query_config(
         return ExtractionProgressResponse(status=TaskStatus.UNKNOWN, progress=progress)
     except Exception as exc:
         _raise_extraction_error(exc)
+
+
+@router.post(
+    "/workflows/complete",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=CompleteWorkflowRunResponse,
+)
+async def run_complete_workflow(
+    file: UploadFile = File(...),
+    profile_identifier: str = Form(...),
+    qualitative_vocab_identifiers: str | None = Form(
+        default=None,
+        description="Optional JSON string array or comma-separated vocabulary identifiers.",
+    ),
+    buffer_window_size: int = Form(
+        default=1,
+        ge=0,
+        description="Number of lines to include as buffer before and after each chunk.",
+    ),
+    semantic_chunking_threshold: float = Form(
+        default=95.0,
+        ge=0.0,
+        le=100.0,
+        description="Threshold for semantic chunking quality (0-100).",
+    ),
+    replace_existing_chunks: bool = Form(
+        default=False,
+        description="Replace previously persisted chunks for a package with the same deterministic id.",
+    ),
+    resume: bool = Form(
+        default=False,
+        description="Resume a persisted extraction run instead of clearing previous partial results.",
+    ),
+    datasource_service: DataSourceService = Depends(get_datasource_service),
+    extraction_service: ExtractionService = Depends(get_extraction_service),
+) -> CompleteWorkflowRunResponse:
+    if not file.filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded file must have a filename.",
+        )
+
+    try:
+        vocab_identifiers = _parse_qualitative_vocab_identifiers(
+            qualitative_vocab_identifiers
+        )
+        data_package = datasource_service.save_data_package(
+            BytesIO(await file.read()),
+            file.filename,
+        )
+        workflow_status = await extraction_service.run_complete_workflow(
+            data_package_id=data_package.id,
+            profile_identifier=profile_identifier,
+            qualitative_vocab_identifiers=vocab_identifiers,
+            buffer_window_size=buffer_window_size,
+            semantic_chunking_threshold=semantic_chunking_threshold,
+            replace_existing_chunks=replace_existing_chunks,
+            resume=resume,
+        )
+        _, progress = await extraction_service.get_extraction_progress(
+            data_package_id=data_package.id,
+        )
+        return CompleteWorkflowRunResponse(
+            status=workflow_status,
+            data_package=_data_package_response(data_package),
+            progress=progress,
+            progress_url=f"/api/v1/extraction/run/{data_package.id}/progress",
+            result_url=f"/api/v1/extraction/result/{data_package.id}",
+        )
+    except Exception as exc:
+        _raise_workflow_upload_error(exc)
 
 
 @router.post("/run/{data_package_id}/vocab-queries/rerun")

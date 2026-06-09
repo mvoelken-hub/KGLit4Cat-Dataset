@@ -387,6 +387,12 @@ After chunking is complete, the user starts extraction through:
 POST /api/v1/extraction/run
 ```
 
+For a no-UI run, the user can instead upload a ZIP package and let the backend perform upload, chunking, and extraction through:
+
+```text
+POST /api/v1/extraction/workflows/complete
+```
+
 The request includes:
 
 * `data_package_id`
@@ -879,7 +885,7 @@ The source code indicates several boundaries that should be stated clearly in th
 | Evaluation pipeline            | The inspected code shows workflow and test infrastructure, but not a completed thesis-level benchmark/evaluation dataset.               |
 | Ontology coverage              | Initial vocabularies are configured, but extraction quality still depends on the imported vocabularies and their term schemes.          |
 | LLM dependency                 | Extraction, ranking, candidate selection, fallback query generation, and profile projection depend on the configured Ollama chat model. |
-| Chunking dependency            | Extraction requires completed chunking; it does not automatically chunk inside the extraction endpoint.                                 |
+| Chunking dependency            | `POST /api/v1/extraction/run` requires completed chunking. `POST /api/v1/extraction/workflows/complete` automates upload, chunking, and extraction in one background workflow. |
 | Profile dependency             | Final output requires a registered profile and successful schema validation.                                                            |
 
 ---
