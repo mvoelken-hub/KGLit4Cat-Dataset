@@ -28,6 +28,7 @@ ENV_FILE = REPO_ROOT / ".env"
 ENV_EXAMPLE = REPO_ROOT / ".env.example"
 
 COMPOSE_PROD = REPO_ROOT / "docker-compose.yml"
+COMPOSE_GPU = REPO_ROOT / "docker-compose.gpu.yml"
 
 API_URL = "http://127.0.0.1:8000/docs"
 API_BASE = "http://127.0.0.1:8000/api/v1"
@@ -674,8 +675,11 @@ def _print_links() -> None:
     typer.echo("")
 
 
-def _compose_files_for_mode() -> list[Path]:
-    return [COMPOSE_PROD]
+def _compose_files_for_mode(gpu: bool = True) -> list[Path]:
+    files = [COMPOSE_PROD]
+    if gpu:
+        files.append(COMPOSE_GPU)
+    return files
 
 
 def _build_compose_cmd(
@@ -802,6 +806,7 @@ def main(ctx: typer.Context) -> None:
 def up(
     build: bool = typer.Option(False, "--build", help="Build images before starting containers"),
     verbose: bool = typer.Option(True, "--verbose/--quiet", help="Show startup progress, container status, and API logs while waiting"),
+    no_gpu: bool = typer.Option(False, "--no-gpu", help="Disable NVIDIA GPU reservations for Ollama (CPU-only mode)"),
 ) -> None:
     """Start SIMONE in production mode (API/frontend in Docker)."""
     if not _docker_available():
@@ -813,7 +818,7 @@ def up(
     env_values = _read_env_file(ENV_FILE)
     local_neo4j, local_ollama = _local_service_flags(env_values)
 
-    compose_files = _compose_files_for_mode()
+    compose_files = _compose_files_for_mode(gpu=not no_gpu)
     services = [service for service, enabled in (("neo4j", local_neo4j), ("ollama", local_ollama)) if enabled]
     services.extend(["api", "frontend"])
     cmd = _build_compose_cmd(ENV_FILE, compose_files, action="up", services=services, build=build)
@@ -844,6 +849,7 @@ def dev(
         "-fg",
         help="Attach local API and frontend logs to this terminal instead of opening dev windows",
     ),
+    no_gpu: bool = typer.Option(False, "--no-gpu", help="Disable NVIDIA GPU reservations for Ollama (CPU-only mode)"),
 ) -> None:
     """Start SIMONE in development mode (API locally; local services as needed)."""
     os.environ["APP_ENV"] = "development"
@@ -875,7 +881,7 @@ def dev(
             pass
 
     typer.echo("")
-    compose_files = _compose_files_for_mode()
+    compose_files = _compose_files_for_mode(gpu=not no_gpu)
     services = [service for service, enabled in (("neo4j", local_neo4j), ("ollama", local_ollama)) if enabled]
     if use_docker_frontend:
         services.append("frontend")
@@ -1033,6 +1039,7 @@ def host(
     neo4j: bool = typer.Option(False, "--neo4j", help="Start Neo4j (default: start all local services)"),
     ollama: bool = typer.Option(False, "--ollama", help="Start Ollama (default: start all local services)"),
     verbose: bool = typer.Option(True, "--verbose/--quiet", help="Show startup progress and container status"),
+    no_gpu: bool = typer.Option(False, "--no-gpu", help="Disable NVIDIA GPU reservations for Ollama (CPU-only mode)"),
 ) -> None:
     """Start only infrastructure services (Neo4j and/or Ollama) for remote access by other SIMONE instances."""
     if not _docker_available():
@@ -1068,7 +1075,7 @@ def host(
         typer.echo("Nothing to start locally. Use --neo4j and/or --ollama to force start, or update NEO4J_HOSTNAME and OLLAMA_HOSTNAME.")
         raise typer.Exit(0)
 
-    compose_files = _compose_files_for_mode()
+    compose_files = _compose_files_for_mode(gpu=not no_gpu)
     cmd = _build_compose_cmd(ENV_FILE, compose_files, action="up", services=compose_services, build=False)
     container_label = " + ".join(compose_services)
     typer.echo(f"Starting {container_label} for remote access ...")

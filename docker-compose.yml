@@ -29,15 +29,6 @@ services:
       - "127.0.0.1:${OLLAMA_PORT}:${OLLAMA_PORT}"
     volumes:
       - ./data/docker/ollama/data:/root/.ollama
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities:
-                - gpu
-
   api:
     build:
       context: ./backend
@@ -57,7 +48,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_BASE_URL: http://127.0.0.1:8000/api/v1
+        VITE_API_BASE_URL: /api/v1
     ports:
       - "127.0.0.1:${FRONTEND_PORT}:80"
     restart: unless-stopped
