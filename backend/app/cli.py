@@ -1137,6 +1137,7 @@ def vocabs(
     bootstrap: bool = typer.Option(False, "--bootstrap", help="Import configured vocabularies into Neo4j and generate embeddings"),
     foreground: bool = typer.Option(False, "--foreground", help="Run bootstrap in the current terminal instead of in the background"),
     start_services: bool = typer.Option(True, "--start-services/--no-start-services", help="Start local Neo4j/Ollama containers before bootstrapping"),
+    no_gpu: bool = typer.Option(False, "--no-gpu", help="Disable NVIDIA GPU reservations for Ollama (CPU-only mode)"),
 ) -> None:
     """Inspect or bootstrap the configured initial vocabularies."""
     if info and bootstrap:
@@ -1151,7 +1152,7 @@ def vocabs(
         _print_initial_vocab_info()
         return
 
-    _bootstrap_vocabs(foreground=foreground, start_services=start_services)
+    _bootstrap_vocabs(foreground=foreground, start_services=start_services, gpu=not no_gpu)
 
 
 def _print_initial_vocab_info() -> None:
@@ -2130,7 +2131,7 @@ def _models_action_server(env_values: dict[str, str]) -> None:
         typer.echo(f"Unknown choice: {choice}")
 
 
-def _bootstrap_vocabs(foreground: bool, start_services: bool) -> None:
+def _bootstrap_vocabs(foreground: bool, start_services: bool, gpu: bool) -> None:
     _ensure_no_bootstrap_vocab_job()
 
     os.environ["APP_ENV"] = "development"
@@ -2139,13 +2140,14 @@ def _bootstrap_vocabs(foreground: bool, start_services: bool) -> None:
     local_neo4j, local_ollama = _local_service_flags(env_values)
 
     if start_services:
+        compose_files = _compose_files_for_mode(gpu=gpu)
         services = [service for service, enabled in (("neo4j", local_neo4j), ("ollama", local_ollama)) if enabled]
         if services:
             if not _docker_available():
                 typer.echo("Error: Docker is not running. Please start Docker Desktop.", err=True)
                 raise typer.Exit(1)
             typer.echo(f"Starting {' + '.join(services)} containers ...")
-            _run(_build_compose_cmd(ENV_FILE, [COMPOSE_PROD], action="up", services=services, build=False), cwd=REPO_ROOT)
+            _run(_build_compose_cmd(ENV_FILE, compose_files, action="up", services=services, build=False), cwd=REPO_ROOT)
             if local_neo4j:
                 if not _wait_for_url("http://127.0.0.1:7474", timeout=120, label="Neo4j", verbose=False):
                     raise typer.Exit(1)
