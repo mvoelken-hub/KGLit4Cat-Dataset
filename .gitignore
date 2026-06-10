@@ -212,3 +212,4 @@ main.toc
 main.log
 main.pdf
 latexmkrc
+.backups/
