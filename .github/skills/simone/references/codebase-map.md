@@ -27,7 +27,8 @@ The wrapper delegates to `uv --directory backend run simone`, whose Typer app is
 - `.\simone.bat dev`: development mode, API locally with Uvicorn reload, frontend through npm/Vite when available, local Neo4j/Ollama containers when env hostnames are local.
 - `.\simone.bat dev --no-npm`: Docker frontend mode.
 - `.\simone.bat dev -fg`: attach local dev logs to current terminal.
-- `.\simone.bat up`: production mode, API/frontend in Docker.
+- `.\simone.bat up`: production mode, API/frontend in Docker, with GPU-enabled Ollama by default.
+- `.\simone.bat up --build --no-gpu`: production rebuild without the NVIDIA compose override; use on hosts without an NVIDIA Docker runtime.
 - `.\simone.bat host`: infrastructure-only Neo4j/Ollama.
 - `.\simone.bat down`: stop containers, local dev API/frontend processes, and background vocabulary bootstrap jobs.
 - `.\simone.bat status`: inspect stack status before launch/restart.
@@ -52,6 +53,8 @@ Neo4j persists under `data/docker/neo4j/data`; initial password only applies whe
 - API health: `http://127.0.0.1:8000/api/v1/health`
 - Neo4j Browser: `http://127.0.0.1:7474/browser/` when local
 
+On the Hostinger VPS, services are intended to be inspected over Tailscale. The frontend is served by nginx and proxies `/api/` to the API container. API, Neo4j, and Ollama stay loopback-bound in Docker but may be exposed to the tailnet through Tailscale Serve for experiment inspection.
+
 ## Runtime Artifacts
 
 Local dev API runtime is normally `backend/.runtime` because Uvicorn runs from `backend`.
@@ -69,6 +72,7 @@ Current files:
 - `extraction_run_state.json`
 - `extraction_warnings.json`
 - `token_usage.json`
+- `normalization.json` when a completed run persisted vocabulary normalization artifacts
 
 Avoid committing `.runtime`, `data/docker`, generated workflow files, or local service data unless the user explicitly asks.
 
@@ -76,7 +80,7 @@ Avoid committing `.runtime`, `data/docker`, generated workflow files, or local s
 
 Primary locations:
 
-- `backend/app/main.py`: FastAPI app, lifespan startup/shutdown, CORS, router registration.
+- `backend/app/main.py`: FastAPI app, lifespan startup/shutdown, router registration. CORS middleware is intentionally not configured; production browser calls go through the frontend nginx `/api/` proxy.
 - `backend/app/bootstrap.py`: startup setup for Ollama, Neo4j, graph cleanup, initial vocabulary import.
 - `backend/app/dependencies.py`: composition root for settings, clients, repositories, and services.
 - `backend/app/cli.py`: Typer CLI behind wrappers.
@@ -126,6 +130,14 @@ Wire new services/repositories in `backend/app/dependencies.py`.
 - Profile registration/validation/export: `backend/app/services/profile_service.py`, `backend/app/domain/profiles/__init__.py`, profile repositories.
 - Vocabulary import/search/enrichment: `backend/app/services/semantic_service.py`, `backend/app/domain/semantics`, semantic graph repositories, Neo4j indexes.
 - Task status/progress: `backend/app/core/task_registry.py`.
+- Branch handover and prototype-completion intent: `docs/HANDOVER_complete_workflow_endpoint.md`.
+
+## Complete Workflow And Evaluation
+
+- `POST /api/v1/extraction/workflows/complete`: upload ZIP, chunk, run extraction, normalize, project, validate, and expose progress/result URLs.
+- `simone evaluate run`: submit reference datasets through the complete workflow endpoint and score completed outputs.
+- `simone evaluate score`: score existing runtime outputs and emit partial reports for missing, timed-out, or crashed runs.
+- Deterministic file ranking is the default in the current branch; do not assume an LLM file-ranking call exists.
 
 ## Testing
 

@@ -4,6 +4,9 @@ Use this reference for evaluation design, experimental planning, metrics, baseli
 
 Primary local sources to re-check:
 
+- `docs/HANDOVER_complete_workflow_endpoint.md`
+- `docs/PROTOTYPE_STATUS.md`
+- `docs/evaluation/preliminary_evaluation.md`
 - `docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md`
 - `docs/thesis/sections/05_results_and_evaluation.tex`
 - `data/datasets`
@@ -16,17 +19,23 @@ The prototype supports evaluation by stage, but thesis-grade evaluation is not c
 Available:
 
 - Sample ZIP data packages under `data/datasets`.
+- `POST /api/v1/extraction/workflows/complete` for upload, chunking, extraction, normalization, projection, validation, and result/progress URL creation.
+- `simone evaluate run` and `simone evaluate score`.
+- Focused manual reference annotations under `data/evaluation/references`.
 - Workflow artifacts persisted in runtime output directories after extraction.
+- Partial reports for missing, timed-out, or crashed runs.
+- Manual-reference baseline summaries.
 - Token usage and progress tracking.
 - Unit tests for many backend components.
 
 Missing or incomplete:
 
-- Manual gold/reference annotations.
-- Evaluation tables.
+- Thesis-grade manual gold/reference annotations beyond the current focused references.
+- Final evaluation tables based on multiple completed post-fix runs.
 - Baseline runs.
-- Error analysis backed by real extraction outputs.
+- Broad error analysis backed by real extraction outputs.
 - Reproducibility package describing model, prompt, vocabulary, profile, chunking settings, and dataset IDs.
+- Runtime/scalability controls for verbose packages such as NMR exports.
 
 ## Evaluation Material
 
@@ -123,12 +132,19 @@ For each run, record:
 
 ## Thesis-Critical Completeness
 
-The current implementation is complete enough to support the thesis as a workflow prototype. It is not complete enough to support strong quality claims until evaluation evidence exists.
+The current implementation is complete enough to support the thesis as a workflow prototype and has a repeatable evaluation harness. It is not complete enough to support strong quality claims until more completed runs and error analysis exist.
+
+Current evidence to remember:
+
+- `IR-IR.zip` completed through the automatic endpoint and produced a schema-valid profile document, but semantic quality scores were weak.
+- `1H_NMR-1H_NMR.zip` previously timed out around `78/107` chunks, showing a runtime/scalability failure mode.
+- Several reference packages still have partial or missing outputs.
+- The manual-reference baseline is focused fact-level evidence, not a complete expert-curated metadata baseline.
 
 Prioritize:
 
-1. Reference annotations.
-2. Repeatable extraction runs.
-3. A compact baseline.
-4. Evidence tables.
-5. Qualitative error analysis.
+1. Repeatable extraction runs on the focused reference set.
+2. Runtime controls for verbose packages.
+3. Stronger semantic-grounding evidence.
+4. A compact baseline.
+5. Evidence tables and qualitative error analysis.

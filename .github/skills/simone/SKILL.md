@@ -22,7 +22,7 @@ Keep this file as the router. Load only the relevant reference:
 - Evaluation dataset, annotations, metrics, baselines, or remaining completeness gaps: `references/evaluation-plan.md`
 - NotebookLM, citation traceability, bibliography sync, literature status, or source-grounded prose: `references/notebooklm-workflow.md`
 
-For implementation facts, trust the repo/code/docs over memory. Re-check `docs/WORKFLOW.md`, `docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md`, and source files when accuracy matters.
+For implementation facts, trust the repo/code/docs over memory. Re-check `docs/WORKFLOW.md`, `docs/PROTOTYPE_STATUS.md`, `docs/HANDOVER_complete_workflow_endpoint.md`, `docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md`, and source files when accuracy matters.
 
 ## Thesis Source Rule
 
@@ -77,7 +77,10 @@ Use production mode for Docker API/frontend:
 ```powershell
 .\simone.bat up
 .\simone.bat up --build
+.\simone.bat up --build --no-gpu
 ```
+
+GPU is enabled by default through the compose override. Use `--no-gpu` on hosts without an NVIDIA Docker runtime, such as the current Hostinger VPS.
 
 Use infrastructure-only mode for Neo4j/Ollama:
 

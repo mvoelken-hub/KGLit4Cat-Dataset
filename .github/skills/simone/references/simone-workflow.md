@@ -18,7 +18,7 @@ The compact thesis-facing workflow is:
 2. File-type-specific text extraction.
 3. Semantic chunking and chunk persistence.
 4. Extraction run initialization and profile/schema loading.
-5. File ranking.
+5. Deterministic file ranking.
 6. Chunk ordering.
 7. Chunk-wise LLM extraction into `ExtractionContext`.
 8. Optional structured-output repair.
@@ -42,7 +42,7 @@ Implementation-level order:
 6. `ContentChunk.create_chunks_for_file_entry()` extracts text, splits lines, filters text quality, reinserts protected lines, embeds line windows, calculates adjacent cosine distances, and stores chunks.
 7. `POST /api/v1/extraction/run` verifies package/profile/schema and requires completed chunks.
 8. Extraction task loads the selected profile, JSON Schema, validation schema, data package, and completed chunks.
-9. LLM file ranking ranks package file paths by expected metadata relevance, with heuristic fallback.
+9. Deterministic heuristic file ranking orders package file paths by expected metadata relevance.
 10. Chunks are ordered by ranked file order, file path, and start line.
 11. Each chunk is sent to the LLM to produce `ExtractionContext`.
 12. Failed structured output can be queued for repair.
@@ -60,6 +60,7 @@ The active backend workflow is a single resumable run, not the older initial-dra
 
 Main extraction endpoints:
 
+- `POST /api/v1/extraction/workflows/complete`
 - `POST /api/v1/extraction/run`
 - `GET /api/v1/extraction/run/{data_package_id}/progress`
 - `POST /api/v1/extraction/run/{data_package_id}/pause`
@@ -95,9 +96,10 @@ The intermediate context is profile-independent. Profile projection happens only
 - Binary/raw instrument files may be retained as resources but are not semantically interpreted unless text extraction works.
 - Manual patch review is not complete; older frontend review pieces are compatibility remnants.
 - Extraction requires completed chunking.
+- The complete workflow endpoint performs upload, chunking, extraction, normalization, projection, validation, and result/progress URL creation as one background workflow.
 - Final output requires a registered profile and successful schema validation.
 - JSON Schema validation is necessary but not sufficient for scientific correctness.
-- Extraction, ranking, candidate selection, fallback query generation, and projection depend on configured Ollama models.
+- Chunk-level extraction, candidate selection, fallback query generation, and projection depend on configured Ollama models. File ranking is deterministic by default.
 
 ## Thesis-Ready Interpretation
 
@@ -113,4 +115,4 @@ Raw files
   -> validated final output
 ```
 
-The LLM is used at controlled points rather than as one unconstrained generator: file ranking, chunk-level extraction, candidate selection/fallback query generation, and profile projection.
+The LLM is used at controlled points rather than as one unconstrained generator: chunk-level extraction, candidate selection/fallback query generation, and profile projection. File ranking is deterministic by default to keep evaluation stable and cheap.
