@@ -2,6 +2,8 @@ from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from contextlib import asynccontextmanager
 
+from fastapi.middleware.cors import CORSMiddleware
+
 from app.core.config import settings
 from app.core.logging import logger, setup_logging
 
@@ -57,6 +59,14 @@ async def lifespan(app: FastAPI):
 
 # Create FastAPI app with lifespan management for startup and shutdown actions
 fastapi_app = FastAPI(title="Semantic Metadata Extraction API", lifespan=lifespan)
+
+fastapi_app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Define a root endpoint that redirects to the API documentation
 @fastapi_app.get("/", include_in_schema=False)

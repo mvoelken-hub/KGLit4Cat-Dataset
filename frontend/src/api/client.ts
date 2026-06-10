@@ -12,7 +12,7 @@ export const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
 export async function readJson<T>(response: Response): Promise<T> {
   const text = await response.text();
-  const payload = text ? JSON.parse(text) : undefined;
+  const payload = text ? parseJsonResponse(text, response) : undefined;
 
   if (!response.ok) {
     const message = payload && typeof payload === 'object' && 'detail' in payload
@@ -22,6 +22,19 @@ export async function readJson<T>(response: Response): Promise<T> {
   }
 
   return payload as T;
+}
+
+function parseJsonResponse(text: string, response: Response): unknown {
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    const contentType = response.headers.get('content-type') || 'unknown content type';
+    const preview = text.trim().replace(/\s+/g, ' ').slice(0, 120);
+    throw new ApiError(
+      `Expected JSON from ${response.url || 'API'}, but received ${contentType} (${response.status}). ${preview}`,
+      response.status,
+    );
+  }
 }
 
 function formatApiDetail(detail: unknown): string {

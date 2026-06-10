@@ -894,7 +894,8 @@ def dev(
         cmd = _build_compose_cmd(ENV_FILE, compose_files, action="up", services=services, build=True)
         container_label = " + ".join(services)
         typer.echo(f"Starting {container_label} containers ...")
-        _run(cmd, cwd=REPO_ROOT)
+        compose_env = {"VITE_API_BASE_URL": API_BASE} if use_docker_frontend else None
+        _run(cmd, cwd=REPO_ROOT, env=compose_env)
     else:
         typer.echo("Using external Neo4j/Ollama services from .env.")
 
