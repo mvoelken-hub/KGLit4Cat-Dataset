@@ -51,7 +51,7 @@ The CLI creates one `.env` file from `.env.example` and sets `APP_ENV` automatic
 | `EMBEDDING_BATCH_SIZE` | `32` | `32` | Number of texts embedded per Ollama request batch. |
 | `MAX_CONTEXT_LENGTH` | `64000` | `64000` | Maximum model context length used when preparing Ollama requests. |
 | `RUNTIME_DIR` | `./.runtime` | `./.runtime` | Base runtime directory for uploads, vocabularies, profiles, output files, and API logs. |
-| `FRONTEND_PORT` | `3000` | `3000` | Frontend browser port. The API automatically allows `localhost` and `127.0.0.1` origins for this port. |
+| `FRONTEND_PORT` | `3000` | `3000` | Frontend browser port. |
 | `SKIP_MODEL_PULL` | `false` | `true` | Override: skip pulling configured Ollama models on startup. |
 | `SKIP_INITIAL_VOCAB_IMPORT` | `false` | `true` | Override: skip importing initial vocabularies on startup. |
 
@@ -103,6 +103,8 @@ By default, `up` reuses existing images and containers. Rebuild images explicitl
 ```bash
 simone up --build
 ```
+
+For a remote VPS run, `simone up --build` starts the full stack. The frontend is published on `http://<vps-host>:${FRONTEND_PORT}` while the API, Neo4j, and Ollama ports stay bound to the server loopback interface. Browser API requests use the frontend nginx `/api/` proxy, so no separate CORS setup is required.
 
 ### Development Mode
 
@@ -165,7 +167,7 @@ If both hostnames are set to remote addresses in `.env`, `simone host` exits wit
 
 | Service | URL |
 |---|---|
-| Frontend | http://127.0.0.1:3000 by default, or the configured `FRONTEND_PORT` |
+| Frontend | http://127.0.0.1:3000 locally, or `http://<vps-host>:FRONTEND_PORT` on a remote VPS |
 | API Docs | http://127.0.0.1:8000/docs |
 | API Health | http://127.0.0.1:8000/api/v1/health |
 | Neo4j Browser | http://127.0.0.1:7474/browser/ |
