@@ -13,7 +13,6 @@ from app.domain.datasources import ContentChunk
 from app.domain.extraction import (
     DEFAULT_QUALITATIVE_VOCAB_IDENTIFIERS,
     EXTRACTION_CONTEXT_SYSTEM_PROMPT,
-    FILE_RANKING_SYSTEM_PROMPT,
     PROFILE_PROJECTION_SYSTEM_PROMPT,
     QUDT_QUANTITY_KIND_VOCAB,
     QUDT_UNIT_VOCAB,
@@ -47,7 +46,6 @@ from app.domain.extraction import (
     build_candidate_selection_prompt,
     build_extraction_context_prompt,
     build_fallback_query_prompt,
-    build_file_ranking_prompt,
     build_profile_projection_prompt,
     build_qualitative_vocab_query,
     build_quantity_kind_vocab_query,
@@ -786,41 +784,12 @@ class ExtractionService:
         data_package: Any,
         warnings: list[str],
     ) -> FileRankingResult:
-        assert self.ollama_client is not None
+        _ = data_package_id, warnings
         files = [
             FileContext(file_path=file.file_path, byte_size=len(file.raw_content))
             for file in data_package.files
         ]
-        try:
-            result = await generate_structured(
-                self.ollama_client,
-                model=self.ollama_client.chat_model,
-                system=FILE_RANKING_SYSTEM_PROMPT,
-                prompt=build_file_ranking_prompt(files, data_package.file_name),
-                output_type=FileRankingResult,
-                num_ctx=self.ollama_client.max_context_length,
-            )
-            self._record_workflow_token_usage(
-                data_package_id=data_package_id,
-                agent_name="file_ranking",
-                usage=result.usage,
-            )
-            allowed_paths = {file.file_path for file in files}
-            ranked = [
-                item
-                for item in result.output.files
-                if item.file_path in allowed_paths
-            ]
-            missing = [
-                file
-                for file in files
-                if file.file_path not in {item.file_path for item in ranked}
-            ]
-            fallback_tail = fallback_file_ranking(missing).files
-            return FileRankingResult(files=ranked + fallback_tail)
-        except CompletionError as exc:
-            warnings.append(f"File ranking fell back to heuristics: {exc}")
-            return fallback_file_ranking(files)
+        return fallback_file_ranking(files)
 
     async def _rerun_vocab_downstream(
         self,

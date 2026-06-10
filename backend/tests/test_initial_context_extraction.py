@@ -14,7 +14,6 @@ from app.domain.extraction import (
     ExtractionRunState,
     ExtractionVocabQueryConfig,
     ExtractionVocabQueryRecord,
-    FileRankingResult,
     RankedFile,
     VocabularyCandidateSelection,
 )
@@ -387,15 +386,27 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 profile_identifier="profile",
             )
 
+    async def test_file_ranking_is_deterministic_by_default(self):
+        service, _, _ = make_service([[make_chunk()]])
+
+        with patch("app.services.extraction_service.generate_structured") as generate:
+            ranking = await service._rank_files(
+                data_package_id="package-id",
+                data_package=service.datasource_service.get_data_package("package-id"),
+                warnings=[],
+            )
+
+        generate.assert_not_called()
+        self.assertEqual(
+            [file.file_path for file in ranking.files],
+            ["README.md"],
+        )
+
     async def test_run_extraction_processes_task_and_persists_interim_context(self):
         service, task_registry, output_repository = make_service(
             [[make_chunk(0, "sample one"), make_chunk(1, "sample two")]]
         )
         outputs = [
-            CompletionResult(
-                output=FileRankingResult(files=[RankedFile(rank=1, file_path="README.md")]),
-                usage=RunUsage(requests=1, input_tokens=10, output_tokens=2),
-            ),
             CompletionResult(
                 output=resource_context("alpha-resource", "Alpha catalyst metadata."),
                 usage=RunUsage(requests=1, input_tokens=20, output_tokens=5),
@@ -469,12 +480,6 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
         async def fake_generate(*_args, **kwargs):
             output_type = kwargs["output_type"]
-            if output_type is FileRankingResult:
-                call_order.append("rank")
-                return CompletionResult(
-                    output=FileRankingResult(files=[RankedFile(rank=1, file_path="README.md")]),
-                    usage=RunUsage(requests=1, input_tokens=10, output_tokens=2),
-                )
             if output_type is ExtractionContext:
                 call_order.append(f"extract:{len(call_order)}")
                 output = chunk_outputs.pop(0)
@@ -506,7 +511,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(status, TaskStatus.RUNNING)
             await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
 
-        self.assertEqual(call_order, ["rank", "extract:1", "extract:2", "repair", "profile"])
+        self.assertEqual(call_order, ["extract:0", "extract:1", "repair", "profile"])
         self.assertEqual(
             [resource.identifier for resource in output_repository.context.resources],
             ["resource-one", "resource-two", "README.md"],
@@ -590,12 +595,6 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
         async def fake_generate(*_args, **kwargs):
             output_type = kwargs["output_type"]
-            if output_type is FileRankingResult:
-                call_order.append("rank")
-                return CompletionResult(
-                    output=FileRankingResult(files=[RankedFile(rank=1, file_path="README.md")]),
-                    usage=RunUsage(requests=1),
-                )
             if output_type is ExtractionContext:
                 if len([item for item in call_order if item.startswith("extract")]) == 1:
                     await asyncio.wait_for(semantic_service.discovery_started.wait(), timeout=1)
@@ -944,11 +943,6 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
         async def fake_generate(*_args, **kwargs):
             output_type = kwargs["output_type"]
-            if output_type is FileRankingResult:
-                return CompletionResult(
-                    output=FileRankingResult(files=[RankedFile(rank=1, file_path="README.md")]),
-                    usage=RunUsage(requests=1, input_tokens=10, output_tokens=2),
-                )
             if output_type is ExtractionContext:
                 extraction_started.set()
                 await asyncio.Event().wait()

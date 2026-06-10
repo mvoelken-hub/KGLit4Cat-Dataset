@@ -433,9 +433,9 @@ The validation schema is later used for profile projection. This means the workf
 
 ## Stage 7: File ranking
 
-Before processing chunks, SIMONE ranks files. The rationale is that a ZIP package may contain many files with different relevance. Instead of simply processing files in archive order, the workflow asks the LLM to rank file paths by likely metadata relevance.
+Before processing chunks, SIMONE ranks files. The rationale is that a ZIP package may contain many files with different relevance. Instead of simply processing files in archive order, the workflow deterministically ranks file paths by likely metadata relevance.
 
-The workflow creates a list of file contexts with file path and byte size, then calls the LLM using `FILE_RANKING_SYSTEM_PROMPT` and `build_file_ranking_prompt()`.  If the LLM ranking fails, the system records a warning and falls back to heuristic ranking. 
+The workflow creates a list of file contexts with file path and byte size, then applies heuristic ranking. The heuristic prefers README files, metadata tables, manifests, protocols, reports, summaries, compact text/table/PDF files, and scripts, while deprioritizing large raw binaries, archives, images, and measurement-only files.
 
 The resulting ranked files are stored in the extraction run state and progress object. 
 
@@ -768,8 +768,7 @@ POST /extraction/run
         ▼
 File ranking
         │
-        ├── LLM ranks files by metadata relevance
-        └── fallback heuristic ranking if needed
+        └── deterministic heuristic ranking by metadata relevance
         │
         ▼
 Chunk ordering
