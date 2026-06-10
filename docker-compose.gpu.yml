@@ -1,0 +1,14 @@
+# Docker Compose GPU override for SIMONE
+# Usage: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d ollama
+# This adds NVIDIA GPU reservations to the ollama service.
+
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities:
+                - gpu
