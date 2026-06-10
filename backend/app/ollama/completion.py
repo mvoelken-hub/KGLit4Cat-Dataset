@@ -7,6 +7,7 @@ Ollama's `format` parameter.
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass
 from typing import (
@@ -44,6 +45,19 @@ _REPAIR_SYSTEM_PROMPT = (
     "again, do not infer new facts, and do not add commentary. Return only "
     "the corrected JSON object."
 )
+_SCHEMA_PROMPT_TEMPLATE = (
+    "\n\nReturn exactly one JSON object that satisfies this JSON Schema. "
+    "Do not include Markdown fences, prose, comments, or additional text."
+    "\n\nJSON Schema:\n{schema}"
+)
+_EXAMPLE_PROMPT_TEMPLATE = (
+    "\n\nReturn exactly one JSON object matching this compact example shape. "
+    "Replace placeholder values with extracted values where available, and do "
+    "not include Markdown fences, prose, comments, or additional text."
+    "\n\nExample JSON shape:\n{example}"
+)
+_ESTIMATED_CHARS_PER_TOKEN = 4
+_INPUT_CONTEXT_BUDGET_RATIO = 0.75
 
 
 @dataclass
@@ -69,6 +83,99 @@ def _extract_json_schema(output_type: type[BaseModel] | JsonSchema) -> JsonSchem
     if isinstance(output_type, dict):
         return output_type
     raise CompletionError(f"Unsupported output_type: {output_type!r}")
+
+
+def _estimated_tokens(text: str) -> int:
+    return math.ceil(len(text) / _ESTIMATED_CHARS_PER_TOKEN)
+
+
+def _fits_context_budget(
+    *,
+    system: str,
+    prompt: str,
+    addition: str,
+    num_ctx: int | None,
+) -> bool:
+    if num_ctx is None:
+        return True
+    budget = max(1, int(num_ctx * _INPUT_CONTEXT_BUDGET_RATIO))
+    return _estimated_tokens(system + addition + prompt) <= budget
+
+
+def _schema_example(schema: JsonSchema) -> Any:
+    return _schema_example_from_node(schema, schema)
+
+
+def _schema_example_from_node(node: Any, root: JsonSchema) -> Any:
+    if not isinstance(node, dict):
+        return None
+    if "$ref" in node:
+        ref = str(node["$ref"])
+        if ref.startswith("#/$defs/"):
+            key = ref.removeprefix("#/$defs/")
+            return _schema_example_from_node(root.get("$defs", {}).get(key), root)
+        return None
+    for union_key in ("anyOf", "oneOf"):
+        options = [option for option in node.get(union_key, []) if option.get("type") != "null"]
+        if options:
+            return _schema_example_from_node(options[0], root)
+    if "const" in node:
+        return node["const"]
+    if "enum" in node and node["enum"]:
+        return node["enum"][0]
+
+    node_type = node.get("type")
+    if isinstance(node_type, list):
+        node_type = next((item for item in node_type if item != "null"), node_type[0])
+    if node_type == "object" or "properties" in node:
+        return {
+            key: _schema_example_from_node(value, root)
+            for key, value in node.get("properties", {}).items()
+        }
+    if node_type == "array":
+        return [_schema_example_from_node(node.get("items", {}), root)]
+    if node_type == "integer":
+        return 0
+    if node_type == "number":
+        return 0.0
+    if node_type == "boolean":
+        return False
+    if node_type == "null":
+        return None
+    return ""
+
+
+def _system_prompt_for_model(
+    *,
+    system: str,
+    prompt: str,
+    schema: JsonSchema,
+    num_ctx: int | None,
+) -> str:
+    schema_text = json.dumps(schema, ensure_ascii=False, separators=(",", ":"))
+    schema_addition = _SCHEMA_PROMPT_TEMPLATE.format(schema=schema_text)
+    if _fits_context_budget(
+        system=system,
+        prompt=prompt,
+        addition=schema_addition,
+        num_ctx=num_ctx,
+    ):
+        return system + schema_addition
+
+    example_text = json.dumps(
+        _schema_example(schema),
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    example_addition = _EXAMPLE_PROMPT_TEMPLATE.format(example=example_text)
+    if _fits_context_budget(
+        system=system,
+        prompt=prompt,
+        addition=example_addition,
+        num_ctx=num_ctx,
+    ):
+        return system + example_addition
+    return system
 
 
 def _json_schema_validator(json_schema: JsonSchema):
@@ -221,8 +328,13 @@ async def generate_structured(
     )
 
     current_prompt = prompt
-    current_system = system
     current_model = model
+    current_system = _system_prompt_for_model(
+        system=system,
+        prompt=current_prompt,
+        schema=schema,
+        num_ctx=num_ctx,
+    )
     total_usage = RunUsage()
 
     last_error: Exception | None = None
@@ -260,7 +372,12 @@ async def generate_structured(
         except json.JSONDecodeError as e:
             last_error = OutputParsingError(str(e))
             if attempt < retries:
-                current_system = _REPAIR_SYSTEM_PROMPT
+                current_system = _system_prompt_for_model(
+                    system=_REPAIR_SYSTEM_PROMPT,
+                    prompt=_repair_prompt(failed_response=raw, error=last_error),
+                    schema=schema,
+                    num_ctx=num_ctx,
+                )
                 current_prompt = _repair_prompt(failed_response=raw, error=last_error)
                 current_model = repair_model or model
                 continue
@@ -273,7 +390,12 @@ async def generate_structured(
             except PydanticValidationError as e:
                 last_error = OutputParsingError(str(e))
                 if attempt < retries:
-                    current_system = _REPAIR_SYSTEM_PROMPT
+                    current_system = _system_prompt_for_model(
+                        system=_REPAIR_SYSTEM_PROMPT,
+                        prompt=_repair_prompt(failed_response=raw, error=last_error),
+                        schema=schema,
+                        num_ctx=num_ctx,
+                    )
                     current_prompt = _repair_prompt(failed_response=raw, error=last_error)
                     current_model = repair_model or model
                     continue
@@ -288,7 +410,12 @@ async def generate_structured(
                     "Output did not match JSON Schema:\n" + validation_errors
                 )
                 if attempt < retries:
-                    current_system = _REPAIR_SYSTEM_PROMPT
+                    current_system = _system_prompt_for_model(
+                        system=_REPAIR_SYSTEM_PROMPT,
+                        prompt=_repair_prompt(failed_response=raw, error=last_error),
+                        schema=schema,
+                        num_ctx=num_ctx,
+                    )
                     current_prompt = _repair_prompt(failed_response=raw, error=last_error)
                     current_model = repair_model or model
                     continue

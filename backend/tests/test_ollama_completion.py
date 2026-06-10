@@ -194,7 +194,8 @@ class GenerateStructuredHappyPathTests(IsolatedAsyncioTestCase):
 
         call = client.calls[0]
         self.assertEqual(call["model"], "qwen3.5:4b")
-        self.assertEqual(call["system"], "sys")
+        self.assertTrue(call["system"].startswith("sys"))
+        self.assertIn("JSON Schema:", call["system"])
         self.assertEqual(call["prompt"], "prompt")
         self.assertIsInstance(call["format"], dict)
         self.assertEqual(
@@ -203,6 +204,69 @@ class GenerateStructuredHappyPathTests(IsolatedAsyncioTestCase):
         )
         self.assertTrue(call["think"])
         self.assertEqual(call["keep_alive"], 300)
+
+    async def test_injects_json_schema_into_system_prompt_by_default(self):
+        client = FakeOllamaClient([
+            FakeGenerateResponse(response='{"answer": "x", "score": 1}'),
+        ])
+
+        await generate_structured(
+            client,
+            model="qwen3.5:4b",
+            system="sys",
+            prompt="prompt",
+            output_type=SimpleOutput,
+        )
+
+        self.assertIn("JSON Schema:", client.calls[0]["system"])
+        self.assertIn('"answer"', client.calls[0]["system"])
+        self.assertIn('"score"', client.calls[0]["system"])
+        self.assertIsInstance(client.calls[0]["format"], dict)
+
+    async def test_uses_example_shape_when_full_schema_exceeds_context_budget(self):
+        schema = {
+            "type": "object",
+            "properties": {
+                "answer": {
+                    "type": "string",
+                    "description": "x" * 1000,
+                }
+            },
+            "required": ["answer"],
+        }
+        client = FakeOllamaClient([
+            FakeGenerateResponse(response='{"answer": "x"}'),
+        ])
+
+        await generate_structured(
+            client,
+            model="qwen3.5:4b",
+            system="sys",
+            prompt="prompt",
+            output_type=schema,
+            num_ctx=120,
+        )
+
+        self.assertNotIn("JSON Schema:", client.calls[0]["system"])
+        self.assertIn("Example JSON shape:", client.calls[0]["system"])
+        self.assertIn('"answer"', client.calls[0]["system"])
+        self.assertNotIn("xxx", client.calls[0]["system"])
+
+    async def test_omits_prompt_visible_schema_when_context_budget_is_too_small(self):
+        client = FakeOllamaClient([
+            FakeGenerateResponse(response='{"answer": "x", "score": 1}'),
+        ])
+
+        await generate_structured(
+            client,
+            model="qwen3.5:4b",
+            system="sys",
+            prompt="prompt",
+            output_type=SimpleOutput,
+            num_ctx=8,
+        )
+
+        self.assertEqual(client.calls[0]["system"], "sys")
 
     async def test_markdown_fences_stripped(self):
         client = FakeOllamaClient([
@@ -277,6 +341,25 @@ class GenerateStructuredRetryTests(IsolatedAsyncioTestCase):
         self.assertIn("bad json", client.calls[1]["prompt"])
         self.assertNotIn("Return JSON.", client.calls[1]["prompt"])
         self.assertIn("repair", client.calls[1]["system"].lower())
+
+    async def test_repair_retry_keeps_schema_in_system_prompt(self):
+        client = FakeOllamaClient([
+            FakeGenerateResponse(response="bad json"),
+            FakeGenerateResponse(response='{"answer": "x", "score": 1}'),
+        ])
+
+        await generate_structured(
+            client,
+            model="qwen3.5:4b",
+            system="Be precise.",
+            prompt="Return JSON.",
+            output_type=SimpleOutput,
+            retries=1,
+        )
+
+        self.assertIn("repair", client.calls[1]["system"].lower())
+        self.assertIn("JSON Schema:", client.calls[1]["system"])
+        self.assertIn('"answer"', client.calls[1]["system"])
 
     async def test_repair_attempt_can_use_dedicated_repair_model(self):
         client = FakeOllamaClient([
