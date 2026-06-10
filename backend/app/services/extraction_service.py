@@ -739,7 +739,7 @@ class ExtractionService:
                         usage=exc.usage,
                     )
                     chunk_result.status = "failed"
-                    chunk_result.error = f"Queued for repair after first-pass extraction: {exc}"
+                    chunk_result.error = "Queued for repair after first-pass extraction"
                     chunk_result.response_duration_ms = self._usage_float(
                         exc.usage,
                         "response_duration_ms",
