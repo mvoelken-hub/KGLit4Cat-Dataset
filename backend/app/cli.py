@@ -926,9 +926,12 @@ def dev(
             else:
                 npm_cmd = "npm.cmd" if sys.platform == "win32" else "npm"
                 typer.echo("Starting local frontend dev server in this terminal ...")
+                frontend_env = os.environ.copy()
+                frontend_env.update(env_values)
                 frontend_process = subprocess.Popen(
                     [npm_cmd, "run", "dev", "--", "--host", "127.0.0.1"],
                     cwd=str(FRONTEND_DIR),
+                    env=frontend_env,
                 )
 
             _wait_for_url(
@@ -981,17 +984,21 @@ def dev(
         else:
             frontend_cmd = "npm run dev -- --host 127.0.0.1"
             typer.echo("Starting local frontend dev server ...")
+            frontend_env = os.environ.copy()
+            frontend_env.update(env_values)
             if sys.platform == "win32":
                 subprocess.Popen(
                     ["cmd", "/c", "start", "SIMONE Frontend", "powershell", "-ExecutionPolicy", "Bypass", "-Command", frontend_cmd],
                     cwd=str(FRONTEND_DIR),
                     creationflags=subprocess.CREATE_NEW_CONSOLE,
+                    env=frontend_env,
                 )
             else:
                 subprocess.Popen(
                     frontend_cmd,
                     cwd=str(FRONTEND_DIR),
                     shell=True,
+                    env=frontend_env,
                 )
     else:
         pass
