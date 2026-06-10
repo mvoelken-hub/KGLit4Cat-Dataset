@@ -8,14 +8,14 @@
     "SG-V4050.infer.json"
   ],
   "expected_objects": [
-    {"object_type": "resource", "label": "dataset_description.txt"},
-    {"object_type": "resource", "label": "SG-V4050.dx", "aliases": ["dx"]},
-    {"object_type": "resource", "label": "SG-V4050.edit.jdx", "aliases": ["jdx"]},
-    {"object_type": "agentic_entity", "label": "Bruker ALPHA", "aliases": ["ALPHA"]},
-    {"object_type": "method", "label": "IR", "aliases": ["infrared spectroscopy"]}
+    {"object_kind": "Resource", "label": "dataset_description.txt"},
+    {"object_kind": "Resource", "label": "SG-V4050.dx", "aliases": ["dx"]},
+    {"object_kind": "Resource", "label": "SG-V4050.edit.jdx", "aliases": ["jdx"]},
+    {"object_kind": "AgenticEntity", "label": "Bruker ALPHA", "aliases": ["ALPHA"]},
+    {"object_kind": "Method", "label": "IR", "aliases": ["infrared spectroscopy"]}
   ],
   "expected_attributes": [
-    {"title": "instrument", "value": "Bruker ALPHA", "object_type": "agentic_entity"},
+    {"title": "instrument", "value": "Bruker ALPHA", "object_kind": "AgenticEntity"},
     {"title": "method", "value": "IR", "aliases": ["infrared"]}
   ],
   "expected_vocab_mappings": [

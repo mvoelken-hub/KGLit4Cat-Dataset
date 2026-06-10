@@ -110,34 +110,34 @@ def _score_objects(
     expected_objects: list[ReferenceObject],
     context: ExtractionContext,
 ) -> tuple[dict[str, MetricSummary], list[str]]:
-    expected_by_type: dict[str, list[ReferenceObject]] = defaultdict(list)
-    actual_by_type: dict[str, list[str]] = defaultdict(list)
+    expected_by_kind: dict[str, list[ReferenceObject]] = defaultdict(list)
+    actual_by_kind: dict[str, list[str]] = defaultdict(list)
     for expected in expected_objects:
-        expected_by_type[expected.object_type].append(expected)
+        expected_by_kind[expected.object_kind].append(expected)
     for trace in context.extraction_objects:
-        actual_by_type[trace.object_type].append(_object_text(trace.extracted_object))
+        actual_by_kind[trace.object_kind].append(_object_text(trace.extracted_object))
 
     metrics: dict[str, MetricSummary] = {}
     failures: list[str] = []
-    for object_type, expected_items in expected_by_type.items():
-        actual_items = actual_by_type.get(object_type, [])
+    for object_kind, expected_items in expected_by_kind.items():
+        actual_items = actual_by_kind.get(object_kind, [])
         matched_actual: set[int] = set()
         true_positives = 0
         for expected in expected_items:
             actual_index = _best_match_index(_reference_terms(expected), actual_items, matched_actual)
             if actual_index is None:
                 if expected.required:
-                    failures.append(f"Missing expected {object_type}: {expected.label}")
+                    failures.append(f"Missing expected {object_kind}: {expected.label}")
                 continue
             matched_actual.add(actual_index)
             true_positives += 1
         false_positives = max(0, len(actual_items) - len(matched_actual))
         false_negatives = max(0, len([item for item in expected_items if item.required]) - true_positives)
-        metrics[object_type] = _metric_summary(true_positives, false_positives, false_negatives)
+        metrics[object_kind] = _metric_summary(true_positives, false_positives, false_negatives)
 
-    for object_type, actual_items in actual_by_type.items():
-        if object_type not in metrics:
-            metrics[object_type] = _metric_summary(0, len(actual_items), 0)
+    for object_kind, actual_items in actual_by_kind.items():
+        if object_kind not in metrics:
+            metrics[object_kind] = _metric_summary(0, len(actual_items), 0)
     return metrics, failures
 
 
@@ -156,19 +156,19 @@ def _score_attributes(
             )
             actual.append(
                 {
-                    "object_type": trace.object_type,
+                    "object_kind": trace.object_kind,
                     "title": title,
                     "value": str(attr.value),
-                    "text": f"{trace.object_type} {title} {attr.value} {attr.unit}",
+                    "text": f"{trace.object_kind} {title} {attr.value} {attr.unit}",
                 }
             )
         for attr in getattr(obj, "has_qualitative_attributes", []):
             actual.append(
                 {
-                    "object_type": trace.object_type,
+                    "object_kind": trace.object_kind,
                     "title": str(attr.title),
                     "value": str(attr.value),
-                    "text": f"{trace.object_type} {attr.title} {attr.value}",
+                    "text": f"{trace.object_kind} {attr.title} {attr.value}",
                 }
             )
 
@@ -206,7 +206,7 @@ def _matching_attribute_index(
     for index, candidate in enumerate(actual):
         if index in matched_actual:
             continue
-        if expected.object_type and candidate["object_type"] != expected.object_type:
+        if expected.object_kind and candidate["object_kind"] != expected.object_kind:
             continue
         title_score = max(
             (_similarity(term, candidate["title"]) for term in title_terms if term),

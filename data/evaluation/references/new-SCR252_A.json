@@ -8,14 +8,14 @@
     "SCR252_A.infer.json"
   ],
   "expected_objects": [
-    {"object_type": "resource", "label": "dataset_description.txt"},
-    {"object_type": "resource", "label": "SCR252_A.jcamp", "aliases": ["jcamp"]},
-    {"object_type": "resource", "label": "SCR252_A.infer.json", "aliases": ["nmr prediction"]},
-    {"object_type": "agentic_entity", "label": "Bruker Avance II 400", "aliases": ["Avance II 400"]},
-    {"object_type": "method", "label": "NMR", "aliases": ["1H NMR", "nmr prediction"]}
+    {"object_kind": "Resource", "label": "dataset_description.txt"},
+    {"object_kind": "Resource", "label": "SCR252_A.jcamp", "aliases": ["jcamp"]},
+    {"object_kind": "Resource", "label": "SCR252_A.infer.json", "aliases": ["nmr prediction"]},
+    {"object_kind": "AgenticEntity", "label": "Bruker Avance II 400", "aliases": ["Avance II 400"]},
+    {"object_kind": "Method", "label": "NMR", "aliases": ["1H NMR", "nmr prediction"]}
   ],
   "expected_attributes": [
-    {"title": "instrument", "value": "Bruker Avance II 400", "object_type": "agentic_entity"},
+    {"title": "instrument", "value": "Bruker Avance II 400", "object_kind": "AgenticEntity"},
     {"title": "prediction status", "value": "NMR prediction success", "aliases": ["accept", "shift prediction"]}
   ],
   "expected_vocab_mappings": [

@@ -8,14 +8,14 @@
     "13C-Gel-NMR.nmrium"
   ],
   "expected_objects": [
-    {"object_type": "resource", "label": "dataset_description.txt", "aliases": ["dataset description"]},
-    {"object_type": "resource", "label": "13C-Gel-NMR.jcamp", "aliases": ["jcamp"]},
-    {"object_type": "resource", "label": "13C-Gel-NMR.pdf", "aliases": ["pdf report"]},
-    {"object_type": "agentic_entity", "label": "Bruker Ascend 400", "aliases": ["Ascend 400", "Bruker instrument"]},
-    {"object_type": "method", "label": "13C NMR", "aliases": ["carbon 13 nmr", "13C-Gel-NMR"]}
+    {"object_kind": "Resource", "label": "dataset_description.txt", "aliases": ["dataset description"]},
+    {"object_kind": "Resource", "label": "13C-Gel-NMR.jcamp", "aliases": ["jcamp"]},
+    {"object_kind": "Resource", "label": "13C-Gel-NMR.pdf", "aliases": ["pdf report"]},
+    {"object_kind": "AgenticEntity", "label": "Bruker Ascend 400", "aliases": ["Ascend 400", "Bruker instrument"]},
+    {"object_kind": "Method", "label": "13C NMR", "aliases": ["carbon 13 nmr", "13C-Gel-NMR"]}
   ],
   "expected_attributes": [
-    {"title": "instrument", "value": "Bruker Ascend 400", "object_type": "agentic_entity"},
+    {"title": "instrument", "value": "Bruker Ascend 400", "object_kind": "AgenticEntity"},
     {"title": "nucleus", "value": "13C", "aliases": ["carbon 13"]}
   ],
   "expected_vocab_mappings": [

@@ -67,7 +67,7 @@ class ExtractionDomainTests(unittest.TestCase):
             {
                 "extraction_objects": [
                     {
-                        "object_type": "method",
+                        "object_kind": "Method",
                         "extracted_object": {
                             "identifier": "sample-method",
                             "description": "Method for sample A.",
@@ -82,7 +82,7 @@ class ExtractionDomainTests(unittest.TestCase):
             {
                 "extraction_objects": [
                     {
-                        "object_type": "method",
+                        "object_kind": "Method",
                         "extracted_object": {
                             "identifier": "sample method",
                             "description": "Method for sample A with more detail.",
@@ -104,7 +104,7 @@ class ExtractionDomainTests(unittest.TestCase):
             {
                 "extraction_objects": [
                     {
-                        "object_type": "resource",
+                        "object_kind": "Resource",
                         "extracted_object": {
                             "identifier": f"resource-{index}",
                             "type": "dataset",

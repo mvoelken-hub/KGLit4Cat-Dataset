@@ -5,6 +5,7 @@ import json
 import subprocess
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from io import BytesIO
@@ -40,6 +41,19 @@ def package_id_for_dataset(dataset_path: Path) -> str:
         file_name=dataset_path.name,
     )
     return package.id
+
+
+def _api_url(api_base: str, path_or_url: str) -> str:
+    if path_or_url.startswith(("http://", "https://")):
+        return path_or_url
+    base = api_base.rstrip("/")
+    path = path_or_url if path_or_url.startswith("/") else f"/{path_or_url}"
+    parsed = urllib.parse.urlparse(base)
+    if parsed.path and path.startswith(f"{parsed.path.rstrip('/')}/"):
+        return urllib.parse.urlunparse(
+            (parsed.scheme, parsed.netloc, path, "", "", "")
+        )
+    return f"{base}{path}"
 
 
 def score_reference_directory(
@@ -293,7 +307,8 @@ def submit_complete_workflow(
     (run_dir / "manifest.json").write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
 
     result_url = f"{api_base.rstrip('/')}/extraction/result/{package_id}"
-    progress_url = f"{api_base.rstrip('/')}/extraction/run/{package_id}/progress"
+    progress_path = payload.get("progress_url") or f"/extraction/run/{package_id}/progress"
+    progress_url = _api_url(api_base, str(progress_path))
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
         progress_status, progress_payload = _get_json(progress_url)

@@ -25,6 +25,7 @@ from app.api.v1.schemas.semantic import (
     _vocab_query_result_response,
 )
 from app.api.v1.schemas.extraction import (
+    CompleteWorkflowProgressResponse,
     CompleteWorkflowRunResponse,
     ExtractionProgressResponse,
     ExtractionResultResponse,
@@ -68,6 +69,7 @@ __all__ = [
     "ExtractionResultResponse",
     "ExtractionRunRequest",
     "ExtractionRunResponse",
+    "CompleteWorkflowProgressResponse",
     "CompleteWorkflowRunResponse",
     "VocabQueryConfigUpdateRequest",
     "JsonLdExportResponse",

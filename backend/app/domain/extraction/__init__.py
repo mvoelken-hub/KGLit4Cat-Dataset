@@ -9,11 +9,13 @@ from app.domain.extraction.file_ranking import (
 
 from app.domain.extraction.extraction_context import (
     AgenticEntity,
+    BaseExtractionModel,
     ChunkContext,
     ChunkMetadata,
     DataGeneratingActivity,
     EvaluatedEntity,
     ExtractionContext,
+    ExtractionObjectKind,
     Method,
     QualitativeAttribute,
     QuantitativeAttribute,
@@ -54,6 +56,8 @@ from app.domain.extraction.vocabulary import (
 
 from app.domain.extraction.workflow import (
     ChunkingRequiredError,
+    CompleteWorkflowProgress,
+    CompleteWorkflowStepProgress,
     ExtractionChunkRef,
     ExtractionChunkResult,
     ExtractionVocabQueryConfig,
@@ -73,7 +77,9 @@ __all__ = [
     "build_file_ranking_prompt",
     "FILE_RANKING_SYSTEM_PROMPT",
     "AgenticEntity",
+    "BaseExtractionModel",
     "ExtractionContext",
+    "ExtractionObjectKind",
     "ChunkContext",
     "ChunkMetadata",
     "DataGeneratingActivity",
@@ -109,6 +115,8 @@ __all__ = [
     "build_quantity_kind_vocab_query",
     "build_unit_vocab_query",
     "ChunkingRequiredError",
+    "CompleteWorkflowProgress",
+    "CompleteWorkflowStepProgress",
     "ExtractionChunkRef",
     "ExtractionChunkResult",
     "ExtractionVocabQueryConfig",

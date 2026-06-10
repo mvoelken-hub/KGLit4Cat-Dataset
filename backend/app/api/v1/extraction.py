@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 
 from app.core.task_registry import TaskStatus
 from app.api.v1.schemas import (
+    CompleteWorkflowProgressResponse,
     CompleteWorkflowRunResponse,
     ExtractionProgressResponse,
     ExtractionRunRequest,
@@ -235,18 +236,32 @@ async def run_complete_workflow(
             resume=resume,
             force_rerun=force_rerun,
         )
-        _, progress = await extraction_service.get_extraction_progress(
+        _, progress = await extraction_service.get_complete_workflow_progress(
             data_package_id=data_package.id,
         )
         return CompleteWorkflowRunResponse(
             status=workflow_status,
             data_package=_data_package_response(data_package),
             progress=progress,
-            progress_url=f"/api/v1/extraction/run/{data_package.id}/progress",
+            progress_url=f"/api/v1/extraction/workflows/complete/{data_package.id}/progress",
             result_url=f"/api/v1/extraction/result/{data_package.id}",
         )
     except Exception as exc:
         _raise_workflow_upload_error(exc)
+
+
+@router.get(
+    "/workflows/complete/{data_package_id}/progress",
+    response_model=CompleteWorkflowProgressResponse,
+)
+async def get_complete_workflow_progress(
+    data_package_id: str,
+    extraction_service: ExtractionService = Depends(get_extraction_service),
+) -> CompleteWorkflowProgressResponse:
+    status_value, progress = await extraction_service.get_complete_workflow_progress(
+        data_package_id=data_package_id,
+    )
+    return CompleteWorkflowProgressResponse(status=status_value, progress=progress)
 
 
 @router.post("/run/{data_package_id}/vocab-queries/rerun")

@@ -21,6 +21,8 @@ from app.domain.extraction import (
     ChunkContext,
     ChunkMetadata,
     ChunkingRequiredError,
+    CompleteWorkflowProgress,
+    CompleteWorkflowStepProgress,
     ExtractionChunkRef,
     ExtractionChunkResult,
     ExtractionContext,
@@ -181,7 +183,11 @@ class ExtractionService:
         ):
             if self._load_result_or_none(data_package_id) is not None:
                 return TaskStatus.COMPLETED
-        if task_info is not None and task_info.status == TaskStatus.CRASHED:
+        if (
+            task_info is not None
+            and task_info.status == TaskStatus.CRASHED
+            and not force_rerun
+        ):
             exception = task_info.task.exception()
             raise exception if exception else Exception("Complete workflow task crashed without an exception.")
 
@@ -217,6 +223,17 @@ class ExtractionService:
         assert self.datasource_service is not None
         assert self.task_registry is not None
 
+        self._update_complete_workflow_progress(
+            data_package_id=data_package_id,
+            progress=CompleteWorkflowProgress(
+                stage="chunking",
+                data_package_id=data_package_id,
+                profile_identifier=profile_identifier,
+                chunking_status=TaskStatus.RUNNING,
+                extraction_status=TaskStatus.UNKNOWN,
+                result_url=self._result_url(data_package_id),
+            ),
+        )
         _, chunk_status = await self.datasource_service.chunk_file_entries_in_data_package(
             data_package_id=data_package_id,
             buffer_window_size=buffer_window_size,
@@ -224,6 +241,17 @@ class ExtractionService:
             replace_existing_chunks=replace_existing_chunks,
         )
         if chunk_status == TaskStatus.RUNNING:
+            self._update_complete_workflow_progress(
+                data_package_id=data_package_id,
+                progress=CompleteWorkflowProgress(
+                    stage="chunking",
+                    data_package_id=data_package_id,
+                    profile_identifier=profile_identifier,
+                    chunking_status=TaskStatus.RUNNING,
+                    extraction_status=TaskStatus.UNKNOWN,
+                    result_url=self._result_url(data_package_id),
+                ),
+            )
             await self.task_registry.wait_for_task(
                 self.datasource_service.chunk_task_name(data_package_id)
             )
@@ -236,6 +264,17 @@ class ExtractionService:
                 "Complete workflow could not continue because chunking produced no completed chunks."
             )
 
+        self._update_complete_workflow_progress(
+            data_package_id=data_package_id,
+            progress=CompleteWorkflowProgress(
+                stage="extraction",
+                data_package_id=data_package_id,
+                profile_identifier=profile_identifier,
+                chunking_status=TaskStatus.COMPLETED,
+                extraction_status=TaskStatus.RUNNING,
+                result_url=self._result_url(data_package_id),
+            ),
+        )
         _, extraction_status = await self.run_extraction(
             data_package_id=data_package_id,
             profile_identifier=profile_identifier,
@@ -246,6 +285,78 @@ class ExtractionService:
             await self.task_registry.wait_for_task(
                 self._extraction_task_name(data_package_id)
             )
+        workflow_progress = self._derive_complete_workflow_progress(
+            data_package_id=data_package_id,
+            workflow_status=TaskStatus.RUNNING,
+        )
+        if workflow_progress is not None:
+            self._update_complete_workflow_progress(
+                data_package_id=data_package_id,
+                progress=workflow_progress,
+            )
+
+    async def get_complete_workflow_progress(
+        self,
+        *,
+        data_package_id: str,
+    ) -> tuple[TaskStatus, CompleteWorkflowProgress | None]:
+        if self.task_registry is None:
+            return TaskStatus.UNKNOWN, None
+
+        task_info = self.task_registry.get_task_info(
+            self._complete_workflow_task_name(data_package_id)
+        )
+        if task_info is not None:
+            saved_progress = (
+                CompleteWorkflowProgress.model_validate(task_info.progress)
+                if task_info.progress
+                else None
+            )
+            progress = self._derive_complete_workflow_progress(
+                data_package_id=data_package_id,
+                workflow_status=task_info.status,
+            )
+            if progress is not None and saved_progress is not None:
+                update: dict[str, Any] = {
+                    "profile_identifier": progress.profile_identifier
+                    or saved_progress.profile_identifier,
+                }
+                if (
+                    progress.extraction_status == TaskStatus.UNKNOWN
+                    and saved_progress.extraction_status != TaskStatus.UNKNOWN
+                ):
+                    update["extraction_status"] = saved_progress.extraction_status
+                    if progress.stage == "extraction_pending":
+                        update["stage"] = saved_progress.stage
+                if (
+                    progress.extraction_progress is None
+                    and saved_progress.extraction_progress is not None
+                ):
+                    update["extraction_progress"] = saved_progress.extraction_progress
+                progress = progress.model_copy(update=update)
+            progress = progress or saved_progress
+            if progress is None:
+                return task_info.status, None
+            return task_info.status, self._complete_workflow_progress_with_steps(
+                progress,
+                workflow_status=task_info.status,
+            )
+
+        progress = self._derive_complete_workflow_progress(
+            data_package_id=data_package_id,
+            workflow_status=TaskStatus.UNKNOWN,
+        )
+        if progress is None:
+            return TaskStatus.UNKNOWN, None
+        status = (
+            TaskStatus.COMPLETED
+            if progress.stage == "completed"
+            else TaskStatus.UNKNOWN
+        )
+        return status, self._complete_workflow_progress_with_steps(
+            progress,
+            workflow_status=status,
+        )
 
     async def get_extraction_progress(
         self,
@@ -942,9 +1053,9 @@ class ExtractionService:
         data_package_id: str,
         extraction_context: ExtractionContext,
     ) -> str:
-        for object_type in ("evaluated_entity", "resource", "data_generating_activity", "method"):
+        for object_kind in ("EvaluatedEntity", "Resource", "DataGeneratingActivity", "Method"):
             for trace in extraction_context.extraction_objects:
-                if trace.object_type != object_type:
+                if trace.object_kind != object_kind:
                     continue
                 identifier = getattr(trace.extracted_object, "identifier", None)
                 if identifier:
@@ -1078,7 +1189,7 @@ class ExtractionService:
         existing_resource_ids = {
             trace.extracted_object.identifier
             for trace in context.extraction_objects
-            if trace.object_type == "resource"
+            if trace.object_kind == "Resource"
             and isinstance(trace.extracted_object, Resource)
         }
         inventory_objects = []
@@ -1087,7 +1198,7 @@ class ExtractionService:
                 continue
             inventory_objects.append(
                 TracedExtractionObject(
-                    object_type="resource",
+                    object_kind="Resource",
                     extracted_object=Resource(
                         identifier=file.file_path,
                         type=getattr(getattr(file, "file_type", None), "value", "file"),
@@ -2228,6 +2339,234 @@ class ExtractionService:
             self._extraction_task_name(data_package_id),
             progress.model_dump(mode="json"),
         )
+
+    def _update_complete_workflow_progress(
+        self,
+        *,
+        data_package_id: str,
+        progress: CompleteWorkflowProgress,
+    ) -> None:
+        if self.task_registry is None:
+            return
+        self.task_registry.update_progress(
+            self._complete_workflow_task_name(data_package_id),
+            self._complete_workflow_progress_with_steps(
+                progress,
+                workflow_status=TaskStatus.RUNNING,
+            ).model_dump(mode="json"),
+        )
+
+    def _derive_complete_workflow_progress(
+        self,
+        *,
+        data_package_id: str,
+        workflow_status: TaskStatus,
+    ) -> CompleteWorkflowProgress | None:
+        extraction_status, extraction_progress = self._current_extraction_progress(
+            data_package_id
+        )
+        result = self._load_result_or_none(data_package_id)
+        if result is not None:
+            extraction_status = TaskStatus.COMPLETED
+            extraction_progress = extraction_progress or ExtractionRunProgress(
+                stage="completed",
+                interim_context=result.extraction_context,
+                warnings=list(result.warnings),
+            )
+
+        chunking_status = self._current_chunking_status(data_package_id)
+        if result is not None:
+            chunking_status = TaskStatus.COMPLETED
+
+        if (
+            workflow_status == TaskStatus.UNKNOWN
+            and chunking_status == TaskStatus.UNKNOWN
+            and extraction_status == TaskStatus.UNKNOWN
+            and result is None
+        ):
+            return None
+
+        stage = self._complete_workflow_stage(
+            workflow_status=workflow_status,
+            chunking_status=chunking_status,
+            extraction_status=extraction_status,
+            extraction_progress=extraction_progress,
+            result_exists=result is not None,
+        )
+        warnings = (
+            list(extraction_progress.warnings)
+            if extraction_progress is not None
+            else self._load_warnings_or_empty(data_package_id)
+        )
+        return CompleteWorkflowProgress(
+            stage=stage,
+            data_package_id=data_package_id,
+            profile_identifier=self._profile_identifier_from_state(data_package_id),
+            chunking_status=chunking_status,
+            extraction_status=extraction_status,
+            extraction_progress=extraction_progress,
+            warnings=warnings,
+            result_url=self._result_url(data_package_id),
+        )
+
+    def _current_extraction_progress(
+        self,
+        data_package_id: str,
+    ) -> tuple[TaskStatus, ExtractionRunProgress | None]:
+        if self.task_registry is None:
+            return TaskStatus.UNKNOWN, None
+        task_info = self.task_registry.get_task_info(
+            self._extraction_task_name(data_package_id)
+        )
+        if task_info is not None:
+            progress = (
+                ExtractionRunProgress.model_validate(task_info.progress)
+                if task_info.progress
+                else None
+            )
+            return task_info.status, progress
+        result = self._load_result_or_none(data_package_id)
+        if result is not None:
+            return TaskStatus.COMPLETED, ExtractionRunProgress(
+                stage="completed",
+                interim_context=result.extraction_context,
+                warnings=list(result.warnings),
+            )
+        state = self._load_run_state_or_none(data_package_id)
+        if state is not None:
+            return TaskStatus.UNKNOWN, ExtractionRunProgress(
+                stage="interim_context",
+                processed_chunks=self._completed_chunk_count(state),
+                total_chunks=len(state.chunk_results),
+                interim_context=self._merged_completed_chunk_context_or_none(state),
+                vocab_query_config=state.vocab_query_config,
+                ranked_files=state.ranked_files,
+                chunk_results=state.chunk_results,
+                warnings=self._load_warnings_or_empty(data_package_id),
+            )
+        return TaskStatus.UNKNOWN, None
+
+    def _current_chunking_status(self, data_package_id: str) -> TaskStatus:
+        if self.datasource_service is None:
+            return TaskStatus.UNKNOWN
+        get_status = getattr(self.datasource_service, "get_chunk_task_status", None)
+        if callable(get_status):
+            return get_status(data_package_id)
+        chunks = self.datasource_service.get_completed_content_chunks_by_file(
+            data_package_id
+        )
+        return TaskStatus.COMPLETED if chunks else TaskStatus.UNKNOWN
+
+    def _profile_identifier_from_state(self, data_package_id: str) -> str | None:
+        state = self._load_run_state_or_none(data_package_id)
+        return state.profile_identifier if state is not None else None
+
+    @staticmethod
+    def _complete_workflow_stage(
+        *,
+        workflow_status: TaskStatus,
+        chunking_status: TaskStatus,
+        extraction_status: TaskStatus,
+        extraction_progress: ExtractionRunProgress | None,
+        result_exists: bool,
+    ) -> str:
+        if result_exists or extraction_status == TaskStatus.COMPLETED:
+            return "completed"
+        if workflow_status == TaskStatus.CRASHED or extraction_status == TaskStatus.CRASHED:
+            return "crashed"
+        if workflow_status == TaskStatus.CANCELLED or extraction_status == TaskStatus.CANCELLED:
+            return "cancelled"
+        if extraction_progress is not None and extraction_progress.stage != "pending":
+            return extraction_progress.stage
+        if extraction_status == TaskStatus.RUNNING:
+            return "extraction"
+        if chunking_status == TaskStatus.RUNNING:
+            return "chunking"
+        if chunking_status == TaskStatus.COMPLETED:
+            return "extraction_pending"
+        return "pending"
+
+    def _complete_workflow_progress_with_steps(
+        self,
+        progress: CompleteWorkflowProgress,
+        *,
+        workflow_status: TaskStatus,
+    ) -> CompleteWorkflowProgress:
+        if workflow_status == TaskStatus.CRASHED:
+            progress = progress.model_copy(update={"stage": "crashed"})
+        elif workflow_status == TaskStatus.CANCELLED:
+            progress = progress.model_copy(update={"stage": "cancelled"})
+        step_statuses = self._complete_workflow_step_statuses(
+            stage=progress.stage,
+            workflow_status=workflow_status,
+            chunking_status=progress.chunking_status,
+            extraction_status=progress.extraction_status,
+            extraction_progress=progress.extraction_progress,
+        )
+        return progress.model_copy(
+            update={
+                "steps": [
+                    CompleteWorkflowStepProgress(name=name, status=status)
+                    for name, status in step_statuses.items()
+                ]
+            }
+        )
+
+    @staticmethod
+    def _complete_workflow_step_statuses(
+        *,
+        stage: str,
+        workflow_status: TaskStatus,
+        chunking_status: TaskStatus,
+        extraction_status: TaskStatus,
+        extraction_progress: ExtractionRunProgress | None,
+    ) -> dict[str, TaskStatus]:
+        steps = {
+            "upload": TaskStatus.COMPLETED,
+            "chunking": chunking_status,
+            "extraction": extraction_status,
+            "normalization": TaskStatus.UNKNOWN,
+            "profile_projection": TaskStatus.UNKNOWN,
+            "validation": TaskStatus.UNKNOWN,
+        }
+        if extraction_progress is not None:
+            if extraction_progress.stage in {
+                "file_ranking",
+                "chunk_extraction",
+                "chunk_repair",
+                "interim_context",
+            }:
+                steps["extraction"] = TaskStatus.RUNNING
+            if extraction_progress.stage in {
+                "vocabulary_normalization",
+                "profile_projection",
+                "completed",
+            }:
+                steps["extraction"] = TaskStatus.COMPLETED
+                steps["normalization"] = (
+                    TaskStatus.RUNNING
+                    if extraction_progress.stage == "vocabulary_normalization"
+                    else TaskStatus.COMPLETED
+                )
+            if extraction_progress.stage in {"profile_projection", "completed"}:
+                steps["profile_projection"] = (
+                    TaskStatus.RUNNING
+                    if extraction_progress.stage == "profile_projection"
+                    else TaskStatus.COMPLETED
+                )
+            if extraction_progress.stage == "completed":
+                steps["validation"] = TaskStatus.COMPLETED
+        if stage == "completed":
+            for name in steps:
+                steps[name] = TaskStatus.COMPLETED
+        if workflow_status == TaskStatus.CRASHED:
+            active_step = "extraction" if chunking_status == TaskStatus.COMPLETED else "chunking"
+            steps[active_step] = TaskStatus.CRASHED
+        return steps
+
+    @staticmethod
+    def _result_url(data_package_id: str) -> str:
+        return f"/api/v1/extraction/result/{data_package_id}"
 
     def _record_workflow_token_usage(
         self,

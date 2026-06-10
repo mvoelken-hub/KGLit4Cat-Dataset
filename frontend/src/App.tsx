@@ -187,7 +187,7 @@ function extractionContextKeywords(item: Record<string, unknown>): string[] {
 function extractionContextTraces(context?: Record<string, unknown> | null) {
   return asRecordArray(context?.extraction_objects)
     .map((trace) => ({
-      objectType: String(trace.object_type || 'unknown'),
+      objectKind: String(trace.object_kind || 'unknown'),
       sourceText: typeof trace.source_text === 'string' ? trace.source_text : '',
       object: asRecord(trace.extracted_object),
     }))
@@ -198,9 +198,9 @@ function extractionContextHasStructuredItems(context?: Record<string, unknown> |
   return extractionContextTraces(context).some((trace) => trace.object);
 }
 
-function extractionContextTraceLabel(trace: { objectType: string; object: Record<string, unknown> | null }) {
+function extractionContextTraceLabel(trace: { objectKind: string; object: Record<string, unknown> | null }) {
   const label = trace.object ? extractionContextItemTitle(trace.object, 'Extracted object') : 'Extracted object';
-  return `${trace.objectType.replace(/_/g, ' ')}: ${label}`;
+  return `${trace.objectKind}: ${label}`;
 }
 
 function ExtractionContextResultView({ context }: { context?: Record<string, unknown> | null }) {
@@ -209,14 +209,14 @@ function ExtractionContextResultView({ context }: { context?: Record<string, unk
 
   const traces = extractionContextTraces(context);
   const sections = [
-    { key: 'resource', label: 'Resources' },
-    { key: 'method', label: 'Methods' },
-    { key: 'data_generating_activity', label: 'Activities' },
-    { key: 'evaluated_entity', label: 'Entities' },
-    { key: 'agentic_entity', label: 'Agents' },
+    { key: 'Resource', label: 'Resources' },
+    { key: 'Method', label: 'Methods' },
+    { key: 'DataGeneratingActivity', label: 'Activities' },
+    { key: 'EvaluatedEntity', label: 'Entities' },
+    { key: 'AgenticEntity', label: 'Agents' },
   ].map((section) => ({
     ...section,
-    traces: traces.filter((trace) => trace.objectType === section.key && trace.object),
+    traces: traces.filter((trace) => trace.objectKind === section.key && trace.object),
   })).filter((section) => section.traces.length > 0);
 
   if (!extractionContextHasStructuredItems(context)) {
@@ -270,7 +270,7 @@ function ExtractionObjectModal({
       <div className="vocab-dialog extraction-object-dialog" onClick={(event) => event.stopPropagation()}>
         <div className="vocab-dialog-header">
           <div>
-            <span>{trace.objectType.replace(/_/g, ' ')}</span>
+            <span>{trace.objectKind}</span>
             <strong>{itemTitle}</strong>
           </div>
           <button className="ghost" onClick={onClose}>Close</button>
@@ -282,7 +282,7 @@ function ExtractionObjectModal({
           </section>
           <section>
             <span>Trace</span>
-            <ExtractionFieldList value={{ object_type: trace.objectType, source_text: trace.sourceText }} />
+            <ExtractionFieldList value={{ object_kind: trace.objectKind, source_text: trace.sourceText }} />
           </section>
         </div>
       </div>
@@ -407,7 +407,7 @@ function ChunkTraceModal({
                       {segment.text}
                       <span className="chunk-trace-tooltip">
                         {segment.traces.map((trace, traceIndex) => (
-                          <span key={`${trace.objectType}-${traceIndex}`}>
+                          <span key={`${trace.objectKind}-${traceIndex}`}>
                             <strong>{extractionContextTraceLabel(trace)}</strong>
                             {trace.object && extractionContextItemDescription(trace.object) ? <small>{extractionContextItemDescription(trace.object)}</small> : null}
                           </span>
@@ -423,7 +423,7 @@ function ChunkTraceModal({
                     {unmatchedTraces.map((trace, index) => (
                       <button
                         className="chunk-unmatched-trace"
-                        key={`${trace.objectType}-${index}`}
+                        key={`${trace.objectKind}-${index}`}
                         type="button"
                         onClick={() => setSelectedTrace(trace)}
                       >

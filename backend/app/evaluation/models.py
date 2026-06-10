@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 
 class ReferenceObject(BaseModel):
-    object_type: str
+    object_kind: str
     label: str
     aliases: list[str] = Field(default_factory=list)
     required: bool = True
@@ -17,7 +17,7 @@ class ReferenceObject(BaseModel):
 class ReferenceAttribute(BaseModel):
     title: str
     value: str
-    object_type: str | None = None
+    object_kind: str | None = None
     aliases: list[str] = Field(default_factory=list)
     required: bool = True
 

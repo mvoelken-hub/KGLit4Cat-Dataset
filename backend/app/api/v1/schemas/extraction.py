@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 from app.core.task_registry import TaskStatus
 from app.domain.extraction import (
+    CompleteWorkflowProgress,
     ExtractionContext,
     ExtractionNormalization,
     ExtractionRunProgress,
@@ -40,10 +41,15 @@ class ExtractionProgressResponse(BaseModel):
     progress: ExtractionRunProgress | None = None
 
 
+class CompleteWorkflowProgressResponse(BaseModel):
+    status: TaskStatus
+    progress: CompleteWorkflowProgress | None = None
+
+
 class CompleteWorkflowRunResponse(BaseModel):
     status: TaskStatus
     data_package: DataPackageResponse
-    progress: ExtractionRunProgress | None = None
+    progress: CompleteWorkflowProgress | None = None
     progress_url: str
     result_url: str
 

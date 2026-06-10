@@ -58,6 +58,11 @@ class FakeDataSourceService:
     def get_completed_content_chunks_by_file(self, _data_package_id: str):
         return self.chunks_by_file
 
+    def get_chunk_task_status(self, _data_package_id: str) -> TaskStatus:
+        if self.chunk_status != TaskStatus.UNKNOWN:
+            return self.chunk_status
+        return TaskStatus.COMPLETED if self.chunks_by_file else TaskStatus.UNKNOWN
+
     async def chunk_file_entries_in_data_package(self, **kwargs):
         self.chunk_calls.append(kwargs)
         return self.chunks_by_file, self.chunk_status
@@ -172,7 +177,7 @@ def resource_context(identifier: str, description: str) -> ExtractionContext:
         {
             "extraction_objects": [
                 {
-                    "object_type": "resource",
+                    "object_kind": "Resource",
                     "extracted_object": {
                         "identifier": identifier,
                         "type": "dataset",
@@ -190,7 +195,7 @@ def qualitative_context(identifier: str, title: str, value: str) -> ExtractionCo
         {
             "extraction_objects": [
                 {
-                    "object_type": "resource",
+                    "object_kind": "Resource",
                     "extracted_object": {
                         "identifier": identifier,
                         "type": "dataset",
@@ -339,6 +344,117 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(len(run_calls), 1)
 
+    async def test_complete_workflow_can_force_rerun_crashed_package(self):
+        service, task_registry, output_repository = make_service([[make_chunk()]])
+        output_repository.result = ExtractionRunResult(
+            document={"id": "stale"},
+            extraction_context=ExtractionContext(),
+        )
+        run_calls: list[dict] = []
+
+        async def crashed_task():
+            raise RuntimeError("previous failure")
+
+        await task_registry.create_task(
+            crashed_task(),
+            type=TaskType.WORKFLOW,
+            name="workflow:complete:package-id",
+        )
+        with self.assertRaises(RuntimeError):
+            await task_registry.wait_for_task("workflow:complete:package-id")
+
+        async def fake_run_extraction(**kwargs):
+            run_calls.append(kwargs)
+            return None, TaskStatus.COMPLETED
+
+        service.run_extraction = fake_run_extraction  # type: ignore[method-assign]
+
+        status = await service.run_complete_workflow(
+            data_package_id="package-id",
+            profile_identifier="profile",
+            force_rerun=True,
+        )
+        await task_registry.wait_for_task("workflow:complete:package-id")
+
+        self.assertEqual(status, TaskStatus.RUNNING)
+        self.assertIsNone(output_repository.result)
+        self.assertEqual(len(run_calls), 1)
+
+    async def test_complete_workflow_reports_live_extraction_progress(self):
+        service, task_registry, _ = make_service([[make_chunk()]])
+        extraction_started = asyncio.Event()
+        finish_extraction = asyncio.Event()
+
+        async def fake_run_extraction(**_kwargs):
+            extraction_started.set()
+            await finish_extraction.wait()
+            return None, TaskStatus.COMPLETED
+
+        service.run_extraction = fake_run_extraction  # type: ignore[method-assign]
+
+        status = await service.run_complete_workflow(
+            data_package_id="package-id",
+            profile_identifier="profile",
+        )
+        await extraction_started.wait()
+
+        progress_status, progress = await service.get_complete_workflow_progress(
+            data_package_id="package-id"
+        )
+        finish_extraction.set()
+        await task_registry.wait_for_task("workflow:complete:package-id")
+
+        self.assertEqual(status, TaskStatus.RUNNING)
+        self.assertEqual(progress_status, TaskStatus.RUNNING)
+        self.assertIsNotNone(progress)
+        self.assertEqual(progress.stage, "extraction")
+        self.assertEqual(progress.chunking_status, TaskStatus.COMPLETED)
+        self.assertEqual(progress.extraction_status, TaskStatus.RUNNING)
+        self.assertEqual(
+            {step.name: step.status for step in progress.steps},
+            {
+                "upload": TaskStatus.COMPLETED,
+                "chunking": TaskStatus.COMPLETED,
+                "extraction": TaskStatus.RUNNING,
+                "normalization": TaskStatus.UNKNOWN,
+                "profile_projection": TaskStatus.UNKNOWN,
+                "validation": TaskStatus.UNKNOWN,
+            },
+        )
+
+    async def test_complete_workflow_progress_recovers_completed_result(self):
+        service, _, output_repository = make_service([[make_chunk()]])
+        output_repository.result = ExtractionRunResult(
+            document={"id": "done"},
+            extraction_context=ExtractionContext(),
+            warnings=["schema-valid but semantically weak"],
+        )
+        output_repository.run_state = ExtractionRunState(
+            profile_identifier="profile",
+            chunk_results=[
+                ExtractionChunkResult(
+                    chunk_index=0,
+                    file_path="README.md",
+                    start_idx=0,
+                    end_idx=0,
+                    status="completed",
+                    extraction_context=ExtractionContext(),
+                )
+            ],
+        )
+
+        status, progress = await service.get_complete_workflow_progress(
+            data_package_id="package-id"
+        )
+
+        self.assertEqual(status, TaskStatus.COMPLETED)
+        self.assertIsNotNone(progress)
+        self.assertEqual(progress.stage, "completed")
+        self.assertEqual(progress.profile_identifier, "profile")
+        self.assertEqual(progress.result_url, "/api/v1/extraction/result/package-id")
+        self.assertEqual(progress.warnings, ["schema-valid but semantically weak"])
+        self.assertTrue(all(step.status == TaskStatus.COMPLETED for step in progress.steps))
+
     async def test_profile_projection_falls_back_to_minimal_valid_document(self):
         service, _, output_repository = make_service([[make_chunk()]])
         service.profile_service = TitleProfileService()  # type: ignore[assignment]
@@ -346,7 +462,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             {
                 "extraction_objects": [
                     {
-                        "object_type": "evaluated_entity",
+                        "object_kind": "EvaluatedEntity",
                         "extracted_object": {
                             "identifier": "SG-V4050",
                             "description": "Sample SG-V4050",

@@ -8,11 +8,11 @@
     "SG-V4053_10.zip"
   ],
   "expected_objects": [
-    {"object_type": "resource", "label": "dataset_description.txt"},
-    {"object_type": "resource", "label": "SGV-2976_13C_NMR.xlsx", "aliases": ["spreadsheet", "xlsx"]},
-    {"object_type": "resource", "label": "SG-V4053_10.zip", "aliases": ["nested archive", "raw archive"]},
-    {"object_type": "resource", "label": "SG-V4053_10.dx", "aliases": ["dx"]},
-    {"object_type": "method", "label": "13C NMR", "aliases": ["carbon 13 nmr"]}
+    {"object_kind": "Resource", "label": "dataset_description.txt"},
+    {"object_kind": "Resource", "label": "SGV-2976_13C_NMR.xlsx", "aliases": ["spreadsheet", "xlsx"]},
+    {"object_kind": "Resource", "label": "SG-V4053_10.zip", "aliases": ["nested archive", "raw archive"]},
+    {"object_kind": "Resource", "label": "SG-V4053_10.dx", "aliases": ["dx"]},
+    {"object_kind": "Method", "label": "13C NMR", "aliases": ["carbon 13 nmr"]}
   ],
   "expected_attributes": [
     {"title": "nucleus", "value": "13C", "aliases": ["carbon 13"]},

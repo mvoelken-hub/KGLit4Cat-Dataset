@@ -31,7 +31,7 @@ def context_payload() -> dict:
     return {
         "extraction_objects": [
             {
-                "object_type": "method",
+                "object_kind": "Method",
                 "extracted_object": {
                     "identifier": "ir-method",
                     "description": "Infrared spectroscopy using a Bruker ALPHA instrument.",
@@ -43,7 +43,7 @@ def context_payload() -> dict:
                 "source_text": "instrument: Bruker ALPHA",
             },
             {
-                "object_type": "agentic_entity",
+                "object_kind": "AgenticEntity",
                 "extracted_object": {
                     "identifier": "Bruker ALPHA",
                     "description": "Bruker ALPHA spectrometer.",
@@ -122,8 +122,8 @@ class EvaluationTests(unittest.TestCase):
             dataset_filename="IR-IR.zip",
             relevant_files=["dataset_description.txt", "SG-V4050.dx"],
             expected_objects=[
-                ReferenceObject(object_type="method", label="IR"),
-                ReferenceObject(object_type="agentic_entity", label="Bruker ALPHA"),
+                ReferenceObject(object_kind="Method", label="IR"),
+                ReferenceObject(object_kind="AgenticEntity", label="Bruker ALPHA"),
             ],
             expected_attributes=[
                 ReferenceAttribute(title="method", value="IR"),
@@ -147,7 +147,7 @@ class EvaluationTests(unittest.TestCase):
 
         self.assertTrue(report.schema_valid)
         self.assertTrue(report.file_ranking_top1_hit)
-        self.assertEqual(report.object_metrics["method"].recall, 1.0)
+        self.assertEqual(report.object_metrics["Method"].recall, 1.0)
         self.assertEqual(report.attribute_metrics.recall, 1.0)
         self.assertEqual(report.vocab_mapping_metrics.recall, 1.0)
         self.assertEqual(report.required_profile_field_coverage, 1.0)

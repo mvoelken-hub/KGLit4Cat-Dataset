@@ -4,6 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.core.task_registry import TaskStatus
 from app.domain.extraction.extraction_context import ExtractionContext
 from app.domain.extraction.vocabulary import ExtractionNormalization
 from app.domain.extraction.file_ranking import RankedFile
@@ -95,6 +96,23 @@ class ExtractionRunProgress(BaseModel):
     chunk_results: list[ExtractionChunkResult] = Field(default_factory=list)
     current_chunk: ExtractionChunkRef | None = None
     warnings: list[str] = Field(default_factory=list)
+
+
+class CompleteWorkflowStepProgress(BaseModel):
+    name: str
+    status: TaskStatus = TaskStatus.UNKNOWN
+
+
+class CompleteWorkflowProgress(BaseModel):
+    stage: str = "pending"
+    data_package_id: str
+    profile_identifier: str | None = None
+    steps: list[CompleteWorkflowStepProgress] = Field(default_factory=list)
+    chunking_status: TaskStatus = TaskStatus.UNKNOWN
+    extraction_status: TaskStatus = TaskStatus.UNKNOWN
+    extraction_progress: ExtractionRunProgress | None = None
+    warnings: list[str] = Field(default_factory=list)
+    result_url: str | None = None
 
 
 class ExtractionRunResult(BaseModel):
