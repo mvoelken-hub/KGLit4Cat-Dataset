@@ -4,6 +4,8 @@ import asyncio
 import json
 import time
 from dataclasses import dataclass
+
+from pydantic import ValidationError
 from hashlib import sha1
 from typing import TYPE_CHECKING, Any
 
@@ -399,11 +401,14 @@ class ExtractionService:
                     warnings=self._load_warnings_or_empty(data_package_id),
                 )
             return TaskStatus.UNKNOWN, None
-        progress = (
-            ExtractionRunProgress.model_validate(task_info.progress)
-            if task_info.progress
-            else None
-        )
+        try:
+            progress = (
+                ExtractionRunProgress.model_validate(task_info.progress)
+                if task_info.progress
+                else None
+            )
+        except ValidationError:
+            progress = None
         if progress is None:
             state = self._load_run_state_or_none(data_package_id)
             if state is not None:
@@ -2277,7 +2282,7 @@ class ExtractionService:
             return None
         try:
             return self.output_repository.load_extraction_result(data_package_id)
-        except FileNotFoundError:
+        except (FileNotFoundError, ValidationError):
             return None
 
     def _load_context_or_none(self, data_package_id: str) -> ExtractionContext | None:
@@ -2285,7 +2290,7 @@ class ExtractionService:
             return None
         try:
             return self.output_repository.load_extraction_context(data_package_id)
-        except FileNotFoundError:
+        except (FileNotFoundError, ValidationError):
             return None
 
     def _load_run_state_or_none(self, data_package_id: str) -> ExtractionRunState | None:
@@ -2293,7 +2298,7 @@ class ExtractionService:
             return None
         try:
             return self.output_repository.load_extraction_run_state(data_package_id)
-        except (FileNotFoundError, json.JSONDecodeError):
+        except (FileNotFoundError, json.JSONDecodeError, ValidationError):
             return None
 
     def _save_run_state(
