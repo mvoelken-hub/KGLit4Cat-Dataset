@@ -107,20 +107,4 @@ class Settings(BaseSettings):
             return self.skip_model_pull_override
         return self.app_env != "production"
 
-    # Frontend / CORS configuration
-    frontend_port: int = 3000
-    cors_origins: str = ""
-
-    @computed_field
-    @property
-    def frontend_cors_origins(self) -> list[str]:
-        origins = [
-            f"http://localhost:{self.frontend_port}",
-            f"http://127.0.0.1:{self.frontend_port}",
-        ]
-        if self.cors_origins:
-            origins += [o.strip() for o in self.cors_origins.split(",") if o.strip()]
-        return origins
-
-
 settings = Settings()
