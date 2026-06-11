@@ -641,7 +641,7 @@ function ExtractionContextOverview({
   onRerunVocabQuery?: (queryId: string) => void;
 }) {
   const [traceChunk, setTraceChunk] = useState<{ chunk: ExtractionChunkResult; content: string } | null>(null);
-  const [vocabTraceChunk, setVocabTraceChunk] = useState<ExtractionChunkResult | null>(null);
+  const [vocabTraceTarget, setVocabTraceTarget] = useState<{ title: string; queries: ExtractionVocabQueryRecord[] } | null>(null);
   const resultByKey = new Map(chunkResults.map((chunk) => [chunkResultKey(chunk), chunk]));
   const packageFileByPath = new Map(packageFiles.map((file) => [file.file_path, file]));
   const chunkGroupsByPath = new Map(
@@ -663,6 +663,8 @@ function ExtractionContextOverview({
   const completedChunks = chunkResults.filter((chunk) => chunk.status === 'completed').length;
   const runningChunks = chunkResults.filter((chunk) => chunk.status === 'running').length;
   const failedChunks = chunkResults.filter((chunk) => chunk.status === 'failed').length;
+  const runVocabQueries = progress?.vocab_queries ?? [];
+  const completedRunVocabQueries = runVocabQueries.filter((query) => query.status === 'completed').length;
 
   if (!filePaths.length) {
     return (
@@ -704,6 +706,24 @@ function ExtractionContextOverview({
           onRerunAll={onRerunAllVocabQueries}
         />
       )}
+
+      {runVocabQueries.length ? (
+        <section className="chunk-vocab-query-section">
+          <div className="chunk-vocab-query-heading">
+            <span>Workflow vocabulary queries</span>
+            <strong>{completedRunVocabQueries}/{runVocabQueries.length} completed</strong>
+          </div>
+          <div className="chunk-call-meta">
+            <button
+              className="small ghost"
+              type="button"
+              onClick={() => setVocabTraceTarget({ title: 'Workflow vocabulary queries', queries: runVocabQueries })}
+            >
+              View workflow vocab queries
+            </button>
+          </div>
+        </section>
+      ) : null}
 
       <div className="ranked-file-list">
         {filePaths.map((filePath, fileIndex) => {
@@ -752,8 +772,6 @@ function ExtractionContextOverview({
                     && maxContextLength > 0
                     && chunk.context_tokens >= maxContextLength * 0.9
                     && !reachedTokenLimit;
-                  const vocabQueries = chunk.vocab_queries ?? [];
-                  const completedVocabQueries = vocabQueries.filter((query) => query.status === 'completed').length;
                   const sourceChunk = (chunkGroupsByPath.get(chunk.file_path) ?? []).find((item) => chunkResultKey(item) === chunkResultKey(chunk));
                   const chunkText = sourceChunk?.content ?? '';
                   return (
@@ -787,11 +805,6 @@ function ExtractionContextOverview({
                           ) : null}
                           {chunk.status === 'completed' && chunk.response_duration_ms ? <span className="response-generation">{formatDuration(chunk.response_duration_ms)} response generation</span> : null}
                           {chunkText ? <button className="small ghost" type="button" onClick={() => setTraceChunk({ chunk, content: chunkText })}>View chunk text</button> : null}
-                          {vocabQueries.length ? (
-                            <button className="small ghost" type="button" onClick={() => setVocabTraceChunk(chunk)}>
-                              View vocab queries ({completedVocabQueries}/{vocabQueries.length})
-                            </button>
-                          ) : null}
                         </div>
                       )}
                       <ExtractionContextResultView context={chunk.extraction_context} />
@@ -813,10 +826,11 @@ function ExtractionContextOverview({
           onClose={() => setTraceChunk(null)}
         />
       )}
-      {vocabTraceChunk && (
+      {vocabTraceTarget && (
         <VocabQueryTraceModal
-          chunk={vocabTraceChunk}
-          onClose={() => setVocabTraceChunk(null)}
+          title={vocabTraceTarget.title}
+          queries={vocabTraceTarget.queries}
+          onClose={() => setVocabTraceTarget(null)}
           onRerun={onRerunVocabQuery}
         />
       )}
@@ -1162,8 +1176,10 @@ function VocabQueryTraceList({
   const running = queries.filter((query) => query.status === 'running').length;
   const quantitativeQueries = queries.filter((query) => query.kind === 'quantity_kind' || query.kind === 'unit');
   const qualitativeQueries = queries.filter((query) => query.kind === 'qualitative_attribute');
-  const otherQueries = queries.filter((query) => !quantitativeQueries.includes(query) && !qualitativeQueries.includes(query));
+  const objectGroundingQueries = queries.filter((query) => query.kind === 'object_grounding');
+  const otherQueries = queries.filter((query) => !quantitativeQueries.includes(query) && !qualitativeQueries.includes(query) && !objectGroundingQueries.includes(query));
   const queryGroups = [
+    { key: 'object-grounding', title: 'Object grounding', description: 'voc4cat term candidates', queries: objectGroundingQueries },
     { key: 'quantitative', title: 'Quantitative queries', description: 'Quantity kinds and units', queries: quantitativeQueries },
     { key: 'qualitative', title: 'Qualitative queries', description: 'Descriptive attribute terms', queries: qualitativeQueries },
     ...(otherQueries.length ? [{ key: 'other', title: 'Other queries', description: 'Additional vocabulary lookups', queries: otherQueries }] : []),
@@ -1217,12 +1233,13 @@ function VocabQueryTraceList({
               <div className="chunk-vocab-query-list">
                 {group.queries.map(renderQuery)}
               </div>
-            ) : <p className="muted chunk-vocab-query-empty">No queries in this group for the current chunk.</p>}
+            ) : <p className="muted chunk-vocab-query-empty">No queries in this group.</p>}
           </section>
         ))}
       </div>
-      <div className="chunk-vocab-query-list">
-        {false && queries.map((query) => (
+      {false && (
+        <div className="chunk-vocab-query-list">
+          {queries.map((query) => (
           <details className={`chunk-vocab-query ${query.status}`} key={query.query_id}>
             <summary>
               <div>
@@ -1244,22 +1261,24 @@ function VocabQueryTraceList({
               <JsonDetails title="Full query result" value={query.result ?? null} />
             </div>
           </details>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
 
 function VocabQueryTraceModal({
-  chunk,
+  title,
+  queries,
   onClose,
   onRerun,
 }: {
-  chunk: ExtractionChunkResult;
+  title: string;
+  queries: ExtractionVocabQueryRecord[];
   onClose: () => void;
   onRerun?: (queryId: string) => void;
 }) {
-  const queries = chunk.vocab_queries ?? [];
   const completed = queries.filter((query) => query.status === 'completed').length;
   return createPortal(
     <div className="vocab-dialog-overlay" onClick={onClose}>
@@ -1267,7 +1286,7 @@ function VocabQueryTraceModal({
         <div className="vocab-dialog-header">
           <div>
             <span>Vocabulary queries</span>
-            <strong>Chunk {chunk.chunk_index + 1} - {completed}/{queries.length} completed</strong>
+            <strong>{title} - {completed}/{queries.length} completed</strong>
           </div>
           <button className="ghost" type="button" onClick={onClose}>Close</button>
         </div>

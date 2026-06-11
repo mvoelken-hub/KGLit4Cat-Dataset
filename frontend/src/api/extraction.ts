@@ -39,7 +39,10 @@ export type ExtractionRunProgress = {
   normalized_quantities: number;
   normalized_qualitative_attributes: number;
   interim_context?: Record<string, unknown> | null;
+  interim_profile_document?: Record<string, unknown> | null;
+  profile_patch_results?: ProfilePatchResult[];
   vocab_query_config?: ExtractionVocabQueryConfig;
+  vocab_queries?: ExtractionVocabQueryRecord[];
   ranked_files?: RankedExtractionFile[];
   chunk_results?: ExtractionChunkResult[];
   current_chunk?: ExtractionChunkRef | null;
@@ -86,7 +89,6 @@ export type ExtractionChunkResult = ExtractionChunkRef & {
   error?: string | null;
   response_duration_ms?: number | null;
   context_tokens?: number | null;
-  vocab_queries?: ExtractionVocabQueryRecord[];
 };
 
 export type ExtractionVocabQueryRecord = {
@@ -101,6 +103,21 @@ export type ExtractionVocabQueryRecord = {
   result?: Record<string, unknown> | null;
   error?: string | null;
   duration_ms?: number | null;
+};
+
+export type ProfilePatchOperation = {
+  op: 'add' | 'replace' | 'remove' | string;
+  path: string;
+  value?: unknown;
+};
+
+export type ProfilePatchResult = {
+  object_identifier: string;
+  object_kind: string;
+  status: 'applied' | 'skipped' | 'failed' | string;
+  operations: ProfilePatchOperation[];
+  error?: string | null;
+  reason: string;
 };
 
 export type PatchProgress = ExtractionRunProgress & {
