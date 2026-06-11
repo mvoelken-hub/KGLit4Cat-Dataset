@@ -1,5 +1,4 @@
 from difflib import SequenceMatcher
-from hashlib import sha1
 import re
 from typing import Any, Literal, TypeVar
 from pydantic import BaseModel, Field, model_validator
@@ -22,6 +21,25 @@ class QualitativeAttribute(BaseModel):
 
 # Extraction classes
 
+
+class DefinedTerm(BaseModel):
+    """A term picked from a controlled vocabulary, used to enrich a type property.
+
+    Mirrors the dcat-ap-plus `DefinedTerm` class: a URI, an optional prefLabel, and
+    the source controlled vocabulary URL.
+    """
+
+    id: str = Field(..., description="URI of the term in the controlled vocabulary.")
+    title: str | None = Field(
+        default=None,
+        description="Preferred label (skos:prefLabel) of the term, if known.",
+    )
+    from_CV: str | None = Field(
+        default=None,
+        description="Identifier of the source controlled vocabulary.",
+    )
+
+
 class BaseExtractionModel(BaseModel):
     """Common shape for extraction context objects."""
     identifier: str = Field(..., description="Unique identifier for the extraction object.")
@@ -30,6 +48,23 @@ class BaseExtractionModel(BaseModel):
     has_quantitative_attributes: list[QuantitativeAttribute] = Field(default_factory=list, description="List of quantitative attributes associated with the extraction object.")
     has_qualitative_attributes: list[QualitativeAttribute] = Field(default_factory=list, description="List of qualitative attributes associated with the extraction object.")
     type: str = Field("unknown", description="Type of the entity (e.g., sample, model).")
+
+    def to_embedding_text(self) -> str:
+        return self._join_query_parts(
+            self.description,
+            " ".join(self.keywords),
+            self.type,
+        )
+
+    def to_fulltext_query(self) -> str:
+        return self._join_query_parts(
+            " ".join(self.keywords),
+            self.type,
+        )
+
+    @staticmethod
+    def _join_query_parts(*parts: str | None) -> str:
+        return " ".join(part for part in parts if part).strip()
 
 
 class DataGeneratingActivity(BaseExtractionModel):
@@ -298,6 +333,11 @@ def norm_text(s: str) -> str:
 def token_set(s: str) -> set[str]:
     return set(norm_text(s).split())
 
+def normalized_value(value: Any) -> str:
+    if isinstance(value, list):
+        return " ".join(sorted(norm_text(str(item)) for item in value if str(item).strip()))
+    return norm_text(str(value or ""))
+
 def jaccard(a: str, b: str) -> float:
     ta, tb = token_set(a), token_set(b)
     if not ta and not tb:
@@ -308,6 +348,42 @@ def jaccard(a: str, b: str) -> float:
 
 def string_sim(a: str, b: str) -> float:
     return SequenceMatcher(None, norm_text(a), norm_text(b)).ratio()
+
+
+def _quantitative_attribute_key(attr: Any) -> tuple[str, str, str, str]:
+    data = attr.model_dump() if isinstance(attr, BaseModel) else dict(attr)
+    return (
+        normalized_value(data.get("identifier")),
+        normalized_value(data.get("value")),
+        normalized_value(data.get("unit")),
+        normalized_value(data.get("quantity_kind")),
+    )
+
+
+def _qualitative_attribute_key(attr: Any) -> tuple[str, str]:
+    data = attr.model_dump() if isinstance(attr, BaseModel) else dict(attr)
+    return (
+        normalized_value(data.get("title")),
+        normalized_value(data.get("value")),
+    )
+
+
+def _attribute_keys(data: dict[str, Any], field: str) -> set[tuple[Any, ...]]:
+    key_func = (
+        _quantitative_attribute_key
+        if field == "has_quantitative_attributes"
+        else _qualitative_attribute_key
+    )
+    keys: set[tuple[Any, ...]] = set()
+    for attr in data.get(field, []):
+        key = key_func(attr)
+        if any(key):
+            keys.add(key)
+    return keys
+
+
+def _keyword_text(data: dict[str, Any]) -> str:
+    return " ".join(sorted(normalized_value(keyword) for keyword in data.get("keywords", [])))
 
 
 def are_probably_same_item(a: BaseModel, b: BaseModel) -> bool:
@@ -322,11 +398,23 @@ def are_probably_same_item(a: BaseModel, b: BaseModel) -> bool:
     a_id = norm_text(ad.get("identifier", ""))
     b_id = norm_text(bd.get("identifier", ""))
 
+    a_type = norm_text(ad.get("type", ""))
+    b_type = norm_text(bd.get("type", ""))
+
     a_desc = norm_text(ad.get("description", ""))
     b_desc = norm_text(bd.get("description", ""))
 
-    a_kw = " ".join(sorted(ad.get("keywords", [])))
-    b_kw = " ".join(sorted(bd.get("keywords", [])))
+    a_kw = _keyword_text(ad)
+    b_kw = _keyword_text(bd)
+
+    shared_quantities = _attribute_keys(ad, "has_quantitative_attributes") & _attribute_keys(
+        bd,
+        "has_quantitative_attributes",
+    )
+    shared_qualities = _attribute_keys(ad, "has_qualitative_attributes") & _attribute_keys(
+        bd,
+        "has_qualitative_attributes",
+    )
 
     # 1. Strong identifier match
     if a_id and b_id and a_id == b_id:
@@ -334,6 +422,16 @@ def are_probably_same_item(a: BaseModel, b: BaseModel) -> bool:
 
     # 2. Very similar identifiers
     if a_id and b_id and string_sim(a_id, b_id) >= 0.92:
+        return True
+
+    # 3. Shared object type plus matching attributes can identify repeated objects
+    if a_type and b_type and a_type == b_type and (shared_quantities or shared_qualities):
+        return True
+
+    if (shared_quantities or shared_qualities) and (
+        string_sim(a_desc, b_desc) >= 0.65
+        or jaccard(a_kw, b_kw) >= 0.50
+    ):
         return True
 
     # 3. Description + keyword overlap
@@ -353,7 +451,7 @@ def merge_items(a: T, b: T) -> T:
     if isinstance(a, TracedExtractionObject) and isinstance(b, TracedExtractionObject):
         merged_object = merge_items(a.extracted_object, b.extracted_object)
         source_texts = list(dict.fromkeys(text for text in (a.source_text, b.source_text) if text))
-        source_text = "\n...\n".join(source_texts)
+        source_text = "\n...\n".join(sorted(source_texts, key=len, reverse=True))
         return type(a)(
             object_kind=a.object_kind,
             extracted_object=merged_object,
@@ -370,19 +468,22 @@ def merge_items(a: T, b: T) -> T:
     # Merge keywords
     data["keywords"] = sorted(set(data.get("keywords", [])) | set(other.get("keywords", [])))
 
-    # Merge attributes by normalized keys
-    for field in ["has_quantitative_attributes", "has_qualitative_attributes"]:
+    # Merge attributes by normalized semantic keys
+    for field, key_func in [
+        ("has_quantitative_attributes", _quantitative_attribute_key),
+        ("has_qualitative_attributes", _qualitative_attribute_key),
+    ]:
         existing = data.get(field, [])
         seen = {
-            sha1(repr(x).encode("utf-8")).hexdigest()
+            key_func(x)
             for x in existing
         }
 
         for attr in other.get(field, []):
-            h = sha1(repr(attr).encode("utf-8")).hexdigest()
-            if h not in seen:
+            key = key_func(attr)
+            if key not in seen:
                 existing.append(attr)
-                seen.add(h)
+                seen.add(key)
 
         data[field] = existing
 

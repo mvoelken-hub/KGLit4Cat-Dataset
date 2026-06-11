@@ -7,21 +7,33 @@ from app.core.task_registry import TaskRegistry, TaskStatus, TaskType
 from app.domain.datasources import ContentChunk, DataPackage, FileEntry
 from app.domain.extraction import (
     ChunkingRequiredError,
+    DefinedTerm,
     ExtractionChunkResult,
     ExtractionContext,
     ExtractionNormalization,
     ExtractionRunResult,
+    ExtractionRunProgress,
     ExtractionRunState,
     ExtractionVocabQueryConfig,
     ExtractionVocabQueryRecord,
+    GroundedExtractionObject,
+    ProfilePatchDocument,
     RankedFile,
+    Resource,
+    TracedExtractionObject,
+    VocabularyFallbackQuery,
     VocabularyCandidateSelection,
+    VocabularyTermMapping,
 )
 from app.domain.semantics import CompactVocabResource, VocabQuery, VocabQueryResult, VocabSchemeInfo, VocabTermScheme
 from app.ollama.completion import CompletionResult
 from app.ollama.errors import MaxRetriesExceeded, OutputParsingError
 from app.ollama.usage import RunUsage
-from app.services.extraction_service import ExtractionService, _QualitativeCandidateDiscovery
+from app.services.extraction_service import (
+    ExtractionService,
+    _ObjectGroundingCandidateDiscovery,
+    _QualitativeCandidateDiscovery,
+)
 
 
 class FakeLogger:
@@ -81,7 +93,7 @@ class FakeProfileService:
     }
 
     def get_profile(self, identifier: str):
-        return SimpleNamespace(identifier=identifier, target_class="Dataset")
+        return SimpleNamespace(identifier=identifier, target_class="Dataset", enrichable_fields=["type"])
 
     def load_json_schema(self, _identifier: str):
         return self.schema
@@ -208,6 +220,60 @@ def qualitative_context(identifier: str, title: str, value: str) -> ExtractionCo
                 }
             ]
         }
+    )
+
+
+def quantitative_context(identifier: str, quantity_identifier: str = "temperature") -> ExtractionContext:
+    return ExtractionContext.model_validate(
+        {
+            "extraction_objects": [
+                {
+                    "object_kind": "Resource",
+                    "extracted_object": {
+                        "identifier": identifier,
+                        "type": "dataset",
+                        "description": "Temperature measurement.",
+                        "has_quantitative_attributes": [
+                            {
+                                "identifier": quantity_identifier,
+                                "value": "300",
+                                "unit": "K",
+                                "quantity_kind": "temperature",
+                            }
+                        ],
+                    },
+                    "source_text": "Temperature 300 K",
+                }
+            ]
+        }
+    )
+
+
+def empty_profile_patch() -> CompletionResult[ProfilePatchDocument]:
+    return CompletionResult(
+        output=ProfilePatchDocument(),
+        usage=RunUsage(requests=1),
+    )
+
+
+def type_profile_patch(value: str = "dataset") -> CompletionResult[ProfilePatchDocument]:
+    return CompletionResult(
+        output=ProfilePatchDocument(
+            operations=[{"op": "add", "path": "/type", "value": value}]
+        ),
+        usage=RunUsage(requests=1),
+    )
+
+
+def quantity_profile_patch() -> CompletionResult[ProfilePatchDocument]:
+    return CompletionResult(
+        output=ProfilePatchDocument(
+            operations=[
+                {"op": "add", "path": "/has_quantity_type", "value": "temperature"},
+                {"op": "add", "path": "/unit", "value": "K"},
+            ]
+        ),
+        usage=RunUsage(requests=1),
     )
 
 
@@ -455,7 +521,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(progress.warnings, ["schema-valid but semantically weak"])
         self.assertTrue(all(step.status == TaskStatus.COMPLETED for step in progress.steps))
 
-    async def test_profile_projection_falls_back_to_minimal_valid_document(self):
+    async def test_profile_skeleton_creates_minimal_valid_document(self):
         service, _, output_repository = make_service([[make_chunk()]])
         service.profile_service = TitleProfileService()  # type: ignore[assignment]
         context = ExtractionContext.model_validate(
@@ -475,23 +541,103 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         )
         warnings: list[str] = []
 
-        with patch(
-            "app.services.extraction_service.generate_structured",
-            side_effect=MaxRetriesExceeded(),
-        ):
-            result = await service._project_and_save_result(
+        document = service._fallback_profile_document(
+            data_package_id="package-id",
+            extraction_context=context,
+            validation_schema=TitleProfileService.schema,
+        )
+        result = await service._save_validated_profile_result(
+            data_package_id="package-id",
+            profile_identifier="profile",
+            extraction_context=context,
+            normalization=ExtractionNormalization(),
+            document=document,
+            warnings=warnings,
+        )
+
+        self.assertEqual(result.document, {"title": "SG-V4050", "identifier": "package-id"})
+        self.assertEqual(output_repository.result, result)
+
+    async def test_profile_patching_applies_valid_patch_and_persists_interim_document(self):
+        service, _, output_repository = make_service([[make_chunk()]])
+        context = resource_context("spectrum", "NMR spectrum file.")
+        state = ExtractionRunState(profile_identifier="profile")
+        progress = ExtractionRunProgress(stage="profile_projection")
+
+        async def fake_generate(*_args, **kwargs):
+            if kwargs["output_type"] is ProfilePatchDocument:
+                return type_profile_patch("spectrum")
+            raise AssertionError("Only profile patch generation is expected")
+
+        with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
+            document = await service._build_profile_document_by_patching(
                 data_package_id="package-id",
                 profile_identifier="profile",
                 profile_target_class="Dataset",
                 extraction_context=context,
-                normalization=ExtractionNormalization(),
-                validation_schema=TitleProfileService.schema,
+                validation_schema=FakeProfileService.schema,
+                state=state,
+                progress=progress,
+                warnings=[],
+            )
+
+        self.assertEqual(document["type"], "spectrum")
+        self.assertEqual(state.interim_profile_document, document)
+        self.assertEqual(state.profile_patch_results[0].status, "applied")
+        self.assertEqual(output_repository.run_state.interim_profile_document, document)
+
+    async def test_profile_patching_skips_invalid_patch_with_warning(self):
+        service, _, _ = make_service([[make_chunk()]])
+        context = resource_context("spectrum", "NMR spectrum file.")
+        state = ExtractionRunState(profile_identifier="profile")
+        progress = ExtractionRunProgress(stage="profile_projection")
+        warnings: list[str] = []
+
+        async def fake_generate(*_args, **kwargs):
+            if kwargs["output_type"] is ProfilePatchDocument:
+                return CompletionResult(
+                    output=ProfilePatchDocument(
+                        operations=[{"op": "replace", "path": "/id", "value": 12}]
+                    ),
+                    usage=RunUsage(requests=1),
+                )
+            raise AssertionError("Only profile patch generation is expected")
+
+        with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
+            document = await service._build_profile_document_by_patching(
+                data_package_id="package-id",
+                profile_identifier="profile",
+                profile_target_class="Dataset",
+                extraction_context=context,
+                validation_schema=FakeProfileService.schema,
+                state=state,
+                progress=progress,
                 warnings=warnings,
             )
 
-        self.assertEqual(result.document, {"title": "SG-V4050", "identifier": "package-id"})
-        self.assertIn("Profile projection fell back", result.warnings[0])
-        self.assertEqual(output_repository.result, result)
+        self.assertEqual(document["id"], "package-id")
+        self.assertEqual(state.profile_patch_results[0].status, "failed")
+        self.assertIn("broke schema validation", warnings[0])
+
+    def test_profile_vocab_sources_use_only_quantity_unit_and_enrichable_fields(self):
+        sources = ExtractionService._profile_vocab_sources(
+            {
+                "title": "plain title",
+                "type": "dataset",
+                "has_quantity_type": "temperature",
+                "unit": "K",
+            },
+            enrichable_fields=["type"],
+        )
+
+        self.assertEqual(
+            sources,
+            [
+                ("/type", "type", "dataset"),
+                ("/has_quantity_type", "has_quantity_type", "temperature"),
+                ("/unit", "unit", "K"),
+            ],
+        )
 
     async def test_run_extraction_requires_completed_chunks(self):
         service, _, _ = make_service([])
@@ -538,6 +684,8 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         ]
 
         async def fake_generate(*_args, **_kwargs):
+            if _kwargs["output_type"] is ProfilePatchDocument:
+                return empty_profile_patch()
             return outputs.pop(0)
 
         with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
@@ -554,7 +702,8 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(output_repository.contexts[0].resources[0].identifier, "alpha-resource")
         self.assertEqual(len(output_repository.contexts[1].resources), 2)
         self.assertIsNotNone(output_repository.result)
-        self.assertEqual(output_repository.result.document["id"], "dataset")
+        self.assertEqual(output_repository.result.document["id"], "package-id")
+        self.assertEqual(len(output_repository.run_state.profile_patch_results), 3)
         self.assertIn("chunk_extraction", output_repository.token_usage)
 
     async def test_progress_returns_persisted_interim_context(self):
@@ -602,6 +751,9 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 if isinstance(output, Exception):
                     raise output
                 return output
+            if output_type is ProfilePatchDocument:
+                call_order.append("profile_patch")
+                return empty_profile_patch()
             call_order.append("profile")
             return CompletionResult(
                 output={"id": "dataset"},
@@ -627,11 +779,70 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(status, TaskStatus.RUNNING)
             await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
 
-        self.assertEqual(call_order, ["extract:0", "extract:1", "repair", "profile"])
+        self.assertEqual(
+            call_order,
+            ["extract:0", "extract:1", "repair", "profile_patch", "profile_patch", "profile_patch"],
+        )
         self.assertEqual(
             [resource.identifier for resource in output_repository.context.resources],
             ["resource-one", "resource-two", "README.md"],
         )
+        self.assertIn("chunk_extraction_repair", output_repository.token_usage)
+
+    async def test_failed_chunk_repair_does_not_crash_extraction(self):
+        service, task_registry, output_repository = make_service(
+            [[make_chunk(0, "sample one"), make_chunk(1, "sample two")]]
+        )
+        chunk_outputs = [
+            CompletionResult(
+                output=resource_context("resource-one", "First partial resource."),
+                usage=RunUsage(requests=1, input_tokens=20, output_tokens=5),
+            ),
+            MaxRetriesExceeded(
+                last_error=OutputParsingError("bad json"),
+                failed_response='{"extraction_objects": [',
+                usage=RunUsage(requests=1, input_tokens=21, output_tokens=4),
+            ),
+        ]
+
+        async def fake_generate(*_args, **kwargs):
+            output_type = kwargs["output_type"]
+            if output_type is ExtractionContext:
+                output = chunk_outputs.pop(0)
+                if isinstance(output, Exception):
+                    raise output
+                return output
+            if output_type is ProfilePatchDocument:
+                return empty_profile_patch()
+            return CompletionResult(
+                output={"id": "dataset"},
+                usage=RunUsage(requests=1, input_tokens=30, output_tokens=8),
+            )
+
+        async def fake_repair(*_args, **_kwargs):
+            raise MaxRetriesExceeded(
+                last_error=OutputParsingError("still bad"),
+                failed_response="still bad",
+                usage=RunUsage(requests=1, input_tokens=12, output_tokens=3),
+            )
+
+        with (
+            patch("app.services.extraction_service.generate_structured", side_effect=fake_generate),
+            patch("app.services.extraction_service.repair_structured_output", side_effect=fake_repair),
+        ):
+            result, status = await service.run_extraction(
+                data_package_id="package-id",
+                profile_identifier="profile",
+            )
+            self.assertIsNone(result)
+            self.assertEqual(status, TaskStatus.RUNNING)
+            await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
+
+        self.assertIsNotNone(output_repository.result)
+        self.assertEqual(output_repository.result.document["id"], "package-id")
+        self.assertEqual(output_repository.run_state.chunk_results[0].status, "completed")
+        self.assertEqual(output_repository.run_state.chunk_results[1].status, "failed")
+        self.assertIn("Chunk extraction repair failed", output_repository.warnings[0])
         self.assertIn("chunk_extraction_repair", output_repository.token_usage)
 
     async def test_resume_reuses_completed_chunk_results(self):
@@ -676,6 +887,8 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         ]
 
         async def fake_generate(*_args, **_kwargs):
+            if _kwargs["output_type"] is ProfilePatchDocument:
+                return empty_profile_patch()
             return outputs.pop(0)
 
         with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
@@ -688,7 +901,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(status, TaskStatus.RUNNING)
             await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
 
-        self.assertEqual(outputs, [])
+        self.assertEqual(len(outputs), 1)
         self.assertIsNotNone(output_repository.result)
         self.assertIsNotNone(output_repository.run_state)
         self.assertEqual(
@@ -700,7 +913,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             ["already-extracted", "resumed-chunk", "README.md"],
         )
 
-    async def test_vocab_candidate_discovery_starts_after_completed_chunk_before_all_chunks_finish(self):
+    async def test_vocab_candidate_discovery_starts_after_all_chunks_finish(self):
         service, task_registry, output_repository = make_service(
             [[make_chunk(0, "sample one"), make_chunk(1, "sample two")]]
         )
@@ -713,13 +926,15 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             output_type = kwargs["output_type"]
             if output_type is ExtractionContext:
                 if len([item for item in call_order if item.startswith("extract")]) == 1:
-                    await asyncio.wait_for(semantic_service.discovery_started.wait(), timeout=1)
-                    call_order.append("discovery-before-second-finished")
+                    self.assertEqual(semantic_service.query_calls, [])
                 call_order.append("extract")
                 return CompletionResult(
                     output=qualitative_context("sample", "phase", "liquid"),
                     usage=RunUsage(requests=1),
                 )
+            if output_type is ProfilePatchDocument:
+                call_order.append("profile_patch")
+                return type_profile_patch()
             call_order.append("profile")
             return CompletionResult(output={"id": "dataset"}, usage=RunUsage(requests=1))
 
@@ -730,14 +945,103 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             )
             await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
 
-        self.assertIn("discovery-before-second-finished", call_order)
         self.assertGreaterEqual(len(semantic_service.query_calls), 1)
         self.assertIsNotNone(output_repository.run_state)
-        vocab_queries = output_repository.run_state.chunk_results[0].vocab_queries
+        vocab_queries = output_repository.run_state.vocab_queries
         self.assertGreaterEqual(len(vocab_queries), 1)
         self.assertEqual(vocab_queries[0].status, "completed")
         self.assertIsNotNone(vocab_queries[0].query)
         self.assertIsNotNone(vocab_queries[0].result)
+
+    async def test_profile_type_field_gets_voc4cat_query_after_patching(self):
+        service, task_registry, output_repository = make_service(
+            [[make_chunk(0, "first"), make_chunk(1, "second")]]
+        )
+        semantic_service = FakeSemanticService()
+        service.semantic_service = semantic_service  # type: ignore[assignment]
+        contexts = [
+            resource_context("resource-a", "First resource."),
+            resource_context("resource-b", "Second resource."),
+        ]
+
+        async def fake_generate(*_args, **kwargs):
+            output_type = kwargs["output_type"]
+            if output_type is ExtractionContext:
+                return CompletionResult(
+                    output=contexts.pop(0),
+                    usage=RunUsage(requests=1),
+                )
+            if output_type is ProfilePatchDocument:
+                return type_profile_patch()
+            return CompletionResult(output={"id": "dataset"}, usage=RunUsage(requests=1))
+
+        with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
+            await service.run_extraction(
+                data_package_id="package-id",
+                profile_identifier="profile",
+            )
+            await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
+
+        self.assertIsNotNone(output_repository.run_state)
+        object_queries = [
+            record
+            for record in output_repository.run_state.vocab_queries
+            if record.kind == "profile_type"
+        ]
+        self.assertEqual(len(object_queries), 1)
+        self.assertEqual(
+            [record.source_context["json_path"] for record in object_queries],
+            ["/type"],
+        )
+
+    async def test_profile_quantity_fields_are_queried_once_after_patching(self):
+        service, task_registry, output_repository = make_service(
+            [[make_chunk(0, "first"), make_chunk(1, "second")]]
+        )
+        semantic_service = FakeSemanticService()
+        service.semantic_service = semantic_service  # type: ignore[assignment]
+
+        async def fake_generate(*_args, **kwargs):
+            output_type = kwargs["output_type"]
+            if output_type is ExtractionContext:
+                return CompletionResult(
+                    output=quantitative_context("same-resource"),
+                    usage=RunUsage(requests=1),
+                )
+            if output_type is ProfilePatchDocument:
+                return quantity_profile_patch()
+            if output_type is VocabularyFallbackQuery:
+                return CompletionResult(
+                    output=VocabularyFallbackQuery(
+                        vector_query="temperature",
+                        fulltext_query="temperature",
+                    ),
+                    usage=RunUsage(requests=1),
+                )
+            return CompletionResult(output={"id": "dataset"}, usage=RunUsage(requests=1))
+
+        with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
+            await service.run_extraction(
+                data_package_id="package-id",
+                profile_identifier="profile",
+            )
+            await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
+
+        self.assertIsNotNone(output_repository.run_state)
+        records = output_repository.run_state.vocab_queries
+        quantity_records = [
+            record
+            for record in records
+            if record.kind in {"profile_has_quantity_type", "profile_unit"}
+        ]
+        object_records = [
+            record for record in records if record.kind == "profile_type"
+        ]
+        self.assertEqual(
+            [record.kind for record in quantity_records],
+            ["profile_has_quantity_type", "profile_unit"],
+        )
+        self.assertEqual(len(object_records), 0)
 
     async def test_vocab_query_config_update_persists_in_run_state_and_progress(self):
         service, _, output_repository = make_service([[make_chunk()]])
@@ -817,36 +1121,27 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
         async def completed_discovery(index: int):
             query_id = f"query-{index}"
-            state.chunk_results.append(
-                ExtractionChunkResult(
-                    chunk_index=index,
-                    file_path="README.md",
-                    start_idx=index,
-                    end_idx=index,
+            state.vocab_queries.append(
+                ExtractionVocabQueryRecord(
+                    query_id=query_id,
+                    kind="qualitative_attribute",
+                    source_value="phase: liquid",
+                    source_context={"title": "phase", "value": "liquid"},
+                    vocabulary_identifier="urn:vocab",
+                    rdf_type="skos__Concept",
+                    query=VocabQuery(rdf_type="skos__Concept", fulltext_query="phase liquid"),
                     status="completed",
-                    vocab_queries=[
-                        ExtractionVocabQueryRecord(
-                            query_id=query_id,
-                            kind="qualitative_attribute",
-                            source_value="phase: liquid",
-                            source_context={"title": "phase", "value": "liquid"},
-                            vocabulary_identifier="urn:vocab",
-                            rdf_type="skos__Concept",
-                            query=VocabQuery(rdf_type="skos__Concept", fulltext_query="phase liquid"),
-                            status="completed",
-                            result=VocabQueryResult(
-                                identifier="urn:vocab",
-                                rdf_type="skos__Concept",
-                                resources={
-                                    f"urn:candidate:{index}": CompactVocabResource(
-                                        uri=f"urn:candidate:{index}",
-                                        rdf_types=["skos__Concept"],
-                                        properties={"label": f"candidate {index}"},
-                                    )
-                                },
-                            ),
-                        )
-                    ],
+                    result=VocabQueryResult(
+                        identifier="urn:vocab",
+                        rdf_type="skos__Concept",
+                        resources={
+                            f"urn:candidate:{index}": CompactVocabResource(
+                                uri=f"urn:candidate:{index}",
+                                rdf_types=["skos__Concept"],
+                                properties={"label": f"candidate {index}"},
+                            )
+                        },
+                    ),
                 )
             )
             return _QualitativeCandidateDiscovery(
@@ -868,11 +1163,13 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             )
 
         tasks = [asyncio.create_task(completed_discovery(index)) for index in range(3)]
+        extraction_context = ExtractionContext()
         with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
             normalization = await service._normalize_from_candidate_tasks(
                 data_package_id="package-id",
                 state=state,
                 candidate_tasks=tasks,
+                extraction_context=extraction_context,
                 warnings=[],
             )
 
@@ -889,36 +1186,27 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
         async def completed_discovery(index: int):
             query_id = f"query-{index}"
-            state.chunk_results.append(
-                ExtractionChunkResult(
-                    chunk_index=index,
-                    file_path="README.md",
-                    start_idx=index,
-                    end_idx=index,
+            state.vocab_queries.append(
+                ExtractionVocabQueryRecord(
+                    query_id=query_id,
+                    kind="qualitative_attribute",
+                    source_value="phase: liquid",
+                    source_context={"title": "phase", "value": "liquid"},
+                    vocabulary_identifier="urn:vocab",
+                    rdf_type="skos__Concept",
+                    query=VocabQuery(rdf_type="skos__Concept", fulltext_query="phase liquid"),
                     status="completed",
-                    vocab_queries=[
-                        ExtractionVocabQueryRecord(
-                            query_id=query_id,
-                            kind="qualitative_attribute",
-                            source_value="phase: liquid",
-                            source_context={"title": "phase", "value": "liquid"},
-                            vocabulary_identifier="urn:vocab",
-                            rdf_type="skos__Concept",
-                            query=VocabQuery(rdf_type="skos__Concept", fulltext_query="phase liquid"),
-                            status="completed",
-                            result=VocabQueryResult(
-                                identifier="urn:vocab",
-                                rdf_type="skos__Concept",
-                                resources={
-                                    f"urn:candidate:{index}": CompactVocabResource(
-                                        uri=f"urn:candidate:{index}",
-                                        rdf_types=["skos__Concept"],
-                                        properties={"label": f"candidate {index}"},
-                                    )
-                                },
-                            ),
-                        )
-                    ],
+                    result=VocabQueryResult(
+                        identifier="urn:vocab",
+                        rdf_type="skos__Concept",
+                        resources={
+                            f"urn:candidate:{index}": CompactVocabResource(
+                                uri=f"urn:candidate:{index}",
+                                rdf_types=["skos__Concept"],
+                                properties={"label": f"candidate {index}"},
+                            )
+                        },
+                    ),
                 )
             )
             return _QualitativeCandidateDiscovery(
@@ -940,11 +1228,13 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             )
 
         tasks = [asyncio.create_task(completed_discovery(index)) for index in range(3)]
+        extraction_context = ExtractionContext()
         with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
             await service._normalize_from_candidate_tasks(
                 data_package_id="package-id",
                 state=state,
                 candidate_tasks=tasks,
+                extraction_context=extraction_context,
                 warnings=[],
             )
 
@@ -1090,6 +1380,466 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             task_registry.get_task_info("extraction:run:package-id").status,
             TaskStatus.CANCELLED,
         )
+
+
+    async def test_object_grounding_normalization_picks_defined_term_from_concept_candidates(self):
+        service, _, _ = make_service([[make_chunk()]])
+        state = ExtractionRunState()
+        discovery = _ObjectGroundingCandidateDiscovery(
+            object_identifier="ir-spectrum",
+            object_kind="Resource",
+            raw_type="spectrum",
+            source_context={"identifier": "ir-spectrum", "type": "spectrum"},
+            query_ids=["voc4cat-concept", "voc4cat-collection"],
+        )
+        state.vocab_queries.append(
+            ExtractionVocabQueryRecord(
+                query_id="voc4cat-concept",
+                kind="object_grounding",
+                source_value="ir-spectrum",
+                source_context={"identifier": "ir-spectrum", "type": "spectrum"},
+                vocabulary_identifier="https://w3id.org/nfdi4cat/voc4cat",
+                rdf_type="skos__Concept",
+                query=VocabQuery(rdf_type="skos__Concept", fulltext_query="spectrum"),
+                status="completed",
+                result=VocabQueryResult(
+                    identifier="https://w3id.org/nfdi4cat/voc4cat",
+                    rdf_type="skos__Concept",
+                    resources={
+                        "https://w3id.org/nfdi4cat/voc4cat_42": CompactVocabResource(
+                            uri="https://w3id.org/nfdi4cat/voc4cat_42",
+                            rdf_types=["skos__Concept"],
+                            properties={"skos__prefLabel": "IR spectrum"},
+                        ),
+                        "https://w3id.org/nfdi4cat/voc4cat_99": CompactVocabResource(
+                            uri="https://w3id.org/nfdi4cat/voc4cat_99",
+                            rdf_types=["skos__Concept"],
+                            properties={"skos__prefLabel": "catalyst sample"},
+                        ),
+                    },
+                ),
+            )
+        )
+        state.vocab_queries.append(
+            ExtractionVocabQueryRecord(
+                query_id="voc4cat-collection",
+                kind="object_grounding",
+                source_value="ir-spectrum",
+                source_context={"identifier": "ir-spectrum", "type": "spectrum"},
+                vocabulary_identifier="https://w3id.org/nfdi4cat/voc4cat",
+                rdf_type="skos__Collection",
+                query=VocabQuery(rdf_type="skos__Collection", fulltext_query="spectrum"),
+                status="completed",
+                result=VocabQueryResult(
+                    identifier="https://w3id.org/nfdi4cat/voc4cat",
+                    rdf_type="skos__Collection",
+                    resources={
+                        "https://w3id.org/nfdi4cat/voc4cat_coll_1": CompactVocabResource(
+                            uri="https://w3id.org/nfdi4cat/voc4cat_coll_1",
+                            rdf_types=["skos__Collection"],
+                            properties={"skos__prefLabel": "spectroscopy collection"},
+                        ),
+                    },
+                ),
+            )
+        )
+
+        async def fake_generate(*_args, **kwargs):
+            return CompletionResult(
+                output=VocabularyCandidateSelection(
+                    selected_uri="https://w3id.org/nfdi4cat/voc4cat_42",
+                    confidence=0.9,
+                    reason="IR spectrum matches the prefLabel of the candidate concept.",
+                ),
+                usage=RunUsage(requests=1),
+            )
+
+        trace = TracedExtractionObject(
+            object_kind="Resource",
+            extracted_object=Resource(
+                identifier="ir-spectrum",
+                description="IR spectrum measurement",
+                type="spectrum",
+            ),
+            source_text="IR spectrum measurement",
+        )
+        with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
+            grounded = await service._normalize_object_grounding_from_candidates(
+                data_package_id="package-id",
+                state=state,
+                discovery=discovery,
+                trace=trace,
+                selection_semaphore=asyncio.Semaphore(1),
+                warnings=[],
+            )
+
+        self.assertIsInstance(grounded, GroundedExtractionObject)
+        self.assertEqual(grounded.object_identifier, "ir-spectrum")
+        self.assertEqual(grounded.object_kind, "Resource")
+        self.assertEqual(grounded.source_value, "spectrum")
+        self.assertIsNotNone(grounded.defined_term)
+        self.assertEqual(
+            grounded.defined_term.id,
+            "https://w3id.org/nfdi4cat/voc4cat_42",
+        )
+        self.assertEqual(grounded.defined_term.title, "IR spectrum")
+        self.assertEqual(
+            grounded.defined_term.from_CV,
+            "https://w3id.org/nfdi4cat/voc4cat",
+        )
+        self.assertGreater(grounded.confidence, 0.0)
+
+    async def test_object_grounding_normalization_keeps_raw_type_when_selector_returns_null(self):
+        service, _, _ = make_service([[make_chunk()]])
+        state = ExtractionRunState()
+        discovery = _ObjectGroundingCandidateDiscovery(
+            object_identifier="mystery-object",
+            object_kind="Resource",
+            raw_type="unknown",
+            source_context={"identifier": "mystery-object", "type": "unknown"},
+            query_ids=["voc4cat-concept"],
+        )
+        state.vocab_queries.append(
+            ExtractionVocabQueryRecord(
+                query_id="voc4cat-concept",
+                kind="object_grounding",
+                source_value="mystery-object",
+                source_context={"identifier": "mystery-object", "type": "unknown"},
+                vocabulary_identifier="https://w3id.org/nfdi4cat/voc4cat",
+                rdf_type="skos__Concept",
+                query=VocabQuery(rdf_type="skos__Concept", fulltext_query="unknown"),
+                status="completed",
+                result=VocabQueryResult(
+                    identifier="https://w3id.org/nfdi4cat/voc4cat",
+                    rdf_type="skos__Concept",
+                    resources={
+                        "https://w3id.org/nfdi4cat/voc4cat_77": CompactVocabResource(
+                            uri="https://w3id.org/nfdi4cat/voc4cat_77",
+                            rdf_types=["skos__Concept"],
+                            properties={"skos__prefLabel": "photocatalysis"},
+                        )
+                    },
+                ),
+            )
+        )
+
+        async def fake_generate(*_args, **_kwargs):
+            return CompletionResult(
+                output=VocabularyCandidateSelection(
+                    selected_uri=None,
+                    confidence=0.0,
+                    reason="No candidate matches the object description.",
+                ),
+                usage=RunUsage(requests=1),
+            )
+
+        trace = TracedExtractionObject(
+            object_kind="Resource",
+            extracted_object=Resource(
+                identifier="mystery-object",
+                description="mystery",
+                type="unknown",
+            ),
+            source_text="mystery",
+        )
+        with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
+            grounded = await service._normalize_object_grounding_from_candidates(
+                data_package_id="package-id",
+                state=state,
+                discovery=discovery,
+                trace=trace,
+                selection_semaphore=asyncio.Semaphore(1),
+                warnings=[],
+            )
+
+        self.assertEqual(grounded.object_identifier, "mystery-object")
+        self.assertIsNone(grounded.defined_term)
+        self.assertEqual(grounded.source_value, "unknown")
+
+    async def test_object_grounding_normalization_keeps_raw_type_when_concept_candidates_are_empty(self):
+        service, _, _ = make_service([[make_chunk()]])
+        state = ExtractionRunState()
+        discovery = _ObjectGroundingCandidateDiscovery(
+            object_identifier="spectrum",
+            object_kind="Resource",
+            raw_type="spectrum",
+            source_context={"identifier": "spectrum", "type": "spectrum"},
+            query_ids=["voc4cat-collection-only"],
+        )
+        state.vocab_queries.append(
+            ExtractionVocabQueryRecord(
+                query_id="voc4cat-collection-only",
+                kind="object_grounding",
+                source_value="spectrum",
+                source_context={"identifier": "spectrum", "type": "spectrum"},
+                vocabulary_identifier="https://w3id.org/nfdi4cat/voc4cat",
+                rdf_type="skos__Collection",
+                query=VocabQuery(rdf_type="skos__Collection", fulltext_query="spectrum"),
+                status="completed",
+                result=VocabQueryResult(
+                    identifier="https://w3id.org/nfdi4cat/voc4cat",
+                    rdf_type="skos__Collection",
+                    resources={},
+                ),
+            )
+        )
+
+        trace = TracedExtractionObject(
+            object_kind="Resource",
+            extracted_object=Resource(
+                identifier="spectrum",
+                description="spectrum",
+                type="spectrum",
+            ),
+            source_text="spectrum",
+        )
+        grounded = await service._normalize_object_grounding_from_candidates(
+            data_package_id="package-id",
+            state=state,
+            discovery=discovery,
+            trace=trace,
+            selection_semaphore=asyncio.Semaphore(1),
+            warnings=[],
+        )
+
+        self.assertEqual(grounded.source_value, "spectrum")
+        self.assertIsNone(grounded.defined_term)
+
+    async def test_normalize_from_state_vocab_queries_rebuilds_object_grounding(self):
+        service, _, _ = make_service([[make_chunk()]])
+        state = ExtractionRunState()
+        state.vocab_queries.append(
+            ExtractionVocabQueryRecord(
+                query_id="voc4cat-concept",
+                kind="object_grounding",
+                source_value="dataset",
+                source_context={"identifier": "dataset", "type": "dataset", "object_kind": "Resource"},
+                vocabulary_identifier="https://w3id.org/nfdi4cat/voc4cat",
+                rdf_type="skos__Concept",
+                query=VocabQuery(rdf_type="skos__Concept", fulltext_query="dataset"),
+                status="completed",
+                result=VocabQueryResult(
+                    identifier="https://w3id.org/nfdi4cat/voc4cat",
+                    rdf_type="skos__Concept",
+                    resources={
+                        "https://w3id.org/nfdi4cat/voc4cat_5": CompactVocabResource(
+                            uri="https://w3id.org/nfdi4cat/voc4cat_5",
+                            rdf_types=["skos__Concept"],
+                            properties={"skos__prefLabel": "dataset"},
+                        )
+                    },
+                ),
+            )
+        )
+
+        async def fake_generate(*_args, **_kwargs):
+            return CompletionResult(
+                output=VocabularyCandidateSelection(
+                    selected_uri="https://w3id.org/nfdi4cat/voc4cat_5",
+                    confidence=0.8,
+                    reason="Direct match.",
+                ),
+                usage=RunUsage(requests=1),
+            )
+
+        extraction_context = ExtractionContext(
+            extraction_objects=[
+                TracedExtractionObject(
+                    object_kind="Resource",
+                    extracted_object=Resource(
+                        identifier="dataset",
+                        description="dataset",
+                        type="dataset",
+                    ),
+                    source_text="dataset",
+                )
+            ]
+        )
+        with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
+            normalization = await service._normalize_from_state_vocab_queries(
+                data_package_id="package-id",
+                state=state,
+                extraction_context=extraction_context,
+                warnings=[],
+            )
+
+        self.assertEqual(len(normalization.grounded_objects), 1)
+        grounding = normalization.grounded_objects[0]
+        self.assertIsInstance(grounding, GroundedExtractionObject)
+        self.assertEqual(grounding.object_identifier, "dataset")
+        self.assertEqual(grounding.object_kind, "Resource")
+        self.assertEqual(grounding.source_value, "dataset")
+        self.assertIsNotNone(grounding.defined_term)
+        self.assertEqual(grounding.defined_term.id, "https://w3id.org/nfdi4cat/voc4cat_5")
+
+    async def test_normalize_from_candidate_tasks_wraps_trace_in_grounded_extraction_object(self):
+        service, _, _ = make_service([[make_chunk()]])
+        extraction_context = ExtractionContext(
+            extraction_objects=[
+                TracedExtractionObject(
+                    object_kind="Resource",
+                    extracted_object=Resource(
+                        identifier="ir-spectrum",
+                        description="IR spectrum measurement",
+                        type="spectrum",
+                    ),
+                    source_text="IR spectrum measurement",
+                )
+            ]
+        )
+        state = ExtractionRunState()
+        discovery = _ObjectGroundingCandidateDiscovery(
+            object_identifier="ir-spectrum",
+            object_kind="Resource",
+            raw_type="spectrum",
+            source_context={"identifier": "ir-spectrum", "type": "spectrum"},
+            query_ids=["voc4cat-concept"],
+        )
+        state.vocab_queries.append(
+            ExtractionVocabQueryRecord(
+                query_id="voc4cat-concept",
+                kind="object_grounding",
+                source_value="ir-spectrum",
+                source_context={"identifier": "ir-spectrum", "type": "spectrum"},
+                vocabulary_identifier="https://w3id.org/nfdi4cat/voc4cat",
+                rdf_type="skos__Concept",
+                query=VocabQuery(rdf_type="skos__Concept", fulltext_query="spectrum"),
+                status="completed",
+                result=VocabQueryResult(
+                    identifier="https://w3id.org/nfdi4cat/voc4cat",
+                    rdf_type="skos__Concept",
+                    resources={
+                        "https://w3id.org/nfdi4cat/voc4cat_42": CompactVocabResource(
+                            uri="https://w3id.org/nfdi4cat/voc4cat_42",
+                            rdf_types=["skos__Concept"],
+                            properties={"skos__prefLabel": "IR spectrum"},
+                        )
+                    },
+                ),
+            )
+        )
+
+        async def fake_generate(*_args, **_kwargs):
+            return CompletionResult(
+                output=VocabularyCandidateSelection(
+                    selected_uri="https://w3id.org/nfdi4cat/voc4cat_42",
+                    confidence=0.9,
+                    reason="IR spectrum prefLabel matches.",
+                ),
+                usage=RunUsage(requests=1),
+            )
+
+        async def fake_discover(*_args, **_kwargs):
+            return discovery
+
+        task = asyncio.create_task(fake_discover())
+
+        with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
+            normalization = await service._normalize_from_candidate_tasks(
+                data_package_id="package-id",
+                state=state,
+                candidate_tasks=[task],
+                extraction_context=extraction_context,
+                warnings=[],
+            )
+
+        self.assertEqual(len(normalization.grounded_objects), 1)
+        grounded = normalization.grounded_objects[0]
+        self.assertIsInstance(grounded, GroundedExtractionObject)
+        self.assertEqual(grounded.object_identifier, "ir-spectrum")
+        self.assertEqual(grounded.object_kind, "Resource")
+        self.assertEqual(grounded.source_value, "spectrum")
+        self.assertIsInstance(grounded.extracted_object, Resource)
+        self.assertEqual(grounded.extracted_object.identifier, "ir-spectrum")
+        self.assertEqual(grounded.extracted_object.type, "spectrum")
+        self.assertIsNotNone(grounded.defined_term)
+        self.assertEqual(grounded.defined_term.id, "https://w3id.org/nfdi4cat/voc4cat_42")
+        self.assertEqual(grounded.defined_term.title, "IR spectrum")
+        self.assertEqual(grounded.defined_term.from_CV, "https://w3id.org/nfdi4cat/voc4cat")
+        # The original ExtractionContext and its traces are unchanged.
+        self.assertIsNone(extraction_context.extraction_objects[0].extracted_object.model_extra)
+        # grounded_objects and object_groundings stay in sync.
+        self.assertEqual(
+            [g.object_identifier for g in normalization.object_groundings],
+            ["ir-spectrum"],
+        )
+
+    async def test_grounded_extraction_object_keeps_raw_type_when_selector_returns_null(self):
+        service, _, _ = make_service([[make_chunk()]])
+        extraction_context = ExtractionContext(
+            extraction_objects=[
+                TracedExtractionObject(
+                    object_kind="Resource",
+                    extracted_object=Resource(
+                        identifier="mystery",
+                        description="mystery",
+                        type="unknown",
+                    ),
+                    source_text="mystery",
+                )
+            ]
+        )
+        state = ExtractionRunState()
+        discovery = _ObjectGroundingCandidateDiscovery(
+            object_identifier="mystery",
+            object_kind="Resource",
+            raw_type="unknown",
+            source_context={"identifier": "mystery", "type": "unknown"},
+            query_ids=["voc4cat-concept"],
+        )
+        state.vocab_queries.append(
+            ExtractionVocabQueryRecord(
+                query_id="voc4cat-concept",
+                kind="object_grounding",
+                source_value="mystery",
+                source_context={"identifier": "mystery", "type": "unknown"},
+                vocabulary_identifier="https://w3id.org/nfdi4cat/voc4cat",
+                rdf_type="skos__Concept",
+                query=VocabQuery(rdf_type="skos__Concept", fulltext_query="unknown"),
+                status="completed",
+                result=VocabQueryResult(
+                    identifier="https://w3id.org/nfdi4cat/voc4cat",
+                    rdf_type="skos__Concept",
+                    resources={
+                        "https://w3id.org/nfdi4cat/voc4cat_77": CompactVocabResource(
+                            uri="https://w3id.org/nfdi4cat/voc4cat_77",
+                            rdf_types=["skos__Concept"],
+                            properties={"skos__prefLabel": "photocatalysis"},
+                        )
+                    },
+                ),
+            )
+        )
+
+        async def fake_generate(*_args, **_kwargs):
+            return CompletionResult(
+                output=VocabularyCandidateSelection(
+                    selected_uri=None,
+                    confidence=0.0,
+                    reason="No candidate matches.",
+                ),
+                usage=RunUsage(requests=1),
+            )
+
+        async def fake_discover(*_args, **_kwargs):
+            return discovery
+
+        task = asyncio.create_task(fake_discover())
+
+        with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
+            normalization = await service._normalize_from_candidate_tasks(
+                data_package_id="package-id",
+                state=state,
+                candidate_tasks=[task],
+                extraction_context=extraction_context,
+                warnings=[],
+            )
+
+        self.assertEqual(len(normalization.grounded_objects), 1)
+        grounded = normalization.grounded_objects[0]
+        self.assertIsNone(grounded.defined_term)
+        self.assertEqual(grounded.source_value, "unknown")
+        self.assertEqual(grounded.extracted_object.type, "unknown")
 
 
 if __name__ == "__main__":

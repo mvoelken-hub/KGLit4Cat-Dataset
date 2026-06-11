@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from app.core.task_registry import TaskStatus
 from app.domain.extraction.extraction_context import ExtractionContext
+from app.domain.extraction.profile_projection import ProfileObjectPatchResult
 from app.domain.extraction.vocabulary import ExtractionNormalization
 from app.domain.extraction.file_ranking import RankedFile
 from app.domain.semantics import VocabQuery, VocabQueryResult
@@ -74,7 +75,6 @@ class ExtractionChunkResult(ExtractionChunkRef):
     error: str | None = None
     response_duration_ms: float | None = None
     context_tokens: int | None = None
-    vocab_queries: list[ExtractionVocabQueryRecord] = Field(default_factory=list)
 
 
 class ExtractionRunState(BaseModel):
@@ -82,6 +82,9 @@ class ExtractionRunState(BaseModel):
     vocab_query_config: ExtractionVocabQueryConfig = Field(default_factory=ExtractionVocabQueryConfig)
     ranked_files: list[RankedFile] = Field(default_factory=list)
     chunk_results: list[ExtractionChunkResult] = Field(default_factory=list)
+    vocab_queries: list[ExtractionVocabQueryRecord] = Field(default_factory=list)
+    interim_profile_document: dict[str, Any] | None = None
+    profile_patch_results: list[ProfileObjectPatchResult] = Field(default_factory=list)
 
 
 class ExtractionRunProgress(BaseModel):
@@ -94,6 +97,9 @@ class ExtractionRunProgress(BaseModel):
     vocab_query_config: ExtractionVocabQueryConfig = Field(default_factory=ExtractionVocabQueryConfig)
     ranked_files: list[RankedFile] = Field(default_factory=list)
     chunk_results: list[ExtractionChunkResult] = Field(default_factory=list)
+    vocab_queries: list[ExtractionVocabQueryRecord] = Field(default_factory=list)
+    interim_profile_document: dict[str, Any] | None = None
+    profile_patch_results: list[ProfileObjectPatchResult] = Field(default_factory=list)
     current_chunk: ExtractionChunkRef | None = None
     warnings: list[str] = Field(default_factory=list)
 

@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "charset-normalizer>=3.4.7",
     "fastapi[standard]>=0.136.1",
+    "jsonpatch>=1.33",
     "jsonschema>=4.26.0",
     "linkml>=1.11.0",
     "linkml-runtime>=1.11.0",
