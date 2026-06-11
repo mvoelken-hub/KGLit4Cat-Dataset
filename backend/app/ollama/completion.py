@@ -6,6 +6,7 @@ Ollama's `format` parameter.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 import re
@@ -28,6 +29,7 @@ from pydantic import BaseModel, ValidationError as PydanticValidationError
 
 from app.ollama.errors import CompletionError, EmptyResponseError, MaxRetriesExceeded, OutputParsingError
 from app.ollama.usage import RunUsage
+from app.core.logging import logger
 
 if TYPE_CHECKING:
     from app.ollama.client import OllamaClientWrapper
@@ -57,7 +59,12 @@ _EXAMPLE_PROMPT_TEMPLATE = (
     "\n\nExample JSON shape:\n{example}"
 )
 _ESTIMATED_CHARS_PER_TOKEN = 4
-_INPUT_CONTEXT_BUDGET_RATIO = 0.75
+# Be conservative: keep more headroom for the system-prompt schema or
+# example additions, the per-request `format` parameter, and Ollama's own
+# tokenization overhead. The ratio used to be 0.75 which left no headroom
+# for the 73 KB dcat-ap-plus schema on a 32K-token context.
+_INPUT_CONTEXT_BUDGET_RATIO = 0.5
+_MAX_SCHEMA_EXAMPLE_DEPTH = 50
 
 
 @dataclass
@@ -103,22 +110,42 @@ def _fits_context_budget(
 
 
 def _schema_example(schema: JsonSchema) -> Any:
-    return _schema_example_from_node(schema, schema)
+    return _schema_example_from_node(schema, schema, seen_refs=(), depth=0)
 
 
-def _schema_example_from_node(node: Any, root: JsonSchema) -> Any:
+def _schema_example_from_node(
+    node: Any,
+    root: JsonSchema,
+    *,
+    seen_refs: tuple[str, ...],
+    depth: int,
+) -> Any:
     if not isinstance(node, dict):
+        return None
+    if depth > _MAX_SCHEMA_EXAMPLE_DEPTH:
         return None
     if "$ref" in node:
         ref = str(node["$ref"])
         if ref.startswith("#/$defs/"):
             key = ref.removeprefix("#/$defs/")
-            return _schema_example_from_node(root.get("$defs", {}).get(key), root)
+            if key in seen_refs:
+                return {}
+            return _schema_example_from_node(
+                root.get("$defs", {}).get(key),
+                root,
+                seen_refs=(*seen_refs, key),
+                depth=depth + 1,
+            )
         return None
     for union_key in ("anyOf", "oneOf"):
         options = [option for option in node.get(union_key, []) if option.get("type") != "null"]
         if options:
-            return _schema_example_from_node(options[0], root)
+            return _schema_example_from_node(
+                options[0],
+                root,
+                seen_refs=seen_refs,
+                depth=depth + 1,
+            )
     if "const" in node:
         return node["const"]
     if "enum" in node and node["enum"]:
@@ -129,11 +156,23 @@ def _schema_example_from_node(node: Any, root: JsonSchema) -> Any:
         node_type = next((item for item in node_type if item != "null"), node_type[0])
     if node_type == "object" or "properties" in node:
         return {
-            key: _schema_example_from_node(value, root)
+            key: _schema_example_from_node(
+                value,
+                root,
+                seen_refs=seen_refs,
+                depth=depth + 1,
+            )
             for key, value in node.get("properties", {}).items()
         }
     if node_type == "array":
-        return [_schema_example_from_node(node.get("items", {}), root)]
+        return [
+            _schema_example_from_node(
+                node.get("items", {}),
+                root,
+                seen_refs=seen_refs,
+                depth=depth + 1,
+            )
+        ]
     if node_type == "integer":
         return 0
     if node_type == "number":
@@ -256,6 +295,8 @@ async def generate_structured(
     num_ctx: int | None = None,
     keep_alive: float | str | None = -1,
     repair_model: str | None = None,
+    api_retries: int = 2,
+    api_retry_backoff_seconds: float = 0.5,
 ) -> CompletionResult[ModelT]: ...
 
 
@@ -274,6 +315,8 @@ async def generate_structured(
     num_ctx: int | None = None,
     keep_alive: float | str | None = -1,
     repair_model: str | None = None,
+    api_retries: int = 2,
+    api_retry_backoff_seconds: float = 0.5,
 ) -> CompletionResult[Any]:
     ...
 
@@ -292,6 +335,8 @@ async def generate_structured(
     num_ctx: int | None = None,
     keep_alive: float | str | None = -1,
     repair_model: str | None = None,
+    api_retries: int = 2,
+    api_retry_backoff_seconds: float = 0.5,
 ) -> CompletionResult[Any]:
     """Single /api/generate call with format=json_schema, parse + validate + retry.
 
@@ -310,6 +355,8 @@ async def generate_structured(
                  If None, uses whatever the Ollama host has configured.
         keep_alive: How long to keep the model loaded. Default -1 = keep in RAM.
         repair_model: Optional model name for repair attempts. Defaults to model.
+        api_retries: Max retries for Ollama API/transport failures per structured attempt.
+        api_retry_backoff_seconds: Initial exponential backoff delay for API retries.
 
     Returns:
         CompletionResult with validated output and token usage.
@@ -341,20 +388,20 @@ async def generate_structured(
 
     for attempt in range(retries + 1):
         try:
-            response = cast(
-                ollama.GenerateResponse,
-                await client.ollama_client.generate(
-                    model=current_model,
-                    prompt=current_prompt,
-                    system=current_system,
-                    format=schema,
-                    options=options,
-                    think=think,
-                    keep_alive=keep_alive,
-                ),
+            response = await _generate_with_api_retries(
+                client,
+                model=current_model,
+                prompt=current_prompt,
+                system=current_system,
+                schema=schema,
+                options=options,
+                think=think,
+                keep_alive=keep_alive,
+                api_retries=api_retries,
+                api_retry_backoff_seconds=api_retry_backoff_seconds,
             )
-        except Exception as e:
-            raise CompletionError(f"Ollama API error: {e}") from e
+        except CompletionError:
+            raise
 
         # Accumulate token usage from Ollama response metadata
         total_usage = total_usage + RunUsage.from_ollama_response(response)
@@ -423,6 +470,63 @@ async def generate_structured(
         return CompletionResult(output=parsed, usage=total_usage)
 
     raise _max_retries_exceeded(last_error)
+
+
+async def _generate_with_api_retries(
+    client: OllamaClientWrapper,
+    *,
+    model: str,
+    prompt: str,
+    system: str,
+    schema: JsonSchema,
+    options: ollama.Options,
+    think: ThinkMode,
+    keep_alive: float | str | None,
+    api_retries: int,
+    api_retry_backoff_seconds: float,
+) -> ollama.GenerateResponse:
+    max_attempts = max(0, api_retries) + 1
+    last_error: Exception | None = None
+    for api_attempt in range(max_attempts):
+        try:
+            return cast(
+                ollama.GenerateResponse,
+                await client.ollama_client.generate(
+                    model=model,
+                    prompt=prompt,
+                    system=system,
+                    format=schema,
+                    options=options,
+                    think=think,
+                    keep_alive=keep_alive,
+                ),
+            )
+        except Exception as exc:
+            last_error = exc
+            if api_attempt >= max_attempts - 1:
+                break
+            delay = max(0.0, api_retry_backoff_seconds) * (2**api_attempt)
+            logger.warning(
+                "Ollama structured generation failed; retrying",
+                extra={
+                    "model": model,
+                    "api_attempt": api_attempt + 1,
+                    "api_retries": api_retries,
+                    "delay_seconds": delay,
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                },
+            )
+            if delay:
+                await asyncio.sleep(delay)
+    raise CompletionError(
+        f"Ollama API error after {max_attempts} attempt(s): {last_error}",
+        {
+            "error_type": type(last_error).__name__ if last_error else None,
+            "api_attempts": max_attempts,
+            "model": model,
+        },
+    ) from last_error
 
 
 @overload

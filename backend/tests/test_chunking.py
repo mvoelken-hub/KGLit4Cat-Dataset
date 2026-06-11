@@ -136,6 +136,43 @@ class ProtectedLineIndicesTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(5, chunk.filtered_line_indices)
         self.assertNotIn(99, chunk.filtered_line_indices)
 
+    async def test_token_cap_splits_oversized_chunk_after_semantic_chunking(self):
+        content = "".join(
+            f"line {index} " + ("sample metadata words " * 8) + "\n"
+            for index in range(12)
+        )
+        file_entry = FakeFileEntry(content)
+
+        async def embed(texts):
+            return [[0.1] * 4 for _ in texts]
+
+        chunks = await ContentChunk.create_chunks_for_file_entry(
+            data_package_id="pkg",
+            file_entry=file_entry,
+            embedding_func=embed,
+            min_lines_for_chunking=3,
+            max_tokens_per_chunk=60,
+        )
+
+        self.assertGreater(len(chunks), 1)
+        for chunk in chunks:
+            self.assertLessEqual((len(chunk.content) + 3) // 4, 60)
+
+    async def test_single_oversized_line_does_not_crash_token_cap(self):
+        content = ("sample metadata words " * 30) + "\n"
+        file_entry = FakeFileEntry(content)
+
+        chunks = await ContentChunk.create_chunks_for_file_entry(
+            data_package_id="pkg",
+            file_entry=file_entry,
+            embedding_func=AsyncMock(return_value=[]),
+            min_lines_for_chunking=3,
+            max_tokens_per_chunk=60,
+        )
+
+        self.assertEqual(len(chunks), 1)
+        self.assertEqual(chunks[0].content, content)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,3 +1,4 @@
+import math
 from typing import Any, Callable, TypeVar, Awaitable
 from sklearn.metrics.pairwise import cosine_similarity
 from numpy import percentile
@@ -20,6 +21,13 @@ from app.domain.datasources.text_quality import (
 from app.domain.datasources.errors import (
     EmbeddingDistanceCalcError
 )
+
+_ESTIMATED_CHARS_PER_TOKEN = 4
+_DEFAULT_MAX_TOKENS_PER_CHUNK = 1024
+
+
+def _estimated_tokens(text: str) -> int:
+    return math.ceil(len(text) / _ESTIMATED_CHARS_PER_TOKEN)
 
 @dataclass
 class FilteredLine:
@@ -62,6 +70,7 @@ class ContentChunk(BaseModel):
         embedding_batch_size: int = 32,
         semantic_chunking_threshold: float = 95.0,
         protected_line_indices: list[int] | None = None,
+        max_tokens_per_chunk: int = _DEFAULT_MAX_TOKENS_PER_CHUNK,
     ) -> list["ContentChunk"]:
         
         chunk_list: list[ContentChunk] = []
@@ -92,14 +101,23 @@ class ContentChunk(BaseModel):
             return []
 
         if len(filtered_lines) < min_lines_for_chunking:
-            return [cls(
+            single_chunk = cls(
                 content="".join(line.text for line in filtered_lines),
                 data_package_id=data_package_id,
                 file_path=file_entry.file_path,
                 start_idx=filtered_lines[0].line_idx,
                 end_idx=filtered_lines[-1].line_idx,
                 filtered_line_indices=[line.line_idx for line in filtered_lines]
-            )]
+            )
+            if max_tokens_per_chunk and max_tokens_per_chunk > 0:
+                return cls._split_chunks_by_token_budget(
+                    [single_chunk],
+                    filtered_lines=filtered_lines,
+                    data_package_id=data_package_id,
+                    file_path=file_entry.file_path,
+                    max_tokens_per_chunk=max_tokens_per_chunk,
+                )
+            return [single_chunk]
         
         combined_lines = combine_lines(
             filtered_lines,
@@ -142,7 +160,83 @@ class ContentChunk(BaseModel):
                 filtered_line_indices=[item.line.line_idx for item in group]
             ))
 
+        if max_tokens_per_chunk and max_tokens_per_chunk > 0:
+            return cls._split_chunks_by_token_budget(
+                chunk_list,
+                filtered_lines=filtered_lines,
+                data_package_id=data_package_id,
+                file_path=file_entry.file_path,
+                max_tokens_per_chunk=max_tokens_per_chunk,
+            )
+
         return chunk_list
+
+    @classmethod
+    def _split_chunks_by_token_budget(
+        cls,
+        chunks: list["ContentChunk"],
+        *,
+        filtered_lines: list[FilteredLine],
+        data_package_id: str,
+        file_path: str,
+        max_tokens_per_chunk: int,
+    ) -> list["ContentChunk"]:
+        bounded: list[ContentChunk] = []
+        for chunk in chunks:
+            if _estimated_tokens(chunk.content) <= max_tokens_per_chunk:
+                bounded.append(chunk)
+                continue
+            lines_in_chunk = [
+                line
+                for line in filtered_lines
+                if chunk.start_idx <= line.line_idx <= chunk.end_idx
+            ]
+            window: list[FilteredLine] = []
+            window_tokens = 0
+            for line in lines_in_chunk:
+                line_tokens = _estimated_tokens(line.text)
+                if window and window_tokens + line_tokens > max_tokens_per_chunk:
+                    bounded.append(cls._chunk_from_filtered_lines(
+                        window,
+                        data_package_id=data_package_id,
+                        file_path=file_path,
+                    ))
+                    window = []
+                    window_tokens = 0
+                window.append(line)
+                window_tokens += line_tokens
+                if line_tokens > max_tokens_per_chunk:
+                    bounded.append(cls._chunk_from_filtered_lines(
+                        window,
+                        data_package_id=data_package_id,
+                        file_path=file_path,
+                    ))
+                    window = []
+                    window_tokens = 0
+            if window:
+                bounded.append(cls._chunk_from_filtered_lines(
+                    window,
+                    data_package_id=data_package_id,
+                    file_path=file_path,
+                ))
+        return bounded
+
+    @classmethod
+    def _chunk_from_filtered_lines(
+        cls,
+        lines: list[FilteredLine],
+        *,
+        data_package_id: str,
+        file_path: str,
+    ) -> "ContentChunk":
+        return cls(
+            content="".join(item.text for item in lines),
+            data_package_id=data_package_id,
+            file_path=file_path,
+            start_idx=lines[0].line_idx,
+            end_idx=lines[-1].line_idx,
+            filtered_line_indices=[item.line_idx for item in lines],
+        )
 
     @staticmethod
     def get_chunk_group_id_from_file_path(file_path: str) -> str:

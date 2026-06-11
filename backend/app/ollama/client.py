@@ -15,10 +15,15 @@ class OllamaClientWrapper:
         self.embed_num_gpu = getattr(settings, "ollama_embed_num_gpu", -1)
         self.flash_attention = getattr(settings, "ollama_flash_attention", False)
         self.kv_cache_type = getattr(settings, "ollama_kv_cache_type", "f16")
+        timeout = (
+            httpx.Timeout(timeout=settings.ollama_timeout_seconds, connect=30.0)
+            if settings.ollama_timeout_seconds is not None
+            else httpx.Timeout(None)
+        )
 
-        self.model_client = ollama.AsyncClient(host=settings.ollama_base_url, timeout=httpx.Timeout(None))
-        self.embedding_client = ollama.AsyncClient(host=settings.ollama_base_url, timeout=httpx.Timeout(None))
-        self.chat_client = ollama.AsyncClient(host=settings.ollama_base_url, timeout=httpx.Timeout(None))
+        self.model_client = ollama.AsyncClient(host=settings.ollama_base_url, timeout=timeout)
+        self.embedding_client = ollama.AsyncClient(host=settings.ollama_base_url, timeout=timeout)
+        self.chat_client = ollama.AsyncClient(host=settings.ollama_base_url, timeout=timeout)
         self.logger = logger
         self.embed_dimensions = settings.ollama_embed_dimensions
         self.max_context_length = settings.max_context_length

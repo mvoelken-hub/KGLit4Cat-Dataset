@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from app.ollama.completion import (
     CompletionResult,
     _extract_json_schema,
+    _schema_example,
     _strip_markdown_fences,
     generate_structured,
     repair_structured_output,
@@ -47,8 +48,8 @@ class FakeGenerateResponse:
 class FakeOllamaClient:
     """Fake ollama.AsyncClient that returns pre-scheduled responses."""
 
-    def __init__(self, responses: list[FakeGenerateResponse] | None = None):
-        self.responses: list[FakeGenerateResponse] = responses or []
+    def __init__(self, responses: list[FakeGenerateResponse | Exception] | None = None):
+        self.responses: list[FakeGenerateResponse | Exception] = responses or []
         self.calls: list[dict[str, Any]] = []
         self.call_index = 0
 
@@ -61,6 +62,8 @@ class FakeOllamaClient:
         if self.call_index < len(self.responses):
             r = self.responses[self.call_index]
             self.call_index += 1
+            if isinstance(r, Exception):
+                raise r
             return r
         # Default empty response if exhausted
         return FakeGenerateResponse(response="{}")
@@ -105,6 +108,57 @@ class ExtractJsonSchemaTests(unittest.TestCase):
     def test_unsupported_type_raises(self):
         with self.assertRaises(CompletionError):
             _extract_json_schema("not_a_model")
+
+
+class SchemaExampleTests(unittest.TestCase):
+    def test_recursive_ref_cycle_is_truncated(self):
+        schema = {
+            "$defs": {
+                "Dataset": {
+                    "type": "object",
+                    "properties": {
+                        "dataset_distribution": {
+                            "type": "array",
+                            "items": {"$ref": "#/$defs/Distribution"},
+                        },
+                    },
+                },
+                "Distribution": {
+                    "type": "object",
+                    "properties": {
+                        "access_service": {
+                            "type": "array",
+                            "items": {"$ref": "#/$defs/DataService"},
+                        },
+                    },
+                },
+                "DataService": {
+                    "type": "object",
+                    "properties": {
+                        "serves_dataset": {
+                            "type": "array",
+                            "items": {"$ref": "#/$defs/Dataset"},
+                        },
+                    },
+                },
+            },
+            "$ref": "#/$defs/Dataset",
+        }
+
+        self.assertEqual(
+            _schema_example(schema),
+            {
+                "dataset_distribution": [
+                    {
+                        "access_service": [
+                            {
+                                "serves_dataset": [{}],
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
 
 
 class GenerateStructuredHappyPathTests(IsolatedAsyncioTestCase):
@@ -244,7 +298,7 @@ class GenerateStructuredHappyPathTests(IsolatedAsyncioTestCase):
             system="sys",
             prompt="prompt",
             output_type=schema,
-            num_ctx=120,
+            num_ctx=220,
         )
 
         self.assertNotIn("JSON Schema:", client.calls[0]["system"])
@@ -285,6 +339,47 @@ class GenerateStructuredHappyPathTests(IsolatedAsyncioTestCase):
 
 
 class GenerateStructuredRetryTests(IsolatedAsyncioTestCase):
+    async def test_retry_on_ollama_api_error(self):
+        client = FakeOllamaClient([
+            RuntimeError("Bad Request"),
+            FakeGenerateResponse(response='{"answer": "fixed", "score": 99}'),
+        ])
+
+        result = await generate_structured(
+            client,
+            model="test-model",
+            system="Be precise.",
+            prompt="Return JSON.",
+            output_type=SimpleOutput,
+            api_retries=1,
+            api_retry_backoff_seconds=0,
+        )
+
+        self.assertEqual(result.output.answer, "fixed")
+        self.assertEqual(len(client.calls), 2)
+        self.assertEqual(result.usage.requests, 1)
+
+    async def test_api_error_raises_completion_error_after_retries(self):
+        client = FakeOllamaClient([
+            RuntimeError("Bad Request"),
+            RuntimeError("Bad Request"),
+        ])
+
+        with self.assertRaises(CompletionError) as error:
+            await generate_structured(
+                client,
+                model="test-model",
+                system="Be precise.",
+                prompt="Return JSON.",
+                output_type=SimpleOutput,
+                api_retries=1,
+                api_retry_backoff_seconds=0,
+            )
+
+        self.assertEqual(len(client.calls), 2)
+        self.assertIn("Ollama API error after 2 attempt", str(error.exception))
+        self.assertEqual(error.exception.details["api_attempts"], 2)
+
     async def test_retry_on_json_decode_error(self):
         client = FakeOllamaClient([
             FakeGenerateResponse(response="not json at all"),
