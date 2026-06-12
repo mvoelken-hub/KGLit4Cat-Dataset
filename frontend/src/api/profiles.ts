@@ -42,3 +42,11 @@ export async function validateProfileDocument(identifier: string, document: obje
     body: JSON.stringify({ document }),
   }));
 }
+
+export async function exportProfileDocumentJsonLd(identifier: string, document: object): Promise<{ document: Record<string, unknown>; triple_count: number }> {
+  return readJson(await fetch(apiBaseUrl + '/profiles/' + encodeURIComponent(identifier) + '/jsonld', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ document }),
+  }));
+}

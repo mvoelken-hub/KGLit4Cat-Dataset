@@ -2,28 +2,23 @@ import { type FormEvent, type PointerEvent, type ReactNode, type WheelEvent, use
 import { createPortal } from 'react-dom';
 import { chunkDataPackage, deleteDataPackage, getChunkStatus, getDataPackageChunks, getFileEntryContent, listDataPackages, uploadDataPackage } from './api/datasources';
 import {
-  extractInitialDraft,
+  applyCurationFieldAction,
   getExistingInitialContext,
-  getExistingInitialDraft,
+  getExistingCuratedDocument,
+  getExistingGeneratedFinalDraft,
   getExtractionResult,
-  getPatchArtifacts,
   getPatchProgress,
-  getPatchReviewState,
-  getProtectedFields,
   getTokenUsage,
   initialContextFromExtractionContext,
-  patchDraft,
   pauseExtraction,
   rerunAllVocabQueries,
   rerunVocabQuery,
   runExtraction,
-  saveDraft,
-  saveInitialContext,
-  savePatchReviewState,
-  setProtectedFields as apiSetProtectedFields,
+  runVocabularyGrounding,
+  saveCuratedDocument,
   updateVocabQueryConfig,
 } from './api/extraction';
-import { deleteProfile, getProfileJsonSchema, listProfiles, registerProfile } from './api/profiles';
+import { deleteProfile, exportProfileDocumentJsonLd, getProfileJsonSchema, listProfiles, registerProfile } from './api/profiles';
 import {
   getLlmBudget,
   getOllamaConfig,
@@ -36,7 +31,7 @@ import {
   type OllamaPerformanceTest,
 } from './api/system';
 import { listVocabularies } from './api/semantic';
-import { JsonEditor, type JsonObject, type JsonPatchMarker, type JsonSchemaDocument, type JsonValue, setValueAtPath } from './components/JsonEditor';
+import { JsonEditor, type JsonObject, type JsonPatchMarker, type JsonSchemaDocument } from './components/JsonEditor';
 import { ChunkingDialog } from './components/ChunkingDialog';
 import { VocabularyPanel } from './components/VocabularyPanel';
 import type { ChunkRequestResponse, ChunkResponse, DataPackageResponse, FileEntryResponse, InitialContext, ProfileManifestResponse, TextQualityConfig, VocabQueryResult } from './api/types';
@@ -45,9 +40,7 @@ import type {
   ExtractionChunkResult,
   ExtractionVocabQueryConfig,
   ExtractionVocabQueryRecord,
-  PatchArtifacts,
   PatchProgress,
-  PatchReviewState,
   PatchTaskStatus,
   PatchTokenUsage,
   PatchTokenUsageEntry,
@@ -55,15 +48,6 @@ import type {
 } from './api/extraction';
 
 type BusyKey = 'upload' | 'chunk' | 'context' | 'pause' | 'draft' | 'patch' | 'load' | 'profile' | 'profile-delete' | 'dataset-delete' | 'ollama';
-type ReviewItem = JsonPatchMarker & { kind: 'matched' | 'unmapped'; targetPath?: string; fact?: string; reason?: string; outcome?: string; resolutionNote?: string };
-
-const emptyReviewState: PatchReviewState = {
-  resolved_item_ids: [],
-  unmapped_assignments: {},
-  resolution_notes: {},
-  resolved_at: {},
-};
-
 const selectedPackageStorageKey = 'simone_selected_package_id';
 
 function readStoredSelectedPackageId(): string {
@@ -96,6 +80,45 @@ function formatExtractionStage(stage: string): string {
   return stage
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function jsonPointerToEditorPath(path: string): string {
+  if (!path || path === '/') return '';
+  return path
+    .replace(/^\//, '')
+    .split('/')
+    .map((part) => part.replace(/~1/g, '/').replace(/~0/g, '~'))
+    .join('.');
+}
+
+function downloadJsonFile(filename: string, payload: unknown) {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function sourceContextJsonPointer(query: ExtractionVocabQueryRecord): string | null {
+  const path = query.source_context?.json_path;
+  return typeof path === 'string' && path.startsWith('/') ? path : null;
+}
+
+function vocabResourceTitle(result: Record<string, unknown>, uri: string): string | null {
+  const coerced = coerceVocabQueryResult(result);
+  const resource = coerced?.resources[uri];
+  const properties = resource?.properties ?? {};
+  for (const key of ['skos:prefLabel', 'rdfs:label', 'title', 'label', 'name']) {
+    const value = properties[key];
+    if (typeof value === 'string' && value.trim()) return value;
+    if (Array.isArray(value)) {
+      const first = value.find((item): item is string => typeof item === 'string' && item.trim().length > 0);
+      if (first) return first;
+    }
+  }
+  return null;
 }
 
 function EditableContextField({
@@ -620,11 +643,11 @@ function ExtractionContextOverview({
   progress,
   status,
   budget,
-  tokenUsageSummary,
   packageId,
   onUpdateVocabQueryConfig,
   onRerunAllVocabQueries,
   onRerunVocabQuery,
+  tokenUsageSummary,
 }: {
   rankedFiles: RankedExtractionFile[];
   chunkResults: ExtractionChunkResult[];
@@ -634,14 +657,13 @@ function ExtractionContextOverview({
   progress?: PatchProgress | null;
   status?: PatchTaskStatus | null;
   budget?: LlmBudget | null;
-  tokenUsageSummary?: ReactNode;
-  packageId?: string;
+  packageId?: string | null;
   onUpdateVocabQueryConfig?: (config: ExtractionVocabQueryConfig) => void;
   onRerunAllVocabQueries?: () => void;
   onRerunVocabQuery?: (queryId: string) => void;
+  tokenUsageSummary?: ReactNode;
 }) {
   const [traceChunk, setTraceChunk] = useState<{ chunk: ExtractionChunkResult; content: string } | null>(null);
-  const [vocabTraceTarget, setVocabTraceTarget] = useState<{ title: string; queries: ExtractionVocabQueryRecord[] } | null>(null);
   const resultByKey = new Map(chunkResults.map((chunk) => [chunkResultKey(chunk), chunk]));
   const packageFileByPath = new Map(packageFiles.map((file) => [file.file_path, file]));
   const chunkGroupsByPath = new Map(
@@ -663,8 +685,8 @@ function ExtractionContextOverview({
   const completedChunks = chunkResults.filter((chunk) => chunk.status === 'completed').length;
   const runningChunks = chunkResults.filter((chunk) => chunk.status === 'running').length;
   const failedChunks = chunkResults.filter((chunk) => chunk.status === 'failed').length;
-  const runVocabQueries = progress?.vocab_queries ?? [];
-  const completedRunVocabQueries = runVocabQueries.filter((query) => query.status === 'completed').length;
+  const vocabQueries = progress?.vocab_queries ?? [];
+  const completedVocabQueries = vocabQueries.filter((query) => query.status === 'completed').length;
 
   if (!filePaths.length) {
     return (
@@ -696,33 +718,62 @@ function ExtractionContextOverview({
         </div>
       </div>
 
+      {(progress?.initial_extraction_overview || progress?.initial_extraction_overview_status) ? (
+        <details className="initial-overview-panel" open>
+          <summary>
+            <div>
+              <span>Initial overview</span>
+              <strong>{formatExtractionStage(progress?.initial_extraction_overview_status || 'not available')}</strong>
+            </div>
+          </summary>
+          {progress?.initial_extraction_overview ? (
+            <JsonDetails title="Run-level extraction guidance" value={progress.initial_extraction_overview} />
+          ) : (
+            <p className="muted">No overview guidance is available for this run.</p>
+          )}
+        </details>
+      ) : null}
+
       {tokenUsageSummary}
 
-      {progress?.vocab_query_config && (
-        <VocabQueryConfigPanel
-          config={progress.vocab_query_config}
-          disabled={!packageId}
-          onApply={onUpdateVocabQueryConfig}
-          onRerunAll={onRerunAllVocabQueries}
-        />
-      )}
-
-      {runVocabQueries.length ? (
-        <section className="chunk-vocab-query-section">
-          <div className="chunk-vocab-query-heading">
-            <span>Workflow vocabulary queries</span>
-            <strong>{completedRunVocabQueries}/{runVocabQueries.length} completed</strong>
+      {(progress?.vocab_query_config || vocabQueries.length) ? (
+        <details className="draft-grounding-panel">
+          <summary>
+            <div>
+              <span>Vocabulary search</span>
+              <strong>
+                {vocabQueries.length
+                  ? `${completedVocabQueries}/${vocabQueries.length} vocabulary queries completed`
+                  : 'Context vocabulary query settings'}
+              </strong>
+            </div>
+          </summary>
+          <div className="draft-grounding-body">
+            <div className="chunk-call-meta">
+              <button
+                className="small ghost"
+                type="button"
+                disabled={!packageId || !vocabQueries.length || !onRerunAllVocabQueries}
+                onClick={() => onRerunAllVocabQueries?.()}
+              >
+                Rerun vocabulary queries
+              </button>
+            </div>
+            {progress?.vocab_query_config ? (
+              <VocabQueryConfigPanel
+                config={progress.vocab_query_config}
+                disabled={!packageId}
+                onApply={onUpdateVocabQueryConfig}
+                onRerunAll={onRerunAllVocabQueries}
+              />
+            ) : null}
+            {vocabQueries.length ? (
+              <VocabQueryTraceList queries={vocabQueries} onRerun={onRerunVocabQuery} />
+            ) : (
+              <p className="muted">No context vocabulary queries have been generated yet.</p>
+            )}
           </div>
-          <div className="chunk-call-meta">
-            <button
-              className="small ghost"
-              type="button"
-              onClick={() => setVocabTraceTarget({ title: 'Workflow vocabulary queries', queries: runVocabQueries })}
-            >
-              View workflow vocab queries
-            </button>
-          </div>
-        </section>
+        </details>
       ) : null}
 
       <div className="ranked-file-list">
@@ -824,14 +875,6 @@ function ExtractionContextOverview({
           content={traceChunk.content}
           context={traceChunk.chunk.extraction_context}
           onClose={() => setTraceChunk(null)}
-        />
-      )}
-      {vocabTraceTarget && (
-        <VocabQueryTraceModal
-          title={vocabTraceTarget.title}
-          queries={vocabTraceTarget.queries}
-          onClose={() => setVocabTraceTarget(null)}
-          onRerun={onRerunVocabQuery}
         />
       )}
     </div>
@@ -1166,9 +1209,13 @@ function VocabQueryConfigPanel({
 function VocabQueryTraceList({
   queries,
   onRerun,
+  onSelectCandidate,
+  onMarkUnresolved,
 }: {
   queries: ExtractionVocabQueryRecord[];
   onRerun?: (queryId: string) => void;
+  onSelectCandidate?: (query: ExtractionVocabQueryRecord, uri: string, title?: string | null) => void;
+  onMarkUnresolved?: (query: ExtractionVocabQueryRecord) => void;
 }) {
   if (!queries.length) return null;
   const completed = queries.filter((query) => query.status === 'completed').length;
@@ -1190,7 +1237,11 @@ function VocabQueryTraceList({
     const groupFailed = groupQueries.filter((query) => query.status === 'failed').length;
     return `${groupCompleted}/${groupQueries.length} completed${groupRunning ? `, ${groupRunning} running` : ''}${groupFailed ? `, ${groupFailed} failed` : ''}`;
   };
-  const renderQuery = (query: ExtractionVocabQueryRecord) => (
+  const renderQuery = (query: ExtractionVocabQueryRecord) => {
+    const jsonPath = sourceContextJsonPointer(query);
+    const candidateSeeds = query.result ? coerceVocabQueryResult(query.result)?.seeds.slice(0, 5) ?? [] : [];
+    const canCurateField = Boolean(jsonPath && query.kind.startsWith('profile_'));
+    return (
     <details className={`chunk-vocab-query ${query.status}`} key={query.query_id}>
       <summary>
         <div>
@@ -1203,8 +1254,36 @@ function VocabQueryTraceList({
         <div className="chunk-call-meta">
           {query.duration_ms ? <span>{formatDuration(query.duration_ms)} query time</span> : null}
           {query.result ? <span>{Object.keys(asRecord(query.result.resources) ?? {}).length} resources</span> : null}
+          {jsonPath ? <span>{jsonPath}</span> : null}
           <button className="small ghost" type="button" disabled={!onRerun} onClick={() => onRerun?.(query.query_id)}>Rerun query</button>
         </div>
+        {canCurateField ? (
+          <div className="vocab-curation-actions">
+            {candidateSeeds.map((seed) => {
+              const title = query.result ? vocabResourceTitle(query.result, seed.uri) : null;
+              return (
+                <button
+                  className="small ghost"
+                  type="button"
+                  key={seed.uri}
+                  disabled={!onSelectCandidate}
+                  onClick={() => onSelectCandidate?.(query, seed.uri, title)}
+                  title={seed.uri}
+                >
+                  {title || seed.uri}
+                </button>
+              );
+            })}
+            <button
+              className="small ghost"
+              type="button"
+              disabled={!onMarkUnresolved}
+              onClick={() => onMarkUnresolved?.(query)}
+            >
+              Mark unresolved
+            </button>
+          </div>
+        ) : null}
         {query.error && <p className="warning">{query.error}</p>}
         <JsonDetails title="Query input" value={query.query} />
         <JsonDetails title="Source context" value={query.source_context} />
@@ -1296,6 +1375,72 @@ function VocabQueryTraceModal({
       </div>
     </div>,
     document.body,
+    );
+  };
+}
+
+function DraftGroundingPanel({
+  progress,
+  disabled,
+  onUpdateVocabQueryConfig,
+  onRunGrounding,
+  onRerunAllVocabQueries,
+  onRerunVocabQuery,
+  onSelectCandidate,
+  onMarkUnresolved,
+}: {
+  progress?: PatchProgress | null;
+  disabled?: boolean;
+  onUpdateVocabQueryConfig?: (config: ExtractionVocabQueryConfig) => void;
+  onRunGrounding?: () => void;
+  onRerunAllVocabQueries?: () => void;
+  onRerunVocabQuery?: (queryId: string) => void;
+  onSelectCandidate?: (query: ExtractionVocabQueryRecord, uri: string, title?: string | null) => void;
+  onMarkUnresolved?: (query: ExtractionVocabQueryRecord) => void;
+}) {
+  const queries = progress?.vocab_queries ?? [];
+  const completed = queries.filter((query) => query.status === 'completed').length;
+  const profileFields = queries.filter((query) => query.kind.startsWith('profile_'));
+  return (
+    <details className="draft-grounding-panel">
+      <summary>
+        <div>
+          <span>Advanced grounding</span>
+          <strong>{queries.length ? `${completed}/${queries.length} vocabulary queries completed` : 'Profile-path vocabulary grounding'}</strong>
+        </div>
+      </summary>
+      <div className="draft-grounding-body">
+        <div className="chunk-call-meta">
+          <button className="small" type="button" disabled={disabled || !onRunGrounding} onClick={() => onRunGrounding?.()}>
+            Run vocabulary grounding
+          </button>
+          <button className="small ghost" type="button" disabled={disabled || !queries.length || !onRerunAllVocabQueries} onClick={() => onRerunAllVocabQueries?.()}>
+            Rerun vocabulary queries
+          </button>
+        </div>
+        {progress?.vocab_query_config ? (
+          <VocabQueryConfigPanel
+            config={progress.vocab_query_config}
+            disabled={disabled}
+            onApply={onUpdateVocabQueryConfig}
+            onRerunAll={onRerunAllVocabQueries}
+          />
+        ) : null}
+        {queries.length ? (
+          <VocabQueryTraceList
+            queries={queries}
+            onRerun={onRerunVocabQuery}
+            onSelectCandidate={onSelectCandidate}
+            onMarkUnresolved={onMarkUnresolved}
+          />
+        ) : (
+          <p className="muted">No profile vocabulary queries have been generated yet.</p>
+        )}
+        {profileFields.length && profileFields.length !== queries.length ? (
+          <p className="muted">{profileFields.length} query{profileFields.length === 1 ? '' : 'ies'} target profile fields.</p>
+        ) : null}
+      </div>
+    </details>
   );
 }
 
@@ -1838,146 +1983,6 @@ function asRecordArray(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.map(asRecord).filter((item): item is Record<string, unknown> => Boolean(item)) : [];
 }
 
-function hasPatchArtifacts(artifacts: PatchArtifacts): boolean {
-  return artifacts.patches.length > 0 || artifacts.quality_reports.length > 0 || artifacts.unmapped_facts.length > 0;
-}
-
-function patchArtifactBaseName(fileName?: string): string {
-  return (fileName || '')
-    .replace(/\.quality_report\.json$/, '.json')
-    .replace(/\.candidates\.json$/, '.json')
-    .replace(/\.accepted\.json$/, '.json')
-    .replace(/\.raw\.json$/, '.json')
-    .replace(/\.unmapped_facts\.json$/, '.json');
-}
-
-function confidenceLabel(confidence?: number): string {
-  return confidence === undefined ? 'unknown confidence' : `${Math.round(confidence * 100)}% confidence`;
-}
-
-function textList(value: unknown): string[] {
-  return Array.isArray(value) ? value.map((item) => String(item)).filter(Boolean) : [];
-}
-
-function issueList(issues: Record<string, unknown>[]): string[] {
-  return issues.map((issue) => [
-    issue.issue_type ? String(issue.issue_type) : '',
-    issue.severity ? `(${String(issue.severity)})` : '',
-    issue.explanation ? String(issue.explanation) : '',
-    issue.suggested_target_path ? `Suggested field: ${String(issue.suggested_target_path)}` : '',
-  ].filter(Boolean).join(' '));
-}
-
-function unmappedFactKey(fact: Record<string, unknown>): string {
-  return [fact.file_name, fact.fact, fact.reason, fact.source_hint].map((item) => String(item || '')).join('|');
-}
-
-function matchedReviewItemId(baseName: string, path: string, index: number): string {
-  return `matched:${baseName}:${path}:${index}`;
-}
-
-function unmappedReviewItemId(fact: Record<string, unknown>): string {
-  return `unmapped:${unmappedFactKey(fact)}`;
-}
-
-function reviewOutcomeFromNote(note?: string): string | undefined {
-  const match = note?.match(/^(included|already_present|excluded|unresolved):/);
-  return match?.[1];
-}
-
-function displayResolutionLogEntry(entry: string): string {
-  return entry.replace(/^[0-9a-f]{64}:\s+/i, '');
-}
-
-function buildReviewItems(artifacts: PatchArtifacts | null, reviewState: PatchReviewState): ReviewItem[] {
-  if (!artifacts) return [];
-  const resolvedIds = new Set(reviewState.resolved_item_ids);
-  const ratingByPatchAndField = new Map<string, Record<string, unknown>>();
-
-  for (const report of artifacts.quality_reports) {
-    const baseName = patchArtifactBaseName(report.file_name);
-    const reportContent = asRecord(report.content);
-    for (const rating of asRecordArray(reportContent?.candidate_ratings)) {
-      const fieldPath = String(rating.field_path || '');
-      if (fieldPath) ratingByPatchAndField.set(`${baseName}:${fieldPath}`, rating);
-    }
-  }
-
-  const items: ReviewItem[] = [];
-  for (const artifact of artifacts.patches) {
-    if (artifact.artifact_type !== 'candidates') continue;
-    const baseName = patchArtifactBaseName(artifact.file_name);
-    asRecordArray(artifact.content).forEach((candidate, candidateIndex) => {
-      const path = String(candidate.field_path || '');
-      if (!path) return;
-      const confidence = typeof candidate.confidence === 'number' ? candidate.confidence : undefined;
-      const rating = ratingByPatchAndField.get(`${baseName}:${path}`);
-      const decision = String(rating?.decision || '');
-      const issues = asRecordArray(rating?.issues);
-      const needsReview = confidence === undefined || confidence < 0.8 || decision !== 'accept' || issues.length > 0;
-      const id = matchedReviewItemId(baseName, path, candidateIndex);
-      const resolutionNote = reviewState.resolution_notes[id];
-      items.push({
-        id,
-        kind: 'matched',
-        path,
-        status: needsReview ? 'needs_review' : 'accepted',
-        label: needsReview ? 'Review' : 'Patch',
-        resolved: !needsReview || resolvedIds.has(id),
-        outcome: reviewOutcomeFromNote(resolutionNote),
-        resolutionNote,
-        confidence,
-        fileName: String(artifact.file_name || ''),
-        patch: candidate.patch,
-        evidence: textList(candidate.source_evidence),
-        issues: issueList(issues),
-        detail: [
-          confidenceLabel(confidence),
-          decision ? `Decision: ${decision}` : '',
-          issues.length ? `${issues.length} issue${issues.length === 1 ? '' : 's'}` : '',
-          String(candidate.reasoning || ''),
-        ].filter(Boolean).join(' - '),
-      });
-    });
-  }
-
-  for (const fact of artifacts.unmapped_facts) {
-    const id = unmappedReviewItemId(fact);
-    const assignedPath = reviewState.unmapped_assignments[id] || '';
-    const resolutionNote = reviewState.resolution_notes[id];
-    items.push({
-      id,
-      kind: 'unmapped',
-      path: assignedPath || 'Unassigned',
-      targetPath: assignedPath,
-      status: 'unmapped',
-      label: 'Unmapped',
-      resolved: resolvedIds.has(id),
-      outcome: reviewOutcomeFromNote(resolutionNote),
-      resolutionNote,
-      fileName: String(fact.file_name || ''),
-      evidence: fact.source_hint ? [String(fact.source_hint)] : [],
-      detail: String(fact.fact || fact.reason || 'Unmapped source fact'),
-      fact: String(fact.fact || ''),
-      reason: String(fact.reason || ''),
-    });
-  }
-
-  return items;
-}
-
-function ResolutionLogList({ entries }: { entries: string[] }) {
-  if (!entries.length) return null;
-  return (
-    <div className="resolution-log">
-      <span>Resolution log</span>
-      <ol>
-        {entries.map((entry, index) => <li key={`${index}-${entry}`}>{displayResolutionLogEntry(entry)}</li>)}
-      </ol>
-    </div>
-  );
-}
-
 const tokenUsageLabels: Record<string, string> = {
   initial_context: 'Context extraction',
   file_ranking: 'File ranking',
@@ -1991,7 +1996,6 @@ const tokenUsageLabels: Record<string, string> = {
   schema_repair: 'Schema repair',
   patch_extraction: 'Patch extraction',
   patch_quality: 'Patch quality review',
-  auto_resolve: 'Auto-resolve',
 };
 
 function formatTokenCount(value?: number): string {
@@ -2332,7 +2336,7 @@ function OllamaSettingsPanel({
                 <div>
                   <span>Recent average input</span>
                   <strong>{formatTokenCount(averageInput)} tokens</strong>
-                  <small>{averageInput && runtime && averageInput > runtime.input_token_budget * 0.8 ? 'Lower context usage before starting the next run.' : 'Use chunks per turn to tune call size.'}</small>
+                  <small>{averageInput && runtime && averageInput > runtime.input_token_budget * 0.8 ? 'Lower context usage before starting the next run.' : 'Tune chunking settings to reduce per-call context size.'}</small>
                 </div>
                 <div>
                   <span>Diagnostics</span>
@@ -2585,38 +2589,18 @@ export function App() {
   const [viewingFile, setViewingFile] = useState<FileEntryResponse | null>(null);
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [context, setContext] = useState<InitialContext | null>(null);
-  const [draft, setDraft] = useState<object | null>(null);
-  const [protectedFields, setProtectedFields] = useState<string[]>([]);
+  const [generatedFinalDraft, setGeneratedFinalDraft] = useState<Record<string, unknown> | null>(null);
+  const [curatedDocument, setCuratedDocument] = useState<Record<string, unknown> | null>(null);
   const [patchStatus, setPatchStatus] = useState<PatchTaskStatus | null>(null);
   const [patchProgress, setPatchProgress] = useState<PatchProgress | null>(null);
-  const [patchArtifacts, setPatchArtifacts] = useState<PatchArtifacts | null>(null);
   const [tokenUsage, setTokenUsage] = useState<PatchTokenUsage | null>(null);
   const [llmBudget, setLlmBudget] = useState<LlmBudget | null>(null);
   const [ollamaConfig, setOllamaConfig] = useState<OllamaConfig | null>(null);
   const [activeProfileSchema, setActiveProfileSchema] = useState<JsonSchemaDocument | null>(null);
-  const [patchReviewState, setPatchReviewState] = useState<PatchReviewState>(emptyReviewState);
   const [busy, setBusy] = useState<BusyKey | null>('load');
   const [message, setMessage] = useState('Loading workspace.');
   const [railCollapsed, setRailCollapsed] = useState(true);
-  const [contextEditMode, setContextEditMode] = useState(false);
   const [chunkingDialogOpen, setChunkingDialogOpen] = useState(false);
-  const [numChunksPerTurn, setNumChunksPerTurn] = useState(() => {
-    try {
-      const stored = localStorage.getItem('simone_num_chunks_per_turn');
-      const parsed = stored ? parseInt(stored, 10) : NaN;
-      return Number.isFinite(parsed) && parsed >= 1 ? parsed : 3;
-    } catch {
-      return 3;
-    }
-  });
-  const [autoResolve, setAutoResolve] = useState(() => {
-    try {
-      const stored = localStorage.getItem('simone_auto_resolve');
-      return stored === 'true';
-    } catch {
-      return false;
-    }
-  });
   const [profileFormOpen, setProfileFormOpen] = useState(false);
   const [profileIdentifier, setProfileIdentifier] = useState('');
   const [profileTargetClass, setProfileTargetClass] = useState('Dataset');
@@ -2627,7 +2611,7 @@ export function App() {
   const [profileEnrichableFields, setProfileEnrichableFields] = useState('');
   const datasetUploadInputRef = useRef<HTMLInputElement | null>(null);
   const saveContextTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const saveDraftTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveCuratedDocumentTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedPackageIdRef = useRef('');
 
   const selectedPackage = useMemo(() => packages.find((item) => item.id === selectedPackageId) || null, [packages, selectedPackageId]);
@@ -2641,11 +2625,6 @@ export function App() {
     return counts;
   }, [chunksByFile]);
   const isPatching = patchStatus === 'running';
-  const hasVisiblePatchArtifacts = Boolean(patchArtifacts && hasPatchArtifacts(patchArtifacts));
-  const patchButtonLabel = isPatching ? 'Patching...' : hasVisiblePatchArtifacts ? 'Resume patching from checkpoint' : 'Start new patching';
-  const progressBatchNo = patchProgress?.batch_no ?? 0;
-  const progressTotalBatches = patchProgress?.total_batches ?? 0;
-  const progressPercent = progressTotalBatches > 0 ? Math.min(100, Math.round((progressBatchNo / progressTotalBatches) * 100)) : 0;
   const extractionLimitReachedChunkCount = useMemo(() => {
     const maxContextLength = llmBudget?.max_context_length ?? 0;
     if (maxContextLength <= 0) return 0;
@@ -2686,12 +2665,72 @@ export function App() {
       || (patchStatus === 'unknown' && hasPersistedExtractionState)
     ),
   );
-  const reviewItems = useMemo(() => buildReviewItems(patchArtifacts, patchReviewState), [patchArtifacts, patchReviewState]);
-  const unresolvedReviewItems = reviewItems.filter((item) => !item.resolved);
-  const patchMarkers = unresolvedReviewItems;
-  const reviewMarkers = unresolvedReviewItems.filter((marker) => marker.status === 'needs_review' || marker.status === 'unmapped');
-  const autoResolutionActive = patchProgress?.resolution_active === true || (isPatching && autoResolve);
-  const manualReviewActionsDisabled = autoResolutionActive;
+  const projectionLedger = patchProgress?.projection_ledger ?? [];
+  const hasProfileArtifacts = Boolean(generatedFinalDraft || curatedDocument);
+  const projectedObjects = projectionLedger.filter((record) => record.status === 'projected').length;
+  const notProjectedObjects = projectionLedger.filter((record) => record.status === 'not_projected' || record.status === 'ambiguous').length;
+  const editRequiredObjects = projectionLedger.filter((record) => record.status === 'user_edit_required').length;
+  const validationErrorCount = patchProgress?.validation?.errors?.length ?? 0;
+  const fieldIssueCount = (patchProgress?.field_completion_ledger ?? []).filter((record) => record.issue_categories.length > 0).length;
+  const curationMarkers = useMemo<JsonPatchMarker[]>(() => {
+    const fieldMarkers = (patchProgress?.field_completion_ledger ?? []).flatMap((record) => {
+      const markers: JsonPatchMarker[] = [];
+      if (record.validation_status === 'missing') {
+        markers.push({
+          id: `missing:${record.json_path}`,
+          path: jsonPointerToEditorPath(record.json_path),
+          status: 'missing',
+          label: 'Missing',
+          detail: record.edit_needed_reason || 'Field needs a value.',
+          evidence: record.source_evidence,
+          issues: record.issue_categories,
+        });
+      } else if (record.validation_status === 'invalid') {
+        markers.push({
+          id: `invalid:${record.json_path}`,
+          path: jsonPointerToEditorPath(record.json_path),
+          status: 'invalid',
+          label: 'Invalid',
+          detail: record.edit_needed_reason || 'Field does not satisfy the profile schema.',
+          evidence: record.source_evidence,
+          issues: record.issue_categories,
+        });
+      }
+      if (record.issue_categories.includes('non_enriched')) {
+        markers.push({
+          id: `non-enriched:${record.json_path}`,
+          path: jsonPointerToEditorPath(record.json_path),
+          status: 'non_enriched',
+          label: 'Non-enriched',
+          detail: record.edit_needed_reason || 'No vocabulary term was selected.',
+          evidence: record.source_evidence,
+          issues: record.issue_categories,
+        });
+      }
+      if (record.enrichment_status === 'intentionally_unresolved') {
+        markers.push({
+          id: `unresolved:${record.json_path}`,
+          path: jsonPointerToEditorPath(record.json_path),
+          status: 'intentionally_unresolved',
+          label: 'Unresolved',
+          detail: 'Marked intentionally unresolved.',
+          evidence: record.source_evidence,
+        });
+      }
+      return markers;
+    });
+    const curationMarkers = (patchProgress?.curation_ledger ?? [])
+      .filter((record) => record.status !== 'unchanged')
+      .map((record): JsonPatchMarker => ({
+        id: `curation:${record.status}:${record.json_path}`,
+        path: jsonPointerToEditorPath(record.json_path),
+        status: record.status === 'user_removed' ? 'user_removed' : record.status === 'user_selected_vocab_term' ? 'user_selected_vocab_term' : 'user_edited',
+        label: record.status.replace(/_/g, ' '),
+        detail: record.reason || undefined,
+        evidence: record.source_evidence,
+      }));
+    return [...fieldMarkers, ...curationMarkers];
+  }, [patchProgress?.field_completion_ledger, patchProgress?.curation_ledger]);
 
   async function refresh() {
     setBusy('load');
@@ -2744,25 +2783,9 @@ export function App() {
   }, [selectedProfile]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('simone_num_chunks_per_turn', String(numChunksPerTurn));
-    } catch {
-      // ignore storage errors
-    }
-  }, [numChunksPerTurn]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('simone_auto_resolve', String(autoResolve));
-    } catch {
-      // ignore storage errors
-    }
-  }, [autoResolve]);
-
-  useEffect(() => {
     return () => {
       if (saveContextTimeoutRef.current) clearTimeout(saveContextTimeoutRef.current);
-      if (saveDraftTimeoutRef.current) clearTimeout(saveDraftTimeoutRef.current);
+      if (saveCuratedDocumentTimeoutRef.current) clearTimeout(saveCuratedDocumentTimeoutRef.current);
     };
   }, []);
 
@@ -2771,9 +2794,9 @@ export function App() {
       clearTimeout(saveContextTimeoutRef.current);
       saveContextTimeoutRef.current = null;
     }
-    if (saveDraftTimeoutRef.current) {
-      clearTimeout(saveDraftTimeoutRef.current);
-      saveDraftTimeoutRef.current = null;
+    if (saveCuratedDocumentTimeoutRef.current) {
+      clearTimeout(saveCuratedDocumentTimeoutRef.current);
+      saveCuratedDocumentTimeoutRef.current = null;
     }
     setChunkResult(null);
     setHasChunks(false);
@@ -2781,14 +2804,11 @@ export function App() {
     setViewingFile(null);
     setFileContent(null);
     setContext(null);
-    setContextEditMode(false);
-    setDraft(null);
-    setProtectedFields([]);
+    setGeneratedFinalDraft(null);
+    setCuratedDocument(null);
     setPatchStatus(null);
     setPatchProgress(null);
-    setPatchArtifacts(null);
     setTokenUsage(null);
-    setPatchReviewState(emptyReviewState);
     setChunkingDialogOpen(false);
     setBusy(null);
   }
@@ -2898,9 +2918,8 @@ export function App() {
       setChunkResult(null);
       setChunksByFile([]);
       setContext(null);
-      setDraft(null);
-      setPatchArtifacts(null);
-      setPatchReviewState(emptyReviewState);
+      setGeneratedFinalDraft(null);
+      setCuratedDocument(null);
       setMessage(`Dataset ${pkg?.file_name ?? selectedPackageId} removed.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Dataset removal failed.');
@@ -2921,9 +2940,8 @@ export function App() {
       setChunkResult(null);
       setChunksByFile([]);
       setContext(null);
-      setDraft(null);
-      setPatchArtifacts(null);
-      setPatchReviewState(emptyReviewState);
+      setGeneratedFinalDraft(null);
+      setCuratedDocument(null);
       setMessage('Dataset uploaded. Create chunks next.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Upload failed.');
@@ -3021,22 +3039,27 @@ export function App() {
         return;
       }
       setContext(null);
-      setContextEditMode(false);
-      setDraft(null);
-      setPatchArtifacts(null);
+      setGeneratedFinalDraft(null);
+      setCuratedDocument(null);
       setPatchProgress(null);
       const response = await runExtraction({
         data_package_id: packageId,
         profile_identifier: selectedProfile,
         resume: options.resume,
+        target_stage: 'context',
       });
       if (selectedPackageIdRef.current !== packageId) return;
-      const nextContext = response.result?.extraction_context || response.progress?.interim_context;
+      const nextContext = response.result?.machine_extraction_context || response.progress?.interim_context;
       if (nextContext) {
         setContext(initialContextFromExtractionContext(nextContext));
-        setContextEditMode(response.status !== 'running');
       }
-      if (response.result) setDraft(response.result.document);
+      if (response.result) {
+        setGeneratedFinalDraft(response.result.generated_final_draft);
+        setCuratedDocument(response.result.curated_document ?? response.result.generated_final_draft);
+      } else {
+        setGeneratedFinalDraft(response.progress?.generated_final_draft ?? null);
+        setCuratedDocument(response.progress?.curated_document ?? response.progress?.generated_final_draft ?? null);
+      }
       setPatchStatus(response.status);
       setPatchProgress(response.progress ? { ...response.progress } : null);
       setTokenUsage(await getTokenUsage(packageId));
@@ -3059,7 +3082,6 @@ export function App() {
       setPatchProgress(progress ? { ...progress } : null);
       if (progress?.interim_context) {
         setContext(initialContextFromExtractionContext(progress.interim_context));
-        setContextEditMode(true);
       }
       setTokenUsage(await getTokenUsage(packageId));
       setMessage(status === 'cancelled' ? 'Extraction paused. Resume extraction to continue from saved chunks.' : 'Extraction is not running.');
@@ -3098,8 +3120,9 @@ export function App() {
         ? await rerunVocabQuery(packageId, queryId)
         : await rerunAllVocabQueries(packageId);
       if (selectedPackageIdRef.current !== packageId) return;
-      setDraft(result.document);
-      setContext(initialContextFromExtractionContext(result.extraction_context));
+      setGeneratedFinalDraft(result.generated_final_draft);
+      setCuratedDocument(result.curated_document ?? result.generated_final_draft);
+      setContext(initialContextFromExtractionContext(result.machine_extraction_context));
       setTokenUsage(result.token_usage);
       const { status, progress } = await getPatchProgress(packageId);
       if (selectedPackageIdRef.current !== packageId) return;
@@ -3200,98 +3223,153 @@ export function App() {
     }
   }
 
-  function onContextChange(update: (current: InitialContext) => InitialContext) {
-    if (!context || !selectedPackageId) return;
-    const packageId = selectedPackageId;
-    const updated = update(context);
-    setContext(updated);
-    if (saveContextTimeoutRef.current) clearTimeout(saveContextTimeoutRef.current);
-    saveContextTimeoutRef.current = setTimeout(async () => {
-      try {
-        await saveInitialContext(packageId, updated);
-        if (selectedPackageIdRef.current === packageId) setMessage('Extraction context saved.');
-      } catch (error) {
-        if (selectedPackageIdRef.current === packageId) {
-          setMessage(error instanceof Error ? error.message : 'Failed to save extraction context.');
-        }
-      }
-    }, 800);
-  }
-
-  async function onDraft() {
+  async function onGenerateDraft() {
     if (!selectedPackageId || !selectedProfile) return;
-    const isReplacingDraft = Boolean(draft);
-    if (isReplacingDraft) {
+    const isReplacingGeneratedDraft = Boolean(generatedFinalDraft);
+    if (isReplacingGeneratedDraft) {
       const confirmed = window.confirm(
-        'Re-create the initial draft?\n\nThis removes the current draft, locked fields, patch artifacts, and review progress for this dataset.',
+        'Rebuild the generated final draft?\n\nThis updates the machine artifact. Existing curated edits remain separate.',
       );
       if (!confirmed) return;
     }
-    if (saveDraftTimeoutRef.current) {
-      clearTimeout(saveDraftTimeoutRef.current);
-      saveDraftTimeoutRef.current = null;
+    if (saveCuratedDocumentTimeoutRef.current) {
+      clearTimeout(saveCuratedDocumentTimeoutRef.current);
+      saveCuratedDocumentTimeoutRef.current = null;
     }
     setBusy('draft');
     try {
-      const result = await extractInitialDraft({ data_package_id: selectedPackageId, profile_identifier: selectedProfile });
-      setDraft(result);
-      setPatchArtifacts(null);
-      setPatchStatus(null);
-      setPatchProgress(null);
-      setPatchReviewState(emptyReviewState);
-      setProtectedFields([]);
+      const response = await runExtraction({
+        data_package_id: selectedPackageId,
+        profile_identifier: selectedProfile,
+        resume: true,
+        target_stage: 'profile',
+      });
+      const nextGenerated = response.result?.generated_final_draft ?? response.progress?.generated_final_draft ?? null;
+      setGeneratedFinalDraft(nextGenerated);
+      setCuratedDocument(response.result?.curated_document ?? response.progress?.curated_document ?? curatedDocument ?? nextGenerated);
+      setPatchStatus(response.status);
+      setPatchProgress(response.progress ? { ...response.progress } : null);
       setTokenUsage(await getTokenUsage(selectedPackageId));
-      setMessage(isReplacingDraft ? 'Initial profile draft re-created. Previous draft progress was removed.' : 'Initial profile draft created.');
+      setMessage(isReplacingGeneratedDraft ? 'Generated final draft rebuilt.' : 'Generated final draft construction started.');
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Draft creation failed.');
+      setMessage(error instanceof Error ? error.message : 'Generated final draft construction failed.');
     } finally {
       setBusy(null);
     }
   }
 
-  async function onDraftChange(updated: Record<string, unknown>) {
-    setDraft(updated);
+  async function onCuratedDocumentChange(updated: Record<string, unknown>) {
+    setCuratedDocument(updated);
     if (!selectedPackageId) return;
-    if (saveDraftTimeoutRef.current) clearTimeout(saveDraftTimeoutRef.current);
-    saveDraftTimeoutRef.current = setTimeout(async () => {
+    if (saveCuratedDocumentTimeoutRef.current) clearTimeout(saveCuratedDocumentTimeoutRef.current);
+    saveCuratedDocumentTimeoutRef.current = setTimeout(async () => {
       try {
-        await saveDraft(selectedPackageId, updated);
-        setMessage('Draft saved.');
+        const saved = await saveCuratedDocument(selectedPackageId, updated, selectedProfile);
+        setCuratedDocument(saved);
+        setPatchProgress((current) => current ? { ...current, curated_document: saved as Record<string, unknown> } : current);
+        setMessage('Curated document saved.');
       } catch (error) {
-        setMessage(error instanceof Error ? error.message : 'Failed to save draft.');
+        setMessage(error instanceof Error ? error.message : 'Failed to save curated document.');
       }
     }, 800);
   }
 
-  async function onPatch() {
+  async function onGrounding() {
     if (!selectedPackageId || !selectedProfile) return;
     setBusy('patch');
     try {
-      setPatchProgress(null);
-      const result = await patchDraft({ data_package_id: selectedPackageId, profile_identifier: selectedProfile, num_chunks_per_turn: numChunksPerTurn, auto_resolve: autoResolve });
-      setDraft(result.draft);
+      const result = await runVocabularyGrounding({ data_package_id: selectedPackageId, profile_identifier: selectedProfile });
+      setCuratedDocument(result.curated_document);
       setPatchStatus(result.status);
+      const { progress } = await getPatchProgress(selectedPackageId);
+      setPatchProgress(progress ? { ...progress } : patchProgress);
       setTokenUsage(await getTokenUsage(selectedPackageId));
       setMessage(
         result.status === 'completed'
-          ? 'Draft patching completed. Use Show/refresh artifacts to load the latest artifacts and review items.'
-          : 'Draft patching is running. Use Show/refresh artifacts to load the latest artifacts and review items when needed.',
+          ? 'Vocabulary grounding completed and final profile document was saved.'
+          : 'Vocabulary grounding is running.',
       );
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Patch step failed.');
+      setMessage(error instanceof Error ? error.message : 'Vocabulary grounding failed.');
     } finally {
       setBusy(null);
     }
   }
 
-  async function onShowPatchArtifacts() {
+  async function onSelectVocabularyCandidate(query: ExtractionVocabQueryRecord, uri: string, title?: string | null) {
+    if (!selectedPackageId) return;
+    const jsonPath = sourceContextJsonPointer(query);
+    if (!jsonPath) return;
+    setBusy('patch');
+    try {
+      const { status, progress } = await applyCurationFieldAction({
+        data_package_id: selectedPackageId,
+        action: 'select_vocab_term',
+        json_path: jsonPath,
+        selected_uri: uri,
+        selected_title: title ?? null,
+        vocabulary_identifier: query.vocabulary_identifier,
+      });
+      setPatchStatus(status);
+      setPatchProgress(progress ? { ...progress } : patchProgress);
+      if (progress?.curated_document) setCuratedDocument(progress.curated_document);
+      setMessage('Vocabulary term selected for curated document.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Failed to select vocabulary term.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function onMarkVocabularyUnresolved(query: ExtractionVocabQueryRecord) {
+    if (!selectedPackageId) return;
+    const jsonPath = sourceContextJsonPointer(query);
+    if (!jsonPath) return;
+    setBusy('patch');
+    try {
+      const { status, progress } = await applyCurationFieldAction({
+        data_package_id: selectedPackageId,
+        action: 'mark_unresolved',
+        json_path: jsonPath,
+        vocabulary_identifier: query.vocabulary_identifier,
+      });
+      setPatchStatus(status);
+      setPatchProgress(progress ? { ...progress } : patchProgress);
+      if (progress?.curated_document) setCuratedDocument(progress.curated_document);
+      setMessage('Field marked intentionally unresolved.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Failed to mark field unresolved.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function onExportCuratedJson() {
+    if (!selectedPackageId || !curatedDocument) return;
+    downloadJsonFile(`${selectedPackageId}-curated-document.json`, curatedDocument);
+    setMessage('Curated JSON exported.');
+  }
+
+  async function onExportCuratedJsonLd() {
+    if (!selectedPackageId || !selectedProfile || !curatedDocument) return;
+    setBusy('patch');
+    try {
+      const exported = await exportProfileDocumentJsonLd(selectedProfile, curatedDocument);
+      downloadJsonFile(`${selectedPackageId}-curated-document.jsonld`, exported.document);
+      setMessage(`Curated JSON-LD exported with ${exported.triple_count} triples.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Curated JSON-LD export failed.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function refreshExtractionProgress() {
     if (!selectedPackageId) return;
     const packageId = selectedPackageId;
     try {
-      const [{ status, progress }, artifacts, reviewState] = await Promise.all([
+      const [{ status, progress }] = await Promise.all([
         getPatchProgress(packageId),
-        getPatchArtifacts(packageId),
-        getPatchReviewState(packageId),
       ]);
       if (selectedPackageIdRef.current !== packageId) return;
       const completedResult = status === 'completed'
@@ -3301,101 +3379,25 @@ export function App() {
       setPatchStatus(status);
       setPatchProgress(progress || null);
       if (completedResult) {
-        setContext(initialContextFromExtractionContext(completedResult.extraction_context));
-        setDraft(completedResult.document);
-        setContextEditMode(true);
+        setContext(initialContextFromExtractionContext(completedResult.machine_extraction_context));
+        setGeneratedFinalDraft(completedResult.generated_final_draft);
+        setCuratedDocument(completedResult.curated_document ?? completedResult.generated_final_draft);
       } else if (progress?.interim_context) {
         setContext(initialContextFromExtractionContext(progress.interim_context));
-        setContextEditMode(false);
       }
-      setPatchArtifacts(artifacts);
-      setPatchReviewState(reviewState);
+      if (!completedResult) {
+        setGeneratedFinalDraft(progress?.generated_final_draft ?? null);
+        setCuratedDocument(progress?.curated_document ?? progress?.generated_final_draft ?? null);
+      }
       const nextTokenUsage = completedResult?.token_usage ?? await getTokenUsage(packageId);
       setTokenUsage(nextTokenUsage);
       if (status === 'running') {
-        setMessage('Extraction is running.');
+        setMessage('Workflow stage is running.');
       } else {
-        setMessage(hasPatchArtifacts(artifacts) ? 'Loaded existing patch artifacts.' : 'No existing patch artifacts found.');
+        setMessage('Workflow progress refreshed.');
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Failed to load patch artifacts.');
-    }
-  }
-
-  async function persistPatchReviewState(nextState: PatchReviewState, successMessage: string) {
-    if (!selectedPackageId) return;
-    const previous = patchReviewState;
-    setPatchReviewState(nextState);
-    try {
-      const saved = await savePatchReviewState(selectedPackageId, nextState);
-      setPatchReviewState(saved);
-      setMessage(successMessage);
-    } catch (error) {
-      setPatchReviewState(previous);
-      setMessage(error instanceof Error ? error.message : 'Failed to save review state.');
-    }
-  }
-
-  async function onApplyPatch(itemId: string, editedValue: unknown) {
-    if (!selectedPackageId || !draft) return;
-    if (autoResolutionActive) {
-      setMessage('Auto resolver is running. Manual review controls are disabled until it finishes.');
-      return;
-    }
-    const item = reviewItems.find((ri) => ri.id === itemId);
-    if (!item) return;
-
-    const previousDraft = draft;
-    const updatedDraft = setValueAtPath(draft as JsonObject, item.path, editedValue as JsonValue);
-    setDraft(updatedDraft as Record<string, unknown>);
-
-    const previousReviewState = patchReviewState;
-    const nextReviewState: PatchReviewState = {
-      ...patchReviewState,
-      resolved_item_ids: [...patchReviewState.resolved_item_ids, itemId],
-      resolved_at: { ...patchReviewState.resolved_at, [itemId]: new Date().toISOString() },
-    };
-    setPatchReviewState(nextReviewState);
-
-    try {
-      await Promise.all([
-        saveDraft(selectedPackageId, updatedDraft as Record<string, unknown>),
-        savePatchReviewState(selectedPackageId, nextReviewState),
-      ]);
-      setMessage('Patch applied and marked resolved.');
-    } catch (error) {
-      setDraft(previousDraft);
-      setPatchReviewState(previousReviewState);
-      setMessage(error instanceof Error ? error.message : 'Failed to apply patch.');
-    }
-  }
-
-  async function onResolveReviewItem(itemId: string) {
-    if (autoResolutionActive) {
-      setMessage('Auto resolver is running. Manual review controls are disabled until it finishes.');
-      return;
-    }
-    if (patchReviewState.resolved_item_ids.includes(itemId)) return;
-    await persistPatchReviewState(
-      {
-        ...patchReviewState,
-        resolved_item_ids: [...patchReviewState.resolved_item_ids, itemId],
-        resolved_at: { ...patchReviewState.resolved_at, [itemId]: new Date().toISOString() },
-      },
-      'Review item marked resolved.',
-    );
-  }
-
-  async function onSaveProtectedFields(fields: string[]) {
-    if (!selectedPackageId) return;
-    const previous = protectedFields;
-    setProtectedFields(fields);
-    try {
-      await apiSetProtectedFields(selectedPackageId, fields);
-      setMessage('Protected fields updated.');
-    } catch (error) {
-      setProtectedFields(previous);
-      setMessage(error instanceof Error ? error.message : 'Failed to save protected fields.');
+      setMessage(error instanceof Error ? error.message : 'Failed to refresh workflow progress.');
     }
   }
 
@@ -3409,13 +3411,11 @@ export function App() {
     setBusy('load');
     void (async () => {
       try {
-        const [ctx, draftResult, fields, { status, progress }, artifacts, reviewState, chunkStatus, usage] = await Promise.all([
+        const [ctx, generatedResult, curatedResult, { status, progress }, chunkStatus, usage] = await Promise.all([
           getExistingInitialContext(packageId),
-          getExistingInitialDraft(packageId),
-          getProtectedFields(packageId),
+          getExistingGeneratedFinalDraft(packageId),
+          getExistingCuratedDocument(packageId),
           getPatchProgress(packageId),
-          getPatchArtifacts(packageId),
-          getPatchReviewState(packageId),
           getChunkStatus(packageId),
           getTokenUsage(packageId),
         ]);
@@ -3428,15 +3428,12 @@ export function App() {
           : null;
         if (ctx || progressContext) {
           setContext(ctx ?? progressContext);
-          setContextEditMode(status !== 'running');
         }
-        if (draftResult) setDraft(draftResult);
-        setProtectedFields(fields);
+        setGeneratedFinalDraft(generatedResult ?? progress?.generated_final_draft ?? null);
+        setCuratedDocument(curatedResult ?? progress?.curated_document ?? progress?.generated_final_draft ?? null);
         setPatchStatus(status);
         setPatchProgress(progress || null);
         setTokenUsage(usage);
-        if (status === 'completed' || status === 'crashed' || status === 'cancelled' || hasPatchArtifacts(artifacts)) setPatchArtifacts(artifacts);
-        setPatchReviewState(reviewState);
         setHasChunks(chunkStatus.has_chunks);
         setChunksByFile(chunks);
         if (chunkStatus.status !== 'unknown' || chunks.flat().length > 0) {
@@ -3460,7 +3457,7 @@ export function App() {
 
   useEffect(() => {
     if (!selectedPackageId || patchStatus !== 'running') return;
-    const interval = setInterval(() => void onShowPatchArtifacts(), 5000);
+    const interval = setInterval(() => void refreshExtractionProgress(), 5000);
     return () => clearInterval(interval);
   }, [patchStatus, selectedPackageId]);
 
@@ -3708,77 +3705,66 @@ export function App() {
 
           <StepPanel
             number="03"
-            title="Draft workspace"
-            description="Create the initial profile draft, edit and lock fields, then patch the draft with chunk evidence while reviewing issues as they appear."
-            actions={draft && (
-              <button className="ghost draft-refresh-button" onClick={() => void onShowPatchArtifacts()} disabled={!selectedPackageId || busy === 'load'}>Refresh</button>
+            title="Generated and curated profile"
+            description="Build the machine-generated final draft, inspect projection issues, and curate the separate user document."
+            actions={hasProfileArtifacts && (
+              <button className="ghost draft-refresh-button" onClick={() => void refreshExtractionProgress()} disabled={!selectedPackageId || busy === 'load'}>Refresh</button>
             )}
           >
-              <div className={draft ? 'draft-actions' : 'actions'}>
-                {!draft ? (
-                  <button onClick={() => void onDraft()} disabled={!selectedPackageId || !selectedProfile || !!busy}>{busy === 'draft' ? 'Drafting...' : 'Create new draft'}</button>
+              <div className={hasProfileArtifacts ? 'draft-actions' : 'actions'}>
+                {!generatedFinalDraft ? (
+                  <button onClick={() => void onGenerateDraft()} disabled={!selectedPackageId || !selectedProfile || !!busy || !context}>{busy === 'draft' ? 'Building generated draft...' : 'Build generated final draft'}</button>
                 ) : (
                   <>
-                    <button onClick={() => void onPatch()} disabled={!selectedProfile || !!busy || isPatching}>{patchButtonLabel}</button>
-                    <div className="draft-settings">
-                      <label className="patch-config-row" htmlFor="num-chunks-per-turn">
-                        <span>Chunks per turn</span>
-                        <input
-                          id="num-chunks-per-turn"
-                          type="number"
-                          min={1}
-                          value={numChunksPerTurn}
-                          onChange={(e) => {
-                            const val = parseInt(e.target.value, 10);
-                            setNumChunksPerTurn(Number.isFinite(val) && val >= 1 ? val : 1);
-                          }}
-                          disabled={isPatching}
-                          title="Number of chunks to include in each patch agent call. Higher values process more content per turn but increase token usage."
-                        />
-                      </label>
-                      <label className="patch-config-row checkbox" htmlFor="auto-resolve">
-                        <input
-                          id="auto-resolve"
-                          type="checkbox"
-                          checked={autoResolve}
-                          onChange={(e) => setAutoResolve(e.target.checked)}
-                          disabled={isPatching}
-                          title="Automatically send unresolved review items to the resolve agent as patch artifacts are produced."
-                        />
-                        <span>Auto-resolve review items</span>
-                      </label>
-                    </div>
-                    <button className="ghost draft-recreate-button" onClick={() => void onDraft()} disabled={!selectedPackageId || !selectedProfile || !!busy}>{busy === 'draft' ? 'Re-creating...' : 'Re-create draft'}</button>
+                    <button className="ghost draft-recreate-button" onClick={() => void onGenerateDraft()} disabled={!selectedPackageId || !selectedProfile || !!busy}>{busy === 'draft' ? 'Rebuilding...' : 'Rebuild generated draft'}</button>
+                    <button className="ghost" onClick={() => void onExportCuratedJson()} disabled={!curatedDocument || !!busy}>Export curated JSON</button>
+                    <button className="ghost" onClick={() => void onExportCuratedJsonLd()} disabled={!curatedDocument || !selectedProfile || !!busy}>Export curated JSON-LD</button>
                   </>
                 )}
               </div>
-              {draft && patchStatus && (
+              {hasProfileArtifacts && (
+                <section className="patch-progress">
+                  <div className="patch-progress-header">
+                    <span>Projection and validation</span>
+                    <span>
+                      {projectedObjects} projected, {notProjectedObjects} unresolved, {editRequiredObjects} edit needed
+                    </span>
+                  </div>
+                  <div className="patch-progress-summary">
+                    <span>Draft quality: {formatExtractionStage(patchProgress?.draft_quality_state || 'not run')}</span>
+                    <span>Validation: {formatExtractionStage(patchProgress?.validation?.status || 'not run')}</span>
+                    <span>{validationErrorCount} validation issue{validationErrorCount === 1 ? '' : 's'}</span>
+                    <span>{fieldIssueCount} field issue{fieldIssueCount === 1 ? '' : 's'}</span>
+                  </div>
+                </section>
+              )}
+              {hasProfileArtifacts && patchStatus === 'running' && (
                 <div className="patch-progress">
                   <div className="patch-progress-header">
-                    <span>Status: <strong>{patchStatus}</strong></span>
-                    {progressTotalBatches > 0 && <span>Patching batch {progressBatchNo} of {progressTotalBatches}</span>}
+                    <span>Status: <strong>{formatExtractionStage(patchProgress?.stage || patchStatus)}</strong></span>
                   </div>
-                  <div className="patch-progress-track" aria-hidden="true"><div style={{ width: `${progressPercent}%` }} /></div>
-                  <TokenUsageSummary tokenUsage={patchProgress?.token_usage} averageUnit="patch" budget={llmBudget} />
-                  <ResolutionLogList entries={patchProgress?.resolution_log ?? []} />
                 </div>
               )}
-              {draft && !autoResolutionActive && reviewMarkers.length > 0 && (
-                <div className="review-strip">
-                  <strong>{reviewMarkers.length} unresolved review item{reviewMarkers.length === 1 ? '' : 's'}</strong>
-                  <div>{reviewMarkers.slice(0, 8).map((marker, index) => <span key={`${marker.path}-${index}`}>{marker.path}</span>)}</div>
-                </div>
+              {hasProfileArtifacts && (
+                <DraftGroundingPanel
+                  progress={patchProgress}
+                  disabled={!selectedPackageId || !!busy || isPatching}
+                  onUpdateVocabQueryConfig={(config) => void onUpdateVocabConfig(config)}
+                  onRunGrounding={() => void onGrounding()}
+                  onRerunAllVocabQueries={() => void onRerunVocabularyQueries()}
+                  onRerunVocabQuery={(queryId) => void onRerunVocabularyQueries(queryId)}
+                  onSelectCandidate={(query, uri, title) => void onSelectVocabularyCandidate(query, uri, title)}
+                  onMarkUnresolved={(query) => void onMarkVocabularyUnresolved(query)}
+                />
               )}
-              {draft && (
+              {generatedFinalDraft && (
+                <JsonDetails title="Generated final draft (machine artifact)" value={generatedFinalDraft} />
+              )}
+              {curatedDocument && (
                 <JsonEditor
-                  value={draft as Record<string, unknown>}
-                  onChange={(updated) => onDraftChange(updated)}
-                  protectedPaths={protectedFields}
-                  onProtectedPathsChange={(paths) => void onSaveProtectedFields(paths)}
-                  patchMarkers={patchMarkers}
-                  onApplyPatch={(itemId, value) => void onApplyPatch(itemId, value)}
-                  onResolvePatch={(itemId) => void onResolveReviewItem(itemId)}
-                  reviewActionsDisabled={manualReviewActionsDisabled}
+                  value={curatedDocument as Record<string, unknown>}
+                  onChange={(updated) => onCuratedDocumentChange(updated)}
+                  patchMarkers={curationMarkers}
                   schema={activeProfileSchema}
                   targetClass={selectedProfileManifest?.target_class}
                 />

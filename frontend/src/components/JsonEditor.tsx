@@ -8,7 +8,19 @@ export type JsonSchemaDocument = Record<string, unknown>;
 export type JsonPatchMarker = {
   id: string;
   path: string;
-  status: 'accepted' | 'needs_review' | 'unmapped';
+  status:
+    | 'accepted'
+    | 'needs_review'
+    | 'unmapped'
+    | 'projected'
+    | 'missing'
+    | 'invalid'
+    | 'ambiguous'
+    | 'non_enriched'
+    | 'user_edited'
+    | 'user_removed'
+    | 'user_selected_vocab_term'
+    | 'intentionally_unresolved';
   label: string;
   detail?: string;
   confidence?: number;

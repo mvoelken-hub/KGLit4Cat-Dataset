@@ -98,11 +98,6 @@ export interface ProfileManifestResponse {
   enrichable_fields: string[];
 }
 
-export interface PatchDraftResponse {
-  draft: object;
-  status: TaskStatus;
-}
-
 export interface VocabTermScheme {
   rdf_type: string;
   properties: string[];

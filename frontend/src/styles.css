@@ -118,6 +118,13 @@ h2 { margin: 0; font-size: clamp(1.6rem, 3vw, 2.6rem); letter-spacing: -0.04em; 
 .extraction-overview-summary > div { min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,0.54); }
 .extraction-overview-summary span, .extraction-result-section > span { display: block; color: var(--muted); font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 5px; }
 .extraction-overview-summary strong { display: block; overflow-wrap: anywhere; font-size: 0.92rem; }
+.initial-overview-panel { border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,0.5); overflow: hidden; }
+.initial-overview-panel > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; cursor: pointer; list-style: none; }
+.initial-overview-panel > summary::-webkit-details-marker { display: none; }
+.initial-overview-panel > summary span { display: block; color: var(--muted); font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 5px; }
+.initial-overview-panel > summary strong { display: block; font-size: 0.92rem; }
+.initial-overview-panel .json-details { margin: 0 12px 12px; }
+.initial-overview-panel > p { margin: 0; padding: 0 12px 12px; }
 .ranked-file-list { display: grid; gap: 9px; }
 .ranked-file { border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,0.46); overflow: hidden; }
 .ranked-file > summary { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 12px; cursor: pointer; list-style: none; }
@@ -213,6 +220,8 @@ h2 { margin: 0; font-size: clamp(1.6rem, 3vw, 2.6rem); letter-spacing: -0.04em; 
 .chunk-vocab-query > summary small { color: var(--muted); margin-top: 2px; }
 .chunk-vocab-query > summary > span { flex-shrink: 0; color: var(--muted); font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; }
 .chunk-vocab-query-body { display: grid; gap: 8px; padding: 0 10px 10px; }
+.vocab-curation-actions { display: flex; flex-wrap: wrap; gap: 7px; padding: 9px; border: 1px dashed rgba(99, 154, 0, 0.34); border-radius: 8px; background: rgba(246, 250, 239, 0.68); }
+.vocab-curation-actions button { max-width: min(420px, 100%); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .json-details { border: 1px solid rgba(36,43,51,0.09); border-radius: 7px; background: rgba(248,250,247,0.76); overflow: hidden; }
 .json-details > summary { padding: 8px 9px; cursor: pointer; color: var(--muted); font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; }
 .json-details pre { max-height: 260px; overflow: auto; margin: 0; padding: 10px; background: #1e1e1e; color: #f0f0f0; font-size: 0.74rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -343,8 +352,17 @@ h2 { margin: 0; font-size: clamp(1.6rem, 3vw, 2.6rem); letter-spacing: -0.04em; 
 .patch-marker-badges { display: inline-flex; flex-wrap: wrap; gap: 5px; }
 .patch-marker-badge { border: 1px solid var(--line); border-radius: 999px; padding: 0.18rem 0.45rem; font-size: 0.68rem; line-height: 1; color: var(--ink); background: rgba(255, 255, 255, 0.72); }
 .patch-marker-badge.accepted { border-color: rgba(53, 107, 69, 0.42); color: var(--ok); }
+.patch-marker-badge.projected,
+.patch-marker-badge.user_selected_vocab_term { border-color: rgba(53, 107, 69, 0.42); color: var(--ok); background: rgba(246, 250, 239, 0.88); }
 .patch-marker-badge.needs_review { border-color: rgba(202, 116, 6, 0.48); color: var(--warn); background: rgba(255, 248, 234, 0.88); }
+.patch-marker-badge.missing,
+.patch-marker-badge.invalid,
+.patch-marker-badge.ambiguous,
+.patch-marker-badge.non_enriched,
+.patch-marker-badge.intentionally_unresolved { border-color: rgba(202, 116, 6, 0.48); color: var(--warn); background: rgba(255, 248, 234, 0.88); }
 .patch-marker-badge.unmapped { border-color: rgba(141, 63, 34, 0.44); color: var(--accent-dark); }
+.patch-marker-badge.user_edited,
+.patch-marker-badge.user_removed { border-color: rgba(141, 63, 34, 0.44); color: var(--accent-dark); background: rgba(255, 252, 246, 0.88); }
 .selected-patch-review { display: grid; gap: 10px; margin-bottom: 16px; }
 .selected-patch-review.compact { margin: 4px 0 12px; }
 .selected-patch-review.compact .selected-patch-review-heading { padding-bottom: 6px; }

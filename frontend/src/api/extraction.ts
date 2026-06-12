@@ -1,7 +1,8 @@
 import { apiBaseUrl, readJson } from './client';
-import type { InitialContext, PatchDraftResponse } from './types';
+import type { InitialContext } from './types';
 
 export type PatchTaskStatus = 'unknown' | 'running' | 'completed' | 'cancelled' | 'crashed';
+export type ExtractionTargetStage = 'context' | 'profile' | 'grounding' | 'complete';
 
 export type PatchTokenUsageEntry = {
   input_tokens: number;
@@ -39,8 +40,16 @@ export type ExtractionRunProgress = {
   normalized_quantities: number;
   normalized_qualitative_attributes: number;
   interim_context?: Record<string, unknown> | null;
-  interim_profile_document?: Record<string, unknown> | null;
-  profile_patch_results?: ProfilePatchResult[];
+  generated_final_draft?: Record<string, unknown> | null;
+  curated_document?: Record<string, unknown> | null;
+  draft_quality_state?: DraftQualityState | null;
+  validation?: DraftValidationResult | null;
+  curated_validation?: DraftValidationResult | null;
+  projection_ledger?: ProjectionLedgerRecord[];
+  field_completion_ledger?: FieldCompletionLedgerRecord[];
+  curation_ledger?: CurationLedgerRecord[];
+  initial_extraction_overview?: ExtractionOverview | null;
+  initial_extraction_overview_status?: ExtractionOverviewStatus | null;
   vocab_query_config?: ExtractionVocabQueryConfig;
   vocab_queries?: ExtractionVocabQueryRecord[];
   ranked_files?: RankedExtractionFile[];
@@ -91,6 +100,44 @@ export type ExtractionChunkResult = ExtractionChunkRef & {
   context_tokens?: number | null;
 };
 
+export type ExtractionOverviewStatus = 'structured' | 'unstructured_fallback' | 'failed' | string;
+
+export type ExtractionOverviewFileRole = {
+  file_path: string;
+  role: string;
+  extraction_notes: string[];
+  read_reason?: string;
+};
+
+export type ExtractionOverviewInspectedFile = {
+  file_path: string;
+  byte_size?: number | null;
+  chars_read: number;
+  reason: string;
+};
+
+export type ExtractionOverview = {
+  source_fingerprint: string;
+  source_file_paths: string[];
+  inspected_files: ExtractionOverviewInspectedFile[];
+  dataset_theme: string;
+  summary: string;
+  file_roles: ExtractionOverviewFileRole[];
+  likely_activities: string[];
+  likely_entities: string[];
+  likely_resources: string[];
+  likely_methods: string[];
+  instrument_or_device_names: string[];
+  analytical_techniques: string[];
+  sample_identifiers: string[];
+  compound_names: string[];
+  metadata_sources: string[];
+  keywords: string[];
+  parameter_attachment_guidance: string[];
+  known_traps: string[];
+  uncertainty_notes: string[];
+};
+
 export type ExtractionVocabQueryRecord = {
   query_id: string;
   kind: string;
@@ -120,6 +167,52 @@ export type ProfilePatchResult = {
   reason: string;
 };
 
+export type DraftQualityState = 'complete_final_draft' | 'imperfect_final_draft' | 'empty_profile_shell';
+
+export type DraftValidationIssue = {
+  path: string;
+  message: string;
+  schema_path: string;
+};
+
+export type DraftValidationResult = {
+  status: 'valid' | 'invalid' | 'not_run' | string;
+  errors: DraftValidationIssue[];
+  warnings: string[];
+};
+
+export type ProjectionLedgerRecord = {
+  object_identifier: string;
+  object_kind: string;
+  source_evidence?: string | null;
+  status: 'projected' | 'not_projected' | 'ambiguous' | 'user_edit_required' | string;
+  projected_paths: string[];
+  reason: string;
+  error?: string | null;
+};
+
+export type FieldCompletionLedgerRecord = {
+  json_path: string;
+  field_name: string;
+  generated_value?: unknown;
+  curated_value?: unknown;
+  source_evidence: string[];
+  validation_status: 'valid' | 'invalid' | 'missing' | 'not_run' | string;
+  enrichment_status: 'grounded' | 'not_grounded' | 'no_candidate' | 'ambiguous' | 'user_selected_vocab_term' | 'intentionally_unresolved' | string;
+  issue_categories: string[];
+  edit_needed_reason: string;
+};
+
+export type CurationLedgerRecord = {
+  json_path: string;
+  field_name: string;
+  generated_value?: unknown;
+  curated_value?: unknown;
+  source_evidence: string[];
+  status: 'unchanged' | 'user_modified' | 'user_removed' | 'user_selected_vocab_term' | 'intentionally_unresolved' | string;
+  reason: string;
+};
+
 export type PatchProgress = ExtractionRunProgress & {
   batch_no?: number;
   total_batches?: number;
@@ -135,8 +228,17 @@ export type PatchProgress = ExtractionRunProgress & {
 };
 
 export type ExtractionRunResult = {
-  document: Record<string, unknown>;
-  extraction_context: Record<string, unknown>;
+  generated_final_draft: Record<string, unknown>;
+  machine_extraction_context: Record<string, unknown>;
+  initial_extraction_overview?: ExtractionOverview | null;
+  initial_extraction_overview_status?: ExtractionOverviewStatus | null;
+  curated_document?: Record<string, unknown> | null;
+  draft_quality_state: DraftQualityState;
+  validation: DraftValidationResult;
+  curated_validation?: DraftValidationResult | null;
+  projection_ledger: ProjectionLedgerRecord[];
+  field_completion_ledger: FieldCompletionLedgerRecord[];
+  curation_ledger: CurationLedgerRecord[];
   normalization?: Record<string, unknown> | null;
   warnings: string[];
   token_usage: PatchTokenUsage;
@@ -190,7 +292,7 @@ export type PatchReviewDecision = {
 };
 
 export type PatchReviewResolutionResponse = {
-  draft: object;
+  curated_document: Record<string, unknown>;
   review_state: PatchReviewState;
   resolved_count: number;
   unresolved_item_ids: string[];
@@ -205,6 +307,7 @@ export async function runExtraction(input: {
   profile_identifier: string;
   qualitative_vocab_identifiers?: string[] | null;
   resume?: boolean;
+  target_stage?: ExtractionTargetStage;
 }): Promise<ExtractionRunResponse> {
   return readJson(await fetch(apiBaseUrl + '/extraction/run', {
     method: 'POST',
@@ -229,12 +332,17 @@ export async function getExtractionResult(data_package_id: string): Promise<Extr
 
 export async function getExistingInitialContext(data_package_id: string): Promise<InitialContext | null> {
   const result = await getExtractionResult(data_package_id);
-  return result ? initialContextFromExtractionContext(result.extraction_context) : null;
+  return result ? initialContextFromExtractionContext(result.machine_extraction_context) : null;
 }
 
-export async function getExistingInitialDraft(data_package_id: string): Promise<object | null> {
+export async function getExistingGeneratedFinalDraft(data_package_id: string): Promise<Record<string, unknown> | null> {
   const result = await getExtractionResult(data_package_id);
-  return result?.document ?? null;
+  return result?.generated_final_draft ?? null;
+}
+
+export async function getExistingCuratedDocument(data_package_id: string): Promise<Record<string, unknown> | null> {
+  const result = await getExtractionResult(data_package_id);
+  return result?.curated_document ?? result?.generated_final_draft ?? null;
 }
 
 export async function extractInitialContext(input: {
@@ -244,51 +352,65 @@ export async function extractInitialContext(input: {
   const response = await runExtraction({
     data_package_id: input.data_package_id,
     profile_identifier: input.profile_identifier,
+    target_stage: 'context',
   });
-  const context = response.result?.extraction_context || response.progress?.interim_context;
+  const context = response.result?.machine_extraction_context || response.progress?.interim_context;
   return context
     ? initialContextFromExtractionContext(context)
     : emptyInitialContext('Extraction is running.');
 }
 
-export async function saveInitialContext(_data_package_id: string, context: InitialContext): Promise<InitialContext> {
-  return context;
+export async function saveCuratedDocument(data_package_id: string, document: object, profile_identifier?: string): Promise<Record<string, unknown>> {
+  if (!profile_identifier) return document as Record<string, unknown>;
+  const response = await fetch(apiBaseUrl + '/extraction/run/' + encodeURIComponent(data_package_id) + '/curated-document', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ profile_identifier, document }),
+  });
+  const payload = await readJson(await response) as { progress?: ExtractionRunProgress | null };
+  return payload.progress?.curated_document ?? (document as Record<string, unknown>);
 }
 
-export async function extractInitialDraft(input: {
+export async function applyCurationFieldAction(input: {
+  data_package_id: string;
+  action: 'select_vocab_term' | 'mark_unresolved';
+  json_path: string;
+  selected_uri?: string | null;
+  selected_title?: string | null;
+  vocabulary_identifier?: string | null;
+}): Promise<{ status: PatchTaskStatus; progress?: ExtractionRunProgress | null }> {
+  return readJson(await fetch(apiBaseUrl + '/extraction/run/' + encodeURIComponent(input.data_package_id) + '/curation/field', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: input.action,
+      json_path: input.json_path,
+      selected_uri: input.selected_uri ?? null,
+      selected_title: input.selected_title ?? null,
+      vocabulary_identifier: input.vocabulary_identifier ?? null,
+    }),
+  }));
+}
+
+export type VocabularyGroundingResponse = {
+  curated_document: Record<string, unknown>;
+  status: PatchTaskStatus;
+};
+
+export async function runVocabularyGrounding(input: {
   data_package_id: string;
   profile_identifier: string;
-}): Promise<object> {
-  const response = await runExtraction(input);
-  return response.result?.document ?? {};
-}
-
-export async function saveDraft(_data_package_id: string, draft: object): Promise<object> {
-  return draft;
-}
-
-export async function patchDraft(input: {
-  data_package_id: string;
-  profile_identifier: string;
-  num_chunks_per_turn: number;
-  auto_resolve: boolean;
-}): Promise<PatchDraftResponse> {
+}): Promise<VocabularyGroundingResponse> {
   const response = await runExtraction({
     data_package_id: input.data_package_id,
     profile_identifier: input.profile_identifier,
+    resume: true,
+    target_stage: 'grounding',
   });
   return {
-    draft: response.result?.document ?? {},
+    curated_document: response.result?.curated_document ?? response.result?.generated_final_draft ?? response.progress?.curated_document ?? response.progress?.generated_final_draft ?? {},
     status: response.status,
   };
-}
-
-export async function getProtectedFields(_data_package_id: string): Promise<string[]> {
-  return [];
-}
-
-export async function setProtectedFields(_data_package_id: string, fields: string[]): Promise<string[]> {
-  return fields;
 }
 
 export async function getPatchProgress(data_package_id: string): Promise<{ status: PatchTaskStatus; progress?: PatchProgress | null }> {
@@ -356,7 +478,7 @@ export async function resolvePatchReview(input: {
   review_items: PatchReviewResolutionItem[];
 }): Promise<PatchReviewResolutionResponse> {
   return {
-    draft: {},
+    curated_document: {},
     review_state: emptyReviewState(),
     resolved_count: 0,
     unresolved_item_ids: input.review_items.map((item) => item.id),
