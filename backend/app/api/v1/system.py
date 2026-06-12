@@ -222,6 +222,9 @@ async def delete_ollama_model(
     model: str,
     ollama_client: OllamaClientWrapper = Depends(get_ollama_client),
 ):
+    # POLICY: This endpoint deletes Ollama models. Only invoke it with explicit
+    # user confirmation. Models may be large intentional downloads for thesis
+    # evaluation and must not be removed without consent.
     try:
         model = clean_model_name(model)
     except ValueError as exc:

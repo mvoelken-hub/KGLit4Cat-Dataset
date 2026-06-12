@@ -50,7 +50,7 @@ At runtime, SIMONE consists of a frontend, backend API, local or remote infrastr
 
 The backend is a FastAPI application titled **“Semantic Metadata Extraction API.”** During startup it initializes logging, setup tasks, Neo4j, Ollama, the task registry, and the semantic service.  It registers separate API routers for system, datasources, extraction, profiles, and semantic functionality.  
 
-The prototype is intended to run with Docker, `uv`, Neo4j, Ollama, a backend API, and a frontend. The README lists Docker Desktop and `uv` as required tools and Node/npm as optional for frontend hot reload.  The backend project is a Python package named `SIMONE`, version `0.1.0`, requiring Python `>=3.12`, with dependencies including FastAPI, Ollama, pandas, PyMuPDF, rdflib, rdflib-neo4j, scikit-learn, Pydantic, LinkML, jsonschema, and Typer.  The frontend is a React/Vite/TypeScript application. 
+The prototype is intended to run with Docker, `uv`, Neo4j, Ollama, a backend API, and a frontend. The README lists Docker Desktop and `uv` as required tools and Node/npm as optional for frontend hot reload.  The backend project is a Python package named `SIMONE`, version `0.1.0`, requiring Python `>=3.12`, with dependencies including FastAPI, Ollama, NumPy, pandas, PyMuPDF, rdflib, rdflib-neo4j, Pydantic, LinkML, jsonschema, and Typer.  The frontend is a React/Vite/TypeScript application. 
 
 ---
 

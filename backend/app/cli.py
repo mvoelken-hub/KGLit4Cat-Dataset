@@ -53,7 +53,7 @@ def _run(
     process_env = os.environ.copy()
     if env:
         process_env.update(env)
-    return subprocess.run(cmd, cwd=cwd, check=check, capture_output=capture_output, text=True, env=process_env)
+    return subprocess.run(cmd, cwd=cwd, check=check, capture_output=capture_output, text=True, encoding="utf-8", errors="replace", env=process_env)
 
 
 def _check_command(name: str) -> bool:
@@ -99,6 +99,8 @@ def _running_bootstrap_vocab_pids() -> list[int]:
                 ],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
             )
             if result.returncode != 0 or not result.stdout.strip():
                 return []
@@ -109,7 +111,7 @@ def _running_bootstrap_vocab_pids() -> list[int]:
         except Exception:
             return []
 
-    result = subprocess.run(["ps", "-eo", "pid=,args="], capture_output=True, text=True)
+    result = subprocess.run(["ps", "-eo", "pid=,args="], capture_output=True, text=True, encoding="utf-8", errors="replace")
     if result.returncode != 0:
         return []
     pids = []
@@ -166,7 +168,7 @@ def _ensure_no_bootstrap_vocab_job() -> None:
 def _docker_available() -> bool:
     if not _check_command("docker"):
         return False
-    result = subprocess.run(["docker", "info"], capture_output=True, text=True)
+    result = subprocess.run(["docker", "info"], capture_output=True, text=True, encoding="utf-8", errors="replace")
     return result.returncode == 0
 
 
@@ -719,6 +721,8 @@ def _find_pids_by_cmdline(pattern: str) -> list[int]:
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         if result.returncode != 0 or not result.stdout.strip():
             return []
@@ -766,6 +770,8 @@ def _find_pids_by_window_title(title: str) -> list[int]:
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         if result.returncode != 0 or not result.stdout.strip():
             return []

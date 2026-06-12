@@ -1,7 +1,6 @@
 import math
-from typing import Any, Callable, TypeVar, Awaitable
-from sklearn.metrics.pairwise import cosine_similarity
-from numpy import percentile
+from typing import Awaitable, Callable
+import numpy as np
 from hashlib import sha256
 
 from dataclasses import dataclass
@@ -133,7 +132,7 @@ class ContentChunk(BaseModel):
 
         distances = attach_cosine_distances(combined_lines)
 
-        breakpoint_distance_threshold = percentile(distances, semantic_chunking_threshold)
+        breakpoint_distance_threshold = np.percentile(distances, semantic_chunking_threshold)
 
         indices_about_threshold = [
             index for index, distance in enumerate(distances)
@@ -283,8 +282,11 @@ def attach_cosine_distances(
         embedding_next = combined_lines[i + 1].embedding
         if embedding_current is None or embedding_next is None:
             raise EmbeddingDistanceCalcError(f"Missing embedding for line index {i} or {i + 1}")
-        
-        similarity = cosine_similarity([embedding_current], [embedding_next])[0][0] # type: ignore
+
+        current = np.asarray(embedding_current, dtype=float)
+        next_embedding = np.asarray(embedding_next, dtype=float)
+        denominator = np.linalg.norm(current) * np.linalg.norm(next_embedding)
+        similarity = 0.0 if denominator == 0 else float(np.dot(current, next_embedding) / denominator)
         distance = 1 - similarity
         distances.append(distance)
         item.distance_next = distance

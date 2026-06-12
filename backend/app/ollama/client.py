@@ -15,9 +15,10 @@ class OllamaClientWrapper:
         self.embed_num_gpu = getattr(settings, "ollama_embed_num_gpu", -1)
         self.flash_attention = getattr(settings, "ollama_flash_attention", False)
         self.kv_cache_type = getattr(settings, "ollama_kv_cache_type", "f16")
+        timeout_seconds = getattr(settings, "ollama_timeout_seconds", None)
         timeout = (
-            httpx.Timeout(timeout=settings.ollama_timeout_seconds, connect=30.0)
-            if settings.ollama_timeout_seconds is not None
+            httpx.Timeout(timeout=timeout_seconds, connect=30.0)
+            if timeout_seconds is not None
             else httpx.Timeout(None)
         )
 
@@ -99,6 +100,9 @@ class OllamaClientWrapper:
             self.logger.info(f"Pulled Ollama model: {model_name}")
 
     async def delete_model(self, model_name: str) -> None:
+        # POLICY: Never call this without explicit user confirmation.
+        # Models may be large downloads the user intentionally pulled for
+        # evaluation. Deletion is destructive and irreversible.
         await self.model_client.delete(model=model_name)
         self.logger.info(f"Deleted Ollama model: {model_name}")
 

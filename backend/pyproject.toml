@@ -11,6 +11,7 @@ dependencies = [
     "jsonschema>=4.26.0",
     "linkml>=1.11.0",
     "linkml-runtime>=1.11.0",
+    "numpy>=2.3.5",
     "ollama>=0.6.2",
     "pandas[excel]>=3.0.3",
     "pydantic>=2.13.4",
@@ -18,7 +19,6 @@ dependencies = [
     "pyyaml>=6.0.3",
     "rdflib>=7.6.0",
     "rdflib-neo4j>=1.1",
-    "scikit-learn>=1.8.0",
     "typer>=0.15.0",
 ]
 

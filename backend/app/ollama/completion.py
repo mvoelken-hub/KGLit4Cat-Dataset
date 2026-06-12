@@ -291,7 +291,7 @@ async def generate_structured(
     retries: int = 2,
     temperature: float = 0.0,
     seed: int = 42,
-    think: ThinkMode = False,
+    think: ThinkMode = None,
     num_ctx: int | None = None,
     keep_alive: float | str | None = -1,
     repair_model: str | None = None,
@@ -311,7 +311,7 @@ async def generate_structured(
     retries: int = 2,
     temperature: float = 0.0,
     seed: int = 42,
-    think: ThinkMode = False,
+    think: ThinkMode = None,
     num_ctx: int | None = None,
     keep_alive: float | str | None = -1,
     repair_model: str | None = None,
@@ -331,7 +331,7 @@ async def generate_structured(
     retries: int = 2,
     temperature: float = 0.0,
     seed: int = 42,
-    think: ThinkMode = False,
+    think: ThinkMode = None,
     num_ctx: int | None = None,
     keep_alive: float | str | None = -1,
     repair_model: str | None = None,
@@ -489,17 +489,19 @@ async def _generate_with_api_retries(
     last_error: Exception | None = None
     for api_attempt in range(max_attempts):
         try:
+            kwargs = dict(
+                model=model,
+                prompt=prompt,
+                system=system,
+                format=schema,
+                options=options,
+                keep_alive=keep_alive,
+            )
+            if think is not None:
+                kwargs["think"] = think
             return cast(
                 ollama.GenerateResponse,
-                await client.ollama_client.generate(
-                    model=model,
-                    prompt=prompt,
-                    system=system,
-                    format=schema,
-                    options=options,
-                    think=think,
-                    keep_alive=keep_alive,
-                ),
+                await client.ollama_client.generate(**kwargs),
             )
         except Exception as exc:
             last_error = exc
@@ -540,7 +542,7 @@ async def repair_structured_output(
     retries: int = 2,
     temperature: float = 0.0,
     seed: int = 42,
-    think: ThinkMode = False,
+    think: ThinkMode = None,
     num_ctx: int | None = None,
     keep_alive: float | str | None = -1,
     repair_model: str | None = None,
@@ -558,7 +560,7 @@ async def repair_structured_output(
     retries: int = 2,
     temperature: float = 0.0,
     seed: int = 42,
-    think: ThinkMode = False,
+    think: ThinkMode = None,
     num_ctx: int | None = None,
     keep_alive: float | str | None = -1,
     repair_model: str | None = None,
@@ -576,7 +578,7 @@ async def repair_structured_output(
     retries: int = 2,
     temperature: float = 0.0,
     seed: int = 42,
-    think: ThinkMode = False,
+    think: ThinkMode = None,
     num_ctx: int | None = None,
     keep_alive: float | str | None = -1,
     repair_model: str | None = None,
