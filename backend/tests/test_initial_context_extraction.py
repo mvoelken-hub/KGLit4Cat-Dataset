@@ -10,12 +10,14 @@ from app.domain.extraction import (
     DefinedTerm,
     ExtractionChunkResult,
     ExtractionContext,
+    ExtractionOverview,
     ExtractionNormalization,
     ExtractionRunResult,
     ExtractionRunProgress,
     ExtractionRunState,
     ExtractionVocabQueryConfig,
     ExtractionVocabQueryRecord,
+    FileRankingResult,
     GroundedExtractionObject,
     ProfilePatchDocument,
     RankedFile,
@@ -125,6 +127,14 @@ class FakeOutputRepository:
         self.contexts: list[ExtractionContext] = []
         self.result: ExtractionRunResult | None = None
         self.run_state: ExtractionRunState | None = None
+        self.initial_extraction_overview = None
+        self.initial_extraction_overview_status = None
+        self.generated_final_draft: dict | None = None
+        self.curated_document: dict | None = None
+        self.projection_ledger: list = []
+        self.field_completion_ledger: list = []
+        self.curation_ledger: list = []
+        self.validation: dict | None = None
         self.warnings: list[str] = []
         self.token_usage: dict[str, dict[str, int]] = {}
 
@@ -139,19 +149,95 @@ class FakeOutputRepository:
 
     def save_extraction_result(self, *, workflow_id: str, result: ExtractionRunResult):
         self.result = result
+        self.initial_extraction_overview = result.initial_extraction_overview
+        self.initial_extraction_overview_status = result.initial_extraction_overview_status
+        self.generated_final_draft = result.generated_final_draft
+        self.curated_document = result.curated_document
+        self.projection_ledger = result.projection_ledger
+        self.field_completion_ledger = result.field_completion_ledger
+        self.curation_ledger = result.curation_ledger
+        self.validation = {
+            "generated": result.validation,
+            "curated": result.curated_validation,
+        }
 
-    def load_extraction_result(self, workflow_id: str) -> ExtractionRunResult:
+    def load_extraction_result(self, workflow_id: str, chat_model: str | None = None) -> ExtractionRunResult:
         if self.result is None:
             raise FileNotFoundError
         return self.result
 
+    def save_initial_extraction_overview(
+        self,
+        *,
+        workflow_id: str,
+        overview,
+        status,
+        chat_model: str | None = None,
+    ):
+        self.initial_extraction_overview = overview
+        self.initial_extraction_overview_status = status
+
+    def load_initial_extraction_overview(self, workflow_id: str, chat_model: str | None = None):
+        if self.initial_extraction_overview_status is None:
+            raise FileNotFoundError
+        return self.initial_extraction_overview, self.initial_extraction_overview_status
+
     def save_extraction_run_state(self, *, workflow_id: str, state: ExtractionRunState):
         self.run_state = state
 
-    def load_extraction_run_state(self, workflow_id: str) -> ExtractionRunState:
+    def load_extraction_run_state(self, workflow_id: str, chat_model: str | None = None) -> ExtractionRunState:
         if self.run_state is None:
             raise FileNotFoundError
         return self.run_state
+
+    def save_generated_final_draft(self, *, workflow_id: str, document: dict, chat_model: str | None = None):
+        self.generated_final_draft = document
+
+    def load_generated_final_draft(self, workflow_id: str, chat_model: str | None = None) -> dict:
+        if self.generated_final_draft is None:
+            raise FileNotFoundError
+        return self.generated_final_draft
+
+    def save_curated_document(self, *, workflow_id: str, document: dict, chat_model: str | None = None):
+        self.curated_document = document
+
+    def load_curated_document(self, workflow_id: str, chat_model: str | None = None) -> dict:
+        if self.curated_document is None:
+            raise FileNotFoundError
+        return self.curated_document
+
+    def save_projection_ledger(self, *, workflow_id: str, ledger: list, chat_model: str | None = None):
+        self.projection_ledger = ledger
+
+    def load_projection_ledger(self, workflow_id: str, chat_model: str | None = None) -> list:
+        return self.projection_ledger
+
+    def save_field_completion_ledger(self, *, workflow_id: str, ledger: list, chat_model: str | None = None):
+        self.field_completion_ledger = ledger
+
+    def load_field_completion_ledger(self, workflow_id: str, chat_model: str | None = None) -> list:
+        return self.field_completion_ledger
+
+    def save_curation_ledger(self, *, workflow_id: str, ledger: list, chat_model: str | None = None):
+        self.curation_ledger = ledger
+
+    def load_curation_ledger(self, workflow_id: str, chat_model: str | None = None) -> list:
+        return self.curation_ledger
+
+    def save_validation(
+        self,
+        *,
+        workflow_id: str,
+        validation,
+        curated_validation=None,
+        chat_model: str | None = None,
+    ):
+        self.validation = {"generated": validation, "curated": curated_validation}
+
+    def load_validation(self, workflow_id: str, chat_model: str | None = None) -> dict:
+        if self.validation is None:
+            raise FileNotFoundError
+        return self.validation
 
     def save_extraction_warnings(self, *, workflow_id: str, warnings: list[str]):
         self.warnings = warnings
@@ -170,6 +256,14 @@ class FakeOutputRepository:
         self.contexts = []
         self.result = None
         self.run_state = None
+        self.initial_extraction_overview = None
+        self.initial_extraction_overview_status = None
+        self.generated_final_draft = None
+        self.curated_document = None
+        self.projection_ledger = []
+        self.field_completion_ledger = []
+        self.curation_ledger = []
+        self.validation = None
         self.warnings = []
         self.token_usage = {}
 
@@ -324,6 +418,189 @@ def make_service(chunks_by_file: list[list[ContentChunk]]):
 
 
 class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
+    async def test_initial_overview_previews_use_ranked_top_files_and_raw_first_lines(self):
+        service, _, _ = make_service([[make_chunk()]])
+        data_package = DataPackage(
+            file_name="package",
+            files=[
+                FileEntry(
+                    file_path="a.txt",
+                    file_name="a.txt",
+                    file_extension=".txt",
+                    raw_content="\n".join(f"a-{i}" for i in range(100)).encode(),
+                ),
+                FileEntry(
+                    file_path="b.txt",
+                    file_name="b.txt",
+                    file_extension=".txt",
+                    raw_content=b"b-0\nb-1",
+                ),
+                FileEntry(
+                    file_path="c.txt",
+                    file_name="c.txt",
+                    file_extension=".txt",
+                    raw_content=b"c-0",
+                ),
+            ],
+        )
+        ranking = FileRankingResult(files=[
+            RankedFile(rank=1, file_path="b.txt"),
+            RankedFile(rank=2, file_path="a.txt"),
+            RankedFile(rank=3, file_path="c.txt"),
+        ])
+
+        previews = service._initial_overview_file_previews(
+            data_package=data_package,
+            ranking=ranking,
+        )
+
+        self.assertEqual([preview.file_path for preview in previews], ["b.txt", "a.txt", "c.txt"])
+        self.assertEqual(previews[0].first_lines, ["b-0", "b-1"])
+        self.assertEqual(len(previews[1].first_lines), 80)
+        self.assertEqual(previews[1].first_lines[0], "a-0")
+        self.assertEqual(previews[1].first_lines[-1], "a-79")
+
+    async def test_initial_overview_generation_stamps_file_provenance(self):
+        service, _, output_repository = make_service([[make_chunk()]])
+        service.ollama_client.ollama_client = SimpleNamespace()  # type: ignore[attr-defined]
+        data_package = DataPackage(
+            file_name="nmr-package",
+            files=[
+                FileEntry(
+                    file_path="dataset_description.txt",
+                    file_name="dataset_description.txt",
+                    file_extension=".txt",
+                    raw_content=b"1H NMR spectrum for sample HMS-Q11-p.",
+                ),
+                FileEntry(
+                    file_path="HMS-Q11-p_10.dx",
+                    file_name="HMS-Q11-p_10.dx",
+                    file_extension=".dx",
+                    raw_content=b"##TITLE=HMS-Q11-p\n##.OBSERVE NUCLEUS=1H\n##$PULPROG=zg30",
+                ),
+            ],
+        )
+        ranking = FileRankingResult(files=[
+            RankedFile(rank=1, file_path="dataset_description.txt"),
+            RankedFile(rank=2, file_path="HMS-Q11-p_10.dx"),
+        ])
+        state = ExtractionRunState(profile_identifier="profile")
+
+        async def fake_generate(*_args, **kwargs):
+            self.assertIs(kwargs["output_type"], ExtractionOverview)
+            self.assertIn("scientific data archivist", kwargs["system"])
+            self.assertIn("dataset_description.txt", kwargs["prompt"])
+            self.assertIn("##$PULPROG=zg30", kwargs["prompt"])
+            return CompletionResult(
+                output=ExtractionOverview(
+                    dataset_theme="1H NMR spectroscopy package",
+                    analytical_techniques=["1H NMR spectroscopy"],
+                    instrument_or_device_names=[],
+                    sample_identifiers=["HMS-Q11-p"],
+                    parameter_attachment_guidance=[
+                        "Attach PULPROG=zg30 to an NMR acquisition method, not a standalone object."
+                    ],
+                ),
+                usage=RunUsage(requests=1),
+            )
+
+        with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
+            await service._generate_initial_extraction_overview(
+                data_package_id="package-id",
+                data_package=data_package,
+                ranking=ranking,
+                state=state,
+                warnings=[],
+            )
+
+        self.assertEqual(state.initial_extraction_overview_status, "structured")
+        overview = state.initial_extraction_overview
+        self.assertIsNotNone(overview)
+        self.assertEqual(
+            overview.source_file_paths,
+            ["dataset_description.txt", "HMS-Q11-p_10.dx"],
+        )
+        self.assertTrue(overview.source_fingerprint)
+        self.assertEqual(
+            [file.file_path for file in overview.inspected_files],
+            ["dataset_description.txt", "HMS-Q11-p_10.dx"],
+        )
+        self.assertEqual(output_repository.initial_extraction_overview, overview)
+
+    async def test_prepare_run_state_does_not_reuse_old_chunks_without_overview(self):
+        service, _, _ = make_service([[make_chunk()]])
+        chunk = make_chunk(content="new content")
+        ranking = FileRankingResult(files=[RankedFile(rank=1, file_path=chunk.file_path)])
+        old_context = resource_context("old", "Old context")
+        persisted_without_overview = ExtractionRunState(
+            chunk_results=[
+                ExtractionChunkResult(
+                    chunk_index=0,
+                    file_path=chunk.file_path,
+                    start_idx=chunk.start_idx,
+                    end_idx=chunk.end_idx,
+                    status="completed",
+                    extraction_context=old_context,
+                )
+            ]
+        )
+
+        state = service._prepare_run_state(
+            ranking=ranking,
+            ordered_chunks=[chunk],
+            persisted_state=persisted_without_overview,
+            profile_identifier="profile",
+            vocab_query_config=ExtractionVocabQueryConfig(),
+        )
+
+        self.assertEqual(state.chunk_results[0].status, "pending")
+        self.assertIsNone(state.chunk_results[0].extraction_context)
+
+        persisted_with_overview = persisted_without_overview.model_copy(
+            update={
+                "initial_extraction_overview": ExtractionOverview(
+                    summary="overview",
+                    source_file_paths=[chunk.file_path],
+                ),
+                "initial_extraction_overview_status": "structured",
+            }
+        )
+        resumed = service._prepare_run_state(
+            ranking=ranking,
+            ordered_chunks=[chunk],
+            persisted_state=persisted_with_overview,
+            profile_identifier="profile",
+            vocab_query_config=ExtractionVocabQueryConfig(),
+        )
+
+        self.assertEqual(resumed.chunk_results[0].status, "completed")
+        self.assertEqual(
+            resumed.chunk_results[0].extraction_context.extraction_objects[0].extracted_object.identifier,
+            "old",
+        )
+
+        stale_overview = persisted_without_overview.model_copy(
+            update={
+                "initial_extraction_overview": ExtractionOverview(
+                    summary="wrong package",
+                    source_file_paths=["sunrise.jpg"],
+                ),
+                "initial_extraction_overview_status": "structured",
+            }
+        )
+        fresh_state = service._prepare_run_state(
+            ranking=ranking,
+            ordered_chunks=[chunk],
+            persisted_state=stale_overview,
+            profile_identifier="profile",
+            vocab_query_config=ExtractionVocabQueryConfig(),
+        )
+
+        self.assertIsNone(fresh_state.initial_extraction_overview)
+        self.assertIsNone(fresh_state.initial_extraction_overview_status)
+        self.assertEqual(fresh_state.chunk_results[0].status, "pending")
+        self.assertIsNone(fresh_state.chunk_results[0].extraction_context)
+
     async def test_run_complete_workflow_chunks_then_starts_extraction(self):
         service, task_registry, _ = make_service([[make_chunk()]])
         run_calls: list[dict] = []
@@ -374,8 +651,11 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
     async def test_complete_workflow_can_force_rerun_completed_package(self):
         service, task_registry, output_repository = make_service([[make_chunk()]])
         output_repository.result = ExtractionRunResult(
-            document={"id": "old"},
-            extraction_context=ExtractionContext(),
+            generated_final_draft={"id": "old"},
+            machine_extraction_context=ExtractionContext(),
+            curated_document={"id": "old"},
+            draft_quality_state="imperfect_final_draft",
+            validation={"status": "valid", "errors": [], "warnings": []},
         )
         run_calls: list[dict] = []
 
@@ -413,8 +693,11 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
     async def test_complete_workflow_can_force_rerun_crashed_package(self):
         service, task_registry, output_repository = make_service([[make_chunk()]])
         output_repository.result = ExtractionRunResult(
-            document={"id": "stale"},
-            extraction_context=ExtractionContext(),
+            generated_final_draft={"id": "stale"},
+            machine_extraction_context=ExtractionContext(),
+            curated_document={"id": "stale"},
+            draft_quality_state="imperfect_final_draft",
+            validation={"status": "valid", "errors": [], "warnings": []},
         )
         run_calls: list[dict] = []
 
@@ -491,8 +774,11 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
     async def test_complete_workflow_progress_recovers_completed_result(self):
         service, _, output_repository = make_service([[make_chunk()]])
         output_repository.result = ExtractionRunResult(
-            document={"id": "done"},
-            extraction_context=ExtractionContext(),
+            generated_final_draft={"id": "done"},
+            machine_extraction_context=ExtractionContext(),
+            curated_document={"id": "done"},
+            draft_quality_state="imperfect_final_draft",
+            validation={"status": "valid", "errors": [], "warnings": []},
             warnings=["schema-valid but semantically weak"],
         )
         output_repository.run_state = ExtractionRunState(
@@ -546,16 +832,20 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             extraction_context=context,
             validation_schema=TitleProfileService.schema,
         )
-        result = await service._save_validated_profile_result(
+        result = await service._save_profile_result(
             data_package_id="package-id",
             profile_identifier="profile",
             extraction_context=context,
             normalization=ExtractionNormalization(),
             document=document,
+            profile_manifest=SimpleNamespace(enrichable_fields=[]),
+            validation_schema=TitleProfileService.schema,
+            state=ExtractionRunState(profile_identifier="profile"),
             warnings=warnings,
         )
 
-        self.assertEqual(result.document, {"title": "SG-V4050", "identifier": "package-id"})
+        self.assertEqual(result.generated_final_draft, {"title": "SG-V4050", "identifier": "package-id"})
+        self.assertEqual(result.curated_document, result.generated_final_draft)
         self.assertEqual(output_repository.result, result)
 
     async def test_profile_patching_applies_valid_patch_and_persists_interim_document(self):
@@ -582,9 +872,9 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(document["type"], "spectrum")
-        self.assertEqual(state.interim_profile_document, document)
-        self.assertEqual(state.profile_patch_results[0].status, "applied")
-        self.assertEqual(output_repository.run_state.interim_profile_document, document)
+        self.assertEqual(state.generated_final_draft, document)
+        self.assertEqual(state.projection_ledger[0].status, "projected")
+        self.assertEqual(output_repository.run_state.generated_final_draft, document)
 
     async def test_profile_patching_skips_invalid_patch_with_warning(self):
         service, _, _ = make_service([[make_chunk()]])
@@ -616,7 +906,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(document["id"], "package-id")
-        self.assertEqual(state.profile_patch_results[0].status, "failed")
+        self.assertEqual(state.projection_ledger[0].status, "user_edit_required")
         self.assertIn("broke schema validation", warnings[0])
 
     def test_profile_vocab_sources_use_only_quantity_unit_and_enrichable_fields(self):
@@ -702,9 +992,193 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(output_repository.contexts[0].resources[0].identifier, "alpha-resource")
         self.assertEqual(len(output_repository.contexts[1].resources), 2)
         self.assertIsNotNone(output_repository.result)
-        self.assertEqual(output_repository.result.document["id"], "package-id")
-        self.assertEqual(len(output_repository.run_state.profile_patch_results), 3)
+        self.assertEqual(output_repository.result.generated_final_draft["id"], "package-id")
+        self.assertEqual(len(output_repository.run_state.projection_ledger), 3)
         self.assertIn("chunk_extraction", output_repository.token_usage)
+
+    async def test_context_target_stops_after_interim_context_without_result(self):
+        service, task_registry, output_repository = make_service([[make_chunk()]])
+
+        async def fake_generate(*_args, **kwargs):
+            self.assertIs(kwargs["output_type"], ExtractionContext)
+            return CompletionResult(
+                output=resource_context("context-only", "Context only resource."),
+                usage=RunUsage(requests=1),
+            )
+
+        with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
+            result, status = await service.run_extraction(
+                data_package_id="package-id",
+                profile_identifier="profile",
+                target_stage="context",
+            )
+            self.assertIsNone(result)
+            self.assertEqual(status, TaskStatus.RUNNING)
+            await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
+
+        self.assertIsNotNone(output_repository.context)
+        self.assertIsNone(output_repository.result)
+        self.assertIsNone(output_repository.run_state.generated_final_draft)
+
+        status, progress = await service.get_extraction_progress(data_package_id="package-id")
+        self.assertEqual(status, TaskStatus.COMPLETED)
+        self.assertIsNotNone(progress)
+        self.assertEqual(progress.stage, "interim_context")
+
+    async def test_profile_target_resumes_context_and_stops_after_profile_draft(self):
+        service, task_registry, output_repository = make_service([[make_chunk()]])
+        output_repository.save_extraction_run_state(
+            workflow_id="package-id",
+            state=ExtractionRunState(
+                profile_identifier="profile",
+                ranked_files=[RankedFile(rank=1, file_path="README.md")],
+                initial_extraction_overview=ExtractionOverview(
+                    summary="new-format overview",
+                    source_file_paths=["README.md"],
+                ),
+                initial_extraction_overview_status="structured",
+                chunk_results=[
+                    ExtractionChunkResult(
+                        chunk_index=0,
+                        file_path="README.md",
+                        start_idx=0,
+                        end_idx=0,
+                        status="completed",
+                        extraction_context=resource_context("profile-resource", "Profile resource."),
+                    ),
+                ],
+            ),
+        )
+        output_repository.save_extraction_context(
+            workflow_id="package-id",
+            extraction_context=resource_context("profile-resource", "Profile resource."),
+        )
+
+        async def fake_generate(*_args, **kwargs):
+            self.assertIs(kwargs["output_type"], ProfilePatchDocument)
+            return type_profile_patch()
+
+        with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
+            result, status = await service.run_extraction(
+                data_package_id="package-id",
+                profile_identifier="profile",
+                resume=True,
+                target_stage="profile",
+            )
+            self.assertIsNone(result)
+            self.assertEqual(status, TaskStatus.RUNNING)
+            await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
+
+        self.assertIsNone(output_repository.result)
+        self.assertIsNotNone(output_repository.run_state.generated_final_draft)
+        self.assertEqual(output_repository.run_state.generated_final_draft["type"], "dataset")
+        self.assertEqual(output_repository.run_state.vocab_queries, [])
+        status, progress = await service.get_extraction_progress(data_package_id="package-id")
+        self.assertEqual(status, TaskStatus.COMPLETED)
+        self.assertIsNotNone(progress)
+        self.assertEqual(progress.stage, "profile_draft")
+
+    async def test_grounding_target_uses_manual_interim_profile_and_writes_result(self):
+        service, task_registry, output_repository = make_service([[make_chunk()]])
+        service.semantic_service = FakeSemanticService()  # type: ignore[assignment]
+        output_repository.save_extraction_run_state(
+            workflow_id="package-id",
+            state=ExtractionRunState(
+                profile_identifier="profile",
+                ranked_files=[RankedFile(rank=1, file_path="README.md")],
+                initial_extraction_overview=ExtractionOverview(
+                    summary="new-format overview",
+                    source_file_paths=["README.md"],
+                ),
+                initial_extraction_overview_status="structured",
+                chunk_results=[
+                    ExtractionChunkResult(
+                        chunk_index=0,
+                        file_path="README.md",
+                        start_idx=0,
+                        end_idx=0,
+                        status="completed",
+                        extraction_context=resource_context("grounding-resource", "Grounding resource."),
+                    ),
+                ],
+                generated_final_draft={"id": "manual-id", "type": "dataset"},
+                curated_document={"id": "manual-id", "type": "dataset"},
+            ),
+        )
+        output_repository.save_extraction_context(
+            workflow_id="package-id",
+            extraction_context=resource_context("grounding-resource", "Grounding resource."),
+        )
+
+        async def fake_generate(*_args, **kwargs):
+            output_type = kwargs["output_type"]
+            if output_type is ProfilePatchDocument:
+                return empty_profile_patch()
+            return CompletionResult(
+                output=VocabularyCandidateSelection(
+                    selected_uri=None,
+                    confidence=0.0,
+                    reason="No clear mapping.",
+                ),
+                usage=RunUsage(requests=1),
+            )
+
+        with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
+            result, status = await service.run_extraction(
+                data_package_id="package-id",
+                profile_identifier="profile",
+                resume=True,
+                target_stage="grounding",
+            )
+            self.assertIsNone(result)
+            self.assertEqual(status, TaskStatus.RUNNING)
+            await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
+
+        self.assertIsNotNone(output_repository.result)
+        self.assertEqual(output_repository.result.generated_final_draft["id"], "manual-id")
+        self.assertEqual(output_repository.result.curated_document["id"], "manual-id")
+        self.assertGreaterEqual(len(output_repository.run_state.vocab_queries), 1)
+
+    async def test_update_curated_document_saves_invalid_edits_without_changing_generated_draft(self):
+        service, _, output_repository = make_service([[make_chunk()]])
+        output_repository.save_extraction_run_state(
+            workflow_id="package-id",
+            state=ExtractionRunState(
+                profile_identifier="profile",
+                chunk_results=[
+                    ExtractionChunkResult(
+                        chunk_index=0,
+                        file_path="README.md",
+                        start_idx=0,
+                        end_idx=0,
+                        status="completed",
+                        extraction_context=resource_context("resource", "Persisted result."),
+                    ),
+                ],
+                generated_final_draft={"id": "generated", "type": "dataset"},
+                curated_document={"id": "previous"},
+            ),
+        )
+
+        progress = await service.update_curated_document(
+            data_package_id="package-id",
+            profile_identifier="profile",
+            document={"id": "edited", "type": "dataset"},
+        )
+
+        self.assertEqual(progress.stage, "curated_document")
+        self.assertEqual(output_repository.run_state.generated_final_draft["id"], "generated")
+        self.assertEqual(output_repository.run_state.curated_document["id"], "edited")
+
+        invalid_progress = await service.update_curated_document(
+            data_package_id="package-id",
+            profile_identifier="profile",
+            document={"id": None},
+        )
+
+        self.assertEqual(output_repository.run_state.generated_final_draft["id"], "generated")
+        self.assertNotIn("id", output_repository.run_state.curated_document)
+        self.assertEqual(invalid_progress.curated_validation.status, "invalid")
 
     async def test_progress_returns_persisted_interim_context(self):
         service, _, output_repository = make_service([[make_chunk()]])
@@ -839,7 +1313,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
 
         self.assertIsNotNone(output_repository.result)
-        self.assertEqual(output_repository.result.document["id"], "package-id")
+        self.assertEqual(output_repository.result.generated_final_draft["id"], "package-id")
         self.assertEqual(output_repository.run_state.chunk_results[0].status, "completed")
         self.assertEqual(output_repository.run_state.chunk_results[1].status, "failed")
         self.assertIn("Chunk extraction repair failed", output_repository.warnings[0])
@@ -853,6 +1327,11 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             workflow_id="package-id",
             state=ExtractionRunState(
                 ranked_files=[RankedFile(rank=1, file_path="README.md")],
+                initial_extraction_overview=ExtractionOverview(
+                    summary="new-format overview",
+                    source_file_paths=["README.md"],
+                ),
+                initial_extraction_overview_status="structured",
                 chunk_results=[
                     ExtractionChunkResult(
                         chunk_index=0,

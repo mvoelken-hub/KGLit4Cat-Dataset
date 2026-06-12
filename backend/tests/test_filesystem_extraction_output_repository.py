@@ -4,6 +4,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch, call
 
+from app.domain.extraction import (
+    ExtractionContext,
+    ExtractionOverview,
+    ExtractionRunResult,
+    ExtractionRunState,
+)
 from infra.filesystem_extraction_output_repository import (
     FileSystemExtractionOutputRepository,
     _atomic_replace,
@@ -19,7 +25,101 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
             FileSystemExtractionOutputRepository._write_json_file(path, {"value": "new"})
 
             self.assertEqual(json.loads(path.read_text(encoding="utf-8")), {"value": "new"})
-            self.assertEqual(list(path.parent.glob(".payload.json.*.tmp")), [])
+            self.assertEqual(list(path.parent.glob(".tmp*.tmp")), [])
+
+    def test_model_name_with_colon_creates_valid_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = FileSystemExtractionOutputRepository(Path(directory))
+            workflow_id = "test_workflow"
+            chat_model = "lfm2.5-thinking:1.2b-bf16"
+
+            run_state = ExtractionRunState(chat_model=chat_model)
+            repo.save_extraction_run_state(workflow_id=workflow_id, state=run_state)
+
+            loaded = repo.load_extraction_run_state(workflow_id, chat_model)
+            self.assertEqual(loaded.chat_model, chat_model)
+            self.assertTrue(
+                (repo._workflow_dir(workflow_id, chat_model) / "extraction_run_state.json").exists()
+            )
+
+    def test_extraction_result_writes_and_clears_new_artifacts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = FileSystemExtractionOutputRepository(Path(directory))
+            workflow_id = "test_workflow"
+            chat_model = "model:tag"
+            result = ExtractionRunResult(
+                generated_final_draft={"id": "generated", "title": "Generated"},
+                machine_extraction_context=ExtractionContext(),
+                initial_extraction_overview=ExtractionOverview(
+                    dataset_theme="NMR package",
+                    summary="Use NMR acquisition context as orientation only.",
+                ),
+                initial_extraction_overview_status="structured",
+                curated_document={"id": "curated", "title": "Curated"},
+                draft_quality_state="imperfect_final_draft",
+                validation={"status": "invalid", "errors": [], "warnings": ["weak"]},
+                curated_validation={"status": "valid", "errors": [], "warnings": []},
+                projection_ledger=[
+                    {
+                        "object_identifier": "object-1",
+                        "object_kind": "Resource",
+                        "status": "projected",
+                        "projected_paths": ["/title"],
+                        "reason": "projected",
+                    }
+                ],
+                field_completion_ledger=[
+                    {
+                        "json_path": "/title",
+                        "field_name": "title",
+                        "generated_value": "Generated",
+                        "curated_value": "Curated",
+                        "validation_status": "valid",
+                        "enrichment_status": "not_grounded",
+                    }
+                ],
+                curation_ledger=[
+                    {
+                        "json_path": "/title",
+                        "field_name": "title",
+                        "generated_value": "Generated",
+                        "curated_value": "Curated",
+                        "status": "user_modified",
+                    }
+                ],
+                chat_model=chat_model,
+            )
+
+            repo.save_extraction_result(workflow_id=workflow_id, result=result)
+            workflow_dir = repo._workflow_dir(workflow_id, chat_model)
+
+            for name in [
+                "initial_extraction_overview.json",
+                "generated_final_draft.json",
+                "curated_document.json",
+                "projection_ledger.json",
+                "field_completion_ledger.json",
+                "curation_ledger.json",
+                "validation.json",
+                "extraction_result.json",
+            ]:
+                self.assertTrue((workflow_dir / name).exists(), name)
+
+            overview, overview_status = repo.load_initial_extraction_overview(workflow_id, chat_model)
+            self.assertEqual(overview_status, "structured")
+            self.assertEqual(overview.dataset_theme, "NMR package")
+            self.assertEqual(repo.load_generated_final_draft(workflow_id, chat_model)["id"], "generated")
+            self.assertEqual(repo.load_curated_document(workflow_id, chat_model)["id"], "curated")
+            self.assertEqual(repo.load_projection_ledger(workflow_id, chat_model)[0].status, "projected")
+            self.assertEqual(repo.load_field_completion_ledger(workflow_id, chat_model)[0].json_path, "/title")
+            self.assertEqual(repo.load_curation_ledger(workflow_id, chat_model)[0].status, "user_modified")
+            generated_validation, curated_validation = repo.load_validation(workflow_id, chat_model)
+            self.assertEqual(generated_validation.status, "invalid")
+            self.assertEqual(curated_validation.status, "valid")
+
+            repo.clear_extraction_run(workflow_id)
+
+            self.assertFalse((Path(directory) / workflow_id).exists())
 
     def test_failed_replace_keeps_previous_json(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -31,7 +131,7 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
                     FileSystemExtractionOutputRepository._write_json_file(path, {"value": "new"})
 
             self.assertEqual(json.loads(path.read_text(encoding="utf-8")), {"value": "old"})
-            self.assertEqual(list(path.parent.glob(".payload.json.*.tmp")), [])
+            self.assertEqual(list(path.parent.glob(".tmp*.tmp")), [])
 
 
 class AtomicReplaceTests(unittest.TestCase):

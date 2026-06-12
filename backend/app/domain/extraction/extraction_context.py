@@ -3,6 +3,12 @@ import re
 from typing import Any, Literal, TypeVar
 from pydantic import BaseModel, Field, model_validator
 
+from app.domain.extraction.overview import (
+    ExtractionOverview,
+    ExtractionOverviewStatus,
+    overview_to_prompt_text,
+)
+
 T = TypeVar("T", bound=BaseModel)
 
 # Attribute classes
@@ -172,8 +178,7 @@ class ExtractionContext(BaseModel):
         ]
 
 
-EXTRACTION_CONTEXT_SYSTEM_PROMPT = f"""
-You are an expert for extracting structured metadata about scientific experiments from unstructured text.
+EXTRACTION_CONTEXT_SYSTEM_PROMPT = f"""You are an expert for extracting structured metadata about scientific experiments from unstructured text.
 You receive a content chunk from a file in a research data package, and your task is to extract structured information about the experimental context, including:
 - Data-generating activities: measurement, acquisition, analysis, processing, or generation runs that produce information about a target.
 - Evaluated entities: only the actual target of observation or evaluation, such as a sample, material, catalyst, specimen, model, or subject. Do not use evaluated_entity as a fallback class.
@@ -181,13 +186,33 @@ You receive a content chunk from a file in a research data package, and your tas
 - Resources: files, datasets, spectra, peak tables, images, reports, checksums, and generated data artifacts.
 - Methods: protocols, plans, pulse sequences, acquisition procedures, processing routines, and instrument procedures.
 Attach quantitative attributes (measured or calculated quantities) and qualitative attributes (observed characteristics, settings, labels, and modes) to the nearest meaningful activity, method, resource, or evaluated entity.
-Do not create standalone extraction objects for low-level parameter names, header fields, table-schema rows, internal format declarations, checksums, dates, software versions, numeric settings, solvents, nuclei, frequencies, delays, averages, or acquisition modes unless the text clearly presents them as a real activity, method, resource, agent, or evaluated target.
+Do not create standalone extraction objects for low-level parameter names, header fields, table-schema rows, internal format declarations, checksums, dates, software versions, numeric settings, solvents, nuclei, frequencies, delays, averages, pulse powers, receiver gains, spectral widths, or acquisition modes unless the text clearly presents them as a real activity, method, resource, agent, or evaluated target.
 If a line only contains technical metadata and cannot be attached usefully to a meaningful object, skip it.
+
+Examples of correct class choices:
+- DataGeneratingActivity: "1H NMR acquisition run" (parameters like ns=16, solvent CDCl3, temperature 298 K)
+- Resource: "HMS-Q11-p_10.peak.jdx" (a peak list file extracted from an instrument)
+- EvaluatedEntity: "HMS-Q11-p" (the catalyst sample being measured)
+- Method: "temperature program" (a ramp protocol applied during the run)
+- AgenticEntity: "Bruker AVANCE III 400 MHz" (the NMR spectrometer performing the measurement)
+
+CRITICAL negative instructions:
+- NEVER default to DataGeneratingActivity when the text describes a file, spectrum, dataset, image, report, checksum, or artifact. Use Resource for those.
+- NEVER default to DataGeneratingActivity when the text describes a sample, material, catalyst, specimen, or subject. Use EvaluatedEntity for those.
+- NEVER default to DataGeneratingActivity when the text describes a protocol, plan, pulse sequence, or procedure. Use Method for those.
+- The identifier must be a SPECIFIC name taken verbatim from the text. Generic words like "measurement", "experiment", "sample", "run", "data", or "acquisition" are forbidden as identifiers unless they are part of a longer specific label (e.g., "UV-Vis measurement of Pt-Al2O3").
+- The type field should describe the kind of entity (e.g., "sample", "spectrum", "instrument", "protocol"), not the object_kind label.
+- For instrument formats, labels such as PLW1, PULPROG, SFO1, TD, D1, NS, DS, RG, SW, SWH, AQ, NUC1, SOLVENT, and DATE are parameter keys, not standalone scientific objects.
+- If a chunk contains NMR acquisition settings, prefer one meaningful DataGeneratingActivity such as "1H NMR acquisition run" and attach settings as attributes.
+- File names and generated artifacts with extensions such as .dx, .jdx, .png, .csv, .txt, .pdf, or checksums are Resources, never DataGeneratingActivity.
+- Pulse sequence values such as "zg30" may support a Method or an attribute; the parameter key "PULPROG" alone is not a Method.
+
 Return only a valid ExtractionContext JSON object with the extracted information.
 Use this output schema: {ExtractionContext.model_json_schema()}
 For each extraction_objects item, set object_kind to the exact class label (DataGeneratingActivity, EvaluatedEntity, AgenticEntity, Resource, or Method) and set source_text to a short exact substring copied verbatim from the chunk that supports the extracted object. Do not paraphrase source_text. Use the metadata to get a sense of the overall context, but do not extract information from it.
 Work from the chunk content only. Inspect lines individually as evidence, but consolidate related lines into a small number of meaningful experimental objects instead of producing one object per header or parameter line.
 """
+
 
 class ChunkMetadata(BaseModel):
     start_idx: int = Field(..., ge=0, description="Start line index of the chunk in the original file")
@@ -210,6 +235,207 @@ def build_extraction_context_prompt(
         f"Chunk content (residual lines after text-quality filtering):\n{chunk_context.content}\n"
         "Extract structured metadata about the experimental context from the **chunk content**."
     )
+
+# Constants for scoring and compact formatting
+_GENERIC_IDENTIFIER_DENYLIST = {
+    "measurement",
+    "experiment",
+    "sample",
+    "run",
+    "data",
+    "acquisition",
+    "analysis",
+    "processing",
+    "generation",
+    "scan",
+    "test",
+    "reading",
+    "record",
+    "entry",
+    "result",
+    "output",
+    "input",
+    "file",
+    "dataset",
+    "spectrum",
+    "image",
+    "report",
+    "table",
+    "list",
+    "plot",
+    "graph",
+    "method",
+    "protocol",
+    "procedure",
+    "sequence",
+    "routine",
+    "plan",
+    "agent",
+    "entity",
+    "person",
+    "organization",
+    "instrument",
+    "system",
+    "unknown",
+}
+
+_CHARS_PER_TOKEN_ESTIMATE = 4
+_INPUT_CONTEXT_BUDGET_RATIO = 0.5
+
+
+def _score_extraction_object(trace: TracedExtractionObject) -> int:
+    obj = trace.extracted_object
+    score = 0
+
+    identifier = norm_text(obj.identifier)
+    if identifier and identifier not in _GENERIC_IDENTIFIER_DENYLIST:
+        score += 40
+    else:
+        score -= 30
+
+    desc_len = len(obj.description or "")
+    score += min(desc_len // 10, 20)
+
+    score += len(obj.has_quantitative_attributes) * 8
+    score += len(obj.has_qualitative_attributes) * 5
+
+    score += len(obj.keywords) * 3
+
+    src_len = len(trace.source_text or "")
+    score += min(src_len // 20, 10)
+
+    return score
+
+
+def _compact_object_bullet(trace: TracedExtractionObject) -> str:
+    obj = trace.extracted_object
+    parts = [f"- {trace.object_kind}: {obj.identifier} -- {obj.description}"]
+    if obj.keywords:
+        parts.append(f"  (keywords: {', '.join(obj.keywords)})")
+    if obj.has_quantitative_attributes:
+        qtys = ", ".join(
+            f"{quantity.identifier}={quantity.value} {quantity.unit}"
+            for quantity in obj.has_quantitative_attributes
+        )
+        parts.append(f"  [quantities: {qtys}]")
+    if obj.has_qualitative_attributes:
+        qualities = ", ".join(
+            f"{quality.title}={quality.value}"
+            for quality in obj.has_qualitative_attributes
+        )
+        parts.append(f"  [qualities: {qualities}]")
+    return " ".join(parts)
+
+
+def build_system_prompt_with_context(
+    base_prompt: str,
+    global_context: ExtractionContext | None,
+    num_ctx: int,
+    schema_buffer_chars: int = 500,
+) -> str:
+    if not global_context or not global_context.extraction_objects:
+        return base_prompt
+
+    free_chars = int(num_ctx * _INPUT_CONTEXT_BUDGET_RATIO * _CHARS_PER_TOKEN_ESTIMATE) - len(base_prompt) - schema_buffer_chars
+    if free_chars <= 0:
+        return base_prompt
+
+    scored = sorted(
+        global_context.extraction_objects,
+        key=lambda trace: _score_extraction_object(trace),
+        reverse=True,
+    )
+    bullets: list[str] = []
+    bullets_len = 0
+    header = "\n\nPreviously extracted objects (most informative first):\n"
+    for trace in scored:
+        bullet = _compact_object_bullet(trace)
+        added_len = len(bullet) + 1
+        if bullets_len + added_len > free_chars:
+            break
+        bullets.append(bullet)
+        bullets_len += added_len
+    if not bullets:
+        return base_prompt
+    return base_prompt + header + "\n".join(bullets)
+
+
+def build_system_prompt_with_overview(
+    base_prompt: str,
+    *,
+    overview: ExtractionOverview | None,
+    overview_status: ExtractionOverviewStatus | None,
+    same_file_context: ExtractionContext | None,
+    num_ctx: int,
+    schema_buffer_chars: int = 500,
+) -> str:
+    sections: list[str] = []
+    overview_text = overview_to_prompt_text(overview, status=overview_status)
+    if overview_text:
+        sections.append(
+            "\n\nInitial extraction overview (orientation only; do not extract evidence from this text):\n"
+            + overview_text
+        )
+
+    same_file_bullets = _same_file_context_bullets(
+        same_file_context,
+        max_chars=_same_file_memory_budget(
+            base_prompt=base_prompt,
+            overview_text=overview_text,
+            num_ctx=num_ctx,
+            schema_buffer_chars=schema_buffer_chars,
+        ),
+    )
+    if same_file_bullets:
+        sections.append(
+            "\n\nEarlier extracted objects from this same file (orientation only; current chunk source_text is still required):\n"
+            + "\n".join(same_file_bullets)
+        )
+    if not sections:
+        return base_prompt
+    return base_prompt + "".join(sections)
+
+
+def _same_file_memory_budget(
+    *,
+    base_prompt: str,
+    overview_text: str,
+    num_ctx: int,
+    schema_buffer_chars: int,
+) -> int:
+    free_chars = (
+        int(num_ctx * _INPUT_CONTEXT_BUDGET_RATIO * _CHARS_PER_TOKEN_ESTIMATE)
+        - len(base_prompt)
+        - len(overview_text)
+        - schema_buffer_chars
+    )
+    return max(0, free_chars)
+
+
+def _same_file_context_bullets(
+    context: ExtractionContext | None,
+    *,
+    max_chars: int,
+) -> list[str]:
+    if not context or not context.extraction_objects or max_chars <= 0:
+        return []
+    scored = sorted(
+        context.extraction_objects,
+        key=lambda trace: _score_extraction_object(trace),
+        reverse=True,
+    )
+    bullets: list[str] = []
+    used_chars = 0
+    for trace in scored:
+        if _score_extraction_object(trace) <= 0:
+            continue
+        bullet = _compact_object_bullet(trace)
+        added = len(bullet) + 1
+        if used_chars + added > max_chars:
+            break
+        bullets.append(bullet)
+        used_chars += added
+    return bullets
 
 def merge_extraction_context_results(
     context_list: list[ExtractionContext]

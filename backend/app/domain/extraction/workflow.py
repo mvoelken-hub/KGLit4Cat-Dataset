@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 from app.core.task_registry import TaskStatus
 from app.domain.extraction.extraction_context import ExtractionContext
-from app.domain.extraction.profile_projection import ProfileObjectPatchResult
 from app.domain.extraction.vocabulary import ExtractionNormalization
 from app.domain.extraction.file_ranking import RankedFile
+from app.domain.extraction.overview import ExtractionOverview, ExtractionOverviewStatus
+from app.domain.profiles import ProfileValidationIssue
 from app.domain.semantics import VocabQuery, VocabQueryResult
 
 
@@ -77,14 +78,91 @@ class ExtractionChunkResult(ExtractionChunkRef):
     context_tokens: int | None = None
 
 
+DraftQualityState = Literal[
+    "complete_final_draft",
+    "imperfect_final_draft",
+    "empty_profile_shell",
+]
+DraftValidationStatus = Literal["valid", "invalid", "not_run"]
+ProjectionLedgerStatus = Literal[
+    "projected",
+    "not_projected",
+    "ambiguous",
+    "user_edit_required",
+]
+FieldValidationStatus = Literal["valid", "invalid", "missing", "not_run"]
+FieldEnrichmentStatus = Literal[
+    "grounded",
+    "not_grounded",
+    "no_candidate",
+    "ambiguous",
+    "user_selected_vocab_term",
+    "intentionally_unresolved",
+]
+CurationLedgerStatus = Literal[
+    "unchanged",
+    "user_modified",
+    "user_removed",
+    "user_selected_vocab_term",
+    "intentionally_unresolved",
+]
+
+
+class DraftValidationResult(BaseModel):
+    status: DraftValidationStatus = "not_run"
+    errors: list[ProfileValidationIssue] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ProjectionLedgerRecord(BaseModel):
+    object_identifier: str
+    object_kind: str
+    source_evidence: str | None = None
+    status: ProjectionLedgerStatus = "not_projected"
+    projected_paths: list[str] = Field(default_factory=list)
+    reason: str = ""
+    error: str | None = None
+
+
+class FieldCompletionLedgerRecord(BaseModel):
+    json_path: str
+    field_name: str
+    generated_value: Any = None
+    curated_value: Any = None
+    source_evidence: list[str] = Field(default_factory=list)
+    validation_status: FieldValidationStatus = "not_run"
+    enrichment_status: FieldEnrichmentStatus = "not_grounded"
+    issue_categories: list[str] = Field(default_factory=list)
+    edit_needed_reason: str = ""
+
+
+class CurationLedgerRecord(BaseModel):
+    json_path: str
+    field_name: str
+    generated_value: Any = None
+    curated_value: Any = None
+    source_evidence: list[str] = Field(default_factory=list)
+    status: CurationLedgerStatus = "unchanged"
+    reason: str = ""
+
+
 class ExtractionRunState(BaseModel):
     profile_identifier: str | None = None
     vocab_query_config: ExtractionVocabQueryConfig = Field(default_factory=ExtractionVocabQueryConfig)
+    chat_model: str | None = None
     ranked_files: list[RankedFile] = Field(default_factory=list)
+    initial_extraction_overview: ExtractionOverview | None = None
+    initial_extraction_overview_status: ExtractionOverviewStatus | None = None
     chunk_results: list[ExtractionChunkResult] = Field(default_factory=list)
     vocab_queries: list[ExtractionVocabQueryRecord] = Field(default_factory=list)
-    interim_profile_document: dict[str, Any] | None = None
-    profile_patch_results: list[ProfileObjectPatchResult] = Field(default_factory=list)
+    generated_final_draft: dict[str, Any] | None = None
+    curated_document: dict[str, Any] | None = None
+    draft_quality_state: DraftQualityState | None = None
+    validation: DraftValidationResult = Field(default_factory=DraftValidationResult)
+    curated_validation: DraftValidationResult | None = None
+    projection_ledger: list[ProjectionLedgerRecord] = Field(default_factory=list)
+    field_completion_ledger: list[FieldCompletionLedgerRecord] = Field(default_factory=list)
+    curation_ledger: list[CurationLedgerRecord] = Field(default_factory=list)
 
 
 class ExtractionRunProgress(BaseModel):
@@ -96,10 +174,18 @@ class ExtractionRunProgress(BaseModel):
     interim_context: ExtractionContext | None = None
     vocab_query_config: ExtractionVocabQueryConfig = Field(default_factory=ExtractionVocabQueryConfig)
     ranked_files: list[RankedFile] = Field(default_factory=list)
+    initial_extraction_overview: ExtractionOverview | None = None
+    initial_extraction_overview_status: ExtractionOverviewStatus | None = None
     chunk_results: list[ExtractionChunkResult] = Field(default_factory=list)
     vocab_queries: list[ExtractionVocabQueryRecord] = Field(default_factory=list)
-    interim_profile_document: dict[str, Any] | None = None
-    profile_patch_results: list[ProfileObjectPatchResult] = Field(default_factory=list)
+    generated_final_draft: dict[str, Any] | None = None
+    curated_document: dict[str, Any] | None = None
+    draft_quality_state: DraftQualityState | None = None
+    validation: DraftValidationResult = Field(default_factory=DraftValidationResult)
+    curated_validation: DraftValidationResult | None = None
+    projection_ledger: list[ProjectionLedgerRecord] = Field(default_factory=list)
+    field_completion_ledger: list[FieldCompletionLedgerRecord] = Field(default_factory=list)
+    curation_ledger: list[CurationLedgerRecord] = Field(default_factory=list)
     current_chunk: ExtractionChunkRef | None = None
     warnings: list[str] = Field(default_factory=list)
 
@@ -122,8 +208,18 @@ class CompleteWorkflowProgress(BaseModel):
 
 
 class ExtractionRunResult(BaseModel):
-    document: dict[str, Any]
-    extraction_context: ExtractionContext
+    generated_final_draft: dict[str, Any]
+    machine_extraction_context: ExtractionContext
+    initial_extraction_overview: ExtractionOverview | None = None
+    initial_extraction_overview_status: ExtractionOverviewStatus | None = None
+    curated_document: dict[str, Any] | None = None
+    draft_quality_state: DraftQualityState
+    validation: DraftValidationResult
+    curated_validation: DraftValidationResult | None = None
+    projection_ledger: list[ProjectionLedgerRecord] = Field(default_factory=list)
+    field_completion_ledger: list[FieldCompletionLedgerRecord] = Field(default_factory=list)
+    curation_ledger: list[CurationLedgerRecord] = Field(default_factory=list)
+    chat_model: str | None = None
     normalization: ExtractionNormalization | None = None
     warnings: list[str] = Field(default_factory=list)
     token_usage: dict[str, Any] = Field(default_factory=dict)

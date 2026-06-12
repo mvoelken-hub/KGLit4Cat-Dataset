@@ -1,6 +1,16 @@
-from typing import Protocol
+from typing import Any, Protocol
 
-from app.domain.extraction import ExtractionContext, ExtractionRunResult, ExtractionRunState
+from app.domain.extraction import (
+    CurationLedgerRecord,
+    DraftValidationResult,
+    ExtractionOverview,
+    ExtractionOverviewStatus,
+    ExtractionContext,
+    ExtractionRunResult,
+    ExtractionRunState,
+    FieldCompletionLedgerRecord,
+    ProjectionLedgerRecord,
+)
 
 
 class ExtractionOutputRepository(Protocol):
@@ -24,6 +34,120 @@ class ExtractionOutputRepository(Protocol):
         ...
 
     def load_extraction_result(self, workflow_id: str) -> ExtractionRunResult:
+        ...
+
+    def save_initial_extraction_overview(
+        self,
+        *,
+        workflow_id: str,
+        overview: ExtractionOverview | None,
+        status: ExtractionOverviewStatus | None,
+        chat_model: str | None = None,
+    ) -> None:
+        ...
+
+    def load_initial_extraction_overview(
+        self,
+        workflow_id: str,
+        chat_model: str | None = None,
+    ) -> tuple[ExtractionOverview | None, ExtractionOverviewStatus | None]:
+        ...
+
+    def save_generated_final_draft(
+        self,
+        *,
+        workflow_id: str,
+        document: dict[str, Any],
+        chat_model: str | None = None,
+    ) -> None:
+        ...
+
+    def load_generated_final_draft(
+        self,
+        workflow_id: str,
+        chat_model: str | None = None,
+    ) -> dict[str, Any]:
+        ...
+
+    def save_curated_document(
+        self,
+        *,
+        workflow_id: str,
+        document: dict[str, Any],
+        chat_model: str | None = None,
+    ) -> None:
+        ...
+
+    def load_curated_document(
+        self,
+        workflow_id: str,
+        chat_model: str | None = None,
+    ) -> dict[str, Any]:
+        ...
+
+    def save_projection_ledger(
+        self,
+        *,
+        workflow_id: str,
+        ledger: list[ProjectionLedgerRecord],
+        chat_model: str | None = None,
+    ) -> None:
+        ...
+
+    def load_projection_ledger(
+        self,
+        workflow_id: str,
+        chat_model: str | None = None,
+    ) -> list[ProjectionLedgerRecord]:
+        ...
+
+    def save_field_completion_ledger(
+        self,
+        *,
+        workflow_id: str,
+        ledger: list[FieldCompletionLedgerRecord],
+        chat_model: str | None = None,
+    ) -> None:
+        ...
+
+    def load_field_completion_ledger(
+        self,
+        workflow_id: str,
+        chat_model: str | None = None,
+    ) -> list[FieldCompletionLedgerRecord]:
+        ...
+
+    def save_curation_ledger(
+        self,
+        *,
+        workflow_id: str,
+        ledger: list[CurationLedgerRecord],
+        chat_model: str | None = None,
+    ) -> None:
+        ...
+
+    def load_curation_ledger(
+        self,
+        workflow_id: str,
+        chat_model: str | None = None,
+    ) -> list[CurationLedgerRecord]:
+        ...
+
+    def save_validation(
+        self,
+        *,
+        workflow_id: str,
+        validation: DraftValidationResult,
+        curated_validation: DraftValidationResult | None = None,
+        chat_model: str | None = None,
+    ) -> None:
+        ...
+
+    def load_validation(
+        self,
+        workflow_id: str,
+        chat_model: str | None = None,
+    ) -> tuple[DraftValidationResult, DraftValidationResult | None]:
         ...
 
     def save_extraction_run_state(

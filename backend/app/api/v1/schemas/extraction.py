@@ -1,12 +1,10 @@
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 from app.core.task_registry import TaskStatus
 from app.domain.extraction import (
     CompleteWorkflowProgress,
-    ExtractionContext,
-    ExtractionNormalization,
     ExtractionRunProgress,
     ExtractionRunResult,
     ExtractionVocabQueryConfig,
@@ -27,6 +25,10 @@ class ExtractionRunRequest(BaseModel):
     resume: bool = Field(
         default=False,
         description="Resume from persisted extraction context state instead of clearing previous partial results.",
+    )
+    target_stage: Literal["context", "profile", "grounding", "complete"] = Field(
+        default="complete",
+        description="Workflow stage to run up to.",
     )
 
 
@@ -58,12 +60,21 @@ class VocabQueryConfigUpdateRequest(ExtractionVocabQueryConfig):
     pass
 
 
-class ExtractionResultResponse(BaseModel):
-    document: dict[str, Any]
-    extraction_context: ExtractionContext
-    normalization: ExtractionNormalization | None = None
-    warnings: list[str] = Field(default_factory=list)
-    token_usage: dict[str, Any] = Field(default_factory=dict)
+class CuratedDocumentUpdateRequest(BaseModel):
+    profile_identifier: str = Field(..., description="Identifier of the selected extraction profile.")
+    document: dict[str, Any] = Field(..., description="Edited curated profile document.")
+
+
+class CurationFieldActionRequest(BaseModel):
+    action: Literal["select_vocab_term", "mark_unresolved"]
+    json_path: str = Field(..., description="RFC 6901 JSON Pointer to the curated field.")
+    selected_uri: str | None = Field(default=None, description="Selected vocabulary term URI.")
+    selected_title: str | None = Field(default=None, description="Selected vocabulary term label.")
+    vocabulary_identifier: str | None = Field(default=None, description="Source vocabulary identifier.")
+
+
+class ExtractionResultResponse(ExtractionRunResult):
+    pass
 
 
 def _extraction_run_response(

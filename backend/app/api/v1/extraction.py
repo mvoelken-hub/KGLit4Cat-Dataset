@@ -8,6 +8,8 @@ from app.core.task_registry import TaskStatus
 from app.api.v1.schemas import (
     CompleteWorkflowProgressResponse,
     CompleteWorkflowRunResponse,
+    CuratedDocumentUpdateRequest,
+    CurationFieldActionRequest,
     ExtractionProgressResponse,
     ExtractionRunRequest,
     ExtractionRunResponse,
@@ -123,6 +125,7 @@ async def run_extraction(
             profile_identifier=request.profile_identifier,
             qualitative_vocab_identifiers=request.qualitative_vocab_identifiers,
             resume=request.resume,
+            target_stage=request.target_stage,
         )
         _, progress = await extraction_service.get_extraction_progress(
             data_package_id=request.data_package_id,
@@ -168,6 +171,43 @@ async def update_vocab_query_config(
         progress = await extraction_service.update_vocab_query_config(
             data_package_id=data_package_id,
             config=request,
+        )
+        return ExtractionProgressResponse(status=TaskStatus.UNKNOWN, progress=progress)
+    except Exception as exc:
+        _raise_extraction_error(exc)
+
+
+@router.put("/run/{data_package_id}/curated-document", response_model=ExtractionProgressResponse)
+async def update_curated_document(
+    data_package_id: str,
+    request: CuratedDocumentUpdateRequest,
+    extraction_service: ExtractionService = Depends(get_extraction_service),
+) -> ExtractionProgressResponse:
+    try:
+        progress = await extraction_service.update_curated_document(
+            data_package_id=data_package_id,
+            profile_identifier=request.profile_identifier,
+            document=request.document,
+        )
+        return ExtractionProgressResponse(status=TaskStatus.UNKNOWN, progress=progress)
+    except Exception as exc:
+        _raise_extraction_error(exc)
+
+
+@router.post("/run/{data_package_id}/curation/field", response_model=ExtractionProgressResponse)
+async def apply_curation_field_action(
+    data_package_id: str,
+    request: CurationFieldActionRequest,
+    extraction_service: ExtractionService = Depends(get_extraction_service),
+) -> ExtractionProgressResponse:
+    try:
+        progress = await extraction_service.apply_curation_field_action(
+            data_package_id=data_package_id,
+            action=request.action,
+            json_path=request.json_path,
+            selected_uri=request.selected_uri,
+            selected_title=request.selected_title,
+            vocabulary_identifier=request.vocabulary_identifier,
         )
         return ExtractionProgressResponse(status=TaskStatus.UNKNOWN, progress=progress)
     except Exception as exc:

@@ -10,8 +10,10 @@ from app.domain.extraction import (
     FileContext,
     FileRankingResult,
     GroundedExtractionObject,
+    QualitativeAttribute,
     QuantitativeAttribute,
     RankedFile,
+    DataGeneratingActivity,
     Resource,
     TracedExtractionObject,
     build_extraction_context_prompt,
@@ -433,5 +435,180 @@ class ExtractionDomainTests(unittest.TestCase):
         self.assertEqual(round_trip.source_text, "IR spectrum")
 
 
+
+
+    def test_score_prefers_specific_identifiers(self):
+        specific = TracedExtractionObject(
+            object_kind="Resource",
+            extracted_object=Resource(identifier="HMS-Q11-p", description="A sample"),
+            source_text="HMS-Q11-p",
+        )
+        generic = TracedExtractionObject(
+            object_kind="DataGeneratingActivity",
+            extracted_object=DataGeneratingActivity(identifier="measurement", description="A run"),
+            source_text="measurement",
+        )
+        from app.domain.extraction.extraction_context import _score_extraction_object
+        self.assertGreater(_score_extraction_object(specific), _score_extraction_object(generic))
+
+    def test_score_rewards_attribute_richness(self):
+        sparse = TracedExtractionObject(
+            object_kind="DataGeneratingActivity",
+            extracted_object=DataGeneratingActivity(identifier="run-1", description="A run"),
+            source_text="run-1",
+        )
+        rich = TracedExtractionObject(
+            object_kind="DataGeneratingActivity",
+            extracted_object=DataGeneratingActivity(
+                identifier="run-1",
+                description="A run with many attributes",
+                has_quantitative_attributes=[QuantitativeAttribute(identifier="t", value="300", unit="K", quantity_kind="temperature")],
+                has_qualitative_attributes=[QualitativeAttribute(title="mode", value="batch")],
+                keywords=["batch", "reactor"],
+            ),
+            source_text="run-1 batch reactor",
+        )
+        from app.domain.extraction.extraction_context import _score_extraction_object
+        self.assertGreater(_score_extraction_object(rich), _score_extraction_object(sparse))
+
+    def test_build_system_prompt_returns_base_when_no_context(self):
+        from app.domain.extraction.extraction_context import build_system_prompt_with_context, EXTRACTION_CONTEXT_SYSTEM_PROMPT
+        result = build_system_prompt_with_context(
+            base_prompt=EXTRACTION_CONTEXT_SYSTEM_PROMPT,
+            global_context=None,
+            num_ctx=8192,
+        )
+        self.assertEqual(result, EXTRACTION_CONTEXT_SYSTEM_PROMPT)
+
+    def test_build_system_prompt_includes_all_when_space_available(self):
+        from app.domain.extraction.extraction_context import build_system_prompt_with_context, EXTRACTION_CONTEXT_SYSTEM_PROMPT, ExtractionContext
+        ctx = ExtractionContext(extraction_objects=[
+            TracedExtractionObject(
+                object_kind="Resource",
+                extracted_object=Resource(identifier="file.txt", description="A file"),
+                source_text="file.txt",
+            ),
+        ])
+        result = build_system_prompt_with_context(
+            base_prompt=EXTRACTION_CONTEXT_SYSTEM_PROMPT,
+            global_context=ctx,
+            num_ctx=8192,
+        )
+        self.assertIn("file.txt", result)
+        self.assertIn("Previously extracted objects", result)
+
+    def test_build_system_prompt_triages_when_space_limited(self):
+        from app.domain.extraction.extraction_context import build_system_prompt_with_context, EXTRACTION_CONTEXT_SYSTEM_PROMPT, ExtractionContext
+        objects = [
+            TracedExtractionObject(
+                object_kind="Resource",
+                extracted_object=Resource(identifier=f"file-{i}.txt", description=f"File {i}"),
+                source_text=f"file-{i}.txt",
+            )
+            for i in range(50)
+        ]
+        ctx = ExtractionContext(extraction_objects=objects)
+        result = build_system_prompt_with_context(
+            base_prompt=EXTRACTION_CONTEXT_SYSTEM_PROMPT,
+            global_context=ctx,
+            num_ctx=16384,
+            schema_buffer_chars=500,
+        )
+        self.assertIn("Previously extracted objects", result)
+        # With a small context, not all 50 objects should fit
+        self.assertGreater(result.count("file-"), 0)
+
+    def test_build_system_prompt_with_overview_uses_overview_and_same_file_memory(self):
+        from app.domain.extraction.extraction_context import (
+            EXTRACTION_CONTEXT_SYSTEM_PROMPT,
+            ExtractionContext,
+            build_system_prompt_with_overview,
+        )
+        from app.domain.extraction.overview import ExtractionOverview
+
+        same_file = ExtractionContext(extraction_objects=[
+            TracedExtractionObject(
+                object_kind="Resource",
+                extracted_object=Resource(identifier="same-file.dx", description="Same file resource"),
+                source_text="same-file.dx",
+            ),
+        ])
+        overview = ExtractionOverview(
+            dataset_theme="1H NMR package",
+            summary="Attach NMR parameters to an acquisition run.",
+            known_traps=["PLW1 is a pulse power parameter, not a sample."],
+        )
+
+        result = build_system_prompt_with_overview(
+            base_prompt=EXTRACTION_CONTEXT_SYSTEM_PROMPT,
+            overview=overview,
+            overview_status="structured",
+            same_file_context=same_file,
+            num_ctx=8192,
+        )
+
+        self.assertIn("Initial extraction overview", result)
+        self.assertIn("1H NMR package", result)
+        self.assertIn("Earlier extracted objects from this same file", result)
+        self.assertIn("same-file.dx", result)
+        self.assertIn("orientation only", result)
+
+    def test_extraction_prompt_warns_that_instrument_parameters_are_not_objects(self):
+        from app.domain.extraction.extraction_context import EXTRACTION_CONTEXT_SYSTEM_PROMPT
+
+        self.assertIn("PLW1", EXTRACTION_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("PULPROG", EXTRACTION_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("parameter keys, not standalone scientific objects", EXTRACTION_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("File names and generated artifacts", EXTRACTION_CONTEXT_SYSTEM_PROMPT)
+
+    def test_global_context_includes_all_prior_completed_chunks(self):
+        from app.domain.extraction.workflow import ExtractionRunState, ExtractionChunkResult
+        from app.domain.extraction.extraction_context import ExtractionContext, merge_extraction_context_results
+        from app.services.extraction_service import ExtractionService
+        state = ExtractionRunState(chunk_results=[
+            ExtractionChunkResult(
+                chunk_index=0, file_path="a.txt", start_idx=0, end_idx=1,
+                status="completed", extraction_context=ExtractionContext(extraction_objects=[
+                    TracedExtractionObject(object_kind="Resource", extracted_object=Resource(identifier="a", description="A"), source_text="a"),
+                ]),
+            ),
+            ExtractionChunkResult(
+                chunk_index=1, file_path="b.txt", start_idx=0, end_idx=1,
+                status="completed", extraction_context=ExtractionContext(extraction_objects=[
+                    TracedExtractionObject(object_kind="Resource", extracted_object=Resource(identifier="b", description="B"), source_text="b"),
+                ]),
+            ),
+        ])
+        ctx = ExtractionService._global_extraction_context_for_prompt(state, current_chunk_index=2)
+        self.assertIsNotNone(ctx)
+        ids = [t.extracted_object.identifier for t in ctx.extraction_objects]
+        self.assertIn("a", ids)
+        self.assertIn("b", ids)
+
+    def test_global_context_respects_chunk_order(self):
+        from app.domain.extraction.workflow import ExtractionRunState, ExtractionChunkResult
+        from app.domain.extraction.extraction_context import ExtractionContext
+        from app.services.extraction_service import ExtractionService
+        state = ExtractionRunState(chunk_results=[
+            ExtractionChunkResult(
+                chunk_index=0, file_path="a.txt", start_idx=0, end_idx=1,
+                status="completed", extraction_context=ExtractionContext(extraction_objects=[]),
+            ),
+            ExtractionChunkResult(
+                chunk_index=5, file_path="a.txt", start_idx=0, end_idx=1,
+                status="completed", extraction_context=ExtractionContext(extraction_objects=[
+                    TracedExtractionObject(object_kind="Resource", extracted_object=Resource(identifier="later", description="Later"), source_text="later"),
+                ]),
+            ),
+        ])
+        ctx = ExtractionService._global_extraction_context_for_prompt(state, current_chunk_index=6)
+        self.assertIsNotNone(ctx)
+        ids = [t.extracted_object.identifier for t in ctx.extraction_objects]
+        self.assertIn("later", ids)
+
+        # For chunk 5, only chunks with index < 5 should be included
+        ctx_5 = ExtractionService._global_extraction_context_for_prompt(state, current_chunk_index=5)
+        self.assertIsNotNone(ctx_5)
+        self.assertEqual(ctx_5.extraction_objects, [])
 if __name__ == "__main__":
     unittest.main()

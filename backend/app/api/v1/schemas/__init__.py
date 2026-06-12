@@ -27,6 +27,8 @@ from app.api.v1.schemas.semantic import (
 from app.api.v1.schemas.extraction import (
     CompleteWorkflowProgressResponse,
     CompleteWorkflowRunResponse,
+    CuratedDocumentUpdateRequest,
+    CurationFieldActionRequest,
     ExtractionProgressResponse,
     ExtractionResultResponse,
     ExtractionRunRequest,
@@ -69,6 +71,8 @@ __all__ = [
     "ExtractionResultResponse",
     "ExtractionRunRequest",
     "ExtractionRunResponse",
+    "CuratedDocumentUpdateRequest",
+    "CurationFieldActionRequest",
     "CompleteWorkflowProgressResponse",
     "CompleteWorkflowRunResponse",
     "VocabQueryConfigUpdateRequest",

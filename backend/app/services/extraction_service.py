@@ -8,7 +8,7 @@ from dataclasses import dataclass
 import jsonpatch
 from pydantic import ValidationError
 from hashlib import sha1
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from app.core.config import Settings
 from app.core.logging import logger
@@ -17,6 +17,8 @@ from app.domain.datasources import ContentChunk
 from app.domain.extraction import (
     DEFAULT_QUALITATIVE_VOCAB_IDENTIFIERS,
     EXTRACTION_CONTEXT_SYSTEM_PROMPT,
+    EXTRACTION_OVERVIEW_FALLBACK_SYSTEM_PROMPT,
+    EXTRACTION_OVERVIEW_SYSTEM_PROMPT,
     PROFILE_PROJECTION_SYSTEM_PROMPT,
     PROFILE_PATCH_SYSTEM_PROMPT,
     QUDT_QUANTITY_KIND_VOCAB,
@@ -29,10 +31,16 @@ from app.domain.extraction import (
     ChunkingRequiredError,
     CompleteWorkflowProgress,
     CompleteWorkflowStepProgress,
+    CurationLedgerRecord,
     DefinedTerm,
+    DraftValidationResult,
     ExtractionChunkRef,
     ExtractionChunkResult,
     ExtractionContext,
+    ExtractionOverview,
+    ExtractionOverviewFilePreview,
+    ExtractionOverviewInspectedFile,
+    ExtractionOverviewStatus,
     ExtractionNormalization,
     ExtractionResultNotFoundError,
     ExtractionRunProgress,
@@ -43,10 +51,12 @@ from app.domain.extraction import (
     ExtractionVocabQueryRecord,
     FileContext,
     FileRankingResult,
+    FieldCompletionLedgerRecord,
     GroundedExtractionObject,
     ProfileFieldNormalization,
     ProfileObjectPatchResult,
     ProfilePatchDocument,
+    ProjectionLedgerRecord,
     QualitativeAttribute,
     QualitativeAttributeNormalization,
     QuantitativeAttribute,
@@ -58,6 +68,9 @@ from app.domain.extraction import (
     VocabularyTermMapping,
     build_candidate_selection_prompt,
     build_extraction_context_prompt,
+    build_extraction_overview_fallback_prompt,
+    build_extraction_overview_prompt,
+    build_system_prompt_with_overview,
     build_fallback_query_prompt,
     build_object_grounding_selection_prompt,
     build_profile_patch_prompt,
@@ -69,10 +82,15 @@ from app.domain.extraction import (
     fallback_file_ranking,
     merge_extraction_context_results,
 )
-from app.domain.profiles import remove_null_values, validation_schema_for_target_class
+from app.domain.profiles import (
+    ProfileValidationIssue,
+    remove_null_values,
+    validation_schema_for_target_class,
+)
 from app.domain.semantics import VocabQuery, VocabQueryResult
 from app.ollama.completion import generate_structured, repair_structured_output
 from app.ollama.errors import CompletionError, MaxRetriesExceeded
+from app.ollama.usage import RunUsage
 from app.repositories.extraction_output_repository import ExtractionOutputRepository
 
 if TYPE_CHECKING:
@@ -80,6 +98,12 @@ if TYPE_CHECKING:
     from app.services.datasource_service import DataSourceService
     from app.services.profile_service import ProfileService
     from app.services.semantic_service import SemanticService
+
+
+ExtractionTargetStage = Literal["context", "profile", "grounding", "complete"]
+INITIAL_OVERVIEW_TOP_FILE_LIMIT = 8
+INITIAL_OVERVIEW_PREVIEW_LINE_LIMIT = 80
+INITIAL_OVERVIEW_MAX_LINE_CHARS = 500
 
 
 @dataclass
@@ -138,6 +162,7 @@ class ExtractionService:
         profile_identifier: str,
         qualitative_vocab_identifiers: list[str] | None = None,
         resume: bool = False,
+        target_stage: ExtractionTargetStage = "complete",
     ) -> tuple[ExtractionRunResult | None, TaskStatus]:
         self._require_runtime_dependencies()
         assert self.datasource_service is not None
@@ -162,7 +187,7 @@ class ExtractionService:
             return self._load_result_or_none(data_package_id), TaskStatus.RUNNING
         if task_info is not None and task_info.status == TaskStatus.COMPLETED:
             result = self._load_result_or_none(data_package_id)
-            if result is not None:
+            if result is not None and resume:
                 return result, TaskStatus.COMPLETED
 
         if not resume:
@@ -173,6 +198,7 @@ class ExtractionService:
                 profile_identifier=profile_identifier,
                 qualitative_vocab_identifiers=qualitative_vocab_identifiers,
                 resume=resume,
+                target_stage=target_stage,
             ),
             type=TaskType.WORKFLOW,
             name=task_name,
@@ -406,19 +432,27 @@ class ExtractionService:
                     stage="completed",
                     processed_chunks=self._completed_chunk_count(state) if state else 0,
                     total_chunks=len(state.chunk_results) if state else 0,
-                    interim_context=result.extraction_context,
+                    interim_context=result.machine_extraction_context,
                     vocab_query_config=state.vocab_query_config if state else self._default_vocab_query_config(None),
                     ranked_files=state.ranked_files if state else [],
+                    initial_extraction_overview=result.initial_extraction_overview,
+                    initial_extraction_overview_status=result.initial_extraction_overview_status,
                     chunk_results=state.chunk_results if state else [],
                     vocab_queries=state.vocab_queries if state else [],
-                    interim_profile_document=state.interim_profile_document if state else None,
-                    profile_patch_results=state.profile_patch_results if state else [],
+                    generated_final_draft=result.generated_final_draft,
+                    curated_document=result.curated_document,
+                    draft_quality_state=result.draft_quality_state,
+                    validation=result.validation,
+                    curated_validation=result.curated_validation,
+                    projection_ledger=result.projection_ledger,
+                    field_completion_ledger=result.field_completion_ledger,
+                    curation_ledger=result.curation_ledger,
                     warnings=list(result.warnings),
                 )
             interim_context = self._load_context_or_none(data_package_id)
             if interim_context is not None or state is not None:
                 return TaskStatus.UNKNOWN, ExtractionRunProgress(
-                    stage="interim_context",
+                    stage="profile_draft" if state and state.generated_final_draft else "interim_context",
                     processed_chunks=self._completed_chunk_count(state) if state else 0,
                     total_chunks=len(state.chunk_results) if state else 0,
                     interim_context=interim_context or (
@@ -428,10 +462,18 @@ class ExtractionService:
                     ),
                     vocab_query_config=state.vocab_query_config if state else self._default_vocab_query_config(None),
                     ranked_files=state.ranked_files if state else [],
+                    initial_extraction_overview=state.initial_extraction_overview if state else None,
+                    initial_extraction_overview_status=state.initial_extraction_overview_status if state else None,
                     chunk_results=state.chunk_results if state else [],
                     vocab_queries=state.vocab_queries if state else [],
-                    interim_profile_document=state.interim_profile_document if state else None,
-                    profile_patch_results=state.profile_patch_results if state else [],
+                    generated_final_draft=state.generated_final_draft if state else None,
+                    curated_document=state.curated_document if state else None,
+                    draft_quality_state=state.draft_quality_state if state else None,
+                    validation=state.validation if state else DraftValidationResult(),
+                    curated_validation=state.curated_validation if state else None,
+                    projection_ledger=state.projection_ledger if state else [],
+                    field_completion_ledger=state.field_completion_ledger if state else [],
+                    curation_ledger=state.curation_ledger if state else [],
                     warnings=self._load_warnings_or_empty(data_package_id),
                 )
             return TaskStatus.UNKNOWN, None
@@ -447,16 +489,24 @@ class ExtractionService:
             state = self._load_run_state_or_none(data_package_id)
             if state is not None:
                 progress = ExtractionRunProgress(
-                    stage="interim_context",
+                    stage="profile_draft" if state.generated_final_draft else "interim_context",
                     processed_chunks=self._completed_chunk_count(state),
                     total_chunks=len(state.chunk_results),
                     interim_context=self._merged_completed_chunk_context_or_none(state),
                     vocab_query_config=state.vocab_query_config,
                     ranked_files=state.ranked_files,
+                    initial_extraction_overview=state.initial_extraction_overview,
+                    initial_extraction_overview_status=state.initial_extraction_overview_status,
                     chunk_results=state.chunk_results,
                     vocab_queries=state.vocab_queries,
-                    interim_profile_document=state.interim_profile_document,
-                    profile_patch_results=state.profile_patch_results,
+                    generated_final_draft=state.generated_final_draft,
+                    curated_document=state.curated_document,
+                    draft_quality_state=state.draft_quality_state,
+                    validation=state.validation,
+                    curated_validation=state.curated_validation,
+                    projection_ledger=state.projection_ledger,
+                    field_completion_ledger=state.field_completion_ledger,
+                    curation_ledger=state.curation_ledger,
                 )
         if progress is not None and progress.interim_context is None:
             progress.interim_context = self._load_context_or_none(data_package_id)
@@ -469,9 +519,17 @@ class ExtractionService:
                     progress.chunk_results = state.chunk_results
                     progress.processed_chunks = self._completed_chunk_count(state)
                     progress.total_chunks = len(state.chunk_results)
+                progress.initial_extraction_overview = state.initial_extraction_overview
+                progress.initial_extraction_overview_status = state.initial_extraction_overview_status
                 progress.vocab_queries = state.vocab_queries
-                progress.interim_profile_document = state.interim_profile_document
-                progress.profile_patch_results = state.profile_patch_results
+                progress.generated_final_draft = state.generated_final_draft
+                progress.curated_document = state.curated_document
+                progress.draft_quality_state = state.draft_quality_state
+                progress.validation = state.validation
+                progress.curated_validation = state.curated_validation
+                progress.projection_ledger = state.projection_ledger
+                progress.field_completion_ledger = state.field_completion_ledger
+                progress.curation_ledger = state.curation_ledger
         return task_info.status, progress
 
     async def pause_extraction(
@@ -507,10 +565,18 @@ class ExtractionService:
             or self._load_context_or_none(data_package_id),
             vocab_query_config=state.vocab_query_config,
             ranked_files=state.ranked_files,
+            initial_extraction_overview=state.initial_extraction_overview,
+            initial_extraction_overview_status=state.initial_extraction_overview_status,
             chunk_results=state.chunk_results,
             vocab_queries=state.vocab_queries,
-            interim_profile_document=state.interim_profile_document,
-            profile_patch_results=state.profile_patch_results,
+            generated_final_draft=state.generated_final_draft,
+            curated_document=state.curated_document,
+            draft_quality_state=state.draft_quality_state,
+            validation=state.validation,
+            curated_validation=state.curated_validation,
+            projection_ledger=state.projection_ledger,
+            field_completion_ledger=state.field_completion_ledger,
+            curation_ledger=state.curation_ledger,
             current_chunk=None,
             warnings=self._load_warnings_or_empty(data_package_id),
         )
@@ -529,7 +595,10 @@ class ExtractionService:
         if self.output_repository is None:
             raise ExtractionResultNotFoundError("Extraction output repository is unavailable.")
         try:
-            return self.output_repository.load_extraction_result(data_package_id)
+            return self.output_repository.load_extraction_result(
+                data_package_id,
+                chat_model=self.ollama_client.chat_model if self.ollama_client else None,
+            )
         except FileNotFoundError as exc:
             raise ExtractionResultNotFoundError(
                 f"Extraction result not found for workflow '{data_package_id}'."
@@ -564,12 +633,190 @@ class ExtractionService:
             interim_context=self._merged_completed_chunk_context_or_none(state),
             vocab_query_config=state.vocab_query_config,
             ranked_files=state.ranked_files,
+            initial_extraction_overview=state.initial_extraction_overview,
+            initial_extraction_overview_status=state.initial_extraction_overview_status,
             chunk_results=state.chunk_results,
             vocab_queries=state.vocab_queries,
-            interim_profile_document=state.interim_profile_document,
-            profile_patch_results=state.profile_patch_results,
+            generated_final_draft=state.generated_final_draft,
+            curated_document=state.curated_document,
+            draft_quality_state=state.draft_quality_state,
+            validation=state.validation,
+            curated_validation=state.curated_validation,
+            projection_ledger=state.projection_ledger,
+            field_completion_ledger=state.field_completion_ledger,
+            curation_ledger=state.curation_ledger,
             warnings=self._load_warnings_or_empty(data_package_id),
         )
+
+    async def update_curated_document(
+        self,
+        *,
+        data_package_id: str,
+        profile_identifier: str,
+        document: dict[str, Any],
+    ) -> ExtractionRunProgress:
+        self._require_runtime_dependencies()
+        assert self.datasource_service is not None
+        assert self.output_repository is not None
+
+        self.datasource_service.get_data_package(data_package_id)
+        self.profile_service.get_profile(profile_identifier)
+        clean_document = remove_null_values(document)
+        state = self._load_run_state_or_none(data_package_id)
+        if state is None:
+            raise ExtractionResultNotFoundError(
+                f"Extraction run state not found for '{data_package_id}'. Run context extraction first."
+            )
+        state.curated_document = clean_document
+        state.curated_validation = self._validate_profile_document(
+            profile_identifier=profile_identifier,
+            document=clean_document,
+        )
+        state.curation_ledger = self._build_curation_ledger(
+            generated_document=state.generated_final_draft or {},
+            curated_document=clean_document,
+            existing_field_ledger=state.field_completion_ledger,
+        )
+        state.field_completion_ledger = self._field_ledger_with_curated_values(
+            state.field_completion_ledger,
+            clean_document,
+        )
+        self._save_run_state(data_package_id, state)
+        self._persist_state_artifacts(data_package_id, state)
+
+        progress = ExtractionRunProgress(
+            stage="curated_document",
+            processed_chunks=self._completed_chunk_count(state),
+            total_chunks=len(state.chunk_results),
+            interim_context=self._load_context_or_none(data_package_id)
+            or self._merged_completed_chunk_context_or_none(state),
+            vocab_query_config=state.vocab_query_config,
+            ranked_files=state.ranked_files,
+            initial_extraction_overview=state.initial_extraction_overview,
+            initial_extraction_overview_status=state.initial_extraction_overview_status,
+            chunk_results=state.chunk_results,
+            vocab_queries=state.vocab_queries,
+            generated_final_draft=state.generated_final_draft,
+            curated_document=state.curated_document,
+            draft_quality_state=state.draft_quality_state,
+            validation=state.validation,
+            curated_validation=state.curated_validation,
+            projection_ledger=state.projection_ledger,
+            field_completion_ledger=state.field_completion_ledger,
+            curation_ledger=state.curation_ledger,
+            warnings=self._load_warnings_or_empty(data_package_id),
+        )
+        self._update_progress(data_package_id, progress)
+        return progress
+
+    async def apply_curation_field_action(
+        self,
+        *,
+        data_package_id: str,
+        action: Literal["select_vocab_term", "mark_unresolved"],
+        json_path: str,
+        selected_uri: str | None = None,
+        selected_title: str | None = None,
+        vocabulary_identifier: str | None = None,
+    ) -> ExtractionRunProgress:
+        self._require_runtime_dependencies()
+        assert self.datasource_service is not None
+        assert self.output_repository is not None
+
+        self.datasource_service.get_data_package(data_package_id)
+        state = self._load_run_state_or_none(data_package_id)
+        if state is None:
+            raise ExtractionResultNotFoundError(
+                f"Extraction run state not found for '{data_package_id}'."
+            )
+        profile_identifier = state.profile_identifier
+        if not profile_identifier:
+            raise ValueError("Cannot curate a field before a profile is selected.")
+
+        curated_document = self._clone_json_object(
+            state.curated_document or state.generated_final_draft or {}
+        )
+        if action == "select_vocab_term":
+            if not selected_uri:
+                raise ValueError("select_vocab_term requires selected_uri.")
+            profile_manifest = self.profile_service.get_profile(profile_identifier)
+            profile_json_schema = self.profile_service.load_json_schema(profile_identifier)
+            validation_schema = validation_schema_for_target_class(
+                json_schema=profile_json_schema,
+                target_class=profile_manifest.target_class,
+            )
+            field_schema = self._schema_for_json_pointer(validation_schema, json_path)
+            selected_value = self._selected_vocab_value_for_schema(
+                field_schema=field_schema,
+                root_schema=validation_schema,
+                selected_uri=selected_uri,
+                selected_title=selected_title,
+                vocabulary_identifier=vocabulary_identifier,
+                existing_value=self._json_pointer_value(curated_document, json_path)[1],
+            )
+            curated_document = self._set_json_pointer_value(
+                curated_document,
+                json_path,
+                selected_value,
+            )
+
+        state.curated_document = curated_document
+        state.curated_validation = self._validate_profile_document(
+            profile_identifier=profile_identifier,
+            document=curated_document,
+        )
+        state.field_completion_ledger = self._mark_field_curation_status(
+            ledger=self._field_ledger_with_curated_values(
+                state.field_completion_ledger,
+                curated_document,
+            ),
+            json_path=json_path,
+            status=(
+                "user_selected_vocab_term"
+                if action == "select_vocab_term"
+                else "intentionally_unresolved"
+            ),
+        )
+        state.curation_ledger = self._mark_curation_ledger_status(
+            ledger=self._build_curation_ledger(
+                generated_document=state.generated_final_draft or {},
+                curated_document=curated_document,
+                existing_field_ledger=state.field_completion_ledger,
+            ),
+            json_path=json_path,
+            status=(
+                "user_selected_vocab_term"
+                if action == "select_vocab_term"
+                else "intentionally_unresolved"
+            ),
+        )
+        self._save_run_state(data_package_id, state)
+        self._persist_state_artifacts(data_package_id, state)
+
+        progress = ExtractionRunProgress(
+            stage="curated_document",
+            processed_chunks=self._completed_chunk_count(state),
+            total_chunks=len(state.chunk_results),
+            interim_context=self._load_context_or_none(data_package_id)
+            or self._merged_completed_chunk_context_or_none(state),
+            vocab_query_config=state.vocab_query_config,
+            ranked_files=state.ranked_files,
+            initial_extraction_overview=state.initial_extraction_overview,
+            initial_extraction_overview_status=state.initial_extraction_overview_status,
+            chunk_results=state.chunk_results,
+            vocab_queries=state.vocab_queries,
+            generated_final_draft=state.generated_final_draft,
+            curated_document=state.curated_document,
+            draft_quality_state=state.draft_quality_state,
+            validation=state.validation,
+            curated_validation=state.curated_validation,
+            projection_ledger=state.projection_ledger,
+            field_completion_ledger=state.field_completion_ledger,
+            curation_ledger=state.curation_ledger,
+            warnings=self._load_warnings_or_empty(data_package_id),
+        )
+        self._update_progress(data_package_id, progress)
+        return progress
 
     async def rerun_vocab_queries(
         self,
@@ -626,7 +873,8 @@ class ExtractionService:
         profile_identifier: str,
         qualitative_vocab_identifiers: list[str] | None,
         resume: bool = False,
-    ) -> ExtractionRunResult:
+        target_stage: ExtractionTargetStage = "complete",
+    ) -> ExtractionRunResult | None:
         self._require_runtime_dependencies()
         assert self.datasource_service is not None
         assert self.ollama_client is not None
@@ -657,13 +905,37 @@ class ExtractionService:
             stage="file_ranking",
             total_chunks=sum(len(chunks) for chunks in chunks_by_file),
             ranked_files=persisted_state.ranked_files if persisted_state else [],
+            initial_extraction_overview=(
+                persisted_state.initial_extraction_overview if persisted_state else None
+            ),
+            initial_extraction_overview_status=(
+                persisted_state.initial_extraction_overview_status if persisted_state else None
+            ),
             chunk_results=persisted_state.chunk_results if persisted_state else [],
             vocab_queries=persisted_state.vocab_queries if persisted_state else [],
-            interim_profile_document=(
-                persisted_state.interim_profile_document if persisted_state else None
+            generated_final_draft=(
+                persisted_state.generated_final_draft if persisted_state else None
             ),
-            profile_patch_results=(
-                persisted_state.profile_patch_results if persisted_state else []
+            curated_document=(
+                persisted_state.curated_document if persisted_state else None
+            ),
+            draft_quality_state=(
+                persisted_state.draft_quality_state if persisted_state else None
+            ),
+            validation=(
+                persisted_state.validation if persisted_state else DraftValidationResult()
+            ),
+            curated_validation=(
+                persisted_state.curated_validation if persisted_state else None
+            ),
+            projection_ledger=(
+                persisted_state.projection_ledger if persisted_state else []
+            ),
+            field_completion_ledger=(
+                persisted_state.field_completion_ledger if persisted_state else []
+            ),
+            curation_ledger=(
+                persisted_state.curation_ledger if persisted_state else []
             ),
             vocab_query_config=(
                 persisted_state.vocab_query_config
@@ -689,15 +961,38 @@ class ExtractionService:
         self._save_run_state(data_package_id, state)
 
         progress.ranked_files = state.ranked_files
+        progress.initial_extraction_overview = state.initial_extraction_overview
+        progress.initial_extraction_overview_status = state.initial_extraction_overview_status
         progress.chunk_results = state.chunk_results
         progress.vocab_query_config = state.vocab_query_config
         progress.vocab_queries = state.vocab_queries
-        progress.interim_profile_document = state.interim_profile_document
-        progress.profile_patch_results = state.profile_patch_results
+        progress.generated_final_draft = state.generated_final_draft
+        progress.curated_document = state.curated_document
+        progress.draft_quality_state = state.draft_quality_state
+        progress.validation = state.validation
+        progress.curated_validation = state.curated_validation
+        progress.projection_ledger = state.projection_ledger
+        progress.field_completion_ledger = state.field_completion_ledger
+        progress.curation_ledger = state.curation_ledger
         progress.total_chunks = len(state.chunk_results)
         progress.processed_chunks = self._completed_chunk_count(state)
         progress.interim_context = self._merged_completed_chunk_context_or_none(state)
         self._update_progress(data_package_id, progress)
+
+        if state.initial_extraction_overview_status is None:
+            progress.stage = "initial_overview"
+            self._update_progress(data_package_id, progress)
+            await self._generate_initial_extraction_overview(
+                data_package_id=data_package_id,
+                data_package=data_package,
+                ranking=ranking,
+                state=state,
+                warnings=warnings,
+            )
+            progress.initial_extraction_overview = state.initial_extraction_overview
+            progress.initial_extraction_overview_status = state.initial_extraction_overview_status
+            progress.warnings = list(warnings)
+            self._update_progress(data_package_id, progress)
 
         progress.stage = "chunk_extraction"
         chunk_repairs: list[tuple[ExtractionChunkResult, MaxRetriesExceeded]] = []
@@ -718,7 +1013,17 @@ class ExtractionService:
                     result = await generate_structured(
                         self.ollama_client,
                         model=self.ollama_client.chat_model,
-                        system=EXTRACTION_CONTEXT_SYSTEM_PROMPT,
+                        system=build_system_prompt_with_overview(
+                            base_prompt=EXTRACTION_CONTEXT_SYSTEM_PROMPT,
+                            overview=state.initial_extraction_overview,
+                            overview_status=state.initial_extraction_overview_status,
+                            same_file_context=self._initial_extraction_context_for_prompt(
+                                state,
+                                file_path=chunk.file_path,
+                                current_chunk_index=chunk_result.chunk_index,
+                            ),
+                            num_ctx=self.ollama_client.max_context_length,
+                        ),
                         prompt=build_extraction_context_prompt(
                             ChunkContext(
                                 content=chunk.content,
@@ -727,16 +1032,14 @@ class ExtractionService:
                                     end_idx=chunk.end_idx,
                                     file_path=chunk.file_path,
                                     data_package_name=data_package.file_name,
-                                    initial_extraction_context=self._initial_extraction_context_for_prompt(
-                                        state,
-                                        file_path=chunk.file_path,
-                                        current_chunk_index=chunk_result.chunk_index,
-                                    ),
+                                    initial_extraction_context=None,
                                 ),
                             )
                         ),
                         output_type=ExtractionContext,
-                        retries=0,
+                        retries=2,
+                        temperature=0.1,
+                        think=None,
                         num_ctx=self.ollama_client.max_context_length,
                     )
                 except MaxRetriesExceeded as exc:
@@ -858,6 +1161,8 @@ class ExtractionService:
                     failed_response=failure.failed_response or "",
                     error=failure.last_error or failure,
                     output_type=ExtractionContext,
+                    temperature=0.1,
+                    think=None,
                     num_ctx=self.ollama_client.max_context_length,
                 )
             except CompletionError as exc:
@@ -932,6 +1237,18 @@ class ExtractionService:
             extraction_context=extraction_context,
         )
 
+        if target_stage == "context":
+            progress.stage = "interim_context"
+            progress.interim_context = extraction_context
+            progress.warnings = list(warnings)
+            self._save_run_state(data_package_id, state)
+            self.output_repository.save_extraction_warnings(
+                workflow_id=data_package_id,
+                warnings=warnings,
+            )
+            self._update_progress(data_package_id, progress)
+            return None
+
         progress.stage = "profile_projection"
         progress.interim_context = extraction_context
         self._update_progress(data_package_id, progress)
@@ -947,10 +1264,38 @@ class ExtractionService:
             warnings=warnings,
         )
 
+        if target_stage == "profile":
+            progress.stage = "profile_draft"
+            progress.interim_context = extraction_context
+            progress.generated_final_draft = profile_document
+            progress.curated_document = state.curated_document
+            progress.draft_quality_state = state.draft_quality_state
+            progress.validation = state.validation
+            progress.curated_validation = state.curated_validation
+            progress.projection_ledger = state.projection_ledger
+            progress.field_completion_ledger = state.field_completion_ledger
+            progress.curation_ledger = state.curation_ledger
+            progress.vocab_queries = state.vocab_queries
+            progress.warnings = list(warnings)
+            self._save_run_state(data_package_id, state)
+            self._persist_state_artifacts(data_package_id, state)
+            self.output_repository.save_extraction_warnings(
+                workflow_id=data_package_id,
+                warnings=warnings,
+            )
+            self._update_progress(data_package_id, progress)
+            return None
+
         progress.stage = "vocabulary_normalization"
         progress.interim_context = extraction_context
-        progress.interim_profile_document = profile_document
-        progress.profile_patch_results = state.profile_patch_results
+        progress.generated_final_draft = profile_document
+        progress.curated_document = state.curated_document
+        progress.draft_quality_state = state.draft_quality_state
+        progress.validation = state.validation
+        progress.curated_validation = state.curated_validation
+        progress.projection_ledger = state.projection_ledger
+        progress.field_completion_ledger = state.field_completion_ledger
+        progress.curation_ledger = state.curation_ledger
         progress.vocab_queries = state.vocab_queries
         self._update_progress(data_package_id, progress)
         vocab_query_semaphore = asyncio.Semaphore(self._vocab_query_concurrency())
@@ -959,8 +1304,14 @@ class ExtractionService:
             progress.chunk_results = state.chunk_results
             progress.vocab_query_config = state.vocab_query_config
             progress.vocab_queries = state.vocab_queries
-            progress.interim_profile_document = state.interim_profile_document
-            progress.profile_patch_results = state.profile_patch_results
+            progress.generated_final_draft = state.generated_final_draft
+            progress.curated_document = state.curated_document
+            progress.draft_quality_state = state.draft_quality_state
+            progress.validation = state.validation
+            progress.curated_validation = state.curated_validation
+            progress.projection_ledger = state.projection_ledger
+            progress.field_completion_ledger = state.field_completion_ledger
+            progress.curation_ledger = state.curation_ledger
             self._save_run_state(data_package_id, state)
             self._update_progress(data_package_id, progress)
 
@@ -1004,18 +1355,27 @@ class ExtractionService:
         progress.vocab_queries = state.vocab_queries
         self._update_progress(data_package_id, progress)
 
-        result = await self._save_validated_profile_result(
+        result = await self._save_profile_result(
             data_package_id=data_package_id,
             profile_identifier=profile_identifier,
             extraction_context=extraction_context,
             normalization=normalization,
             document=profile_document,
+            profile_manifest=profile_manifest,
+            validation_schema=validation_schema,
+            state=state,
             warnings=warnings,
         )
         progress.stage = "completed"
         progress.interim_context = extraction_context
-        progress.interim_profile_document = profile_document
-        progress.profile_patch_results = state.profile_patch_results
+        progress.generated_final_draft = result.generated_final_draft
+        progress.curated_document = result.curated_document
+        progress.draft_quality_state = result.draft_quality_state
+        progress.validation = result.validation
+        progress.curated_validation = result.curated_validation
+        progress.projection_ledger = result.projection_ledger
+        progress.field_completion_ledger = result.field_completion_ledger
+        progress.curation_ledger = result.curation_ledger
         progress.warnings = warnings
         self._update_progress(data_package_id, progress)
         return result
@@ -1033,6 +1393,238 @@ class ExtractionService:
         ]
         return fallback_file_ranking(files)
 
+    async def _generate_initial_extraction_overview(
+        self,
+        *,
+        data_package_id: str,
+        data_package: Any,
+        ranking: FileRankingResult,
+        state: ExtractionRunState,
+        warnings: list[str],
+    ) -> None:
+        if not hasattr(self.ollama_client, "ollama_client"):
+            state.initial_extraction_overview = None
+            state.initial_extraction_overview_status = "failed"
+            self._save_run_state(data_package_id, state)
+            self._persist_initial_extraction_overview(data_package_id, state)
+            return
+        previews = self._initial_overview_file_previews(
+            data_package=data_package,
+            ranking=ranking,
+        )
+        source_fingerprint = self._initial_overview_source_fingerprint(
+            data_package=data_package,
+            ranking=ranking,
+            previews=previews,
+        )
+        try:
+            result = await generate_structured(
+                self.ollama_client,
+                model=self.ollama_client.chat_model,
+                system=EXTRACTION_OVERVIEW_SYSTEM_PROMPT,
+                prompt=build_extraction_overview_prompt(
+                    data_package_name=data_package.file_name,
+                    ranked_files=ranking.files,
+                    file_previews=previews,
+                ),
+                output_type=ExtractionOverview,
+                retries=1,
+                temperature=0.1,
+                think=None,
+                num_ctx=self.ollama_client.max_context_length,
+            )
+            self._record_workflow_token_usage(
+                data_package_id=data_package_id,
+                agent_name="initial_extraction_overview",
+                usage=result.usage,
+            )
+            state.initial_extraction_overview = self._with_initial_overview_provenance(
+                result.output,
+                source_fingerprint=source_fingerprint,
+                previews=previews,
+            )
+            state.initial_extraction_overview_status = "structured"
+            self._save_run_state(data_package_id, state)
+            self._persist_initial_extraction_overview(data_package_id, state)
+            return
+        except CompletionError as exc:
+            usage = getattr(exc, "usage", None)
+            if usage is not None:
+                self._record_workflow_token_usage(
+                    data_package_id=data_package_id,
+                    agent_name="initial_extraction_overview",
+                    usage=usage,
+                )
+            warnings.append(
+                "Initial extraction overview structured generation failed; using free-text fallback."
+            )
+            logger.warning(
+                "Initial extraction overview structured generation failed",
+                extra={
+                    "data_package_id": data_package_id,
+                    "error_type": type(exc).__name__,
+                },
+            )
+
+        try:
+            response = await self.ollama_client.ollama_client.generate(
+                model=self.ollama_client.chat_model,
+                system=EXTRACTION_OVERVIEW_FALLBACK_SYSTEM_PROMPT,
+                prompt=build_extraction_overview_fallback_prompt(
+                    data_package_name=data_package.file_name,
+                    ranked_files=ranking.files,
+                    file_previews=previews,
+                ),
+                options={
+                    "temperature": 0.1,
+                    "seed": 42,
+                    "num_ctx": self.ollama_client.max_context_length,
+                },
+                think=None,
+                keep_alive=-1,
+            )
+            usage = RunUsage.from_ollama_response(response)
+            self._record_workflow_token_usage(
+                data_package_id=data_package_id,
+                agent_name="initial_extraction_overview_fallback",
+                usage=usage,
+            )
+            text = (response.response or "").strip()
+            if not text:
+                raise CompletionError("Initial extraction overview fallback returned an empty response.")
+            state.initial_extraction_overview = self._with_initial_overview_provenance(
+                ExtractionOverview(
+                    summary=text,
+                    known_traps=[
+                        "This overview is an unstructured fallback and is orientation only."
+                    ],
+                ),
+                source_fingerprint=source_fingerprint,
+                previews=previews,
+            )
+            state.initial_extraction_overview_status = "unstructured_fallback"
+        except Exception as exc:
+            warnings.append(
+                f"Initial extraction overview fallback failed; continuing without overview: {exc}"
+            )
+            logger.warning(
+                "Initial extraction overview fallback failed",
+                extra={
+                    "data_package_id": data_package_id,
+                    "error_type": type(exc).__name__,
+                },
+            )
+            state.initial_extraction_overview = None
+            state.initial_extraction_overview_status = "failed"
+
+        self._save_run_state(data_package_id, state)
+        self._persist_initial_extraction_overview(data_package_id, state)
+
+    def _initial_overview_file_previews(
+        self,
+        *,
+        data_package: Any,
+        ranking: FileRankingResult,
+    ) -> list[ExtractionOverviewFilePreview]:
+        files_by_path = {file.file_path: file for file in data_package.files}
+        previews: list[ExtractionOverviewFilePreview] = []
+        for ranked_file in sorted(ranking.files, key=lambda item: item.rank)[
+            :INITIAL_OVERVIEW_TOP_FILE_LIMIT
+        ]:
+            file_entry = files_by_path.get(ranked_file.file_path)
+            if file_entry is None:
+                continue
+            try:
+                lines = file_entry.get_extracted_content().splitlines()
+            except Exception as exc:
+                lines = [f"[Text extraction failed: {exc}]"]
+            previews.append(
+                ExtractionOverviewFilePreview(
+                    rank=ranked_file.rank,
+                    file_path=ranked_file.file_path,
+                    byte_size=len(file_entry.raw_content),
+                    first_lines=[
+                        self._truncate_overview_preview_line(line)
+                        for line in lines[:INITIAL_OVERVIEW_PREVIEW_LINE_LIMIT]
+                    ],
+                )
+            )
+        return previews
+
+    @staticmethod
+    def _truncate_overview_preview_line(line: str) -> str:
+        if len(line) <= INITIAL_OVERVIEW_MAX_LINE_CHARS:
+            return line
+        return line[: INITIAL_OVERVIEW_MAX_LINE_CHARS - 3].rstrip() + "..."
+
+    @staticmethod
+    def _initial_overview_source_fingerprint(
+        *,
+        data_package: Any,
+        ranking: FileRankingResult,
+        previews: list[ExtractionOverviewFilePreview],
+    ) -> str:
+        payload = {
+            "data_package_name": getattr(data_package, "file_name", ""),
+            "ranked_files": [file.model_dump(mode="json") for file in ranking.files],
+            "previews": [preview.model_dump(mode="json") for preview in previews],
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return sha1(encoded).hexdigest()
+
+    @staticmethod
+    def _with_initial_overview_provenance(
+        overview: ExtractionOverview,
+        *,
+        source_fingerprint: str,
+        previews: list[ExtractionOverviewFilePreview],
+    ) -> ExtractionOverview:
+        source_file_paths = [preview.file_path for preview in previews]
+        inspected_by_path = {
+            inspected.file_path: inspected
+            for inspected in overview.inspected_files
+        }
+        inspected_files = [
+            ExtractionOverviewInspectedFile(
+                file_path=preview.file_path,
+                byte_size=preview.byte_size,
+                chars_read=sum(len(line) for line in preview.first_lines),
+                reason=inspected_by_path.get(preview.file_path, ExtractionOverviewInspectedFile(file_path=preview.file_path)).reason,
+            )
+            for preview in previews
+        ]
+        return overview.model_copy(
+            update={
+                "source_fingerprint": source_fingerprint,
+                "source_file_paths": source_file_paths,
+                "inspected_files": inspected_files,
+            }
+        )
+
+    @staticmethod
+    def _initial_overview_matches_current_run(
+        *,
+        overview: ExtractionOverview | None,
+        status: ExtractionOverviewStatus | None,
+        ranking: FileRankingResult,
+        ordered_chunks: list[ContentChunk],
+    ) -> bool:
+        if status is None or overview is None:
+            return False
+        source_file_paths = overview.source_file_paths
+        if not source_file_paths:
+            return False
+        ranked_paths = [file.file_path for file in sorted(ranking.files, key=lambda item: item.rank)]
+        if source_file_paths != ranked_paths[: len(source_file_paths)]:
+            return False
+        current_chunk_paths = {chunk.file_path for chunk in ordered_chunks}
+        if any(path not in current_chunk_paths and path not in ranked_paths for path in source_file_paths):
+            return False
+        overview_role_paths = {role.file_path for role in overview.file_roles}
+        if any(path not in ranked_paths for path in overview_role_paths):
+            return False
+        return True
+
     async def _rerun_vocab_downstream(
         self,
         *,
@@ -1048,7 +1640,7 @@ class ExtractionService:
             target_class=profile_manifest.target_class,
         )
         extraction_context = self._merged_completed_chunk_context(state)
-        profile_document = state.interim_profile_document or self._fallback_profile_document(
+        profile_document = state.generated_final_draft or self._fallback_profile_document(
             data_package_id=data_package_id,
             extraction_context=extraction_context,
             validation_schema=validation_schema,
@@ -1058,12 +1650,15 @@ class ExtractionService:
             state=state,
             warnings=warnings,
         )
-        result = await self._save_validated_profile_result(
+        result = await self._save_profile_result(
             data_package_id=data_package_id,
             profile_identifier=profile_identifier,
             extraction_context=extraction_context,
             normalization=normalization,
             document=profile_document,
+            profile_manifest=profile_manifest,
+            validation_schema=validation_schema,
+            state=state,
             warnings=warnings,
         )
         if self.task_registry is not None:
@@ -1078,10 +1673,18 @@ class ExtractionService:
                     interim_context=extraction_context,
                     vocab_query_config=state.vocab_query_config,
                     ranked_files=state.ranked_files,
+                    initial_extraction_overview=state.initial_extraction_overview,
+                    initial_extraction_overview_status=state.initial_extraction_overview_status,
                     chunk_results=state.chunk_results,
                     vocab_queries=state.vocab_queries,
-                    interim_profile_document=profile_document,
-                    profile_patch_results=state.profile_patch_results,
+                    generated_final_draft=result.generated_final_draft,
+                    curated_document=result.curated_document,
+                    draft_quality_state=result.draft_quality_state,
+                    validation=result.validation,
+                    curated_validation=result.curated_validation,
+                    projection_ledger=result.projection_ledger,
+                    field_completion_ledger=result.field_completion_ledger,
+                    curation_ledger=result.curation_ledger,
                     warnings=warnings,
                 ).model_dump(mode="json"),
             )
@@ -1099,7 +1702,7 @@ class ExtractionService:
         progress: ExtractionRunProgress,
         warnings: list[str],
     ) -> dict[str, Any]:
-        document = state.interim_profile_document or self._fallback_profile_document(
+        document = state.generated_final_draft or self._fallback_profile_document(
             data_package_id=data_package_id,
             extraction_context=extraction_context,
             validation_schema=validation_schema,
@@ -1116,9 +1719,9 @@ class ExtractionService:
 
         schema_slice = self._profile_schema_slice(validation_schema, max_depth=2)
         patched_identifiers = {
-            result.object_identifier
-            for result in state.profile_patch_results
-            if result.status == "applied"
+            record.object_identifier
+            for record in state.projection_ledger
+            if record.status == "projected"
         }
         for trace in extraction_context.extraction_objects:
             object_identifier = trace.extracted_object.identifier
@@ -1133,19 +1736,54 @@ class ExtractionService:
                 schema_slice=schema_slice,
                 warnings=warnings,
             )
-            state.profile_patch_results.append(patch_result)
             if patch_result.status == "applied":
                 document = self._apply_profile_patch(
                     document,
                     patch_result.operations,
                 )
-            state.interim_profile_document = document
-            progress.interim_profile_document = document
-            progress.profile_patch_results = state.profile_patch_results
+            projection_record = self._projection_record_from_patch_result(
+                trace=trace,
+                patch_result=patch_result,
+            )
+            state.projection_ledger = [
+                record
+                for record in state.projection_ledger
+                if record.object_identifier != object_identifier
+            ]
+            state.projection_ledger.append(projection_record)
+            state.generated_final_draft = document
+            progress.generated_final_draft = document
+            progress.projection_ledger = state.projection_ledger
             progress.warnings = list(warnings)
             self._save_run_state(data_package_id, state)
+            self._persist_state_artifacts(data_package_id, state)
             self._update_progress(data_package_id, progress)
         return document
+
+    @staticmethod
+    def _projection_record_from_patch_result(
+        *,
+        trace: TracedExtractionObject,
+        patch_result: ProfileObjectPatchResult,
+    ) -> ProjectionLedgerRecord:
+        status = "not_projected"
+        if patch_result.status == "applied":
+            status = "projected"
+        elif patch_result.status == "failed":
+            status = "user_edit_required"
+        return ProjectionLedgerRecord(
+            object_identifier=patch_result.object_identifier,
+            object_kind=patch_result.object_kind,
+            source_evidence=trace.source_text,
+            status=status,
+            projected_paths=[
+                operation.path
+                for operation in patch_result.operations
+                if getattr(operation, "path", None)
+            ],
+            reason=patch_result.reason,
+            error=patch_result.error,
+        )
 
     async def _patch_profile_with_extraction_object(
         self,
@@ -1256,7 +1894,7 @@ class ExtractionService:
         ]
         return jsonpatch.JsonPatch(patch_ops).apply(document, in_place=False)
 
-    async def _save_validated_profile_result(
+    async def _save_profile_result(
         self,
         *,
         data_package_id: str,
@@ -1264,22 +1902,60 @@ class ExtractionService:
         extraction_context: ExtractionContext,
         normalization: ExtractionNormalization,
         document: dict[str, Any],
+        profile_manifest: Any,
+        validation_schema: dict[str, Any],
+        state: ExtractionRunState,
         warnings: list[str],
     ) -> ExtractionRunResult:
         assert self.output_repository is not None
         clean_document = remove_null_values(document)
-        validation = self.profile_service.validate_document(
-            identifier=profile_identifier,
+        validation = self._validate_profile_document(
+            profile_identifier=profile_identifier,
             document=clean_document,
         )
-        if not validation.valid:
-            raise ExtractionValidationError(
-                [f"{issue.path}: {issue.message}" for issue in validation.errors]
+        state.generated_final_draft = clean_document
+        state.validation = validation
+        if state.curated_document is None:
+            state.curated_document = self._clone_json_object(clean_document)
+            state.curated_validation = validation
+        elif state.curated_validation is None:
+            state.curated_validation = self._validate_profile_document(
+                profile_identifier=profile_identifier,
+                document=state.curated_document,
             )
+        state.field_completion_ledger = self._build_field_completion_ledger(
+            generated_document=clean_document,
+            curated_document=state.curated_document,
+            validation=validation,
+            normalization=normalization,
+            validation_schema=validation_schema,
+            enrichable_fields=getattr(profile_manifest, "enrichable_fields", []),
+            projection_ledger=state.projection_ledger,
+        )
+        state.curation_ledger = self._build_curation_ledger(
+            generated_document=clean_document,
+            curated_document=state.curated_document or clean_document,
+            existing_field_ledger=state.field_completion_ledger,
+        )
+        state.draft_quality_state = self._classify_draft_quality(
+            validation=validation,
+            projection_ledger=state.projection_ledger,
+            field_completion_ledger=state.field_completion_ledger,
+        )
         token_usage = await self.get_token_usage(data_package_id)
         result = ExtractionRunResult(
-            document=clean_document,
-            extraction_context=extraction_context,
+            generated_final_draft=clean_document,
+            machine_extraction_context=extraction_context,
+            initial_extraction_overview=state.initial_extraction_overview,
+            initial_extraction_overview_status=state.initial_extraction_overview_status,
+            curated_document=state.curated_document,
+            draft_quality_state=state.draft_quality_state,
+            validation=state.validation,
+            curated_validation=state.curated_validation,
+            projection_ledger=state.projection_ledger,
+            field_completion_ledger=state.field_completion_ledger,
+            curation_ledger=state.curation_ledger,
+            chat_model=self.ollama_client.chat_model if self.ollama_client else None,
             normalization=normalization,
             warnings=warnings,
             token_usage=token_usage,
@@ -1292,7 +1968,608 @@ class ExtractionService:
             workflow_id=data_package_id,
             result=result,
         )
+        self._save_run_state(data_package_id, state)
         return result
+
+    def _validate_profile_document(
+        self,
+        *,
+        profile_identifier: str,
+        document: dict[str, Any],
+        warnings: list[str] | None = None,
+    ) -> DraftValidationResult:
+        validation = self.profile_service.validate_document(
+            identifier=profile_identifier,
+            document=document,
+        )
+        errors = [
+            error
+            if isinstance(error, ProfileValidationIssue)
+            else ProfileValidationIssue(
+                path=str(getattr(error, "path", "")),
+                message=str(getattr(error, "message", error)),
+                schema_path=str(getattr(error, "schema_path", "")),
+            )
+            for error in validation.errors
+        ]
+        return DraftValidationResult(
+            status="valid" if validation.valid else "invalid",
+            errors=errors,
+            warnings=warnings or [],
+        )
+
+    @staticmethod
+    def _classify_draft_quality(
+        *,
+        validation: DraftValidationResult,
+        projection_ledger: list[ProjectionLedgerRecord],
+        field_completion_ledger: list[FieldCompletionLedgerRecord],
+    ) -> str:
+        if not projection_ledger or not any(
+            record.status == "projected" for record in projection_ledger
+        ):
+            return "empty_profile_shell"
+        has_projection_issue = any(
+            record.status != "projected" for record in projection_ledger
+        )
+        has_field_issue = any(
+            record.issue_categories or record.edit_needed_reason
+            for record in field_completion_ledger
+        )
+        if validation.status == "valid" and not has_projection_issue and not has_field_issue:
+            return "complete_final_draft"
+        return "imperfect_final_draft"
+
+    def _build_field_completion_ledger(
+        self,
+        *,
+        generated_document: dict[str, Any],
+        curated_document: dict[str, Any] | None,
+        validation: DraftValidationResult,
+        normalization: ExtractionNormalization,
+        validation_schema: dict[str, Any],
+        enrichable_fields: list[str],
+        projection_ledger: list[ProjectionLedgerRecord],
+    ) -> list[FieldCompletionLedgerRecord]:
+        paths = set(self._required_profile_field_paths(validation_schema))
+        profile_sources = self._profile_vocab_sources(
+            generated_document,
+            enrichable_fields=enrichable_fields,
+        )
+        paths.update(path for path, _field_name, _value in profile_sources)
+        paths.update(
+            self._profile_issue_path_to_pointer(issue.path)
+            for issue in validation.errors
+        )
+        normalization_by_path = {
+            item.json_path: item
+            for item in normalization.profile_fields
+        }
+        source_evidence_by_path: dict[str, list[str]] = {}
+        for record in projection_ledger:
+            if not record.source_evidence:
+                continue
+            for path in record.projected_paths:
+                source_evidence_by_path.setdefault(path, []).append(record.source_evidence)
+
+        ledgers: list[FieldCompletionLedgerRecord] = []
+        for path in sorted(path for path in paths if path):
+            generated_exists, generated_value = self._json_pointer_value(
+                generated_document,
+                path,
+            )
+            curated_exists, curated_value = self._json_pointer_value(
+                curated_document or {},
+                path,
+            )
+            matching_errors = [
+                issue
+                for issue in validation.errors
+                if self._profile_issue_path_to_pointer(issue.path) == path
+            ]
+            issue_categories: list[str] = []
+            if not generated_exists or self._is_missing_value(generated_value):
+                issue_categories.append("missing")
+                validation_status = "missing"
+            elif matching_errors:
+                issue_categories.append("invalid")
+                validation_status = "invalid"
+            else:
+                validation_status = "valid"
+
+            normalized = normalization_by_path.get(path)
+            enrichment_status = "not_grounded"
+            if normalized is not None:
+                if normalized.term is None:
+                    enrichment_status = "no_candidate"
+                elif normalized.term.selected_uri:
+                    enrichment_status = "grounded"
+                else:
+                    enrichment_status = "not_grounded"
+            elif self._field_name_from_pointer(path) not in (
+                {"has_quantity_type", "unit"} | set(enrichable_fields)
+            ):
+                enrichment_status = "not_grounded"
+
+            if normalized is not None and enrichment_status != "grounded":
+                issue_categories.append("non_enriched")
+
+            edit_needed_reason = "; ".join(
+                issue.message for issue in matching_errors
+            )
+            if not edit_needed_reason and issue_categories:
+                edit_needed_reason = ", ".join(issue_categories)
+
+            ledgers.append(
+                FieldCompletionLedgerRecord(
+                    json_path=path,
+                    field_name=self._field_name_from_pointer(path),
+                    generated_value=generated_value if generated_exists else None,
+                    curated_value=curated_value if curated_exists else None,
+                    source_evidence=source_evidence_by_path.get(path, []),
+                    validation_status=validation_status,
+                    enrichment_status=enrichment_status,
+                    issue_categories=issue_categories,
+                    edit_needed_reason=edit_needed_reason,
+                )
+            )
+        return ledgers
+
+    def _build_curation_ledger(
+        self,
+        *,
+        generated_document: dict[str, Any],
+        curated_document: dict[str, Any],
+        existing_field_ledger: list[FieldCompletionLedgerRecord],
+    ) -> list[CurationLedgerRecord]:
+        paths = (
+            self._leaf_json_pointer_paths(generated_document)
+            | self._leaf_json_pointer_paths(curated_document)
+            | {record.json_path for record in existing_field_ledger}
+        )
+        evidence_by_path = {
+            record.json_path: record.source_evidence
+            for record in existing_field_ledger
+        }
+        ledger: list[CurationLedgerRecord] = []
+        for path in sorted(path for path in paths if path):
+            generated_exists, generated_value = self._json_pointer_value(
+                generated_document,
+                path,
+            )
+            curated_exists, curated_value = self._json_pointer_value(
+                curated_document,
+                path,
+            )
+            if not curated_exists:
+                status = "user_removed"
+            elif not generated_exists or generated_value != curated_value:
+                status = "user_modified"
+            else:
+                status = "unchanged"
+            ledger.append(
+                CurationLedgerRecord(
+                    json_path=path,
+                    field_name=self._field_name_from_pointer(path),
+                    generated_value=generated_value if generated_exists else None,
+                    curated_value=curated_value if curated_exists else None,
+                    source_evidence=evidence_by_path.get(path, []),
+                    status=status,
+                )
+            )
+        return ledger
+
+    def _field_ledger_with_curated_values(
+        self,
+        ledger: list[FieldCompletionLedgerRecord],
+        curated_document: dict[str, Any],
+    ) -> list[FieldCompletionLedgerRecord]:
+        updated: list[FieldCompletionLedgerRecord] = []
+        for record in ledger:
+            exists, value = self._json_pointer_value(curated_document, record.json_path)
+            updated.append(
+                record.model_copy(
+                    update={"curated_value": value if exists else None}
+                )
+            )
+        return updated
+
+    def _persist_state_artifacts(
+        self,
+        data_package_id: str,
+        state: ExtractionRunState,
+    ) -> None:
+        if self.output_repository is None:
+            return
+        chat_model = state.chat_model
+        self._persist_initial_extraction_overview(data_package_id, state)
+        if state.generated_final_draft is not None:
+            self.output_repository.save_generated_final_draft(
+                workflow_id=data_package_id,
+                document=state.generated_final_draft,
+                chat_model=chat_model,
+            )
+        if state.curated_document is not None:
+            self.output_repository.save_curated_document(
+                workflow_id=data_package_id,
+                document=state.curated_document,
+                chat_model=chat_model,
+            )
+        self.output_repository.save_projection_ledger(
+            workflow_id=data_package_id,
+            ledger=state.projection_ledger,
+            chat_model=chat_model,
+        )
+        self.output_repository.save_field_completion_ledger(
+            workflow_id=data_package_id,
+            ledger=state.field_completion_ledger,
+            chat_model=chat_model,
+        )
+        self.output_repository.save_curation_ledger(
+            workflow_id=data_package_id,
+            ledger=state.curation_ledger,
+            chat_model=chat_model,
+        )
+        self.output_repository.save_validation(
+            workflow_id=data_package_id,
+            validation=state.validation,
+            curated_validation=state.curated_validation,
+            chat_model=chat_model,
+        )
+
+    def _persist_initial_extraction_overview(
+        self,
+        data_package_id: str,
+        state: ExtractionRunState,
+    ) -> None:
+        if self.output_repository is None:
+            return
+        if state.initial_extraction_overview_status is None:
+            return
+        self.output_repository.save_initial_extraction_overview(
+            workflow_id=data_package_id,
+            overview=state.initial_extraction_overview,
+            status=state.initial_extraction_overview_status,
+            chat_model=state.chat_model,
+        )
+
+    @classmethod
+    def _required_profile_field_paths(
+        cls,
+        validation_schema: dict[str, Any],
+    ) -> list[str]:
+        target = cls._resolve_schema_node(validation_schema, validation_schema)
+        if not isinstance(target, dict):
+            return []
+        required = target.get("required", [])
+        if not isinstance(required, list):
+            return []
+        return [
+            "/" + cls._json_pointer_escape(str(field))
+            for field in required
+            if isinstance(field, str)
+        ]
+
+    @staticmethod
+    def _profile_issue_path_to_pointer(path: str) -> str:
+        if path == "$":
+            return ""
+        pointer = ""
+        remainder = path[2:] if path.startswith("$.") else path
+        token = ""
+        index_mode = False
+        for char in remainder:
+            if char == "." and not index_mode:
+                if token:
+                    pointer += "/" + ExtractionService._json_pointer_escape(token)
+                    token = ""
+                continue
+            if char == "[":
+                if token:
+                    pointer += "/" + ExtractionService._json_pointer_escape(token)
+                    token = ""
+                index_mode = True
+                continue
+            if char == "]":
+                if token:
+                    pointer += "/" + token
+                    token = ""
+                index_mode = False
+                continue
+            token += char
+        if token:
+            pointer += "/" + ExtractionService._json_pointer_escape(token)
+        return pointer
+
+    @staticmethod
+    def _is_missing_value(value: Any) -> bool:
+        return value in (None, "", [], {})
+
+    @classmethod
+    def _field_name_from_pointer(cls, path: str) -> str:
+        if not path:
+            return "root"
+        return cls._json_pointer_unescape(path.rsplit("/", 1)[-1])
+
+    @classmethod
+    def _json_pointer_value(
+        cls,
+        document: dict[str, Any],
+        path: str,
+    ) -> tuple[bool, Any]:
+        if path in ("", "/"):
+            return True, document
+        current: Any = document
+        for raw_part in path.strip("/").split("/"):
+            part = cls._json_pointer_unescape(raw_part)
+            if isinstance(current, dict):
+                if part not in current:
+                    return False, None
+                current = current[part]
+                continue
+            if isinstance(current, list):
+                try:
+                    index = int(part)
+                except ValueError:
+                    return False, None
+                if index < 0 or index >= len(current):
+                    return False, None
+                current = current[index]
+                continue
+            return False, None
+        return True, current
+
+    @classmethod
+    def _set_json_pointer_value(
+        cls,
+        document: dict[str, Any],
+        path: str,
+        value: Any,
+    ) -> dict[str, Any]:
+        if path in ("", "/"):
+            if not isinstance(value, dict):
+                raise ValueError("Root curated document value must be a JSON object.")
+            return value
+        result = cls._clone_json_object(document)
+        parts = [cls._json_pointer_unescape(part) for part in path.strip("/").split("/")]
+        current: Any = result
+        for index, part in enumerate(parts[:-1]):
+            next_part = parts[index + 1]
+            if isinstance(current, dict):
+                if part not in current or current[part] is None:
+                    current[part] = [] if next_part.isdigit() else {}
+                current = current[part]
+                continue
+            if isinstance(current, list):
+                item_index = int(part)
+                while len(current) <= item_index:
+                    current.append({} if not next_part.isdigit() else [])
+                current = current[item_index]
+                continue
+            raise ValueError(f"Cannot set JSON Pointer path '{path}'.")
+
+        final_part = parts[-1]
+        if isinstance(current, dict):
+            current[final_part] = value
+        elif isinstance(current, list):
+            item_index = int(final_part)
+            while len(current) <= item_index:
+                current.append(None)
+            current[item_index] = value
+        else:
+            raise ValueError(f"Cannot set JSON Pointer path '{path}'.")
+        return result
+
+    @classmethod
+    def _schema_for_json_pointer(
+        cls,
+        validation_schema: dict[str, Any],
+        path: str,
+    ) -> dict[str, Any]:
+        current = cls._resolve_schema_node(validation_schema, validation_schema)
+        for raw_part in path.strip("/").split("/") if path.strip("/") else []:
+            part = cls._json_pointer_unescape(raw_part)
+            current = cls._resolve_schema_node(current, validation_schema)
+            if not isinstance(current, dict):
+                return {}
+            if part.isdigit():
+                current = current.get("items", {})
+                continue
+            properties = current.get("properties", {})
+            if not isinstance(properties, dict):
+                return {}
+            current = properties.get(part, {})
+        current = cls._resolve_schema_node(current, validation_schema)
+        return current if isinstance(current, dict) else {}
+
+    @classmethod
+    def _selected_vocab_value_for_schema(
+        cls,
+        *,
+        field_schema: dict[str, Any],
+        root_schema: dict[str, Any],
+        selected_uri: str,
+        selected_title: str | None,
+        vocabulary_identifier: str | None,
+        existing_value: Any,
+    ) -> Any:
+        field_schema = cls._resolve_schema_node(field_schema, root_schema)
+        if cls._schema_is_array(field_schema, root_schema):
+            item_schema = cls._resolve_schema_node(
+                field_schema.get("items", {}),
+                root_schema,
+            )
+            item_value = (
+                cls._term_object_for_schema(
+                    schema=item_schema,
+                    root_schema=root_schema,
+                    selected_uri=selected_uri,
+                    selected_title=selected_title,
+                    vocabulary_identifier=vocabulary_identifier,
+                )
+                if cls._schema_accepts_term_object(item_schema, root_schema)
+                else selected_uri
+            )
+            current = list(existing_value) if isinstance(existing_value, list) else []
+            if item_value not in current:
+                current.append(item_value)
+            return current
+        if cls._schema_accepts_term_object(field_schema, root_schema):
+            return cls._term_object_for_schema(
+                schema=field_schema,
+                root_schema=root_schema,
+                selected_uri=selected_uri,
+                selected_title=selected_title,
+                vocabulary_identifier=vocabulary_identifier,
+            )
+        return selected_uri
+
+    @classmethod
+    def _schema_is_array(
+        cls,
+        schema: dict[str, Any],
+        root_schema: dict[str, Any],
+    ) -> bool:
+        schema = cls._resolve_schema_node(schema, root_schema)
+        schema_type = schema.get("type") if isinstance(schema, dict) else None
+        return schema_type == "array" or (
+            isinstance(schema_type, list) and "array" in schema_type
+        )
+
+    @classmethod
+    def _schema_accepts_term_object(
+        cls,
+        schema: dict[str, Any],
+        root_schema: dict[str, Any],
+    ) -> bool:
+        schema = cls._resolve_schema_node(schema, root_schema)
+        if not isinstance(schema, dict):
+            return False
+        for union_key in ("anyOf", "oneOf"):
+            options = schema.get(union_key)
+            if isinstance(options, list):
+                return any(
+                    cls._schema_accepts_term_object(option, root_schema)
+                    for option in options
+                    if isinstance(option, dict)
+                )
+        properties = schema.get("properties", {})
+        return isinstance(properties, dict) and "id" in properties
+
+    @classmethod
+    def _term_object_for_schema(
+        cls,
+        *,
+        schema: dict[str, Any],
+        root_schema: dict[str, Any],
+        selected_uri: str,
+        selected_title: str | None,
+        vocabulary_identifier: str | None,
+    ) -> dict[str, Any]:
+        schema = cls._resolve_schema_node(schema, root_schema)
+        properties = schema.get("properties", {}) if isinstance(schema, dict) else {}
+        if not isinstance(properties, dict):
+            return {"id": selected_uri}
+        value: dict[str, Any] = {"id": selected_uri}
+        if "title" in properties and selected_title is not None:
+            value["title"] = selected_title
+        if "from_CV" in properties and vocabulary_identifier is not None:
+            value["from_CV"] = vocabulary_identifier
+        return value
+
+    @staticmethod
+    def _mark_field_curation_status(
+        *,
+        ledger: list[FieldCompletionLedgerRecord],
+        json_path: str,
+        status: str,
+    ) -> list[FieldCompletionLedgerRecord]:
+        updated: list[FieldCompletionLedgerRecord] = []
+        found = False
+        for record in ledger:
+            if record.json_path != json_path:
+                updated.append(record)
+                continue
+            found = True
+            issue_categories = [
+                category
+                for category in record.issue_categories
+                if category != "non_enriched"
+            ]
+            updated.append(
+                record.model_copy(
+                    update={
+                        "enrichment_status": status,
+                        "issue_categories": issue_categories,
+                        "edit_needed_reason": "",
+                    }
+                )
+            )
+        if not found:
+            updated.append(
+                FieldCompletionLedgerRecord(
+                    json_path=json_path,
+                    field_name=ExtractionService._field_name_from_pointer(json_path),
+                    enrichment_status=status,
+                )
+            )
+        return updated
+
+    @staticmethod
+    def _mark_curation_ledger_status(
+        *,
+        ledger: list[CurationLedgerRecord],
+        json_path: str,
+        status: str,
+    ) -> list[CurationLedgerRecord]:
+        updated: list[CurationLedgerRecord] = []
+        found = False
+        for record in ledger:
+            if record.json_path != json_path:
+                updated.append(record)
+                continue
+            found = True
+            updated.append(record.model_copy(update={"status": status}))
+        if not found:
+            updated.append(
+                CurationLedgerRecord(
+                    json_path=json_path,
+                    field_name=ExtractionService._field_name_from_pointer(json_path),
+                    status=status,
+                )
+            )
+        return updated
+
+    @classmethod
+    def _leaf_json_pointer_paths(
+        cls,
+        value: Any,
+        path: str = "",
+    ) -> set[str]:
+        if isinstance(value, dict):
+            if not value and path:
+                return {path}
+            paths: set[str] = set()
+            for key, item in value.items():
+                paths.update(
+                    cls._leaf_json_pointer_paths(
+                        item,
+                        f"{path}/{cls._json_pointer_escape(str(key))}",
+                    )
+                )
+            return paths
+        if isinstance(value, list):
+            if not value and path:
+                return {path}
+            paths = set()
+            for index, item in enumerate(value):
+                paths.update(cls._leaf_json_pointer_paths(item, f"{path}/{index}"))
+            return paths
+        return {path} if path else set()
+
+    @staticmethod
+    def _clone_json_object(document: dict[str, Any]) -> dict[str, Any]:
+        return json.loads(json.dumps(document))
 
     @classmethod
     def _fallback_profile_document(
@@ -1302,11 +2579,19 @@ class ExtractionService:
         extraction_context: ExtractionContext,
         validation_schema: dict[str, Any],
     ) -> dict[str, Any]:
+        target_schema = cls._resolve_schema_node(validation_schema, validation_schema)
+        document = cls._schema_shell_value(
+            target_schema,
+            validation_schema,
+            depth=0,
+            required_only=True,
+        )
+        if not isinstance(document, dict):
+            document = {}
         properties = cls._target_schema_properties(validation_schema)
         title = cls._fallback_title(data_package_id, extraction_context)
-        document: dict[str, Any] = {
-            "title": cls._fallback_property_value(properties.get("title"), title),
-        }
+        if "title" in properties or "title" in document:
+            document["title"] = cls._fallback_property_value(properties.get("title"), title)
         if "description" in properties:
             document["description"] = cls._fallback_property_value(
                 properties.get("description"),
@@ -1324,6 +2609,72 @@ class ExtractionService:
                 {"id": f"{data_package_id}:activity:metadata-extraction"}
             ]
         return document
+
+    @classmethod
+    def _schema_shell_value(
+        cls,
+        schema: Any,
+        root: dict[str, Any],
+        *,
+        depth: int,
+        required_only: bool,
+    ) -> Any:
+        schema = cls._resolve_schema_node(schema, root)
+        if not isinstance(schema, dict):
+            return None
+        if "const" in schema:
+            return schema["const"]
+        if isinstance(schema.get("enum"), list) and schema["enum"]:
+            return schema["enum"][0]
+        for union_key in ("anyOf", "oneOf"):
+            options = schema.get(union_key)
+            if isinstance(options, list):
+                non_null_options = [
+                    option
+                    for option in options
+                    if not (isinstance(option, dict) and option.get("type") == "null")
+                ]
+                if non_null_options:
+                    return cls._schema_shell_value(
+                        non_null_options[0],
+                        root,
+                        depth=depth,
+                        required_only=required_only,
+                    )
+
+        schema_type = schema.get("type")
+        types = schema_type if isinstance(schema_type, list) else [schema_type]
+        if "object" in types or "properties" in schema:
+            if depth >= 3:
+                return {}
+            properties = schema.get("properties", {})
+            required = {
+                item
+                for item in schema.get("required", [])
+                if isinstance(item, str)
+            }
+            if not isinstance(properties, dict):
+                return {}
+            keys = required if required_only else set(properties)
+            return {
+                key: cls._schema_shell_value(
+                    properties[key],
+                    root,
+                    depth=depth + 1,
+                    required_only=required_only,
+                )
+                for key in sorted(keys)
+                if key in properties
+            }
+        if "array" in types:
+            return []
+        if "string" in types:
+            return ""
+        if "integer" in types or "number" in types:
+            return 0
+        if "boolean" in types:
+            return False
+        return None
 
     @staticmethod
     def _fallback_property_value(schema: Any, value: str) -> Any:
@@ -1477,6 +2828,10 @@ class ExtractionService:
         return value.replace("~", "~0").replace("/", "~1")
 
     @staticmethod
+    def _json_pointer_unescape(value: str) -> str:
+        return value.replace("~1", "/").replace("~0", "~")
+
+    @staticmethod
     def _ordered_chunks(
         chunks_by_file: list[list[ContentChunk]],
         ranking: FileRankingResult,
@@ -1495,9 +2850,8 @@ class ExtractionService:
             ),
         )
 
-    @classmethod
     def _prepare_run_state(
-        cls,
+        self,
         *,
         ranking: FileRankingResult,
         ordered_chunks: list[ContentChunk],
@@ -1505,13 +2859,26 @@ class ExtractionService:
         profile_identifier: str,
         vocab_query_config: ExtractionVocabQueryConfig,
     ) -> ExtractionRunState:
+        preserve_completed_chunks = (
+            persisted_state is not None
+            and self._initial_overview_matches_current_run(
+                overview=persisted_state.initial_extraction_overview,
+                status=persisted_state.initial_extraction_overview_status,
+                ranking=ranking,
+                ordered_chunks=ordered_chunks,
+            )
+        )
         persisted_by_key = {
-            cls._chunk_result_key(result): result
-            for result in (persisted_state.chunk_results if persisted_state else [])
+            self._chunk_result_key(result): result
+            for result in (
+                persisted_state.chunk_results
+                if preserve_completed_chunks and persisted_state
+                else []
+            )
         }
         chunk_results: list[ExtractionChunkResult] = []
         for index, chunk in enumerate(ordered_chunks):
-            existing = persisted_by_key.get(cls._chunk_key(chunk))
+            existing = persisted_by_key.get(self._chunk_key(chunk))
             if existing and existing.status == "completed" and existing.extraction_context is not None:
                 chunk_results.append(
                     existing.model_copy(
@@ -1536,19 +2903,48 @@ class ExtractionService:
 
         return ExtractionRunState(
             profile_identifier=profile_identifier,
+            chat_model=self.ollama_client.chat_model if self.ollama_client else None,
             vocab_query_config=(
                 persisted_state.vocab_query_config
                 if persisted_state
                 else vocab_query_config
             ),
             ranked_files=ranking.files,
+            initial_extraction_overview=(
+                persisted_state.initial_extraction_overview
+                if preserve_completed_chunks and persisted_state
+                else None
+            ),
+            initial_extraction_overview_status=(
+                persisted_state.initial_extraction_overview_status
+                if preserve_completed_chunks and persisted_state
+                else None
+            ),
             chunk_results=chunk_results,
             vocab_queries=persisted_state.vocab_queries if persisted_state else [],
-            interim_profile_document=(
-                persisted_state.interim_profile_document if persisted_state else None
+            generated_final_draft=(
+                persisted_state.generated_final_draft if persisted_state else None
             ),
-            profile_patch_results=(
-                persisted_state.profile_patch_results if persisted_state else []
+            curated_document=(
+                persisted_state.curated_document if persisted_state else None
+            ),
+            draft_quality_state=(
+                persisted_state.draft_quality_state if persisted_state else None
+            ),
+            validation=(
+                persisted_state.validation if persisted_state else DraftValidationResult()
+            ),
+            curated_validation=(
+                persisted_state.curated_validation if persisted_state else None
+            ),
+            projection_ledger=(
+                persisted_state.projection_ledger if persisted_state else []
+            ),
+            field_completion_ledger=(
+                persisted_state.field_completion_ledger if persisted_state else []
+            ),
+            curation_ledger=(
+                persisted_state.curation_ledger if persisted_state else []
             ),
         )
 
@@ -1729,6 +3125,23 @@ class ExtractionService:
         ]
 
     @classmethod
+    def _global_extraction_context_for_prompt(
+        cls,
+        state: ExtractionRunState,
+        *,
+        current_chunk_index: int,
+    ) -> ExtractionContext | None:
+        contexts = [
+            result.extraction_context
+            for result in state.chunk_results
+            if result.status == "completed"
+            and result.extraction_context is not None
+            and result.chunk_index < current_chunk_index
+        ]
+        if not contexts:
+            return None
+        return merge_extraction_context_results(contexts)
+
     def _latest_completed_chunk_result_with_tokens(
         cls,
         state: ExtractionRunState,
@@ -3105,7 +4518,10 @@ class ExtractionService:
         if self.output_repository is None:
             return None
         try:
-            return self.output_repository.load_extraction_result(data_package_id)
+            return self.output_repository.load_extraction_result(
+                data_package_id,
+                chat_model=self.ollama_client.chat_model if self.ollama_client else None,
+            )
         except (FileNotFoundError, ValidationError):
             return None
 
@@ -3121,7 +4537,10 @@ class ExtractionService:
         if self.output_repository is None:
             return None
         try:
-            return self.output_repository.load_extraction_run_state(data_package_id)
+            return self.output_repository.load_extraction_run_state(
+                data_package_id,
+                chat_model=self.ollama_client.chat_model if self.ollama_client else None,
+            )
         except (FileNotFoundError, json.JSONDecodeError, ValidationError):
             return None
 
@@ -3200,12 +4619,20 @@ class ExtractionService:
             state = self._load_run_state_or_none(data_package_id)
             extraction_progress = extraction_progress or ExtractionRunProgress(
                 stage="completed",
-                interim_context=result.extraction_context,
+                interim_context=result.machine_extraction_context,
                 vocab_query_config=state.vocab_query_config if state else None,
+                initial_extraction_overview=result.initial_extraction_overview,
+                initial_extraction_overview_status=result.initial_extraction_overview_status,
                 chunk_results=state.chunk_results if state else [],
                 vocab_queries=state.vocab_queries if state else [],
-                interim_profile_document=state.interim_profile_document if state else None,
-                profile_patch_results=state.profile_patch_results if state else [],
+                generated_final_draft=result.generated_final_draft,
+                curated_document=result.curated_document,
+                draft_quality_state=result.draft_quality_state,
+                validation=result.validation,
+                curated_validation=result.curated_validation,
+                projection_ledger=result.projection_ledger,
+                field_completion_ledger=result.field_completion_ledger,
+                curation_ledger=result.curation_ledger,
                 warnings=list(result.warnings),
             )
 
@@ -3265,27 +4692,43 @@ class ExtractionService:
             state = self._load_run_state_or_none(data_package_id)
             return TaskStatus.COMPLETED, ExtractionRunProgress(
                 stage="completed",
-                interim_context=result.extraction_context,
+                interim_context=result.machine_extraction_context,
                 vocab_query_config=state.vocab_query_config if state else None,
+                initial_extraction_overview=result.initial_extraction_overview,
+                initial_extraction_overview_status=result.initial_extraction_overview_status,
                 chunk_results=state.chunk_results if state else [],
                 vocab_queries=state.vocab_queries if state else [],
-                interim_profile_document=state.interim_profile_document if state else None,
-                profile_patch_results=state.profile_patch_results if state else [],
+                generated_final_draft=result.generated_final_draft,
+                curated_document=result.curated_document,
+                draft_quality_state=result.draft_quality_state,
+                validation=result.validation,
+                curated_validation=result.curated_validation,
+                projection_ledger=result.projection_ledger,
+                field_completion_ledger=result.field_completion_ledger,
+                curation_ledger=result.curation_ledger,
                 warnings=list(result.warnings),
             )
         state = self._load_run_state_or_none(data_package_id)
         if state is not None:
             return TaskStatus.UNKNOWN, ExtractionRunProgress(
-                stage="interim_context",
+                stage="profile_draft" if state.generated_final_draft else "interim_context",
                 processed_chunks=self._completed_chunk_count(state),
                 total_chunks=len(state.chunk_results),
                 interim_context=self._merged_completed_chunk_context_or_none(state),
                 vocab_query_config=state.vocab_query_config,
                 ranked_files=state.ranked_files,
+                initial_extraction_overview=state.initial_extraction_overview,
+                initial_extraction_overview_status=state.initial_extraction_overview_status,
                 chunk_results=state.chunk_results,
                 vocab_queries=state.vocab_queries,
-                interim_profile_document=state.interim_profile_document,
-                profile_patch_results=state.profile_patch_results,
+                generated_final_draft=state.generated_final_draft,
+                curated_document=state.curated_document,
+                draft_quality_state=state.draft_quality_state,
+                validation=state.validation,
+                curated_validation=state.curated_validation,
+                projection_ledger=state.projection_ledger,
+                field_completion_ledger=state.field_completion_ledger,
+                curation_ledger=state.curation_ledger,
                 warnings=self._load_warnings_or_empty(data_package_id),
             )
         return TaskStatus.UNKNOWN, None
@@ -3392,7 +4835,9 @@ class ExtractionService:
                     if extraction_progress.stage == "vocabulary_normalization"
                     else TaskStatus.COMPLETED
                 )
-            if extraction_progress.stage in {"profile_projection", "completed"}:
+            if extraction_progress.stage == "profile_draft":
+                steps["extraction"] = TaskStatus.COMPLETED
+            if extraction_progress.stage in {"profile_projection", "profile_draft", "completed"}:
                 steps["profile_projection"] = (
                     TaskStatus.RUNNING
                     if extraction_progress.stage == "profile_projection"
