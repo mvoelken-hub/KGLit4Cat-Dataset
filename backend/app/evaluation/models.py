@@ -80,6 +80,9 @@ class EvaluationReport(BaseModel):
     source_trace_coverage: float
     vocab_mapping_metrics: MetricSummary
     required_profile_field_coverage: float
+    draft_quality_state: str | None = None
+    projection_status_counts: dict[str, int] = Field(default_factory=dict)
+    field_enrichment_status_counts: dict[str, int] = Field(default_factory=dict)
     warnings_count: int
     token_usage: dict[str, Any] = Field(default_factory=dict)
     failures: list[str] = Field(default_factory=list)

@@ -70,7 +70,16 @@ def score_reference_directory(
         reference = load_reference(reference_path)
         dataset_path = dataset_dir / reference.dataset_filename
         package_id = reference.package_id or package_id_for_dataset(dataset_path)
-        result_path = output_dir / package_id / "extraction_result.json"
+        workflow_dir = output_dir / package_id
+        result_path = workflow_dir / "extraction_result.json"
+        if not result_path.exists():
+            result_candidates = sorted(
+                workflow_dir.glob("*/extraction_result.json"),
+                key=lambda path: path.stat().st_mtime,
+                reverse=True,
+            )
+            if result_candidates:
+                result_path = result_candidates[0]
         if not result_path.exists():
             missing_outputs.append(
                 {

@@ -94,8 +94,30 @@ class EvaluationTests(unittest.TestCase):
 
     def test_evaluate_extraction_result_scores_expected_items(self):
         result = ExtractionRunResult(
-            document={"title": "IR"},
-            extraction_context=ExtractionContext.model_validate(context_payload()),
+            generated_final_draft={"title": "IR"},
+            machine_extraction_context=ExtractionContext.model_validate(context_payload()),
+            curated_document={"title": "Human edited IR"},
+            draft_quality_state="complete_final_draft",
+            validation={"status": "valid", "errors": [], "warnings": []},
+            projection_ledger=[
+                {
+                    "object_identifier": "ir-method",
+                    "object_kind": "Method",
+                    "status": "projected",
+                    "projected_paths": ["/title"],
+                    "reason": "projected",
+                }
+            ],
+            field_completion_ledger=[
+                {
+                    "json_path": "/title",
+                    "field_name": "title",
+                    "generated_value": "IR",
+                    "curated_value": "Human edited IR",
+                    "validation_status": "valid",
+                    "enrichment_status": "grounded",
+                }
+            ],
             normalization=ExtractionNormalization(
                 qualitative_attributes=[
                     QualitativeAttributeNormalization(
@@ -151,6 +173,9 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(report.attribute_metrics.recall, 1.0)
         self.assertEqual(report.vocab_mapping_metrics.recall, 1.0)
         self.assertEqual(report.required_profile_field_coverage, 1.0)
+        self.assertEqual(report.draft_quality_state, "complete_final_draft")
+        self.assertEqual(report.projection_status_counts, {"projected": 1})
+        self.assertEqual(report.field_enrichment_status_counts, {"grounded": 1})
 
     def test_score_reference_directory_writes_partial_report_for_missing_output(self):
         with TemporaryDirectory() as directory:

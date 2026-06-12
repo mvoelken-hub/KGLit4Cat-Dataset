@@ -28,7 +28,7 @@ def evaluate_extraction_result(
     manifest: EvaluationRunManifest | None = None,
     schema_valid: bool = True,
 ) -> EvaluationReport:
-    context = result.extraction_context
+    context = result.machine_extraction_context
     object_metrics, object_failures = _score_objects(reference.expected_objects, context)
     attribute_metrics, attribute_matches = _score_attributes(
         reference.expected_attributes,
@@ -40,7 +40,7 @@ def evaluate_extraction_result(
     )
     profile_coverage, profile_failures = _score_profile_fields(
         reference.required_profile_fields,
-        result.document,
+        result.generated_final_draft,
     )
     top1_hit, top3_recall = _score_file_ranking(
         reference.relevant_files,
@@ -73,6 +73,13 @@ def evaluate_extraction_result(
         source_trace_coverage=source_trace_coverage,
         vocab_mapping_metrics=vocab_metrics,
         required_profile_field_coverage=profile_coverage,
+        draft_quality_state=result.draft_quality_state,
+        projection_status_counts=_status_counts(
+            record.status for record in result.projection_ledger
+        ),
+        field_enrichment_status_counts=_status_counts(
+            record.enrichment_status for record in result.field_completion_ledger
+        ),
         warnings_count=len(result.warnings),
         token_usage=result.token_usage,
         failures=failures,
@@ -94,16 +101,35 @@ def load_result_artifacts(
     package_id: str,
 ) -> tuple[ExtractionRunResult, ExtractionRunState | None]:
     workflow_dir = output_dir / package_id
+    result_path = workflow_dir / "extraction_result.json"
+    if not result_path.exists():
+        result_candidates = sorted(
+            workflow_dir.glob("*/extraction_result.json"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        if result_candidates:
+            result_path = result_candidates[0]
     result = ExtractionRunResult.model_validate_json(
-        (workflow_dir / "extraction_result.json").read_text(encoding="utf-8")
+        result_path.read_text(encoding="utf-8")
     )
-    state_path = workflow_dir / "extraction_run_state.json"
+    state_path = result_path.parent / "extraction_run_state.json"
+    if not state_path.exists():
+        state_path = workflow_dir / "extraction_run_state.json"
     state = (
         ExtractionRunState.model_validate_json(state_path.read_text(encoding="utf-8"))
         if state_path.exists()
         else None
     )
     return result, state
+
+
+def _status_counts(values: Any) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        key = str(value)
+        counts[key] = counts.get(key, 0) + 1
+    return counts
 
 
 def _score_objects(
