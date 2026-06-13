@@ -6,7 +6,8 @@ from tempfile import TemporaryDirectory
 
 from app.domain.datasources import DataPackage, FileEntry
 from app.domain.extraction import (
-    ExtractionContext,
+    EvidenceContext,
+    EvidenceNote,
     ExtractionNormalization,
     ExtractionRunResult,
     ExtractionRunState,
@@ -27,32 +28,27 @@ from app.evaluation.runner import score_reference_directory
 from app.services.extraction_service import ExtractionService
 
 
-def context_payload() -> dict:
-    return {
-        "extraction_objects": [
-            {
-                "object_kind": "Method",
-                "extracted_object": {
-                    "identifier": "ir-method",
-                    "description": "Infrared spectroscopy using a Bruker ALPHA instrument.",
-                    "keywords": ["IR"],
-                    "has_qualitative_attributes": [
-                        {"title": "method", "value": "IR"}
-                    ],
-                },
-                "source_text": "instrument: Bruker ALPHA",
-            },
-            {
-                "object_kind": "AgenticEntity",
-                "extracted_object": {
-                    "identifier": "Bruker ALPHA",
-                    "description": "Bruker ALPHA spectrometer.",
-                    "type": "instrument",
-                },
-                "source_text": "instrument: Bruker ALPHA",
-            },
+def evidence_context() -> EvidenceContext:
+    return EvidenceContext(
+        notes=[
+            EvidenceNote(
+                note_id="method-ir",
+                category="method_signal",
+                observation="IR method: infrared spectroscopy using a Bruker ALPHA instrument.",
+                evidence_text="instrument: Bruker ALPHA",
+                file_path="dataset_description.txt",
+                evidence_match_score=1.0,
+            ),
+            EvidenceNote(
+                note_id="agent-bruker",
+                category="agent_signal",
+                observation="Bruker ALPHA spectrometer.",
+                evidence_text="instrument: Bruker ALPHA",
+                file_path="dataset_description.txt",
+                evidence_match_score=1.0,
+            ),
         ]
-    }
+    )
 
 
 class EvaluationTests(unittest.TestCase):
@@ -81,21 +77,28 @@ class EvaluationTests(unittest.TestCase):
             ],
         )
 
-        context = ExtractionService._context_with_resource_inventory(
+        context = ExtractionService._evidence_context_with_file_inventory(
             data_package=data_package,
-            context=ExtractionContext.model_validate(context_payload()),
+            context=EvidenceContext(),
+            state=ExtractionRunState(
+                ranked_files=[
+                    RankedFile(rank=1, file_path="dataset_description.txt"),
+                    RankedFile(rank=2, file_path="SG-V4050.edit.png"),
+                    RankedFile(rank=3, file_path="SG-V4050.infer.json"),
+                ],
+            ),
         )
 
-        resources = context.resources
-        self.assertIn("dataset_description.txt", [item.identifier for item in resources])
-        self.assertIn("SG-V4050.infer.json", [item.identifier for item in resources])
-        image = next(item for item in resources if item.identifier == "SG-V4050.edit.png")
-        self.assertEqual(image.type, "image")
+        inventory = context.file_inventory
+        self.assertIn("dataset_description.txt", [item.file_path for item in inventory])
+        self.assertIn("SG-V4050.infer.json", [item.file_path for item in inventory])
+        image = next(item for item in inventory if item.file_path == "SG-V4050.edit.png")
+        self.assertEqual(image.file_type, "image")
 
     def test_evaluate_extraction_result_scores_expected_items(self):
         result = ExtractionRunResult(
             generated_final_draft={"title": "IR"},
-            machine_extraction_context=ExtractionContext.model_validate(context_payload()),
+            machine_evidence_context=evidence_context(),
             curated_document={"title": "Human edited IR"},
             draft_quality_state="complete_final_draft",
             validation={"status": "valid", "errors": [], "warnings": []},
@@ -169,7 +172,7 @@ class EvaluationTests(unittest.TestCase):
 
         self.assertTrue(report.schema_valid)
         self.assertTrue(report.file_ranking_top1_hit)
-        self.assertEqual(report.object_metrics["Method"].recall, 1.0)
+        self.assertEqual(report.object_metrics["EvidenceNote"].recall, 1.0)
         self.assertEqual(report.attribute_metrics.recall, 1.0)
         self.assertEqual(report.vocab_mapping_metrics.recall, 1.0)
         self.assertEqual(report.required_profile_field_coverage, 1.0)

@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import patch, call
 
 from app.domain.extraction import (
-    ExtractionContext,
+    EvidenceContext,
     ExtractionFileSummary,
     ExtractionOverview,
     ExtractionRunResult,
@@ -50,7 +50,7 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
             chat_model = "model:tag"
             result = ExtractionRunResult(
                 generated_final_draft={"id": "generated", "title": "Generated"},
-                machine_extraction_context=ExtractionContext(),
+                machine_evidence_context=EvidenceContext(),
                 initial_file_summaries=[
                     ExtractionFileSummary(
                         file_path="dataset_description.txt",

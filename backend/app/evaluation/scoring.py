@@ -7,7 +7,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
-from app.domain.extraction import ExtractionContext, ExtractionRunResult, ExtractionRunState
+from app.domain.extraction import EvidenceContext, ExtractionContext, ExtractionRunResult, ExtractionRunState
 from app.evaluation.models import (
     AttributeMatch,
     EvaluationReference,
@@ -28,11 +28,14 @@ def evaluate_extraction_result(
     manifest: EvaluationRunManifest | None = None,
     schema_valid: bool = True,
 ) -> EvaluationReport:
-    context = result.machine_extraction_context
-    object_metrics, object_failures = _score_objects(reference.expected_objects, context)
-    attribute_metrics, attribute_matches = _score_attributes(
+    evidence_context = result.machine_evidence_context
+    object_metrics, object_failures = _score_evidence_objects(
+        reference.expected_objects,
+        evidence_context,
+    )
+    attribute_metrics, attribute_matches = _score_evidence_attributes(
         reference.expected_attributes,
-        context,
+        evidence_context,
     )
     vocab_metrics, vocab_failures = _score_vocab_mappings(
         reference.expected_vocab_mappings,
@@ -47,9 +50,9 @@ def evaluate_extraction_result(
         state,
     )
 
-    traced = context.extraction_objects
+    traced = evidence_context.notes
     source_trace_coverage = (
-        sum(1 for item in traced if item.source_text.strip()) / len(traced)
+        sum(1 for item in traced if item.evidence_text.strip()) / len(traced)
         if traced
         else 0.0
     )
@@ -130,6 +133,68 @@ def _status_counts(values: Any) -> dict[str, int]:
         key = str(value)
         counts[key] = counts.get(key, 0) + 1
     return counts
+
+
+def _score_evidence_objects(
+    expected_objects: list[ReferenceObject],
+    context: EvidenceContext,
+) -> tuple[dict[str, MetricSummary], list[str]]:
+    if not expected_objects:
+        return {}, []
+    note_texts = [
+        f"{note.category} {note.observation} {note.evidence_text}"
+        for note in context.notes
+    ]
+    matched_notes: set[int] = set()
+    true_positives = 0
+    failures: list[str] = []
+    for expected in expected_objects:
+        index = _best_match_index(_reference_terms(expected), note_texts, matched_notes)
+        if index is None:
+            if expected.required:
+                failures.append(f"Missing expected evidence for {expected.object_kind}: {expected.label}")
+            continue
+        matched_notes.add(index)
+        true_positives += 1
+    false_negatives = max(0, len([item for item in expected_objects if item.required]) - true_positives)
+    return {
+        "EvidenceNote": _metric_summary(
+            true_positives,
+            max(0, len(note_texts) - len(matched_notes)),
+            false_negatives,
+        )
+    }, failures
+
+
+def _score_evidence_attributes(
+    expected_attributes: list[ReferenceAttribute],
+    context: EvidenceContext,
+) -> tuple[MetricSummary, list[AttributeMatch]]:
+    note_texts = [
+        f"{note.category} {note.observation} {note.evidence_text}"
+        for note in context.notes
+    ]
+    matched_notes: set[int] = set()
+    matches: list[AttributeMatch] = []
+    true_positives = 0
+    for expected in expected_attributes:
+        terms = [expected.title, expected.value, expected.object_kind]
+        index = _best_match_index(terms, note_texts, matched_notes)
+        if index is None:
+            matches.append(AttributeMatch(expected=f"{expected.title}: {expected.value}"))
+            continue
+        matched_notes.add(index)
+        true_positives += 1
+        matches.append(
+            AttributeMatch(
+                expected=f"{expected.title}: {expected.value}",
+                matched=note_texts[index],
+                status="matched",
+            )
+        )
+    false_positives = max(0, len(note_texts) - len(matched_notes))
+    false_negatives = max(0, len([item for item in expected_attributes if item.required]) - true_positives)
+    return _metric_summary(true_positives, false_positives, false_negatives), matches
 
 
 def _score_objects(

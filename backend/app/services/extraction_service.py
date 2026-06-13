@@ -16,6 +16,7 @@ from app.core.task_registry import TaskRegistry, TaskStatus, TaskType
 from app.domain.datasources import ContentChunk, FileType
 from app.domain.extraction import (
     DEFAULT_QUALITATIVE_VOCAB_IDENTIFIERS,
+    EVIDENCE_CONTEXT_SYSTEM_PROMPT,
     EXTRACTION_CONTEXT_SYSTEM_PROMPT,
     EXTRACTION_FILE_SUMMARY_SYSTEM_PROMPT,
     EXTRACTION_OVERVIEW_FALLBACK_SYSTEM_PROMPT,
@@ -24,6 +25,8 @@ from app.domain.extraction import (
     PROFILE_PATCH_SYSTEM_PROMPT,
     QUDT_QUANTITY_KIND_VOCAB,
     QUDT_UNIT_VOCAB,
+    PROFILE_TARGET_PLANNER_SYSTEM_PROMPT,
+    PROFILE_TARGET_WRITER_SYSTEM_PROMPT,
     VOCAB_CANDIDATE_SELECTION_SYSTEM_PROMPT,
     VOCAB_FALLBACK_QUERY_SYSTEM_PROMPT,
     VOCAB_OBJECT_GROUNDING_SELECTION_SYSTEM_PROMPT,
@@ -35,6 +38,11 @@ from app.domain.extraction import (
     CurationLedgerRecord,
     DefinedTerm,
     DraftValidationResult,
+    EvidenceChunkContext,
+    EvidenceChunkMetadata,
+    EvidenceContext,
+    EvidenceNote,
+    FileInventoryItem,
     ExtractionChunkRef,
     ExtractionChunkResult,
     ExtractionContext,
@@ -59,6 +67,8 @@ from app.domain.extraction import (
     ProfileFieldNormalization,
     ProfileObjectPatchResult,
     ProfilePatchDocument,
+    ProfileTargetWriteDocument,
+    ProfileTargetDecision,
     ProjectionLedgerRecord,
     QualitativeAttribute,
     QualitativeAttributeNormalization,
@@ -69,22 +79,29 @@ from app.domain.extraction import (
     VocabularyCandidateSelection,
     VocabularyFallbackQuery,
     VocabularyTermMapping,
+    build_evidence_context_prompt,
+    build_evidence_system_prompt_with_overview,
     build_candidate_selection_prompt,
     build_extraction_context_prompt,
     build_extraction_file_summary_prompt,
     build_extraction_overview_fallback_prompt,
     build_extraction_overview_prompt,
+    is_noisy_payload_chunk,
     build_system_prompt_with_overview,
     build_fallback_query_prompt,
     build_object_grounding_selection_prompt,
     build_profile_patch_prompt,
     build_profile_projection_prompt,
+    build_profile_target_planner_prompt,
+    build_profile_target_write_prompt,
     build_qualitative_vocab_query,
     build_quantity_kind_vocab_query,
     build_unit_vocab_query,
     cap_extraction_context_for_prompt,
     fallback_file_ranking,
+    merge_evidence_contexts,
     merge_extraction_context_results,
+    validate_evidence_context_for_chunk,
 )
 from app.domain.profiles import (
     ProfileValidationIssue,
@@ -141,6 +158,15 @@ class _ProfileFieldCandidateDiscovery:
     source_value: str
     vocabulary_identifier: str
     query_ids: list[str]
+
+
+@dataclass
+class _EvidenceProjectionGroup:
+    group_id: str
+    object_kind: str
+    notes: list[EvidenceNote]
+    target_hint: str
+    target_class_hint: str | None
 
 class ExtractionService:
     def __init__(
@@ -606,7 +632,7 @@ class ExtractionService:
                     stage="completed",
                     processed_chunks=self._completed_chunk_count(state) if state else 0,
                     total_chunks=len(state.chunk_results) if state else 0,
-                    interim_context=result.machine_extraction_context,
+                    interim_evidence_context=result.machine_evidence_context,
                     vocab_query_config=state.vocab_query_config if state else self._default_vocab_query_config(None),
                     ranked_files=state.ranked_files if state else [],
                     initial_file_summaries=result.initial_file_summaries,
@@ -620,15 +646,16 @@ class ExtractionService:
                     draft_quality_state=result.draft_quality_state,
                     validation=result.validation,
                     curated_validation=result.curated_validation,
+                    initial_draft_scaffold=result.initial_draft_scaffold,
                     projection_ledger=result.projection_ledger,
                     field_completion_ledger=result.field_completion_ledger,
                     curation_ledger=result.curation_ledger,
                     warnings=list(result.warnings),
                 )
-            interim_context = self._load_context_or_none(data_package_id)
-            if interim_context is not None or state is not None:
-                stage = "interim_context"
-                if interim_context is None and state and not state.chunk_results and (
+            interim_evidence_context = self._load_evidence_context_or_none(data_package_id)
+            if interim_evidence_context is not None or state is not None:
+                stage = "interim_evidence_context"
+                if interim_evidence_context is None and state and not state.chunk_results and (
                     state.initial_file_summary_status is not None
                     or state.initial_extraction_overview_status is not None
                 ):
@@ -639,8 +666,8 @@ class ExtractionService:
                     stage=stage,
                     processed_chunks=self._completed_chunk_count(state) if state else 0,
                     total_chunks=len(state.chunk_results) if state else 0,
-                    interim_context=interim_context or (
-                        self._merged_completed_chunk_context_or_none(state)
+                    interim_evidence_context=interim_evidence_context or (
+                        self._merged_completed_evidence_context_or_none(state)
                         if state
                         else None
                     ),
@@ -657,6 +684,7 @@ class ExtractionService:
                     draft_quality_state=state.draft_quality_state if state else None,
                     validation=state.validation if state else DraftValidationResult(),
                     curated_validation=state.curated_validation if state else None,
+                    initial_draft_scaffold=state.initial_draft_scaffold if state else {},
                     projection_ledger=state.projection_ledger if state else [],
                     field_completion_ledger=state.field_completion_ledger if state else [],
                     curation_ledger=state.curation_ledger if state else [],
@@ -674,7 +702,7 @@ class ExtractionService:
         if progress is None:
             state = self._load_run_state_or_none(data_package_id)
             if state is not None:
-                stage = "interim_context"
+                stage = "interim_evidence_context"
                 if not state.chunk_results and (
                     state.initial_file_summary_status is not None
                     or state.initial_extraction_overview_status is not None
@@ -686,7 +714,7 @@ class ExtractionService:
                     stage=stage,
                     processed_chunks=self._completed_chunk_count(state),
                     total_chunks=len(state.chunk_results),
-                    interim_context=self._merged_completed_chunk_context_or_none(state),
+                    interim_evidence_context=self._merged_completed_evidence_context_or_none(state),
                     vocab_query_config=state.vocab_query_config,
                     ranked_files=state.ranked_files,
                     initial_file_summaries=state.initial_file_summaries,
@@ -704,8 +732,8 @@ class ExtractionService:
                     field_completion_ledger=state.field_completion_ledger,
                     curation_ledger=state.curation_ledger,
                 )
-        if progress is not None and progress.interim_context is None:
-            progress.interim_context = self._load_context_or_none(data_package_id)
+        if progress is not None and progress.interim_evidence_context is None:
+            progress.interim_evidence_context = self._load_evidence_context_or_none(data_package_id)
         if progress is not None:
             state = self._load_run_state_or_none(data_package_id)
             if state is not None:
@@ -759,8 +787,8 @@ class ExtractionService:
             stage="paused",
             processed_chunks=self._completed_chunk_count(state),
             total_chunks=len(state.chunk_results),
-            interim_context=self._merged_completed_chunk_context_or_none(state)
-            or self._load_context_or_none(data_package_id),
+            interim_evidence_context=self._merged_completed_evidence_context_or_none(state)
+            or self._load_evidence_context_or_none(data_package_id),
             vocab_query_config=state.vocab_query_config,
             ranked_files=state.ranked_files,
             initial_file_summaries=state.initial_file_summaries,
@@ -774,6 +802,7 @@ class ExtractionService:
             draft_quality_state=state.draft_quality_state,
             validation=state.validation,
             curated_validation=state.curated_validation,
+            initial_draft_scaffold=state.initial_draft_scaffold,
             projection_ledger=state.projection_ledger,
             field_completion_ledger=state.field_completion_ledger,
             curation_ledger=state.curation_ledger,
@@ -830,7 +859,7 @@ class ExtractionService:
             stage="vocabulary_config_updated",
             processed_chunks=self._completed_chunk_count(state),
             total_chunks=len(state.chunk_results),
-            interim_context=self._merged_completed_chunk_context_or_none(state),
+            interim_evidence_context=self._merged_completed_evidence_context_or_none(state),
             vocab_query_config=state.vocab_query_config,
             ranked_files=state.ranked_files,
             initial_file_summaries=state.initial_file_summaries,
@@ -844,6 +873,7 @@ class ExtractionService:
             draft_quality_state=state.draft_quality_state,
             validation=state.validation,
             curated_validation=state.curated_validation,
+            initial_draft_scaffold=state.initial_draft_scaffold,
             projection_ledger=state.projection_ledger,
             field_completion_ledger=state.field_completion_ledger,
             curation_ledger=state.curation_ledger,
@@ -890,8 +920,8 @@ class ExtractionService:
             stage="curated_document",
             processed_chunks=self._completed_chunk_count(state),
             total_chunks=len(state.chunk_results),
-            interim_context=self._load_context_or_none(data_package_id)
-            or self._merged_completed_chunk_context_or_none(state),
+            interim_evidence_context=self._load_evidence_context_or_none(data_package_id)
+            or self._merged_completed_evidence_context_or_none(state),
             vocab_query_config=state.vocab_query_config,
             ranked_files=state.ranked_files,
             initial_file_summaries=state.initial_file_summaries,
@@ -905,6 +935,7 @@ class ExtractionService:
             draft_quality_state=state.draft_quality_state,
             validation=state.validation,
             curated_validation=state.curated_validation,
+            initial_draft_scaffold=state.initial_draft_scaffold,
             projection_ledger=state.projection_ledger,
             field_completion_ledger=state.field_completion_ledger,
             curation_ledger=state.curation_ledger,
@@ -1001,8 +1032,8 @@ class ExtractionService:
             stage="curated_document",
             processed_chunks=self._completed_chunk_count(state),
             total_chunks=len(state.chunk_results),
-            interim_context=self._load_context_or_none(data_package_id)
-            or self._merged_completed_chunk_context_or_none(state),
+            interim_evidence_context=self._load_evidence_context_or_none(data_package_id)
+            or self._merged_completed_evidence_context_or_none(state),
             vocab_query_config=state.vocab_query_config,
             ranked_files=state.ranked_files,
             initial_file_summaries=state.initial_file_summaries,
@@ -1139,6 +1170,9 @@ class ExtractionService:
             projection_ledger=(
                 persisted_state.projection_ledger if persisted_state else []
             ),
+            initial_draft_scaffold=(
+                persisted_state.initial_draft_scaffold if persisted_state else {}
+            ),
             field_completion_ledger=(
                 persisted_state.field_completion_ledger if persisted_state else []
             ),
@@ -1186,7 +1220,7 @@ class ExtractionService:
         progress.curation_ledger = state.curation_ledger
         progress.total_chunks = len(state.chunk_results)
         progress.processed_chunks = self._completed_chunk_count(state)
-        progress.interim_context = self._merged_completed_chunk_context_or_none(state)
+        progress.interim_evidence_context = self._merged_completed_evidence_context_or_none(state)
         self._update_progress(data_package_id, progress)
 
         if (
@@ -1209,11 +1243,24 @@ class ExtractionService:
 
         try:
             for chunk_result, chunk in zip(state.chunk_results, ordered_chunks):
-                if chunk_result.status == "completed" and chunk_result.extraction_context is not None:
+                if chunk_result.status in {"completed", "skipped"} and chunk_result.evidence_context is not None:
+                    continue
+
+                if is_noisy_payload_chunk(chunk.content):
+                    chunk_result.status = "skipped"
+                    chunk_result.error = None
+                    chunk_result.skip_reason = "encoded_or_payload_dominated_chunk"
+                    chunk_result.evidence_context = EvidenceContext()
+                    progress.processed_chunks = self._completed_chunk_count(state)
+                    progress.current_chunk = None
+                    progress.chunk_results = state.chunk_results
+                    self._save_run_state(data_package_id, state)
+                    self._update_progress(data_package_id, progress)
                     continue
 
                 chunk_result.status = "running"
                 chunk_result.error = None
+                chunk_result.skip_reason = None
                 progress.current_chunk = self._chunk_ref(chunk_result)
                 progress.chunk_results = state.chunk_results
                 self._save_run_state(data_package_id, state)
@@ -1223,34 +1270,27 @@ class ExtractionService:
                     result = await generate_structured(
                         self.ollama_client,
                         model=self.ollama_client.chat_model,
-                        system=build_system_prompt_with_overview(
-                            base_prompt=EXTRACTION_CONTEXT_SYSTEM_PROMPT,
+                        system=build_evidence_system_prompt_with_overview(
+                            base_prompt=EVIDENCE_CONTEXT_SYSTEM_PROMPT,
                             overview=state.initial_extraction_overview,
                             overview_status=state.initial_extraction_overview_status,
                             file_summary=self._initial_file_summary_for_prompt(
                                 state,
                                 file_path=chunk.file_path,
                             ),
-                            same_file_context=self._initial_extraction_context_for_prompt(
-                                state,
-                                file_path=chunk.file_path,
-                                current_chunk_index=chunk_result.chunk_index,
-                            ),
-                            num_ctx=self.ollama_client.max_context_length,
                         ),
-                        prompt=build_extraction_context_prompt(
-                            ChunkContext(
+                        prompt=build_evidence_context_prompt(
+                            EvidenceChunkContext(
                                 content=chunk.content,
-                                metadata=ChunkMetadata(
+                                metadata=EvidenceChunkMetadata(
                                     start_idx=chunk.start_idx,
                                     end_idx=chunk.end_idx,
                                     file_path=chunk.file_path,
                                     data_package_name=data_package.file_name,
-                                    initial_extraction_context=None,
                                 ),
                             )
                         ),
-                        output_type=ExtractionContext,
+                        output_type=EvidenceContext,
                         retries=2,
                         temperature=0.1,
                         think=None,
@@ -1334,8 +1374,22 @@ class ExtractionService:
                     agent_name="chunk_extraction",
                     usage=result.usage,
                 )
+                validated_context, dropped_notes = validate_evidence_context_for_chunk(
+                    result.output,
+                    chunk_content=chunk.content,
+                    file_path=chunk.file_path,
+                    start_idx=chunk.start_idx,
+                    end_idx=chunk.end_idx,
+                )
+                for dropped in dropped_notes:
+                    warnings.append(
+                        "Dropped unsupported evidence note "
+                        f"{dropped.note_id} for {chunk.file_path} lines "
+                        f"{chunk.start_idx}-{chunk.end_idx}: evidence match score "
+                        f"{dropped.evidence_match_score:.2f}."
+                    )
                 chunk_result.status = "completed"
-                chunk_result.extraction_context = result.output
+                chunk_result.evidence_context = validated_context
                 chunk_result.response_duration_ms = self._usage_float(
                     result.usage,
                     "response_duration_ms",
@@ -1343,15 +1397,16 @@ class ExtractionService:
                 chunk_result.context_tokens = self._usage_int(result.usage, "input_tokens")
                 self._save_run_state(data_package_id, state)
 
-                partial_context = self._merged_completed_chunk_context(state)
-                self.output_repository.save_extraction_context(
+                partial_context = self._merged_completed_evidence_context(state)
+                self.output_repository.save_evidence_context(
                     workflow_id=data_package_id,
-                    extraction_context=partial_context,
+                    evidence_context=partial_context,
                 )
                 progress.processed_chunks = self._completed_chunk_count(state)
-                progress.interim_context = partial_context
+                progress.interim_evidence_context = partial_context
                 progress.current_chunk = None
                 progress.chunk_results = state.chunk_results
+                progress.warnings = list(warnings)
                 self._update_progress(data_package_id, progress)
 
             if chunk_repairs:
@@ -1360,6 +1415,7 @@ class ExtractionService:
         except asyncio.CancelledError:
             raise
 
+        chunk_by_key = {self._chunk_key(chunk): chunk for chunk in ordered_chunks}
         for chunk_result, failure in chunk_repairs:
             chunk_result.status = "running"
             chunk_result.error = None
@@ -1374,7 +1430,7 @@ class ExtractionService:
                     model=self.ollama_client.chat_model,
                     failed_response=failure.failed_response or "",
                     error=failure.last_error or failure,
-                    output_type=ExtractionContext,
+                    output_type=EvidenceContext,
                     temperature=0.1,
                     think=None,
                     num_ctx=self.ollama_client.max_context_length,
@@ -1406,7 +1462,21 @@ class ExtractionService:
                 usage=repair.usage,
             )
             chunk_result.status = "completed"
-            chunk_result.extraction_context = repair.output
+            repaired_chunk = chunk_by_key.get(self._chunk_result_key(chunk_result))
+            validated_context, dropped_notes = validate_evidence_context_for_chunk(
+                repair.output,
+                chunk_content=repaired_chunk.content if repaired_chunk is not None else "",
+                file_path=chunk_result.file_path,
+                start_idx=chunk_result.start_idx,
+                end_idx=chunk_result.end_idx,
+            )
+            for dropped in dropped_notes:
+                warnings.append(
+                    "Dropped unsupported repaired evidence note "
+                    f"{dropped.note_id} for {chunk_result.file_path}: evidence match score "
+                    f"{dropped.evidence_match_score:.2f}."
+                )
+            chunk_result.evidence_context = validated_context
             chunk_result.response_duration_ms = self._usage_float(
                 repair.usage,
                 "response_duration_ms",
@@ -1414,13 +1484,13 @@ class ExtractionService:
             chunk_result.context_tokens = self._usage_int(repair.usage, "input_tokens")
             self._save_run_state(data_package_id, state)
 
-            partial_context = self._merged_completed_chunk_context(state)
-            self.output_repository.save_extraction_context(
+            partial_context = self._merged_completed_evidence_context(state)
+            self.output_repository.save_evidence_context(
                 workflow_id=data_package_id,
-                extraction_context=partial_context,
+                evidence_context=partial_context,
             )
             progress.processed_chunks = self._completed_chunk_count(state)
-            progress.interim_context = partial_context
+            progress.interim_evidence_context = partial_context
             progress.current_chunk = None
             progress.chunk_results = state.chunk_results
             self._update_progress(data_package_id, progress)
@@ -1442,18 +1512,19 @@ class ExtractionService:
             self._save_run_state(data_package_id, state)
             self._update_progress(data_package_id, progress)
 
-        extraction_context = self._context_with_resource_inventory(
+        evidence_context = self._evidence_context_with_file_inventory(
             data_package=data_package,
-            context=self._merged_completed_chunk_context(state),
+            context=self._merged_completed_evidence_context(state),
+            state=state,
         )
-        self.output_repository.save_extraction_context(
+        self.output_repository.save_evidence_context(
             workflow_id=data_package_id,
-            extraction_context=extraction_context,
+            evidence_context=evidence_context,
         )
 
         if target_stage == "context":
-            progress.stage = "interim_context"
-            progress.interim_context = extraction_context
+            progress.stage = "interim_evidence_context"
+            progress.interim_evidence_context = evidence_context
             progress.warnings = list(warnings)
             self._save_run_state(data_package_id, state)
             self.output_repository.save_extraction_warnings(
@@ -1464,14 +1535,14 @@ class ExtractionService:
             return None
 
         progress.stage = "profile_projection"
-        progress.interim_context = extraction_context
+        progress.interim_evidence_context = evidence_context
         self._update_progress(data_package_id, progress)
 
         profile_document = await self._build_profile_document_by_patching(
             data_package_id=data_package_id,
             profile_identifier=profile_identifier,
             profile_target_class=profile_manifest.target_class,
-            extraction_context=extraction_context,
+            evidence_context=evidence_context,
             validation_schema=validation_schema,
             state=state,
             progress=progress,
@@ -1480,12 +1551,13 @@ class ExtractionService:
 
         if target_stage == "profile":
             progress.stage = "profile_draft"
-            progress.interim_context = extraction_context
+            progress.interim_evidence_context = evidence_context
             progress.generated_final_draft = profile_document
             progress.curated_document = state.curated_document
             progress.draft_quality_state = state.draft_quality_state
             progress.validation = state.validation
             progress.curated_validation = state.curated_validation
+            progress.initial_draft_scaffold = state.initial_draft_scaffold
             progress.projection_ledger = state.projection_ledger
             progress.field_completion_ledger = state.field_completion_ledger
             progress.curation_ledger = state.curation_ledger
@@ -1501,12 +1573,13 @@ class ExtractionService:
             return None
 
         progress.stage = "vocabulary_normalization"
-        progress.interim_context = extraction_context
+        progress.interim_evidence_context = evidence_context
         progress.generated_final_draft = profile_document
         progress.curated_document = state.curated_document
         progress.draft_quality_state = state.draft_quality_state
         progress.validation = state.validation
         progress.curated_validation = state.curated_validation
+        progress.initial_draft_scaffold = state.initial_draft_scaffold
         progress.projection_ledger = state.projection_ledger
         progress.field_completion_ledger = state.field_completion_ledger
         progress.curation_ledger = state.curation_ledger
@@ -1523,6 +1596,7 @@ class ExtractionService:
             progress.draft_quality_state = state.draft_quality_state
             progress.validation = state.validation
             progress.curated_validation = state.curated_validation
+            progress.initial_draft_scaffold = state.initial_draft_scaffold
             progress.projection_ledger = state.projection_ledger
             progress.field_completion_ledger = state.field_completion_ledger
             progress.curation_ledger = state.curation_ledger
@@ -1572,7 +1646,7 @@ class ExtractionService:
         result = await self._save_profile_result(
             data_package_id=data_package_id,
             profile_identifier=profile_identifier,
-            extraction_context=extraction_context,
+            evidence_context=evidence_context,
             normalization=normalization,
             document=profile_document,
             profile_manifest=profile_manifest,
@@ -1581,12 +1655,13 @@ class ExtractionService:
             warnings=warnings,
         )
         progress.stage = "completed"
-        progress.interim_context = extraction_context
+        progress.interim_evidence_context = evidence_context
         progress.generated_final_draft = result.generated_final_draft
         progress.curated_document = result.curated_document
         progress.draft_quality_state = result.draft_quality_state
         progress.validation = result.validation
         progress.curated_validation = result.curated_validation
+        progress.initial_draft_scaffold = result.initial_draft_scaffold
         progress.projection_ledger = result.projection_ledger
         progress.field_completion_ledger = result.field_completion_ledger
         progress.curation_ledger = result.curation_ledger
@@ -2199,10 +2274,10 @@ class ExtractionService:
             json_schema=profile_json_schema,
             target_class=profile_manifest.target_class,
         )
-        extraction_context = self._merged_completed_chunk_context(state)
+        evidence_context = self._merged_completed_evidence_context(state)
         profile_document = state.generated_final_draft or self._fallback_profile_document(
             data_package_id=data_package_id,
-            extraction_context=extraction_context,
+            evidence_context=evidence_context,
             validation_schema=validation_schema,
         )
         normalization = await self._normalize_profile_fields_from_state_vocab_queries(
@@ -2213,7 +2288,7 @@ class ExtractionService:
         result = await self._save_profile_result(
             data_package_id=data_package_id,
             profile_identifier=profile_identifier,
-            extraction_context=extraction_context,
+            evidence_context=evidence_context,
             normalization=normalization,
             document=profile_document,
             profile_manifest=profile_manifest,
@@ -2230,7 +2305,7 @@ class ExtractionService:
                     total_chunks=len(state.chunk_results),
                     normalized_quantities=len(normalization.quantities),
                     normalized_qualitative_attributes=len(normalization.qualitative_attributes),
-                    interim_context=extraction_context,
+                    interim_evidence_context=evidence_context,
                     vocab_query_config=state.vocab_query_config,
                     ranked_files=state.ranked_files,
                     initial_file_summaries=state.initial_file_summaries,
@@ -2244,6 +2319,7 @@ class ExtractionService:
                     draft_quality_state=result.draft_quality_state,
                     validation=result.validation,
                     curated_validation=result.curated_validation,
+                    initial_draft_scaffold=state.initial_draft_scaffold,
                     projection_ledger=result.projection_ledger,
                     field_completion_ledger=result.field_completion_ledger,
                     curation_ledger=result.curation_ledger,
@@ -2258,17 +2334,25 @@ class ExtractionService:
         data_package_id: str,
         profile_identifier: str,
         profile_target_class: str,
-        extraction_context: ExtractionContext,
+        evidence_context: EvidenceContext,
         validation_schema: dict[str, Any],
         state: ExtractionRunState,
         progress: ExtractionRunProgress,
         warnings: list[str],
     ) -> dict[str, Any]:
-        document = state.generated_final_draft or self._fallback_profile_document(
-            data_package_id=data_package_id,
-            extraction_context=extraction_context,
-            validation_schema=validation_schema,
-        )
+        if state.generated_final_draft is None:
+            document, scaffold = self._initial_profile_document(
+                data_package_id=data_package_id,
+                evidence_context=evidence_context,
+                validation_schema=validation_schema,
+            )
+            state.initial_draft_scaffold = scaffold
+            state.generated_final_draft = document
+            progress.generated_final_draft = document
+            progress.initial_draft_scaffold = scaffold
+        else:
+            document = state.generated_final_draft
+            progress.initial_draft_scaffold = state.initial_draft_scaffold
         validation = self.profile_service.validate_document(
             identifier=profile_identifier,
             document=document,
@@ -2279,42 +2363,75 @@ class ExtractionService:
                 + "; ".join(f"{issue.path}: {issue.message}" for issue in validation.errors)
             )
 
-        schema_slice = self._profile_schema_slice(validation_schema, max_depth=2)
+        target_catalog = self._target_catalog_from_document(
+            document=document,
+            validation_schema=validation_schema,
+            scaffold=state.initial_draft_scaffold,
+        )
         patched_identifiers = {
             record.object_identifier
             for record in state.projection_ledger
             if record.status == "projected"
         }
-        for trace in extraction_context.extraction_objects:
-            object_identifier = trace.extracted_object.identifier
-            if object_identifier in patched_identifiers:
+        for group in self._projection_groups_for_evidence(evidence_context):
+            if group.group_id in patched_identifiers:
                 continue
-            patch_result = await self._patch_profile_with_extraction_object(
+            target_decision = await self._plan_profile_target_for_evidence_group(
                 data_package_id=data_package_id,
                 profile_identifier=profile_identifier,
                 profile_target_class=profile_target_class,
-                current_document=document,
-                extraction_object=trace,
-                schema_slice=schema_slice,
+                group=group,
+                file_inventory=evidence_context.file_inventory,
                 warnings=warnings,
+                target_catalog=target_catalog,
             )
-            if patch_result.status == "applied":
-                document = self._apply_profile_patch(
-                    document,
-                    patch_result.operations,
+            if target_decision.status == "skip" or not target_decision.target_path:
+                patch_result = ProfileObjectPatchResult(
+                    object_identifier=group.group_id,
+                    object_kind=group.object_kind,
+                    status="skipped",
+                    target_path=target_decision.target_path,
+                    target_class=target_decision.target_class,
+                    planner_status=target_decision.status,
+                    planner_reason=target_decision.reason,
+                    reason=target_decision.reason,
                 )
-            projection_record = self._projection_record_from_patch_result(
-                trace=trace,
+            else:
+                patch_result = await self._write_profile_target_with_evidence_group(
+                    data_package_id=data_package_id,
+                    profile_identifier=profile_identifier,
+                    profile_target_class=profile_target_class,
+                    current_document=document,
+                    group=group,
+                    target_decision=target_decision,
+                    validation_schema=validation_schema,
+                    file_inventory=evidence_context.file_inventory,
+                    warnings=warnings,
+                )
+            if patch_result.status == "applied":
+                document = self._replace_json_pointer(
+                    document,
+                    patch_result.target_path or group.target_hint,
+                    patch_result.target_value,
+                )
+                target_catalog = self._target_catalog_from_document(
+                    document=document,
+                    validation_schema=validation_schema,
+                    scaffold=state.initial_draft_scaffold,
+                )
+            projection_record = self._projection_record_from_group_patch_result(
+                group=group,
                 patch_result=patch_result,
             )
             state.projection_ledger = [
                 record
                 for record in state.projection_ledger
-                if record.object_identifier != object_identifier
+                if record.object_identifier != group.group_id
             ]
             state.projection_ledger.append(projection_record)
             state.generated_final_draft = document
             progress.generated_final_draft = document
+            progress.initial_draft_scaffold = state.initial_draft_scaffold
             progress.projection_ledger = state.projection_ledger
             progress.warnings = list(warnings)
             self._save_run_state(data_package_id, state)
@@ -2323,9 +2440,16 @@ class ExtractionService:
         return document
 
     @staticmethod
+    def _projection_identifier_for_evidence_note(note: EvidenceNote) -> str:
+        file_path = note.file_path or "unknown-file"
+        line_span = f"{note.start_idx}-{note.end_idx}"
+        note_id = note.note_id or "unnamed-note"
+        return f"{file_path}#{line_span}#{note_id}"
+
+    @staticmethod
     def _projection_record_from_patch_result(
         *,
-        trace: TracedExtractionObject,
+        note: EvidenceNote,
         patch_result: ProfileObjectPatchResult,
     ) -> ProjectionLedgerRecord:
         status = "not_projected"
@@ -2336,7 +2460,7 @@ class ExtractionService:
         return ProjectionLedgerRecord(
             object_identifier=patch_result.object_identifier,
             object_kind=patch_result.object_kind,
-            source_evidence=trace.source_text,
+            source_evidence=note.evidence_text,
             status=status,
             projected_paths=[
                 operation.path
@@ -2347,6 +2471,195 @@ class ExtractionService:
             error=patch_result.error,
         )
 
+    @classmethod
+    def _projection_record_from_group_patch_result(
+        cls,
+        *,
+        group: _EvidenceProjectionGroup,
+        patch_result: ProfileObjectPatchResult,
+    ) -> ProjectionLedgerRecord:
+        status = "not_projected"
+        if patch_result.status == "applied":
+            status = "projected"
+        elif patch_result.status == "failed":
+            status = "user_edit_required"
+        projected_paths = [
+            operation.path
+            for operation in patch_result.operations
+            if getattr(operation, "path", None)
+        ]
+        if patch_result.status == "applied" and not projected_paths and patch_result.target_path:
+            projected_paths = [patch_result.target_path]
+        return ProjectionLedgerRecord(
+            object_identifier=patch_result.object_identifier,
+            object_kind=patch_result.object_kind,
+            source_evidence="\n".join(note.evidence_text for note in group.notes if note.evidence_text),
+            evidence_note_identifiers=[
+                cls._projection_identifier_for_evidence_note(note)
+                for note in group.notes
+            ],
+            status=status,
+            projected_paths=projected_paths,
+            target_path=patch_result.target_path,
+            target_class=patch_result.target_class,
+            planner_status=patch_result.planner_status,
+            planner_reason=patch_result.planner_reason,
+            evidence_quality=cls._evidence_quality_summary(group.notes),
+            reason=patch_result.reason,
+            error=patch_result.error,
+        )
+
+    @staticmethod
+    def _evidence_quality_summary(notes: list[EvidenceNote]) -> dict[str, Any]:
+        confidence: dict[str, int] = {"high": 0, "medium": 0, "low": 0}
+        worthiness: dict[str, int] = {"high": 0, "medium": 0, "low": 0}
+        for note in notes:
+            confidence[note.interpretation_confidence] = confidence.get(note.interpretation_confidence, 0) + 1
+            worthiness[note.profile_worthiness] = worthiness.get(note.profile_worthiness, 0) + 1
+        return {
+            "note_count": len(notes),
+            "interpretation_confidence": confidence,
+            "profile_worthiness": worthiness,
+        }
+
+    @classmethod
+    def _projection_groups_for_evidence(
+        cls,
+        evidence_context: EvidenceContext,
+        *,
+        max_group_size: int = 6,
+    ) -> list[_EvidenceProjectionGroup]:
+        buckets: dict[tuple[str, str, str, str], list[EvidenceNote]] = {}
+        for note in evidence_context.notes:
+            target_hint, target_class_hint = cls._target_hint_for_evidence_note(note)
+            family = cls._evidence_note_family(note.note_id)
+            key = (target_hint, target_class_hint or "", note.category, f"{note.file_path}:{family}")
+            buckets.setdefault(key, []).append(note)
+
+        groups: list[_EvidenceProjectionGroup] = []
+        for (target_hint, target_class_hint, category, _family_key), notes in buckets.items():
+            for index in range(0, len(notes), max_group_size):
+                chunk = notes[index : index + max_group_size]
+                note_ids = [cls._projection_identifier_for_evidence_note(note) for note in chunk]
+                digest = sha1("|".join(note_ids).encode("utf-8")).hexdigest()[:12]
+                groups.append(
+                    _EvidenceProjectionGroup(
+                        group_id=f"group:{target_hint.strip('/').replace('/', '.') or 'root'}:{digest}",
+                        object_kind=category,
+                        notes=chunk,
+                        target_hint=target_hint,
+                        target_class_hint=target_class_hint or None,
+                    )
+                )
+        return groups
+
+    @staticmethod
+    def _evidence_note_family(note_id: str) -> str:
+        family = note_id or "unnamed"
+        while family and (family[-1].isdigit() or family[-1] in {"_", "-", "."}):
+            family = family[:-1]
+        return family or note_id or "unnamed"
+
+    @classmethod
+    def _target_hint_for_evidence_note(cls, note: EvidenceNote) -> tuple[str, str | None]:
+        text = f"{note.note_id} {note.category} {note.observation} {note.evidence_text}".lower()
+        if note.category == "agent_signal" or any(term in text for term in ("origin", "owner", "creator", "author")):
+            return "/creator/0", "Agent"
+        if note.category in {"entity_signal", "measurement_signal"}:
+            return "/is_about_entity/0", "EvaluatedEntity"
+        if any(term in text for term in ("format", "jcamp", "file", "distribution", "download", "access")):
+            return "/dataset_distribution/0", "Distribution"
+        if note.category == "method_signal" or any(term in text for term in ("pulse", "method", "experiment", "acquisition")):
+            return "/was_generated_by/0", "DataGeneratingActivity"
+        if any(term in text for term in ("dataset name", "title", "spectrum title")):
+            return "/title", None
+        if any(term in text for term in ("date", "timestamp", "modified", "modification")):
+            return "/modification_date", None
+        if any(term in text for term in ("type", "category", "class")):
+            return "/type/0", "Concept"
+        if note.category == "resource_signal":
+            return "/dataset_distribution/0", "Distribution"
+        return "/description", None
+
+    async def _plan_profile_target_for_evidence_group(
+        self,
+        *,
+        data_package_id: str,
+        profile_identifier: str,
+        profile_target_class: str,
+        group: _EvidenceProjectionGroup,
+        file_inventory: list[Any],
+        warnings: list[str],
+        target_catalog: list[dict[str, Any]],
+    ) -> ProfileTargetDecision:
+        assert self.ollama_client is not None
+        try:
+            result = await generate_structured(
+                self.ollama_client,
+                model=self.ollama_client.chat_model,
+                system=PROFILE_TARGET_PLANNER_SYSTEM_PROMPT,
+                prompt=build_profile_target_planner_prompt(
+                    data_package_id=data_package_id,
+                    profile_identifier=profile_identifier,
+                    profile_target_class=profile_target_class,
+                    evidence_notes=group.notes,
+                    target_catalog=target_catalog,
+                    file_inventory=file_inventory,
+                ),
+                output_type=ProfileTargetDecision,
+                num_ctx=self.ollama_client.max_context_length,
+            )
+            self._record_workflow_token_usage(
+                data_package_id=data_package_id,
+                agent_name="profile_target_planner",
+                usage=result.usage,
+            )
+            decision = (
+                result.output
+                if isinstance(result.output, ProfileTargetDecision)
+                else ProfileTargetDecision.model_validate(result.output)
+            )
+        except CompletionError as exc:
+            warnings.append(f"Profile target planning fell back for '{group.group_id}': {exc}")
+            decision = self._fallback_target_decision_for_group(group, target_catalog)
+        catalog_paths = {
+            item.get("path")
+            for item in target_catalog
+            if isinstance(item.get("path"), str)
+        }
+        if decision.target_path not in catalog_paths:
+            fallback = self._fallback_target_decision_for_group(group, target_catalog)
+            fallback.reason = (
+                f"Planner selected unavailable target {decision.target_path!r}; "
+                f"using deterministic hint {fallback.target_path!r}."
+            )
+            return fallback
+        return decision
+
+    @staticmethod
+    def _fallback_target_decision_for_group(
+        group: _EvidenceProjectionGroup,
+        target_catalog: list[dict[str, Any]],
+    ) -> ProfileTargetDecision:
+        paths = {
+            item.get("path"): item
+            for item in target_catalog
+            if isinstance(item.get("path"), str)
+        }
+        target = paths.get(group.target_hint) or paths.get("/description")
+        if target is None:
+            return ProfileTargetDecision(
+                status="skip",
+                reason="No usable projection target is available.",
+            )
+        return ProfileTargetDecision(
+            status="targeted",
+            target_path=target["path"],
+            target_class=target.get("target_class") or group.target_class_hint,
+            target_label=target.get("label", ""),
+            reason="Deterministic evidence-category target hint.",
+        )
+
     async def _patch_profile_with_extraction_object(
         self,
         *,
@@ -2354,13 +2667,14 @@ class ExtractionService:
         profile_identifier: str,
         profile_target_class: str,
         current_document: dict[str, Any],
-        extraction_object: TracedExtractionObject,
+        evidence_note: EvidenceNote,
+        object_identifier: str,
+        file_inventory: list[Any],
         schema_slice: dict[str, Any],
         warnings: list[str],
     ) -> ProfileObjectPatchResult:
         assert self.ollama_client is not None
-        object_identifier = extraction_object.extracted_object.identifier
-        object_kind = extraction_object.object_kind
+        object_kind = evidence_note.category
         try:
             patch = await generate_structured(
                 self.ollama_client,
@@ -2371,8 +2685,11 @@ class ExtractionService:
                     profile_identifier=profile_identifier,
                     profile_target_class=profile_target_class,
                     current_document=current_document,
-                    extraction_object=extraction_object,
+                    evidence_notes=[evidence_note],
+                    file_inventory=file_inventory,
                     schema_slice=schema_slice,
+                    target_path="/description",
+                    target_class=None,
                 ),
                 output_type=ProfilePatchDocument,
                 num_ctx=self.ollama_client.max_context_length,
@@ -2443,6 +2760,292 @@ class ExtractionService:
             reason=patch_document.reason,
         )
 
+    async def _write_profile_target_with_evidence_group(
+        self,
+        *,
+        data_package_id: str,
+        profile_identifier: str,
+        profile_target_class: str,
+        current_document: dict[str, Any],
+        group: _EvidenceProjectionGroup,
+        target_decision: ProfileTargetDecision,
+        validation_schema: dict[str, Any],
+        file_inventory: list[Any],
+        warnings: list[str],
+    ) -> ProfileObjectPatchResult:
+        assert self.ollama_client is not None
+        target_path = target_decision.target_path or group.target_hint
+        target_schema = self._schema_slice_for_json_path(
+            validation_schema,
+            target_path,
+            max_depth=3,
+        )
+        current_target_value = self._value_at_json_pointer(current_document, target_path)
+        try:
+            write = await generate_structured(
+                self.ollama_client,
+                model=self.ollama_client.chat_model,
+                system=PROFILE_TARGET_WRITER_SYSTEM_PROMPT,
+                prompt=build_profile_target_write_prompt(
+                    data_package_id=data_package_id,
+                    profile_identifier=profile_identifier,
+                    profile_target_class=profile_target_class,
+                    target_path=target_path,
+                    target_class=target_decision.target_class,
+                    target_label=target_decision.target_label,
+                    current_target_value=current_target_value,
+                    evidence_notes=group.notes,
+                    file_inventory=file_inventory,
+                    schema_slice=target_schema,
+                ),
+                output_type=ProfileTargetWriteDocument,
+                num_ctx=self.ollama_client.max_context_length,
+            )
+            self._record_workflow_token_usage(
+                data_package_id=data_package_id,
+                agent_name="profile_target_writer",
+                usage=write.usage,
+            )
+        except CompletionError as exc:
+            warnings.append(f"Profile target write failed for '{group.group_id}': {exc}")
+            return ProfileObjectPatchResult(
+                object_identifier=group.group_id,
+                object_kind=group.object_kind,
+                status="failed",
+                target_path=target_path,
+                target_class=target_decision.target_class,
+                planner_status=target_decision.status,
+                planner_reason=target_decision.reason,
+                error=str(exc),
+            )
+
+        write_document = (
+            write.output
+            if isinstance(write.output, ProfileTargetWriteDocument)
+            else ProfileTargetWriteDocument.model_validate(write.output)
+        )
+        if write_document.status == "skip":
+            return ProfileObjectPatchResult(
+                object_identifier=group.group_id,
+                object_kind=group.object_kind,
+                status="skipped",
+                target_path=target_path,
+                target_class=target_decision.target_class,
+                planner_status=target_decision.status,
+                planner_reason=target_decision.reason,
+                reason=write_document.reason or target_decision.reason,
+            )
+
+        try:
+            candidate = self._replace_json_pointer(
+                current_document,
+                target_path,
+                write_document.value,
+            )
+        except Exception as exc:
+            warnings.append(f"Profile target write skipped for '{group.group_id}': {exc}")
+            return ProfileObjectPatchResult(
+                object_identifier=group.group_id,
+                object_kind=group.object_kind,
+                status="failed",
+                target_path=target_path,
+                target_class=target_decision.target_class,
+                planner_status=target_decision.status,
+                planner_reason=target_decision.reason,
+                target_value=write_document.value,
+                error=str(exc),
+                reason=write_document.reason,
+            )
+        validation = self.profile_service.validate_document(
+            identifier=profile_identifier,
+            document=candidate,
+        )
+        if not validation.valid:
+            error = "; ".join(
+                f"{issue.path}: {issue.message}" for issue in validation.errors
+            )
+            warnings.append(
+                f"Profile target write skipped for '{group.group_id}' because it broke schema validation: {error}"
+            )
+            return ProfileObjectPatchResult(
+                object_identifier=group.group_id,
+                object_kind=group.object_kind,
+                status="failed",
+                target_path=target_path,
+                target_class=target_decision.target_class,
+                planner_status=target_decision.status,
+                planner_reason=target_decision.reason,
+                target_value=write_document.value,
+                error=error,
+                reason=write_document.reason,
+            )
+        return ProfileObjectPatchResult(
+            object_identifier=group.group_id,
+            object_kind=group.object_kind,
+            status="applied",
+            target_path=target_path,
+            target_class=target_decision.target_class,
+            planner_status=target_decision.status,
+            planner_reason=target_decision.reason,
+            target_value=write_document.value,
+            reason=write_document.reason or target_decision.reason,
+        )
+
+    async def _patch_profile_with_extraction_group(
+        self,
+        *,
+        data_package_id: str,
+        profile_identifier: str,
+        profile_target_class: str,
+        current_document: dict[str, Any],
+        group: _EvidenceProjectionGroup,
+        target_decision: ProfileTargetDecision,
+        validation_schema: dict[str, Any],
+        file_inventory: list[Any],
+        warnings: list[str],
+    ) -> ProfileObjectPatchResult:
+        assert self.ollama_client is not None
+        target_path = target_decision.target_path or group.target_hint
+        target_schema = self._schema_slice_for_json_path(
+            validation_schema,
+            target_path,
+            max_depth=2,
+        )
+        try:
+            patch = await generate_structured(
+                self.ollama_client,
+                model=self.ollama_client.chat_model,
+                system=PROFILE_PATCH_SYSTEM_PROMPT,
+                prompt=build_profile_patch_prompt(
+                    data_package_id=data_package_id,
+                    profile_identifier=profile_identifier,
+                    profile_target_class=profile_target_class,
+                    current_document=current_document,
+                    evidence_notes=group.notes,
+                    file_inventory=file_inventory,
+                    schema_slice=target_schema,
+                    target_path=target_path,
+                    target_class=target_decision.target_class,
+                ),
+                output_type=ProfilePatchDocument,
+                num_ctx=self.ollama_client.max_context_length,
+            )
+            self._record_workflow_token_usage(
+                data_package_id=data_package_id,
+                agent_name="profile_patch",
+                usage=patch.usage,
+            )
+        except CompletionError as exc:
+            warnings.append(f"Profile patch failed for '{group.group_id}': {exc}")
+            return ProfileObjectPatchResult(
+                object_identifier=group.group_id,
+                object_kind=group.object_kind,
+                status="failed",
+                target_path=target_path,
+                target_class=target_decision.target_class,
+                planner_status=target_decision.status,
+                planner_reason=target_decision.reason,
+                error=str(exc),
+            )
+
+        patch_document = (
+            patch.output
+            if isinstance(patch.output, ProfilePatchDocument)
+            else ProfilePatchDocument.model_validate(patch.output)
+        )
+        operations = patch_document.operations
+        if not operations:
+            return ProfileObjectPatchResult(
+                object_identifier=group.group_id,
+                object_kind=group.object_kind,
+                status="skipped",
+                target_path=target_path,
+                target_class=target_decision.target_class,
+                planner_status=target_decision.status,
+                planner_reason=target_decision.reason,
+                reason=patch_document.reason or target_decision.reason,
+            )
+        invalid_paths = [
+            operation.path
+            for operation in operations
+            if not self._patch_path_allowed_for_target(operation.path, target_path)
+        ]
+        if invalid_paths:
+            error = f"Patch wrote outside selected target {target_path}: {', '.join(invalid_paths)}"
+            warnings.append(f"Profile patch skipped for '{group.group_id}': {error}")
+            return ProfileObjectPatchResult(
+                object_identifier=group.group_id,
+                object_kind=group.object_kind,
+                status="failed",
+                operations=operations,
+                target_path=target_path,
+                target_class=target_decision.target_class,
+                planner_status=target_decision.status,
+                planner_reason=target_decision.reason,
+                error=error,
+                reason=patch_document.reason,
+            )
+        try:
+            candidate = self._apply_profile_patch(current_document, operations)
+        except Exception as exc:
+            warnings.append(f"Profile patch skipped for '{group.group_id}': {exc}")
+            return ProfileObjectPatchResult(
+                object_identifier=group.group_id,
+                object_kind=group.object_kind,
+                status="failed",
+                operations=operations,
+                target_path=target_path,
+                target_class=target_decision.target_class,
+                planner_status=target_decision.status,
+                planner_reason=target_decision.reason,
+                error=str(exc),
+                reason=patch_document.reason,
+            )
+        validation = self.profile_service.validate_document(
+            identifier=profile_identifier,
+            document=candidate,
+        )
+        if not validation.valid:
+            error = "; ".join(
+                f"{issue.path}: {issue.message}" for issue in validation.errors
+            )
+            warnings.append(
+                f"Profile patch skipped for '{group.group_id}' because it broke schema validation: {error}"
+            )
+            return ProfileObjectPatchResult(
+                object_identifier=group.group_id,
+                object_kind=group.object_kind,
+                status="failed",
+                operations=operations,
+                target_path=target_path,
+                target_class=target_decision.target_class,
+                planner_status=target_decision.status,
+                planner_reason=target_decision.reason,
+                error=error,
+                reason=patch_document.reason,
+            )
+        return ProfileObjectPatchResult(
+            object_identifier=group.group_id,
+            object_kind=group.object_kind,
+            status="applied",
+            operations=operations,
+            target_path=target_path,
+            target_class=target_decision.target_class,
+            planner_status=target_decision.status,
+            planner_reason=target_decision.reason,
+            reason=patch_document.reason or target_decision.reason,
+        )
+
+    @staticmethod
+    def _patch_path_allowed_for_target(path: str, target_path: str) -> bool:
+        if not path.startswith("/"):
+            return False
+        allowed_parent_paths = {"/id"}
+        if path in allowed_parent_paths:
+            return True
+        target = target_path.rstrip("/") or "/"
+        return path == target or path.startswith(f"{target}/")
+
     @staticmethod
     def _apply_profile_patch(
         document: dict[str, Any],
@@ -2461,7 +3064,7 @@ class ExtractionService:
         *,
         data_package_id: str,
         profile_identifier: str,
-        extraction_context: ExtractionContext,
+        evidence_context: EvidenceContext,
         normalization: ExtractionNormalization,
         document: dict[str, Any],
         profile_manifest: Any,
@@ -2470,7 +3073,11 @@ class ExtractionService:
         warnings: list[str],
     ) -> ExtractionRunResult:
         assert self.output_repository is not None
-        clean_document = remove_null_values(document)
+        pruned_document = self._prune_initial_draft_scaffold(
+            document,
+            state.initial_draft_scaffold,
+        )
+        clean_document = remove_null_values(pruned_document)
         validation = self._validate_profile_document(
             profile_identifier=profile_identifier,
             document=clean_document,
@@ -2507,7 +3114,7 @@ class ExtractionService:
         token_usage = await self.get_token_usage(data_package_id)
         result = ExtractionRunResult(
             generated_final_draft=clean_document,
-            machine_extraction_context=extraction_context,
+            machine_evidence_context=evidence_context,
             initial_file_summaries=state.initial_file_summaries,
             initial_file_summary_status=state.initial_file_summary_status,
             initial_extraction_overview=state.initial_extraction_overview,
@@ -2516,6 +3123,7 @@ class ExtractionService:
             draft_quality_state=state.draft_quality_state,
             validation=state.validation,
             curated_validation=state.curated_validation,
+            initial_draft_scaffold=state.initial_draft_scaffold,
             projection_ledger=state.projection_ledger,
             field_completion_ledger=state.field_completion_ledger,
             curation_ledger=state.curation_ledger,
@@ -2798,6 +3406,7 @@ class ExtractionService:
                 "draft_quality_state": None,
                 "validation": DraftValidationResult(),
                 "curated_validation": None,
+                "initial_draft_scaffold": {},
                 "projection_ledger": [],
                 "field_completion_ledger": [],
                 "curation_ledger": [],
@@ -3172,7 +3781,7 @@ class ExtractionService:
         return {path} if path else set()
 
     @staticmethod
-    def _clone_json_object(document: dict[str, Any]) -> dict[str, Any]:
+    def _clone_json_object(document: Any) -> Any:
         return json.loads(json.dumps(document))
 
     @classmethod
@@ -3180,9 +3789,24 @@ class ExtractionService:
         cls,
         *,
         data_package_id: str,
-        extraction_context: ExtractionContext,
+        evidence_context: EvidenceContext,
         validation_schema: dict[str, Any],
     ) -> dict[str, Any]:
+        document, _scaffold = cls._initial_profile_document(
+            data_package_id=data_package_id,
+            evidence_context=evidence_context,
+            validation_schema=validation_schema,
+        )
+        return document
+
+    @classmethod
+    def _initial_profile_document(
+        cls,
+        *,
+        data_package_id: str,
+        evidence_context: EvidenceContext,
+        validation_schema: dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         target_schema = cls._resolve_schema_node(validation_schema, validation_schema)
         document = cls._schema_shell_value(
             target_schema,
@@ -3193,7 +3817,8 @@ class ExtractionService:
         if not isinstance(document, dict):
             document = {}
         properties = cls._target_schema_properties(validation_schema)
-        title = cls._fallback_title(data_package_id, extraction_context)
+        title = cls._fallback_title(data_package_id, evidence_context)
+        scaffold_entries: list[dict[str, Any]] = []
         if "title" in properties or "title" in document:
             document["title"] = cls._fallback_property_value(properties.get("title"), title)
         if "description" in properties:
@@ -3210,9 +3835,169 @@ class ExtractionService:
             document["id"] = data_package_id
         if "was_generated_by" in properties:
             document["was_generated_by"] = [
-                {"id": f"{data_package_id}:activity:metadata-extraction"}
+                {
+                    "id": f"{data_package_id}:activity:metadata-extraction",
+                    "title": [],
+                    "description": [],
+                    "has_qualitative_attribute": [],
+                    "has_quantitative_attribute": [],
+                    "evaluated_activity": [],
+                    "evaluated_entity": [],
+                }
             ]
-        return document
+            scaffold_entries.append(
+                cls._scaffold_entry(
+                    path="/was_generated_by/0",
+                    value={"id": document["was_generated_by"][0]["id"]},
+                    label="metadata extraction activity",
+                    target_class="DataGeneratingActivity",
+                    kind="required",
+                    prune_if_unchanged=False,
+                )
+            )
+            for child in (
+                "title",
+                "description",
+                "has_qualitative_attribute",
+                "has_quantitative_attribute",
+                "evaluated_activity",
+                "evaluated_entity",
+            ):
+                scaffold_entries.append(
+                    cls._scaffold_entry(
+                        path=f"/was_generated_by/0/{child}",
+                        value=document["was_generated_by"][0][child],
+                        label=f"metadata extraction activity {child.replace('_', ' ')}",
+                        target_class=None,
+                        kind="required-child",
+                        prune_if_unchanged=True,
+                    )
+                )
+
+        evidence_categories = {note.category for note in evidence_context.notes}
+        core_slots = {
+            "creator",
+            "dataset_distribution",
+            "keyword",
+            "type",
+            "modification_date",
+            "is_about_entity",
+            "is_about_activity",
+        }
+        evidence_slots: set[str] = set()
+        if "agent_signal" in evidence_categories:
+            evidence_slots.add("creator")
+        if evidence_categories & {"entity_signal", "measurement_signal"}:
+            evidence_slots.add("is_about_entity")
+        if "method_signal" in evidence_categories:
+            evidence_slots.add("is_about_activity")
+        if "resource_signal" in evidence_categories:
+            evidence_slots.add("dataset_distribution")
+
+        for slot in sorted(core_slots | evidence_slots):
+            if slot not in properties or slot in document:
+                continue
+            placeholder = cls._initial_placeholder_for_slot(
+                data_package_id=data_package_id,
+                slot=slot,
+            )
+            if placeholder is None:
+                continue
+            document[slot] = cls._fallback_property_value(properties.get(slot), placeholder)
+            path = f"/{slot}"
+            target_class = cls._placeholder_target_class(slot)
+            value_for_compare = document[slot]
+            if isinstance(document[slot], list) and document[slot]:
+                path = f"/{slot}/0"
+                value_for_compare = document[slot][0]
+            scaffold_entries.append(
+                cls._scaffold_entry(
+                    path=path,
+                    value=value_for_compare,
+                    label=slot.replace("_", " "),
+                    target_class=target_class,
+                    kind="core" if slot in core_slots else "evidence",
+                    prune_if_unchanged=True,
+                )
+            )
+
+        scaffold = {
+            "version": 1,
+            "evidence_categories": sorted(evidence_categories),
+            "entries": scaffold_entries,
+        }
+        return document, scaffold
+
+    @staticmethod
+    def _initial_placeholder_for_slot(
+        *,
+        data_package_id: str,
+        slot: str,
+    ) -> Any:
+        placeholders: dict[str, Any] = {
+            "creator": {"name": []},
+            "dataset_distribution": {
+                "access_URL": [
+                    {"id": f"{data_package_id}:distribution:primary:access"}
+                ],
+                "title": [],
+                "description": [],
+                "format": None,
+                "media_type": None,
+            },
+            "keyword": [],
+            "type": [{"preferred_label": []}],
+            "modification_date": "",
+            "is_about_entity": [
+                {
+                    "id": f"{data_package_id}:entity:primary",
+                    "title": "",
+                    "description": "",
+                    "has_qualitative_attribute": [],
+                    "has_quantitative_attribute": [],
+                    "was_generated_by": [],
+                }
+            ],
+            "is_about_activity": [
+                {
+                    "id": f"{data_package_id}:activity:primary",
+                    "title": [],
+                    "description": [],
+                    "has_qualitative_attribute": [],
+                    "has_quantitative_attribute": [],
+                }
+            ],
+        }
+        return placeholders.get(slot)
+
+    @staticmethod
+    def _placeholder_target_class(slot: str) -> str | None:
+        return {
+            "creator": "Agent",
+            "dataset_distribution": "Distribution",
+            "type": "Concept",
+            "is_about_entity": "EvaluatedEntity",
+            "is_about_activity": "EvaluatedActivity",
+        }.get(slot)
+
+    @staticmethod
+    def _scaffold_entry(
+        *,
+        path: str,
+        value: Any,
+        label: str,
+        target_class: str | None,
+        kind: str,
+        prune_if_unchanged: bool,
+    ) -> dict[str, Any]:
+        return {
+            "path": path,
+            "value": json.loads(json.dumps(value)),
+            "label": label,
+            "target_class": target_class,
+            "kind": kind,
+            "prune_if_unchanged": prune_if_unchanged,
+        }
 
     @classmethod
     def _schema_shell_value(
@@ -3287,8 +4072,247 @@ class ExtractionService:
             if schema_type == "array" or (
                 isinstance(schema_type, list) and "array" in schema_type
             ):
+                if isinstance(value, list):
+                    return value
                 return [value]
         return value
+
+    @classmethod
+    def _target_catalog_from_document(
+        cls,
+        *,
+        document: dict[str, Any],
+        validation_schema: dict[str, Any],
+        scaffold: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        properties = cls._target_schema_properties(validation_schema)
+        catalog_by_path: dict[str, dict[str, Any]] = {}
+        scaffold_by_path = {
+            entry.get("path"): entry
+            for entry in scaffold.get("entries", [])
+            if isinstance(entry, dict) and isinstance(entry.get("path"), str)
+        }
+
+        def add(path: str, label: str, target_class: str | None = None) -> None:
+            field_name = path.strip("/").split("/")[0] if path.strip("/") else ""
+            prop = properties.get(field_name, {})
+            description = prop.get("description", "") if isinstance(prop, dict) else ""
+            scaffold_entry = scaffold_by_path.get(path)
+            current_value = cls._value_at_json_pointer(document, path)
+            scaffold_status = "not_scaffolded"
+            if scaffold_entry:
+                scaffold_status = (
+                    "unfilled"
+                    if current_value == scaffold_entry.get("value")
+                    else "filled"
+                )
+            catalog_by_path[path] = {
+                "path": path,
+                "label": label,
+                "field_name": field_name,
+                "target_class": target_class,
+                "description": description,
+                "current_value": cls._catalog_value_preview(current_value),
+                "scaffold_status": scaffold_status,
+                "category_affinities": cls._target_category_affinities(path, target_class),
+                "description_last_resort": path == "/description",
+            }
+
+        for field in ("title", "description", "identifier", "keyword", "modification_date"):
+            if field in properties and field in document:
+                add(f"/{field}", field.replace("_", " "))
+        for entry in scaffold.get("entries", []):
+            if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
+                continue
+            add(
+                entry["path"],
+                str(entry.get("label") or entry["path"]),
+                entry.get("target_class"),
+            )
+        for path, target_class, label in (
+            ("/creator/0", "Agent", "creator"),
+            ("/dataset_distribution/0", "Distribution", "dataset distribution"),
+            ("/type/0", "Concept", "dataset type"),
+            ("/is_about_entity/0", "EvaluatedEntity", "evaluated entity"),
+            ("/is_about_activity/0", "EvaluatedActivity", "evaluated activity"),
+            ("/was_generated_by/0", "DataGeneratingActivity", "generating activity"),
+        ):
+            field = path.strip("/").split("/")[0]
+            if field in document:
+                add(path, label, target_class)
+        return list(catalog_by_path.values())
+
+    @staticmethod
+    def _target_category_affinities(path: str, target_class: str | None) -> list[str]:
+        if path.startswith("/creator"):
+            return ["agent_signal"]
+        if path.startswith("/dataset_distribution"):
+            return ["resource_signal"]
+        if path.startswith("/was_generated_by"):
+            return ["method_signal", "measurement_signal"]
+        if path.startswith("/is_about_activity"):
+            return ["method_signal"]
+        if path.startswith("/is_about_entity"):
+            return ["entity_signal", "measurement_signal"]
+        if path.startswith("/type"):
+            return ["resource_signal", "data_quality_signal"]
+        if path == "/modification_date":
+            return ["resource_signal", "data_quality_signal"]
+        if path == "/keyword":
+            return ["resource_signal", "entity_signal", "method_signal"]
+        if path == "/description":
+            return ["data_quality_signal", "uncertainty", "other"]
+        if target_class:
+            return [target_class]
+        return []
+
+    @staticmethod
+    def _catalog_value_preview(value: Any) -> Any:
+        if isinstance(value, str):
+            return value[:300]
+        if isinstance(value, list):
+            return value[:3]
+        if isinstance(value, dict):
+            return {
+                key: value[key]
+                for key in list(value.keys())[:10]
+            }
+        return value
+
+    @classmethod
+    def _schema_slice_for_json_path(
+        cls,
+        validation_schema: dict[str, Any],
+        path: str,
+        *,
+        max_depth: int,
+    ) -> dict[str, Any]:
+        node: Any = cls._resolve_schema_node(validation_schema, validation_schema)
+        for token in cls._json_pointer_tokens(path):
+            node = cls._resolve_schema_node(node, validation_schema)
+            if not isinstance(node, dict):
+                break
+            if token.isdigit() or token == "-":
+                node = node.get("items", node)
+                continue
+            properties = node.get("properties", {})
+            if isinstance(properties, dict) and token in properties:
+                node = properties[token]
+                continue
+            break
+        return cls._compact_schema_node(node, validation_schema, depth=max_depth)
+
+    @staticmethod
+    def _json_pointer_tokens(path: str) -> list[str]:
+        if not path or path == "/":
+            return []
+        return [
+            token.replace("~1", "/").replace("~0", "~")
+            for token in path.lstrip("/").split("/")
+        ]
+
+    @classmethod
+    def _value_at_json_pointer(cls, document: Any, path: str) -> Any:
+        value = document
+        for token in cls._json_pointer_tokens(path):
+            if isinstance(value, list) and token.isdigit():
+                index = int(token)
+                if index >= len(value):
+                    return None
+                value = value[index]
+            elif isinstance(value, dict):
+                if token not in value:
+                    return None
+                value = value[token]
+            else:
+                return None
+        return value
+
+    @classmethod
+    def _remove_json_pointer(cls, document: Any, path: str) -> None:
+        tokens = cls._json_pointer_tokens(path)
+        if not tokens:
+            return
+        parent = document
+        for token in tokens[:-1]:
+            if isinstance(parent, list) and token.isdigit():
+                index = int(token)
+                if index >= len(parent):
+                    return
+                parent = parent[index]
+            elif isinstance(parent, dict):
+                parent = parent.get(token)
+            else:
+                return
+        last = tokens[-1]
+        if isinstance(parent, list) and last.isdigit():
+            index = int(last)
+            if index < len(parent):
+                parent.pop(index)
+        elif isinstance(parent, dict):
+            parent.pop(last, None)
+
+    @classmethod
+    def _replace_json_pointer(cls, document: dict[str, Any], path: str, value: Any) -> dict[str, Any]:
+        replaced = cls._clone_json_object(document)
+        tokens = cls._json_pointer_tokens(path)
+        if not tokens:
+            if not isinstance(value, dict):
+                raise ValueError("Root profile document replacement must be an object.")
+            return cls._clone_json_object(value)
+        parent: Any = replaced
+        for token in tokens[:-1]:
+            if isinstance(parent, list) and token.isdigit():
+                index = int(token)
+                if index >= len(parent):
+                    raise IndexError(f"JSON Pointer parent index is out of range: {path}")
+                parent = parent[index]
+            elif isinstance(parent, dict):
+                if token not in parent:
+                    raise KeyError(f"JSON Pointer parent path does not exist: {path}")
+                parent = parent[token]
+            else:
+                raise TypeError(f"JSON Pointer parent is not replaceable: {path}")
+        last = tokens[-1]
+        if isinstance(parent, list) and last.isdigit():
+            index = int(last)
+            if index >= len(parent):
+                raise IndexError(f"JSON Pointer target index is out of range: {path}")
+            parent[index] = cls._clone_json_object(value)
+        elif isinstance(parent, dict):
+            if last not in parent:
+                raise KeyError(f"JSON Pointer target path does not exist: {path}")
+            parent[last] = cls._clone_json_object(value)
+        else:
+            raise TypeError(f"JSON Pointer target is not replaceable: {path}")
+        return replaced
+
+    @classmethod
+    def _prune_initial_draft_scaffold(
+        cls,
+        document: dict[str, Any],
+        scaffold: dict[str, Any],
+    ) -> dict[str, Any]:
+        pruned = cls._clone_json_object(document)
+        entries = [
+            entry
+            for entry in scaffold.get("entries", [])
+            if isinstance(entry, dict) and entry.get("prune_if_unchanged")
+        ]
+        for entry in sorted(entries, key=lambda item: len(str(item.get("path", "")).split("/")), reverse=True):
+            path = entry.get("path")
+            if not isinstance(path, str):
+                continue
+            current = cls._value_at_json_pointer(pruned, path)
+            if current == entry.get("value"):
+                cls._remove_json_pointer(pruned, path)
+                tokens = cls._json_pointer_tokens(path)
+                if len(tokens) == 2 and tokens[1].isdigit():
+                    parent_path = f"/{tokens[0]}"
+                    parent = cls._value_at_json_pointer(pruned, parent_path)
+                    if parent == []:
+                        cls._remove_json_pointer(pruned, parent_path)
+        return pruned
 
     @classmethod
     def _profile_schema_slice(
@@ -3364,18 +4388,12 @@ class ExtractionService:
     @staticmethod
     def _fallback_title(
         data_package_id: str,
-        extraction_context: ExtractionContext,
+        evidence_context: EvidenceContext,
     ) -> str:
-        for object_kind in ("EvaluatedEntity", "Resource", "DataGeneratingActivity", "Method"):
-            for trace in extraction_context.extraction_objects:
-                if trace.object_kind != object_kind:
-                    continue
-                identifier = getattr(trace.extracted_object, "identifier", None)
-                if identifier:
-                    return str(identifier)
-                description = getattr(trace.extracted_object, "description", None)
-                if description:
-                    return str(description)
+        for category in ("entity_signal", "resource_signal", "measurement_signal", "method_signal"):
+            for note in evidence_context.notes:
+                if note.category == category and note.observation.strip():
+                    return note.observation.strip()
         return f"SIMONE extraction result for {data_package_id}"
 
     @classmethod
@@ -3488,12 +4506,16 @@ class ExtractionService:
         chunk_results: list[ExtractionChunkResult] = []
         for index, chunk in enumerate(ordered_chunks):
             existing = persisted_by_key.get(self._chunk_key(chunk))
-            if existing and existing.status == "completed" and existing.extraction_context is not None:
+            if (
+                existing
+                and existing.status in {"completed", "skipped"}
+                and existing.evidence_context is not None
+            ):
                 chunk_results.append(
                     existing.model_copy(
                         update={
                             "chunk_index": index,
-                            "status": "completed",
+                            "status": existing.status,
                             "error": None,
                         }
                     )
@@ -3559,6 +4581,9 @@ class ExtractionService:
             projection_ledger=(
                 persisted_state.projection_ledger if persisted_state else []
             ),
+            initial_draft_scaffold=(
+                persisted_state.initial_draft_scaffold if persisted_state else {}
+            ),
             field_completion_ledger=(
                 persisted_state.field_completion_ledger if persisted_state else []
             ),
@@ -3585,147 +4610,93 @@ class ExtractionService:
         )
 
     @staticmethod
-    def _completed_chunk_contexts(
+    def _completed_chunk_evidence_contexts(
         state: ExtractionRunState,
         *,
         file_path: str | None = None,
-    ) -> list[ExtractionContext]:
+    ) -> list[EvidenceContext]:
         return [
-            result.extraction_context
+            result.evidence_context
             for result in state.chunk_results
-            if result.status == "completed"
-            and result.extraction_context is not None
+            if result.status in {"completed", "skipped"}
+            and result.evidence_context is not None
             and (file_path is None or result.file_path == file_path)
         ]
 
     @classmethod
     def _completed_chunk_count(cls, state: ExtractionRunState) -> int:
-        return len(cls._completed_chunk_contexts(state))
+        return len(cls._completed_chunk_evidence_contexts(state))
 
     @classmethod
-    def _merged_completed_chunk_context(
+    def _merged_completed_evidence_context(
         cls,
         state: ExtractionRunState,
         *,
         file_path: str | None = None,
-    ) -> ExtractionContext:
-        return merge_extraction_context_results(
-            cls._completed_chunk_contexts(state, file_path=file_path)
+    ) -> EvidenceContext:
+        return merge_evidence_contexts(
+            cls._completed_chunk_evidence_contexts(state, file_path=file_path)
         )
 
     @staticmethod
-    def _context_with_resource_inventory(
+    def _evidence_context_with_file_inventory(
         *,
         data_package: Any,
-        context: ExtractionContext,
-    ) -> ExtractionContext:
-        existing_resource_ids = {
-            trace.extracted_object.identifier
-            for trace in context.extraction_objects
-            if trace.object_kind == "Resource"
-            and isinstance(trace.extracted_object, Resource)
+        context: EvidenceContext,
+        state: ExtractionRunState,
+    ) -> EvidenceContext:
+        rank_by_path = {ranked.file_path: ranked.rank for ranked in state.ranked_files}
+        summary_by_path = {
+            summary.file_path: summary
+            for summary in state.initial_file_summaries
+            if summary.status == "summarized"
         }
-        inventory_objects = []
+        inventory_by_path = {item.file_path: item for item in context.file_inventory}
         for file in data_package.files:
-            if file.file_path in existing_resource_ids:
-                continue
-            inventory_objects.append(
-                TracedExtractionObject(
-                    object_kind="Resource",
-                    extracted_object=Resource(
-                        identifier=file.file_path,
-                        type=getattr(getattr(file, "file_type", None), "value", "file"),
-                        description=(
-                            f"Package file '{file.file_path}' "
-                            f"({len(file.raw_content)} bytes, extension {file.file_extension})."
-                        ),
-                    ),
-                    source_text=file.file_path,
-                )
+            summary = summary_by_path.get(file.file_path)
+            summary_text = None
+            if summary is not None:
+                summary_parts = [
+                    part
+                    for part in (
+                        summary.data_format,
+                        summary.explicit_purpose,
+                        "; ".join(summary.data_characteristics),
+                    )
+                    if part
+                ]
+                summary_text = " | ".join(summary_parts) or None
+            inventory_by_path[file.file_path] = FileInventoryItem(
+                file_path=file.file_path,
+                byte_size=len(file.raw_content),
+                file_type=getattr(getattr(file, "file_type", None), "value", None),
+                rank=rank_by_path.get(file.file_path),
+                summary=summary_text,
             )
         return context.model_copy(
             update={
-                "extraction_objects": [
-                    *context.extraction_objects,
-                    *inventory_objects,
-                ]
+                "file_inventory": sorted(
+                    inventory_by_path.values(),
+                    key=lambda item: (
+                        item.rank if item.rank is not None else 10_000,
+                        item.file_path,
+                    ),
+                )
             }
         )
 
 
     @classmethod
-    def _merged_completed_chunk_context_or_none(
+    def _merged_completed_evidence_context_or_none(
         cls,
         state: ExtractionRunState,
         *,
         file_path: str | None = None,
-    ) -> ExtractionContext | None:
-        contexts = cls._completed_chunk_contexts(state, file_path=file_path)
+    ) -> EvidenceContext | None:
+        contexts = cls._completed_chunk_evidence_contexts(state, file_path=file_path)
         if not contexts:
             return None
-        return merge_extraction_context_results(contexts)
-
-    def _initial_extraction_context_for_prompt(
-        self,
-        state: ExtractionRunState,
-        *,
-        file_path: str,
-        current_chunk_index: int,
-    ) -> ExtractionContext | None:
-        context_results = self._completed_chunk_results(
-            state,
-            file_path=file_path,
-            before_chunk_index=current_chunk_index,
-        )
-        if not context_results:
-            return None
-        context = merge_extraction_context_results(
-            [
-                result.extraction_context
-                for result in context_results
-                if result.extraction_context is not None
-            ]
-        )
-        previous_result = self._latest_completed_chunk_result_with_tokens(
-            state,
-            file_path=file_path,
-            before_chunk_index=current_chunk_index,
-        )
-        threshold = self._initial_extraction_context_token_threshold()
-        if (
-            previous_result is None
-            or previous_result.context_tokens is None
-            or previous_result.context_tokens <= threshold
-        ):
-            return context
-
-        previous_context_results = self._completed_chunk_results(
-            state,
-            file_path=file_path,
-            before_chunk_index=previous_result.chunk_index,
-        )
-        if not previous_context_results:
-            return context
-        previous_context = merge_extraction_context_results(
-            [
-                result.extraction_context
-                for result in previous_context_results
-                if result.extraction_context is not None
-            ]
-        )
-        previous_context_chars = len(previous_context.model_dump_json())
-        if previous_context_chars <= 0:
-            return context
-
-        target_chars = int(
-            previous_context_chars
-            * threshold
-            / max(1, previous_result.context_tokens)
-        )
-        return cap_extraction_context_for_prompt(
-            context,
-            max_json_chars=target_chars,
-        )
+        return merge_evidence_contexts(contexts)
 
     @staticmethod
     def _initial_file_summary_for_prompt(
@@ -3748,29 +4719,29 @@ class ExtractionService:
         return [
             result
             for result in state.chunk_results
-            if result.status == "completed"
-            and result.extraction_context is not None
+            if result.status in {"completed", "skipped"}
+            and result.evidence_context is not None
             and result.file_path == file_path
             and result.chunk_index < before_chunk_index
         ]
 
     @classmethod
-    def _global_extraction_context_for_prompt(
+    def _global_evidence_context_for_prompt(
         cls,
         state: ExtractionRunState,
         *,
         current_chunk_index: int,
-    ) -> ExtractionContext | None:
+    ) -> EvidenceContext | None:
         contexts = [
-            result.extraction_context
+            result.evidence_context
             for result in state.chunk_results
-            if result.status == "completed"
-            and result.extraction_context is not None
+            if result.status in {"completed", "skipped"}
+            and result.evidence_context is not None
             and result.chunk_index < current_chunk_index
         ]
         if not contexts:
             return None
-        return merge_extraction_context_results(contexts)
+        return merge_evidence_contexts(contexts)
 
     def _latest_completed_chunk_result_with_tokens(
         cls,
@@ -5155,11 +6126,11 @@ class ExtractionService:
         except (FileNotFoundError, ValidationError):
             return None
 
-    def _load_context_or_none(self, data_package_id: str) -> ExtractionContext | None:
+    def _load_evidence_context_or_none(self, data_package_id: str) -> EvidenceContext | None:
         if self.output_repository is None:
             return None
         try:
-            return self.output_repository.load_extraction_context(data_package_id)
+            return self.output_repository.load_evidence_context(data_package_id)
         except (FileNotFoundError, ValidationError):
             return None
 
@@ -5278,7 +6249,7 @@ class ExtractionService:
             state = self._load_run_state_or_none(data_package_id)
             extraction_progress = extraction_progress or ExtractionRunProgress(
                 stage="completed",
-                interim_context=result.machine_extraction_context,
+                interim_evidence_context=result.machine_evidence_context,
                 vocab_query_config=state.vocab_query_config if state else None,
                 initial_file_summaries=result.initial_file_summaries,
                 initial_file_summary_status=result.initial_file_summary_status,
@@ -5291,6 +6262,7 @@ class ExtractionService:
                 draft_quality_state=result.draft_quality_state,
                 validation=result.validation,
                 curated_validation=result.curated_validation,
+                initial_draft_scaffold=result.initial_draft_scaffold,
                 projection_ledger=result.projection_ledger,
                 field_completion_ledger=result.field_completion_ledger,
                 curation_ledger=result.curation_ledger,
@@ -5353,7 +6325,7 @@ class ExtractionService:
             state = self._load_run_state_or_none(data_package_id)
             return TaskStatus.COMPLETED, ExtractionRunProgress(
                 stage="completed",
-                interim_context=result.machine_extraction_context,
+                interim_evidence_context=result.machine_evidence_context,
                 vocab_query_config=state.vocab_query_config if state else None,
                 initial_file_summaries=result.initial_file_summaries,
                 initial_file_summary_status=result.initial_file_summary_status,
@@ -5366,6 +6338,7 @@ class ExtractionService:
                 draft_quality_state=result.draft_quality_state,
                 validation=result.validation,
                 curated_validation=result.curated_validation,
+                initial_draft_scaffold=result.initial_draft_scaffold,
                 projection_ledger=result.projection_ledger,
                 field_completion_ledger=result.field_completion_ledger,
                 curation_ledger=result.curation_ledger,
@@ -5382,13 +6355,13 @@ class ExtractionService:
                 stage = (
                     "profile_draft"
                     if state.generated_final_draft
-                    else "interim_context"
+                    else "interim_evidence_context"
                 )
             return TaskStatus.UNKNOWN, ExtractionRunProgress(
                 stage=stage,
                 processed_chunks=self._completed_chunk_count(state),
                 total_chunks=len(state.chunk_results),
-                interim_context=self._merged_completed_chunk_context_or_none(state),
+                interim_evidence_context=self._merged_completed_evidence_context_or_none(state),
                 vocab_query_config=state.vocab_query_config,
                 ranked_files=state.ranked_files,
                 initial_file_summaries=state.initial_file_summaries,
@@ -5402,6 +6375,7 @@ class ExtractionService:
                 draft_quality_state=state.draft_quality_state,
                 validation=state.validation,
                 curated_validation=state.curated_validation,
+                initial_draft_scaffold=state.initial_draft_scaffold,
                 projection_ledger=state.projection_ledger,
                 field_completion_ledger=state.field_completion_ledger,
                 curation_ledger=state.curation_ledger,
@@ -5501,7 +6475,7 @@ class ExtractionService:
                 "initial_overview",
                 "chunk_extraction",
                 "chunk_repair",
-                "interim_context",
+                "interim_evidence_context",
             }:
                 steps["extraction"] = TaskStatus.RUNNING
             if extraction_progress.stage in {
@@ -5533,7 +6507,7 @@ class ExtractionService:
             "extraction",
             "chunk_extraction",
             "chunk_repair",
-            "interim_context",
+            "interim_evidence_context",
             "vocabulary_normalization",
             "profile_projection",
             "profile_draft",

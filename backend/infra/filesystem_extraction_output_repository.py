@@ -10,7 +10,7 @@ from typing import Any
 from app.domain.extraction import (
     CurationLedgerRecord,
     DraftValidationResult,
-    ExtractionContext,
+    EvidenceContext,
     ExtractionFileSummary,
     InitialFileSummaryStatus,
     ExtractionOverview,
@@ -22,7 +22,7 @@ from app.domain.extraction import (
 )
 
 
-EXTRACTION_CONTEXT_FILE = "extraction_context.json"
+EVIDENCE_CONTEXT_FILE = "evidence_context.json"
 EXTRACTION_RESULT_FILE = "extraction_result.json"
 EXTRACTION_RUN_STATE_FILE = "extraction_run_state.json"
 EXTRACTION_WARNINGS_FILE = "extraction_warnings.json"
@@ -41,24 +41,24 @@ class FileSystemExtractionOutputRepository:
     def __init__(self, base_path: Path):
         self.base_path = base_path
 
-    def save_extraction_context(
+    def save_evidence_context(
         self,
         *,
         workflow_id: str,
-        extraction_context: ExtractionContext,
+        evidence_context: EvidenceContext,
     ) -> None:
         self._write_json_file(
-            self._workflow_dir(workflow_id) / EXTRACTION_CONTEXT_FILE,
-            extraction_context.model_dump(mode="json"),
+            self._workflow_dir(workflow_id) / EVIDENCE_CONTEXT_FILE,
+            evidence_context.model_dump(mode="json"),
         )
 
-    def load_extraction_context(self, workflow_id: str) -> ExtractionContext:
-        path = self._workflow_dir(workflow_id) / EXTRACTION_CONTEXT_FILE
+    def load_evidence_context(self, workflow_id: str) -> EvidenceContext:
+        path = self._workflow_dir(workflow_id) / EVIDENCE_CONTEXT_FILE
         if not path.exists():
             raise FileNotFoundError(
-                f"Extraction context output not found for workflow '{workflow_id}'."
+                f"Evidence context output not found for workflow '{workflow_id}'."
             )
-        return ExtractionContext.model_validate(self._read_json_file(path))
+        return EvidenceContext.model_validate(self._read_json_file(path))
 
     def save_extraction_result(
         self,
@@ -465,7 +465,7 @@ class FileSystemExtractionOutputRepository:
         if not workflow_dir.exists():
             return
         downstream_files = {
-            EXTRACTION_CONTEXT_FILE,
+            EVIDENCE_CONTEXT_FILE,
             EXTRACTION_RESULT_FILE,
             GENERATED_FINAL_DRAFT_FILE,
             CURATED_DOCUMENT_FILE,

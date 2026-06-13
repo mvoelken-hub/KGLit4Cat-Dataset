@@ -1,15 +1,22 @@
 import unittest
 
+from jsonschema import Draft202012Validator
+
 from app.domain.extraction import (
     ChunkContext,
     ChunkMetadata,
     DefinedTerm,
+    EvidenceContext,
+    EvidenceNote,
+    EVIDENCE_CONTEXT_SYSTEM_PROMPT,
     EXTRACTION_CONTEXT_SYSTEM_PROMPT,
     ExtractionContext,
     ExtractionNormalization,
     FileContext,
     FileRankingResult,
     GroundedExtractionObject,
+    ProfileObjectPatchResult,
+    ProfileTargetWriteDocument,
     QualitativeAttribute,
     QuantitativeAttribute,
     RankedFile,
@@ -17,17 +24,104 @@ from app.domain.extraction import (
     Resource,
     TracedExtractionObject,
     build_extraction_context_prompt,
+    evidence_text_match_score,
     build_file_ranking_prompt,
+    is_noisy_payload_chunk,
     build_object_grounding_selection_prompt,
     build_quantity_kind_vocab_query,
     build_unit_vocab_query,
     cap_extraction_context_for_prompt,
     fallback_file_ranking,
     merge_extraction_context_results,
+    validate_evidence_context_for_chunk,
 )
+from app.services.extraction_service import ExtractionService
 
 
 class ExtractionDomainTests(unittest.TestCase):
+    INITIAL_DRAFT_SCHEMA = {
+        "type": "object",
+        "required": ["id", "title", "description", "was_generated_by"],
+        "properties": {
+            "id": {"type": "string"},
+            "title": {"type": "array", "items": {"type": "string"}},
+            "description": {"type": "array", "items": {"type": "string"}},
+            "identifier": {"type": "array", "items": {"type": "string"}},
+            "keyword": {"type": "array", "items": {"type": "string"}},
+            "modification_date": {"type": ["string", "null"]},
+            "was_generated_by": {"type": "array", "items": {"$ref": "#/$defs/DataGeneratingActivity"}},
+            "creator": {"type": ["array", "null"], "items": {"$ref": "#/$defs/Agent"}},
+            "dataset_distribution": {"type": ["array", "null"], "items": {"$ref": "#/$defs/Distribution"}},
+            "type": {"type": ["array", "null"], "items": {"$ref": "#/$defs/Concept"}},
+            "is_about_entity": {"type": ["array", "null"], "items": {"$ref": "#/$defs/EvaluatedEntity"}},
+            "is_about_activity": {"type": ["array", "null"], "items": {"$ref": "#/$defs/EvaluatedActivity"}},
+        },
+        "$defs": {
+            "DataGeneratingActivity": {
+                "type": "object",
+                "required": ["id"],
+                "properties": {
+                    "id": {"type": "string"},
+                    "title": {"type": "array", "items": {"type": "string"}},
+                    "description": {"type": "array", "items": {"type": "string"}},
+                    "has_qualitative_attribute": {"type": "array"},
+                    "has_quantitative_attribute": {"type": "array"},
+                    "evaluated_activity": {"type": "array"},
+                    "evaluated_entity": {"type": "array"},
+                },
+            },
+            "Agent": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {"name": {"type": "array", "items": {"type": "string"}}, "type": {"type": ["array", "null"]}},
+            },
+            "Resource": {
+                "type": "object",
+                "required": ["id"],
+                "properties": {"id": {"type": "string"}, "title": {"type": "array", "items": {"type": "string"}}},
+            },
+            "Distribution": {
+                "type": "object",
+                "required": ["access_URL"],
+                "properties": {
+                    "access_URL": {"type": "array", "items": {"$ref": "#/$defs/Resource"}},
+                    "title": {"type": "array", "items": {"type": "string"}},
+                    "description": {"type": "array", "items": {"type": "string"}},
+                    "format": {"type": ["object", "null"]},
+                    "media_type": {"type": ["object", "null"]},
+                },
+            },
+            "Concept": {
+                "type": "object",
+                "required": ["preferred_label"],
+                "properties": {"preferred_label": {"type": "array", "items": {"type": "string"}}},
+            },
+            "EvaluatedEntity": {
+                "type": "object",
+                "required": ["id"],
+                "properties": {
+                    "id": {"type": "string"},
+                    "title": {"type": ["string", "null"]},
+                    "description": {"type": ["string", "null"]},
+                    "has_qualitative_attribute": {"type": "array"},
+                    "has_quantitative_attribute": {"type": "array"},
+                    "was_generated_by": {"type": "array"},
+                },
+            },
+            "EvaluatedActivity": {
+                "type": "object",
+                "required": ["id"],
+                "properties": {
+                    "id": {"type": "string"},
+                    "title": {"type": "array", "items": {"type": "string"}},
+                    "description": {"type": "array", "items": {"type": "string"}},
+                    "has_qualitative_attribute": {"type": "array"},
+                    "has_quantitative_attribute": {"type": "array"},
+                },
+            },
+        },
+    }
+
     def test_file_ranking_result_is_pydantic_model(self):
         result = FileRankingResult(files=[RankedFile(rank=1, file_path="README.md")])
 
@@ -63,6 +157,115 @@ class ExtractionDomainTests(unittest.TestCase):
         self.assertIn('"start_idx":4', prompt)
         self.assertIn('"end_idx":6', prompt)
         self.assertIn("temperature 20 C", prompt)
+
+    def test_evidence_validation_accepts_exact_and_whitespace_normalized_matches(self):
+        chunk = "##TITLE= Sample A\n##OWNER= Lab Team\n##XUNITS= 1/CM"
+        context = EvidenceContext(
+            notes=[
+                EvidenceNote(
+                    note_id="n1",
+                    category="resource_signal",
+                    observation="The chunk names Sample A.",
+                    evidence_text="##TITLE= Sample A",
+                ),
+                EvidenceNote(
+                    note_id="n2",
+                    category="agent_signal",
+                    observation="The owner is Lab Team.",
+                    evidence_text="##OWNER=    Lab Team",
+                ),
+            ]
+        )
+
+        validated, dropped = validate_evidence_context_for_chunk(
+            context,
+            chunk_content=chunk,
+            file_path="sample.dx",
+            start_idx=0,
+            end_idx=3,
+        )
+
+        self.assertEqual(len(validated.notes), 2)
+        self.assertEqual(dropped, [])
+        self.assertTrue(all(note.evidence_match_score >= 0.9 for note in validated.notes))
+
+    def test_evidence_note_tracks_confidence_separately_from_match_score(self):
+        chunk = "##$PULPROG= <zg30>\n##$SOLVENT= <CDCl3>"
+        context = EvidenceContext(
+            notes=[
+                EvidenceNote(
+                    note_id="method_group",
+                    category="method_signal",
+                    observation="Acquisition uses zg30 with CDCl3.",
+                    evidence_text="##$PULPROG= <zg30>\n##$SOLVENT= <CDCl3>",
+                    interpretation_confidence="medium",
+                    profile_worthiness="high",
+                )
+            ]
+        )
+
+        validated, dropped = validate_evidence_context_for_chunk(
+            context,
+            chunk_content=chunk,
+            file_path="acqu",
+            start_idx=1,
+            end_idx=3,
+        )
+
+        self.assertEqual(dropped, [])
+        self.assertEqual(validated.notes[0].evidence_match_score, 1.0)
+        self.assertEqual(validated.notes[0].interpretation_confidence, "medium")
+        self.assertEqual(validated.notes[0].profile_worthiness, "high")
+
+    def test_evidence_prompt_discourages_boilerplate_and_requires_quality(self):
+        self.assertIn("Suppress repeated boilerplate", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("profile_worthiness", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+
+    def test_evidence_validation_rejects_synthetic_paraphrase(self):
+        chunk = "##TITLE= Real JCAMP record\n##XUNITS= 1/CM"
+        context = EvidenceContext(
+            notes=[
+                EvidenceNote(
+                    note_id="synthetic",
+                    category="measurement_signal",
+                    observation="Synthetic experiment for testing.",
+                    evidence_text="experiment-1 synthetic data for testing",
+                )
+            ]
+        )
+
+        validated, dropped = validate_evidence_context_for_chunk(
+            context,
+            chunk_content=chunk,
+            file_path="sample.dx",
+            start_idx=0,
+            end_idx=2,
+        )
+
+        self.assertEqual(validated.notes, [])
+        self.assertEqual([note.note_id for note in dropped], ["synthetic"])
+        self.assertLess(evidence_text_match_score(dropped[0].evidence_text, chunk), 0.9)
+
+    def test_noisy_jcamp_payload_detection_skips_xydata_payload_but_not_headers(self):
+        payload = "\n".join(
+            [
+                "##XYDATA=(X++(Y..Y))",
+                "1000 ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz@@1234567890",
+                "1001 ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz@@1234567890",
+                "1002 ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz@@1234567890",
+            ]
+        )
+        header = "\n".join(
+            [
+                "##TITLE= Aspirin sample",
+                "##JCAMP-DX= 5.00",
+                "##XUNITS= 1/CM",
+                "##YUNITS= TRANSMITTANCE",
+            ]
+        )
+
+        self.assertTrue(is_noisy_payload_chunk(payload))
+        self.assertFalse(is_noisy_payload_chunk(header))
 
     def test_extraction_system_prompt_limits_evaluated_entity_fallback(self):
         self.assertIn("Do not use evaluated_entity as a fallback class", EXTRACTION_CONTEXT_SYSTEM_PROMPT)
@@ -574,52 +777,278 @@ class ExtractionDomainTests(unittest.TestCase):
 
     def test_global_context_includes_all_prior_completed_chunks(self):
         from app.domain.extraction.workflow import ExtractionRunState, ExtractionChunkResult
-        from app.domain.extraction.extraction_context import ExtractionContext, merge_extraction_context_results
         from app.services.extraction_service import ExtractionService
         state = ExtractionRunState(chunk_results=[
             ExtractionChunkResult(
                 chunk_index=0, file_path="a.txt", start_idx=0, end_idx=1,
-                status="completed", extraction_context=ExtractionContext(extraction_objects=[
-                    TracedExtractionObject(object_kind="Resource", extracted_object=Resource(identifier="a", description="A"), source_text="a"),
+                status="completed",
+                evidence_context=EvidenceContext(notes=[
+                    EvidenceNote(note_id="a", category="resource_signal", observation="A", evidence_text="a"),
                 ]),
             ),
             ExtractionChunkResult(
                 chunk_index=1, file_path="b.txt", start_idx=0, end_idx=1,
-                status="completed", extraction_context=ExtractionContext(extraction_objects=[
-                    TracedExtractionObject(object_kind="Resource", extracted_object=Resource(identifier="b", description="B"), source_text="b"),
+                status="completed",
+                evidence_context=EvidenceContext(notes=[
+                    EvidenceNote(note_id="b", category="resource_signal", observation="B", evidence_text="b"),
                 ]),
             ),
         ])
-        ctx = ExtractionService._global_extraction_context_for_prompt(state, current_chunk_index=2)
+        ctx = ExtractionService._global_evidence_context_for_prompt(state, current_chunk_index=2)
         self.assertIsNotNone(ctx)
-        ids = [t.extracted_object.identifier for t in ctx.extraction_objects]
+        ids = [note.note_id for note in ctx.notes]
         self.assertIn("a", ids)
         self.assertIn("b", ids)
 
     def test_global_context_respects_chunk_order(self):
         from app.domain.extraction.workflow import ExtractionRunState, ExtractionChunkResult
-        from app.domain.extraction.extraction_context import ExtractionContext
         from app.services.extraction_service import ExtractionService
         state = ExtractionRunState(chunk_results=[
             ExtractionChunkResult(
                 chunk_index=0, file_path="a.txt", start_idx=0, end_idx=1,
-                status="completed", extraction_context=ExtractionContext(extraction_objects=[]),
+                status="completed",
+                evidence_context=EvidenceContext(notes=[]),
             ),
             ExtractionChunkResult(
                 chunk_index=5, file_path="a.txt", start_idx=0, end_idx=1,
-                status="completed", extraction_context=ExtractionContext(extraction_objects=[
-                    TracedExtractionObject(object_kind="Resource", extracted_object=Resource(identifier="later", description="Later"), source_text="later"),
+                status="completed",
+                evidence_context=EvidenceContext(notes=[
+                    EvidenceNote(note_id="later", category="resource_signal", observation="Later", evidence_text="later"),
                 ]),
             ),
         ])
-        ctx = ExtractionService._global_extraction_context_for_prompt(state, current_chunk_index=6)
+        ctx = ExtractionService._global_evidence_context_for_prompt(state, current_chunk_index=6)
         self.assertIsNotNone(ctx)
-        ids = [t.extracted_object.identifier for t in ctx.extraction_objects]
+        ids = [note.note_id for note in ctx.notes]
         self.assertIn("later", ids)
 
         # For chunk 5, only chunks with index < 5 should be included
-        ctx_5 = ExtractionService._global_extraction_context_for_prompt(state, current_chunk_index=5)
+        ctx_5 = ExtractionService._global_evidence_context_for_prompt(state, current_chunk_index=5)
         self.assertIsNotNone(ctx_5)
-        self.assertEqual(ctx_5.extraction_objects, [])
+        self.assertEqual(ctx_5.notes, [])
+
+    def test_projection_identifier_disambiguates_chunk_local_note_ids(self):
+        first = EvidenceNote(
+            note_id="software_version",
+            category="resource_signal",
+            observation="TOPSPIN version",
+            evidence_text="##TITLE= Audit trail, TOPSPIN Version 3.2",
+            file_path="10.zip/10/audita.txt",
+            start_idx=0,
+            end_idx=25,
+        )
+        second = EvidenceNote(
+            note_id="software_version",
+            category="resource_signal",
+            observation="TOPSPIN processing version",
+            evidence_text="##TITLE= Parameter file, TOPSPIN Version 3.2",
+            file_path="10.zip/10/pdata/1/outd",
+            start_idx=0,
+            end_idx=14,
+        )
+
+        self.assertNotEqual(
+            ExtractionService._projection_identifier_for_evidence_note(first),
+            ExtractionService._projection_identifier_for_evidence_note(second),
+        )
+
+    def test_initial_draft_includes_core_and_evidence_guided_scaffold(self):
+        evidence = EvidenceContext(
+            notes=[
+                EvidenceNote(
+                    note_id="instrument",
+                    category="agent_signal",
+                    observation="Instrument owner is Bruker.",
+                    evidence_text="##ORIGIN= Bruker BioSpin GmbH",
+                ),
+                EvidenceNote(
+                    note_id="solvent",
+                    category="entity_signal",
+                    observation="Solvent is CDCl3.",
+                    evidence_text="SOLVENT= <CDCl3>",
+                ),
+                EvidenceNote(
+                    note_id="pulse",
+                    category="method_signal",
+                    observation="Pulse sequence is zg30.",
+                    evidence_text="PULPROG= <zg30>",
+                ),
+            ]
+        )
+
+        document, scaffold = ExtractionService._initial_profile_document(
+            data_package_id="package-id",
+            evidence_context=evidence,
+            validation_schema=self.INITIAL_DRAFT_SCHEMA,
+        )
+
+        Draft202012Validator(self.INITIAL_DRAFT_SCHEMA).validate(document)
+        self.assertEqual(document["id"], "package-id")
+        self.assertIn("creator", document)
+        self.assertIn("dataset_distribution", document)
+        self.assertIn("is_about_entity", document)
+        self.assertIn("is_about_activity", document)
+        self.assertIn("was_generated_by", document)
+        self.assertIn("description", document["was_generated_by"][0])
+        self.assertIn("has_qualitative_attribute", document["was_generated_by"][0])
+        self.assertIn("format", document["dataset_distribution"][0])
+        self.assertIn("has_quantitative_attribute", document["is_about_activity"][0])
+        paths = {entry["path"] for entry in scaffold["entries"]}
+        self.assertIn("/creator/0", paths)
+        self.assertIn("/dataset_distribution/0", paths)
+        self.assertIn("/is_about_entity/0", paths)
+        self.assertIn("/was_generated_by/0/description", paths)
+
+    def test_initial_draft_prunes_only_untouched_optional_scaffold(self):
+        document, scaffold = ExtractionService._initial_profile_document(
+            data_package_id="package-id",
+            evidence_context=EvidenceContext(notes=[]),
+            validation_schema=self.INITIAL_DRAFT_SCHEMA,
+        )
+        document["creator"][0]["name"] = ["Bruker BioSpin GmbH"]
+
+        pruned = ExtractionService._prune_initial_draft_scaffold(document, scaffold)
+
+        self.assertIn("creator", pruned)
+        self.assertNotIn("dataset_distribution", pruned)
+        self.assertNotIn("is_about_entity", pruned)
+        self.assertIn("was_generated_by", pruned)
+        self.assertNotIn("description", pruned["was_generated_by"][0])
+        Draft202012Validator(self.INITIAL_DRAFT_SCHEMA).validate(pruned)
+
+    def test_target_catalog_marks_description_as_last_resort_and_scaffold_status(self):
+        document, scaffold = ExtractionService._initial_profile_document(
+            data_package_id="package-id",
+            evidence_context=EvidenceContext(notes=[]),
+            validation_schema=self.INITIAL_DRAFT_SCHEMA,
+        )
+
+        catalog = ExtractionService._target_catalog_from_document(
+            document=document,
+            validation_schema=self.INITIAL_DRAFT_SCHEMA,
+            scaffold=scaffold,
+        )
+        by_path = {item["path"]: item for item in catalog}
+
+        self.assertTrue(by_path["/description"]["description_last_resort"])
+        self.assertEqual(by_path["/dataset_distribution/0"]["scaffold_status"], "unfilled")
+        self.assertIn("resource_signal", by_path["/dataset_distribution/0"]["category_affinities"])
+        self.assertIn("current_value", by_path["/was_generated_by/0"])
+
+    def test_target_object_rewrite_replaces_only_selected_target(self):
+        document, _scaffold = ExtractionService._initial_profile_document(
+            data_package_id="package-id",
+            evidence_context=EvidenceContext(notes=[]),
+            validation_schema=self.INITIAL_DRAFT_SCHEMA,
+        )
+        replacement = {
+            "access_URL": [{"id": "package-id:distribution:primary:access"}],
+            "title": ["Primary JCAMP-DX distribution"],
+            "description": ["JCAMP-DX spectral data files."],
+            "format": None,
+            "media_type": None,
+        }
+
+        updated = ExtractionService._replace_json_pointer(
+            document,
+            "/dataset_distribution/0",
+            replacement,
+        )
+
+        self.assertEqual(updated["dataset_distribution"][0]["title"], ["Primary JCAMP-DX distribution"])
+        self.assertEqual(document["dataset_distribution"][0]["title"], [])
+        Draft202012Validator(self.INITIAL_DRAFT_SCHEMA).validate(updated)
+
+    def test_profile_target_write_document_carries_complete_target_value(self):
+        write = ProfileTargetWriteDocument(
+            status="write",
+            value={"name": ["Bruker BioSpin GmbH"]},
+            reason="Creator evidence.",
+        )
+
+        self.assertEqual(write.status, "write")
+        self.assertEqual(write.value["name"], ["Bruker BioSpin GmbH"])
+
+    def test_projection_grouping_collapses_repeated_note_families(self):
+        evidence = EvidenceContext(
+            notes=[
+                EvidenceNote(
+                    note_id="acqu_binary_format",
+                    category="resource_signal",
+                    observation="Binary acquisition parameter",
+                    evidence_text="##$USERA4= <>",
+                    file_path="10/acqu",
+                    start_idx=10,
+                    end_idx=20,
+                ),
+                EvidenceNote(
+                    note_id="acqu_binary_format",
+                    category="resource_signal",
+                    observation="Binary acquisition parameter",
+                    evidence_text="##$USERA5= <>",
+                    file_path="10/acqu",
+                    start_idx=10,
+                    end_idx=20,
+                ),
+            ]
+        )
+
+        groups = ExtractionService._projection_groups_for_evidence(evidence)
+
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(len(groups[0].notes), 2)
+        self.assertTrue(groups[0].group_id.startswith("group:dataset_distribution.0:"))
+
+    def test_patch_path_constraint_rejects_description_sink_for_specific_target(self):
+        self.assertTrue(
+            ExtractionService._patch_path_allowed_for_target(
+                "/dataset_distribution/0/title/-",
+                "/dataset_distribution/0",
+            )
+        )
+        self.assertFalse(
+            ExtractionService._patch_path_allowed_for_target(
+                "/description/-",
+                "/dataset_distribution/0",
+            )
+        )
+
+    def test_group_projection_ledger_preserves_target_and_note_ids(self):
+        evidence = EvidenceContext(
+            notes=[
+                EvidenceNote(
+                    note_id="nucleus",
+                    category="entity_signal",
+                    observation="Primary nucleus is 1H.",
+                    evidence_text="NUC1= <1H>",
+                    file_path="10/acqus",
+                    start_idx=1,
+                    end_idx=2,
+                )
+            ]
+        )
+        group = ExtractionService._projection_groups_for_evidence(evidence)[0]
+        record = ExtractionService._projection_record_from_group_patch_result(
+            group=group,
+            patch_result=ProfileObjectPatchResult(
+                object_identifier=group.group_id,
+                object_kind=group.object_kind,
+                status="applied",
+                target_path="/is_about_entity/0",
+                target_class="EvaluatedEntity",
+                planner_status="targeted",
+                planner_reason="Entity evidence.",
+                target_value={"id": "entity:primary", "title": "1H nucleus"},
+            ),
+        )
+
+        self.assertEqual(record.status, "projected")
+        self.assertEqual(record.target_path, "/is_about_entity/0")
+        self.assertEqual(record.target_class, "EvaluatedEntity")
+        self.assertEqual(record.planner_status, "targeted")
+        self.assertEqual(record.projected_paths, ["/is_about_entity/0"])
+        self.assertEqual(record.evidence_quality["note_count"], 1)
+        self.assertEqual(len(record.evidence_note_identifiers), 1)
+        self.assertIn("10/acqus#1-2#nucleus", record.evidence_note_identifiers)
 if __name__ == "__main__":
     unittest.main()

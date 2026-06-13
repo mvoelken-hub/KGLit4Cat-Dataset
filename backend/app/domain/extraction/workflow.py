@@ -5,7 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from app.core.task_registry import TaskStatus
-from app.domain.extraction.extraction_context import ExtractionContext
+from app.domain.extraction.evidence_context import EvidenceContext
 from app.domain.extraction.vocabulary import ExtractionNormalization
 from app.domain.extraction.file_ranking import RankedFile
 from app.domain.extraction.overview import (
@@ -76,8 +76,9 @@ class ExtractionVocabQueryRecord(BaseModel):
 
 
 class ExtractionChunkResult(ExtractionChunkRef):
-    status: str = Field("pending", pattern="^(pending|running|completed|failed)$")
-    extraction_context: ExtractionContext | None = None
+    status: str = Field("pending", pattern="^(pending|running|completed|failed|skipped)$")
+    evidence_context: EvidenceContext | None = None
+    skip_reason: str | None = None
     error: str | None = None
     response_duration_ms: float | None = None
     context_tokens: int | None = None
@@ -123,8 +124,14 @@ class ProjectionLedgerRecord(BaseModel):
     object_identifier: str
     object_kind: str
     source_evidence: str | None = None
+    evidence_note_identifiers: list[str] = Field(default_factory=list)
     status: ProjectionLedgerStatus = "not_projected"
     projected_paths: list[str] = Field(default_factory=list)
+    target_path: str | None = None
+    target_class: str | None = None
+    planner_status: str | None = None
+    planner_reason: str | None = None
+    evidence_quality: dict[str, Any] = Field(default_factory=dict)
     reason: str = ""
     error: str | None = None
 
@@ -167,6 +174,7 @@ class ExtractionRunState(BaseModel):
     draft_quality_state: DraftQualityState | None = None
     validation: DraftValidationResult = Field(default_factory=DraftValidationResult)
     curated_validation: DraftValidationResult | None = None
+    initial_draft_scaffold: dict[str, Any] = Field(default_factory=dict)
     projection_ledger: list[ProjectionLedgerRecord] = Field(default_factory=list)
     field_completion_ledger: list[FieldCompletionLedgerRecord] = Field(default_factory=list)
     curation_ledger: list[CurationLedgerRecord] = Field(default_factory=list)
@@ -178,7 +186,7 @@ class ExtractionRunProgress(BaseModel):
     total_chunks: int = 0
     normalized_quantities: int = 0
     normalized_qualitative_attributes: int = 0
-    interim_context: ExtractionContext | None = None
+    interim_evidence_context: EvidenceContext | None = None
     vocab_query_config: ExtractionVocabQueryConfig = Field(default_factory=ExtractionVocabQueryConfig)
     ranked_files: list[RankedFile] = Field(default_factory=list)
     initial_file_summaries: list[ExtractionFileSummary] = Field(default_factory=list)
@@ -192,6 +200,7 @@ class ExtractionRunProgress(BaseModel):
     draft_quality_state: DraftQualityState | None = None
     validation: DraftValidationResult = Field(default_factory=DraftValidationResult)
     curated_validation: DraftValidationResult | None = None
+    initial_draft_scaffold: dict[str, Any] = Field(default_factory=dict)
     projection_ledger: list[ProjectionLedgerRecord] = Field(default_factory=list)
     field_completion_ledger: list[FieldCompletionLedgerRecord] = Field(default_factory=list)
     curation_ledger: list[CurationLedgerRecord] = Field(default_factory=list)
@@ -218,7 +227,7 @@ class CompleteWorkflowProgress(BaseModel):
 
 class ExtractionRunResult(BaseModel):
     generated_final_draft: dict[str, Any]
-    machine_extraction_context: ExtractionContext
+    machine_evidence_context: EvidenceContext
     initial_file_summaries: list[ExtractionFileSummary] = Field(default_factory=list)
     initial_file_summary_status: InitialFileSummaryStatus | None = None
     initial_extraction_overview: ExtractionOverview | None = None
@@ -227,6 +236,7 @@ class ExtractionRunResult(BaseModel):
     draft_quality_state: DraftQualityState
     validation: DraftValidationResult
     curated_validation: DraftValidationResult | None = None
+    initial_draft_scaffold: dict[str, Any] = Field(default_factory=dict)
     projection_ledger: list[ProjectionLedgerRecord] = Field(default_factory=list)
     field_completion_ledger: list[FieldCompletionLedgerRecord] = Field(default_factory=list)
     curation_ledger: list[CurationLedgerRecord] = Field(default_factory=list)

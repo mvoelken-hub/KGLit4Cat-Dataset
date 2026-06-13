@@ -10,7 +10,7 @@ import {
   getInitialContextProgress,
   getPatchProgress,
   getTokenUsage,
-  initialContextFromExtractionContext,
+  initialContextFromEvidenceContext,
   pauseExtraction,
   rerunAllVocabQueries,
   rerunVocabQuery,
@@ -46,6 +46,7 @@ import type {
   PatchTaskStatus,
   PatchTokenUsage,
   PatchTokenUsageEntry,
+  ProjectionLedgerRecord,
 } from './api/extraction';
 
 type BusyKey = 'upload' | 'initial-context' | 'chunk' | 'context' | 'pause' | 'draft' | 'patch' | 'load' | 'profile' | 'profile-delete' | 'dataset-delete' | 'ollama';
@@ -222,61 +223,54 @@ function extractionContextHasStructuredItems(context?: Record<string, unknown> |
   return extractionContextTraces(context).some((trace) => trace.object);
 }
 
+function evidenceContextNotes(context?: Record<string, unknown> | null) {
+  return asRecordArray(context?.notes);
+}
+
+function evidenceContextHasNotes(context?: Record<string, unknown> | null): boolean {
+  return evidenceContextNotes(context).length > 0;
+}
+
+function evidenceContextNoteCount(context?: Record<string, unknown> | null): number {
+  return evidenceContextNotes(context).length;
+}
+
+function projectionPathBucket(path: string): string {
+  if (!path) return 'No profile path';
+  if (path === '/description' || path.startsWith('/description/')) return '/description';
+  if (path === '/title' || path.startsWith('/title/')) return '/title';
+  if (path === '/identifier' || path.startsWith('/identifier/')) return '/identifier';
+  const [, root] = path.split('/');
+  return root ? `/${root}` : path;
+}
+
+function projectionPathLabel(path: string): string {
+  if (path === 'No profile path') return path;
+  return path;
+}
+
+function projectionEvidencePreview(record: ProjectionLedgerRecord): string {
+  const value = record.source_evidence || record.reason || record.error || record.object_identifier;
+  return value.length > 180 ? `${value.slice(0, 177)}...` : value;
+}
+
+function projectionFailureMessage(record: ProjectionLedgerRecord): string {
+  return record.error || record.reason || 'No profile path was selected for this evidence note.';
+}
+
 function extractionContextTraceLabel(trace: { objectKind: string; object: Record<string, unknown> | null }) {
   const label = trace.object ? extractionContextItemTitle(trace.object, 'Extracted object') : 'Extracted object';
   return `${trace.objectKind}: ${label}`;
 }
 
-function ExtractionContextResultView({ context }: { context?: Record<string, unknown> | null }) {
-  const [selectedTrace, setSelectedTrace] = useState<ReturnType<typeof extractionContextTraces>[number] | null>(null);
+function EvidenceContextResultView({ context }: { context?: Record<string, unknown> | null }) {
   if (!context) return <p className="muted">No extraction result is available for this chunk yet.</p>;
-
-  const traces = extractionContextTraces(context);
-  const sections = [
-    { key: 'Resource', label: 'Resources' },
-    { key: 'Method', label: 'Methods' },
-    { key: 'DataGeneratingActivity', label: 'Activities' },
-    { key: 'EvaluatedEntity', label: 'Entities' },
-    { key: 'AgenticEntity', label: 'Agents' },
-  ].map((section) => ({
-    ...section,
-    traces: traces.filter((trace) => trace.objectKind === section.key && trace.object),
-  })).filter((section) => section.traces.length > 0);
-
-  if (!extractionContextHasStructuredItems(context)) {
-    return <p className="muted">The model call completed, but this chunk did not yield structured extraction context items.</p>;
-  }
-
   return (
     <div className="extraction-context-results">
-      {sections.map((section) => (
-        <section key={section.key} className="extraction-result-section">
-          <span>{section.label}</span>
-          <div>
-            {section.traces.map((trace, index) => {
-              const item = trace.object as Record<string, unknown>;
-              const keywords = extractionContextKeywords(item);
-              return (
-                <button
-                  className="extraction-result-card"
-                  key={`${section.key}-${index}`}
-                  type="button"
-                  onClick={() => setSelectedTrace(trace)}
-                >
-                  <strong>{extractionContextItemTitle(item, `${section.label} ${index + 1}`)}</strong>
-                  {extractionContextItemDescription(item) && <span className="extraction-result-description">{extractionContextItemDescription(item)}</span>}
-                  {keywords.length > 0 && (
-                    <span className="extraction-result-keywords">
-                      {keywords.map((keyword) => <span key={keyword}>{keyword}</span>)}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      ))}
-      {selectedTrace && <ExtractionObjectModal trace={selectedTrace} onClose={() => setSelectedTrace(null)} />}
+      {!evidenceContextHasNotes(context) && (
+        <p className="muted">The model call completed, but this chunk did not yield validated evidence notes.</p>
+      )}
+      <JsonDetails title="Evidence context JSON" value={context} />
     </div>
   );
 }
@@ -666,17 +660,28 @@ function ExtractionContextOverview({
     ...chunksByFile.map((group) => group[0]?.file_path).filter((filePath): filePath is string => Boolean(filePath)),
     ...chunkResults.map((chunk) => chunk.file_path),
   ];
-  const filePaths = Array.from(new Set(fallbackFilePaths));
+  const fallbackFileOrder = new Map(fallbackFilePaths.map((filePath, index) => [filePath, index]));
+  const rankByFilePath = new Map((progress?.ranked_files ?? []).map((file) => [file.file_path, file.rank]));
+  const filePaths = Array.from(new Set(fallbackFilePaths)).sort((left, right) => {
+    const leftRank = rankByFilePath.get(left);
+    const rightRank = rankByFilePath.get(right);
+    if (leftRank !== undefined || rightRank !== undefined) {
+      return (leftRank ?? Number.MAX_SAFE_INTEGER) - (rightRank ?? Number.MAX_SAFE_INTEGER);
+    }
+    return (fallbackFileOrder.get(left) ?? 0) - (fallbackFileOrder.get(right) ?? 0);
+  });
   const totalChunks = progress?.total_chunks || chunkResults.length || chunksByFile.flat().length;
   const completedChunks = chunkResults.filter((chunk) => chunk.status === 'completed').length;
+  const skippedChunks = chunkResults.filter((chunk) => chunk.status === 'skipped').length;
+  const processedChunks = completedChunks + skippedChunks;
   const runningChunks = chunkResults.filter((chunk) => chunk.status === 'running').length;
   const failedChunks = chunkResults.filter((chunk) => chunk.status === 'failed').length;
 
   if (!filePaths.length) {
     return (
       <div className="extraction-overview-empty">
-        <strong>No chunk extraction context yet.</strong>
-        <p>Create chunks and run chunk extraction after initial file understanding.</p>
+        <strong>No chunk evidence yet.</strong>
+        <p>Create chunks and run evidence extraction after initial file understanding.</p>
       </div>
     );
   }
@@ -690,7 +695,7 @@ function ExtractionContextOverview({
         </div>
         <div>
           <span>Chunks</span>
-          <strong>{completedChunks}/{totalChunks || 0} extracted</strong>
+          <strong>{processedChunks}/{totalChunks || 0} processed</strong>
         </div>
         <div>
           <span>Current stage</span>
@@ -698,7 +703,7 @@ function ExtractionContextOverview({
         </div>
         <div>
           <span>Queue</span>
-          <strong>{runningChunks ? `${runningChunks} running` : failedChunks ? `${failedChunks} failed` : `${Math.max(0, (totalChunks || 0) - completedChunks)} pending`}</strong>
+          <strong>{runningChunks ? `${runningChunks} running` : failedChunks ? `${failedChunks} failed` : `${Math.max(0, (totalChunks || 0) - processedChunks)} pending`}</strong>
         </div>
       </div>
 
@@ -706,7 +711,7 @@ function ExtractionContextOverview({
 
       <div className="ranked-file-list">
         {filePaths.map((filePath, fileIndex) => {
-          const rank = fileIndex + 1;
+          const rank = rankByFilePath.get(filePath) ?? fileIndex + 1;
           const file = packageFileByPath.get(filePath);
           const chunks = chunkGroupsByPath.get(filePath) ?? [];
           const persistedChunks = chunkResults.filter((chunk) => chunk.file_path === filePath);
@@ -719,7 +724,7 @@ function ExtractionContextOverview({
                 start_idx: chunk.start_idx,
                 end_idx: chunk.end_idx,
                 status: 'pending',
-                extraction_context: null,
+                evidence_context: null,
               };
               return result ?? fallbackChunk;
             })
@@ -739,8 +744,8 @@ function ExtractionContextOverview({
               <div className="extraction-chunk-list">
                 {chunkCards.length ? chunkCards.map((chunk) => {
                   const running = chunk.status === 'running' || (currentChunk && chunkResultKey(currentChunk) === chunkResultKey(chunk));
-                  const emptyExtractionResult = chunk.status === 'completed' && !extractionContextHasStructuredItems(chunk.extraction_context);
-                  const statusClass = running ? 'running' : chunk.status === 'completed' ? 'completed' : chunk.status === 'failed' ? 'failed' : 'pending';
+                  const emptyExtractionResult = chunk.status === 'completed' && !evidenceContextHasNotes(chunk.evidence_context);
+                  const statusClass = running ? 'running' : chunk.status === 'completed' ? 'completed' : chunk.status === 'skipped' ? 'skipped' : chunk.status === 'failed' ? 'failed' : 'pending';
                   const maxContextLength = budget?.max_context_length ?? 0;
                   const reachedTokenLimit = chunk.status === 'completed'
                     && typeof chunk.context_tokens === 'number'
@@ -766,7 +771,8 @@ function ExtractionContextOverview({
                         </span>
                       </summary>
                       {chunk.status === 'failed' && chunk.error && <p className="warning">{chunk.error}</p>}
-                      {(chunk.status === 'completed' || chunkText) && (
+                      {chunk.status === 'skipped' && chunk.skip_reason && <p className="muted">Skipped: {formatExtractionStage(chunk.skip_reason)}</p>}
+                      {(chunk.status === 'completed' || chunk.status === 'skipped' || chunkText) && (
                         <div className="chunk-call-meta">
                           {chunk.status === 'completed' && chunk.context_tokens ? (
                             <span
@@ -786,7 +792,7 @@ function ExtractionContextOverview({
                           {chunkText ? <button className="small ghost" type="button" onClick={() => setTraceChunk({ chunk, content: chunkText })}>View chunk text</button> : null}
                         </div>
                       )}
-                      <ExtractionContextResultView context={chunk.extraction_context} />
+                      <EvidenceContextResultView context={chunk.evidence_context} />
                     </details>
                   );
                 }) : (
@@ -801,7 +807,7 @@ function ExtractionContextOverview({
         <ChunkTraceModal
           chunk={traceChunk.chunk}
           content={traceChunk.content}
-          context={traceChunk.chunk.extraction_context}
+          context={traceChunk.chunk.evidence_context}
           onClose={() => setTraceChunk(null)}
         />
       )}
@@ -1696,6 +1702,148 @@ function JsonDetails({ title, value }: { title: string; value: unknown }) {
   );
 }
 
+function ProjectionWorkflowPanel({
+  progress,
+  status,
+  ledger,
+  tokenUsageSummary,
+}: {
+  progress?: PatchProgress | null;
+  status?: PatchTaskStatus | null;
+  ledger: ProjectionLedgerRecord[];
+  tokenUsageSummary?: ReactNode;
+}) {
+  const evidenceNoteTotal = evidenceContextNoteCount(progress?.interim_evidence_context);
+  const processedEvidenceIds = new Set(ledger.flatMap((record) => record.evidence_note_identifiers ?? []));
+  const processedCount = processedEvidenceIds.size || ledger.length;
+  const totalCount = Math.max(evidenceNoteTotal, processedCount);
+  const pendingCount = Math.max(0, totalCount - processedCount);
+  const scaffoldEntries = progress?.initial_draft_scaffold?.entries ?? [];
+  const touchedTargets = new Set(ledger.map((record) => record.target_path).filter(Boolean));
+  const remainingScaffoldTargets = scaffoldEntries.filter((entry) => (
+    entry.prune_if_unchanged && entry.path && !touchedTargets.has(entry.path)
+  ));
+  const projectedRecords = ledger.filter((record) => record.status === 'projected');
+  const attentionRecords = ledger.filter((record) => record.status !== 'projected');
+  const targetedRecords = ledger.filter((record) => record.target_path);
+  const failedWriteRecords = ledger.filter((record) => record.status === 'user_edit_required');
+  const descriptionSelectedRecords = ledger.filter((record) => record.target_path === '/description');
+  const confidenceCounts = ledger.reduce((counts, record) => {
+    const values = record.evidence_quality?.interpretation_confidence ?? {};
+    Object.entries(values).forEach(([key, value]) => {
+      counts[key] = (counts[key] ?? 0) + (typeof value === 'number' ? value : 0);
+    });
+    return counts;
+  }, {} as Record<string, number>);
+  const worthinessCounts = ledger.reduce((counts, record) => {
+    const values = record.evidence_quality?.profile_worthiness ?? {};
+    Object.entries(values).forEach(([key, value]) => {
+      counts[key] = (counts[key] ?? 0) + (typeof value === 'number' ? value : 0);
+    });
+    return counts;
+  }, {} as Record<string, number>);
+  const projectedPathCount = projectedRecords.reduce((sum, record) => sum + Math.max(1, record.projected_paths.length), 0);
+  const descriptionPathCount = projectedRecords.reduce((sum, record) => (
+    sum + record.projected_paths.filter((path) => projectionPathBucket(path) === '/description').length
+  ), 0);
+  const progressPercent = totalCount ? Math.min(100, Math.round((processedCount / totalCount) * 100)) : 0;
+  const pathBuckets = Array.from(projectedRecords.reduce((map, record) => {
+    const paths = record.projected_paths.length ? record.projected_paths : ['No profile path'];
+    paths.forEach((path) => {
+      const bucket = projectionPathBucket(path);
+      map.set(bucket, (map.get(bucket) ?? 0) + 1);
+    });
+    return map;
+  }, new Map<string, number>()).entries())
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, 6);
+  const descriptionShare = projectedPathCount ? Math.round((descriptionPathCount / projectedPathCount) * 100) : 0;
+  const lastRecord = ledger[ledger.length - 1] ?? null;
+  const latestLabel = lastRecord
+    ? `${formatExtractionStage(lastRecord.status)}: ${lastRecord.target_path || lastRecord.object_identifier}`
+    : 'No projection attempts yet';
+
+  return (
+    <section className="projection-workflow-panel">
+      <div className="projection-workflow-heading">
+        <div>
+          <span>Projection run</span>
+          <strong>{formatExtractionStage(progress?.stage || status || 'not started')}</strong>
+        </div>
+        <div>
+          <span>{processedCount}/{totalCount || 0}</span>
+          <strong>{pendingCount} pending</strong>
+        </div>
+      </div>
+      <div className="patch-progress-track" aria-hidden="true"><div style={{ width: `${progressPercent}%` }} /></div>
+      <div className="projection-workflow-metrics">
+        <span>{ledger.length} evidence groups</span>
+        <span>{projectedRecords.length} projected</span>
+        <span>{failedWriteRecords.length} failed writes</span>
+        <span>{targetedRecords.length} planner targets</span>
+        <span>{projectedRecords.length} target writes</span>
+        <span>{evidenceNoteTotal} evidence notes</span>
+        <span>{remainingScaffoldTargets.length} initial targets unfilled</span>
+        <span>{descriptionShare}% of projected paths in description</span>
+      </div>
+      {(Object.keys(confidenceCounts).length > 0 || Object.keys(worthinessCounts).length > 0) && (
+        <div className="projection-workflow-metrics">
+          <span>confidence H/M/L: {confidenceCounts.high ?? 0}/{confidenceCounts.medium ?? 0}/{confidenceCounts.low ?? 0}</span>
+          <span>worthiness H/M/L: {worthinessCounts.high ?? 0}/{worthinessCounts.medium ?? 0}/{worthinessCounts.low ?? 0}</span>
+        </div>
+      )}
+      {scaffoldEntries.length > 0 && (
+        <p className="projection-sink-note">
+          Initial draft: {scaffoldEntries.length} scaffold target{scaffoldEntries.length === 1 ? '' : 's'} prepared for projection.
+        </p>
+      )}
+      {descriptionSelectedRecords.length > 0 && (
+        <p className="projection-sink-note warning">
+          Planner selected <code>/description</code> for {descriptionSelectedRecords.length} evidence group{descriptionSelectedRecords.length === 1 ? '' : 's'}.
+        </p>
+      )}
+      {descriptionPathCount > 0 && (
+        <p className={`projection-sink-note ${descriptionShare >= 50 ? 'warning' : ''}`}>
+          {descriptionPathCount} projected path{descriptionPathCount === 1 ? '' : 's'} currently land in <code>/description</code>.
+        </p>
+      )}
+      {pathBuckets.length > 0 && (
+        <div className="projection-path-distribution">
+          {pathBuckets.map(([path, count]) => (
+            <div key={path}>
+              <span>{projectionPathLabel(path)}</span>
+              <strong>{count}</strong>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="projection-latest">
+        <span>Latest attempt</span>
+        <strong>{latestLabel}</strong>
+        {lastRecord?.source_evidence && <small>{projectionEvidencePreview(lastRecord)}</small>}
+      </div>
+      {tokenUsageSummary}
+      {attentionRecords.length > 0 && (
+        <details className="projection-issues">
+          <summary>{attentionRecords.length} projection issue{attentionRecords.length === 1 ? '' : 's'} need review</summary>
+          <div>
+            {attentionRecords.slice(0, 12).map((record) => (
+              <article key={record.object_identifier}>
+                <div>
+                  <strong>{record.object_identifier}</strong>
+                  <span>{formatExtractionStage(record.object_kind)} - {formatExtractionStage(record.status)}{record.target_path ? ` - ${record.target_path}` : ''}</span>
+                </div>
+                <p>{projectionFailureMessage(record)}</p>
+                {record.source_evidence && <small>{projectionEvidencePreview(record)}</small>}
+              </article>
+            ))}
+          </div>
+        </details>
+      )}
+    </section>
+  );
+}
+
 function buildVocabGraph(result: VocabQueryResult) {
   const seedMap = new Map(result.seeds.map((seed) => [seed.uri, seed]));
   const edgeUris = new Set<string>();
@@ -2017,6 +2165,9 @@ const tokenUsageLabels: Record<string, string> = {
   quantity_vocab_selection: 'Quantity vocabulary',
   qualitative_vocab_selection: 'Qualitative vocabulary',
   profile_projection: 'Profile projection',
+  profile_target_planner: 'Projection target planner',
+  profile_target_writer: 'Projection target writer',
+  profile_patch: 'Profile projection',
   patch_discovery: 'Patch discovery',
   schema_patch_writer: 'Schema patch writer',
   schema_repair: 'Schema repair',
@@ -2093,6 +2244,9 @@ function TokenUsageSummary({
         'quantity_vocab_selection',
         'qualitative_vocab_selection',
         'profile_projection',
+        'profile_target_planner',
+        'profile_target_writer',
+        'profile_patch',
         'initial_context',
         'patch_discovery',
         'schema_patch_writer',
@@ -2805,8 +2959,8 @@ export function App() {
     ? `${formatExtractionStage(patchProgress.stage)}${patchProgress.total_chunks ? ` - ${patchProgress.processed_chunks}/${patchProgress.total_chunks} chunks` : ''}`
     : '';
   const hasPersistedExtractionState = Boolean(
-    patchProgress?.interim_context
-    || patchProgress?.chunk_results?.some((chunk) => chunk.status === 'completed' || chunk.extraction_context),
+    patchProgress?.interim_evidence_context
+    || patchProgress?.chunk_results?.some((chunk) => chunk.status === 'completed' || chunk.status === 'skipped' || chunk.evidence_context),
   );
   const hasInitialContextArtifacts = Boolean(
     patchProgress?.initial_file_summary_status
@@ -2826,6 +2980,25 @@ export function App() {
   );
   const projectionLedger = patchProgress?.projection_ledger ?? [];
   const hasProfileArtifacts = Boolean(generatedFinalDraft || curatedDocument);
+  const isProfileBuildRunning = isPatching && (
+    patchProgress?.stage === 'profile_projection'
+    || patchProgress?.stage === 'profile_draft'
+    || Boolean(patchProgress?.generated_final_draft)
+  );
+  const projectionEvidenceNoteTotal = evidenceContextNoteCount(patchProgress?.interim_evidence_context);
+  const projectionHasPendingNotes = projectionEvidenceNoteTotal > projectionLedger.length;
+  const projectionCanContinue = Boolean(
+    selectedPackageId
+    && selectedProfile
+    && hasPersistedExtractionState
+    && !busy
+    && !isPatching
+    && (
+      projectionHasPendingNotes
+      || patchProgress?.stage === 'profile_draft'
+      || patchProgress?.stage === 'profile_projection'
+    )
+  );
   const projectedObjects = projectionLedger.filter((record) => record.status === 'projected').length;
   const notProjectedObjects = projectionLedger.filter((record) => record.status === 'not_projected' || record.status === 'ambiguous').length;
   const editRequiredObjects = projectionLedger.filter((record) => record.status === 'user_edit_required').length;
@@ -3244,9 +3417,9 @@ export function App() {
         target_stage: 'context',
       });
       if (selectedPackageIdRef.current !== packageId) return;
-      const nextContext = response.result?.machine_extraction_context || response.progress?.interim_context;
+      const nextContext = response.result?.machine_evidence_context || response.progress?.interim_evidence_context;
       if (nextContext) {
-        setContext(initialContextFromExtractionContext(nextContext));
+        setContext(initialContextFromEvidenceContext(nextContext));
       }
       if (response.result) {
         setGeneratedFinalDraft(response.result.generated_final_draft);
@@ -3275,8 +3448,8 @@ export function App() {
       if (selectedPackageIdRef.current !== packageId) return;
       setPatchStatus(status);
       setPatchProgress(progress ? { ...progress } : null);
-      if (progress?.interim_context) {
-        setContext(initialContextFromExtractionContext(progress.interim_context));
+      if (progress?.interim_evidence_context) {
+        setContext(initialContextFromEvidenceContext(progress.interim_evidence_context));
       }
       setTokenUsage(await getTokenUsage(packageId));
       setMessage(status === 'cancelled' ? 'Extraction paused. Resume extraction to continue from saved chunks.' : 'Extraction is not running.');
@@ -3317,7 +3490,7 @@ export function App() {
       if (selectedPackageIdRef.current !== packageId) return;
       setGeneratedFinalDraft(result.generated_final_draft);
       setCuratedDocument(result.curated_document ?? result.generated_final_draft);
-      setContext(initialContextFromExtractionContext(result.machine_extraction_context));
+      setContext(initialContextFromEvidenceContext(result.machine_evidence_context));
       setTokenUsage(result.token_usage);
       const { status, progress } = await getPatchProgress(packageId);
       if (selectedPackageIdRef.current !== packageId) return;
@@ -3418,9 +3591,10 @@ export function App() {
     }
   }
 
-  async function onGenerateDraft() {
+  async function onGenerateDraft(options: { mode?: 'continue' | 'rebuild' | 'build' } = {}) {
     if (!selectedPackageId || !selectedProfile) return;
-    const isReplacingGeneratedDraft = Boolean(generatedFinalDraft);
+    const mode = options.mode ?? (generatedFinalDraft ? 'rebuild' : 'build');
+    const isReplacingGeneratedDraft = mode === 'rebuild' && Boolean(generatedFinalDraft);
     if (isReplacingGeneratedDraft) {
       const confirmed = window.confirm(
         'Rebuild the generated final draft?\n\nThis updates the machine artifact. Existing curated edits remain separate.',
@@ -3445,7 +3619,14 @@ export function App() {
       setPatchStatus(response.status);
       setPatchProgress(response.progress ? { ...response.progress } : null);
       setTokenUsage(await getTokenUsage(selectedPackageId));
-      setMessage(isReplacingGeneratedDraft ? 'Generated final draft rebuilt.' : 'Generated final draft construction started.');
+      setMessage(
+        mode === 'continue'
+          ? (response.status === 'running' ? 'Projection resumed.' : 'Projection is up to date.')
+          : isReplacingGeneratedDraft ? 'Generated final draft rebuilt.' : 'Generated final draft construction started.'
+      );
+      if (response.status === 'running') {
+        await refreshExtractionProgress();
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Generated final draft construction failed.');
     } finally {
@@ -3577,11 +3758,11 @@ export function App() {
       setPatchStatus(status);
       setPatchProgress(progress || null);
       if (completedResult) {
-        setContext(initialContextFromExtractionContext(completedResult.machine_extraction_context));
+        setContext(initialContextFromEvidenceContext(completedResult.machine_evidence_context));
         setGeneratedFinalDraft(completedResult.generated_final_draft);
         setCuratedDocument(completedResult.curated_document ?? completedResult.generated_final_draft);
-      } else if (progress?.interim_context) {
-        setContext(initialContextFromExtractionContext(progress.interim_context));
+      } else if (progress?.interim_evidence_context) {
+        setContext(initialContextFromEvidenceContext(progress.interim_evidence_context));
       }
       if (!completedResult) {
         setGeneratedFinalDraft(progress?.generated_final_draft ?? null);
@@ -3624,8 +3805,8 @@ export function App() {
           ? await getDataPackageChunks(packageId)
           : [];
         if (selectedPackageIdRef.current !== packageId) return;
-        const progressContext = progress?.interim_context
-          ? initialContextFromExtractionContext(progress.interim_context)
+        const progressContext = progress?.interim_evidence_context
+          ? initialContextFromEvidenceContext(progress.interim_evidence_context)
           : null;
         if (ctx || progressContext) {
           setContext(ctx ?? progressContext);
@@ -3888,12 +4069,12 @@ export function App() {
 
           <StepPanel
             number="04"
-            title="Chunk extraction context"
-            description="Extract structured machine context from chunks using the initial overview and each file summary as orientation."
+            title="Chunk evidence extraction"
+            description="Collect validated evidence notes from chunks using the initial overview and each file summary as orientation."
           >
               <div className="actions">
                 <button onClick={() => void onContext()} disabled={!selectedPackageId || !selectedProfile || !hasChunks || !hasInitialContextArtifacts || !!busy || isPatching}>
-                  {isPatching ? 'Extraction running...' : busy === 'context' ? 'Extracting...' : hasPersistedExtractionState || context ? 'Re-extract chunk context' : 'Extract chunk context'}
+                  {isPatching ? 'Extraction running...' : busy === 'context' ? 'Extracting...' : hasPersistedExtractionState || context ? 'Re-extract chunk evidence' : 'Extract chunk evidence'}
                 </button>
                 {isPatching && (
                   <button className="ghost" onClick={() => void onPauseExtraction()} disabled={!selectedPackageId || busy === 'pause'}>
@@ -3929,7 +4110,7 @@ export function App() {
                   <TokenUsageSummary
                     tokenUsage={tokenUsage}
                     averageUnit="operation"
-                    heading="Extraction context token usage"
+                    heading="Evidence extraction token usage"
                     agentKeys={['chunk_extraction', 'chunk_extraction_repair', 'quantity_vocab_selection', 'qualitative_vocab_selection', 'profile_projection']}
                     budget={llmBudget}
                     notesByAgent={extractionTokenUsageNotes}
@@ -3951,15 +4132,36 @@ export function App() {
           >
               <div className={hasProfileArtifacts ? 'draft-actions' : 'actions'}>
                 {!generatedFinalDraft ? (
-                  <button onClick={() => void onGenerateDraft()} disabled={!selectedPackageId || !selectedProfile || !!busy || !context}>{busy === 'draft' ? 'Building generated draft...' : 'Build generated final draft'}</button>
+                  <button onClick={() => void onGenerateDraft({ mode: 'build' })} disabled={!selectedPackageId || !selectedProfile || !!busy || isPatching || !context}>{busy === 'draft' ? 'Building generated draft...' : isProfileBuildRunning ? 'Building generated draft...' : 'Build generated final draft'}</button>
                 ) : (
                   <>
-                    <button className="ghost draft-recreate-button" onClick={() => void onGenerateDraft()} disabled={!selectedPackageId || !selectedProfile || !!busy}>{busy === 'draft' ? 'Rebuilding...' : 'Rebuild generated draft'}</button>
+                    {projectionCanContinue && (
+                      <button onClick={() => void onGenerateDraft({ mode: 'continue' })} disabled={!projectionCanContinue}>
+                        {busy === 'draft' ? 'Continuing...' : 'Continue projection'}
+                      </button>
+                    )}
                     <button className="ghost" onClick={() => void onExportCuratedJson()} disabled={!curatedDocument || !!busy}>Export curated JSON</button>
                     <button className="ghost" onClick={() => void onExportCuratedJsonLd()} disabled={!curatedDocument || !selectedProfile || !!busy}>Export curated JSON-LD</button>
+                    <button className="ghost draft-recreate-button" onClick={() => void onGenerateDraft({ mode: 'rebuild' })} disabled={!selectedPackageId || !selectedProfile || !!busy || isPatching}>{busy === 'draft' ? 'Rebuilding...' : isProfileBuildRunning ? 'Rebuilding...' : 'Rebuild generated draft'}</button>
                   </>
                 )}
               </div>
+              {(hasProfileArtifacts || isProfileBuildRunning || projectionLedger.length > 0) && (
+                <ProjectionWorkflowPanel
+                  progress={patchProgress}
+                  status={patchStatus}
+                  ledger={projectionLedger}
+                  tokenUsageSummary={(
+                    <TokenUsageSummary
+                      tokenUsage={tokenUsage}
+                      averageUnit="operation"
+                      heading="Projection token usage"
+                      agentKeys={['profile_target_planner', 'profile_target_writer', 'profile_patch', 'profile_projection']}
+                      budget={llmBudget}
+                    />
+                  )}
+                />
+              )}
               {hasProfileArtifacts && (
                 <section className="patch-progress">
                   <div className="patch-progress-header">
@@ -3976,10 +4178,11 @@ export function App() {
                   </div>
                 </section>
               )}
-              {hasProfileArtifacts && patchStatus === 'running' && (
+              {(hasProfileArtifacts || isProfileBuildRunning) && patchStatus === 'running' && (
                 <div className="patch-progress">
                   <div className="patch-progress-header">
                     <span>Status: <strong>{formatExtractionStage(patchProgress?.stage || patchStatus)}</strong></span>
+                    {!hasProfileArtifacts && <span>Generating draft artifact</span>}
                   </div>
                 </div>
               )}

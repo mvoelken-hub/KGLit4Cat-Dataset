@@ -7,7 +7,7 @@ from app.domain.extraction import (
     InitialFileSummaryStatus,
     ExtractionOverview,
     ExtractionOverviewStatus,
-    ExtractionContext,
+    EvidenceContext,
     ExtractionRunResult,
     ExtractionRunState,
     FieldCompletionLedgerRecord,
@@ -16,15 +16,15 @@ from app.domain.extraction import (
 
 
 class ExtractionOutputRepository(Protocol):
-    def save_extraction_context(
+    def save_evidence_context(
         self,
         *,
         workflow_id: str,
-        extraction_context: ExtractionContext,
+        evidence_context: EvidenceContext,
     ) -> None:
         ...
 
-    def load_extraction_context(self, workflow_id: str) -> ExtractionContext:
+    def load_evidence_context(self, workflow_id: str) -> EvidenceContext:
         ...
 
     def save_extraction_result(

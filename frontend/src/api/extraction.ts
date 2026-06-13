@@ -39,12 +39,13 @@ export type ExtractionRunProgress = {
   total_chunks: number;
   normalized_quantities: number;
   normalized_qualitative_attributes: number;
-  interim_context?: Record<string, unknown> | null;
+  interim_evidence_context?: Record<string, unknown> | null;
   generated_final_draft?: Record<string, unknown> | null;
   curated_document?: Record<string, unknown> | null;
   draft_quality_state?: DraftQualityState | null;
   validation?: DraftValidationResult | null;
   curated_validation?: DraftValidationResult | null;
+  initial_draft_scaffold?: InitialDraftScaffold;
   projection_ledger?: ProjectionLedgerRecord[];
   field_completion_ledger?: FieldCompletionLedgerRecord[];
   curation_ledger?: CurationLedgerRecord[];
@@ -95,11 +96,27 @@ export type ExtractionChunkRef = {
 };
 
 export type ExtractionChunkResult = ExtractionChunkRef & {
-  status: 'pending' | 'running' | 'completed' | 'failed' | string;
-  extraction_context?: Record<string, unknown> | null;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped' | string;
+  evidence_context?: Record<string, unknown> | null;
+  skip_reason?: string | null;
   error?: string | null;
   response_duration_ms?: number | null;
   context_tokens?: number | null;
+};
+
+export type InitialDraftScaffoldEntry = {
+  path: string;
+  value?: unknown;
+  label?: string;
+  target_class?: string | null;
+  kind?: string;
+  prune_if_unchanged?: boolean;
+};
+
+export type InitialDraftScaffold = {
+  version?: number;
+  evidence_categories?: string[];
+  entries?: InitialDraftScaffoldEntry[];
 };
 
 export type ExtractionOverviewStatus = 'structured' | 'unstructured_fallback' | 'failed' | string;
@@ -194,8 +211,19 @@ export type ProjectionLedgerRecord = {
   object_identifier: string;
   object_kind: string;
   source_evidence?: string | null;
+  evidence_note_identifiers?: string[];
   status: 'projected' | 'not_projected' | 'ambiguous' | 'user_edit_required' | string;
   projected_paths: string[];
+  target_path?: string | null;
+  target_class?: string | null;
+  planner_status?: string | null;
+  planner_reason?: string | null;
+  evidence_quality?: {
+    note_count?: number;
+    interpretation_confidence?: Record<string, number>;
+    profile_worthiness?: Record<string, number>;
+    [key: string]: unknown;
+  };
   reason: string;
   error?: string | null;
 };
@@ -238,7 +266,7 @@ export type PatchProgress = ExtractionRunProgress & {
 
 export type ExtractionRunResult = {
   generated_final_draft: Record<string, unknown>;
-  machine_extraction_context: Record<string, unknown>;
+  machine_evidence_context: Record<string, unknown>;
   initial_file_summaries?: ExtractionFileSummary[];
   initial_file_summary_status?: InitialFileSummaryStatus | null;
   initial_extraction_overview?: ExtractionOverview | null;
@@ -247,6 +275,7 @@ export type ExtractionRunResult = {
   draft_quality_state: DraftQualityState;
   validation: DraftValidationResult;
   curated_validation?: DraftValidationResult | null;
+  initial_draft_scaffold?: InitialDraftScaffold;
   projection_ledger: ProjectionLedgerRecord[];
   field_completion_ledger: FieldCompletionLedgerRecord[];
   curation_ledger: CurationLedgerRecord[];
@@ -360,7 +389,7 @@ export async function getExtractionResult(data_package_id: string): Promise<Extr
 
 export async function getExistingInitialContext(data_package_id: string): Promise<InitialContext | null> {
   const result = await getExtractionResult(data_package_id);
-  return result ? initialContextFromExtractionContext(result.machine_extraction_context) : null;
+  return result ? initialContextFromEvidenceContext(result.machine_evidence_context) : null;
 }
 
 export async function getExistingGeneratedFinalDraft(data_package_id: string): Promise<Record<string, unknown> | null> {
@@ -382,9 +411,9 @@ export async function extractInitialContext(input: {
     profile_identifier: input.profile_identifier,
     target_stage: 'context',
   });
-  const context = response.result?.machine_extraction_context || response.progress?.interim_context;
+  const context = response.result?.machine_evidence_context || response.progress?.interim_evidence_context;
   return context
-    ? initialContextFromExtractionContext(context)
+    ? initialContextFromEvidenceContext(context)
     : emptyInitialContext('Extraction is running.');
 }
 
@@ -516,45 +545,53 @@ export async function resolvePatchReview(input: {
   };
 }
 
-export function initialContextFromExtractionContext(context: Record<string, unknown>): InitialContext {
-  const traces = arrayOfRecords(context.extraction_objects);
-  const objectsByKind = (kind: string) => traces
-    .filter((trace) => stringValue(trace.object_kind) === kind)
-    .map((trace) => recordValue(trace.extracted_object))
-    .filter((item): item is Record<string, unknown> => Boolean(item));
-  const resources = objectsByKind('Resource');
-  const activities = objectsByKind('DataGeneratingActivity');
-  const entities = objectsByKind('EvaluatedEntity');
-  const agents = objectsByKind('AgenticEntity');
-  const dataset = resources.find((resource) => stringValue(resource.type)?.toLowerCase() === 'dataset') || resources[0] || {};
+export function initialContextFromEvidenceContext(context: Record<string, unknown>): InitialContext {
+  const notes = arrayOfRecords(context.notes);
+  const observations = notes
+    .map((note) => stringValue(note.observation))
+    .filter((value): value is string => Boolean(value));
+  const evidenceByCategory = (category: string) => notes
+    .filter((note) => stringValue(note.category) === category)
+    .map((note) => ({
+      observation: stringValue(note.observation) || 'Evidence note',
+      evidence: stringValue(note.evidence_text) || null,
+    }));
+  const entitySignals = evidenceByCategory('entity_signal');
+  const agentSignals = evidenceByCategory('agent_signal');
+  const methodSignals = evidenceByCategory('method_signal');
+  const resourceSignals = evidenceByCategory('resource_signal');
+  const titleSource = entitySignals[0] || resourceSignals[0] || methodSignals[0] || null;
+  const summary = observations.length
+    ? observations.slice(0, 5).join(' ')
+    : 'Evidence context generated.';
   return {
-    dataset_title: stringValue(dataset.identifier) || null,
-    dataset_description: stringValue(dataset.description) || null,
-    entities: entities.map((entity) => ({
-      label: stringValue(entity.identifier) || stringValue(entity.description) || 'Entity',
+    dataset_title: titleSource?.observation || null,
+    dataset_description: summary,
+    entities: entitySignals.map((entity) => ({
+      label: entity.observation,
       role: 'unknown',
-      identifier: stringValue(entity.identifier) || null,
-      evidence: stringValue(entity.description) || null,
+      identifier: null,
+      evidence: entity.evidence,
       confidence: null,
     })),
-    agents: agents.map((agent) => ({
-      name: stringValue(agent.identifier) || 'Agent',
+    agents: agentSignals.map((agent) => ({
+      name: agent.observation,
       role: 'unknown',
       model: null,
-      evidence: stringValue(agent.description) || null,
+      evidence: agent.evidence,
       confidence: null,
     })),
-    activities: activities.map((activity) => ({
-      label: stringValue(activity.identifier) || null,
+    activities: methodSignals.map((method) => ({
+      label: method.observation,
       technique: null,
       agent_names: [],
-      evidence: stringValue(activity.description) || null,
+      evidence: method.evidence,
       confidence: null,
     })),
     file_relationships: [],
     metadata_sources: [],
-    keywords: stringArray(dataset.keywords),
-    summary: stringValue(dataset.description) || 'Extraction context generated.',
+    keywords: [],
+    summary,
   };
 }
 
