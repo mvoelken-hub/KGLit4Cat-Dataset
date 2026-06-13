@@ -18,6 +18,7 @@ export async function chunkDataPackage(input: {
   replace_existing_chunks?: boolean;
   protected_line_indices?: Record<string, number[]>;
   text_quality_config?: TextQualityConfig;
+  embedding_num_gpu?: number;
 }): Promise<ChunkRequestResponse> {
   const query = buildQuery({
     id: input.id,
@@ -26,6 +27,7 @@ export async function chunkDataPackage(input: {
     replace_existing_chunks: input.replace_existing_chunks ?? false,
     protected_line_indices: input.protected_line_indices ? JSON.stringify(input.protected_line_indices) : undefined,
     text_quality_config: input.text_quality_config ? JSON.stringify(input.text_quality_config) : undefined,
+    embedding_num_gpu: input.embedding_num_gpu,
   });
   return readJson(await fetch(apiBaseUrl + '/datasources/chunk' + query, { method: 'POST' }));
 }

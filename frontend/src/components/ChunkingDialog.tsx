@@ -16,6 +16,7 @@ export interface ChunkingDialogProps {
     semantic_chunking_threshold: number;
     protected_line_indices: Record<string, number[]>;
     text_quality_config: TextQualityConfig;
+    embedding_num_gpu?: number;
   }) => void;
 }
 
@@ -31,6 +32,7 @@ const chunkColors = [
 const configTooltips = {
   bufferWindowSize: 'Embeds each kept line together with this many kept neighbor lines before and after it. Higher values smooth local differences and usually create fewer, broader chunks; lower values react to sharper line-to-line changes and can create more granular chunks. A significant side effect of increasing the buffer size is a significant increase in the number of tokens processed by the embedding API.',
   semanticThreshold: 'Percentile cutoff for semantic distance between adjacent embedded line windows. Lower values mark more breakpoints and usually make smaller chunks; higher values keep only the strongest topic shifts and usually make larger chunks.',
+  embeddingGpu: 'Per-run Ollama num_gpu override for the embedding model used during semantic chunking. Runtime default uses the current model setting, auto GPU asks Ollama to place all layers automatically, and CPU only keeps chunking embeddings off the GPU.',
   symbolThreshold: 'Symbol-heavy lines receive a quality penalty when their symbol ratio is at or above this value. Lower values are stricter and drop more notation-heavy lines; higher values keep more lines with punctuation, formulas, or metadata keys.',
   digitThreshold: 'Digit-heavy lines receive a quality penalty when their digit ratio is at or above this value. Lower values drop more numeric lines; higher values keep more measurements, identifiers, and tables.',
   keepThreshold: 'Minimum quality score for a line to be included in chunking. Lower values keep more borderline lines and noise; higher values keep fewer, cleaner lines but may remove useful evidence.',
@@ -240,6 +242,7 @@ function QualityTooltip({ decision }: { decision: TextQualityDecision }) {
 export function ChunkingDialog({ isOpen, packageId, dataPackage, chunksByFile, onClose, onSubmit }: ChunkingDialogProps) {
   const [bufferWindowSize, setBufferWindowSize] = useState(1);
   const [semanticThreshold, setSemanticThreshold] = useState(95);
+  const [embeddingGpuMode, setEmbeddingGpuMode] = useState<'default' | 'auto' | 'cpu'>('default');
 
   const [draftTextQualityConfig, setDraftTextQualityConfig] = useState<Required<TextQualityConfig>>(defaultTextQualityConfig);
   const [textQualityConfig, setTextQualityConfig] = useState<Required<TextQualityConfig>>(defaultTextQualityConfig);
@@ -287,6 +290,7 @@ export function ChunkingDialog({ isOpen, packageId, dataPackage, chunksByFile, o
     if (!isOpen) return;
     setBufferWindowSize(1);
     setSemanticThreshold(95);
+    setEmbeddingGpuMode('default');
     setDraftTextQualityConfig(defaultTextQualityConfig);
     setTextQualityConfig(defaultTextQualityConfig);
     setShowAdvanced(false);
@@ -372,6 +376,7 @@ export function ChunkingDialog({ isOpen, packageId, dataPackage, chunksByFile, o
       semantic_chunking_threshold: semanticThreshold,
       protected_line_indices,
       text_quality_config: textQualityConfig,
+      embedding_num_gpu: embeddingGpuMode === 'default' ? undefined : embeddingGpuMode === 'auto' ? -1 : 0,
     });
   };
 
@@ -394,6 +399,14 @@ export function ChunkingDialog({ isOpen, packageId, dataPackage, chunksByFile, o
             <label className="form-row">
               <ConfigLabel tooltip={configTooltips.semanticThreshold}>Semantic threshold (%)</ConfigLabel>
               <input type="number" min={0} max={100} value={semanticThreshold} onChange={(e) => setSemanticThreshold(Number(e.target.value))} />
+            </label>
+            <label className="form-row wide-control">
+              <ConfigLabel tooltip={configTooltips.embeddingGpu}>Embedding GPU</ConfigLabel>
+              <select value={embeddingGpuMode} onChange={(e) => setEmbeddingGpuMode(e.target.value as 'default' | 'auto' | 'cpu')}>
+                <option value="default">Runtime default</option>
+                <option value="auto">Auto GPU</option>
+                <option value="cpu">CPU only</option>
+              </select>
             </label>
 
             <button className="ghost small" onClick={() => setShowAdvanced((s) => !s)}>

@@ -7,6 +7,7 @@ import {
   getExistingCuratedDocument,
   getExistingGeneratedFinalDraft,
   getExtractionResult,
+  getInitialContextProgress,
   getPatchProgress,
   getTokenUsage,
   initialContextFromExtractionContext,
@@ -14,6 +15,7 @@ import {
   rerunAllVocabQueries,
   rerunVocabQuery,
   runExtraction,
+  runInitialContext,
   runVocabularyGrounding,
   saveCuratedDocument,
   updateVocabQueryConfig,
@@ -44,10 +46,9 @@ import type {
   PatchTaskStatus,
   PatchTokenUsage,
   PatchTokenUsageEntry,
-  RankedExtractionFile,
 } from './api/extraction';
 
-type BusyKey = 'upload' | 'chunk' | 'context' | 'pause' | 'draft' | 'patch' | 'load' | 'profile' | 'profile-delete' | 'dataset-delete' | 'ollama';
+type BusyKey = 'upload' | 'initial-context' | 'chunk' | 'context' | 'pause' | 'draft' | 'patch' | 'load' | 'profile' | 'profile-delete' | 'dataset-delete' | 'ollama';
 const selectedPackageStorageKey = 'simone_selected_package_id';
 
 function readStoredSelectedPackageId(): string {
@@ -635,7 +636,6 @@ function nthLineStart(content: string, lineNumber: number) {
 }
 
 function ExtractionContextOverview({
-  rankedFiles,
   chunkResults,
   currentChunk,
   chunksByFile,
@@ -649,7 +649,6 @@ function ExtractionContextOverview({
   onRerunVocabQuery,
   tokenUsageSummary,
 }: {
-  rankedFiles: RankedExtractionFile[];
   chunkResults: ExtractionChunkResult[];
   currentChunk?: ExtractionChunkRef | null;
   chunksByFile: ChunkResponse[][];
@@ -671,16 +670,11 @@ function ExtractionContextOverview({
       .map((group): [string, ChunkResponse[]] => [group[0]?.file_path ?? '', group])
       .filter(([filePath]) => Boolean(filePath)),
   );
-  const rankedFilePaths = rankedFiles
-    .slice()
-    .sort((left, right) => left.rank - right.rank)
-    .map((file) => file.file_path);
   const fallbackFilePaths = [
-    ...packageFiles.map((file) => file.file_path),
     ...chunksByFile.map((group) => group[0]?.file_path).filter((filePath): filePath is string => Boolean(filePath)),
     ...chunkResults.map((chunk) => chunk.file_path),
   ];
-  const filePaths = Array.from(new Set([...rankedFilePaths, ...fallbackFilePaths]));
+  const filePaths = Array.from(new Set(fallbackFilePaths));
   const totalChunks = progress?.total_chunks || chunkResults.length || chunksByFile.flat().length;
   const completedChunks = chunkResults.filter((chunk) => chunk.status === 'completed').length;
   const runningChunks = chunkResults.filter((chunk) => chunk.status === 'running').length;
@@ -691,8 +685,8 @@ function ExtractionContextOverview({
   if (!filePaths.length) {
     return (
       <div className="extraction-overview-empty">
-        <strong>No extraction context overview yet.</strong>
-        <p>Create chunks before starting extraction context extraction.</p>
+        <strong>No chunk extraction context yet.</strong>
+        <p>Create chunks and run chunk extraction after initial file understanding.</p>
       </div>
     );
   }
@@ -717,38 +711,6 @@ function ExtractionContextOverview({
           <strong>{runningChunks ? `${runningChunks} running` : failedChunks ? `${failedChunks} failed` : `${Math.max(0, (totalChunks || 0) - completedChunks)} pending`}</strong>
         </div>
       </div>
-
-      {((progress?.initial_file_summaries?.length ?? 0) > 0 || progress?.initial_file_summary_status) ? (
-        <details className="initial-overview-panel" open>
-          <summary>
-            <div>
-              <span>Ranked file summaries</span>
-              <strong>{formatExtractionStage(progress?.initial_file_summary_status || 'not available')}</strong>
-            </div>
-          </summary>
-          {(progress?.initial_file_summaries?.length ?? 0) > 0 ? (
-            <JsonDetails title="Per-file extraction guidance" value={progress?.initial_file_summaries ?? []} />
-          ) : (
-            <p className="muted">No ranked file summaries are available for this run.</p>
-          )}
-        </details>
-      ) : null}
-
-      {(progress?.initial_extraction_overview || progress?.initial_extraction_overview_status) ? (
-        <details className="initial-overview-panel" open>
-          <summary>
-            <div>
-              <span>Initial overview</span>
-              <strong>{formatExtractionStage(progress?.initial_extraction_overview_status || 'not available')}</strong>
-            </div>
-          </summary>
-          {progress?.initial_extraction_overview ? (
-            <JsonDetails title="Run-level extraction guidance" value={progress.initial_extraction_overview} />
-          ) : (
-            <p className="muted">No overview guidance is available for this run.</p>
-          )}
-        </details>
-      ) : null}
 
       {tokenUsageSummary}
 
@@ -794,7 +756,7 @@ function ExtractionContextOverview({
 
       <div className="ranked-file-list">
         {filePaths.map((filePath, fileIndex) => {
-          const rank = rankedFiles.find((file) => file.file_path === filePath)?.rank ?? fileIndex + 1;
+          const rank = fileIndex + 1;
           const file = packageFileByPath.get(filePath);
           const chunks = chunkGroupsByPath.get(filePath) ?? [];
           const persistedChunks = chunkResults.filter((chunk) => chunk.file_path === filePath);
@@ -893,6 +855,104 @@ function ExtractionContextOverview({
           onClose={() => setTraceChunk(null)}
         />
       )}
+    </div>
+  );
+}
+
+function InitialFileUnderstandingPanel({
+  progress,
+  status,
+  tokenUsageSummary,
+}: {
+  progress?: PatchProgress | null;
+  status?: PatchTaskStatus | null;
+  tokenUsageSummary?: ReactNode;
+}) {
+  const rankedCount = progress?.ranked_files?.length ?? 0;
+  const summaryCount = progress?.initial_file_summaries?.length ?? 0;
+  const hasArtifacts = Boolean(
+    rankedCount
+    || summaryCount
+    || progress?.initial_file_summary_status
+    || progress?.initial_extraction_overview_status
+    || progress?.initial_extraction_overview,
+  );
+
+  if (!hasArtifacts) {
+    return (
+      <div className="extraction-overview-empty">
+        <strong>No initial file understanding yet.</strong>
+        <p>Run initial file understanding after uploading a dataset archive.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="extraction-overview">
+      <div className="extraction-overview-summary">
+        <div>
+          <span>Status</span>
+          <strong>{formatExtractionStage(status || 'unknown')}</strong>
+        </div>
+        <div>
+          <span>Current stage</span>
+          <strong>{formatExtractionStage(progress?.stage || 'not started')}</strong>
+        </div>
+        <div>
+          <span>Ranked files</span>
+          <strong>{rankedCount}</strong>
+        </div>
+        <div>
+          <span>Summaries</span>
+          <strong>{summaryCount} files</strong>
+        </div>
+      </div>
+
+      {progress?.ranked_files?.length ? (
+        <details className="initial-overview-panel">
+          <summary>
+            <div>
+              <span>Ranked files</span>
+              <strong>{progress.ranked_files.length} ranked paths</strong>
+            </div>
+          </summary>
+          <JsonDetails title="File ranking" value={progress.ranked_files} />
+        </details>
+      ) : null}
+
+      {((progress?.initial_file_summaries?.length ?? 0) > 0 || progress?.initial_file_summary_status) ? (
+        <details className="initial-overview-panel" open>
+          <summary>
+            <div>
+              <span>Ranked file summaries</span>
+              <strong>{formatExtractionStage(progress?.initial_file_summary_status || 'not available')}</strong>
+            </div>
+          </summary>
+          {(progress?.initial_file_summaries?.length ?? 0) > 0 ? (
+            <JsonDetails title="Per-file extraction guidance" value={progress?.initial_file_summaries ?? []} />
+          ) : (
+            <p className="muted">No ranked file summaries are available for this run.</p>
+          )}
+        </details>
+      ) : null}
+
+      {(progress?.initial_extraction_overview || progress?.initial_extraction_overview_status) ? (
+        <details className="initial-overview-panel" open>
+          <summary>
+            <div>
+              <span>Initial overview</span>
+              <strong>{formatExtractionStage(progress?.initial_extraction_overview_status || 'not available')}</strong>
+            </div>
+          </summary>
+          {progress?.initial_extraction_overview ? (
+            <JsonDetails title="Run-level extraction guidance" value={progress.initial_extraction_overview} />
+          ) : (
+            <p className="muted">No overview guidance is available for this run.</p>
+          )}
+        </details>
+      ) : null}
+
+      {tokenUsageSummary}
     </div>
   );
 }
@@ -2019,7 +2079,14 @@ function formatTokenCount(value?: number): string {
   return Math.round(numberValue).toLocaleString();
 }
 
-function usageAverage(usage: PatchTokenUsageEntry, unit: 'patch' | 'operation', kind: 'input' | 'output' | 'total'): number {
+type TokenAverageUnit = 'patch' | 'operation' | 'request';
+
+function tokenAverageUnitLabel(unit: TokenAverageUnit): string {
+  return unit === 'request' ? 'model call' : unit;
+}
+
+function usageAverage(usage: PatchTokenUsageEntry, unit: TokenAverageUnit, kind: 'input' | 'output' | 'total'): number {
+  if (unit === 'request') return requestAverage(usage, kind);
   const suffix = unit === 'patch' ? 'patch' : 'operation';
   const key = `average_${kind}_tokens_per_${suffix}` as keyof PatchTokenUsageEntry;
   const preferred = usage[key];
@@ -2059,7 +2126,7 @@ function TokenUsageSummary({
   notesByAgent,
 }: {
   tokenUsage?: PatchTokenUsage | null;
-  averageUnit?: 'patch' | 'operation';
+  averageUnit?: TokenAverageUnit;
   heading?: string;
   agentKeys?: string[];
   budget?: LlmBudget | null;
@@ -2109,7 +2176,7 @@ function TokenUsageSummary({
         {rows.map((row) => (
           <div className={`token-usage-row ${row.key === 'combined' ? 'combined' : ''} ${usageBudgetState(row.usage, budget)}`} key={row.key}>
             <strong>{row.label}</strong>
-            <span>{formatTokenCount(usageAverage(row.usage, averageUnit, 'total'))} avg total / {averageUnit === 'patch' ? 'patch' : 'operation'}</span>
+            <span>{formatTokenCount(usageAverage(row.usage, averageUnit, 'total'))} avg total / {tokenAverageUnitLabel(averageUnit)}</span>
             <small>
               {formatTokenCount(requestAverage(row.usage, 'input'))} context tokens / {formatTokenCount(requestAverage(row.usage, 'output'))} output avg per model call
               {' - '}
@@ -2594,6 +2661,122 @@ function FileViewer({ file, content, chunksByFile, onClose }: {
   return createPortal(viewer, document.body);
 }
 
+function ChunkInspectionPanel({
+  dataPackage,
+  chunksByFile,
+  onViewFile,
+}: {
+  dataPackage?: DataPackageResponse | null;
+  chunksByFile: ChunkResponse[][];
+  onViewFile: (file: FileEntryResponse) => void;
+}) {
+  const fileByPath = new Map((dataPackage?.files ?? []).map((file) => [file.file_path, file]));
+  const chunkGroups = chunksByFile.filter((group) => group.length > 0);
+
+  if (!chunkGroups.length) {
+    return null;
+  }
+
+  return (
+    <div className="file-list chunk-file-list">
+      {chunkGroups.map((group, fileIndex) => {
+        const filePath = group[0]?.file_path ?? `file-${fileIndex + 1}`;
+        const file = fileByPath.get(filePath);
+        const totalIncludedLines = group.reduce((sum, chunk) => sum + chunkLineCount(chunk), 0);
+        const chunkLabel = `${group.length} chunk${group.length === 1 ? '' : 's'}`;
+        const lineLabel = `${totalIncludedLines} included line${totalIncludedLines === 1 ? '' : 's'}`;
+        return (
+          <div
+            className={`file-row ${file ? '' : 'disabled'}`}
+            key={filePath}
+            onClick={file ? () => onViewFile(file) : undefined}
+            title={file ? 'Click to view file content' : undefined}
+          >
+            <span>{filePath}</span>
+            <div className="file-meta">
+              <span className="chunk-badge">{chunkLabel}</span>
+              <small>{lineLabel}</small>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ChunkingStatusPanel({
+  dataPackage,
+  chunkResult,
+  chunksByFile,
+  busy,
+}: {
+  dataPackage?: DataPackageResponse | null;
+  chunkResult?: ChunkRequestResponse | null;
+  chunksByFile: ChunkResponse[][];
+  busy: BusyKey | null;
+}) {
+  const chunkGroups = chunksByFile.filter((group) => group.length > 0);
+  const visibleChunks = chunkGroups.flat().length;
+  const fileCount = dataPackage?.files.length ?? 0;
+  const chunkedFiles = chunkGroups.length;
+  const includedLines = chunkGroups
+    .flat()
+    .reduce((sum, chunk) => sum + chunkLineCount(chunk), 0);
+  const status = busy === 'chunk'
+    ? 'starting'
+    : chunkResult?.status ?? (visibleChunks > 0 ? 'completed' : 'unknown');
+  const isRunning = status === 'running' || status === 'starting';
+  const statusLabel = status === 'unknown' ? 'not started' : formatExtractionStage(status);
+  const statusDetail = isRunning
+    ? 'Chunking is active. Saved chunks may stay at 0 until a file finishes.'
+    : status === 'completed'
+      ? 'Chunking completed and saved chunks are available for inspection.'
+      : status === 'crashed'
+        ? 'Chunking crashed before producing an inspectable chunk list.'
+        : status === 'cancelled'
+          ? 'Chunking was cancelled before completion.'
+          : 'No chunking run is active for this dataset.';
+  const embeddingInput = isRunning
+    ? 'Currently embedding retained text-line windows with the configured buffer size.'
+    : status === 'completed'
+      ? 'Embedding already ran over retained text-line windows; saved chunks are shown below.'
+      : 'Nothing is being embedded right now.';
+  const pipelineDetail = 'During semantic chunking, SIMONE filters noisy lines, combines each retained line with neighboring retained lines, embeds those windows, then uses adjacent embedding distances to choose chunk breakpoints.';
+
+  return (
+    <div className={`chunking-status-panel ${isRunning ? 'running' : status}`}>
+      <div className="chunking-status-grid">
+        <div>
+          <span>Status</span>
+          <strong>{statusLabel}</strong>
+        </div>
+        <div>
+          <span>Visible chunks</span>
+          <strong>{visibleChunks}</strong>
+        </div>
+        <div>
+          <span>Files covered</span>
+          <strong>{chunkedFiles}/{fileCount || 'unknown'}</strong>
+        </div>
+        <div>
+          <span>Included lines</span>
+          <strong>{includedLines}</strong>
+        </div>
+      </div>
+      <div className="chunking-status-copy">
+        <strong>{statusDetail}</strong>
+        <p>{embeddingInput}</p>
+        <small>{pipelineDetail}</small>
+      </div>
+    </div>
+  );
+}
+
+function chunkLineCount(chunk: ChunkResponse): number {
+  if (chunk.filtered_line_indices?.length) return chunk.filtered_line_indices.length;
+  return Math.max(0, chunk.end_idx - chunk.start_idx + 1);
+}
+
 export function App() {
   const [packages, setPackages] = useState<DataPackageResponse[]>([]);
   const [profiles, setProfiles] = useState<ProfileManifestResponse[]>([]);
@@ -2640,7 +2823,12 @@ export function App() {
     }
     return counts;
   }, [chunksByFile]);
-  const isPatching = patchStatus === 'running';
+  const isInitialContextStage = Boolean(
+    patchProgress?.stage?.startsWith('initial_')
+    || patchProgress?.stage === 'file_ranking',
+  );
+  const isInitialContextRunning = patchStatus === 'running' && isInitialContextStage;
+  const isPatching = patchStatus === 'running' && !isInitialContextStage;
   const extractionLimitReachedChunkCount = useMemo(() => {
     const maxContextLength = llmBudget?.max_context_length ?? 0;
     if (maxContextLength <= 0) return 0;
@@ -2670,9 +2858,14 @@ export function App() {
     patchProgress?.interim_context
     || patchProgress?.chunk_results?.some((chunk) => chunk.status === 'completed' || chunk.extraction_context),
   );
+  const hasInitialContextArtifacts = Boolean(
+    patchProgress?.initial_file_summary_status
+    && patchProgress?.initial_extraction_overview_status,
+  );
   const extractionCanResume = Boolean(
     selectedPackageId
     && selectedProfile
+    && hasInitialContextArtifacts
     && !busy
     && !isPatching
     && (
@@ -2958,7 +3151,7 @@ export function App() {
       setContext(null);
       setGeneratedFinalDraft(null);
       setCuratedDocument(null);
-      setMessage('Dataset uploaded. Create chunks next.');
+      setMessage('Dataset uploaded. Run initial file understanding next.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Upload failed.');
     } finally {
@@ -2969,7 +3162,7 @@ export function App() {
     }
   }
 
-  async function onChunk(params?: { replace_existing_chunks: boolean; buffer_window_size: number; semantic_chunking_threshold: number; protected_line_indices: Record<string, number[]>; text_quality_config: TextQualityConfig }) {
+  async function onChunk(params?: { replace_existing_chunks: boolean; buffer_window_size: number; semantic_chunking_threshold: number; protected_line_indices: Record<string, number[]>; text_quality_config: TextQualityConfig; embedding_num_gpu?: number }) {
     if (!selectedPackageId) return;
     const packageId = selectedPackageId;
     setBusy('chunk');
@@ -2981,6 +3174,7 @@ export function App() {
         semantic_chunking_threshold: params?.semantic_chunking_threshold,
         protected_line_indices: params?.protected_line_indices,
         text_quality_config: params?.text_quality_config,
+        embedding_num_gpu: params?.embedding_num_gpu,
       });
       if (selectedPackageIdRef.current !== packageId) return;
       setChunkResult(result);
@@ -3045,6 +3239,37 @@ export function App() {
     setFileContent(null);
   }
 
+  async function onInitialContext(forceRerun = false) {
+    if (!selectedPackageId) return;
+    const packageId = selectedPackageId;
+    setBusy('initial-context');
+    try {
+      if (forceRerun) {
+        setContext(null);
+        setGeneratedFinalDraft(null);
+        setCuratedDocument(null);
+      }
+      const response = await runInitialContext({
+        data_package_id: packageId,
+        force_rerun: forceRerun,
+      });
+      if (selectedPackageIdRef.current !== packageId) return;
+      setPatchStatus(response.status);
+      setPatchProgress(response.progress ? { ...response.progress } : null);
+      setTokenUsage(await getTokenUsage(packageId));
+      setMessage(
+        response.status === 'running'
+          ? 'Initial file understanding is running.'
+          : 'Initial file understanding is complete.',
+      );
+    } catch (error) {
+      if (selectedPackageIdRef.current !== packageId) return;
+      setMessage(error instanceof Error ? error.message : 'Initial file understanding failed.');
+    } finally {
+      if (selectedPackageIdRef.current === packageId) setBusy(null);
+    }
+  }
+
   async function onContext(options: { resume?: boolean } = {}) {
     if (!selectedPackageId) return;
     const packageId = selectedPackageId;
@@ -3052,6 +3277,10 @@ export function App() {
     try {
       if (!selectedProfile) {
         setMessage('Select a profile before running extraction.');
+        return;
+      }
+      if (!hasInitialContextArtifacts) {
+        setMessage('Run initial file understanding before chunk extraction.');
         return;
       }
       setContext(null);
@@ -3384,9 +3613,12 @@ export function App() {
     if (!selectedPackageId) return;
     const packageId = selectedPackageId;
     try {
-      const [{ status, progress }] = await Promise.all([
-        getPatchProgress(packageId),
-      ]);
+      const initialProgress = await getInitialContextProgress(packageId);
+      const extractionProgress = await getPatchProgress(packageId);
+      const status = extractionProgress.status === 'unknown'
+        ? initialProgress.status
+        : extractionProgress.status;
+      const progress = extractionProgress.progress ?? initialProgress.progress;
       if (selectedPackageIdRef.current !== packageId) return;
       const completedResult = status === 'completed'
         ? await getExtractionResult(packageId)
@@ -3427,14 +3659,17 @@ export function App() {
     setBusy('load');
     void (async () => {
       try {
-        const [ctx, generatedResult, curatedResult, { status, progress }, chunkStatus, usage] = await Promise.all([
+        const [ctx, generatedResult, curatedResult, initialRun, extractionRun, chunkStatus, usage] = await Promise.all([
           getExistingInitialContext(packageId),
           getExistingGeneratedFinalDraft(packageId),
           getExistingCuratedDocument(packageId),
+          getInitialContextProgress(packageId),
           getPatchProgress(packageId),
           getChunkStatus(packageId),
           getTokenUsage(packageId),
         ]);
+        const status = extractionRun.status === 'unknown' ? initialRun.status : extractionRun.status;
+        const progress = extractionRun.progress ?? initialRun.progress;
         const chunks = chunkStatus.status !== 'unknown' || chunkStatus.has_chunks
           ? await getDataPackageChunks(packageId)
           : [];
@@ -3614,13 +3849,10 @@ export function App() {
         <section className="workflow">
           <StepPanel
             number="01"
-            title="Upload dataset and create chunks"
-            description="The archive is stored as a data package. Chunking prepares the package for later patch and enrichment stages."
+            title="Upload dataset"
+            description="The archive is stored as a data package. File contents can be inspected before running any extraction stage."
             active
           >
-              <div className="actions">
-                <button onClick={() => setChunkingDialogOpen(true)} disabled={!selectedPackageId || !!busy}>{busy === 'chunk' ? 'Checking...' : 'Configure Chunking'}</button>
-              </div>
               {selectedPackage && (
                 <div className="file-list">
                   {selectedPackage.files.map((file) => {
@@ -3633,11 +3865,10 @@ export function App() {
                           <small>{formatBytes(file.byte_size)}</small>
                         </div>
                       </div>
-                    );
-                  })}
+                  );
+                })}
                 </div>
               )}
-              {chunkResult && <p className="muted">Chunk status: <strong>{chunkResult.status}</strong> - {chunkResult.chunks.flat().length} chunks visible</p>}
               {viewingFile && fileContent !== null && (
                 <FileViewer
                   file={viewingFile}
@@ -3646,6 +3877,52 @@ export function App() {
                   onClose={closeFileViewer}
                 />
               )}
+          </StepPanel>
+
+          <StepPanel
+            number="02"
+            title="Initial file understanding"
+            description="Rank files, summarize the top files, and build a profile-independent run overview before chunking."
+          >
+              <div className="actions">
+                <button onClick={() => void onInitialContext(Boolean(hasInitialContextArtifacts))} disabled={!selectedPackageId || !!busy || isInitialContextRunning || isPatching}>
+                  {busy === 'initial-context' ? 'Running...' : hasInitialContextArtifacts ? 'Rerun initial overview' : 'Run initial overview'}
+                </button>
+              </div>
+              <InitialFileUnderstandingPanel
+                progress={patchProgress}
+                status={patchStatus}
+                tokenUsageSummary={(
+                  <TokenUsageSummary
+                    tokenUsage={tokenUsage}
+                    averageUnit="request"
+                    heading="Initial file understanding token usage"
+                    agentKeys={['file_ranking', 'initial_file_summary', 'initial_extraction_overview', 'initial_extraction_overview_fallback']}
+                    budget={llmBudget}
+                  />
+                )}
+              />
+          </StepPanel>
+
+          <StepPanel
+            number="03"
+            title="Create chunks"
+            description="Chunking prepares file text for later one-shot extraction calls."
+          >
+              <div className="actions">
+                <button onClick={() => setChunkingDialogOpen(true)} disabled={!selectedPackageId || !!busy}>{busy === 'chunk' ? 'Checking...' : 'Configure chunking'}</button>
+              </div>
+              <ChunkingStatusPanel
+                dataPackage={selectedPackage}
+                chunkResult={chunkResult}
+                chunksByFile={chunksByFile}
+                busy={busy}
+              />
+              <ChunkInspectionPanel
+                dataPackage={selectedPackage}
+                chunksByFile={chunksByFile}
+                onViewFile={(file) => void onViewFile(file)}
+              />
               <ChunkingDialog
                 isOpen={chunkingDialogOpen}
                 packageId={selectedPackageId}
@@ -3660,13 +3937,13 @@ export function App() {
           </StepPanel>
 
           <StepPanel
-            number="02"
-            title="Extraction context overview"
-            description="Rank files, extract structured context from each chunk, and track extraction results as they are produced."
+            number="04"
+            title="Chunk extraction context"
+            description="Extract structured machine context from chunks using the initial overview and each file summary as orientation."
           >
               <div className="actions">
-                <button onClick={() => void onContext()} disabled={!selectedPackageId || !!busy || isPatching}>
-                  {isPatching ? 'Extraction running...' : busy === 'context' ? 'Extracting...' : hasPersistedExtractionState || context ? 'Re-extract context overview' : 'Extract context overview'}
+                <button onClick={() => void onContext()} disabled={!selectedPackageId || !selectedProfile || !hasChunks || !hasInitialContextArtifacts || !!busy || isPatching}>
+                  {isPatching ? 'Extraction running...' : busy === 'context' ? 'Extracting...' : hasPersistedExtractionState || context ? 'Re-extract chunk context' : 'Extract chunk context'}
                 </button>
                 {isPatching && (
                   <button className="ghost" onClick={() => void onPauseExtraction()} disabled={!selectedPackageId || busy === 'pause'}>
@@ -3691,7 +3968,6 @@ export function App() {
                 </div>
               )}
               <ExtractionContextOverview
-                rankedFiles={patchProgress?.ranked_files ?? []}
                 chunkResults={patchProgress?.chunk_results ?? []}
                 currentChunk={patchProgress?.current_chunk ?? null}
                 chunksByFile={chunksByFile}
@@ -3708,7 +3984,7 @@ export function App() {
                     tokenUsage={tokenUsage}
                     averageUnit="operation"
                     heading="Extraction context token usage"
-                    agentKeys={['file_ranking', 'chunk_extraction', 'chunk_extraction_repair', 'quantity_vocab_selection', 'qualitative_vocab_selection', 'profile_projection']}
+                    agentKeys={['chunk_extraction', 'chunk_extraction_repair', 'quantity_vocab_selection', 'qualitative_vocab_selection', 'profile_projection']}
                     budget={llmBudget}
                     notesByAgent={extractionTokenUsageNotes}
                   />
@@ -3720,7 +3996,7 @@ export function App() {
           </StepPanel>
 
           <StepPanel
-            number="03"
+            number="05"
             title="Generated and curated profile"
             description="Build the machine-generated final draft, inspect projection issues, and curate the separate user document."
             actions={hasProfileArtifacts && (

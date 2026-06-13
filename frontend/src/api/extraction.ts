@@ -141,22 +141,10 @@ export type ExtractionOverview = {
   source_fingerprint: string;
   source_file_paths: string[];
   inspected_files: ExtractionOverviewInspectedFile[];
-  dataset_theme: string;
-  summary: string;
   file_roles: ExtractionOverviewFileRole[];
-  likely_activities: string[];
-  likely_entities: string[];
-  likely_resources: string[];
-  likely_methods: string[];
-  instrument_or_device_names: string[];
-  analytical_techniques: string[];
-  sample_identifiers: string[];
-  compound_names: string[];
-  metadata_sources: string[];
-  keywords: string[];
-  parameter_attachment_guidance: string[];
-  known_traps: string[];
-  uncertainty_notes: string[];
+  observed_signals: string[];
+  suggested_interpretations: string[];
+  conflicts_or_uncertainties: string[];
 };
 
 export type ExtractionVocabQueryRecord = {
@@ -337,6 +325,23 @@ export async function runExtraction(input: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   }));
+}
+
+export async function runInitialContext(input: {
+  data_package_id: string;
+  force_rerun?: boolean;
+}): Promise<{ status: PatchTaskStatus; progress?: ExtractionRunProgress | null }> {
+  return readJson(await fetch(apiBaseUrl + '/extraction/run/' + encodeURIComponent(input.data_package_id) + '/initial-context', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ force_rerun: input.force_rerun ?? false }),
+  }));
+}
+
+export async function getInitialContextProgress(data_package_id: string): Promise<{ status: PatchTaskStatus; progress?: ExtractionRunProgress | null }> {
+  const response = await fetch(apiBaseUrl + '/extraction/run/' + encodeURIComponent(data_package_id) + '/initial-context/progress');
+  const payload = await readJson(await response) as { status: PatchTaskStatus; progress?: ExtractionRunProgress | null };
+  return { status: payload.status, progress: payload.progress ?? null };
 }
 
 export async function pauseExtraction(data_package_id: string): Promise<{ status: PatchTaskStatus; progress?: ExtractionRunProgress | null }> {
