@@ -205,6 +205,42 @@ def _compose_status(env_file: Path, compose_files: list[Path]) -> str:
     return result.stdout.strip() or "(no containers found)"
 
 
+def _compose_running_services(env_file: Path, compose_files: list[Path]) -> set[str]:
+    result = _run(
+        _compose_base_cmd(env_file, compose_files) + ["ps", "--services", "--status", "running"],
+        cwd=REPO_ROOT,
+        check=False,
+    )
+    if result.returncode == 0:
+        return {line.strip() for line in result.stdout.splitlines() if line.strip()}
+
+    fallback = _run(
+        _compose_base_cmd(env_file, compose_files) + ["ps", "--format", "{{.Service}}\t{{.Status}}"],
+        cwd=REPO_ROOT,
+        check=False,
+    )
+    running: set[str] = set()
+    for line in fallback.stdout.splitlines():
+        if "\t" not in line:
+            continue
+        service, status = line.split("\t", 1)
+        if status.strip().lower().startswith("up"):
+            running.add(service.strip())
+    return running
+
+
+def _command_output_tail(result: subprocess.CompletedProcess, max_lines: int = 40) -> str:
+    text = "\n".join(
+        part.strip()
+        for part in (result.stdout, result.stderr)
+        if isinstance(part, str) and part.strip()
+    )
+    if not text:
+        return "(no command output)"
+    lines = text.splitlines()
+    return "\n".join(lines[-max_lines:])
+
+
 def _compose_has_containers(env_file: Path, compose_files: list[Path]) -> bool:
     result = _run(
         _compose_base_cmd(env_file, compose_files) + ["ps", "-a", "--format", "{{.ID}}"],
@@ -707,6 +743,41 @@ def _build_compose_cmd(
     return cmd
 
 
+def _compose_up_or_continue_if_running(
+    env_file: Path,
+    compose_files: list[Path],
+    services: list[str],
+    *,
+    build: bool = False,
+    env: Optional[dict[str, str]] = None,
+) -> None:
+    if not services:
+        return
+    cmd = _build_compose_cmd(env_file, compose_files, action="up", services=services, build=build)
+    result = _run(cmd, cwd=REPO_ROOT, check=False, env=env)
+    if result.returncode == 0:
+        return
+
+    running_services = _compose_running_services(env_file, compose_files)
+    missing_services = [service for service in services if service not in running_services]
+    if not missing_services:
+        typer.echo(
+            "Docker Compose reported an error, but all requested containers are already running. Continuing.",
+            err=True,
+        )
+        typer.echo("Recent Compose output:", err=True)
+        typer.echo(_command_output_tail(result, max_lines=20), err=True)
+        return
+
+    typer.echo(
+        "Docker Compose could not start required services: "
+        + ", ".join(missing_services),
+        err=True,
+    )
+    typer.echo(_command_output_tail(result), err=True)
+    raise typer.Exit(result.returncode or 1)
+
+
 def _find_pids_by_cmdline(pattern: str) -> list[int]:
     """Find Windows process IDs whose command line contains the given pattern."""
     if sys.platform != "win32":
@@ -897,11 +968,16 @@ def dev(
         if not _docker_available():
             typer.echo("Error: Docker is not running. Please start Docker Desktop.", err=True)
             raise typer.Exit(1)
-        cmd = _build_compose_cmd(ENV_FILE, compose_files, action="up", services=services, build=True)
         container_label = " + ".join(services)
         typer.echo(f"Starting {container_label} containers ...")
         compose_env = {"VITE_API_BASE_URL": API_BASE} if use_docker_frontend else None
-        _run(cmd, cwd=REPO_ROOT, env=compose_env)
+        _compose_up_or_continue_if_running(
+            ENV_FILE,
+            compose_files,
+            services,
+            build=True,
+            env=compose_env,
+        )
     else:
         typer.echo("Using external Neo4j/Ollama services from .env.")
 

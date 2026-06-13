@@ -718,6 +718,22 @@ function ExtractionContextOverview({
         </div>
       </div>
 
+      {((progress?.initial_file_summaries?.length ?? 0) > 0 || progress?.initial_file_summary_status) ? (
+        <details className="initial-overview-panel" open>
+          <summary>
+            <div>
+              <span>Ranked file summaries</span>
+              <strong>{formatExtractionStage(progress?.initial_file_summary_status || 'not available')}</strong>
+            </div>
+          </summary>
+          {(progress?.initial_file_summaries?.length ?? 0) > 0 ? (
+            <JsonDetails title="Per-file extraction guidance" value={progress?.initial_file_summaries ?? []} />
+          ) : (
+            <p className="muted">No ranked file summaries are available for this run.</p>
+          )}
+        </details>
+      ) : null}
+
       {(progress?.initial_extraction_overview || progress?.initial_extraction_overview_status) ? (
         <details className="initial-overview-panel" open>
           <summary>
