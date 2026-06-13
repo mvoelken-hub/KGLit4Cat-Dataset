@@ -524,7 +524,7 @@ class ExtractionDomainTests(unittest.TestCase):
             ExtractionContext,
             build_system_prompt_with_overview,
         )
-        from app.domain.extraction.overview import ExtractionOverview
+        from app.domain.extraction.overview import ExtractionFileSummary, ExtractionOverview
 
         same_file = ExtractionContext(extraction_objects=[
             TracedExtractionObject(
@@ -538,17 +538,27 @@ class ExtractionDomainTests(unittest.TestCase):
             summary="Attach NMR parameters to an acquisition run.",
             known_traps=["PLW1 is a pulse power parameter, not a sample."],
         )
+        file_summary = ExtractionFileSummary(
+            file_path="same-file.dx",
+            rank=1,
+            data_format="JCAMP-DX-like spectroscopy export",
+            parameter_terms=["PULPROG", "PLW1"],
+            known_traps=["Parameter labels should attach to the acquisition context."],
+        )
 
         result = build_system_prompt_with_overview(
             base_prompt=EXTRACTION_CONTEXT_SYSTEM_PROMPT,
             overview=overview,
             overview_status="structured",
+            file_summary=file_summary,
             same_file_context=same_file,
             num_ctx=8192,
         )
 
         self.assertIn("Initial extraction overview", result)
         self.assertIn("1H NMR package", result)
+        self.assertIn("Current file summary", result)
+        self.assertIn("JCAMP-DX-like spectroscopy export", result)
         self.assertIn("Earlier extracted objects from this same file", result)
         self.assertIn("same-file.dx", result)
         self.assertIn("orientation only", result)

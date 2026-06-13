@@ -3,6 +3,8 @@ from typing import Any, Protocol
 from app.domain.extraction import (
     CurationLedgerRecord,
     DraftValidationResult,
+    ExtractionFileSummary,
+    InitialFileSummaryStatus,
     ExtractionOverview,
     ExtractionOverviewStatus,
     ExtractionContext,
@@ -33,7 +35,28 @@ class ExtractionOutputRepository(Protocol):
     ) -> None:
         ...
 
-    def load_extraction_result(self, workflow_id: str) -> ExtractionRunResult:
+    def load_extraction_result(
+        self,
+        workflow_id: str,
+        chat_model: str | None = None,
+    ) -> ExtractionRunResult:
+        ...
+
+    def save_initial_file_summaries(
+        self,
+        *,
+        workflow_id: str,
+        summaries: list[ExtractionFileSummary],
+        status: InitialFileSummaryStatus | None,
+        chat_model: str | None = None,
+    ) -> None:
+        ...
+
+    def load_initial_file_summaries(
+        self,
+        workflow_id: str,
+        chat_model: str | None = None,
+    ) -> tuple[list[ExtractionFileSummary], InitialFileSummaryStatus | None]:
         ...
 
     def save_initial_extraction_overview(
@@ -158,7 +181,11 @@ class ExtractionOutputRepository(Protocol):
     ) -> None:
         ...
 
-    def load_extraction_run_state(self, workflow_id: str) -> ExtractionRunState:
+    def load_extraction_run_state(
+        self,
+        workflow_id: str,
+        chat_model: str | None = None,
+    ) -> ExtractionRunState:
         ...
 
     def save_extraction_warnings(

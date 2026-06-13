@@ -48,6 +48,8 @@ export type ExtractionRunProgress = {
   projection_ledger?: ProjectionLedgerRecord[];
   field_completion_ledger?: FieldCompletionLedgerRecord[];
   curation_ledger?: CurationLedgerRecord[];
+  initial_file_summaries?: ExtractionFileSummary[];
+  initial_file_summary_status?: InitialFileSummaryStatus | null;
   initial_extraction_overview?: ExtractionOverview | null;
   initial_extraction_overview_status?: ExtractionOverviewStatus | null;
   vocab_query_config?: ExtractionVocabQueryConfig;
@@ -101,6 +103,25 @@ export type ExtractionChunkResult = ExtractionChunkRef & {
 };
 
 export type ExtractionOverviewStatus = 'structured' | 'unstructured_fallback' | 'failed' | string;
+export type ExtractionFileSummaryStatus = 'summarized' | 'failed' | string;
+export type InitialFileSummaryStatus = 'completed' | 'partial' | 'failed' | string;
+
+export type ExtractionFileSummary = {
+  source_fingerprint: string;
+  file_path: string;
+  rank: number;
+  status: ExtractionFileSummaryStatus;
+  data_format: string;
+  data_characteristics: string[];
+  explicit_purpose: string;
+  purpose_evidence: string[];
+  metadata_signals: string[];
+  detected_identifiers: string[];
+  instrument_or_software_terms: string[];
+  parameter_terms: string[];
+  uncertainty_notes: string[];
+  known_traps: string[];
+};
 
 export type ExtractionOverviewFileRole = {
   file_path: string;
@@ -230,6 +251,8 @@ export type PatchProgress = ExtractionRunProgress & {
 export type ExtractionRunResult = {
   generated_final_draft: Record<string, unknown>;
   machine_extraction_context: Record<string, unknown>;
+  initial_file_summaries?: ExtractionFileSummary[];
+  initial_file_summary_status?: InitialFileSummaryStatus | null;
   initial_extraction_overview?: ExtractionOverview | null;
   initial_extraction_overview_status?: ExtractionOverviewStatus | null;
   curated_document?: Record<string, unknown> | null;

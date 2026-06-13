@@ -11,6 +11,8 @@ from app.domain.extraction import (
     CurationLedgerRecord,
     DraftValidationResult,
     ExtractionContext,
+    ExtractionFileSummary,
+    InitialFileSummaryStatus,
     ExtractionOverview,
     ExtractionOverviewStatus,
     ExtractionRunResult,
@@ -25,6 +27,7 @@ EXTRACTION_RESULT_FILE = "extraction_result.json"
 EXTRACTION_RUN_STATE_FILE = "extraction_run_state.json"
 EXTRACTION_WARNINGS_FILE = "extraction_warnings.json"
 TOKEN_USAGE_FILE = "token_usage.json"
+INITIAL_FILE_SUMMARIES_FILE = "initial_file_summaries.json"
 INITIAL_EXTRACTION_OVERVIEW_FILE = "initial_extraction_overview.json"
 GENERATED_FINAL_DRAFT_FILE = "generated_final_draft.json"
 CURATED_DOCUMENT_FILE = "curated_document.json"
@@ -63,6 +66,12 @@ class FileSystemExtractionOutputRepository:
         workflow_id: str,
         result: ExtractionRunResult,
     ) -> None:
+        self.save_initial_file_summaries(
+            workflow_id=workflow_id,
+            summaries=result.initial_file_summaries,
+            status=result.initial_file_summary_status,
+            chat_model=result.chat_model,
+        )
         self.save_initial_extraction_overview(
             workflow_id=workflow_id,
             overview=result.initial_extraction_overview,
@@ -113,6 +122,46 @@ class FileSystemExtractionOutputRepository:
                 f"Extraction result output not found for workflow '{workflow_id}'."
             )
         return ExtractionRunResult.model_validate(self._read_json_file(path))
+
+    def save_initial_file_summaries(
+        self,
+        *,
+        workflow_id: str,
+        summaries: list[ExtractionFileSummary],
+        status: InitialFileSummaryStatus | None,
+        chat_model: str | None = None,
+    ) -> None:
+        self._write_json_file(
+            self._workflow_dir(workflow_id, chat_model) / INITIAL_FILE_SUMMARIES_FILE,
+            {
+                "status": status,
+                "summaries": [summary.model_dump(mode="json") for summary in summaries],
+            },
+        )
+
+    def load_initial_file_summaries(
+        self,
+        workflow_id: str,
+        chat_model: str | None = None,
+    ) -> tuple[list[ExtractionFileSummary], InitialFileSummaryStatus | None]:
+        path = self._workflow_dir(workflow_id, chat_model) / INITIAL_FILE_SUMMARIES_FILE
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Initial file summaries not found for workflow '{workflow_id}'."
+            )
+        payload = self._read_json_file(path)
+        if not isinstance(payload, dict):
+            raise ValueError("Initial file summaries artifact is not a JSON object.")
+        summaries_payload = payload.get("summaries")
+        summaries = (
+            [ExtractionFileSummary.model_validate(item) for item in summaries_payload]
+            if isinstance(summaries_payload, list)
+            else []
+        )
+        status = payload.get("status")
+        if status not in {"completed", "partial", "failed", None}:
+            status = "failed"
+        return summaries, status
 
     def save_initial_extraction_overview(
         self,

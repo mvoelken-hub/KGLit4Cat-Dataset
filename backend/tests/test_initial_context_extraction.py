@@ -10,6 +10,7 @@ from app.domain.extraction import (
     DefinedTerm,
     ExtractionChunkResult,
     ExtractionContext,
+    ExtractionFileSummary,
     ExtractionOverview,
     ExtractionNormalization,
     ExtractionRunResult,
@@ -127,6 +128,8 @@ class FakeOutputRepository:
         self.contexts: list[ExtractionContext] = []
         self.result: ExtractionRunResult | None = None
         self.run_state: ExtractionRunState | None = None
+        self.initial_file_summaries: list[ExtractionFileSummary] = []
+        self.initial_file_summary_status = None
         self.initial_extraction_overview = None
         self.initial_extraction_overview_status = None
         self.generated_final_draft: dict | None = None
@@ -149,6 +152,8 @@ class FakeOutputRepository:
 
     def save_extraction_result(self, *, workflow_id: str, result: ExtractionRunResult):
         self.result = result
+        self.initial_file_summaries = result.initial_file_summaries
+        self.initial_file_summary_status = result.initial_file_summary_status
         self.initial_extraction_overview = result.initial_extraction_overview
         self.initial_extraction_overview_status = result.initial_extraction_overview_status
         self.generated_final_draft = result.generated_final_draft
@@ -165,6 +170,22 @@ class FakeOutputRepository:
         if self.result is None:
             raise FileNotFoundError
         return self.result
+
+    def save_initial_file_summaries(
+        self,
+        *,
+        workflow_id: str,
+        summaries,
+        status,
+        chat_model: str | None = None,
+    ):
+        self.initial_file_summaries = summaries
+        self.initial_file_summary_status = status
+
+    def load_initial_file_summaries(self, workflow_id: str, chat_model: str | None = None):
+        if self.initial_file_summary_status is None:
+            raise FileNotFoundError
+        return self.initial_file_summaries, self.initial_file_summary_status
 
     def save_initial_extraction_overview(
         self,
@@ -256,6 +277,8 @@ class FakeOutputRepository:
         self.contexts = []
         self.result = None
         self.run_state = None
+        self.initial_file_summaries = []
+        self.initial_file_summary_status = None
         self.initial_extraction_overview = None
         self.initial_extraction_overview_status = None
         self.generated_final_draft = None
@@ -460,6 +483,66 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(previews[1].first_lines[0], "a-0")
         self.assertEqual(previews[1].first_lines[-1], "a-79")
 
+    async def test_initial_file_summaries_use_budgeted_windows_and_sanitize_purpose(self):
+        service, _, output_repository = make_service([[make_chunk()]])
+        service.ollama_client.ollama_client = SimpleNamespace()  # type: ignore[attr-defined]
+        content = (
+            "BEGIN JCAMP-DX ##TITLE=HMS-Q11-p\n"
+            + ("middle spectral data\n" * 800)
+            + "END ##$PULPROG=zg30 ##$PLW1=12\n"
+        )
+        data_package = DataPackage(
+            file_name="nmr-package",
+            files=[
+                FileEntry(
+                    file_path="HMS-Q11-p_10.dx",
+                    file_name="HMS-Q11-p_10.dx",
+                    file_extension=".dx",
+                    raw_content=content.encode(),
+                )
+            ],
+        )
+        ranking = FileRankingResult(files=[RankedFile(rank=1, file_path="HMS-Q11-p_10.dx")])
+        state = ExtractionRunState(profile_identifier="profile")
+
+        async def fake_generate(*_args, **kwargs):
+            self.assertIs(kwargs["output_type"], ExtractionFileSummary)
+            self.assertIn('"label":"beginning"', kwargs["prompt"])
+            self.assertIn('"label":"middle"', kwargs["prompt"])
+            self.assertIn('"label":"end"', kwargs["prompt"])
+            return CompletionResult(
+                output=ExtractionFileSummary(
+                    file_path="made-up.py",
+                    rank=5,
+                    data_format="JCAMP-DX spectroscopy export",
+                    explicit_purpose="Stores final NMR evidence.",
+                    parameter_terms=["PULPROG", "PLW1"],
+                ),
+                usage=RunUsage(requests=1),
+            )
+
+        warnings: list[str] = []
+        with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
+            await service._generate_initial_file_summaries(
+                data_package_id="package-id",
+                data_package=data_package,
+                ranking=ranking,
+                state=state,
+                warnings=warnings,
+            )
+
+        self.assertEqual(state.initial_file_summary_status, "completed")
+        self.assertEqual(len(state.initial_file_summaries), 1)
+        summary = state.initial_file_summaries[0]
+        self.assertEqual(summary.file_path, "HMS-Q11-p_10.dx")
+        self.assertEqual(summary.rank, 1)
+        self.assertEqual(summary.explicit_purpose, "")
+        self.assertIn("PULPROG", summary.parameter_terms)
+        self.assertTrue(summary.source_fingerprint)
+        self.assertEqual(output_repository.initial_file_summaries, state.initial_file_summaries)
+        self.assertTrue(any("mismatched file_path" in warning for warning in warnings))
+        self.assertTrue(any("without evidence" in warning for warning in warnings))
+
     async def test_initial_overview_generation_stamps_file_provenance(self):
         service, _, output_repository = make_service([[make_chunk()]])
         service.ollama_client.ollama_client = SimpleNamespace()  # type: ignore[attr-defined]
@@ -558,6 +641,14 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
         persisted_with_overview = persisted_without_overview.model_copy(
             update={
+                "initial_file_summaries": [
+                    ExtractionFileSummary(
+                        file_path=chunk.file_path,
+                        rank=1,
+                        data_format="text",
+                    )
+                ],
+                "initial_file_summary_status": "completed",
                 "initial_extraction_overview": ExtractionOverview(
                     summary="overview",
                     source_file_paths=[chunk.file_path],
@@ -1032,6 +1123,14 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             state=ExtractionRunState(
                 profile_identifier="profile",
                 ranked_files=[RankedFile(rank=1, file_path="README.md")],
+                initial_file_summaries=[
+                    ExtractionFileSummary(
+                        file_path="README.md",
+                        rank=1,
+                        data_format="plain text",
+                    )
+                ],
+                initial_file_summary_status="completed",
                 initial_extraction_overview=ExtractionOverview(
                     summary="new-format overview",
                     source_file_paths=["README.md"],
@@ -1086,6 +1185,14 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             state=ExtractionRunState(
                 profile_identifier="profile",
                 ranked_files=[RankedFile(rank=1, file_path="README.md")],
+                initial_file_summaries=[
+                    ExtractionFileSummary(
+                        file_path="README.md",
+                        rank=1,
+                        data_format="plain text",
+                    )
+                ],
+                initial_file_summary_status="completed",
                 initial_extraction_overview=ExtractionOverview(
                     summary="new-format overview",
                     source_file_paths=["README.md"],
@@ -1327,6 +1434,14 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             workflow_id="package-id",
             state=ExtractionRunState(
                 ranked_files=[RankedFile(rank=1, file_path="README.md")],
+                initial_file_summaries=[
+                    ExtractionFileSummary(
+                        file_path="README.md",
+                        rank=1,
+                        data_format="plain text",
+                    )
+                ],
+                initial_file_summary_status="completed",
                 initial_extraction_overview=ExtractionOverview(
                     summary="new-format overview",
                     source_file_paths=["README.md"],

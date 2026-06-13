@@ -4,8 +4,10 @@ from typing import Any, Literal, TypeVar
 from pydantic import BaseModel, Field, model_validator
 
 from app.domain.extraction.overview import (
+    ExtractionFileSummary,
     ExtractionOverview,
     ExtractionOverviewStatus,
+    file_summary_to_prompt_text,
     overview_to_prompt_text,
 )
 
@@ -367,6 +369,7 @@ def build_system_prompt_with_overview(
     overview_status: ExtractionOverviewStatus | None,
     same_file_context: ExtractionContext | None,
     num_ctx: int,
+    file_summary: ExtractionFileSummary | None = None,
     schema_buffer_chars: int = 500,
 ) -> str:
     sections: list[str] = []
@@ -376,12 +379,18 @@ def build_system_prompt_with_overview(
             "\n\nInitial extraction overview (orientation only; do not extract evidence from this text):\n"
             + overview_text
         )
+    file_summary_text = file_summary_to_prompt_text(file_summary)
+    if file_summary_text:
+        sections.append(
+            "\n\nCurrent file summary (orientation only; do not extract evidence from this text):\n"
+            + file_summary_text
+        )
 
     same_file_bullets = _same_file_context_bullets(
         same_file_context,
         max_chars=_same_file_memory_budget(
             base_prompt=base_prompt,
-            overview_text=overview_text,
+            overview_text=overview_text + file_summary_text,
             num_ctx=num_ctx,
             schema_buffer_chars=schema_buffer_chars,
         ),

@@ -8,6 +8,8 @@ from app.domain.extraction.file_ranking import RankedFile
 
 
 ExtractionOverviewStatus = Literal["structured", "unstructured_fallback", "failed"]
+ExtractionFileSummaryStatus = Literal["summarized", "failed"]
+InitialFileSummaryStatus = Literal["completed", "partial", "failed"]
 
 
 class ExtractionOverviewFileRole(BaseModel):
@@ -28,6 +30,47 @@ class ExtractionOverviewInspectedFile(BaseModel):
     byte_size: int | None = None
     chars_read: int = 0
     reason: str = ""
+
+
+class ExtractionFileContentWindow(BaseModel):
+    label: str
+    start_char_idx: int = Field(..., ge=0)
+    end_char_idx: int = Field(..., ge=0)
+    omitted_before_chars: int = Field(default=0, ge=0)
+    omitted_after_chars: int = Field(default=0, ge=0)
+    text: str
+
+
+class ExtractionFileSummary(BaseModel):
+    source_fingerprint: str = Field(
+        "",
+        description="Backend-generated fingerprint of the sampled file content.",
+    )
+    file_path: str
+    rank: int = Field(..., ge=1)
+    status: ExtractionFileSummaryStatus = "summarized"
+    data_format: str = Field(
+        "",
+        description="Obvious file format or syntax visible in the sampled content.",
+    )
+    data_characteristics: list[str] = Field(
+        default_factory=list,
+        description="Observable content characteristics, not inferred dataset intent.",
+    )
+    explicit_purpose: str = Field(
+        "",
+        description="Purpose only when explicitly stated by file content or filename.",
+    )
+    purpose_evidence: list[str] = Field(
+        default_factory=list,
+        description="Short snippets from this file supporting explicit_purpose.",
+    )
+    metadata_signals: list[str] = Field(default_factory=list)
+    detected_identifiers: list[str] = Field(default_factory=list)
+    instrument_or_software_terms: list[str] = Field(default_factory=list)
+    parameter_terms: list[str] = Field(default_factory=list)
+    uncertainty_notes: list[str] = Field(default_factory=list)
+    known_traps: list[str] = Field(default_factory=list)
 
 
 class ExtractionOverview(BaseModel):
@@ -86,7 +129,19 @@ Focus on:
 - traps that would cause bad extraction objects.
 
 Do not invent final metadata.
+Do not mention files that are not present in the ranked files or per-file summaries.
 Fill every field with concise evidence-grounded values. Use empty lists when no entities, relationships, metadata sources, or keywords can be identified.
+"""
+
+
+EXTRACTION_FILE_SUMMARY_SYSTEM_PROMPT = """You are a scientific data archivist summarizing one file from a research artifact bundle.
+Your output is guidance only. It is not extraction evidence for later chunk calls.
+
+Summarize only facts visible in this file's sampled content, filename, or obvious syntax.
+The explicit_purpose field is strict: fill it only when the sampled content or filename directly states the file's purpose. Otherwise leave it empty and add an uncertainty note.
+Data format and data characteristics may be inferred from obvious syntax, extension, and visible content.
+Evidence fields must quote short snippets from this file only.
+Do not invent dataset purpose, instrument names, file roles, sample identities, or software-project files.
 """
 
 
@@ -101,24 +156,61 @@ def build_extraction_overview_prompt(
     data_package_name: str,
     ranked_files: list[RankedFile],
     file_previews: list[ExtractionOverviewFilePreview],
+    file_summaries: list[ExtractionFileSummary] | None = None,
 ) -> str:
     preview_json = ",\n".join(preview.model_dump_json() for preview in file_previews)
     ranked_json = ",\n".join(file.model_dump_json() for file in ranked_files)
+    summary_json = ",\n".join(
+        summary.model_dump_json() for summary in (file_summaries or [])
+    )
+    summary_section = (
+        "Validated per-file summaries JSON:\n"
+        f"[{summary_json}]\n\n"
+        if file_summaries
+        else ""
+    )
     return (
         "Analyze the research artifact archive and extract an ExtractionOverview. "
-        "The backend has listed all ranked files and read the most informative file headers/previews.\n\n"
+        "The backend has listed all ranked files and summarized the top ranked files.\n\n"
         f"Data package name: {data_package_name}\n"
         f"Ranked file count: {len(ranked_files)}\n"
-        f"Inspected preview file count: {len(file_previews)}\n\n"
+        f"Per-file summary count: {len(file_summaries or [])}\n"
+        f"Fallback preview file count: {len(file_previews)}\n\n"
         "Ranked files JSON:\n"
         f"[{ranked_json}]\n\n"
-        "Top ranked raw file previews JSON:\n"
+        f"{summary_section}"
+        "Fallback raw file previews JSON:\n"
         f"[{preview_json}]\n\n"
         "Create an ExtractionOverview that will orient later one-shot chunk extraction calls. "
-        "Use the previews as inspection evidence for this overview, but remember that later extracted "
-        "objects must still be supported by source_text from the current chunk only. "
-        "For each inspected file, describe its likely role and what later chunk extraction should do "
-        "with identifiers, parameters, methods, resources, and metadata found there."
+        "Use the per-file summaries as the primary input and previews only as fallback context when summaries are absent. "
+        "Every file_roles entry must reference a file_path from the ranked files JSON. "
+        "Do not create file roles for missing files. Later extracted objects must still be supported "
+        "by source_text from the current chunk only."
+    )
+
+
+def build_extraction_file_summary_prompt(
+    *,
+    data_package_name: str,
+    rank: int,
+    file_path: str,
+    byte_size: int | None,
+    extracted_char_count: int,
+    content_windows: list[ExtractionFileContentWindow],
+) -> str:
+    windows_json = ",\n".join(window.model_dump_json() for window in content_windows)
+    return (
+        "Summarize one ranked file for later extraction orientation.\n\n"
+        f"Data package name: {data_package_name}\n"
+        f"Rank: {rank}\n"
+        f"File path: {file_path}\n"
+        f"Byte size: {byte_size if byte_size is not None else 'unknown'}\n"
+        f"Extracted character count: {extracted_char_count}\n\n"
+        "Sampled content windows JSON:\n"
+        f"[{windows_json}]\n\n"
+        "Return an ExtractionFileSummary for this exact file_path and rank. "
+        "If the content shows parameter labels such as PLW1, PULPROG, SFO1, TD, D1, or NS, "
+        "list them as parameter_terms and warn that they are settings/labels, not standalone scientific objects."
     )
 
 
@@ -193,3 +285,30 @@ def overview_to_prompt_text(
         if values:
             parts.append(label + ":\n" + "\n".join(f"- {value}" for value in values))
     return "\n\n".join(parts)
+
+
+def file_summary_to_prompt_text(summary: ExtractionFileSummary | None) -> str:
+    if summary is None:
+        return ""
+    parts = [
+        f"File path: {summary.file_path}",
+        f"Rank: {summary.rank}",
+        f"Summary status: {summary.status}",
+    ]
+    if summary.data_format:
+        parts.append(f"Data format: {summary.data_format}")
+    if summary.explicit_purpose:
+        parts.append(f"Explicit purpose: {summary.explicit_purpose}")
+    for label, values in (
+        ("Data characteristics", summary.data_characteristics),
+        ("Purpose evidence", summary.purpose_evidence),
+        ("Metadata signals", summary.metadata_signals),
+        ("Detected identifiers", summary.detected_identifiers),
+        ("Instrument/software terms", summary.instrument_or_software_terms),
+        ("Parameter terms", summary.parameter_terms),
+        ("Known traps", summary.known_traps),
+        ("Uncertainty notes", summary.uncertainty_notes),
+    ):
+        if values:
+            parts.append(label + ":\n" + "\n".join(f"- {value}" for value in values))
+    return "\n".join(parts)

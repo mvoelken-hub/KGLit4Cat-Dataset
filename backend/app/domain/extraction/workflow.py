@@ -8,7 +8,12 @@ from app.core.task_registry import TaskStatus
 from app.domain.extraction.extraction_context import ExtractionContext
 from app.domain.extraction.vocabulary import ExtractionNormalization
 from app.domain.extraction.file_ranking import RankedFile
-from app.domain.extraction.overview import ExtractionOverview, ExtractionOverviewStatus
+from app.domain.extraction.overview import (
+    ExtractionFileSummary,
+    ExtractionOverview,
+    ExtractionOverviewStatus,
+    InitialFileSummaryStatus,
+)
 from app.domain.profiles import ProfileValidationIssue
 from app.domain.semantics import VocabQuery, VocabQueryResult
 
@@ -151,6 +156,8 @@ class ExtractionRunState(BaseModel):
     vocab_query_config: ExtractionVocabQueryConfig = Field(default_factory=ExtractionVocabQueryConfig)
     chat_model: str | None = None
     ranked_files: list[RankedFile] = Field(default_factory=list)
+    initial_file_summaries: list[ExtractionFileSummary] = Field(default_factory=list)
+    initial_file_summary_status: InitialFileSummaryStatus | None = None
     initial_extraction_overview: ExtractionOverview | None = None
     initial_extraction_overview_status: ExtractionOverviewStatus | None = None
     chunk_results: list[ExtractionChunkResult] = Field(default_factory=list)
@@ -174,6 +181,8 @@ class ExtractionRunProgress(BaseModel):
     interim_context: ExtractionContext | None = None
     vocab_query_config: ExtractionVocabQueryConfig = Field(default_factory=ExtractionVocabQueryConfig)
     ranked_files: list[RankedFile] = Field(default_factory=list)
+    initial_file_summaries: list[ExtractionFileSummary] = Field(default_factory=list)
+    initial_file_summary_status: InitialFileSummaryStatus | None = None
     initial_extraction_overview: ExtractionOverview | None = None
     initial_extraction_overview_status: ExtractionOverviewStatus | None = None
     chunk_results: list[ExtractionChunkResult] = Field(default_factory=list)
@@ -210,6 +219,8 @@ class CompleteWorkflowProgress(BaseModel):
 class ExtractionRunResult(BaseModel):
     generated_final_draft: dict[str, Any]
     machine_extraction_context: ExtractionContext
+    initial_file_summaries: list[ExtractionFileSummary] = Field(default_factory=list)
+    initial_file_summary_status: InitialFileSummaryStatus | None = None
     initial_extraction_overview: ExtractionOverview | None = None
     initial_extraction_overview_status: ExtractionOverviewStatus | None = None
     curated_document: dict[str, Any] | None = None

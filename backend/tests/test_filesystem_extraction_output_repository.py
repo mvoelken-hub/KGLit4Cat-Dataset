@@ -6,6 +6,7 @@ from unittest.mock import patch, call
 
 from app.domain.extraction import (
     ExtractionContext,
+    ExtractionFileSummary,
     ExtractionOverview,
     ExtractionRunResult,
     ExtractionRunState,
@@ -50,6 +51,14 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
             result = ExtractionRunResult(
                 generated_final_draft={"id": "generated", "title": "Generated"},
                 machine_extraction_context=ExtractionContext(),
+                initial_file_summaries=[
+                    ExtractionFileSummary(
+                        file_path="dataset_description.txt",
+                        rank=1,
+                        data_format="plain text",
+                    )
+                ],
+                initial_file_summary_status="completed",
                 initial_extraction_overview=ExtractionOverview(
                     dataset_theme="NMR package",
                     summary="Use NMR acquisition context as orientation only.",
@@ -95,6 +104,7 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
 
             for name in [
                 "initial_extraction_overview.json",
+                "initial_file_summaries.json",
                 "generated_final_draft.json",
                 "curated_document.json",
                 "projection_ledger.json",
@@ -106,6 +116,9 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
                 self.assertTrue((workflow_dir / name).exists(), name)
 
             overview, overview_status = repo.load_initial_extraction_overview(workflow_id, chat_model)
+            summaries, summary_status = repo.load_initial_file_summaries(workflow_id, chat_model)
+            self.assertEqual(summary_status, "completed")
+            self.assertEqual(summaries[0].file_path, "dataset_description.txt")
             self.assertEqual(overview_status, "structured")
             self.assertEqual(overview.dataset_theme, "NMR package")
             self.assertEqual(repo.load_generated_final_draft(workflow_id, chat_model)["id"], "generated")
