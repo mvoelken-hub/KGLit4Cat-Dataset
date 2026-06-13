@@ -165,6 +165,13 @@ class OllamaClientWrapperAsyncTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(embedding_client.embed_calls[0]["options"].model_dump(exclude_none=True), {"num_gpu": 0})
 
+    async def test_get_embeddings_accepts_per_call_gpu_override(self):
+        client, _, _, embedding_client, _ = self.make_client()
+
+        await client.get_embeddings(["one"], num_gpu=0)
+
+        self.assertEqual(embedding_client.embed_calls[0]["options"].model_dump(exclude_none=True), {"num_gpu": 0})
+
     def test_update_runtime_config_updates_models_and_limits(self):
         client = OllamaClientWrapper(FakeSettings(), getLogger(__name__))  # type: ignore[arg-type]
 

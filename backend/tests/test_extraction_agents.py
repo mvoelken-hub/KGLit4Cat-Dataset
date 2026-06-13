@@ -534,9 +534,9 @@ class ExtractionDomainTests(unittest.TestCase):
             ),
         ])
         overview = ExtractionOverview(
-            dataset_theme="1H NMR package",
-            summary="Attach NMR parameters to an acquisition run.",
-            known_traps=["PLW1 is a pulse power parameter, not a sample."],
+            observed_signals=["same-file.dx contains spectroscopy-like syntax."],
+            suggested_interpretations=["Attach parameter labels to an acquisition context."],
+            conflicts_or_uncertainties=["PLW1 is a pulse power parameter, not a sample."],
         )
         file_summary = ExtractionFileSummary(
             file_path="same-file.dx",
@@ -556,7 +556,8 @@ class ExtractionDomainTests(unittest.TestCase):
         )
 
         self.assertIn("Initial extraction overview", result)
-        self.assertIn("1H NMR package", result)
+        self.assertIn("same-file.dx contains spectroscopy-like syntax", result)
+        self.assertIn("Attach parameter labels to an acquisition context", result)
         self.assertIn("Current file summary", result)
         self.assertIn("JCAMP-DX-like spectroscopy export", result)
         self.assertIn("Earlier extracted objects from this same file", result)

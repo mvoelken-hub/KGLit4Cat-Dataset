@@ -32,6 +32,7 @@ class ChunkingRequest(BaseModel):
     replace_existing_chunks: bool = Field(False, description="Replace previously persisted chunks with a new chunking run")
     protected_line_indices: dict[str, list[int]] = Field(default_factory=dict, description="Map of file_path -> list of 0-based line indices to always keep regardless of text quality filter")
     text_quality_config: TextQualityConfig | None = Field(None, description="Optional per-request tuning of the text-quality classifier")
+    embedding_num_gpu: int | None = Field(None, ge=-1, le=999, description="Optional Ollama num_gpu override for this chunking run's embedding requests. Use -1 for auto/all GPU and 0 for CPU only.")
 
     @model_validator(mode='before')
     @classmethod

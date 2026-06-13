@@ -13,6 +13,7 @@ from app.api.v1.schemas import (
     ExtractionProgressResponse,
     ExtractionRunRequest,
     ExtractionRunResponse,
+    InitialContextRunRequest,
     VocabQueryConfigUpdateRequest,
     _data_package_response,
     _extraction_result_response,
@@ -145,6 +146,36 @@ async def get_extraction_progress(
     extraction_service: ExtractionService = Depends(get_extraction_service),
 ) -> ExtractionProgressResponse:
     status_value, progress = await extraction_service.get_extraction_progress(
+        data_package_id=data_package_id,
+    )
+    return ExtractionProgressResponse(status=status_value, progress=progress)
+
+
+@router.post("/run/{data_package_id}/initial-context", response_model=ExtractionProgressResponse)
+async def run_initial_context(
+    data_package_id: str,
+    request: InitialContextRunRequest | None = None,
+    extraction_service: ExtractionService = Depends(get_extraction_service),
+) -> ExtractionProgressResponse:
+    try:
+        status_value = await extraction_service.run_initial_context(
+            data_package_id=data_package_id,
+            force_rerun=request.force_rerun if request else False,
+        )
+        _, progress = await extraction_service.get_initial_context_progress(
+            data_package_id=data_package_id,
+        )
+        return ExtractionProgressResponse(status=status_value, progress=progress)
+    except Exception as exc:
+        _raise_extraction_error(exc)
+
+
+@router.get("/run/{data_package_id}/initial-context/progress", response_model=ExtractionProgressResponse)
+async def get_initial_context_progress(
+    data_package_id: str,
+    extraction_service: ExtractionService = Depends(get_extraction_service),
+) -> ExtractionProgressResponse:
+    status_value, progress = await extraction_service.get_initial_context_progress(
         data_package_id=data_package_id,
     )
     return ExtractionProgressResponse(status=status_value, progress=progress)

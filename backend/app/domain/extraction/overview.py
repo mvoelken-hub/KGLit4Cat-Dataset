@@ -86,28 +86,19 @@ class ExtractionOverview(BaseModel):
         default_factory=list,
         description="Files whose extracted text was included in the overview input.",
     )
-    dataset_theme: str = Field(
-        "",
-        description="Short profile-independent description of the package context.",
-    )
-    summary: str = Field(
-        "",
-        description="Compact orientation text for later chunk extraction calls.",
-    )
     file_roles: list[ExtractionOverviewFileRole] = Field(default_factory=list)
-    likely_activities: list[str] = Field(default_factory=list)
-    likely_entities: list[str] = Field(default_factory=list)
-    likely_resources: list[str] = Field(default_factory=list)
-    likely_methods: list[str] = Field(default_factory=list)
-    instrument_or_device_names: list[str] = Field(default_factory=list)
-    analytical_techniques: list[str] = Field(default_factory=list)
-    sample_identifiers: list[str] = Field(default_factory=list)
-    compound_names: list[str] = Field(default_factory=list)
-    metadata_sources: list[str] = Field(default_factory=list)
-    keywords: list[str] = Field(default_factory=list)
-    parameter_attachment_guidance: list[str] = Field(default_factory=list)
-    known_traps: list[str] = Field(default_factory=list)
-    uncertainty_notes: list[str] = Field(default_factory=list)
+    observed_signals: list[str] = Field(
+        default_factory=list,
+        description="Directly visible file/package signals such as extensions, syntax markers, labels, filenames, exact terms, and identifiers.",
+    )
+    suggested_interpretations: list[str] = Field(
+        default_factory=list,
+        description="Plausible but unverified interpretations to guide retrieval and chunk ordering.",
+    )
+    conflicts_or_uncertainties: list[str] = Field(
+        default_factory=list,
+        description="Contradictions, missing modalities, ambiguous labels, and facts that must not be resolved without chunk evidence.",
+    )
 
 
 class ExtractionOverviewFilePreview(BaseModel):
@@ -117,20 +108,27 @@ class ExtractionOverviewFilePreview(BaseModel):
     first_lines: list[str] = Field(default_factory=list)
 
 
-EXTRACTION_OVERVIEW_SYSTEM_PROMPT = """You are a scientific data archivist. Analyze research artifact bundles and extract structured context metadata.
+EXTRACTION_OVERVIEW_SYSTEM_PROMPT = """You are a scientific data archivist creating a conservative package triage map for heterogeneous scientific data.
 Your output is guidance only. It is not evidence. Later extraction calls must still cite source_text from their current chunk.
 
-Focus on:
-- dataset theme and scientific/instrument context;
-- precise instrument or device names, analytical techniques, sample identifiers, compound names, file roles, metadata provenance, keywords, and uncertainty;
-- likely meaningful activities, entities, resources, methods, instruments, and software;
-- concrete per-file guidance for how later chunk calls should interpret each ranked file;
-- how low-level parameters should attach to meaningful objects;
-- traps that would cause bad extraction objects.
+Separate every claim by epistemic status:
+- observed_signals: directly visible file/package signals such as extensions, syntax markers, labels, filenames, exact terms, identifiers, and explicit metadata;
+- suggested_interpretations: plausible but unverified interpretations that can guide retrieval or chunk ordering;
+- conflicts_or_uncertainties: contradictions, missing modalities, ambiguous labels, unsupported links, and facts that must not be resolved at overview stage.
+
+Use broad research-data-management categories rather than dataset-specific examples:
+- experimental data: raw measurements, processed measurements, derived results;
+- metadata: sample identifiers, measurement context, instrument or software settings, timestamps, contributors;
+- workflow/provenance: generation steps, processing history, handovers;
+- relationships: sample-to-measurement, measurement-to-file, raw-to-processed, parameter-to-activity/resource;
+- quality and uncertainty: missing metadata, undocumented uncertainty, inconsistent labels, ambiguous modality.
+
+Focus on file roles, observed syntax, explicit terms, retrieval hints, provenance, and uncertainty. Do not resolve scientific meaning, instrument identity, modality, sample identity, or method identity unless explicitly supported by the summaries/previews.
+When one explicit signal appears inconsistent with another, put that mismatch in conflicts_or_uncertainties. Common examples of mismatch types include instrument term versus measurement modality, file extension versus visible syntax, filename versus content labels, or raw-data versus processed-data role signals. Preserve the unresolved relationship instead of selecting one interpretation.
 
 Do not invent final metadata.
 Do not mention files that are not present in the ranked files or per-file summaries.
-Fill every field with concise evidence-grounded values. Use empty lists when no entities, relationships, metadata sources, or keywords can be identified.
+Fill every field with concise evidence-grounded values. Use empty lists when no file roles, observations, suggested interpretations, or uncertainties can be identified.
 """
 
 
@@ -147,7 +145,7 @@ Do not invent dataset purpose, instrument names, file roles, sample identities, 
 
 EXTRACTION_OVERVIEW_FALLBACK_SYSTEM_PROMPT = """You are a scientific data archivist. Write a compact plain-text orientation for chunk-level metadata extraction.
 The text is guidance only and must not be treated as evidence. Keep it concise and profile-independent.
-Emphasize file roles, likely dataset context, parameter attachment rules, and traps to avoid.
+Emphasize observed file roles, direct file/package signals, cautious suggested interpretations, and unresolved conflicts or limitations.
 """
 
 
@@ -183,6 +181,9 @@ def build_extraction_overview_prompt(
         f"[{preview_json}]\n\n"
         "Create an ExtractionOverview that will orient later one-shot chunk extraction calls. "
         "Use the per-file summaries as the primary input and previews only as fallback context when summaries are absent. "
+        "Treat this as package triage, not final scientific interpretation. "
+        "Populate observed_signals, suggested_interpretations, and conflicts_or_uncertainties separately. "
+        "If explicit metadata and file syntax point in different scientific directions, preserve the conflict instead of resolving it; for example, do not connect an instrument term to a technique when the summaries only show them as separate signals. "
         "Every file_roles entry must reference a file_path from the ranked files JSON. "
         "Do not create file roles for missing files. Later extracted objects must still be supported "
         "by source_text from the current chunk only."
@@ -209,8 +210,12 @@ def build_extraction_file_summary_prompt(
         "Sampled content windows JSON:\n"
         f"[{windows_json}]\n\n"
         "Return an ExtractionFileSummary for this exact file_path and rank. "
-        "If the content shows parameter labels such as PLW1, PULPROG, SFO1, TD, D1, or NS, "
-        "list them as parameter_terms and warn that they are settings/labels, not standalone scientific objects."
+        "Use common metadata categories as orientation only, such as instrument settings, "
+        "software settings, acquisition settings, processing settings, calibration or reference settings, "
+        "sample conditions, identifiers, units, and quantity labels. "
+        "These categories are examples only: do not copy them into the output and do not invent parameter_terms. "
+        "Only list parameter_terms when the exact labels appear in the sampled content, and warn when they are "
+        "settings or labels rather than standalone scientific objects."
     )
 
 
@@ -250,10 +255,6 @@ def overview_to_prompt_text(
     parts: list[str] = []
     if status:
         parts.append(f"Overview status: {status}")
-    if overview.dataset_theme:
-        parts.append(f"Dataset theme: {overview.dataset_theme}")
-    if overview.summary:
-        parts.append(f"Summary: {overview.summary}")
     if overview.file_roles:
         parts.append(
             "File roles:\n"
@@ -268,19 +269,9 @@ def overview_to_prompt_text(
             )
         )
     for label, values in (
-        ("Metadata sources", overview.metadata_sources),
-        ("Analytical techniques", overview.analytical_techniques),
-        ("Instruments/devices", overview.instrument_or_device_names),
-        ("Sample identifiers", overview.sample_identifiers),
-        ("Compound names", overview.compound_names),
-        ("Likely activities", overview.likely_activities),
-        ("Likely entities", overview.likely_entities),
-        ("Likely resources", overview.likely_resources),
-        ("Likely methods", overview.likely_methods),
-        ("Keywords", overview.keywords),
-        ("Parameter attachment guidance", overview.parameter_attachment_guidance),
-        ("Known traps", overview.known_traps),
-        ("Uncertainty notes", overview.uncertainty_notes),
+        ("Observed signals", overview.observed_signals),
+        ("Suggested interpretations", overview.suggested_interpretations),
+        ("Conflicts/uncertainties", overview.conflicts_or_uncertainties),
     ):
         if values:
             parts.append(label + ":\n" + "\n".join(f"- {value}" for value in values))

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from app.core.config import Settings
 from app.core.logging import logger
 from app.core.task_registry import TaskRegistry, TaskStatus, TaskType
-from app.domain.datasources import ContentChunk
+from app.domain.datasources import ContentChunk, FileType
 from app.domain.extraction import (
     DEFAULT_QUALITATIVE_VOCAB_IDENTIFIERS,
     EXTRACTION_CONTEXT_SYSTEM_PROMPT,
@@ -197,7 +197,7 @@ class ExtractionService:
                 return result, TaskStatus.COMPLETED
 
         if not resume:
-            self.output_repository.clear_extraction_run(data_package_id)
+            self._clear_downstream_extraction_outputs(data_package_id)
         await self.task_registry.create_task(
             coro=self._run_extraction_task(
                 data_package_id=data_package_id,
@@ -210,6 +210,144 @@ class ExtractionService:
             name=task_name,
         )
         return None, TaskStatus.RUNNING
+
+    async def run_initial_context(
+        self,
+        *,
+        data_package_id: str,
+        force_rerun: bool = False,
+    ) -> TaskStatus:
+        self._require_runtime_dependencies()
+        assert self.datasource_service is not None
+        assert self.output_repository is not None
+        assert self.task_registry is not None
+
+        self.datasource_service.get_data_package(data_package_id)
+
+        task_name = self._initial_context_task_name(data_package_id)
+        task_info = self.task_registry.get_task_info(task_name)
+        if task_info is not None and task_info.status == TaskStatus.RUNNING:
+            if force_rerun:
+                raise ValueError("Cannot force-rerun initial context while it is already running.")
+            return TaskStatus.RUNNING
+        if (
+            not force_rerun
+            and task_info is not None
+            and task_info.status == TaskStatus.COMPLETED
+            and self._load_run_state_or_none(data_package_id) is not None
+        ):
+            return TaskStatus.COMPLETED
+
+        persisted_state = self._load_run_state_or_none(data_package_id)
+        if (
+            not force_rerun
+            and persisted_state is not None
+            and persisted_state.initial_file_summary_status is not None
+            and persisted_state.initial_extraction_overview_status is not None
+        ):
+            return TaskStatus.COMPLETED
+
+        if force_rerun:
+            self.output_repository.clear_extraction_run(data_package_id)
+
+        await self.task_registry.create_task(
+            coro=self._run_initial_context_task(data_package_id=data_package_id),
+            type=TaskType.WORKFLOW,
+            name=task_name,
+        )
+        return TaskStatus.RUNNING
+
+    async def get_initial_context_progress(
+        self,
+        *,
+        data_package_id: str,
+    ) -> tuple[TaskStatus, ExtractionRunProgress | None]:
+        if self.task_registry is None:
+            return TaskStatus.UNKNOWN, None
+        task_info = self.task_registry.get_task_info(
+            self._initial_context_task_name(data_package_id)
+        )
+        if task_info is not None:
+            progress = (
+                ExtractionRunProgress.model_validate(task_info.progress)
+                if task_info.progress
+                else None
+            )
+            return task_info.status, progress
+
+        state = self._load_run_state_or_none(data_package_id)
+        if state is None:
+            return TaskStatus.UNKNOWN, None
+        status = (
+            TaskStatus.COMPLETED
+            if state.initial_file_summary_status is not None
+            and state.initial_extraction_overview_status is not None
+            else TaskStatus.UNKNOWN
+        )
+        return status, self._initial_context_progress_from_state(
+            state,
+            warnings=self._load_warnings_or_empty(data_package_id),
+            stage=(
+                "initial_context_completed"
+                if status == TaskStatus.COMPLETED
+                else "initial_context_pending"
+            ),
+        )
+
+    async def _run_initial_context_task(self, *, data_package_id: str) -> None:
+        self._require_runtime_dependencies()
+        assert self.datasource_service is not None
+        assert self.output_repository is not None
+
+        data_package = self.datasource_service.get_data_package(data_package_id)
+        warnings: list[str] = []
+        progress = ExtractionRunProgress(stage="file_ranking")
+        self._update_initial_context_progress(data_package_id, progress)
+
+        ranking = await self._rank_files(data_package_id, data_package, warnings)
+        state = ExtractionRunState(
+            chat_model=self.ollama_client.chat_model if self.ollama_client else None,
+            ranked_files=ranking.files,
+        )
+        self._save_run_state(data_package_id, state)
+        progress = self._initial_context_progress_from_state(
+            state,
+            warnings=warnings,
+            stage="initial_file_summaries",
+        )
+        self._update_initial_context_progress(data_package_id, progress)
+
+        await self._generate_initial_file_summaries(
+            data_package_id=data_package_id,
+            data_package=data_package,
+            ranking=ranking,
+            state=state,
+            warnings=warnings,
+        )
+        progress = self._initial_context_progress_from_state(
+            state,
+            warnings=warnings,
+            stage="initial_overview",
+        )
+        self._update_initial_context_progress(data_package_id, progress)
+
+        await self._generate_initial_extraction_overview(
+            data_package_id=data_package_id,
+            data_package=data_package,
+            ranking=ranking,
+            state=state,
+            warnings=warnings,
+        )
+        self.output_repository.save_extraction_warnings(
+            workflow_id=data_package_id,
+            warnings=warnings,
+        )
+        progress = self._initial_context_progress_from_state(
+            state,
+            warnings=warnings,
+            stage="initial_context_completed",
+        )
+        self._update_initial_context_progress(data_package_id, progress)
 
     async def run_complete_workflow(
         self,
@@ -288,6 +426,26 @@ class ExtractionService:
         self._update_complete_workflow_progress(
             data_package_id=data_package_id,
             progress=CompleteWorkflowProgress(
+                stage="initial_context",
+                data_package_id=data_package_id,
+                profile_identifier=profile_identifier,
+                chunking_status=TaskStatus.UNKNOWN,
+                extraction_status=TaskStatus.UNKNOWN,
+                result_url=self._result_url(data_package_id),
+            ),
+        )
+        initial_status = await self.run_initial_context(
+            data_package_id=data_package_id,
+            force_rerun=False,
+        )
+        if initial_status == TaskStatus.RUNNING:
+            await self.task_registry.wait_for_task(
+                self._initial_context_task_name(data_package_id)
+            )
+
+        self._update_complete_workflow_progress(
+            data_package_id=data_package_id,
+            progress=CompleteWorkflowProgress(
                 stage="chunking",
                 data_package_id=data_package_id,
                 profile_identifier=profile_identifier,
@@ -341,7 +499,7 @@ class ExtractionService:
             data_package_id=data_package_id,
             profile_identifier=profile_identifier,
             qualitative_vocab_identifiers=qualitative_vocab_identifiers,
-            resume=resume,
+            resume=True,
         )
         if extraction_status == TaskStatus.RUNNING:
             await self.task_registry.wait_for_task(
@@ -383,6 +541,16 @@ class ExtractionService:
                     "profile_identifier": progress.profile_identifier
                     or saved_progress.profile_identifier,
                 }
+                if (
+                    progress.stage == "pending"
+                    and saved_progress.stage == "initial_context"
+                ):
+                    update["stage"] = saved_progress.stage
+                if (
+                    progress.stage == "initial_context_completed"
+                    and saved_progress.stage in {"chunking", "extraction"}
+                ):
+                    update["stage"] = saved_progress.stage
                 if (
                     progress.extraction_status == TaskStatus.UNKNOWN
                     and saved_progress.extraction_status != TaskStatus.UNKNOWN
@@ -459,8 +627,16 @@ class ExtractionService:
                 )
             interim_context = self._load_context_or_none(data_package_id)
             if interim_context is not None or state is not None:
+                stage = "interim_context"
+                if interim_context is None and state and not state.chunk_results and (
+                    state.initial_file_summary_status is not None
+                    or state.initial_extraction_overview_status is not None
+                ):
+                    stage = "initial_context_completed"
+                elif state and state.generated_final_draft:
+                    stage = "profile_draft"
                 return TaskStatus.UNKNOWN, ExtractionRunProgress(
-                    stage="profile_draft" if state and state.generated_final_draft else "interim_context",
+                    stage=stage,
                     processed_chunks=self._completed_chunk_count(state) if state else 0,
                     total_chunks=len(state.chunk_results) if state else 0,
                     interim_context=interim_context or (
@@ -498,8 +674,16 @@ class ExtractionService:
         if progress is None:
             state = self._load_run_state_or_none(data_package_id)
             if state is not None:
+                stage = "interim_context"
+                if not state.chunk_results and (
+                    state.initial_file_summary_status is not None
+                    or state.initial_extraction_overview_status is not None
+                ):
+                    stage = "initial_context_completed"
+                elif state.generated_final_draft:
+                    stage = "profile_draft"
                 progress = ExtractionRunProgress(
-                    stage="profile_draft" if state.generated_final_draft else "interim_context",
+                    stage=stage,
                     processed_chunks=self._completed_chunk_count(state),
                     total_chunks=len(state.chunk_results),
                     interim_context=self._merged_completed_chunk_context_or_none(state),
@@ -918,11 +1102,7 @@ class ExtractionService:
             )
 
         warnings: list[str] = []
-        persisted_state = (
-            self._load_run_state_or_none(data_package_id)
-            if resume
-            else None
-        )
+        persisted_state = self._load_run_state_or_none(data_package_id)
         progress = ExtractionRunProgress(
             stage="file_ranking",
             total_chunks=sum(len(chunks) for chunks in chunks_by_file),
@@ -1009,35 +1189,20 @@ class ExtractionService:
         progress.interim_context = self._merged_completed_chunk_context_or_none(state)
         self._update_progress(data_package_id, progress)
 
-        if state.initial_file_summary_status is None:
-            progress.stage = "initial_file_summaries"
+        if (
+            state.initial_file_summary_status is None
+            or state.initial_extraction_overview_status is None
+        ):
+            progress.stage = "initial_context_required"
+            progress.warnings = [
+                *warnings,
+                "Run initial file understanding before chunk extraction.",
+            ]
+            self._save_run_state(data_package_id, state)
             self._update_progress(data_package_id, progress)
-            await self._generate_initial_file_summaries(
-                data_package_id=data_package_id,
-                data_package=data_package,
-                ranking=ranking,
-                state=state,
-                warnings=warnings,
+            raise ValueError(
+                "Run initial file understanding before chunk extraction."
             )
-            progress.initial_file_summaries = state.initial_file_summaries
-            progress.initial_file_summary_status = state.initial_file_summary_status
-            progress.warnings = list(warnings)
-            self._update_progress(data_package_id, progress)
-
-        if state.initial_extraction_overview_status is None:
-            progress.stage = "initial_overview"
-            self._update_progress(data_package_id, progress)
-            await self._generate_initial_extraction_overview(
-                data_package_id=data_package_id,
-                data_package=data_package,
-                ranking=ranking,
-                state=state,
-                warnings=warnings,
-            )
-            progress.initial_extraction_overview = state.initial_extraction_overview
-            progress.initial_extraction_overview_status = state.initial_extraction_overview_status
-            progress.warnings = list(warnings)
-            self._update_progress(data_package_id, progress)
 
         progress.stage = "chunk_extraction"
         chunk_repairs: list[tuple[ExtractionChunkResult, MaxRetriesExceeded]] = []
@@ -1466,6 +1631,7 @@ class ExtractionService:
 
         files_by_path = {file.file_path: file for file in data_package.files}
         summaries: list[ExtractionFileSummary] = []
+        skipped_count = 0
         for ranked_file in self._top_initial_context_ranked_files(ranking):
             file_entry = files_by_path.get(ranked_file.file_path)
             if file_entry is None:
@@ -1474,6 +1640,12 @@ class ExtractionService:
                         ranked_file=ranked_file,
                         reason="Ranked file is not present in the data package.",
                     )
+                )
+                continue
+            if self._should_skip_initial_file_summary(file_entry):
+                skipped_count += 1
+                warnings.append(
+                    f"Initial file summary skipped for {ranked_file.file_path}: image files are not text-extractable."
                 )
                 continue
             try:
@@ -1565,6 +1737,8 @@ class ExtractionService:
             state.initial_file_summary_status = "completed"
         elif summarized_count > 0:
             state.initial_file_summary_status = "partial"
+        elif skipped_count > 0:
+            state.initial_file_summary_status = "completed"
         else:
             state.initial_file_summary_status = "failed"
         self._save_run_state(data_package_id, state)
@@ -1589,9 +1763,15 @@ class ExtractionService:
             data_package=data_package,
             ranking=ranking,
         )
+        preview_file_paths = {preview.file_path for preview in previews}
+        overview_ranked_files = [
+            file
+            for file in ranking.files
+            if file.file_path in preview_file_paths
+        ]
         source_fingerprint = self._initial_overview_source_fingerprint(
             data_package=data_package,
-            ranking=ranking,
+            ranking=FileRankingResult(files=overview_ranked_files),
             previews=previews,
         )
         summarized_file_summaries = self._summarized_initial_file_summaries(state)
@@ -1603,7 +1783,7 @@ class ExtractionService:
                 system=EXTRACTION_OVERVIEW_SYSTEM_PROMPT,
                 prompt=build_extraction_overview_prompt(
                     data_package_name=data_package.file_name,
-                    ranked_files=ranking.files,
+                    ranked_files=overview_ranked_files,
                     file_summaries=summarized_file_summaries,
                     file_previews=fallback_previews,
                 ),
@@ -1620,7 +1800,7 @@ class ExtractionService:
             )
             sanitized_overview = self._sanitize_initial_overview_file_roles(
                 result.output,
-                allowed_file_paths={file.file_path for file in ranking.files},
+                allowed_file_paths=preview_file_paths,
                 warnings=warnings,
             )
             state.initial_extraction_overview = self._with_initial_overview_provenance(
@@ -1657,7 +1837,7 @@ class ExtractionService:
                 system=EXTRACTION_OVERVIEW_FALLBACK_SYSTEM_PROMPT,
                 prompt=build_extraction_overview_fallback_prompt(
                     data_package_name=data_package.file_name,
-                    ranked_files=ranking.files,
+                    ranked_files=overview_ranked_files,
                     file_previews=fallback_previews,
                 ),
                 options={
@@ -1679,8 +1859,8 @@ class ExtractionService:
                 raise CompletionError("Initial extraction overview fallback returned an empty response.")
             state.initial_extraction_overview = self._with_initial_overview_provenance(
                 ExtractionOverview(
-                    summary=text,
-                    known_traps=[
+                    observed_signals=[text],
+                    conflicts_or_uncertainties=[
                         "This overview is an unstructured fallback and is orientation only."
                     ],
                 ),
@@ -1718,6 +1898,8 @@ class ExtractionService:
         ]:
             file_entry = files_by_path.get(ranked_file.file_path)
             if file_entry is None:
+                continue
+            if self._should_skip_initial_file_summary(file_entry):
                 continue
             try:
                 lines = file_entry.get_extracted_content().splitlines()
@@ -1762,6 +1944,10 @@ class ExtractionService:
         return sorted(ranking.files, key=lambda item: item.rank)[
             :INITIAL_OVERVIEW_TOP_FILE_LIMIT
         ]
+
+    @staticmethod
+    def _should_skip_initial_file_summary(file_entry: Any) -> bool:
+        return getattr(file_entry, "file_type", None) == FileType.IMAGE
 
     @staticmethod
     def _initial_file_summary_content_windows(
@@ -1928,6 +2114,7 @@ class ExtractionService:
         inspected_by_path = {
             inspected.file_path: inspected
             for inspected in overview.inspected_files
+            if inspected.file_path in source_file_paths
         }
         inspected_files = [
             ExtractionOverviewInspectedFile(
@@ -1952,7 +2139,6 @@ class ExtractionService:
         overview: ExtractionOverview | None,
         status: ExtractionOverviewStatus | None,
         ranking: FileRankingResult,
-        ordered_chunks: list[ContentChunk],
     ) -> bool:
         if status is None or overview is None:
             return False
@@ -1960,10 +2146,17 @@ class ExtractionService:
         if not source_file_paths:
             return False
         ranked_paths = [file.file_path for file in sorted(ranking.files, key=lambda item: item.rank)]
-        if source_file_paths != ranked_paths[: len(source_file_paths)]:
+        ranked_path_set = set(ranked_paths)
+        if any(path not in ranked_path_set for path in source_file_paths):
             return False
-        current_chunk_paths = {chunk.file_path for chunk in ordered_chunks}
-        if any(path not in current_chunk_paths and path not in ranked_paths for path in source_file_paths):
+        source_index = 0
+        for ranked_path in ranked_paths:
+            if (
+                source_index < len(source_file_paths)
+                and source_file_paths[source_index] == ranked_path
+            ):
+                source_index += 1
+        if source_index != len(source_file_paths):
             return False
         overview_role_paths = {role.file_path for role in overview.file_roles}
         if any(path not in ranked_paths for path in overview_role_paths):
@@ -2588,6 +2781,29 @@ class ExtractionService:
             curated_validation=state.curated_validation,
             chat_model=chat_model,
         )
+
+    def _clear_downstream_extraction_outputs(self, data_package_id: str) -> None:
+        if self.output_repository is None:
+            return
+        state = self._load_run_state_or_none(data_package_id)
+        self.output_repository.clear_extraction_downstream(data_package_id)
+        if state is None:
+            return
+        cleared = state.model_copy(
+            update={
+                "chunk_results": [],
+                "vocab_queries": [],
+                "generated_final_draft": None,
+                "curated_document": None,
+                "draft_quality_state": None,
+                "validation": DraftValidationResult(),
+                "curated_validation": None,
+                "projection_ledger": [],
+                "field_completion_ledger": [],
+                "curation_ledger": [],
+            }
+        )
+        self._save_run_state(data_package_id, cleared)
 
     def _persist_initial_extraction_overview(
         self,
@@ -3247,7 +3463,7 @@ class ExtractionService:
         profile_identifier: str,
         vocab_query_config: ExtractionVocabQueryConfig,
     ) -> ExtractionRunState:
-        preserve_completed_chunks = (
+        preserve_initial_context = (
             persisted_state is not None
             and self._initial_file_summaries_match_current_run(
                 summaries=persisted_state.initial_file_summaries,
@@ -3258,9 +3474,9 @@ class ExtractionService:
                 overview=persisted_state.initial_extraction_overview,
                 status=persisted_state.initial_extraction_overview_status,
                 ranking=ranking,
-                ordered_chunks=ordered_chunks,
             )
         )
+        preserve_completed_chunks = preserve_initial_context
         persisted_by_key = {
             self._chunk_result_key(result): result
             for result in (
@@ -3305,22 +3521,22 @@ class ExtractionService:
             ranked_files=ranking.files,
             initial_file_summaries=(
                 persisted_state.initial_file_summaries
-                if preserve_completed_chunks and persisted_state
+                if preserve_initial_context and persisted_state
                 else []
             ),
             initial_file_summary_status=(
                 persisted_state.initial_file_summary_status
-                if preserve_completed_chunks and persisted_state
+                if preserve_initial_context and persisted_state
                 else None
             ),
             initial_extraction_overview=(
                 persisted_state.initial_extraction_overview
-                if preserve_completed_chunks and persisted_state
+                if preserve_initial_context and persisted_state
                 else None
             ),
             initial_extraction_overview_status=(
                 persisted_state.initial_extraction_overview_status
-                if preserve_completed_chunks and persisted_state
+                if preserve_initial_context and persisted_state
                 else None
             ),
             chunk_results=chunk_results,
@@ -5002,6 +5218,35 @@ class ExtractionService:
             progress.model_dump(mode="json"),
         )
 
+    def _update_initial_context_progress(
+        self,
+        data_package_id: str,
+        progress: ExtractionRunProgress,
+    ) -> None:
+        if self.task_registry is None:
+            return
+        self.task_registry.update_progress(
+            self._initial_context_task_name(data_package_id),
+            progress.model_dump(mode="json"),
+        )
+
+    @staticmethod
+    def _initial_context_progress_from_state(
+        state: ExtractionRunState,
+        *,
+        warnings: list[str],
+        stage: str,
+    ) -> ExtractionRunProgress:
+        return ExtractionRunProgress(
+            stage=stage,
+            ranked_files=state.ranked_files,
+            initial_file_summaries=state.initial_file_summaries,
+            initial_file_summary_status=state.initial_file_summary_status,
+            initial_extraction_overview=state.initial_extraction_overview,
+            initial_extraction_overview_status=state.initial_extraction_overview_status,
+            warnings=list(warnings),
+        )
+
     def _update_complete_workflow_progress(
         self,
         *,
@@ -5128,8 +5373,19 @@ class ExtractionService:
             )
         state = self._load_run_state_or_none(data_package_id)
         if state is not None:
+            if not state.chunk_results and (
+                state.initial_file_summary_status is not None
+                or state.initial_extraction_overview_status is not None
+            ):
+                stage = "initial_context_completed"
+            else:
+                stage = (
+                    "profile_draft"
+                    if state.generated_final_draft
+                    else "interim_context"
+                )
             return TaskStatus.UNKNOWN, ExtractionRunProgress(
-                stage="profile_draft" if state.generated_final_draft else "interim_context",
+                stage=stage,
                 processed_chunks=self._completed_chunk_count(state),
                 total_chunks=len(state.chunk_results),
                 interim_context=self._merged_completed_chunk_context_or_none(state),
@@ -5230,6 +5486,7 @@ class ExtractionService:
     ) -> dict[str, TaskStatus]:
         steps = {
             "upload": TaskStatus.COMPLETED,
+            "initial_context": TaskStatus.UNKNOWN,
             "chunking": chunking_status,
             "extraction": extraction_status,
             "normalization": TaskStatus.UNKNOWN,
@@ -5238,7 +5495,10 @@ class ExtractionService:
         }
         if extraction_progress is not None:
             if extraction_progress.stage in {
+                "initial_context_required",
                 "file_ranking",
+                "initial_file_summaries",
+                "initial_overview",
                 "chunk_extraction",
                 "chunk_repair",
                 "interim_context",
@@ -5265,6 +5525,21 @@ class ExtractionService:
                 )
             if extraction_progress.stage == "completed":
                 steps["validation"] = TaskStatus.COMPLETED
+        if stage == "initial_context":
+            steps["initial_context"] = TaskStatus.RUNNING
+        elif stage in {
+            "initial_context_completed",
+            "chunking",
+            "extraction",
+            "chunk_extraction",
+            "chunk_repair",
+            "interim_context",
+            "vocabulary_normalization",
+            "profile_projection",
+            "profile_draft",
+            "completed",
+        }:
+            steps["initial_context"] = TaskStatus.COMPLETED
         if stage == "completed":
             for name in steps:
                 steps[name] = TaskStatus.COMPLETED
@@ -5276,6 +5551,10 @@ class ExtractionService:
     @staticmethod
     def _result_url(data_package_id: str) -> str:
         return f"/api/v1/extraction/result/{data_package_id}"
+
+    @staticmethod
+    def _initial_context_task_name(data_package_id: str) -> str:
+        return f"initial-context:{data_package_id}"
 
     def _record_workflow_token_usage(
         self,

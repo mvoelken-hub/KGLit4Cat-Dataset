@@ -290,6 +290,30 @@ class FakeOutputRepository:
         self.warnings = []
         self.token_usage = {}
 
+    def clear_extraction_downstream(self, workflow_id: str):
+        self.context = None
+        self.contexts = []
+        self.result = None
+        if self.run_state is not None:
+            self.run_state = self.run_state.model_copy(
+                update={
+                    "chunk_results": [],
+                    "vocab_queries": [],
+                    "generated_final_draft": None,
+                    "curated_document": None,
+                    "draft_quality_state": None,
+                    "projection_ledger": [],
+                    "field_completion_ledger": [],
+                    "curation_ledger": [],
+                }
+            )
+        self.generated_final_draft = None
+        self.curated_document = None
+        self.projection_ledger = []
+        self.field_completion_ledger = []
+        self.curation_ledger = []
+        self.validation = None
+
 
 def make_chunk(start_idx: int = 0, content: str = "sample measured at 20 C") -> ContentChunk:
     return ContentChunk(
@@ -425,9 +449,33 @@ class FakeSemanticService:
         )
 
 
-def make_service(chunks_by_file: list[list[ContentChunk]]):
+def make_service(
+    chunks_by_file: list[list[ContentChunk]],
+    *,
+    with_initial_context: bool = True,
+):
     task_registry = TaskRegistry(SimpleNamespace(), FakeLogger())  # type: ignore[arg-type]
     output_repository = FakeOutputRepository()
+    if with_initial_context:
+        output_repository.run_state = ExtractionRunState(
+            chat_model="chat",
+            ranked_files=[RankedFile(rank=1, file_path="README.md")],
+            initial_file_summaries=[
+                ExtractionFileSummary(
+                    source_fingerprint="summary",
+                    file_path="README.md",
+                    rank=1,
+                    data_format="markdown",
+                )
+            ],
+            initial_file_summary_status="completed",
+            initial_extraction_overview=ExtractionOverview(
+                source_fingerprint="overview",
+                source_file_paths=["README.md"],
+                observed_signals=["README.md is present."],
+            ),
+            initial_extraction_overview_status="structured",
+        )
     service = ExtractionService(
         FakeProfileService(),  # type: ignore[arg-type]
         SimpleNamespace(),  # type: ignore[arg-type]
@@ -441,6 +489,42 @@ def make_service(chunks_by_file: list[list[ContentChunk]]):
 
 
 class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
+    async def test_initial_context_run_does_not_require_chunks_or_profile(self):
+        service, task_registry, output_repository = make_service(
+            [],
+            with_initial_context=False,
+        )
+
+        status = await service.run_initial_context(data_package_id="package-id")
+
+        self.assertEqual(status, TaskStatus.RUNNING)
+        await task_registry.wait_for_task("initial-context:package-id", timeout=2)
+        progress_status, progress = await service.get_initial_context_progress(
+            data_package_id="package-id"
+        )
+
+        self.assertEqual(progress_status, TaskStatus.COMPLETED)
+        self.assertIsNotNone(progress)
+        self.assertEqual(progress.stage, "initial_context_completed")
+        self.assertEqual(output_repository.initial_file_summary_status, "failed")
+        self.assertEqual(output_repository.initial_extraction_overview_status, "failed")
+        self.assertEqual(len(output_repository.initial_file_summaries), 1)
+
+    async def test_run_extraction_requires_initial_context_artifacts(self):
+        service, task_registry, _ = make_service(
+            [[make_chunk()]],
+            with_initial_context=False,
+        )
+
+        _, status = await service.run_extraction(
+            data_package_id="package-id",
+            profile_identifier="profile",
+        )
+
+        self.assertEqual(status, TaskStatus.RUNNING)
+        with self.assertRaises(ValueError):
+            await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
+
     async def test_initial_overview_previews_use_ranked_top_files_and_raw_first_lines(self):
         service, _, _ = make_service([[make_chunk()]])
         data_package = DataPackage(
@@ -464,12 +548,19 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     file_extension=".txt",
                     raw_content=b"c-0",
                 ),
+                FileEntry(
+                    file_path="plot.png",
+                    file_name="plot.png",
+                    file_extension=".png",
+                    raw_content=b"image-bytes",
+                ),
             ],
         )
         ranking = FileRankingResult(files=[
             RankedFile(rank=1, file_path="b.txt"),
-            RankedFile(rank=2, file_path="a.txt"),
-            RankedFile(rank=3, file_path="c.txt"),
+            RankedFile(rank=2, file_path="plot.png"),
+            RankedFile(rank=3, file_path="a.txt"),
+            RankedFile(rank=4, file_path="c.txt"),
         ])
 
         previews = service._initial_overview_file_previews(
@@ -510,6 +601,9 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn('"label":"beginning"', kwargs["prompt"])
             self.assertIn('"label":"middle"', kwargs["prompt"])
             self.assertIn('"label":"end"', kwargs["prompt"])
+            self.assertIn("common metadata categories", kwargs["prompt"])
+            self.assertIn("These categories are examples only", kwargs["prompt"])
+            self.assertNotIn("such as PLW1", kwargs["prompt"])
             return CompletionResult(
                 output=ExtractionFileSummary(
                     file_path="made-up.py",
@@ -543,6 +637,63 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any("mismatched file_path" in warning for warning in warnings))
         self.assertTrue(any("without evidence" in warning for warning in warnings))
 
+    async def test_initial_file_summaries_skip_images(self):
+        service, _, output_repository = make_service([[make_chunk()]])
+        service.ollama_client.ollama_client = SimpleNamespace()  # type: ignore[attr-defined]
+        data_package = DataPackage(
+            file_name="nmr-package",
+            files=[
+                FileEntry(
+                    file_path="spectrum.png",
+                    file_name="spectrum.png",
+                    file_extension=".png",
+                    raw_content=b"image-bytes",
+                ),
+                FileEntry(
+                    file_path="notes.txt",
+                    file_name="notes.txt",
+                    file_extension=".txt",
+                    raw_content=b"instrument: Bruker Alpha-P ATR",
+                ),
+            ],
+        )
+        ranking = FileRankingResult(files=[
+            RankedFile(rank=1, file_path="spectrum.png"),
+            RankedFile(rank=2, file_path="notes.txt"),
+        ])
+        state = ExtractionRunState(profile_identifier="profile")
+        calls: list[dict] = []
+
+        async def fake_generate(*_args, **kwargs):
+            calls.append(kwargs)
+            return CompletionResult(
+                output=ExtractionFileSummary(
+                    file_path="notes.txt",
+                    rank=2,
+                    data_format="text",
+                    metadata_signals=["instrument: Bruker Alpha-P ATR"],
+                ),
+                usage=RunUsage(requests=1),
+            )
+
+        warnings: list[str] = []
+        with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
+            await service._generate_initial_file_summaries(
+                data_package_id="package-id",
+                data_package=data_package,
+                ranking=ranking,
+                state=state,
+                warnings=warnings,
+            )
+
+        self.assertEqual(state.initial_file_summary_status, "completed")
+        self.assertEqual([summary.file_path for summary in state.initial_file_summaries], ["notes.txt"])
+        self.assertEqual(len(calls), 1)
+        self.assertIn("notes.txt", calls[0]["prompt"])
+        self.assertNotIn("spectrum.png", calls[0]["prompt"])
+        self.assertEqual(output_repository.initial_file_summaries, state.initial_file_summaries)
+        self.assertTrue(any("spectrum.png" in warning and "skipped" in warning for warning in warnings))
+
     async def test_initial_overview_generation_stamps_file_provenance(self):
         service, _, output_repository = make_service([[make_chunk()]])
         service.ollama_client.ollama_client = SimpleNamespace()  # type: ignore[attr-defined]
@@ -572,16 +723,25 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         async def fake_generate(*_args, **kwargs):
             self.assertIs(kwargs["output_type"], ExtractionOverview)
             self.assertIn("scientific data archivist", kwargs["system"])
+            self.assertIn("conservative package triage map", kwargs["system"])
+            self.assertIn("observed_signals", kwargs["system"])
+            self.assertIn("suggested_interpretations", kwargs["system"])
+            self.assertIn("conflicts_or_uncertainties", kwargs["system"])
+            self.assertIn("instrument term versus measurement modality", kwargs["system"])
+            self.assertIn("package triage, not final scientific interpretation", kwargs["prompt"])
+            self.assertIn("do not connect an instrument term to a technique", kwargs["prompt"])
             self.assertIn("dataset_description.txt", kwargs["prompt"])
             self.assertIn("##$PULPROG=zg30", kwargs["prompt"])
             return CompletionResult(
                 output=ExtractionOverview(
-                    dataset_theme="1H NMR spectroscopy package",
-                    analytical_techniques=["1H NMR spectroscopy"],
-                    instrument_or_device_names=[],
-                    sample_identifiers=["HMS-Q11-p"],
-                    parameter_attachment_guidance=[
-                        "Attach PULPROG=zg30 to an NMR acquisition method, not a standalone object."
+                    observed_signals=[
+                        "dataset_description.txt explicitly mentions 1H NMR."
+                    ],
+                    suggested_interpretations=[
+                        "HMS-Q11-p_10.dx may contain raw spectral data."
+                    ],
+                    conflicts_or_uncertainties=[
+                        "Do not resolve instrument or method identity without chunk evidence."
                     ],
                 ),
                 usage=RunUsage(requests=1),
@@ -607,6 +767,77 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [file.file_path for file in overview.inspected_files],
             ["dataset_description.txt", "HMS-Q11-p_10.dx"],
+        )
+        self.assertEqual(
+            overview.observed_signals,
+            ["dataset_description.txt explicitly mentions 1H NMR."],
+        )
+        self.assertEqual(
+            overview.suggested_interpretations,
+            ["HMS-Q11-p_10.dx may contain raw spectral data."],
+        )
+        self.assertEqual(
+            overview.conflicts_or_uncertainties,
+            ["Do not resolve instrument or method identity without chunk evidence."],
+        )
+
+    async def test_initial_overview_skips_images_from_previews_and_provenance(self):
+        service, _, output_repository = make_service([[make_chunk()]])
+        service.ollama_client.ollama_client = SimpleNamespace()  # type: ignore[attr-defined]
+        data_package = DataPackage(
+            file_name="image-package",
+            files=[
+                FileEntry(
+                    file_path="spectrum.png",
+                    file_name="spectrum.png",
+                    file_extension=".png",
+                    raw_content=b"image-bytes",
+                ),
+                FileEntry(
+                    file_path="notes.txt",
+                    file_name="notes.txt",
+                    file_extension=".txt",
+                    raw_content=b"measurement notes",
+                ),
+            ],
+        )
+        ranking = FileRankingResult(files=[
+            RankedFile(rank=1, file_path="spectrum.png"),
+            RankedFile(rank=2, file_path="notes.txt"),
+        ])
+        state = ExtractionRunState(
+            profile_identifier="profile",
+            initial_file_summaries=[
+                ExtractionFileSummary(file_path="notes.txt", rank=2),
+            ],
+            initial_file_summary_status="completed",
+        )
+
+        async def fake_generate(*_args, **kwargs):
+            self.assertNotIn("spectrum.png", kwargs["prompt"])
+            self.assertIn("notes.txt", kwargs["prompt"])
+            return CompletionResult(
+                output=ExtractionOverview(
+                    observed_signals=["notes.txt contains text notes."],
+                ),
+                usage=RunUsage(requests=1),
+            )
+
+        with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
+            await service._generate_initial_extraction_overview(
+                data_package_id="package-id",
+                data_package=data_package,
+                ranking=ranking,
+                state=state,
+                warnings=[],
+            )
+
+        overview = state.initial_extraction_overview
+        self.assertIsNotNone(overview)
+        self.assertEqual(overview.source_file_paths, ["notes.txt"])
+        self.assertEqual(
+            [file.file_path for file in overview.inspected_files],
+            ["notes.txt"],
         )
         self.assertEqual(output_repository.initial_extraction_overview, overview)
 
@@ -650,8 +881,8 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 ],
                 "initial_file_summary_status": "completed",
                 "initial_extraction_overview": ExtractionOverview(
-                    summary="overview",
                     source_file_paths=[chunk.file_path],
+                    observed_signals=[f"{chunk.file_path} is present."],
                 ),
                 "initial_extraction_overview_status": "structured",
             }
@@ -673,8 +904,8 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         stale_overview = persisted_without_overview.model_copy(
             update={
                 "initial_extraction_overview": ExtractionOverview(
-                    summary="wrong package",
                     source_file_paths=["sunrise.jpg"],
+                    observed_signals=["sunrise.jpg is present."],
                 ),
                 "initial_extraction_overview_status": "structured",
             }
@@ -854,6 +1085,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             {step.name: step.status for step in progress.steps},
             {
                 "upload": TaskStatus.COMPLETED,
+                "initial_context": TaskStatus.COMPLETED,
                 "chunking": TaskStatus.COMPLETED,
                 "extraction": TaskStatus.RUNNING,
                 "normalization": TaskStatus.UNKNOWN,
@@ -1132,8 +1364,8 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 ],
                 initial_file_summary_status="completed",
                 initial_extraction_overview=ExtractionOverview(
-                    summary="new-format overview",
                     source_file_paths=["README.md"],
+                    observed_signals=["README.md is present."],
                 ),
                 initial_extraction_overview_status="structured",
                 chunk_results=[
@@ -1194,8 +1426,8 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 ],
                 initial_file_summary_status="completed",
                 initial_extraction_overview=ExtractionOverview(
-                    summary="new-format overview",
                     source_file_paths=["README.md"],
+                    observed_signals=["README.md is present."],
                 ),
                 initial_extraction_overview_status="structured",
                 chunk_results=[
@@ -1443,8 +1675,8 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 ],
                 initial_file_summary_status="completed",
                 initial_extraction_overview=ExtractionOverview(
-                    summary="new-format overview",
                     source_file_paths=["README.md"],
+                    observed_signals=["README.md is present."],
                 ),
                 initial_extraction_overview_status="structured",
                 chunk_results=[

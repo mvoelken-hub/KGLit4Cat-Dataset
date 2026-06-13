@@ -225,10 +225,11 @@ class OllamaClientWrapper:
         """
         return self.chat_client
 
-    async def get_embeddings(self, input: list[str]) -> list[Embedding]:
+    async def get_embeddings(self, input: list[str], num_gpu: int | None = None) -> list[Embedding]:
+        effective_num_gpu = self.embed_num_gpu if num_gpu is None else num_gpu
         options = (
-            ollama.Options(num_gpu=self.embed_num_gpu)
-            if self.embed_num_gpu != -1
+            ollama.Options(num_gpu=effective_num_gpu)
+            if effective_num_gpu != -1
             else None
         )
         if options is None:

@@ -212,3 +212,6 @@ class ExtractionOutputRepository(Protocol):
 
     def clear_extraction_run(self, workflow_id: str) -> None:
         ...
+
+    def clear_extraction_downstream(self, workflow_id: str) -> None:
+        ...

@@ -60,8 +60,9 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
                 ],
                 initial_file_summary_status="completed",
                 initial_extraction_overview=ExtractionOverview(
-                    dataset_theme="NMR package",
-                    summary="Use NMR acquisition context as orientation only.",
+                    observed_signals=["dataset_description.txt mentions NMR."],
+                    suggested_interpretations=["Use NMR context as orientation only."],
+                    conflicts_or_uncertainties=["Instrument identity is unresolved."],
                 ),
                 initial_extraction_overview_status="structured",
                 curated_document={"id": "curated", "title": "Curated"},
@@ -120,7 +121,7 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
             self.assertEqual(summary_status, "completed")
             self.assertEqual(summaries[0].file_path, "dataset_description.txt")
             self.assertEqual(overview_status, "structured")
-            self.assertEqual(overview.dataset_theme, "NMR package")
+            self.assertEqual(overview.observed_signals, ["dataset_description.txt mentions NMR."])
             self.assertEqual(repo.load_generated_final_draft(workflow_id, chat_model)["id"], "generated")
             self.assertEqual(repo.load_curated_document(workflow_id, chat_model)["id"], "curated")
             self.assertEqual(repo.load_projection_ledger(workflow_id, chat_model)[0].status, "projected")
@@ -129,6 +130,19 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
             generated_validation, curated_validation = repo.load_validation(workflow_id, chat_model)
             self.assertEqual(generated_validation.status, "invalid")
             self.assertEqual(curated_validation.status, "valid")
+
+            repo.clear_extraction_downstream(workflow_id)
+
+            summaries, summary_status = repo.load_initial_file_summaries(workflow_id, chat_model)
+            overview, overview_status = repo.load_initial_extraction_overview(workflow_id, chat_model)
+            self.assertEqual(summary_status, "completed")
+            self.assertEqual(summaries[0].file_path, "dataset_description.txt")
+            self.assertEqual(overview_status, "structured")
+            self.assertEqual(overview.suggested_interpretations, ["Use NMR context as orientation only."])
+            with self.assertRaises(FileNotFoundError):
+                repo.load_extraction_result(workflow_id, chat_model)
+            with self.assertRaises(FileNotFoundError):
+                repo.load_generated_final_draft(workflow_id, chat_model)
 
             repo.clear_extraction_run(workflow_id)
 

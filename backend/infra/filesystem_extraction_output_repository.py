@@ -460,6 +460,24 @@ class FileSystemExtractionOutputRepository:
         if workflow_dir.exists():
             shutil.rmtree(workflow_dir)
 
+    def clear_extraction_downstream(self, workflow_id: str) -> None:
+        workflow_dir = self._workflow_dir(workflow_id)
+        if not workflow_dir.exists():
+            return
+        downstream_files = {
+            EXTRACTION_CONTEXT_FILE,
+            EXTRACTION_RESULT_FILE,
+            GENERATED_FINAL_DRAFT_FILE,
+            CURATED_DOCUMENT_FILE,
+            PROJECTION_LEDGER_FILE,
+            FIELD_COMPLETION_LEDGER_FILE,
+            CURATION_LEDGER_FILE,
+            VALIDATION_FILE,
+        }
+        for path in workflow_dir.rglob("*"):
+            if path.is_file() and path.name in downstream_files:
+                path.unlink()
+
     def _workflow_dir(self, workflow_id: str, chat_model: str | None = None) -> Path:
         base_path = self.base_path.resolve()
         # Branch output by model so the same dataset can be compared across models.

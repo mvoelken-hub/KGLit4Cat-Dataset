@@ -36,6 +36,7 @@ class FakeBlobRepository:
         self.chunks_by_file_path = chunks_by_file_path
         self.loaded_chunk_paths: list[str] = []
         self.deleted_chunk_package_ids: list[str] = []
+        self.saved_chunks: list[ContentChunk] = []
 
     def load_data_package(self, id: str) -> DataPackage:
         return self.data_package
@@ -51,6 +52,18 @@ class FakeBlobRepository:
     def delete_content_chunks(self, data_package_id: str) -> None:
         self.deleted_chunk_package_ids.append(data_package_id)
         self.chunks_by_file_path.clear()
+
+    def save_content_chunks(self, content_chunks: list[ContentChunk]) -> None:
+        self.saved_chunks.extend(content_chunks)
+
+
+class FakeOllamaClient:
+    def __init__(self):
+        self.embedding_num_gpu_values: list[int | None] = []
+
+    async def get_embeddings(self, input: list[str], num_gpu: int | None = None):
+        self.embedding_num_gpu_values.append(num_gpu)
+        return [[float(index), 1.0] for index, _ in enumerate(input)]
 
 
 class FakeTaskRegistry:
@@ -81,13 +94,14 @@ class DataSourceServiceTests(unittest.IsolatedAsyncioTestCase):
         *,
         chunks_by_file_path: dict[str, list[ContentChunk]],
         task_status: TaskStatus | None,
+        ollama_client=None,
     ) -> tuple[DataSourceService, FakeBlobRepository, FakeTaskRegistry]:
         blob_repository = FakeBlobRepository(chunks_by_file_path)
         task_registry = FakeTaskRegistry(status=task_status)
         service = DataSourceService(
             blob_repository=blob_repository,  # type: ignore[arg-type]
             settings=FakeSettings(),  # type: ignore[arg-type]
-            ollama_client=None,  # type: ignore[arg-type]
+            ollama_client=ollama_client,  # type: ignore[arg-type]
             task_registry=task_registry,  # type: ignore[arg-type]
         )
         return service, blob_repository, task_registry
@@ -165,6 +179,28 @@ class DataSourceServiceTests(unittest.IsolatedAsyncioTestCase):
             task_registry.created_task_names,
             ["chunking:file_entries:package-id"],
         )
+
+    async def test_chunking_task_passes_embedding_gpu_override_to_ollama(self):
+        ollama_client = FakeOllamaClient()
+        service, blob_repository, _ = self.make_service(
+            chunks_by_file_path={},
+            task_status=None,
+            ollama_client=ollama_client,
+        )
+        blob_repository.data_package.files[0].raw_content = "\n".join(
+            f"measurement line {index} contains useful catalyst metadata"
+            for index in range(110)
+        ).encode()
+
+        await service._run_chunking_task(
+            data_package_id="package-id",
+            buffer_window_size=1,
+            semantic_chunking_threshold=95.0,
+            embedding_num_gpu=0,
+        )
+
+        self.assertTrue(blob_repository.saved_chunks)
+        self.assertEqual(set(ollama_client.embedding_num_gpu_values), {0})
 
     async def test_chunk_request_replace_existing_starts_task_and_deletes_chunks(self):
         chunk = make_chunk()

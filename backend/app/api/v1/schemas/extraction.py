@@ -43,6 +43,13 @@ class ExtractionProgressResponse(BaseModel):
     progress: ExtractionRunProgress | None = None
 
 
+class InitialContextRunRequest(BaseModel):
+    force_rerun: bool = Field(
+        default=False,
+        description="Clear previous extraction outputs and regenerate ranked file summaries and run overview.",
+    )
+
+
 class CompleteWorkflowProgressResponse(BaseModel):
     status: TaskStatus
     progress: CompleteWorkflowProgress | None = None

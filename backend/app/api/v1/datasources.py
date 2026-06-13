@@ -155,6 +155,7 @@ async def chunk_file_entries_in_data_package(
             replace_existing_chunks=chunking_request.replace_existing_chunks,
             protected_line_indices=chunking_request.protected_line_indices,
             text_quality_config=chunking_request.text_quality_config,
+            embedding_num_gpu=chunking_request.embedding_num_gpu,
         )
         return ChunkRequestResponse(
             chunks=[[ChunkResponse(**chunk.model_dump()) for chunk in chunks] for chunks in chunks_by_file],

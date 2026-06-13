@@ -94,6 +94,7 @@ class DataSourceService:
         replace_existing_chunks: bool = False,
         protected_line_indices: dict[str, list[int]] | None = None,
         text_quality_config: TextQualityConfig | None = None,
+        embedding_num_gpu: int | None = None,
     ) -> tuple[list[list[ContentChunk]], TaskStatus]:
         
         TASK_NAME = self.chunk_task_name(data_package_id)
@@ -114,6 +115,7 @@ class DataSourceService:
                 delete_existing_chunks=replace_existing_chunks,
                 protected_line_indices=protected_line_indices,
                 text_quality_config=text_quality_config,
+                embedding_num_gpu=embedding_num_gpu,
             )
             return [], TaskStatus.RUNNING
 
@@ -126,6 +128,7 @@ class DataSourceService:
                 delete_existing_chunks=True,
                 protected_line_indices=protected_line_indices,
                 text_quality_config=text_quality_config,
+                embedding_num_gpu=embedding_num_gpu,
             )
             return [], TaskStatus.RUNNING
 
@@ -138,6 +141,7 @@ class DataSourceService:
                 delete_existing_chunks=False,
                 protected_line_indices=protected_line_indices,
                 text_quality_config=text_quality_config,
+                embedding_num_gpu=embedding_num_gpu,
             )
             return [], TaskStatus.RUNNING        
         
@@ -176,6 +180,7 @@ class DataSourceService:
         delete_existing_chunks: bool,
         protected_line_indices: dict[str, list[int]] | None = None,
         text_quality_config: TextQualityConfig | None = None,
+        embedding_num_gpu: int | None = None,
     ) -> None:
         if delete_existing_chunks:
             self.blob_repository.delete_content_chunks(data_package_id)
@@ -187,6 +192,7 @@ class DataSourceService:
                 semantic_chunking_threshold=semantic_chunking_threshold,
                 protected_line_indices=protected_line_indices,
                 text_quality_config=text_quality_config,
+                embedding_num_gpu=embedding_num_gpu,
             ),
             type=TaskType.CHUNKING,
             name=task_name
@@ -201,6 +207,7 @@ class DataSourceService:
         semantic_chunking_threshold: float,
         protected_line_indices: dict[str, list[int]] | None = None,
         text_quality_config: TextQualityConfig | None = None,
+        embedding_num_gpu: int | None = None,
     ):
         data_package = self.get_data_package(data_package_id)
         files = data_package.files
@@ -214,13 +221,18 @@ class DataSourceService:
             classification_func = partial(classify_text_line, config=text_quality_config)
         else:
             classification_func = classify_text_line
+        embedding_func = (
+            partial(self.ollama_client.get_embeddings, num_gpu=embedding_num_gpu)
+            if embedding_num_gpu is not None
+            else self.ollama_client.get_embeddings
+        )
         
         for file_entry in files:
             file_protected = protected_line_indices.get(file_entry.file_path) if protected_line_indices else None
             content_chunks = await ContentChunk.create_chunks_for_file_entry(
                 data_package_id=data_package_id,
                 file_entry=file_entry,
-                embedding_func=self.ollama_client.get_embeddings,
+                embedding_func=embedding_func,
                 text_classification_func=classification_func,
                 buffer_window_size=buffer_window_size,
                 embedding_batch_size=self.settings.embedding_batch_size,
