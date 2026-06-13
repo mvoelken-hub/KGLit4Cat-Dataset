@@ -25,6 +25,7 @@ services:
       - OLLAMA_KEEP_ALIVE=-1
       - OLLAMA_HOST=0.0.0.0:${OLLAMA_PORT}
       - OLLAMA_FLASH_ATTENTION=${OLLAMA_FLASH_ATTENTION:-1}
+      - OLLAMA_NO_MMAP=${OLLAMA_NO_MMAP:-0}
     ports:
       - "127.0.0.1:${OLLAMA_PORT}:${OLLAMA_PORT}"
     volumes:
