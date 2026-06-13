@@ -85,7 +85,7 @@ Focus on:
 - how low-level parameters should attach to meaningful objects;
 - traps that would cause bad extraction objects.
 
-Do not invent final metadata. Do not map to a target profile. Do not treat parameter names, table schema rows, checksums, or internal file-format fields as scientific objects.
+Do not invent final metadata.
 Fill every field with concise evidence-grounded values. Use empty lists when no entities, relationships, metadata sources, or keywords can be identified.
 """
 
