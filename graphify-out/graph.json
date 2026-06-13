@@ -5940,7 +5940,7 @@
       "source_location": "L208",
       "_origin": "ast",
       "id": "profiles_init_detect_enrichable_fields",
-      "community": 65,
+      "community": 31,
       "norm_label": "detect_enrichable_fields()"
     },
     {
@@ -15170,7 +15170,7 @@
       "source_location": "L85",
       "_origin": "ast",
       "id": "tests_test_extraction_profiles_extractionprofiledomaintests_test_enrichable_fields_are_detected_from_target_slots",
-      "community": 65,
+      "community": 31,
       "norm_label": ".test_enrichable_fields_are_detected_from_target_slots()"
     },
     {
@@ -15180,7 +15180,7 @@
       "source_location": "L94",
       "_origin": "ast",
       "id": "tests_test_extraction_profiles_filesystemprofilerepositorytests",
-      "community": 39,
+      "community": 65,
       "norm_label": "filesystemprofilerepositorytests"
     },
     {
@@ -15190,7 +15190,7 @@
       "source_location": "L95",
       "_origin": "ast",
       "id": "tests_test_extraction_profiles_filesystemprofilerepositorytests_test_profile_artifacts_round_trip",
-      "community": 39,
+      "community": 65,
       "norm_label": ".test_profile_artifacts_round_trip()"
     },
     {
@@ -15990,7 +15990,7 @@
       "source_location": "L421",
       "_origin": "ast",
       "id": "tests_test_initial_context_extraction_fakesemanticservice",
-      "community": 69,
+      "community": 28,
       "norm_label": "fakesemanticservice"
     },
     {
@@ -16000,7 +16000,7 @@
       "source_location": "L422",
       "_origin": "ast",
       "id": "tests_test_initial_context_extraction_fakesemanticservice_init",
-      "community": 69,
+      "community": 28,
       "norm_label": ".__init__()"
     },
     {
@@ -16010,7 +16010,7 @@
       "source_location": "L426",
       "_origin": "ast",
       "id": "tests_test_initial_context_extraction_fakesemanticservice_get_vocabulary",
-      "community": 69,
+      "community": 28,
       "norm_label": ".get_vocabulary()"
     },
     {
@@ -16020,7 +16020,7 @@
       "source_location": "L441",
       "_origin": "ast",
       "id": "tests_test_initial_context_extraction_fakesemanticservice_query_vocabulary",
-      "community": 69,
+      "community": 28,
       "norm_label": ".query_vocabulary()"
     },
     {
@@ -16330,7 +16330,7 @@
       "source_location": "L1742",
       "_origin": "ast",
       "id": "tests_test_initial_context_extraction_extractionserviceworkflowtests_test_vocab_candidate_discovery_starts_after_all_chunks_finish",
-      "community": 69,
+      "community": 28,
       "norm_label": ".test_vocab_candidate_discovery_starts_after_all_chunks_finish()"
     },
     {
@@ -16340,7 +16340,7 @@
       "source_location": "L1782",
       "_origin": "ast",
       "id": "tests_test_initial_context_extraction_extractionserviceworkflowtests_test_profile_type_field_gets_voc4cat_query_after_patching",
-      "community": 69,
+      "community": 28,
       "norm_label": ".test_profile_type_field_gets_voc4cat_query_after_patching()"
     },
     {
@@ -16350,7 +16350,7 @@
       "source_location": "L1823",
       "_origin": "ast",
       "id": "tests_test_initial_context_extraction_extractionserviceworkflowtests_test_profile_quantity_fields_are_queried_once_after_patching",
-      "community": 69,
+      "community": 28,
       "norm_label": ".test_profile_quantity_fields_are_queried_once_after_patching()"
     },
     {
@@ -19815,7 +19815,7 @@
       "label": "InitialFileUnderstandingPanel()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L862",
+      "source_location": "L812",
       "_origin": "ast",
       "id": "src_app_initialfileunderstandingpanel",
       "community": 3,
@@ -19825,7 +19825,7 @@
       "label": "QUANTITATIVE_ATTRIBUTE_VOCABULARIES",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L960",
+      "source_location": "L910",
       "_origin": "ast",
       "id": "src_app_quantitative_attribute_vocabularies",
       "community": 3,
@@ -19835,7 +19835,7 @@
       "label": "VocabQueryNumericField",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L965",
+      "source_location": "L915",
       "_origin": "ast",
       "id": "src_app_vocabquerynumericfield",
       "community": 3,
@@ -19845,7 +19845,7 @@
       "label": "QUALITATIVE_VOCAB_QUERY_FIELDS",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L972",
+      "source_location": "L922",
       "_origin": "ast",
       "id": "src_app_qualitative_vocab_query_fields",
       "community": 3,
@@ -19855,7 +19855,7 @@
       "label": "QUANTITATIVE_VOCAB_QUERY_FIELDS",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L983",
+      "source_location": "L933",
       "_origin": "ast",
       "id": "src_app_quantitative_vocab_query_fields",
       "community": 3,
@@ -19865,7 +19865,7 @@
       "label": "VOCAB_QUERY_NUMERIC_FIELDS",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L994",
+      "source_location": "L944",
       "_origin": "ast",
       "id": "src_app_vocab_query_numeric_fields",
       "community": 3,
@@ -19875,7 +19875,7 @@
       "label": "QUANTITATIVE_VOCAB_QUERY_DEFAULTS",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L999",
+      "source_location": "L949",
       "_origin": "ast",
       "id": "src_app_quantitative_vocab_query_defaults",
       "community": 3,
@@ -19885,7 +19885,7 @@
       "label": "VocabQueryConfigMode",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L1011",
+      "source_location": "L961",
       "_origin": "ast",
       "id": "src_app_vocabqueryconfigmode",
       "community": 3,
@@ -19895,7 +19895,7 @@
       "label": "normalizeVocabQueryConfig()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L1013",
+      "source_location": "L963",
       "_origin": "ast",
       "id": "src_app_normalizevocabqueryconfig",
       "community": 3,
@@ -19905,7 +19905,7 @@
       "label": "VocabQueryConfigPanel()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L1020",
+      "source_location": "L970",
       "_origin": "ast",
       "id": "src_app_vocabqueryconfigpanel",
       "community": 3,
@@ -19915,7 +19915,7 @@
       "label": "VocabQueryTraceList()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L1285",
+      "source_location": "L1235",
       "_origin": "ast",
       "id": "src_app_vocabquerytracelist",
       "community": 3,
@@ -19925,7 +19925,7 @@
       "label": "DraftGroundingPanel()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L1458",
+      "source_location": "L1408",
       "_origin": "ast",
       "id": "src_app_draftgroundingpanel",
       "community": 3,
@@ -19935,7 +19935,7 @@
       "label": "VocabGraphNode",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L1523",
+      "source_location": "L1473",
       "_origin": "ast",
       "id": "src_app_vocabgraphnode",
       "community": 3,
@@ -19945,7 +19945,7 @@
       "label": "VocabGraphEdge",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L1531",
+      "source_location": "L1481",
       "_origin": "ast",
       "id": "src_app_vocabgraphedge",
       "community": 3,
@@ -19955,7 +19955,7 @@
       "label": "vocabGraphBaseViewBox",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L1538",
+      "source_location": "L1488",
       "_origin": "ast",
       "id": "src_app_vocabgraphbaseviewbox",
       "community": 3,
@@ -19965,7 +19965,7 @@
       "label": "VocabQueryGraphPanel()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L1540",
+      "source_location": "L1490",
       "_origin": "ast",
       "id": "src_app_vocabquerygraphpanel",
       "community": 3,
@@ -19975,7 +19975,7 @@
       "label": "JsonDetails()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L1740",
+      "source_location": "L1690",
       "_origin": "ast",
       "id": "src_app_jsondetails",
       "community": 3,
@@ -19985,7 +19985,7 @@
       "label": "buildVocabGraph()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L1749",
+      "source_location": "L1699",
       "_origin": "ast",
       "id": "src_app_buildvocabgraph",
       "community": 3,
@@ -19995,7 +19995,7 @@
       "label": "defaultVocabGraphSelection()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L1791",
+      "source_location": "L1741",
       "_origin": "ast",
       "id": "src_app_defaultvocabgraphselection",
       "community": 3,
@@ -20005,7 +20005,7 @@
       "label": "vocabGraphNodeRadius()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L1795",
+      "source_location": "L1745",
       "_origin": "ast",
       "id": "src_app_vocabgraphnoderadius",
       "community": 3,
@@ -20015,7 +20015,7 @@
       "label": "directedEdgePath()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L1799",
+      "source_location": "L1749",
       "_origin": "ast",
       "id": "src_app_directededgepath",
       "community": 3,
@@ -20025,7 +20025,7 @@
       "label": "coerceVocabQueryResult()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L1815",
+      "source_location": "L1765",
       "_origin": "ast",
       "id": "src_app_coercevocabqueryresult",
       "community": 3,
@@ -20035,7 +20035,7 @@
       "label": "vocabNodeLabelLines()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L1850",
+      "source_location": "L1800",
       "_origin": "ast",
       "id": "src_app_vocabnodelabellines",
       "community": 3,
@@ -20045,7 +20045,7 @@
       "label": "trimNodeLabel()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L1872",
+      "source_location": "L1822",
       "_origin": "ast",
       "id": "src_app_trimnodelabel",
       "community": 3,
@@ -20055,7 +20055,7 @@
       "label": "labelDy()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L1876",
+      "source_location": "L1826",
       "_origin": "ast",
       "id": "src_app_labeldy",
       "community": 3,
@@ -20065,7 +20065,7 @@
       "label": "vocabNodeTitle()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L1880",
+      "source_location": "L1830",
       "_origin": "ast",
       "id": "src_app_vocabnodetitle",
       "community": 3,
@@ -20075,7 +20075,7 @@
       "label": "findVocabPropertyLabel()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L1885",
+      "source_location": "L1835",
       "_origin": "ast",
       "id": "src_app_findvocabpropertylabel",
       "community": 3,
@@ -20085,7 +20085,7 @@
       "label": "compactPredicate()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L1900",
+      "source_location": "L1850",
       "_origin": "ast",
       "id": "src_app_compactpredicate",
       "community": 3,
@@ -20095,7 +20095,7 @@
       "label": "propertyPreview()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L1908",
+      "source_location": "L1858",
       "_origin": "ast",
       "id": "src_app_propertypreview",
       "community": 3,
@@ -20105,7 +20105,7 @@
       "label": "formatScore()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L1919",
+      "source_location": "L1869",
       "_origin": "ast",
       "id": "src_app_formatscore",
       "community": 3,
@@ -20115,7 +20115,7 @@
       "label": "StepPanel()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L1923",
+      "source_location": "L1873",
       "_origin": "ast",
       "id": "src_app_steppanel",
       "community": 3,
@@ -20125,7 +20125,7 @@
       "label": "contextTechnique()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L1972",
+      "source_location": "L1922",
       "_origin": "ast",
       "id": "src_app_contexttechnique",
       "community": 3,
@@ -20135,7 +20135,7 @@
       "label": "contextActivityLabel()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L1976",
+      "source_location": "L1926",
       "_origin": "ast",
       "id": "src_app_contextactivitylabel",
       "community": 3,
@@ -20145,7 +20145,7 @@
       "label": "contextAgentLabel()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L1983",
+      "source_location": "L1933",
       "_origin": "ast",
       "id": "src_app_contextagentlabel",
       "community": 3,
@@ -20155,7 +20155,7 @@
       "label": "contextEntityLabel()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L1989",
+      "source_location": "L1939",
       "_origin": "ast",
       "id": "src_app_contextentitylabel",
       "community": 3,
@@ -20165,7 +20165,7 @@
       "label": "commaList()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L1994",
+      "source_location": "L1944",
       "_origin": "ast",
       "id": "src_app_commalist",
       "community": 3,
@@ -20175,7 +20175,7 @@
       "label": "contextEntitiesInput()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L2001",
+      "source_location": "L1951",
       "_origin": "ast",
       "id": "src_app_contextentitiesinput",
       "community": 3,
@@ -20185,7 +20185,7 @@
       "label": "updateContextDatasetTitle()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L2005",
+      "source_location": "L1955",
       "_origin": "ast",
       "id": "src_app_updatecontextdatasettitle",
       "community": 3,
@@ -20195,7 +20195,7 @@
       "label": "updateContextTechnique()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L2009",
+      "source_location": "L1959",
       "_origin": "ast",
       "id": "src_app_updatecontexttechnique",
       "community": 3,
@@ -20205,7 +20205,7 @@
       "label": "updateContextAgentName()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L2016",
+      "source_location": "L1966",
       "_origin": "ast",
       "id": "src_app_updatecontextagentname",
       "community": 3,
@@ -20215,7 +20215,7 @@
       "label": "updateContextAgentModel()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L2023",
+      "source_location": "L1973",
       "_origin": "ast",
       "id": "src_app_updatecontextagentmodel",
       "community": 3,
@@ -20225,7 +20225,7 @@
       "label": "updateContextEntities()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L2030",
+      "source_location": "L1980",
       "_origin": "ast",
       "id": "src_app_updatecontextentities",
       "community": 3,
@@ -20235,7 +20235,7 @@
       "label": "updateContextActivityLabel()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L2039",
+      "source_location": "L1989",
       "_origin": "ast",
       "id": "src_app_updatecontextactivitylabel",
       "community": 3,
@@ -20245,7 +20245,7 @@
       "label": "updateContextDescription()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L2046",
+      "source_location": "L1996",
       "_origin": "ast",
       "id": "src_app_updatecontextdescription",
       "community": 3,
@@ -20255,7 +20255,7 @@
       "label": "updateContextKeywords()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L2050",
+      "source_location": "L2000",
       "_origin": "ast",
       "id": "src_app_updatecontextkeywords",
       "community": 3,
@@ -20265,7 +20265,7 @@
       "label": "asRecord()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L2054",
+      "source_location": "L2004",
       "_origin": "ast",
       "id": "src_app_asrecord",
       "community": 3,
@@ -20275,7 +20275,7 @@
       "label": "asRecordArray()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L2058",
+      "source_location": "L2008",
       "_origin": "ast",
       "id": "src_app_asrecordarray",
       "community": 3,
@@ -20285,7 +20285,7 @@
       "label": "tokenUsageLabels",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L2062",
+      "source_location": "L2012",
       "_origin": "ast",
       "id": "src_app_tokenusagelabels",
       "community": 3,
@@ -20295,7 +20295,7 @@
       "label": "formatTokenCount()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L2077",
+      "source_location": "L2027",
       "_origin": "ast",
       "id": "src_app_formattokencount",
       "community": 3,
@@ -20305,7 +20305,7 @@
       "label": "TokenAverageUnit",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L2082",
+      "source_location": "L2032",
       "_origin": "ast",
       "id": "src_app_tokenaverageunit",
       "community": 3,
@@ -20315,7 +20315,7 @@
       "label": "tokenAverageUnitLabel()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L2084",
+      "source_location": "L2034",
       "_origin": "ast",
       "id": "src_app_tokenaverageunitlabel",
       "community": 3,
@@ -20325,7 +20325,7 @@
       "label": "usageAverage()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L2088",
+      "source_location": "L2038",
       "_origin": "ast",
       "id": "src_app_usageaverage",
       "community": 3,
@@ -20335,7 +20335,7 @@
       "label": "requestAverage()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L2103",
+      "source_location": "L2053",
       "_origin": "ast",
       "id": "src_app_requestaverage",
       "community": 3,
@@ -20345,7 +20345,7 @@
       "label": "usageBudgetState()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L2112",
+      "source_location": "L2062",
       "_origin": "ast",
       "id": "src_app_usagebudgetstate",
       "community": 3,
@@ -20355,7 +20355,7 @@
       "label": "TokenUsageSummary()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L2120",
+      "source_location": "L2070",
       "_origin": "ast",
       "id": "src_app_tokenusagesummary",
       "community": 3,
@@ -20365,7 +20365,7 @@
       "label": "formatMemory()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L2212",
+      "source_location": "L2162",
       "_origin": "ast",
       "id": "src_app_formatmemory",
       "community": 3,
@@ -20375,7 +20375,7 @@
       "label": "formatDuration()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L2217",
+      "source_location": "L2167",
       "_origin": "ast",
       "id": "src_app_formatduration",
       "community": 3,
@@ -20385,7 +20385,7 @@
       "label": "OllamaSettingsPanel()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L2223",
+      "source_location": "L2173",
       "_origin": "ast",
       "id": "src_app_ollamasettingspanel",
       "community": 3,
@@ -20395,7 +20395,7 @@
       "label": "FileViewer()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L2590",
+      "source_location": "L2540",
       "_origin": "ast",
       "id": "src_app_fileviewer",
       "community": 3,
@@ -20405,7 +20405,7 @@
       "label": "ChunkInspectionPanel()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L2664",
+      "source_location": "L2614",
       "_origin": "ast",
       "id": "src_app_chunkinspectionpanel",
       "community": 3,
@@ -20415,7 +20415,7 @@
       "label": "ChunkingStatusPanel()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L2707",
+      "source_location": "L2657",
       "_origin": "ast",
       "id": "src_app_chunkingstatuspanel",
       "community": 3,
@@ -20425,7 +20425,7 @@
       "label": "chunkLineCount()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L2775",
+      "source_location": "L2725",
       "_origin": "ast",
       "id": "src_app_chunklinecount",
       "community": 3,
@@ -20435,7 +20435,7 @@
       "label": "App()",
       "file_type": "code",
       "source_file": "frontend/src/App.tsx",
-      "source_location": "L2780",
+      "source_location": "L2730",
       "_origin": "ast",
       "id": "src_app_app",
       "community": 3,
@@ -28684,9 +28684,9 @@
       "source_file": "backend/app/api/v1/schemas/datasources.py",
       "source_location": "L40",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "schemas_datasources_rationale_40",
-      "target": "schemas_datasources_chunkingrequest_parse_json_strings",
-      "confidence_score": 1.0
+      "target": "schemas_datasources_chunkingrequest_parse_json_strings"
     },
     {
       "relation": "inherits",
@@ -38149,9 +38149,9 @@
       "source_file": "backend/tests/test_datasource_service.py",
       "source_location": "L4",
       "weight": 0.8,
+      "confidence_score": 0.5,
       "source": "tests_test_datasource_service_fakeollamaclient",
-      "target": "core_task_registry_taskstatus",
-      "confidence_score": 0.5
+      "target": "core_task_registry_taskstatus"
     },
     {
       "relation": "uses",
@@ -65026,9 +65026,9 @@
       "source_file": "backend/tests/test_datasource_service.py",
       "source_location": "L6",
       "weight": 0.8,
+      "confidence_score": 0.5,
       "source": "tests_test_datasource_service_fakeollamaclient",
-      "target": "services_datasource_service_datasourceservice",
-      "confidence_score": 0.5
+      "target": "services_datasource_service_datasourceservice"
     },
     {
       "relation": "uses",
@@ -79746,9 +79746,9 @@
       "source_file": "backend/tests/test_datasource_service.py",
       "source_location": "L60",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "tests_test_datasource_service",
-      "target": "tests_test_datasource_service_fakeollamaclient",
-      "confidence_score": 1.0
+      "target": "tests_test_datasource_service_fakeollamaclient"
     },
     {
       "relation": "contains",
@@ -79940,9 +79940,9 @@
       "source_file": "backend/tests/test_datasource_service.py",
       "source_location": "L56",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "tests_test_datasource_service_fakeblobrepository_save_content_chunks",
-      "target": "backend_tests_test_datasource_service_py_contentchunk",
-      "confidence_score": 1.0
+      "target": "backend_tests_test_datasource_service_py_contentchunk"
     },
     {
       "relation": "references",
@@ -80001,9 +80001,9 @@
       "source_file": "backend/tests/test_datasource_service.py",
       "source_location": "L56",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "tests_test_datasource_service_fakeblobrepository",
-      "target": "tests_test_datasource_service_fakeblobrepository_save_content_chunks",
-      "confidence_score": 1.0
+      "target": "tests_test_datasource_service_fakeblobrepository_save_content_chunks"
     },
     {
       "relation": "calls",
@@ -80012,9 +80012,9 @@
       "source_file": "backend/tests/test_datasource_service.py",
       "source_location": "L184",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "tests_test_datasource_service_datasourceservicetests_test_chunking_task_passes_embedding_gpu_override_to_ollama",
-      "target": "tests_test_datasource_service_fakeollamaclient",
-      "confidence_score": 1.0
+      "target": "tests_test_datasource_service_fakeollamaclient"
     },
     {
       "relation": "method",
@@ -80022,9 +80022,9 @@
       "source_file": "backend/tests/test_datasource_service.py",
       "source_location": "L64",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "tests_test_datasource_service_fakeollamaclient",
-      "target": "tests_test_datasource_service_fakeollamaclient_get_embeddings",
-      "confidence_score": 1.0
+      "target": "tests_test_datasource_service_fakeollamaclient_get_embeddings"
     },
     {
       "relation": "method",
@@ -80032,9 +80032,9 @@
       "source_file": "backend/tests/test_datasource_service.py",
       "source_location": "L61",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "tests_test_datasource_service_fakeollamaclient",
-      "target": "tests_test_datasource_service_fakeollamaclient_init",
-      "confidence_score": 1.0
+      "target": "tests_test_datasource_service_fakeollamaclient_init"
     },
     {
       "relation": "references",
@@ -80166,9 +80166,9 @@
       "source_file": "backend/tests/test_datasource_service.py",
       "source_location": "L183",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "tests_test_datasource_service_datasourceservicetests",
-      "target": "tests_test_datasource_service_datasourceservicetests_test_chunking_task_passes_embedding_gpu_override_to_ollama",
-      "confidence_score": 1.0
+      "target": "tests_test_datasource_service_datasourceservicetests_test_chunking_task_passes_embedding_gpu_override_to_ollama"
     },
     {
       "relation": "method",
@@ -80262,9 +80262,9 @@
       "source_file": "backend/tests/test_datasource_service.py",
       "source_location": "L185",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "tests_test_datasource_service_datasourceservicetests_test_chunking_task_passes_embedding_gpu_override_to_ollama",
-      "target": "tests_test_datasource_service_datasourceservicetests_make_service",
-      "confidence_score": 1.0
+      "target": "tests_test_datasource_service_datasourceservicetests_make_service"
     },
     {
       "relation": "calls",
@@ -85089,9 +85089,9 @@
       "source_file": "backend/tests/test_ollama_client.py",
       "source_location": "L168",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "tests_test_ollama_client_ollamaclientwrapperasynctests",
-      "target": "tests_test_ollama_client_ollamaclientwrapperasynctests_test_get_embeddings_accepts_per_call_gpu_override",
-      "confidence_score": 1.0
+      "target": "tests_test_ollama_client_ollamaclientwrapperasynctests_test_get_embeddings_accepts_per_call_gpu_override"
     },
     {
       "relation": "method",
@@ -85225,9 +85225,9 @@
       "source_file": "backend/tests/test_ollama_client.py",
       "source_location": "L169",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "tests_test_ollama_client_ollamaclientwrapperasynctests_test_get_embeddings_accepts_per_call_gpu_override",
-      "target": "tests_test_ollama_client_ollamaclientwrapperasynctests_make_client",
-      "confidence_score": 1.0
+      "target": "tests_test_ollama_client_ollamaclientwrapperasynctests_make_client"
     },
     {
       "relation": "calls",
@@ -94942,9 +94942,9 @@
       "source_file": ".codex/skills/graphify/SKILL.md",
       "source_location": "L6",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "graphify_skill",
-      "target": "graphify_skill_graphify",
-      "confidence_score": 1.0
+      "target": "graphify_skill_graphify"
     },
     {
       "relation": "contains",
@@ -94952,9 +94952,9 @@
       "source_file": ".codex/skills/graphify/SKILL.md",
       "source_location": "L596",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "graphify_skill_graphify",
-      "target": "graphify_skill_for_graphify_add_and_watch",
-      "confidence_score": 1.0
+      "target": "graphify_skill_for_graphify_add_and_watch"
     },
     {
       "relation": "contains",
@@ -94962,9 +94962,9 @@
       "source_file": ".codex/skills/graphify/SKILL.md",
       "source_location": "L584",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "graphify_skill_graphify",
-      "target": "graphify_skill_for_graphify_query",
-      "confidence_score": 1.0
+      "target": "graphify_skill_for_graphify_query"
     },
     {
       "relation": "contains",
@@ -94972,9 +94972,9 @@
       "source_file": ".codex/skills/graphify/SKILL.md",
       "source_location": "L602",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "graphify_skill_graphify",
-      "target": "graphify_skill_for_the_commit_hook_and_native_claude_md_integration",
-      "confidence_score": 1.0
+      "target": "graphify_skill_for_the_commit_hook_and_native_claude_md_integration"
     },
     {
       "relation": "contains",
@@ -94982,9 +94982,9 @@
       "source_file": ".codex/skills/graphify/SKILL.md",
       "source_location": "L578",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "graphify_skill_graphify",
-      "target": "graphify_skill_for_update_and_cluster_only",
-      "confidence_score": 1.0
+      "target": "graphify_skill_for_update_and_cluster_only"
     },
     {
       "relation": "contains",
@@ -94992,9 +94992,9 @@
       "source_file": ".codex/skills/graphify/SKILL.md",
       "source_location": "L608",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "graphify_skill_graphify",
-      "target": "graphify_skill_honesty_rules",
-      "confidence_score": 1.0
+      "target": "graphify_skill_honesty_rules"
     },
     {
       "relation": "contains",
@@ -95002,9 +95002,9 @@
       "source_file": ".codex/skills/graphify/SKILL.md",
       "source_location": "L560",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "graphify_skill_graphify",
-      "target": "graphify_skill_interpreter_guard_for_subcommands",
-      "confidence_score": 1.0
+      "target": "graphify_skill_interpreter_guard_for_subcommands"
     },
     {
       "relation": "contains",
@@ -95012,9 +95012,9 @@
       "source_file": ".codex/skills/graphify/SKILL.md",
       "source_location": "L10",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "graphify_skill_graphify",
-      "target": "graphify_skill_usage",
-      "confidence_score": 1.0
+      "target": "graphify_skill_usage"
     },
     {
       "relation": "contains",
@@ -95022,9 +95022,9 @@
       "source_file": ".codex/skills/graphify/SKILL.md",
       "source_location": "L45",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "graphify_skill_graphify",
-      "target": "graphify_skill_what_graphify_is_for",
-      "confidence_score": 1.0
+      "target": "graphify_skill_what_graphify_is_for"
     },
     {
       "relation": "contains",
@@ -95032,9 +95032,9 @@
       "source_file": ".codex/skills/graphify/SKILL.md",
       "source_location": "L49",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "graphify_skill_graphify",
-      "target": "graphify_skill_what_you_must_do_when_invoked",
-      "confidence_score": 1.0
+      "target": "graphify_skill_what_you_must_do_when_invoked"
     },
     {
       "relation": "contains",
@@ -95042,9 +95042,9 @@
       "source_file": ".codex/skills/graphify/SKILL.md",
       "source_location": "L61",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "graphify_skill_what_you_must_do_when_invoked",
-      "target": "graphify_skill_step_0_github_repos_and_multi_path_merge_only_if_a_url_or_several_paths",
-      "confidence_score": 1.0
+      "target": "graphify_skill_step_0_github_repos_and_multi_path_merge_only_if_a_url_or_several_paths"
     },
     {
       "relation": "contains",
@@ -95052,9 +95052,9 @@
       "source_file": ".codex/skills/graphify/SKILL.md",
       "source_location": "L65",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "graphify_skill_what_you_must_do_when_invoked",
-      "target": "graphify_skill_step_1_ensure_graphify_is_installed",
-      "confidence_score": 1.0
+      "target": "graphify_skill_step_1_ensure_graphify_is_installed"
     },
     {
       "relation": "contains",
@@ -95062,9 +95062,9 @@
       "source_file": ".codex/skills/graphify/SKILL.md",
       "source_location": "L144",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "graphify_skill_what_you_must_do_when_invoked",
-      "target": "graphify_skill_step_2_5_video_and_audio_only_if_video_files_detected",
-      "confidence_score": 1.0
+      "target": "graphify_skill_step_2_5_video_and_audio_only_if_video_files_detected"
     },
     {
       "relation": "contains",
@@ -95072,9 +95072,9 @@
       "source_file": ".codex/skills/graphify/SKILL.md",
       "source_location": "L107",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "graphify_skill_what_you_must_do_when_invoked",
-      "target": "graphify_skill_step_2_detect_files",
-      "confidence_score": 1.0
+      "target": "graphify_skill_step_2_detect_files"
     },
     {
       "relation": "contains",
@@ -95082,9 +95082,9 @@
       "source_file": ".codex/skills/graphify/SKILL.md",
       "source_location": "L148",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "graphify_skill_what_you_must_do_when_invoked",
-      "target": "graphify_skill_step_3_extract_entities_and_relationships",
-      "confidence_score": 1.0
+      "target": "graphify_skill_step_3_extract_entities_and_relationships"
     },
     {
       "relation": "contains",
@@ -95092,9 +95092,9 @@
       "source_file": ".codex/skills/graphify/SKILL.md",
       "source_location": "L367",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "graphify_skill_what_you_must_do_when_invoked",
-      "target": "graphify_skill_step_4_build_graph_cluster_analyze_generate_outputs",
-      "confidence_score": 1.0
+      "target": "graphify_skill_step_4_build_graph_cluster_analyze_generate_outputs"
     },
     {
       "relation": "contains",
@@ -95102,9 +95102,9 @@
       "source_file": ".codex/skills/graphify/SKILL.md",
       "source_location": "L419",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "graphify_skill_what_you_must_do_when_invoked",
-      "target": "graphify_skill_step_5_label_communities",
-      "confidence_score": 1.0
+      "target": "graphify_skill_step_5_label_communities"
     },
     {
       "relation": "contains",
@@ -95112,9 +95112,9 @@
       "source_file": ".codex/skills/graphify/SKILL.md",
       "source_location": "L459",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "graphify_skill_what_you_must_do_when_invoked",
-      "target": "graphify_skill_step_6_generate_obsidian_vault_opt_in_html",
-      "confidence_score": 1.0
+      "target": "graphify_skill_step_6_generate_obsidian_vault_opt_in_html"
     },
     {
       "relation": "contains",
@@ -95122,9 +95122,9 @@
       "source_file": ".codex/skills/graphify/SKILL.md",
       "source_location": "L485",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "graphify_skill_what_you_must_do_when_invoked",
-      "target": "graphify_skill_step_9_save_manifest_update_cost_tracker_clean_up_and_report",
-      "confidence_score": 1.0
+      "target": "graphify_skill_step_9_save_manifest_update_cost_tracker_clean_up_and_report"
     },
     {
       "relation": "contains",
@@ -95132,9 +95132,9 @@
       "source_file": ".codex/skills/graphify/SKILL.md",
       "source_location": "L479",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "graphify_skill_what_you_must_do_when_invoked",
-      "target": "graphify_skill_steps_6b_8_wiki_neo4j_falkordb_svg_graphml_mcp_benchmark_only_on_their_flags",
-      "confidence_score": 1.0
+      "target": "graphify_skill_steps_6b_8_wiki_neo4j_falkordb_svg_graphml_mcp_benchmark_only_on_their_flags"
     },
     {
       "relation": "contains",
@@ -95142,9 +95142,9 @@
       "source_file": ".codex/skills/graphify/SKILL.md",
       "source_location": "L165",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "graphify_skill_step_3_extract_entities_and_relationships",
-      "target": "graphify_skill_part_a_structural_extraction_for_code_files",
-      "confidence_score": 1.0
+      "target": "graphify_skill_part_a_structural_extraction_for_code_files"
     },
     {
       "relation": "contains",
@@ -95152,9 +95152,9 @@
       "source_file": ".codex/skills/graphify/SKILL.md",
       "source_location": "L191",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "graphify_skill_step_3_extract_entities_and_relationships",
-      "target": "graphify_skill_part_b_semantic_extraction_parallel_subagents",
-      "confidence_score": 1.0
+      "target": "graphify_skill_part_b_semantic_extraction_parallel_subagents"
     },
     {
       "relation": "contains",
@@ -95162,9 +95162,9 @@
       "source_file": ".codex/skills/graphify/SKILL.md",
       "source_location": "L333",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "graphify_skill_step_3_extract_entities_and_relationships",
-      "target": "graphify_skill_part_c_merge_ast_semantic_into_final_extraction",
-      "confidence_score": 1.0
+      "target": "graphify_skill_part_c_merge_ast_semantic_into_final_extraction"
     },
     {
       "relation": "contains",
@@ -95172,9 +95172,9 @@
       "source_file": ".codex/skills/graphify/references/add-watch.md",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_add_watch",
-      "target": "references_add_watch_graphify_reference_add_a_url_and_watch_a_folder",
-      "confidence_score": 1.0
+      "target": "references_add_watch_graphify_reference_add_a_url_and_watch_a_folder"
     },
     {
       "relation": "contains",
@@ -95182,9 +95182,9 @@
       "source_file": ".codex/skills/graphify/references/add-watch.md",
       "source_location": "L5",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_add_watch_graphify_reference_add_a_url_and_watch_a_folder",
-      "target": "references_add_watch_for_graphify_add",
-      "confidence_score": 1.0
+      "target": "references_add_watch_for_graphify_add"
     },
     {
       "relation": "contains",
@@ -95192,9 +95192,9 @@
       "source_file": ".codex/skills/graphify/references/add-watch.md",
       "source_location": "L39",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_add_watch_graphify_reference_add_a_url_and_watch_a_folder",
-      "target": "references_add_watch_for_watch",
-      "confidence_score": 1.0
+      "target": "references_add_watch_for_watch"
     },
     {
       "relation": "contains",
@@ -95202,9 +95202,9 @@
       "source_file": ".codex/skills/graphify/references/exports.md",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_exports",
-      "target": "references_exports_graphify_reference_extra_exports_and_benchmark",
-      "confidence_score": 1.0
+      "target": "references_exports_graphify_reference_extra_exports_and_benchmark"
     },
     {
       "relation": "contains",
@@ -95212,9 +95212,9 @@
       "source_file": ".codex/skills/graphify/references/exports.md",
       "source_location": "L5",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_exports_graphify_reference_extra_exports_and_benchmark",
-      "target": "references_exports_step_6b_wiki_only_if_wiki_flag",
-      "confidence_score": 1.0
+      "target": "references_exports_step_6b_wiki_only_if_wiki_flag"
     },
     {
       "relation": "contains",
@@ -95222,9 +95222,9 @@
       "source_file": ".codex/skills/graphify/references/exports.md",
       "source_location": "L15",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_exports_graphify_reference_extra_exports_and_benchmark",
-      "target": "references_exports_step_7_neo4j_export_only_if_neo4j_or_neo4j_push_flag",
-      "confidence_score": 1.0
+      "target": "references_exports_step_7_neo4j_export_only_if_neo4j_or_neo4j_push_flag"
     },
     {
       "relation": "contains",
@@ -95232,9 +95232,9 @@
       "source_file": ".codex/skills/graphify/references/exports.md",
       "source_location": "L31",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_exports_graphify_reference_extra_exports_and_benchmark",
-      "target": "references_exports_step_7a_falkordb_export_only_if_falkordb_or_falkordb_push_flag",
-      "confidence_score": 1.0
+      "target": "references_exports_step_7a_falkordb_export_only_if_falkordb_or_falkordb_push_flag"
     },
     {
       "relation": "contains",
@@ -95242,9 +95242,9 @@
       "source_file": ".codex/skills/graphify/references/exports.md",
       "source_location": "L47",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_exports_graphify_reference_extra_exports_and_benchmark",
-      "target": "references_exports_step_7b_svg_export_only_if_svg_flag",
-      "confidence_score": 1.0
+      "target": "references_exports_step_7b_svg_export_only_if_svg_flag"
     },
     {
       "relation": "contains",
@@ -95252,9 +95252,9 @@
       "source_file": ".codex/skills/graphify/references/exports.md",
       "source_location": "L53",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_exports_graphify_reference_extra_exports_and_benchmark",
-      "target": "references_exports_step_7c_graphml_export_only_if_graphml_flag",
-      "confidence_score": 1.0
+      "target": "references_exports_step_7c_graphml_export_only_if_graphml_flag"
     },
     {
       "relation": "contains",
@@ -95262,9 +95262,9 @@
       "source_file": ".codex/skills/graphify/references/exports.md",
       "source_location": "L59",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_exports_graphify_reference_extra_exports_and_benchmark",
-      "target": "references_exports_step_7d_mcp_server_only_if_mcp_flag",
-      "confidence_score": 1.0
+      "target": "references_exports_step_7d_mcp_server_only_if_mcp_flag"
     },
     {
       "relation": "contains",
@@ -95272,9 +95272,9 @@
       "source_file": ".codex/skills/graphify/references/exports.md",
       "source_location": "L79",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_exports_graphify_reference_extra_exports_and_benchmark",
-      "target": "references_exports_step_8_token_reduction_benchmark_only_if_total_words_5000",
-      "confidence_score": 1.0
+      "target": "references_exports_step_8_token_reduction_benchmark_only_if_total_words_5000"
     },
     {
       "relation": "contains",
@@ -95282,9 +95282,9 @@
       "source_file": ".codex/skills/graphify/references/extraction-spec.md",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_extraction_spec",
-      "target": "references_extraction_spec_graphify_reference_extraction_subagent_prompt_compact",
-      "confidence_score": 1.0
+      "target": "references_extraction_spec_graphify_reference_extraction_subagent_prompt_compact"
     },
     {
       "relation": "contains",
@@ -95292,9 +95292,9 @@
       "source_file": ".codex/skills/graphify/references/github-and-merge.md",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_github_and_merge",
-      "target": "references_github_and_merge_graphify_reference_github_clone_and_cross_repo_merge",
-      "confidence_score": 1.0
+      "target": "references_github_and_merge_graphify_reference_github_clone_and_cross_repo_merge"
     },
     {
       "relation": "contains",
@@ -95302,9 +95302,9 @@
       "source_file": ".codex/skills/graphify/references/github-and-merge.md",
       "source_location": "L5",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_github_and_merge_graphify_reference_github_clone_and_cross_repo_merge",
-      "target": "references_github_and_merge_step_0_clone_github_repo_s_only_if_a_github_url_was_given",
-      "confidence_score": 1.0
+      "target": "references_github_and_merge_step_0_clone_github_repo_s_only_if_a_github_url_was_given"
     },
     {
       "relation": "contains",
@@ -95312,9 +95312,9 @@
       "source_file": ".codex/skills/graphify/references/hooks.md",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_hooks",
-      "target": "references_hooks_graphify_reference_commit_hook_and_native_claude_md_integration",
-      "confidence_score": 1.0
+      "target": "references_hooks_graphify_reference_commit_hook_and_native_claude_md_integration"
     },
     {
       "relation": "contains",
@@ -95322,9 +95322,9 @@
       "source_file": ".codex/skills/graphify/references/hooks.md",
       "source_location": "L5",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_hooks_graphify_reference_commit_hook_and_native_claude_md_integration",
-      "target": "references_hooks_for_git_commit_hook",
-      "confidence_score": 1.0
+      "target": "references_hooks_for_git_commit_hook"
     },
     {
       "relation": "contains",
@@ -95332,9 +95332,9 @@
       "source_file": ".codex/skills/graphify/references/hooks.md",
       "source_location": "L21",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_hooks_graphify_reference_commit_hook_and_native_claude_md_integration",
-      "target": "references_hooks_for_native_claude_md_integration",
-      "confidence_score": 1.0
+      "target": "references_hooks_for_native_claude_md_integration"
     },
     {
       "relation": "contains",
@@ -95342,9 +95342,9 @@
       "source_file": ".codex/skills/graphify/references/query.md",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_query",
-      "target": "references_query_graphify_reference_query_path_explain",
-      "confidence_score": 1.0
+      "target": "references_query_graphify_reference_query_path_explain"
     },
     {
       "relation": "contains",
@@ -95352,9 +95352,9 @@
       "source_file": ".codex/skills/graphify/references/query.md",
       "source_location": "L198",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_query_graphify_reference_query_path_explain",
-      "target": "references_query_for_graphify_explain",
-      "confidence_score": 1.0
+      "target": "references_query_for_graphify_explain"
     },
     {
       "relation": "contains",
@@ -95362,9 +95362,9 @@
       "source_file": ".codex/skills/graphify/references/query.md",
       "source_location": "L136",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_query_graphify_reference_query_path_explain",
-      "target": "references_query_for_graphify_path",
-      "confidence_score": 1.0
+      "target": "references_query_for_graphify_path"
     },
     {
       "relation": "contains",
@@ -95372,9 +95372,9 @@
       "source_file": ".codex/skills/graphify/references/transcribe.md",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_transcribe",
-      "target": "references_transcribe_graphify_reference_transcribe_video_and_audio",
-      "confidence_score": 1.0
+      "target": "references_transcribe_graphify_reference_transcribe_video_and_audio"
     },
     {
       "relation": "contains",
@@ -95382,9 +95382,9 @@
       "source_file": ".codex/skills/graphify/references/transcribe.md",
       "source_location": "L5",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_transcribe_graphify_reference_transcribe_video_and_audio",
-      "target": "references_transcribe_step_2_5_transcribe_video_audio_files_only_if_video_files_detected",
-      "confidence_score": 1.0
+      "target": "references_transcribe_step_2_5_transcribe_video_audio_files_only_if_video_files_detected"
     },
     {
       "relation": "contains",
@@ -95392,9 +95392,9 @@
       "source_file": ".codex/skills/graphify/references/update.md",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_update",
-      "target": "references_update_graphify_reference_incremental_update_and_cluster_only",
-      "confidence_score": 1.0
+      "target": "references_update_graphify_reference_incremental_update_and_cluster_only"
     },
     {
       "relation": "contains",
@@ -95402,9 +95402,9 @@
       "source_file": ".codex/skills/graphify/references/update.md",
       "source_location": "L171",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_update_graphify_reference_incremental_update_and_cluster_only",
-      "target": "references_update_for_cluster_only",
-      "confidence_score": 1.0
+      "target": "references_update_for_cluster_only"
     },
     {
       "relation": "contains",
@@ -95412,9 +95412,9 @@
       "source_file": ".codex/skills/graphify/references/update.md",
       "source_location": "L5",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_update_graphify_reference_incremental_update_and_cluster_only",
-      "target": "references_update_for_update_incremental_re_extraction",
-      "confidence_score": 1.0
+      "target": "references_update_for_update_incremental_re_extraction"
     },
     {
       "relation": "contains",
@@ -95422,9 +95422,9 @@
       "source_file": ".github/skills/simone/SKILL.md",
       "source_location": "L6",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "simone_skill",
-      "target": "simone_skill_simone",
-      "confidence_score": 1.0
+      "target": "simone_skill_simone"
     },
     {
       "relation": "contains",
@@ -95432,9 +95432,9 @@
       "source_file": ".github/skills/simone/SKILL.md",
       "source_location": "L101",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "simone_skill_simone",
-      "target": "simone_skill_common_checks",
-      "confidence_score": 1.0
+      "target": "simone_skill_common_checks"
     },
     {
       "relation": "contains",
@@ -95442,9 +95442,9 @@
       "source_file": ".github/skills/simone/SKILL.md",
       "source_location": "L14",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "simone_skill_simone",
-      "target": "simone_skill_load_the_right_reference",
-      "confidence_score": 1.0
+      "target": "simone_skill_load_the_right_reference"
     },
     {
       "relation": "contains",
@@ -95452,9 +95452,9 @@
       "source_file": ".github/skills/simone/SKILL.md",
       "source_location": "L45",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "simone_skill_simone",
-      "target": "simone_skill_preferred_cli_workflow",
-      "confidence_score": 1.0
+      "target": "simone_skill_preferred_cli_workflow"
     },
     {
       "relation": "contains",
@@ -95462,9 +95462,9 @@
       "source_file": ".github/skills/simone/SKILL.md",
       "source_location": "L133",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "simone_skill_simone",
-      "target": "simone_skill_testing_and_verification",
-      "confidence_score": 1.0
+      "target": "simone_skill_testing_and_verification"
     },
     {
       "relation": "contains",
@@ -95472,9 +95472,9 @@
       "source_file": ".github/skills/simone/SKILL.md",
       "source_location": "L118",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "simone_skill_simone",
-      "target": "simone_skill_thesis_and_literature_helpers",
-      "confidence_score": 1.0
+      "target": "simone_skill_thesis_and_literature_helpers"
     },
     {
       "relation": "contains",
@@ -95482,9 +95482,9 @@
       "source_file": ".github/skills/simone/SKILL.md",
       "source_location": "L27",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "simone_skill_simone",
-      "target": "simone_skill_thesis_source_rule",
-      "confidence_score": 1.0
+      "target": "simone_skill_thesis_source_rule"
     },
     {
       "relation": "contains",
@@ -95492,9 +95492,9 @@
       "source_file": ".github/skills/simone/references/codebase-map.md",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_codebase_map",
-      "target": "references_codebase_map_simone_codebase_and_runtime_map",
-      "confidence_score": 1.0
+      "target": "references_codebase_map_simone_codebase_and_runtime_map"
     },
     {
       "relation": "contains",
@@ -95502,9 +95502,9 @@
       "source_file": ".github/skills/simone/references/codebase-map.md",
       "source_location": "L79",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_codebase_map_simone_codebase_and_runtime_map",
-      "target": "references_codebase_map_architecture",
-      "confidence_score": 1.0
+      "target": "references_codebase_map_architecture"
     },
     {
       "relation": "contains",
@@ -95512,9 +95512,9 @@
       "source_file": ".github/skills/simone/references/codebase-map.md",
       "source_location": "L123",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_codebase_map_simone_codebase_and_runtime_map",
-      "target": "references_codebase_map_common_lookup_paths",
-      "confidence_score": 1.0
+      "target": "references_codebase_map_common_lookup_paths"
     },
     {
       "relation": "contains",
@@ -95522,9 +95522,9 @@
       "source_file": ".github/skills/simone/references/codebase-map.md",
       "source_location": "L135",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_codebase_map_simone_codebase_and_runtime_map",
-      "target": "references_codebase_map_complete_workflow_and_evaluation",
-      "confidence_score": 1.0
+      "target": "references_codebase_map_complete_workflow_and_evaluation"
     },
     {
       "relation": "contains",
@@ -95532,9 +95532,9 @@
       "source_file": ".github/skills/simone/references/codebase-map.md",
       "source_location": "L38",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_codebase_map_simone_codebase_and_runtime_map",
-      "target": "references_codebase_map_important_environment_fields",
-      "confidence_score": 1.0
+      "target": "references_codebase_map_important_environment_fields"
     },
     {
       "relation": "contains",
@@ -95542,9 +95542,9 @@
       "source_file": ".github/skills/simone/references/codebase-map.md",
       "source_location": "L102",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_codebase_map_simone_codebase_and_runtime_map",
-      "target": "references_codebase_map_layer_boundaries",
-      "confidence_score": 1.0
+      "target": "references_codebase_map_layer_boundaries"
     },
     {
       "relation": "contains",
@@ -95552,9 +95552,9 @@
       "source_file": ".github/skills/simone/references/codebase-map.md",
       "source_location": "L14",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_codebase_map_simone_codebase_and_runtime_map",
-      "target": "references_codebase_map_repository_root",
-      "confidence_score": 1.0
+      "target": "references_codebase_map_repository_root"
     },
     {
       "relation": "contains",
@@ -95562,9 +95562,9 @@
       "source_file": ".github/skills/simone/references/codebase-map.md",
       "source_location": "L58",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_codebase_map_simone_codebase_and_runtime_map",
-      "target": "references_codebase_map_runtime_artifacts",
-      "confidence_score": 1.0
+      "target": "references_codebase_map_runtime_artifacts"
     },
     {
       "relation": "contains",
@@ -95572,9 +95572,9 @@
       "source_file": ".github/skills/simone/references/codebase-map.md",
       "source_location": "L25",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_codebase_map_simone_codebase_and_runtime_map",
-      "target": "references_codebase_map_runtime_modes",
-      "confidence_score": 1.0
+      "target": "references_codebase_map_runtime_modes"
     },
     {
       "relation": "contains",
@@ -95582,9 +95582,9 @@
       "source_file": ".github/skills/simone/references/codebase-map.md",
       "source_location": "L142",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_codebase_map_simone_codebase_and_runtime_map",
-      "target": "references_codebase_map_testing",
-      "confidence_score": 1.0
+      "target": "references_codebase_map_testing"
     },
     {
       "relation": "contains",
@@ -95592,9 +95592,9 @@
       "source_file": ".github/skills/simone/references/codebase-map.md",
       "source_location": "L49",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_codebase_map_simone_codebase_and_runtime_map",
-      "target": "references_codebase_map_urls",
-      "confidence_score": 1.0
+      "target": "references_codebase_map_urls"
     },
     {
       "relation": "contains",
@@ -95602,9 +95602,9 @@
       "source_file": ".github/skills/simone/references/evaluation-plan.md",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_evaluation_plan",
-      "target": "references_evaluation_plan_simone_evaluation_plan",
-      "confidence_score": 1.0
+      "target": "references_evaluation_plan_simone_evaluation_plan"
     },
     {
       "relation": "contains",
@@ -95612,9 +95612,9 @@
       "source_file": ".github/skills/simone/references/evaluation-plan.md",
       "source_location": "L107",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_evaluation_plan_simone_evaluation_plan",
-      "target": "references_evaluation_plan_baseline_options",
-      "confidence_score": 1.0
+      "target": "references_evaluation_plan_baseline_options"
     },
     {
       "relation": "contains",
@@ -95622,9 +95622,9 @@
       "source_file": ".github/skills/simone/references/evaluation-plan.md",
       "source_location": "L15",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_evaluation_plan_simone_evaluation_plan",
-      "target": "references_evaluation_plan_current_evaluation_status",
-      "confidence_score": 1.0
+      "target": "references_evaluation_plan_current_evaluation_status"
     },
     {
       "relation": "contains",
@@ -95632,9 +95632,9 @@
       "source_file": ".github/skills/simone/references/evaluation-plan.md",
       "source_location": "L87",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_evaluation_plan_simone_evaluation_plan",
-      "target": "references_evaluation_plan_error_categories",
-      "confidence_score": 1.0
+      "target": "references_evaluation_plan_error_categories"
     },
     {
       "relation": "contains",
@@ -95642,9 +95642,9 @@
       "source_file": ".github/skills/simone/references/evaluation-plan.md",
       "source_location": "L40",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_evaluation_plan_simone_evaluation_plan",
-      "target": "references_evaluation_plan_evaluation_material",
-      "confidence_score": 1.0
+      "target": "references_evaluation_plan_evaluation_material"
     },
     {
       "relation": "contains",
@@ -95652,9 +95652,9 @@
       "source_file": ".github/skills/simone/references/evaluation-plan.md",
       "source_location": "L53",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_evaluation_plan_simone_evaluation_plan",
-      "target": "references_evaluation_plan_manual_reference_annotation",
-      "confidence_score": 1.0
+      "target": "references_evaluation_plan_manual_reference_annotation"
     },
     {
       "relation": "contains",
@@ -95662,9 +95662,9 @@
       "source_file": ".github/skills/simone/references/evaluation-plan.md",
       "source_location": "L68",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_evaluation_plan_simone_evaluation_plan",
-      "target": "references_evaluation_plan_metrics",
-      "confidence_score": 1.0
+      "target": "references_evaluation_plan_metrics"
     },
     {
       "relation": "contains",
@@ -95672,9 +95672,9 @@
       "source_file": ".github/skills/simone/references/evaluation-plan.md",
       "source_location": "L119",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_evaluation_plan_simone_evaluation_plan",
-      "target": "references_evaluation_plan_reproducibility_checklist",
-      "confidence_score": 1.0
+      "target": "references_evaluation_plan_reproducibility_checklist"
     },
     {
       "relation": "contains",
@@ -95682,9 +95682,9 @@
       "source_file": ".github/skills/simone/references/evaluation-plan.md",
       "source_location": "L133",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_evaluation_plan_simone_evaluation_plan",
-      "target": "references_evaluation_plan_thesis_critical_completeness",
-      "confidence_score": 1.0
+      "target": "references_evaluation_plan_thesis_critical_completeness"
     },
     {
       "relation": "contains",
@@ -95692,9 +95692,9 @@
       "source_file": ".github/skills/simone/references/notebooklm-workflow.md",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_notebooklm_workflow",
-      "target": "references_notebooklm_workflow_notebooklm_and_literature_workflow",
-      "confidence_score": 1.0
+      "target": "references_notebooklm_workflow_notebooklm_and_literature_workflow"
     },
     {
       "relation": "contains",
@@ -95702,9 +95702,9 @@
       "source_file": ".github/skills/simone/references/notebooklm-workflow.md",
       "source_location": "L97",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_notebooklm_workflow_notebooklm_and_literature_workflow",
-      "target": "references_notebooklm_workflow_citation_sync_flow",
-      "confidence_score": 1.0
+      "target": "references_notebooklm_workflow_citation_sync_flow"
     },
     {
       "relation": "contains",
@@ -95712,9 +95712,9 @@
       "source_file": ".github/skills/simone/references/notebooklm-workflow.md",
       "source_location": "L86",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_notebooklm_workflow_notebooklm_and_literature_workflow",
-      "target": "references_notebooklm_workflow_citation_traceability",
-      "confidence_score": 1.0
+      "target": "references_notebooklm_workflow_citation_traceability"
     },
     {
       "relation": "contains",
@@ -95722,9 +95722,9 @@
       "source_file": ".github/skills/simone/references/notebooklm-workflow.md",
       "source_location": "L23",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_notebooklm_workflow_notebooklm_and_literature_workflow",
-      "target": "references_notebooklm_workflow_first_checks",
-      "confidence_score": 1.0
+      "target": "references_notebooklm_workflow_first_checks"
     },
     {
       "relation": "contains",
@@ -95732,9 +95732,9 @@
       "source_file": ".github/skills/simone/references/notebooklm-workflow.md",
       "source_location": "L61",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_notebooklm_workflow_notebooklm_and_literature_workflow",
-      "target": "references_notebooklm_workflow_focused_thesis_notebooks",
-      "confidence_score": 1.0
+      "target": "references_notebooklm_workflow_focused_thesis_notebooks"
     },
     {
       "relation": "contains",
@@ -95742,9 +95742,9 @@
       "source_file": ".github/skills/simone/references/notebooklm-workflow.md",
       "source_location": "L115",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_notebooklm_workflow_notebooklm_and_literature_workflow",
-      "target": "references_notebooklm_workflow_literature_source_of_truth_policy",
-      "confidence_score": 1.0
+      "target": "references_notebooklm_workflow_literature_source_of_truth_policy"
     },
     {
       "relation": "contains",
@@ -95752,9 +95752,9 @@
       "source_file": ".github/skills/simone/references/notebooklm-workflow.md",
       "source_location": "L145",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_notebooklm_workflow_notebooklm_and_literature_workflow",
-      "target": "references_notebooklm_workflow_pdf_build_check",
-      "confidence_score": 1.0
+      "target": "references_notebooklm_workflow_pdf_build_check"
     },
     {
       "relation": "contains",
@@ -95762,9 +95762,9 @@
       "source_file": ".github/skills/simone/references/notebooklm-workflow.md",
       "source_location": "L131",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_notebooklm_workflow_notebooklm_and_literature_workflow",
-      "target": "references_notebooklm_workflow_reference_discovery",
-      "confidence_score": 1.0
+      "target": "references_notebooklm_workflow_reference_discovery"
     },
     {
       "relation": "contains",
@@ -95772,9 +95772,9 @@
       "source_file": ".github/skills/simone/references/notebooklm-workflow.md",
       "source_location": "L11",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_notebooklm_workflow_notebooklm_and_literature_workflow",
-      "target": "references_notebooklm_workflow_safety",
-      "confidence_score": 1.0
+      "target": "references_notebooklm_workflow_safety"
     },
     {
       "relation": "contains",
@@ -95782,9 +95782,9 @@
       "source_file": ".github/skills/simone/references/notebooklm-workflow.md",
       "source_location": "L50",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_notebooklm_workflow_notebooklm_and_literature_workflow",
-      "target": "references_notebooklm_workflow_thesis_content_rule",
-      "confidence_score": 1.0
+      "target": "references_notebooklm_workflow_thesis_content_rule"
     },
     {
       "relation": "contains",
@@ -95792,9 +95792,9 @@
       "source_file": ".github/skills/simone/references/simone-workflow.md",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_simone_workflow",
-      "target": "references_simone_workflow_simone_workflow_reference",
-      "confidence_score": 1.0
+      "target": "references_simone_workflow_simone_workflow_reference"
     },
     {
       "relation": "contains",
@@ -95802,9 +95802,9 @@
       "source_file": ".github/skills/simone/references/simone-workflow.md",
       "source_location": "L13",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_simone_workflow_simone_workflow_reference",
-      "target": "references_simone_workflow_conceptual_workflow_for_thesis_prose",
-      "confidence_score": 1.0
+      "target": "references_simone_workflow_conceptual_workflow_for_thesis_prose"
     },
     {
       "relation": "contains",
@@ -95812,9 +95812,9 @@
       "source_file": ".github/skills/simone/references/simone-workflow.md",
       "source_location": "L57",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_simone_workflow_simone_workflow_reference",
-      "target": "references_simone_workflow_current_active_extraction_flow",
-      "confidence_score": 1.0
+      "target": "references_simone_workflow_current_active_extraction_flow"
     },
     {
       "relation": "contains",
@@ -95822,9 +95822,9 @@
       "source_file": ".github/skills/simone/references/simone-workflow.md",
       "source_location": "L33",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_simone_workflow_simone_workflow_reference",
-      "target": "references_simone_workflow_implementation_workflow",
-      "confidence_score": 1.0
+      "target": "references_simone_workflow_implementation_workflow"
     },
     {
       "relation": "contains",
@@ -95832,9 +95832,9 @@
       "source_file": ".github/skills/simone/references/simone-workflow.md",
       "source_location": "L93",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_simone_workflow_simone_workflow_reference",
-      "target": "references_simone_workflow_important_boundaries",
-      "confidence_score": 1.0
+      "target": "references_simone_workflow_important_boundaries"
     },
     {
       "relation": "contains",
@@ -95842,9 +95842,9 @@
       "source_file": ".github/skills/simone/references/simone-workflow.md",
       "source_location": "L75",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_simone_workflow_simone_workflow_reference",
-      "target": "references_simone_workflow_intermediate_representation",
-      "confidence_score": 1.0
+      "target": "references_simone_workflow_intermediate_representation"
     },
     {
       "relation": "contains",
@@ -95852,9 +95852,9 @@
       "source_file": ".github/skills/simone/references/simone-workflow.md",
       "source_location": "L104",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_simone_workflow_simone_workflow_reference",
-      "target": "references_simone_workflow_thesis_ready_interpretation",
-      "confidence_score": 1.0
+      "target": "references_simone_workflow_thesis_ready_interpretation"
     },
     {
       "relation": "contains",
@@ -95862,9 +95862,9 @@
       "source_file": ".github/skills/simone/references/thesis-context.md",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_thesis_context",
-      "target": "references_thesis_context_simone_thesis_context",
-      "confidence_score": 1.0
+      "target": "references_thesis_context_simone_thesis_context"
     },
     {
       "relation": "contains",
@@ -95872,9 +95872,9 @@
       "source_file": ".github/skills/simone/references/thesis-context.md",
       "source_location": "L19",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_thesis_context_simone_thesis_context",
-      "target": "references_thesis_context_central_research_question",
-      "confidence_score": 1.0
+      "target": "references_thesis_context_central_research_question"
     },
     {
       "relation": "contains",
@@ -95882,9 +95882,9 @@
       "source_file": ".github/skills/simone/references/thesis-context.md",
       "source_location": "L96",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_thesis_context_simone_thesis_context",
-      "target": "references_thesis_context_chapter_structure",
-      "confidence_score": 1.0
+      "target": "references_thesis_context_chapter_structure"
     },
     {
       "relation": "contains",
@@ -95892,9 +95892,9 @@
       "source_file": ".github/skills/simone/references/thesis-context.md",
       "source_location": "L31",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_thesis_context_simone_thesis_context",
-      "target": "references_thesis_context_contribution_framing",
-      "confidence_score": 1.0
+      "target": "references_thesis_context_contribution_framing"
     },
     {
       "relation": "contains",
@@ -95902,9 +95902,9 @@
       "source_file": ".github/skills/simone/references/thesis-context.md",
       "source_location": "L11",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_thesis_context_simone_thesis_context",
-      "target": "references_thesis_context_core_topic",
-      "confidence_score": 1.0
+      "target": "references_thesis_context_core_topic"
     },
     {
       "relation": "contains",
@@ -95912,9 +95912,9 @@
       "source_file": ".github/skills/simone/references/thesis-context.md",
       "source_location": "L72",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_thesis_context_simone_thesis_context",
-      "target": "references_thesis_context_current_thesis_status",
-      "confidence_score": 1.0
+      "target": "references_thesis_context_current_thesis_status"
     },
     {
       "relation": "contains",
@@ -95922,9 +95922,9 @@
       "source_file": ".github/skills/simone/references/thesis-context.md",
       "source_location": "L49",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_thesis_context_simone_thesis_context",
-      "target": "references_thesis_context_scope",
-      "confidence_score": 1.0
+      "target": "references_thesis_context_scope"
     },
     {
       "relation": "contains",
@@ -95932,9 +95932,9 @@
       "source_file": ".github/skills/simone/references/thesis-context.md",
       "source_location": "L23",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "references_thesis_context_simone_thesis_context",
-      "target": "references_thesis_context_supporting_research_questions",
-      "confidence_score": 1.0
+      "target": "references_thesis_context_supporting_research_questions"
     },
     {
       "relation": "contains",
@@ -95942,9 +95942,9 @@
       "source_file": "AGENTS.md",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agents",
-      "target": "agents_graphify",
-      "confidence_score": 1.0
+      "target": "agents_graphify"
     },
     {
       "relation": "contains",
@@ -95952,9 +95952,9 @@
       "source_file": "README.md",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "readme",
-      "target": "readme_semantic_inference_module_for_ontology_driven_node_extraction_simone",
-      "confidence_score": 1.0
+      "target": "readme_semantic_inference_module_for_ontology_driven_node_extraction_simone"
     },
     {
       "relation": "contains",
@@ -95962,9 +95962,9 @@
       "source_file": "README.md",
       "source_location": "L11",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "readme_semantic_inference_module_for_ontology_driven_node_extraction_simone",
-      "target": "readme_prototype_objective",
-      "confidence_score": 1.0
+      "target": "readme_prototype_objective"
     },
     {
       "relation": "contains",
@@ -95972,9 +95972,9 @@
       "source_file": "README.md",
       "source_location": "L5",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "readme_semantic_inference_module_for_ontology_driven_node_extraction_simone",
-      "target": "readme_research_context",
-      "confidence_score": 1.0
+      "target": "readme_research_context"
     },
     {
       "relation": "contains",
@@ -95982,9 +95982,9 @@
       "source_file": "README.md",
       "source_location": "L17",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "readme_semantic_inference_module_for_ontology_driven_node_extraction_simone",
-      "target": "readme_running_the_app",
-      "confidence_score": 1.0
+      "target": "readme_running_the_app"
     },
     {
       "relation": "contains",
@@ -95992,9 +95992,9 @@
       "source_file": "README.md",
       "source_location": "L79",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "readme_running_the_app",
-      "target": "readme_cli_wrappers",
-      "confidence_score": 1.0
+      "target": "readme_cli_wrappers"
     },
     {
       "relation": "contains",
@@ -96002,9 +96002,9 @@
       "source_file": "README.md",
       "source_location": "L27",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "readme_running_the_app",
-      "target": "readme_clone_and_prepare",
-      "confidence_score": 1.0
+      "target": "readme_clone_and_prepare"
     },
     {
       "relation": "contains",
@@ -96012,9 +96012,9 @@
       "source_file": "README.md",
       "source_location": "L175",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "readme_running_the_app",
-      "target": "readme_complete_workflow_endpoint",
-      "confidence_score": 1.0
+      "target": "readme_complete_workflow_endpoint"
     },
     {
       "relation": "contains",
@@ -96022,9 +96022,9 @@
       "source_file": "README.md",
       "source_location": "L109",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "readme_running_the_app",
-      "target": "readme_development_mode",
-      "confidence_score": 1.0
+      "target": "readme_development_mode"
     },
     {
       "relation": "contains",
@@ -96032,9 +96032,9 @@
       "source_file": "README.md",
       "source_location": "L35",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "readme_running_the_app",
-      "target": "readme_environment_variables",
-      "confidence_score": 1.0
+      "target": "readme_environment_variables"
     },
     {
       "relation": "contains",
@@ -96042,9 +96042,9 @@
       "source_file": "README.md",
       "source_location": "L138",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "readme_running_the_app",
-      "target": "readme_infrastructure_mode",
-      "confidence_score": 1.0
+      "target": "readme_infrastructure_mode"
     },
     {
       "relation": "contains",
@@ -96052,9 +96052,9 @@
       "source_file": "README.md",
       "source_location": "L211",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "readme_running_the_app",
-      "target": "readme_neo4j_data_maintenance",
-      "confidence_score": 1.0
+      "target": "readme_neo4j_data_maintenance"
     },
     {
       "relation": "contains",
@@ -96062,9 +96062,9 @@
       "source_file": "README.md",
       "source_location": "L199",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "readme_running_the_app",
-      "target": "readme_ollama_cloud_sign_in",
-      "confidence_score": 1.0
+      "target": "readme_ollama_cloud_sign_in"
     },
     {
       "relation": "contains",
@@ -96072,9 +96072,9 @@
       "source_file": "README.md",
       "source_location": "L19",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "readme_running_the_app",
-      "target": "readme_prerequisites",
-      "confidence_score": 1.0
+      "target": "readme_prerequisites"
     },
     {
       "relation": "contains",
@@ -96082,9 +96082,9 @@
       "source_file": "README.md",
       "source_location": "L93",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "readme_running_the_app",
-      "target": "readme_production_mode",
-      "confidence_score": 1.0
+      "target": "readme_production_mode"
     },
     {
       "relation": "contains",
@@ -96092,9 +96092,9 @@
       "source_file": "README.md",
       "source_location": "L166",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "readme_running_the_app",
-      "target": "readme_service_urls",
-      "confidence_score": 1.0
+      "target": "readme_service_urls"
     },
     {
       "relation": "contains",
@@ -96102,9 +96102,9 @@
       "source_file": "README.md",
       "source_location": "L190",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "readme_running_the_app",
-      "target": "readme_stop_and_inspect",
-      "confidence_score": 1.0
+      "target": "readme_stop_and_inspect"
     },
     {
       "relation": "contains",
@@ -96112,9 +96112,9 @@
       "source_file": "backend/README.md",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "backend_readme",
-      "target": "backend_readme_simone_backend",
-      "confidence_score": 1.0
+      "target": "backend_readme_simone_backend"
     },
     {
       "relation": "contains",
@@ -96122,9 +96122,9 @@
       "source_file": "backend/README.md",
       "source_location": "L5",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "backend_readme_simone_backend",
-      "target": "backend_readme_testing",
-      "confidence_score": 1.0
+      "target": "backend_readme_testing"
     },
     {
       "relation": "contains",
@@ -96132,9 +96132,9 @@
       "source_file": "backend/README.md",
       "source_location": "L23",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "backend_readme_simone_backend",
-      "target": "backend_readme_vocab_query_flow",
-      "confidence_score": 1.0
+      "target": "backend_readme_vocab_query_flow"
     },
     {
       "relation": "contains",
@@ -96142,9 +96142,9 @@
       "source_file": "backend/docs/ollama-json-schema-mode.md",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_ollama_json_schema_mode",
-      "target": "docs_ollama_json_schema_mode_ollama_json_schema_mode_investigation",
-      "confidence_score": 1.0
+      "target": "docs_ollama_json_schema_mode_ollama_json_schema_mode_investigation"
     },
     {
       "relation": "contains",
@@ -96152,9 +96152,9 @@
       "source_file": "backend/docs/ollama-json-schema-mode.md",
       "source_location": "L56",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_ollama_json_schema_mode_ollama_json_schema_mode_investigation",
-      "target": "docs_ollama_json_schema_mode_additional_observations",
-      "confidence_score": 1.0
+      "target": "docs_ollama_json_schema_mode_additional_observations"
     },
     {
       "relation": "contains",
@@ -96162,9 +96162,9 @@
       "source_file": "backend/docs/ollama-json-schema-mode.md",
       "source_location": "L5",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_ollama_json_schema_mode_ollama_json_schema_mode_investigation",
-      "target": "docs_ollama_json_schema_mode_context",
-      "confidence_score": 1.0
+      "target": "docs_ollama_json_schema_mode_context"
     },
     {
       "relation": "contains",
@@ -96172,9 +96172,9 @@
       "source_file": "backend/docs/ollama-json-schema-mode.md",
       "source_location": "L23",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_ollama_json_schema_mode_ollama_json_schema_mode_investigation",
-      "target": "docs_ollama_json_schema_mode_environment_tested",
-      "confidence_score": 1.0
+      "target": "docs_ollama_json_schema_mode_environment_tested"
     },
     {
       "relation": "contains",
@@ -96182,9 +96182,9 @@
       "source_file": "backend/docs/ollama-json-schema-mode.md",
       "source_location": "L75",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_ollama_json_schema_mode_ollama_json_schema_mode_investigation",
-      "target": "docs_ollama_json_schema_mode_implications_for_simone",
-      "confidence_score": 1.0
+      "target": "docs_ollama_json_schema_mode_implications_for_simone"
     },
     {
       "relation": "contains",
@@ -96192,9 +96192,9 @@
       "source_file": "backend/docs/ollama-json-schema-mode.md",
       "source_location": "L39",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_ollama_json_schema_mode_ollama_json_schema_mode_investigation",
-      "target": "docs_ollama_json_schema_mode_result",
-      "confidence_score": 1.0
+      "target": "docs_ollama_json_schema_mode_result"
     },
     {
       "relation": "contains",
@@ -96202,9 +96202,9 @@
       "source_file": "backend/docs/ollama-json-schema-mode.md",
       "source_location": "L94",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_ollama_json_schema_mode_ollama_json_schema_mode_investigation",
-      "target": "docs_ollama_json_schema_mode_useful_references",
-      "confidence_score": 1.0
+      "target": "docs_ollama_json_schema_mode_useful_references"
     },
     {
       "relation": "contains",
@@ -96212,9 +96212,9 @@
       "source_file": "backend/docs/replace-pydantic-ai.md",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_replace_pydantic_ai",
-      "target": "docs_replace_pydantic_ai_replace_pydantic_ai_with_custom_structured_completion_module",
-      "confidence_score": 1.0
+      "target": "docs_replace_pydantic_ai_replace_pydantic_ai_with_custom_structured_completion_module"
     },
     {
       "relation": "contains",
@@ -96222,9 +96222,9 @@
       "source_file": "backend/docs/replace-pydantic-ai.md",
       "source_location": "L28",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_replace_pydantic_ai_replace_pydantic_ai_with_custom_structured_completion_module",
-      "target": "docs_replace_pydantic_ai_completion_inventory",
-      "confidence_score": 1.0
+      "target": "docs_replace_pydantic_ai_completion_inventory"
     },
     {
       "relation": "contains",
@@ -96232,9 +96232,9 @@
       "source_file": "backend/docs/replace-pydantic-ai.md",
       "source_location": "L59",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_replace_pydantic_ai_replace_pydantic_ai_with_custom_structured_completion_module",
-      "target": "docs_replace_pydantic_ai_current_breakages_addressed",
-      "confidence_score": 1.0
+      "target": "docs_replace_pydantic_ai_current_breakages_addressed"
     },
     {
       "relation": "contains",
@@ -96242,9 +96242,9 @@
       "source_file": "backend/docs/replace-pydantic-ai.md",
       "source_location": "L13",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_replace_pydantic_ai_replace_pydantic_ai_with_custom_structured_completion_module",
-      "target": "docs_replace_pydantic_ai_current_extraction_workflow",
-      "confidence_score": 1.0
+      "target": "docs_replace_pydantic_ai_current_extraction_workflow"
     },
     {
       "relation": "contains",
@@ -96252,9 +96252,9 @@
       "source_file": "backend/docs/replace-pydantic-ai.md",
       "source_location": "L102",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_replace_pydantic_ai_replace_pydantic_ai_with_custom_structured_completion_module",
-      "target": "docs_replace_pydantic_ai_dependency_cleanup",
-      "confidence_score": 1.0
+      "target": "docs_replace_pydantic_ai_dependency_cleanup"
     },
     {
       "relation": "contains",
@@ -96262,9 +96262,9 @@
       "source_file": "backend/docs/replace-pydantic-ai.md",
       "source_location": "L7",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_replace_pydantic_ai_replace_pydantic_ai_with_custom_structured_completion_module",
-      "target": "docs_replace_pydantic_ai_goal",
-      "confidence_score": 1.0
+      "target": "docs_replace_pydantic_ai_goal"
     },
     {
       "relation": "contains",
@@ -96272,9 +96272,9 @@
       "source_file": "backend/docs/replace-pydantic-ai.md",
       "source_location": "L40",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_replace_pydantic_ai_replace_pydantic_ai_with_custom_structured_completion_module",
-      "target": "docs_replace_pydantic_ai_public_api",
-      "confidence_score": 1.0
+      "target": "docs_replace_pydantic_ai_public_api"
     },
     {
       "relation": "contains",
@@ -96282,9 +96282,9 @@
       "source_file": "backend/docs/replace-pydantic-ai.md",
       "source_location": "L71",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_replace_pydantic_ai_replace_pydantic_ai_with_custom_structured_completion_module",
-      "target": "docs_replace_pydantic_ai_structured_completion_architecture",
-      "confidence_score": 1.0
+      "target": "docs_replace_pydantic_ai_structured_completion_architecture"
     },
     {
       "relation": "contains",
@@ -96292,9 +96292,9 @@
       "source_file": "backend/docs/replace-pydantic-ai.md",
       "source_location": "L112",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_replace_pydantic_ai_replace_pydantic_ai_with_custom_structured_completion_module",
-      "target": "docs_replace_pydantic_ai_test_plan",
-      "confidence_score": 1.0
+      "target": "docs_replace_pydantic_ai_test_plan"
     },
     {
       "relation": "contains",
@@ -96302,9 +96302,9 @@
       "source_file": "docs/HANDOVER_complete_workflow_endpoint.md",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_handover_complete_workflow_endpoint",
-      "target": "docs_handover_complete_workflow_endpoint_handover_codex_complete_workflow_endpoint",
-      "confidence_score": 1.0
+      "target": "docs_handover_complete_workflow_endpoint_handover_codex_complete_workflow_endpoint"
     },
     {
       "relation": "contains",
@@ -96312,9 +96312,9 @@
       "source_file": "docs/HANDOVER_complete_workflow_endpoint.md",
       "source_location": "L3",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_handover_complete_workflow_endpoint_handover_codex_complete_workflow_endpoint",
-      "target": "docs_handover_complete_workflow_endpoint_branch_purpose",
-      "confidence_score": 1.0
+      "target": "docs_handover_complete_workflow_endpoint_branch_purpose"
     },
     {
       "relation": "contains",
@@ -96322,9 +96322,9 @@
       "source_file": "docs/HANDOVER_complete_workflow_endpoint.md",
       "source_location": "L9",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_handover_complete_workflow_endpoint_handover_codex_complete_workflow_endpoint",
-      "target": "docs_handover_complete_workflow_endpoint_current_branch_state",
-      "confidence_score": 1.0
+      "target": "docs_handover_complete_workflow_endpoint_current_branch_state"
     },
     {
       "relation": "contains",
@@ -96332,9 +96332,9 @@
       "source_file": "docs/HANDOVER_complete_workflow_endpoint.md",
       "source_location": "L116",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_handover_complete_workflow_endpoint_handover_codex_complete_workflow_endpoint",
-      "target": "docs_handover_complete_workflow_endpoint_decision_principles",
-      "confidence_score": 1.0
+      "target": "docs_handover_complete_workflow_endpoint_decision_principles"
     },
     {
       "relation": "contains",
@@ -96342,9 +96342,9 @@
       "source_file": "docs/HANDOVER_complete_workflow_endpoint.md",
       "source_location": "L104",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_handover_complete_workflow_endpoint_handover_codex_complete_workflow_endpoint",
-      "target": "docs_handover_complete_workflow_endpoint_evaluation_notes",
-      "confidence_score": 1.0
+      "target": "docs_handover_complete_workflow_endpoint_evaluation_notes"
     },
     {
       "relation": "contains",
@@ -96352,9 +96352,9 @@
       "source_file": "docs/HANDOVER_complete_workflow_endpoint.md",
       "source_location": "L41",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_handover_complete_workflow_endpoint_handover_codex_complete_workflow_endpoint",
-      "target": "docs_handover_complete_workflow_endpoint_highest_priority_remaining_work",
-      "confidence_score": 1.0
+      "target": "docs_handover_complete_workflow_endpoint_highest_priority_remaining_work"
     },
     {
       "relation": "contains",
@@ -96362,9 +96362,9 @@
       "source_file": "docs/HANDOVER_complete_workflow_endpoint.md",
       "source_location": "L124",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_handover_complete_workflow_endpoint_handover_codex_complete_workflow_endpoint",
-      "target": "docs_handover_complete_workflow_endpoint_ready_to_merge_criteria_for_this_branch",
-      "confidence_score": 1.0
+      "target": "docs_handover_complete_workflow_endpoint_ready_to_merge_criteria_for_this_branch"
     },
     {
       "relation": "contains",
@@ -96372,9 +96372,9 @@
       "source_file": "docs/HANDOVER_complete_workflow_endpoint.md",
       "source_location": "L67",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_handover_complete_workflow_endpoint_handover_codex_complete_workflow_endpoint",
-      "target": "docs_handover_complete_workflow_endpoint_suggested_developer_workflow",
-      "confidence_score": 1.0
+      "target": "docs_handover_complete_workflow_endpoint_suggested_developer_workflow"
     },
     {
       "relation": "contains",
@@ -96382,9 +96382,9 @@
       "source_file": "docs/HANDOVER_complete_workflow_endpoint.md",
       "source_location": "L22",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_handover_complete_workflow_endpoint_handover_codex_complete_workflow_endpoint",
-      "target": "docs_handover_complete_workflow_endpoint_what_the_prototype_must_demonstrate",
-      "confidence_score": 1.0
+      "target": "docs_handover_complete_workflow_endpoint_what_the_prototype_must_demonstrate"
     },
     {
       "relation": "contains",
@@ -96392,9 +96392,9 @@
       "source_file": "docs/MODEL_COMPARISON.md",
       "source_location": "L38",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_model_comparison",
-      "target": "docs_model_comparison_evaluation_workflow",
-      "confidence_score": 1.0
+      "target": "docs_model_comparison_evaluation_workflow"
     },
     {
       "relation": "contains",
@@ -96402,9 +96402,9 @@
       "source_file": "docs/MODEL_COMPARISON.md",
       "source_location": "L48",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_model_comparison",
-      "target": "docs_model_comparison_future_work",
-      "confidence_score": 1.0
+      "target": "docs_model_comparison_future_work"
     },
     {
       "relation": "contains",
@@ -96412,9 +96412,9 @@
       "source_file": "docs/MODEL_COMPARISON.md",
       "source_location": "L7",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_model_comparison",
-      "target": "docs_model_comparison_how_it_works",
-      "confidence_score": 1.0
+      "target": "docs_model_comparison_how_it_works"
     },
     {
       "relation": "contains",
@@ -96422,9 +96422,9 @@
       "source_file": "docs/MODEL_COMPARISON.md",
       "source_location": "L34",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_model_comparison",
-      "target": "docs_model_comparison_loading_behavior",
-      "confidence_score": 1.0
+      "target": "docs_model_comparison_loading_behavior"
     },
     {
       "relation": "contains",
@@ -96432,9 +96432,9 @@
       "source_file": "docs/MODEL_COMPARISON.md",
       "source_location": "L3",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_model_comparison",
-      "target": "docs_model_comparison_purpose",
-      "confidence_score": 1.0
+      "target": "docs_model_comparison_purpose"
     },
     {
       "relation": "contains",
@@ -96442,9 +96442,9 @@
       "source_file": "docs/PROTOTYPE_STATUS.md",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_prototype_status",
-      "target": "docs_prototype_status_simone_prototype_status_compared_with_teaser_claims",
-      "confidence_score": 1.0
+      "target": "docs_prototype_status_simone_prototype_status_compared_with_teaser_claims"
     },
     {
       "relation": "contains",
@@ -96452,9 +96452,9 @@
       "source_file": "docs/PROTOTYPE_STATUS.md",
       "source_location": "L16",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_prototype_status_simone_prototype_status_compared_with_teaser_claims",
-      "target": "docs_prototype_status_automatic_workflow_endpoint",
-      "confidence_score": 1.0
+      "target": "docs_prototype_status_automatic_workflow_endpoint"
     },
     {
       "relation": "contains",
@@ -96462,9 +96462,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L842",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow",
-      "target": "docs_workflow_10_architectural_interpretation_for_the_thesis",
-      "confidence_score": 1.0
+      "target": "docs_workflow_10_architectural_interpretation_for_the_thesis"
     },
     {
       "relation": "contains",
@@ -96472,9 +96472,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L876",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow",
-      "target": "docs_workflow_11_current_implementation_boundaries",
-      "confidence_score": 1.0
+      "target": "docs_workflow_11_current_implementation_boundaries"
     },
     {
       "relation": "contains",
@@ -96482,9 +96482,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L892",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow",
-      "target": "docs_workflow_12_concise_thesis_ready_summary",
-      "confidence_score": 1.0
+      "target": "docs_workflow_12_concise_thesis_ready_summary"
     },
     {
       "relation": "contains",
@@ -96492,9 +96492,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L225",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow",
-      "target": "docs_workflow_8_dataset_path_through_the_simone_workflow",
-      "confidence_score": 1.0
+      "target": "docs_workflow_8_dataset_path_through_the_simone_workflow"
     },
     {
       "relation": "contains",
@@ -96502,9 +96502,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L719",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow",
-      "target": "docs_workflow_9_end_to_end_dataset_flow_diagram",
-      "confidence_score": 1.0
+      "target": "docs_workflow_9_end_to_end_dataset_flow_diagram"
     },
     {
       "relation": "contains",
@@ -96512,9 +96512,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow",
-      "target": "docs_workflow_architecture_and_dataset_workflow_of_the_simone_prototype",
-      "confidence_score": 1.0
+      "target": "docs_workflow_architecture_and_dataset_workflow_of_the_simone_prototype"
     },
     {
       "relation": "contains",
@@ -96522,9 +96522,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L5",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_architecture_and_dataset_workflow_of_the_simone_prototype",
-      "target": "docs_workflow_1_purpose_and_role_of_the_prototype",
-      "confidence_score": 1.0
+      "target": "docs_workflow_1_purpose_and_role_of_the_prototype"
     },
     {
       "relation": "contains",
@@ -96532,9 +96532,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L21",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_architecture_and_dataset_workflow_of_the_simone_prototype",
-      "target": "docs_workflow_2_high_level_architecture",
-      "confidence_score": 1.0
+      "target": "docs_workflow_2_high_level_architecture"
     },
     {
       "relation": "contains",
@@ -96542,9 +96542,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L57",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_architecture_and_dataset_workflow_of_the_simone_prototype",
-      "target": "docs_workflow_3_runtime_components",
-      "confidence_score": 1.0
+      "target": "docs_workflow_3_runtime_components"
     },
     {
       "relation": "contains",
@@ -96552,9 +96552,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L101",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_architecture_and_dataset_workflow_of_the_simone_prototype",
-      "target": "docs_workflow_4_persistent_storage_architecture",
-      "confidence_score": 1.0
+      "target": "docs_workflow_4_persistent_storage_architecture"
     },
     {
       "relation": "contains",
@@ -96562,9 +96562,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L133",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_architecture_and_dataset_workflow_of_the_simone_prototype",
-      "target": "docs_workflow_5_frontend_architecture",
-      "confidence_score": 1.0
+      "target": "docs_workflow_5_frontend_architecture"
     },
     {
       "relation": "contains",
@@ -96572,9 +96572,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L158",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_architecture_and_dataset_workflow_of_the_simone_prototype",
-      "target": "docs_workflow_6_semantic_vocabulary_architecture",
-      "confidence_score": 1.0
+      "target": "docs_workflow_6_semantic_vocabulary_architecture"
     },
     {
       "relation": "contains",
@@ -96582,9 +96582,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L196",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_architecture_and_dataset_workflow_of_the_simone_prototype",
-      "target": "docs_workflow_7_profile_architecture",
-      "confidence_score": 1.0
+      "target": "docs_workflow_7_profile_architecture"
     },
     {
       "relation": "contains",
@@ -96592,9 +96592,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L3",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_architecture_and_dataset_workflow_of_the_simone_prototype",
-      "target": "docs_workflow_semantic_inference_module_for_ontology_driven_node_extraction",
-      "confidence_score": 1.0
+      "target": "docs_workflow_semantic_inference_module_for_ontology_driven_node_extraction"
     },
     {
       "relation": "contains",
@@ -96602,9 +96602,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L59",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_3_runtime_components",
-      "target": "docs_workflow_3_1_cli_and_application_lifecycle",
-      "confidence_score": 1.0
+      "target": "docs_workflow_3_1_cli_and_application_lifecycle"
     },
     {
       "relation": "contains",
@@ -96612,9 +96612,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L71",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_3_runtime_components",
-      "target": "docs_workflow_3_2_backend_api",
-      "confidence_score": 1.0
+      "target": "docs_workflow_3_2_backend_api"
     },
     {
       "relation": "contains",
@@ -96622,9 +96622,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L85",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_3_runtime_components",
-      "target": "docs_workflow_3_3_dependency_wiring",
-      "confidence_score": 1.0
+      "target": "docs_workflow_3_3_dependency_wiring"
     },
     {
       "relation": "contains",
@@ -96632,9 +96632,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L160",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_6_semantic_vocabulary_architecture",
-      "target": "docs_workflow_6_1_vocabulary_import",
-      "confidence_score": 1.0
+      "target": "docs_workflow_6_1_vocabulary_import"
     },
     {
       "relation": "contains",
@@ -96642,9 +96642,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L164",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_6_semantic_vocabulary_architecture",
-      "target": "docs_workflow_6_2_initial_vocabularies",
-      "confidence_score": 1.0
+      "target": "docs_workflow_6_2_initial_vocabularies"
     },
     {
       "relation": "contains",
@@ -96652,9 +96652,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L179",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_6_semantic_vocabulary_architecture",
-      "target": "docs_workflow_6_3_vocabulary_indexing",
-      "confidence_score": 1.0
+      "target": "docs_workflow_6_3_vocabulary_indexing"
     },
     {
       "relation": "contains",
@@ -96662,9 +96662,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L183",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_6_semantic_vocabulary_architecture",
-      "target": "docs_workflow_6_4_vocabulary_query_flow",
-      "confidence_score": 1.0
+      "target": "docs_workflow_6_4_vocabulary_query_flow"
     },
     {
       "relation": "contains",
@@ -96672,9 +96672,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L231",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_8_dataset_path_through_the_simone_workflow",
-      "target": "docs_workflow_stage_0_runtime_preparation",
-      "confidence_score": 1.0
+      "target": "docs_workflow_stage_0_runtime_preparation"
     },
     {
       "relation": "contains",
@@ -96682,9 +96682,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L523",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_8_dataset_path_through_the_simone_workflow",
-      "target": "docs_workflow_stage_10_structured_output_repair",
-      "confidence_score": 1.0
+      "target": "docs_workflow_stage_10_structured_output_repair"
     },
     {
       "relation": "contains",
@@ -96692,9 +96692,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L543",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_8_dataset_path_through_the_simone_workflow",
-      "target": "docs_workflow_stage_11_incremental_context_accumulation",
-      "confidence_score": 1.0
+      "target": "docs_workflow_stage_11_incremental_context_accumulation"
     },
     {
       "relation": "contains",
@@ -96702,9 +96702,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L563",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_8_dataset_path_through_the_simone_workflow",
-      "target": "docs_workflow_stage_12_vocabulary_candidate_discovery",
-      "confidence_score": 1.0
+      "target": "docs_workflow_stage_12_vocabulary_candidate_discovery"
     },
     {
       "relation": "contains",
@@ -96712,9 +96712,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L594",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_8_dataset_path_through_the_simone_workflow",
-      "target": "docs_workflow_stage_13_vocabulary_query_execution",
-      "confidence_score": 1.0
+      "target": "docs_workflow_stage_13_vocabulary_query_execution"
     },
     {
       "relation": "contains",
@@ -96722,9 +96722,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L622",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_8_dataset_path_through_the_simone_workflow",
-      "target": "docs_workflow_stage_14_vocabulary_normalization",
-      "confidence_score": 1.0
+      "target": "docs_workflow_stage_14_vocabulary_normalization"
     },
     {
       "relation": "contains",
@@ -96732,9 +96732,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L648",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_8_dataset_path_through_the_simone_workflow",
-      "target": "docs_workflow_stage_15_profile_projection",
-      "confidence_score": 1.0
+      "target": "docs_workflow_stage_15_profile_projection"
     },
     {
       "relation": "contains",
@@ -96742,9 +96742,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L668",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_8_dataset_path_through_the_simone_workflow",
-      "target": "docs_workflow_stage_16_schema_validation_and_result_persistence",
-      "confidence_score": 1.0
+      "target": "docs_workflow_stage_16_schema_validation_and_result_persistence"
     },
     {
       "relation": "contains",
@@ -96752,9 +96752,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L696",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_8_dataset_path_through_the_simone_workflow",
-      "target": "docs_workflow_stage_17_result_retrieval_and_downstream_use",
-      "confidence_score": 1.0
+      "target": "docs_workflow_stage_17_result_retrieval_and_downstream_use"
     },
     {
       "relation": "contains",
@@ -96762,9 +96762,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L255",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_8_dataset_path_through_the_simone_workflow",
-      "target": "docs_workflow_stage_1_dataset_upload",
-      "confidence_score": 1.0
+      "target": "docs_workflow_stage_1_dataset_upload"
     },
     {
       "relation": "contains",
@@ -96772,9 +96772,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L269",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_8_dataset_path_through_the_simone_workflow",
-      "target": "docs_workflow_stage_2_zip_expansion_and_file_entry_construction",
-      "confidence_score": 1.0
+      "target": "docs_workflow_stage_2_zip_expansion_and_file_entry_construction"
     },
     {
       "relation": "contains",
@@ -96782,9 +96782,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L301",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_8_dataset_path_through_the_simone_workflow",
-      "target": "docs_workflow_stage_3_file_type_specific_text_extraction",
-      "confidence_score": 1.0
+      "target": "docs_workflow_stage_3_file_type_specific_text_extraction"
     },
     {
       "relation": "contains",
@@ -96792,9 +96792,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L321",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_8_dataset_path_through_the_simone_workflow",
-      "target": "docs_workflow_stage_4_semantic_chunking",
-      "confidence_score": 1.0
+      "target": "docs_workflow_stage_4_semantic_chunking"
     },
     {
       "relation": "contains",
@@ -96802,9 +96802,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L382",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_8_dataset_path_through_the_simone_workflow",
-      "target": "docs_workflow_stage_5_extraction_run_initialization",
-      "confidence_score": 1.0
+      "target": "docs_workflow_stage_5_extraction_run_initialization"
     },
     {
       "relation": "contains",
@@ -96812,9 +96812,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L418",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_8_dataset_path_through_the_simone_workflow",
-      "target": "docs_workflow_stage_6_profile_loading_and_validation_schema_preparation",
-      "confidence_score": 1.0
+      "target": "docs_workflow_stage_6_profile_loading_and_validation_schema_preparation"
     },
     {
       "relation": "contains",
@@ -96822,9 +96822,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L434",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_8_dataset_path_through_the_simone_workflow",
-      "target": "docs_workflow_stage_7_file_ranking",
-      "confidence_score": 1.0
+      "target": "docs_workflow_stage_7_file_ranking"
     },
     {
       "relation": "contains",
@@ -96832,9 +96832,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L444",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_8_dataset_path_through_the_simone_workflow",
-      "target": "docs_workflow_stage_8_chunk_ordering",
-      "confidence_score": 1.0
+      "target": "docs_workflow_stage_8_chunk_ordering"
     },
     {
       "relation": "contains",
@@ -96842,9 +96842,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L470",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_8_dataset_path_through_the_simone_workflow",
-      "target": "docs_workflow_stage_9_chunk_level_llm_extraction",
-      "confidence_score": 1.0
+      "target": "docs_workflow_stage_9_chunk_level_llm_extraction"
     },
     {
       "relation": "contains",
@@ -96852,9 +96852,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L340",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_stage_4_semantic_chunking",
-      "target": "docs_workflow_4_1_chunking_task_management",
-      "confidence_score": 1.0
+      "target": "docs_workflow_4_1_chunking_task_management"
     },
     {
       "relation": "contains",
@@ -96862,9 +96862,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L344",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_stage_4_semantic_chunking",
-      "target": "docs_workflow_4_2_chunking_algorithm",
-      "confidence_score": 1.0
+      "target": "docs_workflow_4_2_chunking_algorithm"
     },
     {
       "relation": "contains",
@@ -96872,9 +96872,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L474",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_stage_9_chunk_level_llm_extraction",
-      "target": "docs_workflow_9_1_extraction_prompt",
-      "confidence_score": 1.0
+      "target": "docs_workflow_9_1_extraction_prompt"
     },
     {
       "relation": "contains",
@@ -96882,9 +96882,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L489",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_stage_9_chunk_level_llm_extraction",
-      "target": "docs_workflow_9_2_chunk_context_sent_to_the_model",
-      "confidence_score": 1.0
+      "target": "docs_workflow_9_2_chunk_context_sent_to_the_model"
     },
     {
       "relation": "contains",
@@ -96892,9 +96892,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L501",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_stage_9_chunk_level_llm_extraction",
-      "target": "docs_workflow_9_3_structured_output",
-      "confidence_score": 1.0
+      "target": "docs_workflow_9_3_structured_output"
     },
     {
       "relation": "contains",
@@ -96902,9 +96902,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L626",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_stage_14_vocabulary_normalization",
-      "target": "docs_workflow_14_1_quantitative_normalization",
-      "confidence_score": 1.0
+      "target": "docs_workflow_14_1_quantitative_normalization"
     },
     {
       "relation": "contains",
@@ -96912,9 +96912,9 @@
       "source_file": "docs/WORKFLOW.md",
       "source_location": "L637",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "docs_workflow_stage_14_vocabulary_normalization",
-      "target": "docs_workflow_14_2_qualitative_normalization",
-      "confidence_score": 1.0
+      "target": "docs_workflow_14_2_qualitative_normalization"
     },
     {
       "relation": "contains",
@@ -96922,9 +96922,9 @@
       "source_file": "docs/evaluation/preliminary_evaluation.md",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "evaluation_preliminary_evaluation",
-      "target": "evaluation_preliminary_evaluation_simone_preliminary_prototype_evaluation",
-      "confidence_score": 1.0
+      "target": "evaluation_preliminary_evaluation_simone_preliminary_prototype_evaluation"
     },
     {
       "relation": "contains",
@@ -96932,9 +96932,9 @@
       "source_file": "docs/evaluation/preliminary_evaluation.md",
       "source_location": "L30",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "evaluation_preliminary_evaluation_simone_preliminary_prototype_evaluation",
-      "target": "evaluation_preliminary_evaluation_claim_support_assessment",
-      "confidence_score": 1.0
+      "target": "evaluation_preliminary_evaluation_claim_support_assessment"
     },
     {
       "relation": "contains",
@@ -96942,9 +96942,9 @@
       "source_file": "docs/evaluation/preliminary_evaluation.md",
       "source_location": "L16",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "evaluation_preliminary_evaluation_simone_preliminary_prototype_evaluation",
-      "target": "evaluation_preliminary_evaluation_current_real_run_evidence",
-      "confidence_score": 1.0
+      "target": "evaluation_preliminary_evaluation_current_real_run_evidence"
     },
     {
       "relation": "contains",
@@ -96952,9 +96952,9 @@
       "source_file": "docs/evaluation/preliminary_evaluation.md",
       "source_location": "L5",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "evaluation_preliminary_evaluation_simone_preliminary_prototype_evaluation",
-      "target": "evaluation_preliminary_evaluation_implemented_evaluation_support",
-      "confidence_score": 1.0
+      "target": "evaluation_preliminary_evaluation_implemented_evaluation_support"
     },
     {
       "relation": "contains",
@@ -96962,9 +96962,9 @@
       "source_file": "docs/evaluation/preliminary_evaluation.md",
       "source_location": "L26",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "evaluation_preliminary_evaluation_simone_preliminary_prototype_evaluation",
-      "target": "evaluation_preliminary_evaluation_manual_reference_baseline",
-      "confidence_score": 1.0
+      "target": "evaluation_preliminary_evaluation_manual_reference_baseline"
     },
     {
       "relation": "contains",
@@ -96972,9 +96972,9 @@
       "source_file": "docs/evaluation/preliminary_evaluation.md",
       "source_location": "L50",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "evaluation_preliminary_evaluation_simone_preliminary_prototype_evaluation",
-      "target": "evaluation_preliminary_evaluation_next_evaluation_work",
-      "confidence_score": 1.0
+      "target": "evaluation_preliminary_evaluation_next_evaluation_work"
     },
     {
       "relation": "contains",
@@ -96982,9 +96982,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/literature-overview.md",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_literature_overview",
-      "target": "agent_generated_assets_literature_overview_literature_overview_of_the_google_drive_folder",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_literature_overview_literature_overview_of_the_google_drive_folder"
     },
     {
       "relation": "contains",
@@ -96992,9 +96992,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/literature-overview.md",
       "source_location": "L49",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_literature_overview",
-      "target": "agent_generated_assets_literature_overview_synthesis_for_a_thesis_literature_review",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_literature_overview_synthesis_for_a_thesis_literature_review"
     },
     {
       "relation": "contains",
@@ -97002,9 +97002,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/literature-overview.md",
       "source_location": "L5",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_literature_overview_literature_overview_of_the_google_drive_folder",
-      "target": "agent_generated_assets_literature_overview_1_ontologies_as_the_semantic_foundation",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_literature_overview_1_ontologies_as_the_semantic_foundation"
     },
     {
       "relation": "contains",
@@ -97012,9 +97012,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/literature-overview.md",
       "source_location": "L13",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_literature_overview_literature_overview_of_the_google_drive_folder",
-      "target": "agent_generated_assets_literature_overview_2_fair_catalysis_data_and_research_data_infrastructure",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_literature_overview_2_fair_catalysis_data_and_research_data_infrastructure"
     },
     {
       "relation": "contains",
@@ -97022,9 +97022,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/literature-overview.md",
       "source_location": "L23",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_literature_overview_literature_overview_of_the_google_drive_folder",
-      "target": "agent_generated_assets_literature_overview_3_knowledge_graphs_for_catalysis_and_scientific_discovery",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_literature_overview_3_knowledge_graphs_for_catalysis_and_scientific_discovery"
     },
     {
       "relation": "contains",
@@ -97032,9 +97032,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/literature-overview.md",
       "source_location": "L31",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_literature_overview_literature_overview_of_the_google_drive_folder",
-      "target": "agent_generated_assets_literature_overview_4_llm_based_extraction_ontology_generation_and_catalyst_discovery",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_literature_overview_4_llm_based_extraction_ontology_generation_and_catalyst_discovery"
     },
     {
       "relation": "contains",
@@ -97042,9 +97042,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/literature-overview.md",
       "source_location": "L43",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_literature_overview_literature_overview_of_the_google_drive_folder",
-      "target": "agent_generated_assets_literature_overview_5_process_engineering_and_simulation_relevance",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_literature_overview_5_process_engineering_and_simulation_relevance"
     },
     {
       "relation": "contains",
@@ -97052,9 +97052,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/retrieval_strategy.md",
       "source_location": "L231",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_retrieval_strategy",
-      "target": "agent_generated_assets_retrieval_strategy_contrastive_context",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_retrieval_strategy_contrastive_context"
     },
     {
       "relation": "contains",
@@ -97062,9 +97062,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/retrieval_strategy.md",
       "source_location": "L299",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_retrieval_strategy",
-      "target": "agent_generated_assets_retrieval_strategy_final_thesis_ready_description",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_retrieval_strategy_final_thesis_ready_description"
     },
     {
       "relation": "contains",
@@ -97072,9 +97072,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/retrieval_strategy.md",
       "source_location": "L126",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_retrieval_strategy",
-      "target": "agent_generated_assets_retrieval_strategy_graph_based_context_construction",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_retrieval_strategy_graph_based_context_construction"
     },
     {
       "relation": "contains",
@@ -97082,9 +97082,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/retrieval_strategy.md",
       "source_location": "L20",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_retrieval_strategy",
-      "target": "agent_generated_assets_retrieval_strategy_hybrid_retrieval_vector_search_and_full_text_search",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_retrieval_strategy_hybrid_retrieval_vector_search_and_full_text_search"
     },
     {
       "relation": "contains",
@@ -97092,9 +97092,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/retrieval_strategy.md",
       "source_location": "L62",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_retrieval_strategy",
-      "target": "agent_generated_assets_retrieval_strategy_reciprocal_rank_fusion",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_retrieval_strategy_reciprocal_rank_fusion"
     },
     {
       "relation": "contains",
@@ -97102,9 +97102,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/retrieval_strategy.md",
       "source_location": "L263",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_retrieval_strategy",
-      "target": "agent_generated_assets_retrieval_strategy_recommended_retrieval_modes_for_evaluation",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_retrieval_strategy_recommended_retrieval_modes_for_evaluation"
     },
     {
       "relation": "contains",
@@ -97112,9 +97112,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/retrieval_strategy.md",
       "source_location": "L3",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_retrieval_strategy",
-      "target": "agent_generated_assets_retrieval_strategy_retrieval_strategy_summary",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_retrieval_strategy_retrieval_strategy_summary"
     },
     {
       "relation": "contains",
@@ -97122,9 +97122,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/retrieval_strategy.md",
       "source_location": "L102",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_retrieval_strategy",
-      "target": "agent_generated_assets_retrieval_strategy_seed_terms",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_retrieval_strategy_seed_terms"
     },
     {
       "relation": "contains",
@@ -97132,9 +97132,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/retrieval_strategy.md",
       "source_location": "L165",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_retrieval_strategy",
-      "target": "agent_generated_assets_retrieval_strategy_traversal_directions",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_retrieval_strategy_traversal_directions"
     },
     {
       "relation": "contains",
@@ -97142,9 +97142,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/retrieval_strategy.md",
       "source_location": "L195",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_retrieval_strategy_traversal_directions",
-      "target": "agent_generated_assets_retrieval_strategy_incoming_traversal",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_retrieval_strategy_incoming_traversal"
     },
     {
       "relation": "contains",
@@ -97152,9 +97152,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/retrieval_strategy.md",
       "source_location": "L175",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_retrieval_strategy_traversal_directions",
-      "target": "agent_generated_assets_retrieval_strategy_outgoing_traversal",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_retrieval_strategy_outgoing_traversal"
     },
     {
       "relation": "contains",
@@ -97162,9 +97162,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/retrieval_strategy.md",
       "source_location": "L215",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_retrieval_strategy_traversal_directions",
-      "target": "agent_generated_assets_retrieval_strategy_undirected_traversal",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_retrieval_strategy_undirected_traversal"
     },
     {
       "relation": "contains",
@@ -97172,9 +97172,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis-structure.md",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_structure",
-      "target": "agent_generated_assets_thesis_structure_thesis_structure_proposal",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_structure_thesis_structure_proposal"
     },
     {
       "relation": "contains",
@@ -97182,9 +97182,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis-structure.md",
       "source_location": "L5",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_structure_thesis_structure_proposal",
-      "target": "agent_generated_assets_thesis_structure_1_goal_of_this_structure",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_structure_1_goal_of_this_structure"
     },
     {
       "relation": "contains",
@@ -97192,9 +97192,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis-structure.md",
       "source_location": "L23",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_structure_thesis_structure_proposal",
-      "target": "agent_generated_assets_thesis_structure_2_recommended_high_level_chapter_structure",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_structure_2_recommended_high_level_chapter_structure"
     },
     {
       "relation": "contains",
@@ -97202,9 +97202,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis-structure.md",
       "source_location": "L204",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_structure_thesis_structure_proposal",
-      "target": "agent_generated_assets_thesis_structure_3_recommended_appendices",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_structure_3_recommended_appendices"
     },
     {
       "relation": "contains",
@@ -97212,9 +97212,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis-structure.md",
       "source_location": "L217",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_structure_thesis_structure_proposal",
-      "target": "agent_generated_assets_thesis_structure_4_suggested_latex_file_structure",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_structure_4_suggested_latex_file_structure"
     },
     {
       "relation": "contains",
@@ -97222,9 +97222,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis-structure.md",
       "source_location": "L251",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_structure_thesis_structure_proposal",
-      "target": "agent_generated_assets_thesis_structure_5_suggested_chapter_mapping_for_main_tex",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_structure_5_suggested_chapter_mapping_for_main_tex"
     },
     {
       "relation": "contains",
@@ -97232,9 +97232,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis-structure.md",
       "source_location": "L295",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_structure_thesis_structure_proposal",
-      "target": "agent_generated_assets_thesis_structure_6_strong_narrative_logic_for_your_specific_thesis",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_structure_6_strong_narrative_logic_for_your_specific_thesis"
     },
     {
       "relation": "contains",
@@ -97242,9 +97242,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis-structure.md",
       "source_location": "L309",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_structure_thesis_structure_proposal",
-      "target": "agent_generated_assets_thesis_structure_7_recommendation_for_chapter_emphasis",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_structure_7_recommendation_for_chapter_emphasis"
     },
     {
       "relation": "contains",
@@ -97252,9 +97252,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis-structure.md",
       "source_location": "L321",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_structure_thesis_structure_proposal",
-      "target": "agent_generated_assets_thesis_structure_8_minimum_viable_version_if_time_gets_tight",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_structure_8_minimum_viable_version_if_time_gets_tight"
     },
     {
       "relation": "contains",
@@ -97262,9 +97262,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis-structure.md",
       "source_location": "L337",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_structure_thesis_structure_proposal",
-      "target": "agent_generated_assets_thesis_structure_9_next_recommended_step",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_structure_9_next_recommended_step"
     },
     {
       "relation": "contains",
@@ -97272,9 +97272,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis-structure.md",
       "source_location": "L25",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_structure_2_recommended_high_level_chapter_structure",
-      "target": "agent_generated_assets_thesis_structure_1_introduction",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_structure_1_introduction"
     },
     {
       "relation": "contains",
@@ -97282,9 +97282,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis-structure.md",
       "source_location": "L46",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_structure_2_recommended_high_level_chapter_structure",
-      "target": "agent_generated_assets_thesis_structure_2_background_and_foundations",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_structure_2_background_and_foundations"
     },
     {
       "relation": "contains",
@@ -97292,9 +97292,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis-structure.md",
       "source_location": "L63",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_structure_2_recommended_high_level_chapter_structure",
-      "target": "agent_generated_assets_thesis_structure_3_state_of_the_art",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_structure_3_state_of_the_art"
     },
     {
       "relation": "contains",
@@ -97302,9 +97302,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis-structure.md",
       "source_location": "L81",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_structure_2_recommended_high_level_chapter_structure",
-      "target": "agent_generated_assets_thesis_structure_4_requirements_and_research_design",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_structure_4_requirements_and_research_design"
     },
     {
       "relation": "contains",
@@ -97312,9 +97312,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis-structure.md",
       "source_location": "L106",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_structure_2_recommended_high_level_chapter_structure",
-      "target": "agent_generated_assets_thesis_structure_5_design_of_the_llm_supported_workflow",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_structure_5_design_of_the_llm_supported_workflow"
     },
     {
       "relation": "contains",
@@ -97322,9 +97322,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis-structure.md",
       "source_location": "L126",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_structure_2_recommended_high_level_chapter_structure",
-      "target": "agent_generated_assets_thesis_structure_6_implementation",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_structure_6_implementation"
     },
     {
       "relation": "contains",
@@ -97332,9 +97332,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis-structure.md",
       "source_location": "L145",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_structure_2_recommended_high_level_chapter_structure",
-      "target": "agent_generated_assets_thesis_structure_7_evaluation_and_results",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_structure_7_evaluation_and_results"
     },
     {
       "relation": "contains",
@@ -97342,9 +97342,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis-structure.md",
       "source_location": "L171",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_structure_2_recommended_high_level_chapter_structure",
-      "target": "agent_generated_assets_thesis_structure_8_discussion",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_structure_8_discussion"
     },
     {
       "relation": "contains",
@@ -97352,9 +97352,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis-structure.md",
       "source_location": "L189",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_structure_2_recommended_high_level_chapter_structure",
-      "target": "agent_generated_assets_thesis_structure_9_conclusion_and_outlook",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_structure_9_conclusion_and_outlook"
     },
     {
       "relation": "contains",
@@ -97362,9 +97362,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document",
-      "target": "agent_generated_assets_thesis_simone_working_document_working_document_thesis_work_and_simone_extraction_prototype",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_working_document_thesis_work_and_simone_extraction_prototype"
     },
     {
       "relation": "contains",
@@ -97372,9 +97372,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L405",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_working_document_thesis_work_and_simone_extraction_prototype",
-      "target": "agent_generated_assets_thesis_simone_working_document_10_suggested_thesis_chapter_structure",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_10_suggested_thesis_chapter_structure"
     },
     {
       "relation": "contains",
@@ -97382,9 +97382,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L471",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_working_document_thesis_work_and_simone_extraction_prototype",
-      "target": "agent_generated_assets_thesis_simone_working_document_11_prototype_strengths",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_11_prototype_strengths"
     },
     {
       "relation": "contains",
@@ -97392,9 +97392,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L488",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_working_document_thesis_work_and_simone_extraction_prototype",
-      "target": "agent_generated_assets_thesis_simone_working_document_12_prototype_limitations",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_12_prototype_limitations"
     },
     {
       "relation": "contains",
@@ -97402,9 +97402,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L502",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_working_document_thesis_work_and_simone_extraction_prototype",
-      "target": "agent_generated_assets_thesis_simone_working_document_13_discussion_points_for_the_thesis",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_13_discussion_points_for_the_thesis"
     },
     {
       "relation": "contains",
@@ -97412,9 +97412,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L526",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_working_document_thesis_work_and_simone_extraction_prototype",
-      "target": "agent_generated_assets_thesis_simone_working_document_14_future_work",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_14_future_work"
     },
     {
       "relation": "contains",
@@ -97422,9 +97422,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L545",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_working_document_thesis_work_and_simone_extraction_prototype",
-      "target": "agent_generated_assets_thesis_simone_working_document_15_short_working_abstract",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_15_short_working_abstract"
     },
     {
       "relation": "contains",
@@ -97432,9 +97432,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L10",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_working_document_thesis_work_and_simone_extraction_prototype",
-      "target": "agent_generated_assets_thesis_simone_working_document_1_executive_summary",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_1_executive_summary"
     },
     {
       "relation": "contains",
@@ -97442,9 +97442,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L20",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_working_document_thesis_work_and_simone_extraction_prototype",
-      "target": "agent_generated_assets_thesis_simone_working_document_2_thesis_motivation",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_2_thesis_motivation"
     },
     {
       "relation": "contains",
@@ -97452,9 +97452,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L30",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_working_document_thesis_work_and_simone_extraction_prototype",
-      "target": "agent_generated_assets_thesis_simone_working_document_3_research_objective",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_3_research_objective"
     },
     {
       "relation": "contains",
@@ -97462,9 +97462,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L48",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_working_document_thesis_work_and_simone_extraction_prototype",
-      "target": "agent_generated_assets_thesis_simone_working_document_4_scope",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_4_scope"
     },
     {
       "relation": "contains",
@@ -97472,9 +97472,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L74",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_working_document_thesis_work_and_simone_extraction_prototype",
-      "target": "agent_generated_assets_thesis_simone_working_document_5_conceptual_workflow",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_5_conceptual_workflow"
     },
     {
       "relation": "contains",
@@ -97482,9 +97482,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L159",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_working_document_thesis_work_and_simone_extraction_prototype",
-      "target": "agent_generated_assets_thesis_simone_working_document_6_prototype_architecture",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_6_prototype_architecture"
     },
     {
       "relation": "contains",
@@ -97492,9 +97492,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L201",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_working_document_thesis_work_and_simone_extraction_prototype",
-      "target": "agent_generated_assets_thesis_simone_working_document_7_main_domain_objects",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_7_main_domain_objects"
     },
     {
       "relation": "contains",
@@ -97502,9 +97502,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L293",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_working_document_thesis_work_and_simone_extraction_prototype",
-      "target": "agent_generated_assets_thesis_simone_working_document_8_evaluation_plan",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_8_evaluation_plan"
     },
     {
       "relation": "contains",
@@ -97512,9 +97512,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L374",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_working_document_thesis_work_and_simone_extraction_prototype",
-      "target": "agent_generated_assets_thesis_simone_working_document_9_current_thesis_status",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_9_current_thesis_status"
     },
     {
       "relation": "contains",
@@ -97522,9 +97522,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L63",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_4_scope",
-      "target": "agent_generated_assets_thesis_simone_working_document_excluded_or_limited",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_excluded_or_limited"
     },
     {
       "relation": "contains",
@@ -97532,9 +97532,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L50",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_4_scope",
-      "target": "agent_generated_assets_thesis_simone_working_document_included",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_included"
     },
     {
       "relation": "contains",
@@ -97542,9 +97542,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L78",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_5_conceptual_workflow",
-      "target": "agent_generated_assets_thesis_simone_working_document_stage_1_data_package_upload_and_unpacking",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_stage_1_data_package_upload_and_unpacking"
     },
     {
       "relation": "contains",
@@ -97552,9 +97552,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L82",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_5_conceptual_workflow",
-      "target": "agent_generated_assets_thesis_simone_working_document_stage_2_text_extraction",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_stage_2_text_extraction"
     },
     {
       "relation": "contains",
@@ -97562,9 +97562,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L86",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_5_conceptual_workflow",
-      "target": "agent_generated_assets_thesis_simone_working_document_stage_3_semantic_chunking",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_stage_3_semantic_chunking"
     },
     {
       "relation": "contains",
@@ -97572,9 +97572,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L92",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_5_conceptual_workflow",
-      "target": "agent_generated_assets_thesis_simone_working_document_stage_4_file_ranking",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_stage_4_file_ranking"
     },
     {
       "relation": "contains",
@@ -97582,9 +97582,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L98",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_5_conceptual_workflow",
-      "target": "agent_generated_assets_thesis_simone_working_document_stage_5_chunk_wise_extraction",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_stage_5_chunk_wise_extraction"
     },
     {
       "relation": "contains",
@@ -97592,9 +97592,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L115",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_5_conceptual_workflow",
-      "target": "agent_generated_assets_thesis_simone_working_document_stage_6_merging_and_deduplication",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_stage_6_merging_and_deduplication"
     },
     {
       "relation": "contains",
@@ -97602,9 +97602,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L121",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_5_conceptual_workflow",
-      "target": "agent_generated_assets_thesis_simone_working_document_stage_7_vocabulary_backed_normalization",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_stage_7_vocabulary_backed_normalization"
     },
     {
       "relation": "contains",
@@ -97612,9 +97612,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L144",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_5_conceptual_workflow",
-      "target": "agent_generated_assets_thesis_simone_working_document_stage_8_profile_projection",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_stage_8_profile_projection"
     },
     {
       "relation": "contains",
@@ -97622,9 +97622,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L153",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_5_conceptual_workflow",
-      "target": "agent_generated_assets_thesis_simone_working_document_stage_9_inspection_and_reruns",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_stage_9_inspection_and_reruns"
     },
     {
       "relation": "contains",
@@ -97632,9 +97632,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L161",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_6_prototype_architecture",
-      "target": "agent_generated_assets_thesis_simone_working_document_backend",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_backend"
     },
     {
       "relation": "contains",
@@ -97642,9 +97642,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L175",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_6_prototype_architecture",
-      "target": "agent_generated_assets_thesis_simone_working_document_frontend",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_frontend"
     },
     {
       "relation": "contains",
@@ -97652,9 +97652,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L188",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_6_prototype_architecture",
-      "target": "agent_generated_assets_thesis_simone_working_document_infrastructure",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_infrastructure"
     },
     {
       "relation": "contains",
@@ -97662,9 +97662,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L266",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_7_main_domain_objects",
-      "target": "agent_generated_assets_thesis_simone_working_document_agenticentity",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_agenticentity"
     },
     {
       "relation": "contains",
@@ -97672,9 +97672,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L232",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_7_main_domain_objects",
-      "target": "agent_generated_assets_thesis_simone_working_document_datageneratingactivity",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_datageneratingactivity"
     },
     {
       "relation": "contains",
@@ -97682,9 +97682,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L255",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_7_main_domain_objects",
-      "target": "agent_generated_assets_thesis_simone_working_document_evaluatedentity",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_evaluatedentity"
     },
     {
       "relation": "contains",
@@ -97692,9 +97692,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L244",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_7_main_domain_objects",
-      "target": "agent_generated_assets_thesis_simone_working_document_method",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_method"
     },
     {
       "relation": "contains",
@@ -97702,9 +97702,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L221",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_7_main_domain_objects",
-      "target": "agent_generated_assets_thesis_simone_working_document_qualitativeattribute",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_qualitativeattribute"
     },
     {
       "relation": "contains",
@@ -97712,9 +97712,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L203",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_7_main_domain_objects",
-      "target": "agent_generated_assets_thesis_simone_working_document_quantitativeattribute",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_quantitativeattribute"
     },
     {
       "relation": "contains",
@@ -97722,9 +97722,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L278",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_7_main_domain_objects",
-      "target": "agent_generated_assets_thesis_simone_working_document_resource",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_resource"
     },
     {
       "relation": "contains",
@@ -97732,9 +97732,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L297",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_8_evaluation_plan",
-      "target": "agent_generated_assets_thesis_simone_working_document_8_1_evaluation_material",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_8_1_evaluation_material"
     },
     {
       "relation": "contains",
@@ -97742,9 +97742,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L308",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_8_evaluation_plan",
-      "target": "agent_generated_assets_thesis_simone_working_document_8_2_reference_annotation",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_8_2_reference_annotation"
     },
     {
       "relation": "contains",
@@ -97752,9 +97752,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L323",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_8_evaluation_plan",
-      "target": "agent_generated_assets_thesis_simone_working_document_8_3_metrics",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_8_3_metrics"
     },
     {
       "relation": "contains",
@@ -97762,9 +97762,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L340",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_8_evaluation_plan",
-      "target": "agent_generated_assets_thesis_simone_working_document_8_4_qualitative_error_categories",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_8_4_qualitative_error_categories"
     },
     {
       "relation": "contains",
@@ -97772,9 +97772,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L360",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_8_evaluation_plan",
-      "target": "agent_generated_assets_thesis_simone_working_document_8_5_baseline_options",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_8_5_baseline_options"
     },
     {
       "relation": "contains",
@@ -97782,9 +97782,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L376",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_9_current_thesis_status",
-      "target": "agent_generated_assets_thesis_simone_working_document_developed_parts",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_developed_parts"
     },
     {
       "relation": "contains",
@@ -97792,9 +97792,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L392",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_9_current_thesis_status",
-      "target": "agent_generated_assets_thesis_simone_working_document_recommended_next_writing_tasks",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_recommended_next_writing_tasks"
     },
     {
       "relation": "contains",
@@ -97802,9 +97802,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L388",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_9_current_thesis_status",
-      "target": "agent_generated_assets_thesis_simone_working_document_underdeveloped_parts",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_underdeveloped_parts"
     },
     {
       "relation": "contains",
@@ -97812,9 +97812,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L504",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_13_discussion_points_for_the_thesis",
-      "target": "agent_generated_assets_thesis_simone_working_document_13_1_why_a_staged_workflow_matters",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_13_1_why_a_staged_workflow_matters"
     },
     {
       "relation": "contains",
@@ -97822,9 +97822,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L508",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_13_discussion_points_for_the_thesis",
-      "target": "agent_generated_assets_thesis_simone_working_document_13_2_why_an_intermediate_extraction_context_matters",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_13_2_why_an_intermediate_extraction_context_matters"
     },
     {
       "relation": "contains",
@@ -97832,9 +97832,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L512",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_13_discussion_points_for_the_thesis",
-      "target": "agent_generated_assets_thesis_simone_working_document_13_3_why_vocabulary_grounding_matters",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_13_3_why_vocabulary_grounding_matters"
     },
     {
       "relation": "contains",
@@ -97842,9 +97842,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L516",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_13_discussion_points_for_the_thesis",
-      "target": "agent_generated_assets_thesis_simone_working_document_13_4_why_validation_is_necessary_but_insufficient",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_13_4_why_validation_is_necessary_but_insufficient"
     },
     {
       "relation": "contains",
@@ -97852,9 +97852,9 @@
       "source_file": "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md",
       "source_location": "L520",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "agent_generated_assets_thesis_simone_working_document_13_discussion_points_for_the_thesis",
-      "target": "agent_generated_assets_thesis_simone_working_document_13_5_why_unresolved_mappings_can_be_acceptable",
-      "confidence_score": 1.0
+      "target": "agent_generated_assets_thesis_simone_working_document_13_5_why_unresolved_mappings_can_be_acceptable"
     },
     {
       "relation": "contains",
@@ -97862,9 +97862,9 @@
       "source_file": "frontend/README.md",
       "source_location": "L1",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "frontend_readme",
-      "target": "frontend_readme_simone_frontend",
-      "confidence_score": 1.0
+      "target": "frontend_readme_simone_frontend"
     },
     {
       "relation": "contains",
@@ -97872,9 +97872,9 @@
       "source_file": "frontend/README.md",
       "source_location": "L32",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "frontend_readme_simone_frontend",
-      "target": "frontend_readme_current_scope",
-      "confidence_score": 1.0
+      "target": "frontend_readme_current_scope"
     },
     {
       "relation": "contains",
@@ -97882,9 +97882,9 @@
       "source_file": "frontend/README.md",
       "source_location": "L5",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "frontend_readme_simone_frontend",
-      "target": "frontend_readme_quick_start",
-      "confidence_score": 1.0
+      "target": "frontend_readme_quick_start"
     },
     {
       "relation": "contains",
@@ -97892,11 +97892,11 @@
       "source_file": "frontend/README.md",
       "source_location": "L16",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "frontend_readme_simone_frontend",
-      "target": "frontend_readme_run_locally_without_docker",
-      "confidence_score": 1.0
+      "target": "frontend_readme_run_locally_without_docker"
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "470f8f96f99a81166b39eab3511f9841aaf4d820"
+  "built_at_commit": "c4aae25cec0b6e0392c021778bce83952c792846"
 }

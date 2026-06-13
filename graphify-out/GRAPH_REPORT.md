@@ -1,16 +1,16 @@
 # Graph Report - Semantic-Inference-Module-for-Ontology-driven-Node-Extraction-SIMONE-  (2026-06-13)
 
 ## Corpus Check
-- 141 files · ~509,271 words
+- 141 files · ~509,137 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 2590 nodes · 6910 edges · 130 communities (113 shown, 17 thin omitted)
+- 2590 nodes · 6910 edges · 129 communities (113 shown, 16 thin omitted)
 - Extraction: 71% EXTRACTED · 29% INFERRED · 0% AMBIGUOUS · INFERRED: 2031 edges (avg confidence: 0.54)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `470f8f96`
+- Built from commit: `c4aae25c`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -84,7 +84,6 @@
 - [[_COMMUNITY_Community 66|Community 66]]
 - [[_COMMUNITY_Community 67|Community 67]]
 - [[_COMMUNITY_Community 68|Community 68]]
-- [[_COMMUNITY_Community 69|Community 69]]
 - [[_COMMUNITY_Community 70|Community 70]]
 - [[_COMMUNITY_Community 71|Community 71]]
 - [[_COMMUNITY_Community 72|Community 72]]
@@ -160,7 +159,7 @@
 - 1-file cycle: `backend/app/main.py -> backend/app/main.py`
 - 1-file cycle: `backend/app/domain/datasources/datasource.py -> backend/app/domain/datasources/datasource.py`
 
-## Communities (130 total, 17 thin omitted)
+## Communities (129 total, 16 thin omitted)
 
 ### Community 0 - "Community 0"
 Cohesion: 0.05
@@ -275,8 +274,8 @@ Cohesion: 0.10
 Nodes (38): Any, DataSourceService, Exception, ExtractionService, UploadFile, ExtractionRunProgress, TaskStatus, CompleteWorkflowProgressResponse (+30 more)
 
 ### Community 28 - "Community 28"
-Cohesion: 0.19
-Nodes (5): DataPackage, CompactVocabResource, ExtractionServiceWorkflowTests, make_chunk(), make_service()
+Cohesion: 0.15
+Nodes (6): DataPackage, CompactVocabResource, ExtractionServiceWorkflowTests, FakeSemanticService, make_chunk(), make_service()
 
 ### Community 29 - "Community 29"
 Cohesion: 0.12
@@ -287,8 +286,8 @@ Cohesion: 0.09
 Nodes (33): VocabQuery, VocabQueryResult, Form, HttpUrl, SemanticService, UploadFile, BaseModel, InitialVocab (+25 more)
 
 ### Community 31 - "Community 31"
-Cohesion: 0.18
-Nodes (20): Any, export_document_to_jsonld(), _format_json_path(), generate_profile_artifacts(), GeneratedProfileArtifacts, InvalidProfileIdentifierError, JsonLdExportResult, _normalized_schema_suffix() (+12 more)
+Cohesion: 0.16
+Nodes (21): Any, detect_enrichable_fields(), export_document_to_jsonld(), _format_json_path(), generate_profile_artifacts(), GeneratedProfileArtifacts, InvalidProfileIdentifierError, JsonLdExportResult (+13 more)
 
 ### Community 33 - "Community 33"
 Cohesion: 0.17
@@ -315,8 +314,8 @@ Cohesion: 0.11
 Nodes (7): Graph, TraversalDirection, VocabGraphStatement, VocabResource, VocabSchemeInfo, VocabSearchCandidate, SemanticGraphRepository
 
 ### Community 39 - "Community 39"
-Cohesion: 0.20
-Nodes (7): Any, GeneratedProfileArtifacts, Path, ProfileManifest, FileSystemProfileRepository, ProfileNotFoundError, FileSystemProfileRepositoryTests
+Cohesion: 0.22
+Nodes (6): Any, GeneratedProfileArtifacts, Path, ProfileManifest, FileSystemProfileRepository, ProfileNotFoundError
 
 ### Community 40 - "Community 40"
 Cohesion: 0.22
@@ -411,8 +410,8 @@ Cohesion: 0.25
 Nodes (7): compilerOptions, allowSyntheticDefaultImports, composite, module, moduleResolution, skipLibCheck, include
 
 ### Community 65 - "Community 65"
-Cohesion: 0.12
-Nodes (10): get_datasource_service(), get_extraction_service(), get_neo4j_driver(), get_ollama_client(), get_profile_service(), get_settings(), get_task_registry(), detect_enrichable_fields() (+2 more)
+Cohesion: 0.13
+Nodes (10): get_datasource_service(), get_extraction_service(), get_neo4j_driver(), get_ollama_client(), get_profile_service(), get_settings(), get_task_registry(), ExtractionProfileDomainTests (+2 more)
 
 ### Community 66 - "Community 66"
 Cohesion: 0.32
@@ -561,7 +560,7 @@ Nodes (3): 4. Scope, Excluded or limited, Included
 ## Knowledge Gaps
 - **374 isolated node(s):** `ProfileManifest`, `ProfileValidationResult`, `ProfileValidationIssue`, `JsonLdExportResult`, `Path` (+369 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **17 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **16 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
@@ -570,7 +569,7 @@ _Questions this graph is uniquely positioned to answer:_
   _High betweenness centrality (0.145) - this node is a cross-community bridge._
 - **Why does `OllamaClientWrapper` connect `Community 0` to `Community 1`, `Community 2`, `Community 36`, `Community 40`, `Community 10`, `Community 109`, `Community 15`, `Community 16`, `Community 17`, `Community 52`, `Community 20`, `Community 55`, `Community 25`, `Community 30`?**
   _High betweenness centrality (0.108) - this node is a cross-community bridge._
-- **Why does `ExtractionService` connect `Community 1` to `Community 0`, `Community 6`, `Community 15`, `Community 16`, `Community 17`, `Community 26`, `Community 27`, `Community 28`, `Community 32`, `Community 47`, `Community 48`, `Community 50`, `Community 52`, `Community 55`, `Community 56`, `Community 61`, `Community 67`, `Community 69`, `Community 109`?**
+- **Why does `ExtractionService` connect `Community 1` to `Community 0`, `Community 32`, `Community 67`, `Community 6`, `Community 109`, `Community 47`, `Community 48`, `Community 15`, `Community 50`, `Community 16`, `Community 52`, `Community 17`, `Community 55`, `Community 56`, `Community 26`, `Community 27`, `Community 28`, `Community 61`?**
   _High betweenness centrality (0.102) - this node is a cross-community bridge._
 - **Are the 49 inferred relationships involving `ExtractionService` (e.g. with `Any` and `DataSourceService`) actually correct?**
   _`ExtractionService` has 49 INFERRED edges - model-reasoned connections that need verification._

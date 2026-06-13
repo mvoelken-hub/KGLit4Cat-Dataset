@@ -643,10 +643,6 @@ function ExtractionContextOverview({
   progress,
   status,
   budget,
-  packageId,
-  onUpdateVocabQueryConfig,
-  onRerunAllVocabQueries,
-  onRerunVocabQuery,
   tokenUsageSummary,
 }: {
   chunkResults: ExtractionChunkResult[];
@@ -656,10 +652,6 @@ function ExtractionContextOverview({
   progress?: PatchProgress | null;
   status?: PatchTaskStatus | null;
   budget?: LlmBudget | null;
-  packageId?: string | null;
-  onUpdateVocabQueryConfig?: (config: ExtractionVocabQueryConfig) => void;
-  onRerunAllVocabQueries?: () => void;
-  onRerunVocabQuery?: (queryId: string) => void;
   tokenUsageSummary?: ReactNode;
 }) {
   const [traceChunk, setTraceChunk] = useState<{ chunk: ExtractionChunkResult; content: string } | null>(null);
@@ -679,8 +671,6 @@ function ExtractionContextOverview({
   const completedChunks = chunkResults.filter((chunk) => chunk.status === 'completed').length;
   const runningChunks = chunkResults.filter((chunk) => chunk.status === 'running').length;
   const failedChunks = chunkResults.filter((chunk) => chunk.status === 'failed').length;
-  const vocabQueries = progress?.vocab_queries ?? [];
-  const completedVocabQueries = vocabQueries.filter((query) => query.status === 'completed').length;
 
   if (!filePaths.length) {
     return (
@@ -713,46 +703,6 @@ function ExtractionContextOverview({
       </div>
 
       {tokenUsageSummary}
-
-      {(progress?.vocab_query_config || vocabQueries.length) ? (
-        <details className="draft-grounding-panel">
-          <summary>
-            <div>
-              <span>Vocabulary search</span>
-              <strong>
-                {vocabQueries.length
-                  ? `${completedVocabQueries}/${vocabQueries.length} vocabulary queries completed`
-                  : 'Context vocabulary query settings'}
-              </strong>
-            </div>
-          </summary>
-          <div className="draft-grounding-body">
-            <div className="chunk-call-meta">
-              <button
-                className="small ghost"
-                type="button"
-                disabled={!packageId || !vocabQueries.length || !onRerunAllVocabQueries}
-                onClick={() => onRerunAllVocabQueries?.()}
-              >
-                Rerun vocabulary queries
-              </button>
-            </div>
-            {progress?.vocab_query_config ? (
-              <VocabQueryConfigPanel
-                config={progress.vocab_query_config}
-                disabled={!packageId}
-                onApply={onUpdateVocabQueryConfig}
-                onRerunAll={onRerunAllVocabQueries}
-              />
-            ) : null}
-            {vocabQueries.length ? (
-              <VocabQueryTraceList queries={vocabQueries} onRerun={onRerunVocabQuery} />
-            ) : (
-              <p className="muted">No context vocabulary queries have been generated yet.</p>
-            )}
-          </div>
-        </details>
-      ) : null}
 
       <div className="ranked-file-list">
         {filePaths.map((filePath, fileIndex) => {
@@ -3975,10 +3925,6 @@ export function App() {
                 progress={patchProgress}
                 status={patchStatus}
                 budget={llmBudget}
-                packageId={selectedPackageId}
-                onUpdateVocabQueryConfig={(config) => void onUpdateVocabConfig(config)}
-                onRerunAllVocabQueries={() => void onRerunVocabularyQueries()}
-                onRerunVocabQuery={(queryId) => void onRerunVocabularyQueries(queryId)}
                 tokenUsageSummary={(
                   <TokenUsageSummary
                     tokenUsage={tokenUsage}

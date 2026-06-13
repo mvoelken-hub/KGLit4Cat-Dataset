@@ -465,8 +465,8 @@
     "semantic_hash": "6b894663437552b843aa4c29e24a01b4"
   },
   "frontend/src/App.tsx": {
-    "mtime": 1781358707.449155,
-    "ast_hash": "a7d6f10aea1dbb08fcf805625a891557",
+    "mtime": 1781360475.4732778,
+    "ast_hash": "ddf1f1f9f693b535349016b4d3760192",
     "semantic_hash": ""
   },
   "frontend/src/api/client.ts": {
