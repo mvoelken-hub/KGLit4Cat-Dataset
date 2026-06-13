@@ -1,6 +1,6 @@
 {
   ".codex/hooks.json": {
-    "mtime": 1781355721.0769522,
+    "mtime": 1781356379.187777,
     "ast_hash": "6bdf481f0816b0e39271659a8df5be22",
     "semantic_hash": "6bdf481f0816b0e39271659a8df5be22"
   },
@@ -30,9 +30,9 @@
     "semantic_hash": "197a224b54d9acf49700048fcc5bcfd7"
   },
   "backend/app/api/v1/datasources.py": {
-    "mtime": 1779492452.4574006,
-    "ast_hash": "477927acdf12ef210f937b93d22d6c1a",
-    "semantic_hash": "477927acdf12ef210f937b93d22d6c1a"
+    "mtime": 1781358680.4519432,
+    "ast_hash": "da1908bd9ef315354d79dea6fd02dda9",
+    "semantic_hash": ""
   },
   "backend/app/api/v1/extraction.py": {
     "mtime": 1781342697.4728591,
@@ -50,9 +50,9 @@
     "semantic_hash": "9373edd3ea7e59ab4863813d6e7ea01b"
   },
   "backend/app/api/v1/schemas/datasources.py": {
-    "mtime": 1779492452.4574006,
-    "ast_hash": "10877d2617cb21bfca86a31ad7731cf0",
-    "semantic_hash": "10877d2617cb21bfca86a31ad7731cf0"
+    "mtime": 1781358680.2489586,
+    "ast_hash": "ddea966add731f0e7d5115948df709e7",
+    "semantic_hash": ""
   },
   "backend/app/api/v1/schemas/extraction.py": {
     "mtime": 1781342686.1292434,
@@ -270,9 +270,9 @@
     "semantic_hash": "8a11ec920f9fa1186358b9b24715f6ea"
   },
   "backend/app/ollama/client.py": {
-    "mtime": 1781251328.8337855,
-    "ast_hash": "7d4eae916eacfc6fdec6f4d3310dd6e8",
-    "semantic_hash": "7d4eae916eacfc6fdec6f4d3310dd6e8"
+    "mtime": 1781358679.9422913,
+    "ast_hash": "e91f363561afb530a5b7bf6fb8e33e11",
+    "semantic_hash": ""
   },
   "backend/app/ollama/completion.py": {
     "mtime": 1781262089.848402,
@@ -315,9 +315,9 @@
     "semantic_hash": "a6487f398b92712a93c60adbc6ebdc22"
   },
   "backend/app/services/datasource_service.py": {
-    "mtime": 1781082400.456214,
-    "ast_hash": "d6f3b8f3e54720a3cf0a1fc2a703a685",
-    "semantic_hash": "d6f3b8f3e54720a3cf0a1fc2a703a685"
+    "mtime": 1781358680.1016488,
+    "ast_hash": "0b28a3b43f0e78447727266969aa4156",
+    "semantic_hash": ""
   },
   "backend/app/services/extraction_service.py": {
     "mtime": 1781351177.6434252,
@@ -370,9 +370,9 @@
     "semantic_hash": "ea28affee1cda4da7f8fccdf393a891c"
   },
   "backend/tests/test_datasource_service.py": {
-    "mtime": 1779492452.4851677,
-    "ast_hash": "9e42f9277bc0ae3ca805b62f42fd9f3f",
-    "semantic_hash": "9e42f9277bc0ae3ca805b62f42fd9f3f"
+    "mtime": 1781358734.69031,
+    "ast_hash": "0c8496e589e5e41eca5db1d6e6fcdf68",
+    "semantic_hash": ""
   },
   "backend/tests/test_evaluation.py": {
     "mtime": 1781277586.343568,
@@ -410,9 +410,9 @@
     "semantic_hash": "e633c494e6025fb6b4648424ea68a569"
   },
   "backend/tests/test_ollama_client.py": {
-    "mtime": 1779961629.5163682,
-    "ast_hash": "71f70968725a2dbce41db649be1bed16",
-    "semantic_hash": "71f70968725a2dbce41db649be1bed16"
+    "mtime": 1781358734.796036,
+    "ast_hash": "ae20e6b3a10bc1d880c4127666b4b56e",
+    "semantic_hash": ""
   },
   "backend/tests/test_ollama_completion.py": {
     "mtime": 1781170410.6594355,
@@ -465,9 +465,9 @@
     "semantic_hash": "6b894663437552b843aa4c29e24a01b4"
   },
   "frontend/src/App.tsx": {
-    "mtime": 1781353524.8287232,
-    "ast_hash": "919308cd26452885ed135f7b92521a1c",
-    "semantic_hash": "919308cd26452885ed135f7b92521a1c"
+    "mtime": 1781358707.449155,
+    "ast_hash": "a7d6f10aea1dbb08fcf805625a891557",
+    "semantic_hash": ""
   },
   "frontend/src/api/client.ts": {
     "mtime": 1781086162.611734,
@@ -475,9 +475,9 @@
     "semantic_hash": "9036c2ca586323a93fdadc54136fb062"
   },
   "frontend/src/api/datasources.ts": {
-    "mtime": 1779492452.5030665,
-    "ast_hash": "779ace783a449c9720e019a2e232f03f",
-    "semantic_hash": "779ace783a449c9720e019a2e232f03f"
+    "mtime": 1781358707.2257552,
+    "ast_hash": "645510493df69e1ce93692d79e67b5a4",
+    "semantic_hash": ""
   },
   "frontend/src/api/extraction.ts": {
     "mtime": 1781350276.1290388,
@@ -505,9 +505,9 @@
     "semantic_hash": "08e0eb0f9a1c1d741fb870c14033fe4b"
   },
   "frontend/src/components/ChunkingDialog.tsx": {
-    "mtime": 1779492452.508657,
-    "ast_hash": "7fe639a5987c510d16582ae7fab2adc4",
-    "semantic_hash": "7fe639a5987c510d16582ae7fab2adc4"
+    "mtime": 1781358707.3272614,
+    "ast_hash": "c4f42e0ca420d9338ea8254bd24a2e7e",
+    "semantic_hash": ""
   },
   "frontend/src/components/JsonEditor.tsx": {
     "mtime": 1781277046.173238,
@@ -548,5 +548,245 @@
     "mtime": 1781081017.192168,
     "ast_hash": "eda61ad00801681f0d047bd78f1903e1",
     "semantic_hash": "eda61ad00801681f0d047bd78f1903e1"
+  },
+  ".codex/skills/graphify/SKILL.md": {
+    "mtime": 1781355721.0769522,
+    "ast_hash": "5c72924d8902cf334936c5827ff65349",
+    "semantic_hash": ""
+  },
+  ".codex/skills/graphify/references/add-watch.md": {
+    "mtime": 1781355692.7825222,
+    "ast_hash": "0df0589623217ca38a12bdcabfb42f4c",
+    "semantic_hash": ""
+  },
+  ".codex/skills/graphify/references/exports.md": {
+    "mtime": 1781355692.7835228,
+    "ast_hash": "c04ddf8f1f5ef5e262ebec491a523c74",
+    "semantic_hash": ""
+  },
+  ".codex/skills/graphify/references/extraction-spec.md": {
+    "mtime": 1781355692.784524,
+    "ast_hash": "a86a7321597b23cc2b22e011b3dc6e1d",
+    "semantic_hash": ""
+  },
+  ".codex/skills/graphify/references/github-and-merge.md": {
+    "mtime": 1781355692.7925255,
+    "ast_hash": "cde13df085e4c492aeb7ba298a996d0d",
+    "semantic_hash": ""
+  },
+  ".codex/skills/graphify/references/hooks.md": {
+    "mtime": 1781355692.7935288,
+    "ast_hash": "3f545db6ce646650bb9de588f5512a27",
+    "semantic_hash": ""
+  },
+  ".codex/skills/graphify/references/query.md": {
+    "mtime": 1781355692.796594,
+    "ast_hash": "c2a8e798674a81b02aa9975f43023819",
+    "semantic_hash": ""
+  },
+  ".codex/skills/graphify/references/transcribe.md": {
+    "mtime": 1781355692.8051088,
+    "ast_hash": "70f6aa30d6211f3a2c7e9fc45479f50c",
+    "semantic_hash": ""
+  },
+  ".codex/skills/graphify/references/update.md": {
+    "mtime": 1781355692.8051088,
+    "ast_hash": "0dad167a95bdb389f02fecffb60b1bc8",
+    "semantic_hash": ""
+  },
+  ".github/skills/simone/SKILL.md": {
+    "mtime": 1781082400.440026,
+    "ast_hash": "e52438e0d0e0ae614a0310af4ba28fc3",
+    "semantic_hash": ""
+  },
+  ".github/skills/simone/agents/openai.yaml": {
+    "mtime": 1781081015.9188056,
+    "ast_hash": "bc97424cf65ccd8ed431cde9600705ae",
+    "semantic_hash": ""
+  },
+  ".github/skills/simone/references/codebase-map.md": {
+    "mtime": 1781082400.440026,
+    "ast_hash": "200c8869c8a3010cd9cce1d15a5bf705",
+    "semantic_hash": ""
+  },
+  ".github/skills/simone/references/evaluation-plan.md": {
+    "mtime": 1781082400.440026,
+    "ast_hash": "2d4e1dd8d56c70d5092f69771fef1b02",
+    "semantic_hash": ""
+  },
+  ".github/skills/simone/references/notebooklm-workflow.md": {
+    "mtime": 1781081015.9193182,
+    "ast_hash": "c980c015c260760c0f85a7a12fb14b8c",
+    "semantic_hash": ""
+  },
+  ".github/skills/simone/references/simone-workflow.md": {
+    "mtime": 1781082400.4556668,
+    "ast_hash": "9da2deffe70796228f49c9fdef5bc256",
+    "semantic_hash": ""
+  },
+  ".github/skills/simone/references/thesis-context.md": {
+    "mtime": 1781081015.9349594,
+    "ast_hash": "9c82b6903e13cdec0424299e7705f36f",
+    "semantic_hash": ""
+  },
+  "AGENTS.md": {
+    "mtime": 1781355721.0769522,
+    "ast_hash": "752aa83aa64361ac32860f882dcff932",
+    "semantic_hash": ""
+  },
+  "README.md": {
+    "mtime": 1781082400.456214,
+    "ast_hash": "0bc0d118e8ecbbc0a54cd6bf94c90339",
+    "semantic_hash": ""
+  },
+  "backend/README.md": {
+    "mtime": 1779961629.4859278,
+    "ast_hash": "bd213c3d9bfa06b1acf771fa678c02e9",
+    "semantic_hash": ""
+  },
+  "backend/docs/ollama-json-schema-mode.md": {
+    "mtime": 1779961629.5103693,
+    "ast_hash": "b9eecfe765311ede1bead931b66eddd0",
+    "semantic_hash": ""
+  },
+  "backend/docs/replace-pydantic-ai.md": {
+    "mtime": 1779961629.511369,
+    "ast_hash": "7ab6b8660264125da5c46ddf2dcca114",
+    "semantic_hash": ""
+  },
+  "docker-compose.gpu.yml": {
+    "mtime": 1781081016.0025113,
+    "ast_hash": "8a21a92d9d5c340243c4249c1902ecd0",
+    "semantic_hash": ""
+  },
+  "docker-compose.yml": {
+    "mtime": 1781337552.3868842,
+    "ast_hash": "c91a1d058e60f871f3664a4cd76c663e",
+    "semantic_hash": ""
+  },
+  "docs/HANDOVER_complete_workflow_endpoint.md": {
+    "mtime": 1781082400.477419,
+    "ast_hash": "d14d9ba712b85d32129c943c004f131e",
+    "semantic_hash": ""
+  },
+  "docs/MODEL_COMPARISON.md": {
+    "mtime": 1781245687.2380998,
+    "ast_hash": "d2ea96bf16d908504403c90e1a251562",
+    "semantic_hash": ""
+  },
+  "docs/PROTOTYPE_STATUS.md": {
+    "mtime": 1781082400.477419,
+    "ast_hash": "fde42358e9bbaac977de4612b1e086c7",
+    "semantic_hash": ""
+  },
+  "docs/WORKFLOW.md": {
+    "mtime": 1781296432.125655,
+    "ast_hash": "30909b459af63210b7ecd94814d44514",
+    "semantic_hash": ""
+  },
+  "docs/evaluation/preliminary_evaluation.md": {
+    "mtime": 1781082400.4804165,
+    "ast_hash": "859e92936a5fae5aceb4c45a7fb5e711",
+    "semantic_hash": ""
+  },
+  "docs/thesis/assets/agent-generated-assets/literature-overview.md": {
+    "mtime": 1781081016.008459,
+    "ast_hash": "0e6ea959f1731622de76546bbb581a27",
+    "semantic_hash": ""
+  },
+  "docs/thesis/assets/agent-generated-assets/retrieval_strategy.md": {
+    "mtime": 1781081016.008459,
+    "ast_hash": "e4e2e45199fb2b00ef4df798662175a5",
+    "semantic_hash": ""
+  },
+  "docs/thesis/assets/agent-generated-assets/thesis-structure.md": {
+    "mtime": 1781081016.0499184,
+    "ast_hash": "16b68d9df4fd7199b1f9042fe5e313ae",
+    "semantic_hash": ""
+  },
+  "docs/thesis/assets/agent-generated-assets/thesis_simone_working_document.md": {
+    "mtime": 1781081016.0499184,
+    "ast_hash": "3ccf99741955b17dfe80348575fd70f7",
+    "semantic_hash": ""
+  },
+  "docs/thesis/assets/todos.txt": {
+    "mtime": 1781082400.4814181,
+    "ast_hash": "e461b8fd99216619f4a3c1306c437c89",
+    "semantic_hash": ""
+  },
+  "docs/working_documents/HANDOVER_three_step_evaluation.md": {
+    "mtime": 1781125509.3231175,
+    "ast_hash": "170a8d0ed7b1fe5da3de2dc3de4f0817",
+    "semantic_hash": ""
+  },
+  "frontend/README.md": {
+    "mtime": 1779292358.5745194,
+    "ast_hash": "a5f4b0d6705ce6dae891c9812f1a92c5",
+    "semantic_hash": ""
+  },
+  "frontend/index.html": {
+    "mtime": 1779292358.5745194,
+    "ast_hash": "667a681037673a558092f96529dbc081",
+    "semantic_hash": ""
+  },
+  "docs/thesis/assets/presentations/Zwischengespr\u00e4ch_v7.pdf": {
+    "mtime": 1781081016.30631,
+    "ast_hash": "0b2c2a5fd753e99557b1e6ab66855bbd",
+    "semantic_hash": ""
+  },
+  "docs/thesis/assets/templates/Abschlussarbeit_Vorlage_v4-2021.pdf": {
+    "mtime": 1781081016.315594,
+    "ast_hash": "4f3878a6a428c6982f426085cc2320d1",
+    "semantic_hash": ""
+  },
+  "docs/thesis/assets/templates/Frederick_Kitel_Masterarbeit.pdf": {
+    "mtime": 1781081016.3312204,
+    "ast_hash": "e68762cc5048f228521118be1bf049f3",
+    "semantic_hash": ""
+  },
+  "docs/thesis/assets/templates/Marc_V\u00f6lkenrath_Masterarbeit.pdf": {
+    "mtime": 1781081016.3683655,
+    "ast_hash": "49d145b561bc8f46b1e420931e8a6e58",
+    "semantic_hash": ""
+  },
+  "docs/thesis/figures/ontology_grounding_layers.png": {
+    "mtime": 1781081016.863889,
+    "ast_hash": "1434c7005a199272035a72d7a31ba3d9",
+    "semantic_hash": ""
+  },
+  "docs/thesis/figures/ontology_grounding_layers_notebooklm.png": {
+    "mtime": 1781081016.9087894,
+    "ast_hash": "59f7e6d563f0b6166fd582aa9e198889",
+    "semantic_hash": ""
+  },
+  "docs/thesis/figures/ontology_grounding_layers_notebooklm_strict.png": {
+    "mtime": 1781081017.0841832,
+    "ast_hash": "598b2250fc1ea5c9a0b95241bd9efb40",
+    "semantic_hash": ""
+  },
+  "docs/thesis/frontpage/AD_Sign.png": {
+    "mtime": 1781081017.09889,
+    "ast_hash": "b277b3d89a4009607f48e69872cbf8cb",
+    "semantic_hash": ""
+  },
+  "docs/thesis/frontpage/BCI.png": {
+    "mtime": 1781081017.09889,
+    "ast_hash": "28418ee920b241cb989bb566ef0207d2",
+    "semantic_hash": ""
+  },
+  "docs/thesis/frontpage/NFDI4Cat.png": {
+    "mtime": 1781081017.103583,
+    "ast_hash": "505920185af194b0b5729052e8b2bb14",
+    "semantic_hash": ""
+  },
+  "docs/thesis/frontpage/NFDI4Cat.svg": {
+    "mtime": 1781081017.1041093,
+    "ast_hash": "d733b452481c59f6321fc7cc2b023c1b",
+    "semantic_hash": ""
+  },
+  "docs/thesis/frontpage/TUDortmund.png": {
+    "mtime": 1781081017.1041093,
+    "ast_hash": "bba6f932ca052d77f0927ba8d8b372f1",
+    "semantic_hash": ""
   }
 }
