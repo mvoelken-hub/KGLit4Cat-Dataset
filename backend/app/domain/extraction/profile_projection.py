@@ -38,6 +38,8 @@ PROFILE_TARGET_WRITER_SYSTEM_PROMPT = """
 You update exactly one selected schema target in a scientific metadata profile document.
 Return only the structured target write decision. When writing, return the complete replacement value for the selected target path, not JSON Patch operations.
 Preserve existing supported values in the current target value, add only evidence-supported facts, and keep the returned value valid for the selected schema slice.
+Match the schema shape exactly: array fields must remain arrays, object fields must remain objects, and scalar strings must not replace arrays.
+Do not write raw instrument parameter keys or low-level acquisition settings to /keyword or /description.
 Return skip when the evidence is redundant, too technical for the selected target, or cannot be represented without inventing facts.
 """
 
@@ -138,7 +140,8 @@ def build_profile_target_write_prompt(
         "Selected target schema slice JSON:\n"
         f"{schema_slice}\n\n"
         "Return JSON with status='write' and `value` set to the complete replacement value for the selected target path, "
-        "or status='skip' when nothing should be written. Preserve schema-valid existing values unless the evidence clearly improves them."
+        "or status='skip' when nothing should be written. Preserve schema-valid existing values unless the evidence clearly improves them. "
+        "Use the current target value as the shape contract: keep arrays as arrays, objects as objects, null-capable object fields as null or objects, and strings as strings."
     )
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from dataclasses import dataclass
 
@@ -122,7 +123,7 @@ if TYPE_CHECKING:
 
 
 ExtractionTargetStage = Literal["context", "profile", "grounding", "complete"]
-INITIAL_OVERVIEW_TOP_FILE_LIMIT = 8
+INITIAL_OVERVIEW_TOP_FILE_LIMIT = 16
 INITIAL_OVERVIEW_PREVIEW_LINE_LIMIT = 80
 INITIAL_OVERVIEW_MAX_LINE_CHARS = 500
 INITIAL_FILE_SUMMARY_CONTEXT_RATIO = 0.35
@@ -2371,7 +2372,6 @@ class ExtractionService:
         patched_identifiers = {
             record.object_identifier
             for record in state.projection_ledger
-            if record.status == "projected"
         }
         for group in self._projection_groups_for_evidence(evidence_context):
             if group.group_id in patched_identifiers:
@@ -2531,6 +2531,8 @@ class ExtractionService:
     ) -> list[_EvidenceProjectionGroup]:
         buckets: dict[tuple[str, str, str, str], list[EvidenceNote]] = {}
         for note in evidence_context.notes:
+            if not cls._note_has_curatable_profile_signal(note):
+                continue
             target_hint, target_class_hint = cls._target_hint_for_evidence_note(note)
             family = cls._evidence_note_family(note.note_id)
             key = (target_hint, target_class_hint or "", note.category, f"{note.file_path}:{family}")
@@ -2781,6 +2783,32 @@ class ExtractionService:
             max_depth=3,
         )
         current_target_value = self._value_at_json_pointer(current_document, target_path)
+        unsuitable_reason = self._profile_target_unsuitable_reason(
+            target_path=target_path,
+            notes=group.notes,
+        )
+        if unsuitable_reason:
+            return ProfileObjectPatchResult(
+                object_identifier=group.group_id,
+                object_kind=group.object_kind,
+                status="skipped",
+                target_path=target_path,
+                target_class=target_decision.target_class,
+                planner_status=target_decision.status,
+                planner_reason=target_decision.reason,
+                reason=unsuitable_reason,
+            )
+        if target_path == "/description" and not self._description_target_worthy(group.notes):
+            return ProfileObjectPatchResult(
+                object_identifier=group.group_id,
+                object_kind=group.object_kind,
+                status="skipped",
+                target_path=target_path,
+                target_class=target_decision.target_class,
+                planner_status=target_decision.status,
+                planner_reason=target_decision.reason,
+                reason="Description is reserved for dataset-level prose; grouped evidence is better handled by structured targets or skipped.",
+            )
         try:
             write = await generate_structured(
                 self.ollama_client,
@@ -2807,6 +2835,22 @@ class ExtractionService:
                 usage=write.usage,
             )
         except CompletionError as exc:
+            fallback = self._deterministic_profile_target_write_result(
+                profile_identifier=profile_identifier,
+                current_document=current_document,
+                group=group,
+                target_path=target_path,
+                target_class=target_decision.target_class,
+                planner_status=target_decision.status,
+                planner_reason=target_decision.reason,
+                current_target_value=current_target_value,
+                reason_prefix="Deterministic schema-safe target fallback after model writer failure",
+            )
+            if fallback is not None:
+                warnings.append(
+                    f"Profile target write used deterministic fallback for '{group.group_id}' after model failure: {exc}"
+                )
+                return fallback
             warnings.append(f"Profile target write failed for '{group.group_id}': {exc}")
             return ProfileObjectPatchResult(
                 object_identifier=group.group_id,
@@ -2836,11 +2880,31 @@ class ExtractionService:
                 reason=write_document.reason or target_decision.reason,
             )
 
+        target_value = self._coerce_profile_target_value(
+            target_path=target_path,
+            current_value=current_target_value,
+            proposed_value=write_document.value,
+        )
+        target_value = self._curate_profile_target_value(
+            target_path=target_path,
+            value=target_value,
+        )
+        if self._target_write_is_empty(current_target_value, target_value):
+            return ProfileObjectPatchResult(
+                object_identifier=group.group_id,
+                object_kind=group.object_kind,
+                status="skipped",
+                target_path=target_path,
+                target_class=target_decision.target_class,
+                planner_status=target_decision.status,
+                planner_reason=target_decision.reason,
+                reason="Target write only contained low-level instrument configuration or duplicate values.",
+            )
         try:
             candidate = self._replace_json_pointer(
                 current_document,
                 target_path,
-                write_document.value,
+                target_value,
             )
         except Exception as exc:
             warnings.append(f"Profile target write skipped for '{group.group_id}': {exc}")
@@ -2852,7 +2916,7 @@ class ExtractionService:
                 target_class=target_decision.target_class,
                 planner_status=target_decision.status,
                 planner_reason=target_decision.reason,
-                target_value=write_document.value,
+                target_value=target_value,
                 error=str(exc),
                 reason=write_document.reason,
             )
@@ -2864,6 +2928,22 @@ class ExtractionService:
             error = "; ".join(
                 f"{issue.path}: {issue.message}" for issue in validation.errors
             )
+            fallback = self._deterministic_profile_target_write_result(
+                profile_identifier=profile_identifier,
+                current_document=current_document,
+                group=group,
+                target_path=target_path,
+                target_class=target_decision.target_class,
+                planner_status=target_decision.status,
+                planner_reason=target_decision.reason,
+                current_target_value=current_target_value,
+                reason_prefix=f"Deterministic schema-safe target fallback after invalid writer value ({error})",
+            )
+            if fallback is not None:
+                warnings.append(
+                    f"Profile target write repaired for '{group.group_id}' with deterministic fallback after validation failed: {error}"
+                )
+                return fallback
             warnings.append(
                 f"Profile target write skipped for '{group.group_id}' because it broke schema validation: {error}"
             )
@@ -2875,7 +2955,7 @@ class ExtractionService:
                 target_class=target_decision.target_class,
                 planner_status=target_decision.status,
                 planner_reason=target_decision.reason,
-                target_value=write_document.value,
+                target_value=target_value,
                 error=error,
                 reason=write_document.reason,
             )
@@ -2887,9 +2967,923 @@ class ExtractionService:
             target_class=target_decision.target_class,
             planner_status=target_decision.status,
             planner_reason=target_decision.reason,
-            target_value=write_document.value,
+            target_value=target_value,
             reason=write_document.reason or target_decision.reason,
         )
+
+    def _deterministic_profile_target_write_result(
+        self,
+        *,
+        profile_identifier: str,
+        current_document: dict[str, Any],
+        group: _EvidenceProjectionGroup,
+        target_path: str,
+        target_class: str | None,
+        planner_status: str | None,
+        planner_reason: str | None,
+        current_target_value: Any,
+        reason_prefix: str,
+    ) -> ProfileObjectPatchResult | None:
+        fallback_value = self._fallback_profile_target_value(
+            target_path=target_path,
+            current_value=current_target_value,
+            notes=group.notes,
+        )
+        if fallback_value is None:
+            return ProfileObjectPatchResult(
+                object_identifier=group.group_id,
+                object_kind=group.object_kind,
+                status="skipped",
+                target_path=target_path,
+                target_class=target_class,
+                planner_status=planner_status,
+                planner_reason=planner_reason,
+                reason=f"{reason_prefix}; no profile-worthy schema-safe value could be derived.",
+            )
+        try:
+            candidate = self._replace_json_pointer(
+                current_document,
+                target_path,
+                fallback_value,
+            )
+        except Exception as exc:
+            return ProfileObjectPatchResult(
+                object_identifier=group.group_id,
+                object_kind=group.object_kind,
+                status="failed",
+                target_path=target_path,
+                target_class=target_class,
+                planner_status=planner_status,
+                planner_reason=planner_reason,
+                target_value=fallback_value,
+                error=str(exc),
+                reason=reason_prefix,
+            )
+        validation = self.profile_service.validate_document(
+            identifier=profile_identifier,
+            document=candidate,
+        )
+        if not validation.valid:
+            return None
+        return ProfileObjectPatchResult(
+            object_identifier=group.group_id,
+            object_kind=group.object_kind,
+            status="applied",
+            target_path=target_path,
+            target_class=target_class,
+            planner_status=planner_status,
+            planner_reason=planner_reason,
+            target_value=fallback_value,
+            reason=reason_prefix,
+        )
+
+    @classmethod
+    def _coerce_profile_target_value(
+        cls,
+        *,
+        target_path: str,
+        current_value: Any,
+        proposed_value: Any,
+    ) -> Any:
+        if target_path in {"/title", "/description", "/identifier", "/keyword"}:
+            return cls._merge_unique_strings(
+                current_value if isinstance(current_value, list) else [],
+                cls._string_list(proposed_value),
+            )
+        if target_path == "/modification_date":
+            if isinstance(proposed_value, str):
+                return proposed_value.strip()
+            return current_value
+        return cls._coerce_to_reference_shape(current_value, proposed_value)
+
+    @classmethod
+    def _coerce_to_reference_shape(cls, reference: Any, proposed: Any) -> Any:
+        if isinstance(reference, list):
+            proposed_items = proposed if isinstance(proposed, list) else [proposed]
+            return [
+                cls._coerce_to_reference_shape(reference[0], item)
+                if reference
+                else cls._clone_json_object(item)
+                for item in proposed_items
+                if not cls._is_missing_value(item)
+            ]
+        if isinstance(reference, dict):
+            proposed_dict = proposed if isinstance(proposed, dict) else {}
+            merged = cls._clone_json_object(reference)
+            for key, current_item in reference.items():
+                if key in proposed_dict:
+                    merged[key] = cls._coerce_to_reference_shape(
+                        current_item,
+                        proposed_dict[key],
+                    )
+            return merged
+        if isinstance(reference, str):
+            if isinstance(proposed, list):
+                return "; ".join(str(item).strip() for item in proposed if str(item).strip())
+            if proposed is None:
+                return reference
+            return str(proposed).strip()
+        if reference is None:
+            return cls._clone_json_object(proposed) if isinstance(proposed, dict) else None
+        return cls._clone_json_object(proposed)
+
+    @classmethod
+    def _fallback_profile_target_value(
+        cls,
+        *,
+        target_path: str,
+        current_value: Any,
+        notes: list[EvidenceNote],
+    ) -> Any | None:
+        if not cls._evidence_group_has_profile_signal(notes):
+            return None
+
+        if target_path == "/keyword":
+            keywords = cls._profile_keywords_for_notes(notes)
+            if not keywords:
+                return None
+            return cls._merge_unique_strings(
+                current_value if isinstance(current_value, list) else [],
+                keywords,
+            )
+        if target_path == "/description":
+            if not cls._description_target_worthy(notes):
+                return None
+            descriptions = cls._profile_observation_sentences(notes, max_count=3)
+            if not descriptions:
+                return None
+            return cls._merge_unique_strings(
+                current_value if isinstance(current_value, list) else [],
+                descriptions,
+            )
+        if target_path == "/title":
+            title = cls._fallback_target_title(notes)
+            if not title:
+                return None
+            return cls._merge_unique_strings(
+                current_value if isinstance(current_value, list) else [],
+                [title],
+            )
+        if target_path == "/identifier":
+            identifiers = cls._identifier_values_for_notes(notes)
+            if not identifiers:
+                return None
+            return cls._merge_unique_strings(
+                current_value if isinstance(current_value, list) else [],
+                identifiers,
+            )
+        if target_path == "/modification_date":
+            return cls._date_value_for_notes(notes)
+        if target_path == "/creator/0":
+            return cls._fallback_creator_value(current_value, notes)
+        if target_path == "/dataset_distribution/0":
+            return cls._fallback_distribution_value(current_value, notes)
+        if target_path == "/was_generated_by/0":
+            return cls._fallback_activity_value(
+                current_value,
+                notes,
+                default_title="NMR data generation activity",
+            )
+        if target_path == "/is_about_activity/0":
+            return cls._fallback_activity_value(
+                current_value,
+                notes,
+                default_title="NMR acquisition activity",
+            )
+        if target_path == "/is_about_entity/0":
+            return cls._fallback_entity_value(current_value, notes)
+        if target_path == "/type/0":
+            return cls._fallback_concept_value(current_value, notes)
+        return None
+
+    @classmethod
+    def _profile_target_unsuitable_reason(
+        cls,
+        *,
+        target_path: str,
+        notes: list[EvidenceNote],
+    ) -> str | None:
+        if not notes:
+            return "No evidence notes were available for profile projection."
+        if all(cls._is_low_level_parameter_note(note) for note in notes):
+            return (
+                "Evidence contains only low-level instrument configuration; "
+                "leaving it out of the dataset-level DCAT-AP-plus object."
+            )
+        if target_path in {"/description", "/keyword"}:
+            useful_keywords = cls._profile_keywords_for_notes(notes)
+            if not useful_keywords and all(
+                note.category in {"method_signal", "measurement_signal", "resource_signal"}
+                for note in notes
+            ):
+                return (
+                    "Dataset description and keywords are reserved for curation-level facts, "
+                    "not raw acquisition or processing parameters."
+                )
+        return None
+
+    @classmethod
+    def _fallback_creator_value(
+        cls,
+        current_value: Any,
+        notes: list[EvidenceNote],
+    ) -> Any | None:
+        if not isinstance(current_value, dict):
+            return None
+        names: list[str] = []
+        for note in notes:
+            key, value = cls._assignment_from_note(note)
+            text = cls._note_search_text(note)
+            if key and key.lower() in {"origin", "owner", "author", "creator"} and value:
+                names.append(value)
+            elif "bruker" in text:
+                names.append("Bruker BioSpin GmbH")
+        if not names:
+            return None
+        value = cls._clone_json_object(current_value)
+        value["name"] = cls._merge_unique_strings(value.get("name", []), names)
+        return value
+
+    @classmethod
+    def _fallback_distribution_value(
+        cls,
+        current_value: Any,
+        notes: list[EvidenceNote],
+    ) -> Any | None:
+        if not isinstance(current_value, dict):
+            return None
+        keywords = cls._profile_keywords_for_notes(notes)
+        file_like = any(
+            term in cls._note_search_text(note)
+            for note in notes
+            for term in ("jcamp", ".jdx", ".dx", "topspin", "zip", "file", "format")
+        )
+        if not file_like and not keywords:
+            return None
+        value = cls._clone_json_object(current_value)
+        title = "Primary NMR data distribution" if "NMR spectroscopy" in keywords or "1H NMR" in keywords else "Primary dataset distribution"
+        value["title"] = cls._merge_unique_strings(value.get("title", []), [title])
+        description_parts = cls._profile_observation_sentences(notes, max_count=2)
+        if not description_parts:
+            description_parts = ["Dataset files contain NMR data and associated metadata."]
+        value["description"] = cls._merge_unique_strings(value.get("description", []), description_parts)
+        if not isinstance(value.get("access_URL"), list) or not value.get("access_URL"):
+            value["access_URL"] = current_value.get("access_URL", [])
+        if not isinstance(value.get("format"), dict):
+            value["format"] = None
+        if not isinstance(value.get("media_type"), dict):
+            value["media_type"] = None
+        return value
+
+    @classmethod
+    def _fallback_activity_value(
+        cls,
+        current_value: Any,
+        notes: list[EvidenceNote],
+        *,
+        default_title: str,
+    ) -> Any | None:
+        if not isinstance(current_value, dict):
+            return None
+        if not any(note.category in {"method_signal", "measurement_signal"} for note in notes):
+            return None
+        value = cls._clone_json_object(current_value)
+        value["title"] = cls._merge_unique_strings(value.get("title", []), [default_title])
+        descriptions = cls._profile_observation_sentences(notes, max_count=3)
+        if descriptions:
+            value["description"] = cls._merge_unique_strings(value.get("description", []), descriptions)
+        qualitative = cls._qualitative_attributes_for_notes(notes)
+        if qualitative:
+            value["has_qualitative_attribute"] = cls._merge_unique_dicts(
+                value.get("has_qualitative_attribute", []),
+                qualitative,
+            )
+        return value
+
+    @classmethod
+    def _fallback_entity_value(
+        cls,
+        current_value: Any,
+        notes: list[EvidenceNote],
+    ) -> Any | None:
+        if not isinstance(current_value, dict):
+            return None
+        if not any(note.category in {"entity_signal", "measurement_signal"} for note in notes):
+            return None
+        value = cls._clone_json_object(current_value)
+        title = cls._entity_title_for_notes(notes)
+        if title:
+            value["title"] = title
+        descriptions = cls._profile_observation_sentences(notes, max_count=2)
+        if descriptions:
+            value["description"] = "; ".join(descriptions)
+        qualitative = cls._qualitative_attributes_for_notes(notes)
+        if qualitative:
+            value["has_qualitative_attribute"] = cls._merge_unique_dicts(
+                value.get("has_qualitative_attribute", []),
+                qualitative,
+            )
+        return value
+
+    @classmethod
+    def _fallback_concept_value(
+        cls,
+        current_value: Any,
+        notes: list[EvidenceNote],
+    ) -> Any | None:
+        if not isinstance(current_value, dict):
+            return None
+        labels = cls._profile_keywords_for_notes(notes)
+        if "1H NMR" in labels:
+            labels.insert(0, "1H NMR dataset")
+        elif "NMR spectroscopy" in labels:
+            labels.insert(0, "NMR spectroscopy dataset")
+        labels = cls._dedupe_strings(labels)
+        if not labels:
+            return None
+        value = cls._clone_json_object(current_value)
+        value["preferred_label"] = cls._merge_unique_strings(value.get("preferred_label", []), labels[:3])
+        return value
+
+    @classmethod
+    def _description_target_worthy(cls, notes: list[EvidenceNote]) -> bool:
+        if not notes:
+            return False
+        if all(cls._is_low_level_parameter_note(note) for note in notes):
+            return False
+        category_set = {note.category for note in notes}
+        if category_set <= {"method_signal", "measurement_signal", "resource_signal"}:
+            return False
+        return any(
+            term in cls._note_search_text(note)
+            for note in notes
+            for term in ("dataset", "sample", "contains", "study", "experiment")
+        )
+
+    @classmethod
+    def _evidence_group_has_profile_signal(cls, notes: list[EvidenceNote]) -> bool:
+        if not notes:
+            return False
+        if all(note.profile_worthiness == "low" for note in notes):
+            return False
+        return any(not cls._is_low_level_parameter_note(note) for note in notes)
+
+    @classmethod
+    def _is_low_level_parameter_note(cls, note: EvidenceNote) -> bool:
+        text = cls._note_search_text(note)
+        note_id = (note.note_id or "").lower()
+        low_level_keys = {
+            "acb",
+            "aq",
+            "aq_mod",
+            "aqmod",
+            "autopos",
+            "bacdel",
+            "bacsair",
+            "bacscap",
+            "bfreq",
+            "bf1",
+            "bgaeth1",
+            "birds",
+            "bla01eth",
+            "bla01nam",
+            "bla01pn",
+            "bla01sn",
+            "bsms",
+            "bsmseth",
+            "cnst",
+            "comdig2",
+            "decim",
+            "digi140",
+            "dspfirm",
+            "dspfvs",
+            "ds",
+            "dw",
+            "fw",
+            "ns",
+            "nus",
+            "o1",
+            "phcor",
+            "pl",
+            "plstrt",
+            "pqphase",
+            "rg",
+            "ro",
+            "sfo1",
+            "sw",
+            "td",
+            "te",
+            "vtueth",
+            "xfac",
+        }
+        key, _value = cls._assignment_from_note(note)
+        high_level_keys = {"solvent", "nuc1", "pulprog", "origin", "owner", "title"}
+        if key and key.lower().strip("$") in high_level_keys:
+            return False
+        normalized_key = key.lower().strip("$") if key else ""
+        low_level_prefixes = (
+            "bacs",
+            "bga",
+            "bla",
+            "bsms",
+            "cfa",
+            "cnf",
+            "com",
+            "cpdb",
+            "crc",
+            "csw",
+            "ctb",
+            "digi",
+            "dru",
+            "rxf",
+            "samchg",
+            "sgu",
+            "shim",
+            "tfx",
+            "triplo",
+            "vtu",
+            "wb",
+            "user",
+        )
+        key_is_low = bool(
+            normalized_key
+            and (
+                normalized_key in low_level_keys
+                or normalized_key.startswith(low_level_prefixes)
+            )
+        )
+        if key_is_low or note_id.endswith("_setting") or note_id in low_level_keys:
+            return True
+        low_level_observation_terms = (
+            "parameter is set",
+            "parameter set",
+            "configuration settings",
+            "network configuration",
+            "ethernet",
+            "tcp/ip",
+            "switchbox routing",
+            "shim settings",
+            "digital signal processing configuration",
+        )
+        if any(term in text for term in low_level_observation_terms):
+            return True
+        high_level_terms = {
+            "solvent",
+            "nuc1",
+            "nucleus",
+            "pulprog",
+            "pulse program",
+            "origin",
+            "owner",
+            "author",
+            "creator",
+            "title",
+            "jcamp",
+            "topspin",
+            "1h",
+            "nmr",
+        }
+        if any(term in text for term in high_level_terms):
+            return False
+        return False
+
+    @classmethod
+    def _curate_generated_profile_document(cls, document: dict[str, Any]) -> dict[str, Any]:
+        curated = cls._clone_json_object(document)
+        if "title" in curated:
+            curated["title"] = cls._curate_profile_target_value(
+                target_path="/title",
+                value=curated.get("title"),
+            )
+        if "description" in curated:
+            curated["description"] = cls._curate_profile_target_value(
+                target_path="/description",
+                value=curated.get("description"),
+            )
+        if "keyword" in curated:
+            curated["keyword"] = cls._curate_profile_target_value(
+                target_path="/keyword",
+                value=curated.get("keyword"),
+            )
+        distributions = curated.get("dataset_distribution")
+        if isinstance(distributions, list):
+            for distribution in distributions:
+                if not isinstance(distribution, dict):
+                    continue
+                if "title" in distribution:
+                    distribution["title"] = cls._curate_profile_target_value(
+                        target_path="/dataset_distribution/0/title",
+                        value=distribution.get("title"),
+                    )
+                if "description" in distribution:
+                    distribution["description"] = cls._curate_profile_target_value(
+                        target_path="/dataset_distribution/0/description",
+                        value=distribution.get("description"),
+                    )
+        return cls._curate_nested_profile_values(curated)
+
+    @classmethod
+    def _curate_nested_profile_values(cls, value: Any) -> Any:
+        if isinstance(value, list):
+            return [
+                cls._curate_nested_profile_values(item)
+                for item in value
+                if not cls._is_low_level_profile_attribute(item)
+            ]
+        if isinstance(value, dict):
+            return {
+                key: cls._curate_nested_profile_values(item)
+                for key, item in value.items()
+            }
+        return value
+
+    @classmethod
+    def _is_low_level_profile_attribute(cls, value: Any) -> bool:
+        if not isinstance(value, dict):
+            return False
+        if not ({"value", "description"} & set(value)):
+            return False
+        text = " ".join(
+            str(value.get(key) or "")
+            for key in ("value", "description")
+        )
+        lower = text.lower()
+        return cls._is_low_level_profile_text(text) or any(
+            term in lower
+            for term in (
+                "solvent off setting",
+                "instrument parameter structure",
+                "parameter structure",
+                "name\tinstrum",
+            )
+        )
+
+    @classmethod
+    def _curate_profile_target_value(
+        cls,
+        *,
+        target_path: str,
+        value: Any,
+    ) -> Any:
+        if target_path == "/title":
+            return cls._dedupe_strings(
+                [
+                    cleaned
+                    for item in cls._string_list(value)
+                    if (cleaned := cls._clean_profile_title_text(item)) is not None
+                ]
+            )
+        if target_path == "/keyword":
+            return [
+                item
+                for item in cls._string_list(value)
+                if cls._is_profile_keyword_text(item)
+            ]
+        if target_path == "/description":
+            return [
+                item
+                for item in cls._string_list(value)
+                if cls._is_profile_description_text(item)
+            ]
+        if target_path.endswith("/title") or target_path.endswith("/description"):
+            if isinstance(value, list):
+                filtered = [
+                    item
+                    for item in cls._string_list(value)
+                    if not cls._is_low_level_profile_text(item)
+                ]
+                return filtered
+            if isinstance(value, str):
+                return "" if cls._is_low_level_profile_text(value) else value
+        return value
+
+    @classmethod
+    def _is_profile_keyword_text(cls, text: str) -> bool:
+        normalized = re.sub(r"\s+", " ", text).strip()
+        if not normalized or cls._is_low_level_profile_text(normalized):
+            return False
+        allowed_exact = {
+            "1h nmr",
+            "nmr spectroscopy",
+            "jcamp-dx",
+            "bruker",
+            "bruker topspin",
+            "bruker avance 500 mhz",
+            "cdcl3",
+            "nmr pulse program",
+            "data analysis",
+        }
+        lower = normalized.lower()
+        if lower in allowed_exact:
+            return True
+        return any(
+            term in lower
+            for term in (
+                "nmr",
+                "jcamp",
+                "bruker avance",
+                "spectrum",
+                "spectroscopy",
+                "dataset",
+            )
+        )
+
+    @classmethod
+    def _is_profile_description_text(cls, text: str) -> bool:
+        normalized = re.sub(r"\s+", " ", text).strip()
+        if not normalized or cls._is_low_level_profile_text(normalized):
+            return False
+        lower = normalized.lower()
+        return any(
+            term in lower
+            for term in (
+                "dataset",
+                "1h nmr",
+                "nmr",
+                "spectrum",
+                "spectroscopy",
+                "instrument",
+                "sample",
+                "jcamp",
+                "file",
+            )
+        )
+
+    @staticmethod
+    def _is_low_level_profile_text(text: str) -> bool:
+        lower = text.lower()
+        if "##$" in text or re.search(r"\b[A-Z][A-Z0-9_]{1,16}\s+parameter\b", text):
+            return True
+        if re.search(r"\b[A-Z][A-Z0-9_]{1,16}\s+(?:set to|is set to)\b", text):
+            return True
+        if re.search(r"\b[A-Z][A-Z0-9_]{1,16}\s+is\s+(?:no|yes|[0-9])\b", text):
+            return True
+        noisy_terms = (
+            "tcp/ip",
+            "ethernet",
+            "switchbox",
+            "shim_setting",
+            "shim settings",
+            "routing",
+            "blanking",
+            "configuration settings",
+            "digital signal processing configuration",
+            "powerlevels",
+            "npoints",
+            "parameter values",
+            "parameter file from topspin",
+        )
+        return any(term in lower for term in noisy_terms)
+
+    @classmethod
+    def _clean_profile_title_text(cls, text: str) -> str | None:
+        normalized = re.sub(r"\s+", " ", text).strip()
+        if not normalized or cls._is_low_level_profile_text(normalized):
+            return None
+        match = re.search(r"\bdataset name\s*(?:is|:)\s*(.+)$", normalized, re.IGNORECASE)
+        if match:
+            normalized = match.group(1).strip()
+        if normalized.lower() in {"title", "spectrum title"}:
+            return None
+        if re.fullmatch(r"\d+(?:\.\d+)?", normalized):
+            return None
+        if len(normalized) > 120:
+            return None
+        return normalized
+
+    @classmethod
+    def _title_value_from_note(cls, note: EvidenceNote) -> str | None:
+        key, value = cls._assignment_from_note(note)
+        if key and key.lower().strip("$") == "title":
+            return cls._clean_profile_title_text(value or "")
+        text = f"{note.observation or ''}\n{note.evidence_text or ''}"
+        match = re.search(r"\bdataset name\s*(?:is|:)\s*([^\r\n.;]+)", text, re.IGNORECASE)
+        if match:
+            return cls._clean_profile_title_text(match.group(1))
+        return None
+
+    @staticmethod
+    def _target_write_is_empty(current_value: Any, target_value: Any) -> bool:
+        if isinstance(target_value, list):
+            return not target_value or target_value == current_value
+        return target_value in (None, "", {}, []) or target_value == current_value
+
+    @classmethod
+    def _profile_keywords_for_notes(cls, notes: list[EvidenceNote]) -> list[str]:
+        keywords: list[str] = []
+        for note in notes:
+            if cls._is_low_level_parameter_note(note):
+                continue
+            text = cls._note_search_text(note)
+            if "1h" in text or "proton" in text:
+                keywords.append("1H NMR")
+            if "nmr" in text:
+                keywords.append("NMR spectroscopy")
+            if "jcamp" in text or ".jdx" in text or ".dx" in text:
+                keywords.append("JCAMP-DX")
+            if "topspin" in text:
+                keywords.append("Bruker TopSpin")
+            if "bruker" in text:
+                keywords.append("Bruker")
+            if "cdcl3" in text or "chloroform-d" in text:
+                keywords.append("CDCl3")
+            if "pulse" in text or "pulprog" in text:
+                keywords.append("NMR pulse program")
+        return cls._dedupe_strings(keywords)
+
+    @classmethod
+    def _profile_observation_sentences(
+        cls,
+        notes: list[EvidenceNote],
+        *,
+        max_count: int,
+    ) -> list[str]:
+        sentences: list[str] = []
+        for note in notes:
+            if cls._is_low_level_parameter_note(note):
+                continue
+            text = (note.observation or "").strip()
+            if not text:
+                continue
+            text = re.sub(r"\s+", " ", text)
+            if len(text) > 220:
+                text = text[:217].rstrip() + "..."
+            sentences.append(text)
+            if len(sentences) >= max_count:
+                break
+        return cls._dedupe_strings(sentences)
+
+    @classmethod
+    def _qualitative_attributes_for_notes(cls, notes: list[EvidenceNote]) -> list[dict[str, str]]:
+        attributes: list[dict[str, str]] = []
+        allowed_keys = {"solvent", "nuc1", "pulprog", "origin", "owner", "probehead", "instrument"}
+        for note in notes:
+            key, value = cls._assignment_from_note(note)
+            if not key or not value:
+                continue
+            normalized_key = key.lower().strip("$")
+            if normalized_key not in allowed_keys:
+                continue
+            attributes.append({"title": normalized_key, "value": value})
+        return cls._merge_unique_dicts([], attributes)
+
+    @classmethod
+    def _assignment_from_note(cls, note: EvidenceNote) -> tuple[str | None, str | None]:
+        text = f"{note.evidence_text or ''}\n{note.observation or ''}"
+        match = re.search(
+            r"(?:##\$?|^|\s)([A-Za-z][A-Za-z0-9_]{1,32})\s*=\s*<?([^>\r\n;]{1,120})>?",
+            text,
+        )
+        if not match:
+            return None, None
+        key = match.group(1).strip()
+        value = match.group(2).strip().strip("<>").strip()
+        if not value:
+            return key, None
+        return key, value
+
+    @classmethod
+    def _identifier_values_for_notes(cls, notes: list[EvidenceNote]) -> list[str]:
+        values: list[str] = []
+        for note in notes:
+            key, value = cls._assignment_from_note(note)
+            if key and key.lower() in {"id", "identifier", "sample_id"} and value:
+                values.append(value)
+        return cls._dedupe_strings(values)
+
+    @classmethod
+    def _date_value_for_notes(cls, notes: list[EvidenceNote]) -> str | None:
+        for note in notes:
+            text = f"{note.evidence_text or ''} {note.observation or ''}"
+            match = re.search(r"\b(20\d{2}-\d{2}-\d{2})(?:[T ][0-2]\d:[0-5]\d(?::[0-5]\d)?)?\b", text)
+            if match:
+                return match.group(1)
+        return None
+
+    @classmethod
+    def _fallback_target_title(cls, notes: list[EvidenceNote]) -> str | None:
+        for note in notes:
+            title = cls._title_value_from_note(note)
+            if title:
+                return title
+        keywords = cls._profile_keywords_for_notes(notes)
+        if "1H NMR" in keywords:
+            return "1H NMR dataset"
+        if "NMR spectroscopy" in keywords:
+            return "NMR spectroscopy dataset"
+        observations = cls._profile_observation_sentences(notes, max_count=1)
+        return observations[0] if observations else None
+
+    @classmethod
+    def _note_has_curatable_profile_signal(cls, note: EvidenceNote) -> bool:
+        if cls._is_low_level_parameter_note(note):
+            return False
+        if note.profile_worthiness == "low":
+            return False
+        key, value = cls._assignment_from_note(note)
+        normalized_key = key.lower().strip("$") if key else ""
+        if normalized_key in {"origin", "owner", "author", "creator"}:
+            return bool(value)
+        if normalized_key in {"solvent", "nuc1", "pulprog"}:
+            return bool(value)
+        if normalized_key == "title":
+            return cls._title_value_from_note(note) is not None
+        text = cls._note_search_text(note)
+        curatable_terms = (
+            "dataset name",
+            "dataset contains",
+            "instrument",
+            "bruker avance",
+            "1h nmr",
+            "nmr spectrum",
+            "nmr spectroscopy",
+            "jcamp",
+            ".jdx",
+            ".dx",
+            "topspin",
+            "pulse program",
+            "solvent",
+            "nucleus",
+            "sample",
+            "modification date",
+            "timestamp",
+        )
+        if any(term in text for term in curatable_terms):
+            if "spectrum title" in text and cls._title_value_from_note(note) is None:
+                return False
+            return True
+        return note.category in {"agent_signal", "entity_signal"} and bool(note.observation.strip())
+
+    @classmethod
+    def _entity_title_for_notes(cls, notes: list[EvidenceNote]) -> str | None:
+        text = " ".join(cls._note_search_text(note) for note in notes)
+        if "1h" in text or "proton" in text:
+            return "1H NMR measurement target"
+        if "cdcl3" in text or "solvent" in text:
+            return "NMR sample environment"
+        observations = cls._profile_observation_sentences(notes, max_count=1)
+        return observations[0] if observations else None
+
+    @staticmethod
+    def _note_search_text(note: EvidenceNote) -> str:
+        return " ".join(
+            part
+            for part in (
+                note.note_id,
+                note.category,
+                note.observation,
+                note.evidence_text,
+                note.file_path,
+            )
+            if part
+        ).lower()
+
+    @staticmethod
+    def _string_list(value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        if isinstance(value, dict):
+            return []
+        text = str(value).strip()
+        return [text] if text else []
+
+    @classmethod
+    def _merge_unique_strings(cls, current: Any, additions: list[str]) -> list[str]:
+        values = cls._string_list(current) + cls._string_list(additions)
+        return cls._dedupe_strings(values)
+
+    @staticmethod
+    def _dedupe_strings(values: list[str]) -> list[str]:
+        seen: set[str] = set()
+        deduped: list[str] = []
+        for value in values:
+            normalized = re.sub(r"\s+", " ", str(value).strip())
+            if not normalized:
+                continue
+            key = normalized.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(normalized)
+        return deduped
+
+    @staticmethod
+    def _merge_unique_dicts(current: Any, additions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        merged = list(current) if isinstance(current, list) else []
+        seen = {
+            json.dumps(item, sort_keys=True)
+            for item in merged
+            if isinstance(item, dict)
+        }
+        for item in additions:
+            key = json.dumps(item, sort_keys=True)
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(item)
+        return merged
 
     async def _patch_profile_with_extraction_group(
         self,
@@ -3077,7 +4071,8 @@ class ExtractionService:
             document,
             state.initial_draft_scaffold,
         )
-        clean_document = remove_null_values(pruned_document)
+        curated_document = self._curate_generated_profile_document(pruned_document)
+        clean_document = remove_null_values(curated_document)
         validation = self._validate_profile_document(
             profile_identifier=profile_identifier,
             document=clean_document,
@@ -4390,9 +5385,17 @@ class ExtractionService:
         data_package_id: str,
         evidence_context: EvidenceContext,
     ) -> str:
-        for category in ("entity_signal", "resource_signal", "measurement_signal", "method_signal"):
+        for note in evidence_context.notes:
+            title = ExtractionService._title_value_from_note(note)
+            if title:
+                return title
+        for category in ("entity_signal", "measurement_signal", "method_signal", "resource_signal"):
             for note in evidence_context.notes:
-                if note.category == category and note.observation.strip():
+                if (
+                    note.category == category
+                    and note.observation.strip()
+                    and not ExtractionService._is_low_level_parameter_note(note)
+                ):
                     return note.observation.strip()
         return f"SIMONE extraction result for {data_package_id}"
 
@@ -5929,18 +6932,31 @@ class ExtractionService:
                     warnings=warnings,
                 )
         assert self.ollama_client is not None
-        result = await generate_structured(
-            self.ollama_client,
-            model=self.ollama_client.chat_model,
-            system=VOCAB_CANDIDATE_SELECTION_SYSTEM_PROMPT,
-            prompt=build_candidate_selection_prompt(
-                source_value=source_value,
-                source_context=source_context,
-                candidates=candidates,
-            ),
-            output_type=VocabularyCandidateSelection,
-            num_ctx=self.ollama_client.max_context_length,
-        )
+        try:
+            result = await generate_structured(
+                self.ollama_client,
+                model=self.ollama_client.chat_model,
+                system=VOCAB_CANDIDATE_SELECTION_SYSTEM_PROMPT,
+                prompt=build_candidate_selection_prompt(
+                    source_value=source_value,
+                    source_context=source_context,
+                    candidates=candidates,
+                ),
+                output_type=VocabularyCandidateSelection,
+                num_ctx=self.ollama_client.max_context_length,
+            )
+        except CompletionError as exc:
+            usage = getattr(exc, "usage", None)
+            if usage is not None:
+                self._record_workflow_token_usage(
+                    data_package_id=data_package_id,
+                    agent_name=agent_name,
+                    usage=usage,
+                )
+            warnings.append(
+                f"Vocabulary selector left '{source_value}' unresolved after model failure: {exc}"
+            )
+            return None
         self._record_workflow_token_usage(
             data_package_id=data_package_id,
             agent_name=agent_name,

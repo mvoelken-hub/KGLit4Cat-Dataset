@@ -969,26 +969,272 @@ class ExtractionDomainTests(unittest.TestCase):
         self.assertEqual(write.status, "write")
         self.assertEqual(write.value["name"], ["Bruker BioSpin GmbH"])
 
+    def test_target_writer_coerces_scalar_strings_to_existing_array_shape(self):
+        current = {
+            "access_URL": [{"id": "package-id:distribution:primary:access"}],
+            "title": [],
+            "description": [],
+            "format": None,
+            "media_type": None,
+        }
+
+        value = ExtractionService._coerce_profile_target_value(
+            target_path="/dataset_distribution/0",
+            current_value=current,
+            proposed_value={
+                "access_URL": [{"id": "package-id:distribution:primary:access"}],
+                "title": "Primary JCAMP-DX distribution",
+                "description": "JCAMP-DX spectral data files.",
+                "format": "JCAMP-DX",
+            },
+        )
+
+        self.assertEqual(value["title"], ["Primary JCAMP-DX distribution"])
+        self.assertEqual(value["description"], ["JCAMP-DX spectral data files."])
+        self.assertIsNone(value["format"])
+
+    def test_deterministic_keyword_fallback_skips_raw_parameter_settings(self):
+        notes = [
+            EvidenceNote(
+                note_id="td_setting",
+                category="method_signal",
+                observation="NMR acquisition parameter TD is 65536.",
+                evidence_text="##$TD= 65536",
+            )
+        ]
+
+        value = ExtractionService._fallback_profile_target_value(
+            target_path="/keyword",
+            current_value=[],
+            notes=notes,
+        )
+
+        self.assertIsNone(value)
+
+    def test_low_level_bruker_hardware_parameters_are_not_profile_targets(self):
+        notes = [
+            EvidenceNote(
+                note_id="note_15",
+                category="method_signal",
+                observation="Bla01Eth parameter is set to '<149.236.99.254>'.",
+                evidence_text="##$Bla01Eth= <149.236.99.254>",
+                file_path="10.zip/10/uxnmr.par",
+            ),
+            EvidenceNote(
+                note_id="note_16",
+                category="method_signal",
+                observation="Bla01Nam parameter is set to '<BLAXH300/100 E 200-600MHZ INR>'.",
+                evidence_text="##$Bla01Nam= <BLAXH300/100 E 200-600MHZ INR>",
+                file_path="10.zip/10/uxnmr.par",
+            ),
+        ]
+
+        self.assertTrue(all(ExtractionService._is_low_level_parameter_note(note) for note in notes))
+        reason = ExtractionService._profile_target_unsuitable_reason(
+            target_path="/keyword",
+            notes=notes,
+        )
+
+        self.assertIsNotNone(reason)
+        self.assertIsNone(
+            ExtractionService._fallback_profile_target_value(
+                target_path="/keyword",
+                current_value=[],
+                notes=notes,
+            )
+        )
+
+    def test_deterministic_fallback_keeps_useful_method_and_resource_targets(self):
+        method_value = ExtractionService._fallback_profile_target_value(
+            target_path="/was_generated_by/0",
+            current_value={
+                "id": "package-id:activity:metadata-extraction",
+                "title": [],
+                "description": [],
+                "has_qualitative_attribute": [],
+                "has_quantitative_attribute": [],
+                "evaluated_activity": [],
+                "evaluated_entity": [],
+            },
+            notes=[
+                EvidenceNote(
+                    note_id="pulprog_setting",
+                    category="method_signal",
+                    observation="Pulse program is zg30.",
+                    evidence_text="##$PULPROG= <zg30>",
+                )
+            ],
+        )
+        distribution_value = ExtractionService._fallback_profile_target_value(
+            target_path="/dataset_distribution/0",
+            current_value={
+                "access_URL": [{"id": "package-id:distribution:primary:access"}],
+                "title": [],
+                "description": [],
+                "format": None,
+                "media_type": None,
+            },
+            notes=[
+                EvidenceNote(
+                    note_id="jcamp_file",
+                    category="resource_signal",
+                    observation="The file is a JCAMP-DX NMR spectral export.",
+                    evidence_text="##TITLE= JCAMP-DX NMR spectrum",
+                    file_path="10.edit.jdx",
+                )
+            ],
+        )
+
+        self.assertIsNotNone(method_value)
+        self.assertIn({"title": "pulprog", "value": "zg30"}, method_value["has_qualitative_attribute"])
+        self.assertIsNotNone(distribution_value)
+        self.assertIn("Primary NMR data distribution", distribution_value["title"])
+
+    def test_final_profile_cleanup_removes_parameter_noise_but_keeps_nmr_signals(self):
+        document = {
+            "id": "package-id",
+            "title": ["1H NMR"],
+            "description": [
+                "SIMONE metadata draft for 1H NMR.",
+                "TD parameter set to 65536.",
+                "Transmitter routing uses TCP/IP 149.236.99.254.",
+            ],
+            "keyword": [
+                "NMR Spectroscopy",
+                "TD parameter set to 65536",
+                "Bla01Eth parameter is set to '<149.236.99.254>'",
+                "JCAMP-DX",
+            ],
+            "dataset_distribution": [
+                {
+                    "access_URL": [{"id": "package-id:distribution:primary:access"}],
+                    "title": ["Primary NMR data distribution"],
+                    "description": [
+                        "JCAMP-DX spectral data files.",
+                        "NPOINTS parameter values from the Bruker file.",
+                        "Nucleus FPNZ is no",
+                        "This is a parameter file from TOPSPIN software version 3.2",
+                    ],
+                }
+            ],
+            "was_generated_by": [
+                {
+                    "id": "package-id:activity:metadata-extraction",
+                    "has_qualitative_attribute": [
+                        {
+                            "value": "Pulse sequence is zg30",
+                            "description": "Pulse sequence is zg30",
+                        },
+                        {
+                            "value": "SOLVENT OFF setting",
+                            "description": "##$SOLVOLD= <off>",
+                        },
+                        {
+                            "value": "Instrument parameter structure",
+                            "description": "NAME\tINSTRUM\n\tFORMAT\t\"\"",
+                        },
+                    ],
+                }
+            ],
+        }
+
+        curated = ExtractionService._curate_generated_profile_document(document)
+
+        self.assertEqual(curated["description"], ["SIMONE metadata draft for 1H NMR."])
+        self.assertEqual(curated["keyword"], ["NMR Spectroscopy", "JCAMP-DX"])
+        self.assertEqual(
+            curated["dataset_distribution"][0]["description"],
+            ["JCAMP-DX spectral data files."],
+        )
+        self.assertEqual(
+            curated["was_generated_by"][0]["has_qualitative_attribute"],
+            [{"value": "Pulse sequence is zg30", "description": "Pulse sequence is zg30"}],
+        )
+
+    def test_fallback_title_prefers_explicit_dataset_name_over_audit_noise(self):
+        evidence = EvidenceContext(
+            notes=[
+                EvidenceNote(
+                    note_id="audit_trail",
+                    category="resource_signal",
+                    observation="Audit trail records software version and user actions",
+                    evidence_text="##AUDIT TRAIL= ... TOPSPIN 3.2",
+                ),
+                EvidenceNote(
+                    note_id="dataset_name",
+                    category="resource_signal",
+                    observation="Dataset name is 1H NMR",
+                    evidence_text="dataset name: 1H NMR",
+                ),
+            ]
+        )
+
+        title = ExtractionService._fallback_title("package-id", evidence)
+
+        self.assertEqual(title, "1H NMR")
+
+    def test_projection_groups_skip_non_curatable_parameter_notes(self):
+        evidence = EvidenceContext(
+            notes=[
+                EvidenceNote(
+                    note_id="dataset_name",
+                    category="resource_signal",
+                    observation="Dataset name is 1H NMR",
+                    evidence_text="dataset name: 1H NMR",
+                    profile_worthiness="high",
+                ),
+                EvidenceNote(
+                    note_id="bfreq_setting",
+                    category="method_signal",
+                    observation="BFREQ parameter is set to 500.13.",
+                    evidence_text="##$BFREQ= 500.13",
+                    profile_worthiness="high",
+                ),
+                EvidenceNote(
+                    note_id="blocks",
+                    category="resource_signal",
+                    observation="single block structure",
+                    evidence_text="##BLOCKS=1",
+                    profile_worthiness="high",
+                ),
+            ]
+        )
+
+        groups = ExtractionService._projection_groups_for_evidence(evidence)
+
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].target_hint, "/title")
+
+    def test_title_cleanup_removes_spectrum_local_numeric_title(self):
+        value = ExtractionService._curate_profile_target_value(
+            target_path="/title",
+            value=["Dataset name is 1H NMR", "10", "spectrum title"],
+        )
+
+        self.assertEqual(value, ["1H NMR"])
+
     def test_projection_grouping_collapses_repeated_note_families(self):
         evidence = EvidenceContext(
             notes=[
                 EvidenceNote(
-                    note_id="acqu_binary_format",
+                    note_id="jcamp_dx_version_1",
                     category="resource_signal",
-                    observation="Binary acquisition parameter",
-                    evidence_text="##$USERA4= <>",
-                    file_path="10/acqu",
+                    observation="JCAMP-DX format version 5.00",
+                    evidence_text="##JCAMP-DX=5.00",
+                    file_path="10.edit.jdx",
                     start_idx=10,
                     end_idx=20,
+                    profile_worthiness="high",
                 ),
                 EvidenceNote(
-                    note_id="acqu_binary_format",
+                    note_id="jcamp_dx_version_2",
                     category="resource_signal",
-                    observation="Binary acquisition parameter",
-                    evidence_text="##$USERA5= <>",
-                    file_path="10/acqu",
+                    observation="JCAMP-DX format version 5.00",
+                    evidence_text="##JCAMP-DX=5.00",
+                    file_path="10.edit.jdx",
                     start_idx=10,
                     end_idx=20,
+                    profile_worthiness="high",
                 ),
             ]
         )
