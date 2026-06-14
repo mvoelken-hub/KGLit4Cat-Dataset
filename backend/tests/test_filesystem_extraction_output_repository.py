@@ -13,6 +13,7 @@ from app.domain.extraction import (
     ExtractionRunState,
     FilteredEvidenceLedger,
     FilteredEvidenceNote,
+    InitialOverviewFailureDiagnostic,
 )
 from infra.filesystem_extraction_output_repository import (
     FileSystemExtractionOutputRepository,
@@ -182,6 +183,44 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
             repo.clear_extraction_downstream(workflow_id)
 
             self.assertEqual(repo.load_filtered_evidence_notes(workflow_id).filtered_notes, [])
+
+    def test_initial_overview_diagnostic_writes_and_clears(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = FileSystemExtractionOutputRepository(Path(directory))
+            workflow_id = "test_workflow"
+            chat_model = "model:tag"
+            diagnostic = InitialOverviewFailureDiagnostic(
+                error_type="MaxRetriesExceeded",
+                message="Max retries exceeded",
+                last_error_type="OutputParsingError",
+                last_error="bad json",
+                failed_response_excerpt='{"observed_signals": [',
+                prompt_budget={"total_input_tokens": 2000},
+                usage={"requests": 2},
+            )
+
+            repo.save_initial_extraction_overview_diagnostic(
+                workflow_id=workflow_id,
+                diagnostic=diagnostic,
+                chat_model=chat_model,
+            )
+
+            path = (
+                repo._workflow_dir(workflow_id, chat_model)
+                / "initial_extraction_overview_diagnostic.json"
+            )
+            self.assertTrue(path.exists())
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["error_type"], "MaxRetriesExceeded")
+            self.assertEqual(payload["prompt_budget"]["total_input_tokens"], 2000)
+
+            repo.save_initial_extraction_overview_diagnostic(
+                workflow_id=workflow_id,
+                diagnostic=None,
+                chat_model=chat_model,
+            )
+
+            self.assertFalse(path.exists())
 
     def test_failed_replace_keeps_previous_json(self):
         with tempfile.TemporaryDirectory() as directory:

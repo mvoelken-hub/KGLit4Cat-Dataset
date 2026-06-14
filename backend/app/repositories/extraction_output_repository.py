@@ -12,6 +12,7 @@ from app.domain.extraction import (
     ExtractionRunResult,
     ExtractionRunState,
     FieldCompletionLedgerRecord,
+    InitialOverviewFailureDiagnostic,
     ProjectionLedgerRecord,
 )
 
@@ -86,6 +87,15 @@ class ExtractionOutputRepository(Protocol):
         workflow_id: str,
         chat_model: str | None = None,
     ) -> tuple[ExtractionOverview | None, ExtractionOverviewStatus | None]:
+        ...
+
+    def save_initial_extraction_overview_diagnostic(
+        self,
+        *,
+        workflow_id: str,
+        diagnostic: InitialOverviewFailureDiagnostic | None,
+        chat_model: str | None = None,
+    ) -> None:
         ...
 
     def save_generated_final_draft(

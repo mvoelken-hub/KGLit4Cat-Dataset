@@ -55,6 +55,7 @@ from app.domain.extraction import (
     ExtractionOverviewFilePreview,
     ExtractionOverviewInspectedFile,
     ExtractionOverviewStatus,
+    InitialOverviewFailureDiagnostic,
     ExtractionNormalization,
     ExtractionResultNotFoundError,
     ExtractionRunProgress,
@@ -138,8 +139,32 @@ ExtractionTargetStage = Literal["context", "profile", "grounding", "complete"]
 INITIAL_OVERVIEW_TOP_FILE_LIMIT = 16
 INITIAL_OVERVIEW_PREVIEW_LINE_LIMIT = 80
 INITIAL_OVERVIEW_MAX_LINE_CHARS = 500
+INITIAL_OVERVIEW_INPUT_CONTEXT_RATIO = 0.45
+INITIAL_OVERVIEW_MIN_INPUT_TOKENS = 1200
+INITIAL_OVERVIEW_SUMMARY_TOKEN_BUDGET = 80
+INITIAL_OVERVIEW_FAILURE_EXCERPT_TOKENS = 300
 INITIAL_FILE_SUMMARY_CONTEXT_RATIO = 0.35
 ESTIMATED_CHARS_PER_TOKEN = 4
+OVERVIEW_SUMMARY_LIST_LIMITS = {
+    "data_characteristics": 3,
+    "purpose_evidence": 2,
+    "metadata_signals": 3,
+    "detected_identifiers": 3,
+    "instrument_or_software_terms": 4,
+    "parameter_terms": 4,
+    "uncertainty_notes": 2,
+    "known_traps": 2,
+}
+OVERVIEW_SUMMARY_REDUCTION_ORDER = (
+    "parameter_terms",
+    "detected_identifiers",
+    "metadata_signals",
+    "data_characteristics",
+    "uncertainty_notes",
+    "known_traps",
+    "purpose_evidence",
+    "instrument_or_software_terms",
+)
 
 
 @dataclass
@@ -1855,17 +1880,33 @@ class ExtractionService:
         )
         summarized_file_summaries = self._summarized_initial_file_summaries(state)
         fallback_previews = [] if summarized_file_summaries else previews
+        overview_prompt_budgeter = PromptTokenBudgeter.from_tokenizer_source(
+            getattr(self.settings, "ollama_chat_tokenizer", "")
+        )
+        if overview_prompt_budgeter.fallback_reason:
+            warning = (
+                "Initial overview prompt budgeting used conservative estimates: "
+                + overview_prompt_budgeter.fallback_reason
+            )
+            if warning not in warnings:
+                warnings.append(warning)
+        overview_input_budget = self._initial_overview_input_token_budget(
+            self.ollama_client.max_context_length
+        )
+        overview_prompt, overview_prompt_report = self._build_budgeted_initial_overview_prompt(
+            data_package_name=data_package.file_name,
+            ranked_files=overview_ranked_files,
+            file_summaries=summarized_file_summaries,
+            file_previews=fallback_previews,
+            token_budgeter=overview_prompt_budgeter,
+            max_input_tokens=overview_input_budget,
+        )
         try:
             result = await generate_structured(
                 self.ollama_client,
                 model=self.ollama_client.chat_model,
                 system=EXTRACTION_OVERVIEW_SYSTEM_PROMPT,
-                prompt=build_extraction_overview_prompt(
-                    data_package_name=data_package.file_name,
-                    ranked_files=overview_ranked_files,
-                    file_summaries=summarized_file_summaries,
-                    file_previews=fallback_previews,
-                ),
+                prompt=overview_prompt,
                 output_type=ExtractionOverview,
                 retries=1,
                 temperature=0.1,
@@ -1890,6 +1931,11 @@ class ExtractionService:
             state.initial_extraction_overview_status = "structured"
             self._save_run_state(data_package_id, state)
             self._persist_initial_extraction_overview(data_package_id, state)
+            self._persist_initial_extraction_overview_diagnostic(
+                data_package_id,
+                state,
+                diagnostic=None,
+            )
             return
         except CompletionError as exc:
             usage = getattr(exc, "usage", None)
@@ -1909,16 +1955,34 @@ class ExtractionService:
                     "error_type": type(exc).__name__,
                 },
             )
+            self._persist_initial_extraction_overview_diagnostic(
+                data_package_id,
+                state,
+                diagnostic=self._initial_overview_failure_diagnostic(
+                    exc,
+                    prompt_budget=overview_prompt_report,
+                    token_budgeter=overview_prompt_budgeter,
+                ),
+            )
 
         try:
+            fallback_prompt = build_extraction_overview_fallback_prompt(
+                data_package_name=data_package.file_name,
+                ranked_files=overview_ranked_files,
+                file_previews=fallback_previews,
+            )
+            fallback_prompt = overview_prompt_budgeter.truncate(
+                fallback_prompt,
+                max_tokens=max(
+                    1,
+                    overview_input_budget
+                    - overview_prompt_budgeter.count(EXTRACTION_OVERVIEW_FALLBACK_SYSTEM_PROMPT),
+                ),
+            )
             response = await self.ollama_client.ollama_client.generate(
                 model=self.ollama_client.chat_model,
                 system=EXTRACTION_OVERVIEW_FALLBACK_SYSTEM_PROMPT,
-                prompt=build_extraction_overview_fallback_prompt(
-                    data_package_name=data_package.file_name,
-                    ranked_files=overview_ranked_files,
-                    file_previews=fallback_previews,
-                ),
+                prompt=fallback_prompt,
                 options={
                     "temperature": 0.1,
                     "seed": 42,
@@ -1963,6 +2027,247 @@ class ExtractionService:
 
         self._save_run_state(data_package_id, state)
         self._persist_initial_extraction_overview(data_package_id, state)
+
+    @classmethod
+    def _initial_overview_input_token_budget(cls, num_ctx: int | None) -> int:
+        context_window = num_ctx or 8192
+        return max(
+            INITIAL_OVERVIEW_MIN_INPUT_TOKENS,
+            int(context_window * INITIAL_OVERVIEW_INPUT_CONTEXT_RATIO),
+        )
+
+    @classmethod
+    def _build_budgeted_initial_overview_prompt(
+        cls,
+        *,
+        data_package_name: str,
+        ranked_files: list[RankedFile],
+        file_summaries: list[ExtractionFileSummary],
+        file_previews: list[ExtractionOverviewFilePreview],
+        token_budgeter: PromptTokenBudgeter,
+        max_input_tokens: int,
+    ) -> tuple[str, dict[str, Any]]:
+        original_prompt = build_extraction_overview_prompt(
+            data_package_name=data_package_name,
+            ranked_files=ranked_files,
+            file_summaries=file_summaries,
+            file_previews=file_previews,
+        )
+        original_prompt_tokens = token_budgeter.count(
+            EXTRACTION_OVERVIEW_SYSTEM_PROMPT + original_prompt
+        )
+        compacted_summaries = [
+            cls._compact_initial_file_summary_for_overview(
+                summary,
+                token_budgeter=token_budgeter,
+            )
+            for summary in file_summaries
+        ]
+        used_ranked_files = list(ranked_files)
+        used_file_previews = list(file_previews)
+
+        def build_prompt() -> str:
+            return build_extraction_overview_prompt(
+                data_package_name=data_package_name,
+                ranked_files=used_ranked_files,
+                file_summaries=compacted_summaries,
+                file_previews=used_file_previews,
+            )
+
+        prompt = build_prompt()
+        compacted_prompt_tokens = token_budgeter.count(
+            EXTRACTION_OVERVIEW_SYSTEM_PROMPT + prompt
+        )
+        dropped_summary_paths: list[str] = []
+        dropped_ranked_paths: list[str] = []
+        dropped_preview_paths: list[str] = []
+
+        while (
+            compacted_summaries
+            and token_budgeter.count(EXTRACTION_OVERVIEW_SYSTEM_PROMPT + prompt) > max_input_tokens
+        ):
+            dropped_summary_paths.append(compacted_summaries.pop().file_path)
+            prompt = build_prompt()
+
+        while (
+            used_file_previews
+            and token_budgeter.count(EXTRACTION_OVERVIEW_SYSTEM_PROMPT + prompt) > max_input_tokens
+        ):
+            dropped_preview_paths.append(used_file_previews.pop().file_path)
+            prompt = build_prompt()
+
+        while (
+            len(used_ranked_files) > 1
+            and token_budgeter.count(EXTRACTION_OVERVIEW_SYSTEM_PROMPT + prompt) > max_input_tokens
+        ):
+            dropped_ranked_paths.append(used_ranked_files.pop().file_path)
+            prompt = build_prompt()
+
+        system_tokens = token_budgeter.count(EXTRACTION_OVERVIEW_SYSTEM_PROMPT)
+        prompt_tokens = token_budgeter.count(prompt)
+        hard_truncated = False
+        if system_tokens + prompt_tokens > max_input_tokens:
+            prompt = token_budgeter.truncate(
+                prompt,
+                max_tokens=max(1, max_input_tokens - system_tokens),
+            )
+            hard_truncated = True
+            prompt_tokens = token_budgeter.count(prompt)
+
+        report = {
+            "max_input_tokens": max_input_tokens,
+            "system_tokens": system_tokens,
+            "prompt_tokens": prompt_tokens,
+            "total_input_tokens": system_tokens + prompt_tokens,
+            "original_total_input_tokens": original_prompt_tokens,
+            "compacted_total_input_tokens_before_drop": compacted_prompt_tokens,
+            "tokenizer_fallback": token_budgeter.uses_fallback,
+            "compact_summary_count": len(compacted_summaries),
+            "original_summary_count": len(file_summaries),
+            "dropped_summary_paths": dropped_summary_paths,
+            "ranked_file_count": len(used_ranked_files),
+            "original_ranked_file_count": len(ranked_files),
+            "dropped_ranked_paths": dropped_ranked_paths,
+            "preview_count": len(used_file_previews),
+            "original_preview_count": len(file_previews),
+            "dropped_preview_paths": dropped_preview_paths,
+            "hard_truncated": hard_truncated,
+        }
+        return prompt, report
+
+    @classmethod
+    def _compact_initial_file_summary_for_overview(
+        cls,
+        summary: ExtractionFileSummary,
+        *,
+        token_budgeter: PromptTokenBudgeter,
+    ) -> ExtractionFileSummary:
+        updates: dict[str, Any] = {
+            "data_format": cls._compact_overview_text(
+                summary.data_format,
+                token_budgeter=token_budgeter,
+                max_tokens=18,
+            ),
+            "explicit_purpose": cls._compact_overview_text(
+                summary.explicit_purpose,
+                token_budgeter=token_budgeter,
+                max_tokens=28,
+            ),
+        }
+        for field_name, max_items in OVERVIEW_SUMMARY_LIST_LIMITS.items():
+            updates[field_name] = cls._compact_overview_text_list(
+                getattr(summary, field_name),
+                token_budgeter=token_budgeter,
+                max_items=max_items,
+                max_item_tokens=22,
+            )
+
+        compact = summary.model_copy(update=updates)
+        while token_budgeter.count(compact.model_dump_json()) > INITIAL_OVERVIEW_SUMMARY_TOKEN_BUDGET:
+            changed = False
+            for field_name in OVERVIEW_SUMMARY_REDUCTION_ORDER:
+                values = list(getattr(compact, field_name))
+                if not values:
+                    continue
+                if len(values) > 1:
+                    values = values[: max(1, len(values) // 2)]
+                else:
+                    values = []
+                compact = compact.model_copy(update={field_name: values})
+                changed = True
+                break
+            if not changed:
+                compact = compact.model_copy(
+                    update={
+                        "data_characteristics": [],
+                        "purpose_evidence": [],
+                        "metadata_signals": [],
+                        "detected_identifiers": [],
+                        "instrument_or_software_terms": [],
+                        "parameter_terms": [],
+                        "uncertainty_notes": [],
+                        "known_traps": [],
+                    }
+                )
+                break
+        return compact
+
+    @staticmethod
+    def _compact_overview_text(
+        value: str,
+        *,
+        token_budgeter: PromptTokenBudgeter,
+        max_tokens: int,
+    ) -> str:
+        value = " ".join((value or "").split())
+        if not value:
+            return ""
+        return token_budgeter.truncate(value, max_tokens=max_tokens)
+
+    @classmethod
+    def _compact_overview_text_list(
+        cls,
+        values: list[str],
+        *,
+        token_budgeter: PromptTokenBudgeter,
+        max_items: int,
+        max_item_tokens: int,
+    ) -> list[str]:
+        compacted: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            item = cls._compact_overview_text(
+                value,
+                token_budgeter=token_budgeter,
+                max_tokens=max_item_tokens,
+            )
+            key = item.casefold()
+            if not item or key in seen:
+                continue
+            compacted.append(item)
+            seen.add(key)
+            if len(compacted) >= max_items:
+                break
+        return compacted
+
+    @classmethod
+    def _initial_overview_failure_diagnostic(
+        cls,
+        exc: CompletionError,
+        *,
+        prompt_budget: dict[str, Any],
+        token_budgeter: PromptTokenBudgeter,
+    ) -> InitialOverviewFailureDiagnostic:
+        failed_response = getattr(exc, "failed_response", None) or exc.details.get(
+            "failed_response",
+            "",
+        )
+        usage = getattr(exc, "usage", RunUsage())
+        return InitialOverviewFailureDiagnostic(
+            error_type=type(exc).__name__,
+            message=str(exc),
+            last_error_type=str(exc.details.get("last_error_type", "")),
+            last_error=cls._compact_overview_text(
+                str(exc.details.get("last_error", "")),
+                token_budgeter=token_budgeter,
+                max_tokens=INITIAL_OVERVIEW_FAILURE_EXCERPT_TOKENS,
+            ),
+            failed_response_excerpt=cls._compact_overview_text(
+                str(failed_response),
+                token_budgeter=token_budgeter,
+                max_tokens=INITIAL_OVERVIEW_FAILURE_EXCERPT_TOKENS,
+            ),
+            prompt_budget=prompt_budget,
+            usage={
+                "requests": usage.requests,
+                "input_tokens": usage.input_tokens,
+                "output_tokens": usage.output_tokens,
+                "prompt_eval_duration_ms": usage.prompt_eval_duration_ms,
+                "load_duration_ms": usage.load_duration_ms,
+                "response_duration_ms": usage.response_duration_ms,
+                "total_duration_ms": usage.total_duration_ms,
+            },
+        )
 
     def _initial_overview_file_previews(
         self,
@@ -4668,6 +4973,21 @@ class ExtractionService:
             workflow_id=data_package_id,
             overview=state.initial_extraction_overview,
             status=state.initial_extraction_overview_status,
+            chat_model=state.chat_model,
+        )
+
+    def _persist_initial_extraction_overview_diagnostic(
+        self,
+        data_package_id: str,
+        state: ExtractionRunState,
+        *,
+        diagnostic: InitialOverviewFailureDiagnostic | None,
+    ) -> None:
+        if self.output_repository is None:
+            return
+        self.output_repository.save_initial_extraction_overview_diagnostic(
+            workflow_id=data_package_id,
+            diagnostic=diagnostic,
             chat_model=state.chat_model,
         )
 

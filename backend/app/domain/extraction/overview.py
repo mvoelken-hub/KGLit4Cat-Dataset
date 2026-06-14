@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -101,6 +101,17 @@ class ExtractionOverview(BaseModel):
     )
 
 
+class InitialOverviewFailureDiagnostic(BaseModel):
+    status: Literal["structured_failure"] = "structured_failure"
+    error_type: str
+    message: str
+    last_error_type: str = ""
+    last_error: str = ""
+    failed_response_excerpt: str = ""
+    prompt_budget: dict[str, Any] = Field(default_factory=dict)
+    usage: dict[str, int] = Field(default_factory=dict)
+
+
 class ExtractionOverviewFilePreview(BaseModel):
     rank: int = Field(..., ge=1)
     file_path: str
@@ -159,7 +170,7 @@ def build_extraction_overview_prompt(
     preview_json = ",\n".join(preview.model_dump_json() for preview in file_previews)
     ranked_json = ",\n".join(file.model_dump_json() for file in ranked_files)
     summary_json = ",\n".join(
-        summary.model_dump_json() for summary in (file_summaries or [])
+        summary.model_dump_json(exclude_defaults=True) for summary in (file_summaries or [])
     )
     summary_section = (
         "Validated per-file summaries JSON:\n"

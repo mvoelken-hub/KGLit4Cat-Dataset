@@ -150,8 +150,8 @@
     "semantic_hash": "a7523bdcf94736a02af78a36c8de9688"
   },
   "backend/app/domain/extraction/__init__.py": {
-    "mtime": 1781464819.5923493,
-    "ast_hash": "414bcdbf9d9f723df411a29d175624ab",
+    "mtime": 1781467410.2234793,
+    "ast_hash": "30667518b1e2471e81dcc47af30e5f5c",
     "semantic_hash": ""
   },
   "backend/app/domain/extraction/extraction_context.py": {
@@ -165,9 +165,9 @@
     "semantic_hash": "65292920a53f250481d86e5b5bd7c664"
   },
   "backend/app/domain/extraction/overview.py": {
-    "mtime": 1781351099.4105973,
-    "ast_hash": "b892f722d1135eea8986afe3c01576ca",
-    "semantic_hash": "b892f722d1135eea8986afe3c01576ca"
+    "mtime": 1781467727.7824023,
+    "ast_hash": "84099de79fbd9bf0045fdce9f07fe0a5",
+    "semantic_hash": ""
   },
   "backend/app/domain/extraction/profile_projection.py": {
     "mtime": 1781427252.826606,
@@ -300,9 +300,9 @@
     "semantic_hash": "1adee609592006fbfb04c95ffee7d7aa"
   },
   "backend/app/repositories/extraction_output_repository.py": {
-    "mtime": 1781443681.2234046,
-    "ast_hash": "d4eb8969ba94c28dceddcf4c9812dbae",
-    "semantic_hash": "d4eb8969ba94c28dceddcf4c9812dbae"
+    "mtime": 1781467415.5210426,
+    "ast_hash": "54e2488910886541d418a427e3d1bf83",
+    "semantic_hash": ""
   },
   "backend/app/repositories/profile_repository.py": {
     "mtime": 1779492452.4794936,
@@ -320,8 +320,8 @@
     "semantic_hash": ""
   },
   "backend/app/services/extraction_service.py": {
-    "mtime": 1781465061.0211704,
-    "ast_hash": "433d8ab93c64a674e8bb431a979ade4b",
+    "mtime": 1781467696.7330925,
+    "ast_hash": "863fcc4c72fb9f3a355364d27dff5e36",
     "semantic_hash": ""
   },
   "backend/app/services/profile_service.py": {
@@ -340,9 +340,9 @@
     "semantic_hash": "18d8c95a3aa4926def9dda9e5838473b"
   },
   "backend/infra/filesystem_extraction_output_repository.py": {
-    "mtime": 1781443690.3217006,
-    "ast_hash": "a97d305b62a2630227fdacd80f56c2b0",
-    "semantic_hash": "a97d305b62a2630227fdacd80f56c2b0"
+    "mtime": 1781467423.3653119,
+    "ast_hash": "f348444a27fcaf687668b6cac45bfd4e",
+    "semantic_hash": ""
   },
   "backend/infra/filesystem_profile_repository.py": {
     "mtime": 1779492452.4851677,
@@ -390,13 +390,13 @@
     "semantic_hash": "56e4fe9e00b0a7bead4018512f5630c5"
   },
   "backend/tests/test_filesystem_extraction_output_repository.py": {
-    "mtime": 1781444109.6704197,
-    "ast_hash": "740f343e51e7a5b2dfc5e000029980ea",
-    "semantic_hash": "740f343e51e7a5b2dfc5e000029980ea"
+    "mtime": 1781467638.5032947,
+    "ast_hash": "89bb42f8737252db3fbef9e92faa92e4",
+    "semantic_hash": ""
   },
   "backend/tests/test_initial_context_extraction.py": {
-    "mtime": 1781465004.5854497,
-    "ast_hash": "7616043bf37d10bfd6f4d13610883e2b",
+    "mtime": 1781467596.6083055,
+    "ast_hash": "c3df8db50161c221898b5a806159b1e9",
     "semantic_hash": ""
   },
   "backend/tests/test_neo4j_driver.py": {

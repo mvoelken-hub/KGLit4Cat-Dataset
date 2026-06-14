@@ -19,6 +19,7 @@ from app.domain.extraction import (
     ExtractionRunResult,
     ExtractionRunState,
     FieldCompletionLedgerRecord,
+    InitialOverviewFailureDiagnostic,
     ProjectionLedgerRecord,
 )
 
@@ -31,6 +32,7 @@ EXTRACTION_WARNINGS_FILE = "extraction_warnings.json"
 TOKEN_USAGE_FILE = "token_usage.json"
 INITIAL_FILE_SUMMARIES_FILE = "initial_file_summaries.json"
 INITIAL_EXTRACTION_OVERVIEW_FILE = "initial_extraction_overview.json"
+INITIAL_EXTRACTION_OVERVIEW_DIAGNOSTIC_FILE = "initial_extraction_overview_diagnostic.json"
 GENERATED_FINAL_DRAFT_FILE = "generated_final_draft.json"
 CURATED_DOCUMENT_FILE = "curated_document.json"
 PROJECTION_LEDGER_FILE = "projection_ledger.json"
@@ -225,6 +227,19 @@ class FileSystemExtractionOutputRepository:
         if status not in {"structured", "unstructured_fallback", "failed", None}:
             status = "failed"
         return overview, status
+
+    def save_initial_extraction_overview_diagnostic(
+        self,
+        *,
+        workflow_id: str,
+        diagnostic: InitialOverviewFailureDiagnostic | None,
+        chat_model: str | None = None,
+    ) -> None:
+        path = self._workflow_dir(workflow_id, chat_model) / INITIAL_EXTRACTION_OVERVIEW_DIAGNOSTIC_FILE
+        if diagnostic is None:
+            path.unlink(missing_ok=True)
+            return
+        self._write_json_file(path, diagnostic.model_dump(mode="json"))
 
     def save_generated_final_draft(
         self,

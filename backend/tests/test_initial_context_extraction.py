@@ -38,6 +38,7 @@ from app.ollama.errors import MaxRetriesExceeded, OutputParsingError
 from app.ollama.usage import RunUsage
 from app.services.extraction_service import (
     ExtractionService,
+    EXTRACTION_OVERVIEW_SYSTEM_PROMPT,
     _ObjectGroundingCandidateDiscovery,
     _QualitativeCandidateDiscovery,
 )
@@ -138,6 +139,7 @@ class FakeOutputRepository:
         self.initial_file_summary_status = None
         self.initial_extraction_overview = None
         self.initial_extraction_overview_status = None
+        self.initial_extraction_overview_diagnostic = None
         self.generated_final_draft: dict | None = None
         self.curated_document: dict | None = None
         self.projection_ledger: list = []
@@ -222,6 +224,15 @@ class FakeOutputRepository:
         if self.initial_extraction_overview_status is None:
             raise FileNotFoundError
         return self.initial_extraction_overview, self.initial_extraction_overview_status
+
+    def save_initial_extraction_overview_diagnostic(
+        self,
+        *,
+        workflow_id: str,
+        diagnostic,
+        chat_model: str | None = None,
+    ):
+        self.initial_extraction_overview_diagnostic = diagnostic
 
     def save_extraction_run_state(self, *, workflow_id: str, state: ExtractionRunState):
         self.run_state = state
@@ -513,6 +524,18 @@ def make_service(
 
 
 class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
+    class WhitespaceEncoding:
+        def __init__(self, text: str):
+            import re
+
+            matches = list(re.finditer(r"\S+", text))
+            self.ids = list(range(len(matches)))
+            self.offsets = [(match.start(), match.end()) for match in matches]
+
+    class WhitespaceTokenizer:
+        def encode(self, text: str, add_special_tokens: bool = False):
+            return ExtractionServiceWorkflowTests.WhitespaceEncoding(text)
+
     async def test_initial_context_run_does_not_require_chunks_or_profile(self):
         service, task_registry, output_repository = make_service(
             [],
@@ -864,6 +887,141 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             ["notes.txt"],
         )
         self.assertEqual(output_repository.initial_extraction_overview, overview)
+
+    async def test_initial_overview_compacts_summaries_before_structured_call(self):
+        service, _, _ = make_service([[make_chunk()]])
+        service.ollama_client.ollama_client = SimpleNamespace()  # type: ignore[attr-defined]
+        service.settings.ollama_chat_tokenizer = "fake/tokenizer"
+        budgeter = PromptTokenBudgeter(tokenizer=self.WhitespaceTokenizer())
+        data_package = DataPackage(
+            file_name="large-package",
+            files=[
+                FileEntry(
+                    file_path="parameters.txt",
+                    file_name="parameters.txt",
+                    file_extension=".txt",
+                    raw_content=b"metadata",
+                )
+            ],
+        )
+        ranking = FileRankingResult(files=[RankedFile(rank=1, file_path="parameters.txt")])
+        state = ExtractionRunState(
+            profile_identifier="profile",
+            initial_file_summaries=[
+                ExtractionFileSummary(
+                    file_path="parameters.txt",
+                    rank=1,
+                    data_format="plain text",
+                    metadata_signals=[f"metadata signal {index}" for index in range(40)],
+                    parameter_terms=[f"parameter term {index}" for index in range(120)],
+                    uncertainty_notes=[f"uncertainty note {index}" for index in range(20)],
+                )
+            ],
+            initial_file_summary_status="completed",
+        )
+
+        async def fake_generate(*_args, **kwargs):
+            prompt = kwargs["prompt"]
+            self.assertIn("parameter term 0", prompt)
+            self.assertNotIn("parameter term 119", prompt)
+            self.assertLessEqual(
+                budgeter.count(EXTRACTION_OVERVIEW_SYSTEM_PROMPT + prompt),
+                service._initial_overview_input_token_budget(
+                    service.ollama_client.max_context_length,
+                ),
+            )
+            return CompletionResult(
+                output=ExtractionOverview(observed_signals=["parameters.txt was summarized."]),
+                usage=RunUsage(requests=1, input_tokens=100, output_tokens=20),
+            )
+
+        with (
+            patch("app.services.extraction_service.generate_structured", side_effect=fake_generate),
+            patch(
+                "app.services.extraction_service.PromptTokenBudgeter.from_tokenizer_source",
+                return_value=budgeter,
+            ) as tokenizer_loader,
+        ):
+            await service._generate_initial_extraction_overview(
+                data_package_id="package-id",
+                data_package=data_package,
+                ranking=ranking,
+                state=state,
+                warnings=[],
+            )
+
+        tokenizer_loader.assert_called_once_with("fake/tokenizer")
+        self.assertEqual(state.initial_extraction_overview_status, "structured")
+
+    async def test_initial_overview_structured_failure_persists_diagnostic(self):
+        service, _, output_repository = make_service([[make_chunk()]])
+        budgeter = PromptTokenBudgeter(tokenizer=self.WhitespaceTokenizer())
+
+        class FakeOllamaGenerate:
+            async def generate(self, **_kwargs):
+                return SimpleNamespace(
+                    response="Fallback overview text.",
+                    prompt_eval_count=12,
+                    eval_count=8,
+                    prompt_eval_duration=0,
+                    load_duration=0,
+                    eval_duration=0,
+                    total_duration=0,
+                )
+
+        service.ollama_client.ollama_client = FakeOllamaGenerate()  # type: ignore[attr-defined]
+        service.settings.ollama_chat_tokenizer = "fake/tokenizer"
+        data_package = DataPackage(
+            file_name="diagnostic-package",
+            files=[
+                FileEntry(
+                    file_path="metadata.txt",
+                    file_name="metadata.txt",
+                    file_extension=".txt",
+                    raw_content=b"metadata",
+                )
+            ],
+        )
+        ranking = FileRankingResult(files=[RankedFile(rank=1, file_path="metadata.txt")])
+        state = ExtractionRunState(
+            profile_identifier="profile",
+            initial_file_summaries=[
+                ExtractionFileSummary(file_path="metadata.txt", rank=1, data_format="plain text")
+            ],
+            initial_file_summary_status="completed",
+        )
+
+        async def fake_generate(*_args, **_kwargs):
+            raise MaxRetriesExceeded(
+                last_error=OutputParsingError("bad json"),
+                failed_response='{"observed_signals": ["unterminated"',
+                usage=RunUsage(requests=2, input_tokens=200, output_tokens=50),
+            )
+
+        with (
+            patch("app.services.extraction_service.generate_structured", side_effect=fake_generate),
+            patch(
+                "app.services.extraction_service.PromptTokenBudgeter.from_tokenizer_source",
+                return_value=budgeter,
+            ),
+        ):
+            await service._generate_initial_extraction_overview(
+                data_package_id="package-id",
+                data_package=data_package,
+                ranking=ranking,
+                state=state,
+                warnings=[],
+            )
+
+        self.assertEqual(state.initial_extraction_overview_status, "unstructured_fallback")
+        diagnostic = output_repository.initial_extraction_overview_diagnostic
+        self.assertIsNotNone(diagnostic)
+        self.assertEqual(diagnostic.error_type, "MaxRetriesExceeded")
+        self.assertEqual(diagnostic.last_error_type, "OutputParsingError")
+        self.assertIn("bad json", diagnostic.last_error)
+        self.assertIn("unterminated", diagnostic.failed_response_excerpt)
+        self.assertEqual(diagnostic.usage["requests"], 2)
+        self.assertIn("total_input_tokens", diagnostic.prompt_budget)
 
     async def test_prepare_run_state_does_not_reuse_old_chunks_without_overview(self):
         service, _, _ = make_service([[make_chunk()]])
