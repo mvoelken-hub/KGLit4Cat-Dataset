@@ -5,7 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from app.core.task_registry import TaskStatus
-from app.domain.extraction.evidence_context import EvidenceContext
+from app.domain.extraction.evidence_context import EvidenceContext, FilteredEvidenceNote
 from app.domain.extraction.vocabulary import ExtractionNormalization
 from app.domain.extraction.file_ranking import RankedFile
 from app.domain.extraction.overview import (
@@ -76,7 +76,7 @@ class ExtractionVocabQueryRecord(BaseModel):
 
 
 class ExtractionChunkResult(ExtractionChunkRef):
-    status: str = Field("pending", pattern="^(pending|running|completed|failed|skipped)$")
+    status: str = Field("pending", pattern="^(pending|running|repair_pending|completed|failed|skipped)$")
     evidence_context: EvidenceContext | None = None
     skip_reason: str | None = None
     error: str | None = None
@@ -112,6 +112,7 @@ CurationLedgerStatus = Literal[
     "user_selected_vocab_term",
     "intentionally_unresolved",
 ]
+ChunkRepairMode = Literal["deferred", "immediate", "disabled"]
 
 
 class DraftValidationResult(BaseModel):
@@ -132,6 +133,10 @@ class ProjectionLedgerRecord(BaseModel):
     planner_status: str | None = None
     planner_reason: str | None = None
     evidence_quality: dict[str, Any] = Field(default_factory=dict)
+    schema_queries: list[dict[str, Any]] = Field(default_factory=list)
+    candidate_paths: list[str] = Field(default_factory=list)
+    selected_schema_branch: dict[str, Any] | None = None
+    merge_status: str | None = None
     reason: str = ""
     error: str | None = None
 
@@ -160,6 +165,7 @@ class CurationLedgerRecord(BaseModel):
 
 class ExtractionRunState(BaseModel):
     profile_identifier: str | None = None
+    chunk_repair_mode: ChunkRepairMode = "deferred"
     vocab_query_config: ExtractionVocabQueryConfig = Field(default_factory=ExtractionVocabQueryConfig)
     chat_model: str | None = None
     ranked_files: list[RankedFile] = Field(default_factory=list)
@@ -178,10 +184,12 @@ class ExtractionRunState(BaseModel):
     projection_ledger: list[ProjectionLedgerRecord] = Field(default_factory=list)
     field_completion_ledger: list[FieldCompletionLedgerRecord] = Field(default_factory=list)
     curation_ledger: list[CurationLedgerRecord] = Field(default_factory=list)
+    filtered_evidence_notes: list[FilteredEvidenceNote] = Field(default_factory=list)
 
 
 class ExtractionRunProgress(BaseModel):
     stage: str = "pending"
+    chunk_repair_mode: ChunkRepairMode = "deferred"
     processed_chunks: int = 0
     total_chunks: int = 0
     normalized_quantities: int = 0

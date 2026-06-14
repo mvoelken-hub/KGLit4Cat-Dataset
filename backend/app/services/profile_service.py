@@ -97,6 +97,10 @@ class ProfileService:
         self.get_profile(identifier)
         return self.profile_repository.load_json_schema(identifier)
 
+    def load_merged_schema(self, identifier: str) -> str:
+        self.get_profile(identifier)
+        return self.profile_repository.load_merged_schema(identifier)
+
     def load_jsonld_context(self, identifier: str) -> dict:
         self.get_profile(identifier)
         return self.profile_repository.load_jsonld_context(identifier)

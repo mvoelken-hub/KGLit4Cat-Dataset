@@ -127,6 +127,7 @@ async def run_extraction(
             qualitative_vocab_identifiers=request.qualitative_vocab_identifiers,
             resume=request.resume,
             target_stage=request.target_stage,
+            chunk_repair_mode=request.chunk_repair_mode,
         )
         _, progress = await extraction_service.get_extraction_progress(
             data_package_id=request.data_package_id,

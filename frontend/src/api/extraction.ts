@@ -3,6 +3,7 @@ import type { InitialContext } from './types';
 
 export type PatchTaskStatus = 'unknown' | 'running' | 'completed' | 'cancelled' | 'crashed';
 export type ExtractionTargetStage = 'context' | 'profile' | 'grounding' | 'complete';
+export type ChunkRepairMode = 'deferred' | 'immediate' | 'disabled';
 
 export type PatchTokenUsageEntry = {
   input_tokens: number;
@@ -35,6 +36,7 @@ export type PatchTokenUsage = {
 
 export type ExtractionRunProgress = {
   stage: string;
+  chunk_repair_mode?: ChunkRepairMode;
   processed_chunks: number;
   total_chunks: number;
   normalized_quantities: number;
@@ -96,7 +98,7 @@ export type ExtractionChunkRef = {
 };
 
 export type ExtractionChunkResult = ExtractionChunkRef & {
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped' | string;
+  status: 'pending' | 'running' | 'repair_pending' | 'completed' | 'failed' | 'skipped' | string;
   evidence_context?: Record<string, unknown> | null;
   skip_reason?: string | null;
   error?: string | null;
@@ -220,8 +222,7 @@ export type ProjectionLedgerRecord = {
   planner_reason?: string | null;
   evidence_quality?: {
     note_count?: number;
-    interpretation_confidence?: Record<string, number>;
-    profile_worthiness?: Record<string, number>;
+    signal_level?: Record<string, number>;
     [key: string]: unknown;
   };
   reason: string;
@@ -344,10 +345,11 @@ export type PatchReviewResolutionResponse = {
 
 export async function runExtraction(input: {
   data_package_id: string;
-  profile_identifier: string;
+  profile_identifier?: string | null;
   qualitative_vocab_identifiers?: string[] | null;
   resume?: boolean;
   target_stage?: ExtractionTargetStage;
+  chunk_repair_mode?: ChunkRepairMode;
 }): Promise<ExtractionRunResponse> {
   return readJson(await fetch(apiBaseUrl + '/extraction/run', {
     method: 'POST',
@@ -404,11 +406,9 @@ export async function getExistingCuratedDocument(data_package_id: string): Promi
 
 export async function extractInitialContext(input: {
   data_package_id: string;
-  profile_identifier: string;
 }): Promise<InitialContext> {
   const response = await runExtraction({
     data_package_id: input.data_package_id,
-    profile_identifier: input.profile_identifier,
     target_stage: 'context',
   });
   const context = response.result?.machine_evidence_context || response.progress?.interim_evidence_context;

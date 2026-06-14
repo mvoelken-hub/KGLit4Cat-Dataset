@@ -11,7 +11,6 @@ from app.domain.extraction.overview import (
     ExtractionOverview,
     ExtractionOverviewStatus,
     file_summary_to_prompt_text,
-    overview_to_prompt_text,
 )
 
 
@@ -25,9 +24,18 @@ EvidenceCategory = Literal[
     "uncertainty",
     "other",
 ]
-EvidenceConfidence = Literal["high", "medium", "low"]
+EvidenceSignalLevel = Literal["high", "medium", "low"]
+FilteredEvidenceReason = Literal[
+    "signal_level_filtered",
+    "duplicate_evidence",
+    "evidence_text_unsupported",
+]
 
 EVIDENCE_MATCH_THRESHOLD = 0.90
+EVIDENCE_OVERVIEW_PROMPT_BUDGET_CHARS = 900
+EVIDENCE_FILE_SUMMARY_PROMPT_BUDGET_CHARS = 800
+EVIDENCE_ORIENTATION_LINE_CHARS = 180
+EVIDENCE_ORIENTATION_VALUES_PER_SECTION = 4
 
 
 class EvidenceNote(BaseModel):
@@ -38,7 +46,12 @@ class EvidenceNote(BaseModel):
     )
     observation: str = Field(
         ...,
-        description="Concise observation supported by the evidence text.",
+        description=(
+            "Concise free-text observation supported by the evidence text. "
+            "Include the useful semantic role in natural language, such as "
+            "'instrument/device', 'dataset title', 'file format', 'method', "
+            "'measured entity', or 'low-level parameter', when the evidence supports it."
+        ),
     )
     evidence_text: str = Field(
         ...,
@@ -48,13 +61,13 @@ class EvidenceNote(BaseModel):
         "",
         description="Short uncertainty note; empty string when the evidence is straightforward.",
     )
-    interpretation_confidence: EvidenceConfidence = Field(
+    signal_level: EvidenceSignalLevel = Field(
         "medium",
-        description="Confidence that the observation correctly interprets the copied evidence text.",
-    )
-    profile_worthiness: EvidenceConfidence = Field(
-        "medium",
-        description="How useful the note is for filling the selected metadata profile.",
+        description=(
+            "Profile-agnostic semantic level. Use high for stable metadata facts worth "
+            "forwarding, medium for interpretable technical context, and low for raw "
+            "parameters, boilerplate, or unclear settings."
+        ),
     )
     file_path: str = ""
     start_idx: int = Field(0, ge=0)
@@ -75,6 +88,21 @@ class EvidenceContext(BaseModel):
     file_inventory: list[FileInventoryItem] = Field(default_factory=list)
 
 
+class FilteredEvidenceNote(BaseModel):
+    reason: FilteredEvidenceReason
+    note: EvidenceNote
+    file_path: str = ""
+    start_idx: int = Field(0, ge=0)
+    end_idx: int = Field(0, ge=0)
+    chunk_index: int | None = None
+    duplicate_representative_id: str | None = None
+
+
+class FilteredEvidenceLedger(BaseModel):
+    filtered_notes: list[FilteredEvidenceNote] = Field(default_factory=list)
+    summary: dict[str, int] = Field(default_factory=dict)
+
+
 class EvidenceChunkMetadata(BaseModel):
     start_idx: int = Field(..., ge=0)
     end_idx: int = Field(..., ge=0)
@@ -87,32 +115,48 @@ class EvidenceChunkContext(BaseModel):
     metadata: EvidenceChunkMetadata
 
 
-EVIDENCE_CONTEXT_SYSTEM_PROMPT = f"""You extract broad, traceable evidence observations from scientific data-package chunks.
-Your output is NOT an ontology object model and NOT a final profile document. Do not classify observations into classes such as DataGeneratingActivity, Resource, Method, AgenticEntity, or EvaluatedEntity.
+EVIDENCE_CONTEXT_SYSTEM_PROMPT = """
+You extract broad, traceable evidence observations from scientific data-package chunks. These observations later feed into a DCAT application profile for dataset metadata.
+Your output is NOT an ontology object model and NOT a final profile document.
 
 Return only a valid EvidenceContext JSON object.
-Use this output schema: {EvidenceContext.model_json_schema()}
 
 Rules:
 - Produce concise evidence notes only when the current chunk contains human-readable evidence.
 - Every evidence_text must be a short substring copied from the current chunk. Do not paraphrase evidence_text.
 - Use initial overview and file summary only to understand context; do not cite them as evidence.
 - If the chunk contains only encoded payload, raw numeric signal rows, checksums, empty declarations, or unreadable data, return notes: [].
-- Prefer a broad perspective: one note may summarize several adjacent headers or settings when they clearly describe the same signal.
-- Suppress repeated boilerplate/header-only facts such as repeated JCAMP version, empty origin, generic DATA TYPE, or repeated parameter-file titles unless they add new profile-worthy meaning.
-- Group adjacent low-level parameters into one broader note when they describe the same method, instrument configuration, processing step, or resource characteristic.
+- Prefer a broad perspective: one note may summarize several adjacent headers or settings when they clearly describe the same scientific method, instrument, file format, sample, or dataset-level signal.
+- Suppress repeated boilerplate/header-only facts such as repeated versions, empty origin, generic DATA TYPE, generic OWNER, local paths, audit labels, or repeated parameter-file titles unless they add new profile-worthy meaning.
+- Group adjacent low-level parameters into one broader note when they describe the same interpretable method or instrument configuration; otherwise leave raw parameters as medium or low signal.
 - Use only these categories: resource_signal, method_signal, measurement_signal, entity_signal, agent_signal, data_quality_signal, uncertainty, other.
+- Put the useful semantic role into observation as natural language, not as structured fields. Examples: "Dataset name is ...", "Instrument/device used is ...", "File/resource format is ...", "Acquisition method uses ...", "Measured entity/sample solvent is ...", or "Low-level parameter TD is ...".
+- Do not turn file-local headers into dataset-level claims. A header like "##TITLE= Audit trail, TOPSPIN Version 3.2" is the audit file title, not the dataset title. A parameter-file title, local path, generic OWNER, or ORIGIN header is file/resource-local unless the chunk explicitly says it names the whole dataset/package.
+- Do not infer dataset creation software or instrument identity from a file title alone. A file title mentioning TOPSPIN is software/header context, not proof that the dataset was created by that software.
+- Instruments, spectrometers, probes, software-controlled acquisition hardware, and named devices should use category agent_signal and an observation that explicitly says instrument/device.
+- ORIGIN/manufacturer labels such as "Bruker BioSpin GmbH" identify file provenance or software/vendor context unless the evidence names a concrete instrument model or device.
+- Scientific method facts such as pulse sequence, observed nucleus, solvent, and observation frequency may be high when the evidence supports an interpretable method statement.
+- Numeric spectrum geometry, point counts, axis min/max values, scaling factors, processing thresholds, routing keys, local file paths, raw instrument parameters, repeated file headers, and empty/off toggles should be described as technical or low-level parameters and should usually have medium or low signal_level.
+- Numbered/channel-specific parameters such as SFO7, SFO8, BF*, O*, Nus*, NPOINTS, and processing counters are technical settings. Keep them medium or low unless grouped into a clear higher-level method observation.
 - Record uncertainty when labels are ambiguous, evidence is only technical, or a setting cannot be safely interpreted.
-- Set interpretation_confidence to high only when the observation follows directly from clear labels or prose; use medium/low for technical parameters.
-- Set profile_worthiness to high only for evidence likely to fill dataset title, creator, distribution, method/activity, entity, measurement, type, keyword, identifier, or modification-date fields.
+- Set signal_level to high only for stable, profile-agnostic metadata facts likely to describe explicit dataset identity, creator/agent, instrument/device, distribution/resource format, interpretable method/activity, measured entity, sample, identifier, date, or meaningful file syntax.
+- Set signal_level to medium for interpretable technical context that may help debugging but should not drive profile generation by itself.
+- Set signal_level to low for raw parameters, boilerplate, repeated syntax/header declarations, empty settings, or unclear technical fields.
+- Only high signal notes are forwarded downstream; medium and low notes are retained in debug artifacts only.
+
+Counterexamples:
+- For evidence_text "##TITLE= Audit trail, TOPSPIN Version 3.2", do not write "Dataset was created by TOPSPIN" and do not write "Instrument/device used is TOPSPIN". At most write a medium/low note such as "Audit file title mentions TOPSPIN Version 3.2."
+- For evidence_text "##ORIGIN= Bruker BioSpin GmbH", do not write "Instrument/device used is Bruker BioSpin GmbH". At most write a medium note that the file declares Bruker BioSpin GmbH as origin/vendor.
+- For evidence_text like "##NPOINTS= 3516", do not write a high signal note. It is a technical point-count parameter.
 """
 
-
 def build_evidence_context_prompt(chunk_context: EvidenceChunkContext) -> str:
+    normalized_content = normalize_chunk_text_for_evidence_prompt(chunk_context.content)
     return (
         "Chunk context metadata:\n"
         f"{chunk_context.metadata.model_dump_json()}\n\n"
-        f"Chunk content (residual lines after text-quality filtering):\n{chunk_context.content}\n"
+        "Chunk content (normalized residual lines after text-quality filtering):\n"
+        f"{normalized_content}\n"
         "Extract broad evidence notes from the current chunk content."
     )
 
@@ -123,21 +167,81 @@ def build_evidence_system_prompt_with_overview(
     overview: ExtractionOverview | None,
     overview_status: ExtractionOverviewStatus | None,
     file_summary: ExtractionFileSummary | None = None,
+    max_overview_chars: int = EVIDENCE_OVERVIEW_PROMPT_BUDGET_CHARS,
+    max_file_summary_chars: int = EVIDENCE_FILE_SUMMARY_PROMPT_BUDGET_CHARS,
 ) -> str:
     sections: list[str] = []
-    overview_text = overview_to_prompt_text(overview, status=overview_status)
+    overview_text = compact_evidence_overview_to_prompt_text(
+        overview,
+        status=overview_status,
+        current_file_path=file_summary.file_path if file_summary else None,
+        max_chars=max_overview_chars,
+    )
     if overview_text:
         sections.append(
             "\n\nInitial extraction overview (orientation only; not evidence):\n"
             + overview_text
         )
-    file_summary_text = file_summary_to_prompt_text(file_summary)
+    file_summary_text = _cap_prompt_text(
+        file_summary_to_prompt_text(file_summary),
+        max_chars=max_file_summary_chars,
+    )
     if file_summary_text:
         sections.append(
             "\n\nCurrent file summary (orientation only; not evidence):\n"
             + file_summary_text
         )
     return base_prompt + "".join(sections)
+
+
+def compact_evidence_overview_to_prompt_text(
+    overview: ExtractionOverview | None,
+    *,
+    status: ExtractionOverviewStatus | None = None,
+    current_file_path: str | None = None,
+    max_chars: int = EVIDENCE_OVERVIEW_PROMPT_BUDGET_CHARS,
+) -> str:
+    if overview is None:
+        return ""
+    parts: list[str] = []
+    if status:
+        parts.append(f"Overview status: {status}")
+    if current_file_path and overview.file_roles:
+        matching_roles = [
+            role for role in overview.file_roles if role.file_path == current_file_path
+        ]
+        if matching_roles:
+            role_lines = []
+            for role in matching_roles[:2]:
+                notes = _compact_prompt_values(role.extraction_notes, limit=2)
+                role_lines.append(
+                    f"- {role.file_path}: {role.role}"
+                    + (f" ({'; '.join(notes)})" if notes else "")
+                )
+            parts.append("Current file role:\n" + "\n".join(role_lines))
+    for label, values in (
+        ("Observed signals", overview.observed_signals),
+        ("Suggested interpretations", overview.suggested_interpretations),
+        ("Conflicts/uncertainties", overview.conflicts_or_uncertainties),
+    ):
+        compact_values = _compact_prompt_values(
+            values,
+            limit=EVIDENCE_ORIENTATION_VALUES_PER_SECTION,
+        )
+        if compact_values:
+            parts.append(label + ":\n" + "\n".join(f"- {value}" for value in compact_values))
+    return _cap_prompt_text("\n\n".join(parts), max_chars=max_chars)
+
+
+def normalize_chunk_text_for_evidence_prompt(content: str) -> str:
+    normalized = content.replace("\r\n", "\n").replace("\r", "\n")
+    normalized = normalized.replace("\t", " ")
+    normalized = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", " ", normalized)
+    normalized = "\n".join(
+        re.sub(r"[ ]{2,}", " ", line).rstrip()
+        for line in normalized.split("\n")
+    )
+    return normalized.strip()
 
 
 def merge_evidence_contexts(contexts: list[EvidenceContext]) -> EvidenceContext:
@@ -162,6 +266,75 @@ def merge_evidence_contexts(contexts: list[EvidenceContext]) -> EvidenceContext:
         notes=notes,
         file_inventory=sorted(inventory_by_path.values(), key=lambda item: item.file_path),
     )
+
+
+def filter_evidence_context_by_signal_level(
+    context: EvidenceContext,
+    *,
+    keep_level: EvidenceSignalLevel = "high",
+    chunk_index: int | None = None,
+) -> tuple[EvidenceContext, list[FilteredEvidenceNote]]:
+    kept: list[EvidenceNote] = []
+    dropped: list[FilteredEvidenceNote] = []
+    for note in context.notes:
+        if note.signal_level == keep_level:
+            kept.append(note)
+            continue
+        dropped.append(
+            _filtered_record(
+                note,
+                reason="signal_level_filtered",
+                chunk_index=chunk_index,
+            )
+        )
+    return (
+        context.model_copy(update={"notes": kept}),
+        dropped,
+    )
+
+
+def dedupe_repeated_evidence_notes(
+    context: EvidenceContext,
+    *,
+    file_rank_by_path: dict[str, int] | None = None,
+) -> tuple[EvidenceContext, list[FilteredEvidenceNote]]:
+    file_rank_by_path = file_rank_by_path or {}
+    grouped: dict[str, list[tuple[int, EvidenceNote]]] = {}
+    unique_without_key: list[tuple[int, EvidenceNote]] = []
+    for index, note in enumerate(context.notes):
+        key = _normalize_evidence_text(note.evidence_text)
+        if not key:
+            unique_without_key.append((index, note))
+            continue
+        grouped.setdefault(key, []).append((index, note))
+
+    kept_with_order: list[tuple[int, EvidenceNote]] = list(unique_without_key)
+    dropped: list[FilteredEvidenceNote] = []
+    for group in grouped.values():
+        if len(group) == 1:
+            kept_with_order.append(group[0])
+            continue
+        representative_index, representative = min(
+            group,
+            key=lambda item: _dedupe_representative_rank(
+                item[1],
+                original_index=item[0],
+                file_rank_by_path=file_rank_by_path,
+            ),
+        )
+        kept_with_order.append((representative_index, representative))
+        for _, note in group:
+            if note is representative:
+                continue
+            dropped.append(
+                _filtered_record(
+                    note,
+                    reason="duplicate_evidence",
+                    duplicate_representative_id=representative.note_id,
+                )
+            )
+    kept = [note for _, note in sorted(kept_with_order, key=lambda item: item[0])]
+    return context.model_copy(update={"notes": kept}), dropped
 
 
 def validate_evidence_context_for_chunk(
@@ -191,6 +364,15 @@ def validate_evidence_context_for_chunk(
         else:
             dropped.append(updated)
     return EvidenceContext(notes=kept, file_inventory=context.file_inventory), dropped
+
+
+def filtered_evidence_ledger(
+    records: list[FilteredEvidenceNote],
+) -> FilteredEvidenceLedger:
+    summary: dict[str, int] = {}
+    for record in records:
+        summary[record.reason] = summary.get(record.reason, 0) + 1
+    return FilteredEvidenceLedger(filtered_notes=records, summary=summary)
 
 
 def evidence_text_match_score(evidence_text: str, chunk_content: str) -> float:
@@ -251,3 +433,67 @@ def _normalize_evidence_text(value: str) -> str:
     normalized = re.sub(r"\s+", " ", normalized)
     normalized = re.sub(r"[\u2010-\u2015]", "-", normalized)
     return normalized.strip()
+
+
+def _compact_prompt_values(values: list[str], *, limit: int) -> list[str]:
+    compact: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        cleaned = _compact_prompt_line(value)
+        if not cleaned:
+            continue
+        key = cleaned.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        compact.append(cleaned)
+        if len(compact) >= limit:
+            break
+    return compact
+
+
+def _compact_prompt_line(value: str) -> str:
+    cleaned = normalize_chunk_text_for_evidence_prompt(value)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if len(cleaned) <= EVIDENCE_ORIENTATION_LINE_CHARS:
+        return cleaned
+    return cleaned[: EVIDENCE_ORIENTATION_LINE_CHARS - 1].rstrip() + "..."
+
+
+def _cap_prompt_text(value: str, *, max_chars: int) -> str:
+    cleaned = normalize_chunk_text_for_evidence_prompt(value)
+    if not cleaned or max_chars <= 0:
+        return ""
+    if len(cleaned) <= max_chars:
+        return cleaned
+    return cleaned[: max(0, max_chars - 28)].rstrip() + "\n[orientation truncated]"
+
+
+def _filtered_record(
+    note: EvidenceNote,
+    *,
+    reason: FilteredEvidenceReason,
+    chunk_index: int | None = None,
+    duplicate_representative_id: str | None = None,
+) -> FilteredEvidenceNote:
+    return FilteredEvidenceNote(
+        reason=reason,
+        note=note,
+        file_path=note.file_path,
+        start_idx=note.start_idx,
+        end_idx=note.end_idx,
+        chunk_index=chunk_index,
+        duplicate_representative_id=duplicate_representative_id,
+    )
+
+
+def _dedupe_representative_rank(
+    note: EvidenceNote,
+    *,
+    original_index: int,
+    file_rank_by_path: dict[str, int],
+) -> tuple[int, int, int, int]:
+    signal_rank = {"high": 0, "medium": 1, "low": 2}.get(note.signal_level, 3)
+    file_rank = file_rank_by_path.get(note.file_path, 10_000)
+    richness = len(note.observation.strip())
+    return (signal_rank, file_rank, -richness, original_index)

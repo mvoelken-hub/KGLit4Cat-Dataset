@@ -39,10 +39,12 @@ from app.domain.extraction import (
     CurationLedgerRecord,
     DefinedTerm,
     DraftValidationResult,
+    ChunkRepairMode,
     EvidenceChunkContext,
     EvidenceChunkMetadata,
     EvidenceContext,
     EvidenceNote,
+    FilteredEvidenceNote,
     FileInventoryItem,
     ExtractionChunkRef,
     ExtractionChunkResult,
@@ -68,6 +70,7 @@ from app.domain.extraction import (
     ProfileFieldNormalization,
     ProfileObjectPatchResult,
     ProfilePatchDocument,
+    SchemaBranch,
     ProfileTargetWriteDocument,
     ProfileTargetDecision,
     ProjectionLedgerRecord,
@@ -82,11 +85,14 @@ from app.domain.extraction import (
     VocabularyTermMapping,
     build_evidence_context_prompt,
     build_evidence_system_prompt_with_overview,
+    dedupe_repeated_evidence_notes,
     build_candidate_selection_prompt,
     build_extraction_context_prompt,
     build_extraction_file_summary_prompt,
     build_extraction_overview_fallback_prompt,
     build_extraction_overview_prompt,
+    filtered_evidence_ledger,
+    filter_evidence_context_by_signal_level,
     is_noisy_payload_chunk,
     build_system_prompt_with_overview,
     build_fallback_query_prompt,
@@ -95,6 +101,8 @@ from app.domain.extraction import (
     build_profile_projection_prompt,
     build_profile_target_planner_prompt,
     build_profile_target_write_prompt,
+    build_schema_branch_index,
+    build_schema_search_query,
     build_qualitative_vocab_query,
     build_quantity_kind_vocab_query,
     build_unit_vocab_query,
@@ -102,6 +110,9 @@ from app.domain.extraction import (
     fallback_file_ranking,
     merge_evidence_contexts,
     merge_extraction_context_results,
+    normalize_chunk_text_for_evidence_prompt,
+    schema_branches_to_catalog,
+    search_schema_branches,
     validate_evidence_context_for_chunk,
 )
 from app.domain.profiles import (
@@ -192,10 +203,11 @@ class ExtractionService:
         self,
         *,
         data_package_id: str,
-        profile_identifier: str,
+        profile_identifier: str | None = None,
         qualitative_vocab_identifiers: list[str] | None = None,
         resume: bool = False,
         target_stage: ExtractionTargetStage = "complete",
+        chunk_repair_mode: ChunkRepairMode = "deferred",
     ) -> tuple[ExtractionRunResult | None, TaskStatus]:
         self._require_runtime_dependencies()
         assert self.datasource_service is not None
@@ -203,8 +215,13 @@ class ExtractionService:
         assert self.task_registry is not None
 
         self.datasource_service.get_data_package(data_package_id)
-        self.profile_service.get_profile(profile_identifier)
-        self.profile_service.load_json_schema(profile_identifier)
+        profile_identifier_for_stage = self._profile_identifier_for_stage(
+            profile_identifier=profile_identifier,
+            target_stage=target_stage,
+        )
+        if profile_identifier_for_stage is not None:
+            self.profile_service.get_profile(profile_identifier_for_stage)
+            self.profile_service.load_json_schema(profile_identifier_for_stage)
 
         chunks_by_file = self.datasource_service.get_completed_content_chunks_by_file(
             data_package_id
@@ -228,10 +245,11 @@ class ExtractionService:
         await self.task_registry.create_task(
             coro=self._run_extraction_task(
                 data_package_id=data_package_id,
-                profile_identifier=profile_identifier,
+                profile_identifier=profile_identifier_for_stage,
                 qualitative_vocab_identifiers=qualitative_vocab_identifiers,
                 resume=resume,
                 target_stage=target_stage,
+                chunk_repair_mode=chunk_repair_mode,
             ),
             type=TaskType.WORKFLOW,
             name=task_name,
@@ -1108,10 +1126,11 @@ class ExtractionService:
         self,
         *,
         data_package_id: str,
-        profile_identifier: str,
+        profile_identifier: str | None,
         qualitative_vocab_identifiers: list[str] | None,
         resume: bool = False,
         target_stage: ExtractionTargetStage = "complete",
+        chunk_repair_mode: ChunkRepairMode = "deferred",
     ) -> ExtractionRunResult | None:
         self._require_runtime_dependencies()
         assert self.datasource_service is not None
@@ -1119,12 +1138,15 @@ class ExtractionService:
         assert self.output_repository is not None
 
         data_package = self.datasource_service.get_data_package(data_package_id)
-        profile_manifest = self.profile_service.get_profile(profile_identifier)
-        profile_json_schema = self.profile_service.load_json_schema(profile_identifier)
-        validation_schema = validation_schema_for_target_class(
-            json_schema=profile_json_schema,
-            target_class=profile_manifest.target_class,
-        )
+        profile_manifest = None
+        validation_schema: dict[str, Any] | None = None
+        if profile_identifier is not None:
+            profile_manifest = self.profile_service.get_profile(profile_identifier)
+            profile_json_schema = self.profile_service.load_json_schema(profile_identifier)
+            validation_schema = validation_schema_for_target_class(
+                json_schema=profile_json_schema,
+                target_class=profile_manifest.target_class,
+            )
         chunks_by_file = self.datasource_service.get_completed_content_chunks_by_file(
             data_package_id
         )
@@ -1137,6 +1159,7 @@ class ExtractionService:
         persisted_state = self._load_run_state_or_none(data_package_id)
         progress = ExtractionRunProgress(
             stage="file_ranking",
+            chunk_repair_mode=chunk_repair_mode,
             total_chunks=sum(len(chunks) for chunks in chunks_by_file),
             ranked_files=persisted_state.ranked_files if persisted_state else [],
             initial_file_summaries=(
@@ -1200,9 +1223,11 @@ class ExtractionService:
             persisted_state=persisted_state,
             profile_identifier=profile_identifier,
             vocab_query_config=progress.vocab_query_config,
+            chunk_repair_mode=chunk_repair_mode,
         )
         self._save_run_state(data_package_id, state)
 
+        progress.chunk_repair_mode = state.chunk_repair_mode
         progress.ranked_files = state.ranked_files
         progress.initial_file_summaries = state.initial_file_summaries
         progress.initial_file_summary_status = state.initial_file_summary_status
@@ -1262,6 +1287,7 @@ class ExtractionService:
                 chunk_result.status = "running"
                 chunk_result.error = None
                 chunk_result.skip_reason = None
+                normalized_chunk_content = normalize_chunk_text_for_evidence_prompt(chunk.content)
                 progress.current_chunk = self._chunk_ref(chunk_result)
                 progress.chunk_results = state.chunk_results
                 self._save_run_state(data_package_id, state)
@@ -1282,7 +1308,7 @@ class ExtractionService:
                         ),
                         prompt=build_evidence_context_prompt(
                             EvidenceChunkContext(
-                                content=chunk.content,
+                                content=normalized_chunk_content,
                                 metadata=EvidenceChunkMetadata(
                                     start_idx=chunk.start_idx,
                                     end_idx=chunk.end_idx,
@@ -1313,10 +1339,19 @@ class ExtractionService:
                         agent_name="chunk_extraction",
                         usage=exc.usage,
                     )
-                    chunk_result.status = "failed"
+                    repairable = bool(exc.failed_response)
+                    chunk_result.status = (
+                        "repair_pending"
+                        if repairable and chunk_repair_mode == "deferred"
+                        else "running"
+                        if repairable and chunk_repair_mode == "immediate"
+                        else "failed"
+                    )
                     chunk_result.error = (
                         "Queued for repair after first-pass extraction"
-                        if exc.failed_response
+                        if repairable and chunk_repair_mode == "deferred"
+                        else "Repairing first-pass structured output"
+                        if repairable and chunk_repair_mode == "immediate"
                         else str(exc)
                     )
                     chunk_result.response_duration_ms = self._usage_float(
@@ -1328,8 +1363,18 @@ class ExtractionService:
                     progress.chunk_results = state.chunk_results
                     self._save_run_state(data_package_id, state)
                     self._update_progress(data_package_id, progress)
-                    if exc.failed_response:
+                    if repairable and chunk_repair_mode == "deferred":
                         chunk_repairs.append((chunk_result, exc))
+                    elif repairable and chunk_repair_mode == "immediate":
+                        await self._repair_chunk_evidence_context(
+                            data_package_id=data_package_id,
+                            chunk_result=chunk_result,
+                            failure=exc,
+                            chunk_content=normalized_chunk_content,
+                            state=state,
+                            progress=progress,
+                            warnings=warnings,
+                        )
                     else:
                         warnings.append(
                             "Chunk extraction failed for "
@@ -1375,20 +1420,12 @@ class ExtractionService:
                     agent_name="chunk_extraction",
                     usage=result.usage,
                 )
-                validated_context, dropped_notes = validate_evidence_context_for_chunk(
+                validated_context = self._validate_and_filter_evidence_context_for_chunk(
                     result.output,
-                    chunk_content=chunk.content,
-                    file_path=chunk.file_path,
-                    start_idx=chunk.start_idx,
-                    end_idx=chunk.end_idx,
+                    chunk_content=normalized_chunk_content,
+                    chunk_result=chunk_result,
+                    state=state,
                 )
-                for dropped in dropped_notes:
-                    warnings.append(
-                        "Dropped unsupported evidence note "
-                        f"{dropped.note_id} for {chunk.file_path} lines "
-                        f"{chunk.start_idx}-{chunk.end_idx}: evidence match score "
-                        f"{dropped.evidence_match_score:.2f}."
-                    )
                 chunk_result.status = "completed"
                 chunk_result.evidence_context = validated_context
                 chunk_result.response_duration_ms = self._usage_float(
@@ -1398,10 +1435,9 @@ class ExtractionService:
                 chunk_result.context_tokens = self._usage_int(result.usage, "input_tokens")
                 self._save_run_state(data_package_id, state)
 
-                partial_context = self._merged_completed_evidence_context(state)
-                self.output_repository.save_evidence_context(
-                    workflow_id=data_package_id,
-                    evidence_context=partial_context,
+                partial_context = self._save_current_evidence_artifacts(
+                    data_package_id=data_package_id,
+                    state=state,
                 )
                 progress.processed_chunks = self._completed_chunk_count(state)
                 progress.interim_evidence_context = partial_context
@@ -1418,83 +1454,21 @@ class ExtractionService:
 
         chunk_by_key = {self._chunk_key(chunk): chunk for chunk in ordered_chunks}
         for chunk_result, failure in chunk_repairs:
-            chunk_result.status = "running"
-            chunk_result.error = None
-            progress.current_chunk = self._chunk_ref(chunk_result)
-            progress.chunk_results = state.chunk_results
-            self._save_run_state(data_package_id, state)
-            self._update_progress(data_package_id, progress)
-
-            try:
-                repair = await repair_structured_output(
-                    self.ollama_client,
-                    model=self.ollama_client.chat_model,
-                    failed_response=failure.failed_response or "",
-                    error=failure.last_error or failure,
-                    output_type=EvidenceContext,
-                    temperature=0.1,
-                    think=None,
-                    num_ctx=self.ollama_client.max_context_length,
-                )
-            except CompletionError as exc:
-                usage = getattr(exc, "usage", None)
-                if usage is not None:
-                    self._record_workflow_token_usage(
-                        data_package_id=data_package_id,
-                        agent_name="chunk_extraction_repair",
-                        usage=usage,
-                    )
-                chunk_result.status = "failed"
-                chunk_result.error = str(exc)
-                warnings.append(
-                    "Chunk extraction repair failed for "
-                    f"{chunk_result.file_path} chunk {chunk_result.chunk_index}: {exc}"
-                )
-                progress.current_chunk = None
-                progress.chunk_results = state.chunk_results
-                progress.warnings = list(warnings)
-                self._save_run_state(data_package_id, state)
-                self._update_progress(data_package_id, progress)
-                continue
-
-            self._record_workflow_token_usage(
-                data_package_id=data_package_id,
-                agent_name="chunk_extraction_repair",
-                usage=repair.usage,
-            )
-            chunk_result.status = "completed"
             repaired_chunk = chunk_by_key.get(self._chunk_result_key(chunk_result))
-            validated_context, dropped_notes = validate_evidence_context_for_chunk(
-                repair.output,
-                chunk_content=repaired_chunk.content if repaired_chunk is not None else "",
-                file_path=chunk_result.file_path,
-                start_idx=chunk_result.start_idx,
-                end_idx=chunk_result.end_idx,
+            repaired_chunk_content = (
+                normalize_chunk_text_for_evidence_prompt(repaired_chunk.content)
+                if repaired_chunk is not None
+                else ""
             )
-            for dropped in dropped_notes:
-                warnings.append(
-                    "Dropped unsupported repaired evidence note "
-                    f"{dropped.note_id} for {chunk_result.file_path}: evidence match score "
-                    f"{dropped.evidence_match_score:.2f}."
-                )
-            chunk_result.evidence_context = validated_context
-            chunk_result.response_duration_ms = self._usage_float(
-                repair.usage,
-                "response_duration_ms",
+            await self._repair_chunk_evidence_context(
+                data_package_id=data_package_id,
+                chunk_result=chunk_result,
+                failure=failure,
+                chunk_content=repaired_chunk_content,
+                state=state,
+                progress=progress,
+                warnings=warnings,
             )
-            chunk_result.context_tokens = self._usage_int(repair.usage, "input_tokens")
-            self._save_run_state(data_package_id, state)
-
-            partial_context = self._merged_completed_evidence_context(state)
-            self.output_repository.save_evidence_context(
-                workflow_id=data_package_id,
-                evidence_context=partial_context,
-            )
-            progress.processed_chunks = self._completed_chunk_count(state)
-            progress.interim_evidence_context = partial_context
-            progress.current_chunk = None
-            progress.chunk_results = state.chunk_results
-            self._update_progress(data_package_id, progress)
 
         failed_chunks = [
             chunk_result
@@ -1513,15 +1487,22 @@ class ExtractionService:
             self._save_run_state(data_package_id, state)
             self._update_progress(data_package_id, progress)
 
+        merged_context, duplicate_records = self._filtered_completed_evidence_context(state)
         evidence_context = self._evidence_context_with_file_inventory(
             data_package=data_package,
-            context=self._merged_completed_evidence_context(state),
+            context=merged_context,
             state=state,
         )
         self.output_repository.save_evidence_context(
             workflow_id=data_package_id,
             evidence_context=evidence_context,
         )
+        self._save_filtered_evidence_notes(
+            data_package_id=data_package_id,
+            state=state,
+            duplicate_records=duplicate_records,
+        )
+        warnings.extend(self._filtered_evidence_summary_warnings(state, duplicate_records))
 
         if target_stage == "context":
             progress.stage = "interim_evidence_context"
@@ -1538,6 +1519,10 @@ class ExtractionService:
         progress.stage = "profile_projection"
         progress.interim_evidence_context = evidence_context
         self._update_progress(data_package_id, progress)
+        if profile_identifier is None or profile_manifest is None or validation_schema is None:
+            raise ValueError(
+                "A profile identifier is required before building the generated profile draft."
+            )
 
         profile_document = await self._build_profile_document_by_patching(
             data_package_id=data_package_id,
@@ -2369,6 +2354,11 @@ class ExtractionService:
             validation_schema=validation_schema,
             scaffold=state.initial_draft_scaffold,
         )
+        schema_branches = self._schema_branches_for_profile(
+            profile_identifier=profile_identifier,
+            profile_target_class=profile_target_class,
+            warnings=warnings,
+        )
         patched_identifiers = {
             record.object_identifier
             for record in state.projection_ledger
@@ -2376,6 +2366,14 @@ class ExtractionService:
         for group in self._projection_groups_for_evidence(evidence_context):
             if group.group_id in patched_identifiers:
                 continue
+            schema_searches, schema_candidate_branches = self._schema_candidates_for_group(
+                group=group,
+                schema_branches=schema_branches,
+            )
+            group_target_catalog = (
+                schema_branches_to_catalog(schema_candidate_branches)
+                + target_catalog
+            )
             target_decision = await self._plan_profile_target_for_evidence_group(
                 data_package_id=data_package_id,
                 profile_identifier=profile_identifier,
@@ -2383,7 +2381,11 @@ class ExtractionService:
                 group=group,
                 file_inventory=evidence_context.file_inventory,
                 warnings=warnings,
-                target_catalog=target_catalog,
+                target_catalog=group_target_catalog,
+            )
+            selected_schema_branch = self._selected_schema_branch(
+                target_decision.target_path,
+                schema_candidate_branches,
             )
             if target_decision.status == "skip" or not target_decision.target_path:
                 patch_result = ProfileObjectPatchResult(
@@ -2395,6 +2397,13 @@ class ExtractionService:
                     planner_status=target_decision.status,
                     planner_reason=target_decision.reason,
                     reason=target_decision.reason,
+                    schema_queries=[search.model_dump(mode="json") for search in schema_searches],
+                    candidate_paths=[branch.path for branch in schema_candidate_branches],
+                    selected_schema_branch=(
+                        selected_schema_branch.model_dump(mode="json")
+                        if selected_schema_branch
+                        else None
+                    ),
                 )
             else:
                 patch_result = await self._write_profile_target_with_evidence_group(
@@ -2408,8 +2417,19 @@ class ExtractionService:
                     file_inventory=evidence_context.file_inventory,
                     warnings=warnings,
                 )
+                patch_result.schema_queries = [
+                    search.model_dump(mode="json") for search in schema_searches
+                ]
+                patch_result.candidate_paths = [
+                    branch.path for branch in schema_candidate_branches
+                ]
+                patch_result.selected_schema_branch = (
+                    selected_schema_branch.model_dump(mode="json")
+                    if selected_schema_branch
+                    else None
+                )
             if patch_result.status == "applied":
-                document = self._replace_json_pointer(
+                document = self._apply_profile_target_write(
                     document,
                     patch_result.target_path or group.target_hint,
                     patch_result.target_value,
@@ -2438,6 +2458,58 @@ class ExtractionService:
             self._persist_state_artifacts(data_package_id, state)
             self._update_progress(data_package_id, progress)
         return document
+
+    def _schema_branches_for_profile(
+        self,
+        *,
+        profile_identifier: str,
+        profile_target_class: str,
+        warnings: list[str],
+    ) -> list[SchemaBranch]:
+        try:
+            merged_schema = self.profile_service.load_merged_schema(profile_identifier)
+            return build_schema_branch_index(
+                merged_schema,
+                target_class=profile_target_class,
+                max_depth=3,
+            )
+        except Exception as exc:
+            warnings.append(
+                f"Schema-guided projection disabled for '{profile_identifier}': {exc}"
+            )
+            return []
+
+    @staticmethod
+    def _schema_candidates_for_group(
+        *,
+        group: _EvidenceProjectionGroup,
+        schema_branches: list[SchemaBranch],
+    ):
+        if not schema_branches:
+            return [], []
+        first_query = build_schema_search_query(group.notes, max_depth=3)
+        first_result = search_schema_branches(schema_branches, first_query, top_k=8)
+        searches = [first_result]
+        candidates = first_result.candidates
+        if not candidates:
+            relaxed_query = first_query.model_copy(update={"max_depth": 4})
+            relaxed_result = search_schema_branches(
+                schema_branches,
+                relaxed_query,
+                top_k=8,
+            )
+            searches.append(relaxed_result)
+            candidates = relaxed_result.candidates
+        return searches, candidates
+
+    @staticmethod
+    def _selected_schema_branch(
+        target_path: str | None,
+        branches: list[SchemaBranch],
+    ) -> SchemaBranch | None:
+        if not target_path:
+            return None
+        return next((branch for branch in branches if branch.path == target_path), None)
 
     @staticmethod
     def _projection_identifier_for_evidence_note(note: EvidenceNote) -> str:
@@ -2505,21 +2577,22 @@ class ExtractionService:
             planner_status=patch_result.planner_status,
             planner_reason=patch_result.planner_reason,
             evidence_quality=cls._evidence_quality_summary(group.notes),
+            schema_queries=patch_result.schema_queries,
+            candidate_paths=patch_result.candidate_paths,
+            selected_schema_branch=patch_result.selected_schema_branch,
+            merge_status=patch_result.merge_status,
             reason=patch_result.reason,
             error=patch_result.error,
         )
 
     @staticmethod
     def _evidence_quality_summary(notes: list[EvidenceNote]) -> dict[str, Any]:
-        confidence: dict[str, int] = {"high": 0, "medium": 0, "low": 0}
-        worthiness: dict[str, int] = {"high": 0, "medium": 0, "low": 0}
+        signal_level: dict[str, int] = {"high": 0, "medium": 0, "low": 0}
         for note in notes:
-            confidence[note.interpretation_confidence] = confidence.get(note.interpretation_confidence, 0) + 1
-            worthiness[note.profile_worthiness] = worthiness.get(note.profile_worthiness, 0) + 1
+            signal_level[note.signal_level] = signal_level.get(note.signal_level, 0) + 1
         return {
             "note_count": len(notes),
-            "interpretation_confidence": confidence,
-            "profile_worthiness": worthiness,
+            "signal_level": signal_level,
         }
 
     @classmethod
@@ -2565,6 +2638,8 @@ class ExtractionService:
     @classmethod
     def _target_hint_for_evidence_note(cls, note: EvidenceNote) -> tuple[str, str | None]:
         text = f"{note.note_id} {note.category} {note.observation} {note.evidence_text}".lower()
+        if cls._note_has_device_signal(note):
+            return "/was_generated_by/0/carried_out_by/-", "AgenticEntity"
         if note.category == "agent_signal" or any(term in text for term in ("origin", "owner", "creator", "author")):
             return "/creator/0", "Agent"
         if note.category in {"entity_signal", "measurement_signal"}:
@@ -2582,6 +2657,20 @@ class ExtractionService:
         if note.category == "resource_signal":
             return "/dataset_distribution/0", "Distribution"
         return "/description", None
+
+    @classmethod
+    def _note_has_device_signal(cls, note: EvidenceNote) -> bool:
+        text = cls._note_search_text(note)
+        return any(
+            term in text
+            for term in (
+                "instrument",
+                "device",
+                "spectrometer",
+                "probehead",
+                "bruker avance",
+            )
+        )
 
     async def _plan_profile_target_for_evidence_group(
         self,
@@ -2901,7 +2990,7 @@ class ExtractionService:
                 reason="Target write only contained low-level instrument configuration or duplicate values.",
             )
         try:
-            candidate = self._replace_json_pointer(
+            candidate = self._apply_profile_target_write(
                 current_document,
                 target_path,
                 target_value,
@@ -2968,6 +3057,7 @@ class ExtractionService:
             planner_status=target_decision.status,
             planner_reason=target_decision.reason,
             target_value=target_value,
+            merge_status="merged",
             reason=write_document.reason or target_decision.reason,
         )
 
@@ -2999,9 +3089,9 @@ class ExtractionService:
                 planner_status=planner_status,
                 planner_reason=planner_reason,
                 reason=f"{reason_prefix}; no profile-worthy schema-safe value could be derived.",
-            )
+        )
         try:
-            candidate = self._replace_json_pointer(
+            candidate = self._apply_profile_target_write(
                 current_document,
                 target_path,
                 fallback_value,
@@ -3034,8 +3124,100 @@ class ExtractionService:
             planner_status=planner_status,
             planner_reason=planner_reason,
             target_value=fallback_value,
+            merge_status="merged",
             reason=reason_prefix,
         )
+
+    @classmethod
+    def _apply_profile_target_write(
+        cls,
+        document: dict[str, Any],
+        target_path: str,
+        target_value: Any,
+    ) -> dict[str, Any]:
+        if target_path.endswith("/-"):
+            return cls._append_profile_sub_object(
+                document,
+                target_path.removesuffix("/-"),
+                target_value,
+            )
+        return cls._replace_json_pointer(document, target_path, target_value)
+
+    @classmethod
+    def _append_profile_sub_object(
+        cls,
+        document: dict[str, Any],
+        array_path: str,
+        value: Any,
+    ) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            raise ValueError("Schema branch append requires an object value.")
+        updated = cls._clone_json_object(document)
+        array_value = cls._value_at_json_pointer(updated, array_path)
+        if array_value is None:
+            cls._set_json_pointer(updated, array_path, [])
+            array_value = cls._value_at_json_pointer(updated, array_path)
+        if not isinstance(array_value, list):
+            raise ValueError(f"Schema branch target is not an array: {array_path}")
+        key = cls._profile_sub_object_key(value)
+        for index, existing in enumerate(array_value):
+            if isinstance(existing, dict) and cls._profile_sub_object_key(existing) == key:
+                array_value[index] = cls._merge_profile_sub_object(existing, value)
+                return updated
+        array_value.append(cls._clone_json_object(value))
+        return updated
+
+    @classmethod
+    def _set_json_pointer(cls, document: dict[str, Any], path: str, value: Any) -> None:
+        tokens = cls._json_pointer_tokens(path)
+        if not tokens:
+            raise ValueError("Cannot assign root document through pointer helper.")
+        parent: Any = document
+        for token in tokens[:-1]:
+            if isinstance(parent, list) and token.isdigit():
+                parent = parent[int(token)]
+            elif isinstance(parent, dict):
+                parent = parent.setdefault(token, {})
+            else:
+                raise ValueError(f"Cannot create JSON Pointer path: {path}")
+        last = tokens[-1]
+        if isinstance(parent, dict):
+            parent[last] = cls._clone_json_object(value)
+        elif isinstance(parent, list) and last.isdigit():
+            index = int(last)
+            while len(parent) <= index:
+                parent.append({})
+            parent[index] = cls._clone_json_object(value)
+        else:
+            raise ValueError(f"Cannot assign JSON Pointer path: {path}")
+
+    @staticmethod
+    def _profile_sub_object_key(value: dict[str, Any]) -> str:
+        for key in ("id", "title", "name"):
+            item = value.get(key)
+            if isinstance(item, list) and item:
+                return f"{key}:{str(item[0]).strip().lower()}"
+            if isinstance(item, str) and item.strip():
+                return f"{key}:{item.strip().lower()}"
+        return json.dumps(value, sort_keys=True, ensure_ascii=False)
+
+    @classmethod
+    def _merge_profile_sub_object(
+        cls,
+        existing: dict[str, Any],
+        incoming: dict[str, Any],
+    ) -> dict[str, Any]:
+        merged = cls._clone_json_object(existing)
+        for key, value in incoming.items():
+            if cls._is_missing_value(value):
+                continue
+            if key not in merged or cls._is_missing_value(merged[key]):
+                merged[key] = cls._clone_json_object(value)
+            elif isinstance(merged[key], list) and isinstance(value, list):
+                merged[key] = cls._merge_unique_dicts(merged[key], value)
+            elif isinstance(merged[key], dict) and isinstance(value, dict):
+                merged[key] = cls._merge_profile_sub_object(merged[key], value)
+        return merged
 
     @classmethod
     def _coerce_profile_target_value(
@@ -3144,6 +3326,8 @@ class ExtractionService:
                 notes,
                 default_title="NMR data generation activity",
             )
+        if target_path == "/was_generated_by/0/carried_out_by/-":
+            return cls._fallback_agentic_entity_value(notes)
         if target_path == "/is_about_activity/0":
             return cls._fallback_activity_value(
                 current_value,
@@ -3154,6 +3338,50 @@ class ExtractionService:
             return cls._fallback_entity_value(current_value, notes)
         if target_path == "/type/0":
             return cls._fallback_concept_value(current_value, notes)
+        return None
+
+    @classmethod
+    def _fallback_agentic_entity_value(cls, notes: list[EvidenceNote]) -> dict[str, Any] | None:
+        device_notes = [note for note in notes if cls._note_has_device_signal(note)]
+        if not device_notes:
+            return None
+        title = cls._device_title_for_notes(device_notes)
+        if not title:
+            return None
+        slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-") or "device"
+        return {
+            "id": f"device:{slug}",
+            "title": title,
+            "description": "Instrument associated with the data-generating activity.",
+            "rdf_type": {
+                "id": "http://purl.obolibrary.org/obo/OBI_0000968",
+                "title": "device",
+            },
+            "type": {
+                "id": "http://purl.obolibrary.org/obo/OBI_0000968",
+                "title": "device",
+            },
+            "has_qualitative_attribute": [],
+            "has_quantitative_attribute": [],
+            "has_part": [],
+            "part_of": [],
+            "other_identifier": [],
+        }
+
+    @staticmethod
+    def _device_title_for_notes(notes: list[EvidenceNote]) -> str | None:
+        for note in notes:
+            text = f"{note.evidence_text}\n{note.observation}"
+            match = re.search(
+                r"(?:instrument|spectrometer|probehead)\s*(?:used\s*)?(?:is|:|=)\s*<?([^>\r\n;]+)>?",
+                text,
+                re.IGNORECASE,
+            )
+            if match:
+                return match.group(1).strip()
+            match = re.search(r"\b(Bruker\s+Avance[^\r\n;]*)", text, re.IGNORECASE)
+            if match:
+                return match.group(1).strip()
         return None
 
     @classmethod
@@ -3324,7 +3552,7 @@ class ExtractionService:
     def _evidence_group_has_profile_signal(cls, notes: list[EvidenceNote]) -> bool:
         if not notes:
             return False
-        if all(note.profile_worthiness == "low" for note in notes):
+        if not any(note.signal_level == "high" for note in notes):
             return False
         return any(not cls._is_low_level_parameter_note(note) for note in notes)
 
@@ -3778,7 +4006,7 @@ class ExtractionService:
     def _note_has_curatable_profile_signal(cls, note: EvidenceNote) -> bool:
         if cls._is_low_level_parameter_note(note):
             return False
-        if note.profile_worthiness == "low":
+        if note.signal_level != "high":
             return False
         key, value = cls._assignment_from_note(note)
         normalized_key = key.lower().strip("$") if key else ""
@@ -4838,6 +5066,7 @@ class ExtractionService:
                     "has_quantitative_attribute": [],
                     "evaluated_activity": [],
                     "evaluated_entity": [],
+                    "carried_out_by": [],
                 }
             ]
             scaffold_entries.append(
@@ -4857,6 +5086,7 @@ class ExtractionService:
                 "has_quantitative_attribute",
                 "evaluated_activity",
                 "evaluated_entity",
+                "carried_out_by",
             ):
                 scaffold_entries.append(
                     cls._scaffold_entry(
@@ -5131,6 +5361,7 @@ class ExtractionService:
             ("/is_about_entity/0", "EvaluatedEntity", "evaluated entity"),
             ("/is_about_activity/0", "EvaluatedActivity", "evaluated activity"),
             ("/was_generated_by/0", "DataGeneratingActivity", "generating activity"),
+            ("/was_generated_by/0/carried_out_by/-", "AgenticEntity", "generating activity participant"),
         ):
             field = path.strip("/").split("/")[0]
             if field in document:
@@ -5139,6 +5370,8 @@ class ExtractionService:
 
     @staticmethod
     def _target_category_affinities(path: str, target_class: str | None) -> list[str]:
+        if "carried_out_by" in path or target_class == "AgenticEntity":
+            return ["agent_signal"]
         if path.startswith("/creator"):
             return ["agent_signal"]
         if path.startswith("/dataset_distribution"):
@@ -5481,8 +5714,9 @@ class ExtractionService:
         ranking: FileRankingResult,
         ordered_chunks: list[ContentChunk],
         persisted_state: ExtractionRunState | None,
-        profile_identifier: str,
+        profile_identifier: str | None,
         vocab_query_config: ExtractionVocabQueryConfig,
+        chunk_repair_mode: ChunkRepairMode = "deferred",
     ) -> ExtractionRunState:
         preserve_initial_context = (
             persisted_state is not None
@@ -5537,6 +5771,7 @@ class ExtractionService:
 
         return ExtractionRunState(
             profile_identifier=profile_identifier,
+            chunk_repair_mode=chunk_repair_mode,
             chat_model=self.ollama_client.chat_model if self.ollama_client else None,
             vocab_query_config=(
                 persisted_state.vocab_query_config
@@ -5593,6 +5828,11 @@ class ExtractionService:
             curation_ledger=(
                 persisted_state.curation_ledger if persisted_state else []
             ),
+            filtered_evidence_notes=(
+                persisted_state.filtered_evidence_notes
+                if persisted_state
+                else []
+            ),
         )
 
     @staticmethod
@@ -5640,6 +5880,200 @@ class ExtractionService:
         return merge_evidence_contexts(
             cls._completed_chunk_evidence_contexts(state, file_path=file_path)
         )
+
+    def _filtered_completed_evidence_context(
+        self,
+        state: ExtractionRunState,
+        *,
+        file_path: str | None = None,
+    ) -> tuple[EvidenceContext, list[FilteredEvidenceNote]]:
+        context = self._merged_completed_evidence_context(state, file_path=file_path)
+        rank_by_path = {ranked.file_path: ranked.rank for ranked in state.ranked_files}
+        return dedupe_repeated_evidence_notes(
+            context,
+            file_rank_by_path=rank_by_path,
+        )
+
+    def _save_filtered_evidence_notes(
+        self,
+        *,
+        data_package_id: str,
+        state: ExtractionRunState,
+        duplicate_records: list[FilteredEvidenceNote] | None = None,
+    ) -> None:
+        assert self.output_repository is not None
+        records = [*state.filtered_evidence_notes, *(duplicate_records or [])]
+        self.output_repository.save_filtered_evidence_notes(
+            workflow_id=data_package_id,
+            ledger=filtered_evidence_ledger(records),
+        )
+
+    def _validate_and_filter_evidence_context_for_chunk(
+        self,
+        context: EvidenceContext,
+        *,
+        chunk_content: str,
+        chunk_result: ExtractionChunkResult,
+        state: ExtractionRunState,
+    ) -> EvidenceContext:
+        validated_context, dropped_notes = validate_evidence_context_for_chunk(
+            context,
+            chunk_content=chunk_content,
+            file_path=chunk_result.file_path,
+            start_idx=chunk_result.start_idx,
+            end_idx=chunk_result.end_idx,
+        )
+        state.filtered_evidence_notes.extend(
+            FilteredEvidenceNote(
+                reason="evidence_text_unsupported",
+                note=dropped,
+                file_path=dropped.file_path,
+                start_idx=dropped.start_idx,
+                end_idx=dropped.end_idx,
+                chunk_index=chunk_result.chunk_index,
+            )
+            for dropped in dropped_notes
+        )
+        high_signal_context, signal_filtered = filter_evidence_context_by_signal_level(
+            validated_context,
+            chunk_index=chunk_result.chunk_index,
+        )
+        state.filtered_evidence_notes.extend(signal_filtered)
+        return high_signal_context
+
+    async def _repair_chunk_evidence_context(
+        self,
+        *,
+        data_package_id: str,
+        chunk_result: ExtractionChunkResult,
+        failure: MaxRetriesExceeded,
+        chunk_content: str,
+        state: ExtractionRunState,
+        progress: ExtractionRunProgress,
+        warnings: list[str],
+    ) -> None:
+        assert self.ollama_client is not None
+        chunk_result.status = "running"
+        chunk_result.error = None
+        progress.current_chunk = self._chunk_ref(chunk_result)
+        progress.chunk_results = state.chunk_results
+        self._save_run_state(data_package_id, state)
+        self._update_progress(data_package_id, progress)
+
+        try:
+            repair = await repair_structured_output(
+                self.ollama_client,
+                model=self.ollama_client.chat_model,
+                failed_response=failure.failed_response or "",
+                error=failure.last_error or failure,
+                output_type=EvidenceContext,
+                temperature=0.1,
+                think=None,
+                num_ctx=self.ollama_client.max_context_length,
+            )
+        except CompletionError as exc:
+            usage = getattr(exc, "usage", None)
+            if usage is not None:
+                self._record_workflow_token_usage(
+                    data_package_id=data_package_id,
+                    agent_name="chunk_extraction_repair",
+                    usage=usage,
+                )
+            chunk_result.status = "failed"
+            chunk_result.error = str(exc)
+            warnings.append(
+                "Chunk extraction repair failed for "
+                f"{chunk_result.file_path} chunk {chunk_result.chunk_index}: {exc}"
+            )
+            progress.current_chunk = None
+            progress.chunk_results = state.chunk_results
+            progress.warnings = list(warnings)
+            self._save_run_state(data_package_id, state)
+            self._update_progress(data_package_id, progress)
+            return
+
+        self._record_workflow_token_usage(
+            data_package_id=data_package_id,
+            agent_name="chunk_extraction_repair",
+            usage=repair.usage,
+        )
+        validated_context = self._validate_and_filter_evidence_context_for_chunk(
+            repair.output,
+            chunk_content=chunk_content,
+            chunk_result=chunk_result,
+            state=state,
+        )
+        chunk_result.status = "completed"
+        chunk_result.evidence_context = validated_context
+        chunk_result.response_duration_ms = self._usage_float(
+            repair.usage,
+            "response_duration_ms",
+        )
+        chunk_result.context_tokens = self._usage_int(repair.usage, "input_tokens")
+        self._save_run_state(data_package_id, state)
+
+        partial_context = self._save_current_evidence_artifacts(
+            data_package_id=data_package_id,
+            state=state,
+        )
+        progress.processed_chunks = self._completed_chunk_count(state)
+        progress.interim_evidence_context = partial_context
+        progress.current_chunk = None
+        progress.chunk_results = state.chunk_results
+        progress.warnings = list(warnings)
+        self._update_progress(data_package_id, progress)
+
+    def _save_current_evidence_artifacts(
+        self,
+        *,
+        data_package_id: str,
+        state: ExtractionRunState,
+        evidence_context: EvidenceContext | None = None,
+    ) -> EvidenceContext:
+        assert self.output_repository is not None
+        if evidence_context is None:
+            evidence_context, duplicate_records = self._filtered_completed_evidence_context(state)
+        else:
+            rank_by_path = {ranked.file_path: ranked.rank for ranked in state.ranked_files}
+            evidence_context, duplicate_records = dedupe_repeated_evidence_notes(
+                evidence_context,
+                file_rank_by_path=rank_by_path,
+            )
+        self.output_repository.save_evidence_context(
+            workflow_id=data_package_id,
+            evidence_context=evidence_context,
+        )
+        self._save_filtered_evidence_notes(
+            data_package_id=data_package_id,
+            state=state,
+            duplicate_records=duplicate_records,
+        )
+        return evidence_context
+
+    @staticmethod
+    def _filtered_evidence_summary_warnings(
+        state: ExtractionRunState,
+        duplicate_records: list[FilteredEvidenceNote],
+    ) -> list[str]:
+        records = [*state.filtered_evidence_notes, *duplicate_records]
+        if not records:
+            return []
+        summary: dict[str, int] = {}
+        for record in records:
+            summary[record.reason] = summary.get(record.reason, 0) + 1
+        labels = {
+            "evidence_text_unsupported": "unsupported evidence-text notes",
+            "signal_level_filtered": "medium/low signal notes",
+            "duplicate_evidence": "duplicate evidence notes",
+        }
+        return [
+            "Filtered evidence notes: "
+            + ", ".join(
+                f"{count} {labels.get(reason, reason)}"
+                for reason, count in sorted(summary.items())
+            )
+            + "."
+        ]
 
     @staticmethod
     def _evidence_context_with_file_inventory(
@@ -7265,6 +7699,7 @@ class ExtractionService:
             state = self._load_run_state_or_none(data_package_id)
             extraction_progress = extraction_progress or ExtractionRunProgress(
                 stage="completed",
+                chunk_repair_mode=state.chunk_repair_mode if state else "deferred",
                 interim_evidence_context=result.machine_evidence_context,
                 vocab_query_config=state.vocab_query_config if state else None,
                 initial_file_summaries=result.initial_file_summaries,
@@ -7341,6 +7776,7 @@ class ExtractionService:
             state = self._load_run_state_or_none(data_package_id)
             return TaskStatus.COMPLETED, ExtractionRunProgress(
                 stage="completed",
+                chunk_repair_mode=state.chunk_repair_mode if state else "deferred",
                 interim_evidence_context=result.machine_evidence_context,
                 vocab_query_config=state.vocab_query_config if state else None,
                 initial_file_summaries=result.initial_file_summaries,
@@ -7375,6 +7811,7 @@ class ExtractionService:
                 )
             return TaskStatus.UNKNOWN, ExtractionRunProgress(
                 stage=stage,
+                chunk_repair_mode=state.chunk_repair_mode,
                 processed_chunks=self._completed_chunk_count(state),
                 total_chunks=len(state.chunk_results),
                 interim_evidence_context=self._merged_completed_evidence_context_or_none(state),
@@ -7537,6 +7974,21 @@ class ExtractionService:
             active_step = "extraction" if chunking_status == TaskStatus.COMPLETED else "chunking"
             steps[active_step] = TaskStatus.CRASHED
         return steps
+
+    @staticmethod
+    def _profile_identifier_for_stage(
+        *,
+        profile_identifier: str | None,
+        target_stage: ExtractionTargetStage,
+    ) -> str | None:
+        if target_stage == "context":
+            return None
+        normalized_identifier = (profile_identifier or "").strip()
+        if not normalized_identifier:
+            raise ValueError(
+                "A profile identifier is required for profile, grounding, and complete extraction stages."
+            )
+        return normalized_identifier
 
     @staticmethod
     def _result_url(data_package_id: str) -> str:

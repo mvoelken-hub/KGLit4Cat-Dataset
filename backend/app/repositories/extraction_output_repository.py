@@ -8,6 +8,7 @@ from app.domain.extraction import (
     ExtractionOverview,
     ExtractionOverviewStatus,
     EvidenceContext,
+    FilteredEvidenceLedger,
     ExtractionRunResult,
     ExtractionRunState,
     FieldCompletionLedgerRecord,
@@ -25,6 +26,17 @@ class ExtractionOutputRepository(Protocol):
         ...
 
     def load_evidence_context(self, workflow_id: str) -> EvidenceContext:
+        ...
+
+    def save_filtered_evidence_notes(
+        self,
+        *,
+        workflow_id: str,
+        ledger: FilteredEvidenceLedger,
+    ) -> None:
+        ...
+
+    def load_filtered_evidence_notes(self, workflow_id: str) -> FilteredEvidenceLedger:
         ...
 
     def save_extraction_result(

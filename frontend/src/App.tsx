@@ -42,6 +42,7 @@ import type {
   ExtractionChunkResult,
   ExtractionVocabQueryConfig,
   ExtractionVocabQueryRecord,
+  ChunkRepairMode,
   PatchProgress,
   PatchTaskStatus,
   PatchTokenUsage,
@@ -665,7 +666,15 @@ function ExtractionContextOverview({
   const skippedChunks = chunkResults.filter((chunk) => chunk.status === 'skipped').length;
   const processedChunks = completedChunks + skippedChunks;
   const runningChunks = chunkResults.filter((chunk) => chunk.status === 'running').length;
+  const repairPendingChunks = chunkResults.filter((chunk) => chunk.status === 'repair_pending').length;
   const failedChunks = chunkResults.filter((chunk) => chunk.status === 'failed').length;
+  const queueLabel = runningChunks
+    ? `${runningChunks} running`
+    : repairPendingChunks
+      ? `${repairPendingChunks} queued for repair`
+      : failedChunks
+        ? `${failedChunks} failed`
+        : `${Math.max(0, (totalChunks || 0) - processedChunks)} pending`;
 
   if (!filePaths.length) {
     return (
@@ -693,7 +702,7 @@ function ExtractionContextOverview({
         </div>
         <div>
           <span>Queue</span>
-          <strong>{runningChunks ? `${runningChunks} running` : failedChunks ? `${failedChunks} failed` : `${Math.max(0, (totalChunks || 0) - processedChunks)} pending`}</strong>
+          <strong>{queueLabel}</strong>
         </div>
       </div>
 
@@ -719,7 +728,7 @@ function ExtractionContextOverview({
               return result ?? fallbackChunk;
             })
             : persistedChunks;
-          const hasRunningChunk = chunkCards.some((chunk) => chunk.status === 'running' || (currentChunk && chunkResultKey(currentChunk) === chunkResultKey(chunk)));
+          const hasRunningChunk = chunkCards.some((chunk) => chunk.status === 'running' || chunk.status === 'repair_pending' || (currentChunk && chunkResultKey(currentChunk) === chunkResultKey(chunk)));
 
           return (
             <details className="ranked-file" key={filePath} open={hasRunningChunk || fileIndex === 0 ? true : undefined}>
@@ -734,8 +743,9 @@ function ExtractionContextOverview({
               <div className="extraction-chunk-list">
                 {chunkCards.length ? chunkCards.map((chunk) => {
                   const running = chunk.status === 'running' || (currentChunk && chunkResultKey(currentChunk) === chunkResultKey(chunk));
+                  const repairPending = chunk.status === 'repair_pending';
                   const emptyExtractionResult = chunk.status === 'completed' && !evidenceContextHasNotes(chunk.evidence_context);
-                  const statusClass = running ? 'running' : chunk.status === 'completed' ? 'completed' : chunk.status === 'skipped' ? 'skipped' : chunk.status === 'failed' ? 'failed' : 'pending';
+                  const statusClass = running ? 'running' : repairPending ? 'repair-pending' : chunk.status === 'completed' ? 'completed' : chunk.status === 'skipped' ? 'skipped' : chunk.status === 'failed' ? 'failed' : 'pending';
                   const maxContextLength = budget?.max_context_length ?? 0;
                   const reachedTokenLimit = chunk.status === 'completed'
                     && typeof chunk.context_tokens === 'number'
@@ -757,9 +767,10 @@ function ExtractionContextOverview({
                         </div>
                         <span className={`chunk-status ${emptyExtractionResult ? 'empty' : ''}`}>
                           {running && <i aria-hidden="true" />}
-                          {running ? 'extracting' : emptyExtractionResult ? 'empty' : chunk.status}
+                          {running ? 'extracting' : repairPending ? 'queued for repair' : emptyExtractionResult ? 'empty' : chunk.status}
                         </span>
                       </summary>
+                      {repairPending && <p className="muted">{chunk.error || 'Queued for repair after first-pass extraction.'}</p>}
                       {chunk.status === 'failed' && chunk.error && <p className="warning">{chunk.error}</p>}
                       {chunk.status === 'skipped' && chunk.skip_reason && <p className="muted">Skipped: {formatExtractionStage(chunk.skip_reason)}</p>}
                       {(chunk.status === 'completed' || chunk.status === 'skipped' || chunkText) && (
@@ -2849,6 +2860,7 @@ export function App() {
   const [message, setMessage] = useState('Loading workspace.');
   const [railCollapsed, setRailCollapsed] = useState(true);
   const [chunkingDialogOpen, setChunkingDialogOpen] = useState(false);
+  const [chunkRepairMode, setChunkRepairMode] = useState<ChunkRepairMode>('deferred');
   const [curatedEditorOpen, setCuratedEditorOpen] = useState(false);
   const [profileFormOpen, setProfileFormOpen] = useState(false);
   const [profileIdentifier, setProfileIdentifier] = useState('');
@@ -3344,10 +3356,6 @@ export function App() {
     const packageId = selectedPackageId;
     setBusy('context');
     try {
-      if (!selectedProfile) {
-        setMessage('Select a profile before running extraction.');
-        return;
-      }
       if (!hasInitialContextArtifacts) {
         setMessage('Run initial file understanding before chunk extraction.');
         return;
@@ -3358,9 +3366,9 @@ export function App() {
       setPatchProgress(null);
       const response = await runExtraction({
         data_package_id: packageId,
-        profile_identifier: selectedProfile,
         resume: options.resume,
         target_stage: 'context',
+        chunk_repair_mode: chunkRepairMode,
       });
       if (selectedPackageIdRef.current !== packageId) return;
       const nextContext = response.result?.machine_evidence_context || response.progress?.interim_evidence_context;
@@ -3931,7 +3939,7 @@ export function App() {
             description="Collect validated evidence notes from chunks using the initial overview and each file summary as orientation."
           >
               <div className="actions">
-                <button onClick={() => void onContext()} disabled={!selectedPackageId || !selectedProfile || !hasChunks || !hasInitialContextArtifacts || !!busy || isPatching}>
+                <button onClick={() => void onContext()} disabled={!selectedPackageId || !hasChunks || !hasInitialContextArtifacts || !!busy || isPatching}>
                   {isPatching ? 'Extraction running...' : busy === 'context' ? 'Extracting...' : hasPersistedExtractionState || context ? 'Re-extract chunk evidence' : 'Extract chunk evidence'}
                 </button>
                 {isPatching && (
@@ -3944,6 +3952,22 @@ export function App() {
                     Resume extraction
                   </button>
                 )}
+              </div>
+              <div className="advanced-inline-control" aria-label="Chunk repair mode">
+                <span>Repair</span>
+                <div className="segmented-control">
+                  {(['deferred', 'immediate', 'disabled'] as ChunkRepairMode[]).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      className={chunkRepairMode === mode ? 'active' : ''}
+                      onClick={() => setChunkRepairMode(mode)}
+                      disabled={!!busy || isPatching}
+                    >
+                      {mode === 'deferred' ? 'Deferred' : mode === 'immediate' ? 'Immediate' : 'Disabled'}
+                    </button>
+                  ))}
+                </div>
               </div>
               {patchStatus === 'running' && patchProgress && (
                 <div className="patch-progress context-progress">

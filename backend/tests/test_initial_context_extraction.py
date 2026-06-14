@@ -8,6 +8,8 @@ from app.domain.datasources import ContentChunk, DataPackage, FileEntry
 from app.domain.extraction import (
     ChunkingRequiredError,
     DefinedTerm,
+    EvidenceContext,
+    EvidenceNote,
     ExtractionChunkResult,
     ExtractionContext,
     ExtractionFileSummary,
@@ -18,6 +20,7 @@ from app.domain.extraction import (
     ExtractionRunState,
     ExtractionVocabQueryConfig,
     ExtractionVocabQueryRecord,
+    FilteredEvidenceLedger,
     FileRankingResult,
     GroundedExtractionObject,
     ProfilePatchDocument,
@@ -126,6 +129,8 @@ class FakeOutputRepository:
     def __init__(self):
         self.context: ExtractionContext | None = None
         self.contexts: list[ExtractionContext] = []
+        self.evidence_context: EvidenceContext | None = None
+        self.filtered_evidence_notes = FilteredEvidenceLedger()
         self.result: ExtractionRunResult | None = None
         self.run_state: ExtractionRunState | None = None
         self.initial_file_summaries: list[ExtractionFileSummary] = []
@@ -149,6 +154,20 @@ class FakeOutputRepository:
         if self.context is None:
             raise FileNotFoundError
         return self.context
+
+    def save_evidence_context(self, *, workflow_id: str, evidence_context: EvidenceContext):
+        self.evidence_context = evidence_context
+
+    def load_evidence_context(self, workflow_id: str) -> EvidenceContext:
+        if self.evidence_context is None:
+            raise FileNotFoundError
+        return self.evidence_context
+
+    def save_filtered_evidence_notes(self, *, workflow_id: str, ledger: FilteredEvidenceLedger):
+        self.filtered_evidence_notes = ledger
+
+    def load_filtered_evidence_notes(self, workflow_id: str) -> FilteredEvidenceLedger:
+        return self.filtered_evidence_notes
 
     def save_extraction_result(self, *, workflow_id: str, result: ExtractionRunResult):
         self.result = result
@@ -275,6 +294,8 @@ class FakeOutputRepository:
     def clear_extraction_run(self, workflow_id: str):
         self.context = None
         self.contexts = []
+        self.evidence_context = None
+        self.filtered_evidence_notes = FilteredEvidenceLedger()
         self.result = None
         self.run_state = None
         self.initial_file_summaries = []
@@ -293,6 +314,8 @@ class FakeOutputRepository:
     def clear_extraction_downstream(self, workflow_id: str):
         self.context = None
         self.contexts = []
+        self.evidence_context = None
+        self.filtered_evidence_notes = FilteredEvidenceLedger()
         self.result = None
         if self.run_state is not None:
             self.run_state = self.run_state.model_copy(
@@ -1323,30 +1346,52 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         service, task_registry, output_repository = make_service([[make_chunk()]])
 
         async def fake_generate(*_args, **kwargs):
-            self.assertIs(kwargs["output_type"], ExtractionContext)
+            self.assertIs(kwargs["output_type"], EvidenceContext)
             return CompletionResult(
-                output=resource_context("context-only", "Context only resource."),
+                output=EvidenceContext(
+                    notes=[
+                        EvidenceNote(
+                            note_id="context-only",
+                            category="resource_signal",
+                            observation="Context only resource.",
+                            evidence_text="metadata",
+                            signal_level="high",
+                        )
+                    ]
+                ),
                 usage=RunUsage(requests=1),
             )
 
         with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
             result, status = await service.run_extraction(
                 data_package_id="package-id",
-                profile_identifier="profile",
                 target_stage="context",
             )
             self.assertIsNone(result)
             self.assertEqual(status, TaskStatus.RUNNING)
             await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
 
-        self.assertIsNotNone(output_repository.context)
+        self.assertIsNotNone(output_repository.evidence_context)
         self.assertIsNone(output_repository.result)
+        self.assertIsNone(output_repository.run_state.profile_identifier)
         self.assertIsNone(output_repository.run_state.generated_final_draft)
 
         status, progress = await service.get_extraction_progress(data_package_id="package-id")
         self.assertEqual(status, TaskStatus.COMPLETED)
         self.assertIsNotNone(progress)
-        self.assertEqual(progress.stage, "interim_context")
+        self.assertEqual(progress.stage, "interim_evidence_context")
+
+    async def test_profile_target_requires_selected_profile(self):
+        service, _, _ = make_service([[make_chunk()]])
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "profile identifier is required",
+        ):
+            await service.run_extraction(
+                data_package_id="package-id",
+                target_stage="profile",
+            )
 
     async def test_profile_target_resumes_context_and_stops_after_profile_draft(self):
         service, task_registry, output_repository = make_service([[make_chunk()]])
@@ -1546,7 +1591,17 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         call_order: list[str] = []
         chunk_outputs = [
             CompletionResult(
-                output=resource_context("resource-one", "First partial resource."),
+                output=EvidenceContext(
+                    notes=[
+                        EvidenceNote(
+                            note_id="resource-one",
+                            category="resource_signal",
+                            observation="First partial resource.",
+                            evidence_text="sample one",
+                            signal_level="high",
+                        )
+                    ]
+                ),
                 usage=RunUsage(requests=1, input_tokens=20, output_tokens=5),
             ),
             MaxRetriesExceeded(
@@ -1558,7 +1613,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
         async def fake_generate(*_args, **kwargs):
             output_type = kwargs["output_type"]
-            if output_type is ExtractionContext:
+            if output_type is EvidenceContext:
                 call_order.append(f"extract:{len(call_order)}")
                 output = chunk_outputs.pop(0)
                 if isinstance(output, Exception):
@@ -1576,7 +1631,17 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         async def fake_repair(*_args, **_kwargs):
             call_order.append("repair")
             return CompletionResult(
-                output=resource_context("resource-two", "Repaired resource."),
+                output=EvidenceContext(
+                    notes=[
+                        EvidenceNote(
+                            note_id="resource-two",
+                            category="resource_signal",
+                            observation="Repaired resource.",
+                            evidence_text="sample two",
+                            signal_level="high",
+                        )
+                    ]
+                ),
                 usage=RunUsage(requests=1, input_tokens=12, output_tokens=3),
             )
 
@@ -1592,13 +1657,16 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(status, TaskStatus.RUNNING)
             await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
 
+        self.assertEqual(call_order[:3], ["extract:0", "extract:1", "repair"])
+        self.assertIsNotNone(output_repository.run_state)
         self.assertEqual(
-            call_order,
-            ["extract:0", "extract:1", "repair", "profile_patch", "profile_patch", "profile_patch"],
+            [chunk.status for chunk in output_repository.run_state.chunk_results],
+            ["completed", "completed"],
         )
+        self.assertIsNotNone(output_repository.evidence_context)
         self.assertEqual(
-            [resource.identifier for resource in output_repository.context.resources],
-            ["resource-one", "resource-two", "README.md"],
+            [note.note_id for note in output_repository.evidence_context.notes],
+            ["resource-one", "resource-two"],
         )
         self.assertIn("chunk_extraction_repair", output_repository.token_usage)
 
@@ -1608,7 +1676,17 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         )
         chunk_outputs = [
             CompletionResult(
-                output=resource_context("resource-one", "First partial resource."),
+                output=EvidenceContext(
+                    notes=[
+                        EvidenceNote(
+                            note_id="resource-one",
+                            category="resource_signal",
+                            observation="First partial resource.",
+                            evidence_text="sample one",
+                            signal_level="high",
+                        )
+                    ]
+                ),
                 usage=RunUsage(requests=1, input_tokens=20, output_tokens=5),
             ),
             MaxRetriesExceeded(
@@ -1620,7 +1698,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
         async def fake_generate(*_args, **kwargs):
             output_type = kwargs["output_type"]
-            if output_type is ExtractionContext:
+            if output_type is EvidenceContext:
                 output = chunk_outputs.pop(0)
                 if isinstance(output, Exception):
                     raise output
@@ -1657,6 +1735,141 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(output_repository.run_state.chunk_results[1].status, "failed")
         self.assertIn("Chunk extraction repair failed", output_repository.warnings[0])
         self.assertIn("chunk_extraction_repair", output_repository.token_usage)
+
+    async def test_immediate_chunk_repair_runs_before_next_chunk(self):
+        service, task_registry, output_repository = make_service(
+            [[make_chunk(0, "sample one"), make_chunk(1, "sample two")]]
+        )
+        call_order: list[str] = []
+        chunk_outputs = [
+            MaxRetriesExceeded(
+                last_error=OutputParsingError("bad json"),
+                failed_response='{"notes": [',
+                usage=RunUsage(requests=1, input_tokens=21, output_tokens=4),
+            ),
+            CompletionResult(
+                output=EvidenceContext(
+                    notes=[
+                        EvidenceNote(
+                            note_id="resource-two",
+                            category="resource_signal",
+                            observation="Second chunk evidence.",
+                            evidence_text="sample two",
+                            signal_level="high",
+                        )
+                    ]
+                ),
+                usage=RunUsage(requests=1, input_tokens=20, output_tokens=5),
+            ),
+        ]
+
+        async def fake_generate(*_args, **kwargs):
+            if kwargs["output_type"] is EvidenceContext:
+                call_order.append(f"extract:{sum(1 for item in call_order if item.startswith('extract'))}")
+                output = chunk_outputs.pop(0)
+                if isinstance(output, Exception):
+                    raise output
+                return output
+            return CompletionResult(output={"id": "dataset"}, usage=RunUsage(requests=1))
+
+        async def fake_repair(*_args, **_kwargs):
+            call_order.append("repair")
+            return CompletionResult(
+                output=EvidenceContext(
+                    notes=[
+                        EvidenceNote(
+                            note_id="resource-one",
+                            category="resource_signal",
+                            observation="Repaired first chunk evidence.",
+                            evidence_text="sample one",
+                            signal_level="high",
+                        )
+                    ]
+                ),
+                usage=RunUsage(requests=1, input_tokens=12, output_tokens=3),
+            )
+
+        with (
+            patch("app.services.extraction_service.generate_structured", side_effect=fake_generate),
+            patch("app.services.extraction_service.repair_structured_output", side_effect=fake_repair),
+        ):
+            result, status = await service.run_extraction(
+                data_package_id="package-id",
+                profile_identifier="profile",
+                target_stage="context",
+                chunk_repair_mode="immediate",
+            )
+            self.assertIsNone(result)
+            self.assertEqual(status, TaskStatus.RUNNING)
+            await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
+
+        self.assertEqual(call_order, ["extract:0", "repair", "extract:1"])
+        self.assertEqual(output_repository.run_state.chunk_repair_mode, "immediate")
+        self.assertEqual(
+            [chunk.status for chunk in output_repository.run_state.chunk_results],
+            ["completed", "completed"],
+        )
+
+    async def test_disabled_chunk_repair_leaves_first_pass_failure_failed(self):
+        service, task_registry, output_repository = make_service(
+            [[make_chunk(0, "sample one"), make_chunk(1, "sample two")]]
+        )
+        repair_called = False
+        chunk_outputs = [
+            MaxRetriesExceeded(
+                last_error=OutputParsingError("bad json"),
+                failed_response='{"notes": [',
+                usage=RunUsage(requests=1, input_tokens=21, output_tokens=4),
+            ),
+            CompletionResult(
+                output=EvidenceContext(
+                    notes=[
+                        EvidenceNote(
+                            note_id="resource-two",
+                            category="resource_signal",
+                            observation="Second chunk evidence.",
+                            evidence_text="sample two",
+                            signal_level="high",
+                        )
+                    ]
+                ),
+                usage=RunUsage(requests=1, input_tokens=20, output_tokens=5),
+            ),
+        ]
+
+        async def fake_generate(*_args, **kwargs):
+            if kwargs["output_type"] is EvidenceContext:
+                output = chunk_outputs.pop(0)
+                if isinstance(output, Exception):
+                    raise output
+                return output
+            return CompletionResult(output={"id": "dataset"}, usage=RunUsage(requests=1))
+
+        async def fake_repair(*_args, **_kwargs):
+            nonlocal repair_called
+            repair_called = True
+            return CompletionResult(output=EvidenceContext(), usage=RunUsage(requests=1))
+
+        with (
+            patch("app.services.extraction_service.generate_structured", side_effect=fake_generate),
+            patch("app.services.extraction_service.repair_structured_output", side_effect=fake_repair),
+        ):
+            result, status = await service.run_extraction(
+                data_package_id="package-id",
+                profile_identifier="profile",
+                target_stage="context",
+                chunk_repair_mode="disabled",
+            )
+            self.assertIsNone(result)
+            self.assertEqual(status, TaskStatus.RUNNING)
+            await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
+
+        self.assertFalse(repair_called)
+        self.assertEqual(output_repository.run_state.chunk_repair_mode, "disabled")
+        self.assertEqual(
+            [chunk.status for chunk in output_repository.run_state.chunk_results],
+            ["failed", "completed"],
+        )
 
     async def test_resume_reuses_completed_chunk_results(self):
         service, task_registry, output_repository = make_service(

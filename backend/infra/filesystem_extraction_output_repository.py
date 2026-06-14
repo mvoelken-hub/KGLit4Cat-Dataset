@@ -11,6 +11,7 @@ from app.domain.extraction import (
     CurationLedgerRecord,
     DraftValidationResult,
     EvidenceContext,
+    FilteredEvidenceLedger,
     ExtractionFileSummary,
     InitialFileSummaryStatus,
     ExtractionOverview,
@@ -23,6 +24,7 @@ from app.domain.extraction import (
 
 
 EVIDENCE_CONTEXT_FILE = "evidence_context.json"
+FILTERED_EVIDENCE_NOTES_FILE = "filtered_evidence_notes.json"
 EXTRACTION_RESULT_FILE = "extraction_result.json"
 EXTRACTION_RUN_STATE_FILE = "extraction_run_state.json"
 EXTRACTION_WARNINGS_FILE = "extraction_warnings.json"
@@ -59,6 +61,23 @@ class FileSystemExtractionOutputRepository:
                 f"Evidence context output not found for workflow '{workflow_id}'."
             )
         return EvidenceContext.model_validate(self._read_json_file(path))
+
+    def save_filtered_evidence_notes(
+        self,
+        *,
+        workflow_id: str,
+        ledger: FilteredEvidenceLedger,
+    ) -> None:
+        self._write_json_file(
+            self._workflow_dir(workflow_id) / FILTERED_EVIDENCE_NOTES_FILE,
+            ledger.model_dump(mode="json"),
+        )
+
+    def load_filtered_evidence_notes(self, workflow_id: str) -> FilteredEvidenceLedger:
+        path = self._workflow_dir(workflow_id) / FILTERED_EVIDENCE_NOTES_FILE
+        if not path.exists():
+            return FilteredEvidenceLedger()
+        return FilteredEvidenceLedger.model_validate(self._read_json_file(path))
 
     def save_extraction_result(
         self,
@@ -466,6 +485,7 @@ class FileSystemExtractionOutputRepository:
             return
         downstream_files = {
             EVIDENCE_CONTEXT_FILE,
+            FILTERED_EVIDENCE_NOTES_FILE,
             EXTRACTION_RESULT_FILE,
             GENERATED_FINAL_DRAFT_FILE,
             CURATED_DOCUMENT_FILE,

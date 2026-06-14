@@ -161,6 +161,7 @@ h2 { margin: 0; font-size: clamp(1.6rem, 3vw, 2.6rem); letter-spacing: -0.04em; 
 .extraction-chunk-card { border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,0.68); overflow: hidden; }
 .extraction-chunk-card.pending { opacity: 0.58; background: rgba(232,232,232,0.52); }
 .extraction-chunk-card.running { border-color: rgba(202, 116, 6, 0.54); background: rgba(255,248,234,0.76); }
+.extraction-chunk-card.repair-pending { border-color: rgba(202, 116, 6, 0.42); border-style: dashed; background: rgba(255,248,234,0.62); }
 .extraction-chunk-card.completed { border-color: rgba(99, 154, 0, 0.34); }
 .extraction-chunk-card.skipped { border-style: dashed; border-color: rgba(99, 154, 0, 0.34); background: rgba(248, 252, 240, 0.68); }
 .extraction-chunk-card.completed.token-warning { border-color: rgba(202, 116, 6, 0.64); background: rgba(255,248,234,0.72); }
@@ -173,6 +174,11 @@ h2 { margin: 0; font-size: clamp(1.6rem, 3vw, 2.6rem); letter-spacing: -0.04em; 
 .chunk-status { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 0.76rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap; }
 .chunk-status.empty { color: var(--warn); }
 .chunk-status i { width: 13px; height: 13px; border: 2px solid rgba(202,116,6,0.32); border-top-color: var(--warn); border-radius: 50%; animation: spin 780ms linear infinite; }
+.advanced-inline-control { display: flex; align-items: center; gap: 10px; margin-top: 10px; color: var(--muted); font-size: 0.82rem; font-weight: 700; }
+.segmented-control { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: rgba(255,255,255,0.72); }
+.segmented-control button { border: 0; border-right: 1px solid var(--line); border-radius: 0; background: transparent; color: var(--muted); padding: 6px 10px; font-size: 0.78rem; }
+.segmented-control button:last-child { border-right: 0; }
+.segmented-control button.active { background: var(--ink); color: white; }
 .chunk-call-meta { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 10px; }
 .chunk-call-meta span { border: 1px solid var(--line); border-radius: 999px; padding: 0.24rem 0.5rem; color: var(--muted); background: rgba(255,255,255,0.66); font-size: 0.74rem; }
 .extraction-chunk-card.token-warning .chunk-call-meta span.response-generation { background: #fef9ef; }

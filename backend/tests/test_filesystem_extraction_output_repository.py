@@ -6,10 +6,13 @@ from unittest.mock import patch, call
 
 from app.domain.extraction import (
     EvidenceContext,
+    EvidenceNote,
     ExtractionFileSummary,
     ExtractionOverview,
     ExtractionRunResult,
     ExtractionRunState,
+    FilteredEvidenceLedger,
+    FilteredEvidenceNote,
 )
 from infra.filesystem_extraction_output_repository import (
     FileSystemExtractionOutputRepository,
@@ -147,6 +150,38 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
             repo.clear_extraction_run(workflow_id)
 
             self.assertFalse((Path(directory) / workflow_id).exists())
+
+    def test_filtered_evidence_notes_artifact_round_trips_and_clears(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = FileSystemExtractionOutputRepository(Path(directory))
+            workflow_id = "test_workflow"
+            ledger = FilteredEvidenceLedger(
+                filtered_notes=[
+                    FilteredEvidenceNote(
+                        reason="signal_level_filtered",
+                        note=EvidenceNote(
+                            note_id="low",
+                            category="method_signal",
+                            observation="Low-level parameter.",
+                            evidence_text="parameter",
+                            signal_level="low",
+                        ),
+                        file_path="acqu",
+                        chunk_index=3,
+                    )
+                ],
+                summary={"signal_level_filtered": 1},
+            )
+
+            repo.save_filtered_evidence_notes(workflow_id=workflow_id, ledger=ledger)
+
+            loaded = repo.load_filtered_evidence_notes(workflow_id)
+            self.assertEqual(loaded.summary, {"signal_level_filtered": 1})
+            self.assertEqual(loaded.filtered_notes[0].note.signal_level, "low")
+
+            repo.clear_extraction_downstream(workflow_id)
+
+            self.assertEqual(repo.load_filtered_evidence_notes(workflow_id).filtered_notes, [])
 
     def test_failed_replace_keeps_previous_json(self):
         with tempfile.TemporaryDirectory() as directory:

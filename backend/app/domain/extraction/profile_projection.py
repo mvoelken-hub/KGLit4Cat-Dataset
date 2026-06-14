@@ -84,6 +84,10 @@ class ProfileObjectPatchResult(BaseModel):
     planner_status: str | None = None
     planner_reason: str | None = None
     target_value: Any = None
+    schema_queries: list[dict[str, Any]] = Field(default_factory=list)
+    candidate_paths: list[str] = Field(default_factory=list)
+    selected_schema_branch: dict[str, Any] | None = None
+    merge_status: str | None = None
 
 
 def build_profile_target_planner_prompt(
@@ -124,6 +128,11 @@ def build_profile_target_write_prompt(
     file_inventory: list[FileInventoryItem],
     schema_slice: dict[str, Any],
 ) -> str:
+    append_instruction = (
+        "The selected target path ends with '/-', so return exactly one object for one new array item, not the whole array. "
+        if target_path.endswith("/-")
+        else ""
+    )
     return (
         f"Data package id: {data_package_id}\n"
         f"Profile identifier: {profile_identifier}\n"
@@ -141,6 +150,7 @@ def build_profile_target_write_prompt(
         f"{schema_slice}\n\n"
         "Return JSON with status='write' and `value` set to the complete replacement value for the selected target path, "
         "or status='skip' when nothing should be written. Preserve schema-valid existing values unless the evidence clearly improves them. "
+        f"{append_instruction}"
         "Use the current target value as the shape contract: keep arrays as arrays, objects as objects, null-capable object fields as null or objects, and strings as strings."
     )
 

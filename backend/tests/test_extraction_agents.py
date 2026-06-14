@@ -7,11 +7,15 @@ from app.domain.extraction import (
     ChunkMetadata,
     DefinedTerm,
     EvidenceContext,
+    EvidenceChunkContext,
+    EvidenceChunkMetadata,
     EvidenceNote,
     EVIDENCE_CONTEXT_SYSTEM_PROMPT,
     EXTRACTION_CONTEXT_SYSTEM_PROMPT,
     ExtractionContext,
+    ExtractionFileSummary,
     ExtractionNormalization,
+    ExtractionOverview,
     FileContext,
     FileRankingResult,
     GroundedExtractionObject,
@@ -24,7 +28,13 @@ from app.domain.extraction import (
     Resource,
     TracedExtractionObject,
     build_extraction_context_prompt,
+    build_evidence_context_prompt,
+    build_evidence_system_prompt_with_overview,
+    build_schema_branch_index,
+    build_schema_search_query,
+    dedupe_repeated_evidence_notes,
     evidence_text_match_score,
+    filter_evidence_context_by_signal_level,
     build_file_ranking_prompt,
     is_noisy_payload_chunk,
     build_object_grounding_selection_prompt,
@@ -33,12 +43,107 @@ from app.domain.extraction import (
     cap_extraction_context_for_prompt,
     fallback_file_ranking,
     merge_extraction_context_results,
+    normalize_chunk_text_for_evidence_prompt,
+    search_schema_branches,
     validate_evidence_context_for_chunk,
 )
 from app.services.extraction_service import ExtractionService
 
 
 class ExtractionDomainTests(unittest.TestCase):
+    SCHEMA_GUIDED_LINKML = """
+id: https://example.org/test-profile
+name: test_profile
+prefixes:
+  ex:
+    prefix_prefix: ex
+    prefix_reference: https://example.org/
+default_prefix: ex
+default_range: string
+slots:
+  id:
+    range: uriorcurie
+    required: true
+  title:
+    range: string
+    multivalued: true
+  description:
+    range: string
+    multivalued: true
+  was_generated_by:
+    range: DataGeneratingActivity
+    multivalued: true
+    inlined_as_list: true
+  carried_out_by:
+    description: AgenticEntity that played a part in carrying out the activity.
+    range: AgenticEntity
+    recommended: true
+    multivalued: true
+    inlined_as_list: true
+  has_qualitative_attribute:
+    range: QualitativeAttribute
+    multivalued: true
+    inlined_as_list: true
+  has_quantitative_attribute:
+    range: QuantitativeAttribute
+    multivalued: true
+    inlined_as_list: true
+  type:
+    range: DefinedTerm
+  rdf_type:
+    range: DefinedTerm
+    recommended: true
+  value:
+    range: string
+  exact:
+    range: string
+classes:
+  Dataset:
+    slots:
+      - id
+      - title
+      - description
+      - was_generated_by
+  Activity:
+    slots:
+      - id
+      - title
+      - description
+      - carried_out_by
+  DataGeneratingActivity:
+    is_a: Activity
+    description: Activity that generates data.
+  AgenticEntity:
+    description: An entity responsible for an activity.
+    slots:
+      - id
+      - title
+      - description
+      - has_qualitative_attribute
+      - has_quantitative_attribute
+      - type
+      - rdf_type
+  Device:
+    is_a: AgenticEntity
+    description: A material instrument that is designed to perform a function primarily by mechanical or electrical nature.
+    aliases:
+      - hardware instrument
+    exact_mappings:
+      - OBI:0000968
+  DefinedTerm:
+    slots:
+      - id
+      - title
+  QualitativeAttribute:
+    slots:
+      - title
+      - value
+  QuantitativeAttribute:
+    slots:
+      - title
+      - value
+"""
+
     INITIAL_DRAFT_SCHEMA = {
         "type": "object",
         "required": ["id", "title", "description", "was_generated_by"],
@@ -68,6 +173,7 @@ class ExtractionDomainTests(unittest.TestCase):
                     "has_quantitative_attribute": {"type": "array"},
                     "evaluated_activity": {"type": "array"},
                     "evaluated_entity": {"type": "array"},
+                    "carried_out_by": {"type": "array", "items": {"$ref": "#/$defs/AgenticEntity"}},
                 },
             },
             "Agent": {
@@ -117,6 +223,22 @@ class ExtractionDomainTests(unittest.TestCase):
                     "description": {"type": "array", "items": {"type": "string"}},
                     "has_qualitative_attribute": {"type": "array"},
                     "has_quantitative_attribute": {"type": "array"},
+                },
+            },
+            "AgenticEntity": {
+                "type": "object",
+                "required": ["id"],
+                "properties": {
+                    "id": {"type": "string"},
+                    "title": {"type": ["string", "null"]},
+                    "description": {"type": ["string", "null"]},
+                    "rdf_type": {"type": ["object", "null"]},
+                    "type": {"type": ["object", "null"]},
+                    "has_qualitative_attribute": {"type": "array"},
+                    "has_quantitative_attribute": {"type": "array"},
+                    "has_part": {"type": "array"},
+                    "part_of": {"type": "array"},
+                    "other_identifier": {"type": "array"},
                 },
             },
         },
@@ -189,7 +311,7 @@ class ExtractionDomainTests(unittest.TestCase):
         self.assertEqual(dropped, [])
         self.assertTrue(all(note.evidence_match_score >= 0.9 for note in validated.notes))
 
-    def test_evidence_note_tracks_confidence_separately_from_match_score(self):
+    def test_evidence_note_tracks_signal_level_separately_from_match_score(self):
         chunk = "##$PULPROG= <zg30>\n##$SOLVENT= <CDCl3>"
         context = EvidenceContext(
             notes=[
@@ -198,8 +320,7 @@ class ExtractionDomainTests(unittest.TestCase):
                     category="method_signal",
                     observation="Acquisition uses zg30 with CDCl3.",
                     evidence_text="##$PULPROG= <zg30>\n##$SOLVENT= <CDCl3>",
-                    interpretation_confidence="medium",
-                    profile_worthiness="high",
+                    signal_level="high",
                 )
             ]
         )
@@ -214,12 +335,146 @@ class ExtractionDomainTests(unittest.TestCase):
 
         self.assertEqual(dropped, [])
         self.assertEqual(validated.notes[0].evidence_match_score, 1.0)
-        self.assertEqual(validated.notes[0].interpretation_confidence, "medium")
-        self.assertEqual(validated.notes[0].profile_worthiness, "high")
+        self.assertEqual(validated.notes[0].signal_level, "high")
+        self.assertFalse(hasattr(validated.notes[0], "interpretation_confidence"))
+        self.assertFalse(hasattr(validated.notes[0], "profile_worthiness"))
 
     def test_evidence_prompt_discourages_boilerplate_and_requires_quality(self):
         self.assertIn("Suppress repeated boilerplate", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
-        self.assertIn("profile_worthiness", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("signal_level", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+
+    def test_evidence_prompt_prevents_file_headers_from_becoming_dataset_identity(self):
+        self.assertIn("Do not turn file-local headers into dataset-level claims", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("audit file title, not the dataset title", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("generic OWNER", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("Do not infer dataset creation software or instrument identity from a file title alone", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("ORIGIN/manufacturer labels", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn('For evidence_text "##TITLE= Audit trail, TOPSPIN Version 3.2"', EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn('do not write "Dataset was created by TOPSPIN"', EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn('do not write "Instrument/device used is Bruker BioSpin GmbH"', EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertNotIn('Examples: "Dataset title is ..."', EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+
+    def test_evidence_prompt_keeps_method_facts_but_downgrades_numeric_geometry(self):
+        self.assertIn("pulse sequence, observed nucleus, solvent, and observation frequency may be high", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("Numeric spectrum geometry, point counts, axis min/max values", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("processing thresholds", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("SFO7, SFO8, BF*, O*, Nus*, NPOINTS", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn('For evidence_text like "##NPOINTS= 3516"', EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+
+    def test_evidence_chunk_prompt_normalizes_control_characters(self):
+        prompt = build_evidence_context_prompt(
+            EvidenceChunkContext(
+                content='##TITLE= Audit trail, TOPSPIN\t\tVersion 3.2\r\n<path "C:/NMR Data">\x00',
+                metadata=EvidenceChunkMetadata(
+                    start_idx=0,
+                    end_idx=2,
+                    file_path="audita.txt",
+                    data_package_name="package",
+                ),
+            )
+        )
+
+        self.assertIn("##TITLE= Audit trail, TOPSPIN Version 3.2", prompt)
+        self.assertIn('<path "C:/NMR Data">', prompt)
+        self.assertNotIn("\r", prompt)
+        self.assertNotIn("\t", prompt)
+        self.assertNotIn("\x00", prompt)
+
+    def test_evidence_system_prompt_uses_compact_orientation_budget(self):
+        overview = ExtractionOverview(
+            source_file_paths=["audita.txt", "other.txt"],
+            observed_signals=[f"Observed signal {index} " + "x" * 80 for index in range(12)],
+            suggested_interpretations=[
+                f"Suggested interpretation {index} " + "y" * 80
+                for index in range(12)
+            ],
+            conflicts_or_uncertainties=[
+                f"Uncertainty {index} " + "z" * 80
+                for index in range(12)
+            ],
+            file_roles=[
+                {
+                    "file_path": "audita.txt",
+                    "role": "audit trail",
+                    "extraction_notes": ["contains software, owner, and timestamp metadata"],
+                },
+                {
+                    "file_path": "other.txt",
+                    "role": "irrelevant",
+                    "extraction_notes": ["should not dominate chunk prompt"],
+                },
+            ],
+        )
+        summary = ExtractionFileSummary(
+            file_path="audita.txt",
+            rank=2,
+            status="summarized",
+            data_format="JCAMP-DX",
+            data_characteristics=["audit trail", "metadata", "software version"],
+            metadata_signals=["TOPSPIN 3.2", "Bruker BioSpin GmbH", "owner nmr"],
+            detected_identifiers=["TOPSPIN 3.2", "CZC412575Q"],
+        )
+
+        prompt = build_evidence_system_prompt_with_overview(
+            base_prompt=EVIDENCE_CONTEXT_SYSTEM_PROMPT,
+            overview=overview,
+            overview_status="structured",
+            file_summary=summary,
+            max_overview_chars=700,
+            max_file_summary_chars=500,
+        )
+
+        self.assertLess(len(prompt), len(EVIDENCE_CONTEXT_SYSTEM_PROMPT) + 1500)
+        self.assertIn("Current file role", prompt)
+        self.assertIn("audita.txt: audit trail", prompt)
+        self.assertNotIn("other.txt: irrelevant", prompt)
+
+    def test_signal_filter_keeps_only_high_level_evidence(self):
+        context = EvidenceContext(
+            notes=[
+                EvidenceNote(note_id="high", category="agent_signal", observation="Instrument/device used is Bruker Avance.", evidence_text="Bruker Avance", signal_level="high"),
+                EvidenceNote(note_id="medium", category="method_signal", observation="Technical acquisition context is present.", evidence_text="technical context", signal_level="medium"),
+                EvidenceNote(note_id="low", category="method_signal", observation="Low-level parameter setting.", evidence_text="parameter setting", signal_level="low"),
+            ]
+        )
+
+        filtered, dropped = filter_evidence_context_by_signal_level(context, chunk_index=2)
+
+        self.assertEqual([note.note_id for note in filtered.notes], ["high"])
+        self.assertEqual([record.reason for record in dropped], ["signal_level_filtered", "signal_level_filtered"])
+        self.assertEqual([record.chunk_index for record in dropped], [2, 2])
+
+    def test_repeated_evidence_dedupe_keeps_best_representative(self):
+        context = EvidenceContext(
+            notes=[
+                EvidenceNote(
+                    note_id="secondary",
+                    category="resource_signal",
+                    observation="Format.",
+                    evidence_text="##JCAMP-DX=5.00",
+                    file_path="rank2.jdx",
+                    signal_level="high",
+                ),
+                EvidenceNote(
+                    note_id="primary",
+                    category="resource_signal",
+                    observation="JCAMP-DX file syntax format version 5.00 is declared.",
+                    evidence_text="##JCAMP-DX=5.00",
+                    file_path="rank1.jdx",
+                    signal_level="high",
+                ),
+            ]
+        )
+
+        deduped, dropped = dedupe_repeated_evidence_notes(
+            context,
+            file_rank_by_path={"rank1.jdx": 1, "rank2.jdx": 2},
+        )
+
+        self.assertEqual([note.note_id for note in deduped.notes], ["primary"])
+        self.assertEqual(len(dropped), 1)
+        self.assertEqual(dropped[0].reason, "duplicate_evidence")
+        self.assertEqual(dropped[0].duplicate_representative_id, "primary")
 
     def test_evidence_validation_rejects_synthetic_paraphrase(self):
         chunk = "##TITLE= Real JCAMP record\n##XUNITS= 1/CM"
@@ -934,6 +1189,48 @@ class ExtractionDomainTests(unittest.TestCase):
         self.assertEqual(by_path["/dataset_distribution/0"]["scaffold_status"], "unfilled")
         self.assertIn("resource_signal", by_path["/dataset_distribution/0"]["category_affinities"])
         self.assertIn("current_value", by_path["/was_generated_by/0"])
+        self.assertIn("/was_generated_by/0/carried_out_by/-", by_path)
+
+    def test_schema_branch_index_exposes_device_candidate_for_carried_out_by(self):
+        branches = build_schema_branch_index(
+            self.SCHEMA_GUIDED_LINKML,
+            target_class="Dataset",
+            max_depth=3,
+        )
+        carried_out_by = next(
+            branch
+            for branch in branches
+            if branch.path == "/was_generated_by/0/carried_out_by/-"
+        )
+
+        self.assertEqual(carried_out_by.range_class, "AgenticEntity")
+        device = next(
+            candidate
+            for candidate in carried_out_by.subclass_candidates
+            if candidate.class_name == "Device"
+        )
+        self.assertIn("hardware instrument", device.aliases)
+        self.assertIn("OBI:0000968", device.exact_mappings)
+
+    def test_schema_search_prefers_device_participant_branch(self):
+        note = EvidenceNote(
+            note_id="instrument",
+            category="resource_signal",
+            observation="Instrument used is Bruker Avance 500 MHz.",
+            evidence_text="instrument: Bruker Avance 500 MHz",
+        )
+        branches = build_schema_branch_index(
+            self.SCHEMA_GUIDED_LINKML,
+            target_class="Dataset",
+            max_depth=3,
+        )
+        result = search_schema_branches(
+            branches,
+            build_schema_search_query([note], max_depth=3),
+            top_k=3,
+        )
+
+        self.assertEqual(result.candidates[0].path, "/was_generated_by/0/carried_out_by/-")
 
     def test_target_object_rewrite_replaces_only_selected_target(self):
         document, _scaffold = ExtractionService._initial_profile_document(
@@ -992,6 +1289,29 @@ class ExtractionDomainTests(unittest.TestCase):
         self.assertEqual(value["title"], ["Primary JCAMP-DX distribution"])
         self.assertEqual(value["description"], ["JCAMP-DX spectral data files."])
         self.assertIsNone(value["format"])
+
+    def test_instrument_note_uses_free_text_observation_without_facets(self):
+        note = EvidenceNote(
+            note_id="instrument",
+            category="agent_signal",
+            observation="Instrument/device used is Bruker Avance 500 MHz.",
+            evidence_text="instrument: Bruker Avance 500 MHz",
+        )
+
+        self.assertEqual(note.category, "agent_signal")
+        self.assertIn("Instrument/device", note.observation)
+        self.assertFalse(hasattr(note, "facets"))
+
+    def test_low_level_parameters_only_get_parameter_schema_hint(self):
+        note = EvidenceNote(
+            note_id="td_setting",
+            category="method_signal",
+            observation="Low-level parameter TD is set to 65536.",
+            evidence_text="##$TD= 65536",
+        )
+        query = build_schema_search_query([note], max_depth=3)
+
+        self.assertEqual(query.semantic_hints, ["parameter_setting"])
 
     def test_deterministic_keyword_fallback_skips_raw_parameter_settings(self):
         notes = [
@@ -1062,6 +1382,7 @@ class ExtractionDomainTests(unittest.TestCase):
                     category="method_signal",
                     observation="Pulse program is zg30.",
                     evidence_text="##$PULPROG= <zg30>",
+                    signal_level="high",
                 )
             ],
         )
@@ -1081,6 +1402,7 @@ class ExtractionDomainTests(unittest.TestCase):
                     observation="The file is a JCAMP-DX NMR spectral export.",
                     evidence_text="##TITLE= JCAMP-DX NMR spectrum",
                     file_path="10.edit.jdx",
+                    signal_level="high",
                 )
             ],
         )
@@ -1089,6 +1411,58 @@ class ExtractionDomainTests(unittest.TestCase):
         self.assertIn({"title": "pulprog", "value": "zg30"}, method_value["has_qualitative_attribute"])
         self.assertIsNotNone(distribution_value)
         self.assertIn("Primary NMR data distribution", distribution_value["title"])
+
+    def test_device_fallback_writes_agentic_entity_not_qualitative_attribute(self):
+        note = EvidenceNote(
+            note_id="instrument",
+            category="resource_signal",
+            observation="Instrument used is Bruker Avance 500 MHz.",
+            evidence_text="instrument: Bruker Avance 500 MHz",
+            signal_level="high",
+        )
+        value = ExtractionService._fallback_profile_target_value(
+            target_path="/was_generated_by/0/carried_out_by/-",
+            current_value=None,
+            notes=[note],
+        )
+
+        self.assertIsNotNone(value)
+        self.assertEqual(value["title"], "Bruker Avance 500 MHz")
+        self.assertEqual(value["rdf_type"]["id"], "http://purl.obolibrary.org/obo/OBI_0000968")
+
+    def test_schema_branch_merge_appends_and_dedupes_device_participants(self):
+        document, _scaffold = ExtractionService._initial_profile_document(
+            data_package_id="package-id",
+            evidence_context=EvidenceContext(notes=[]),
+            validation_schema=self.INITIAL_DRAFT_SCHEMA,
+        )
+        device = {
+            "id": "device:bruker-avance-500-mhz",
+            "title": "Bruker Avance 500 MHz",
+            "description": "Instrument associated with the data-generating activity.",
+            "rdf_type": {"id": "http://purl.obolibrary.org/obo/OBI_0000968", "title": "device"},
+            "type": {"id": "http://purl.obolibrary.org/obo/OBI_0000968", "title": "device"},
+            "has_qualitative_attribute": [],
+            "has_quantitative_attribute": [],
+            "has_part": [],
+            "part_of": [],
+            "other_identifier": [],
+        }
+
+        updated = ExtractionService._apply_profile_target_write(
+            document,
+            "/was_generated_by/0/carried_out_by/-",
+            device,
+        )
+        updated_again = ExtractionService._apply_profile_target_write(
+            updated,
+            "/was_generated_by/0/carried_out_by/-",
+            device,
+        )
+
+        self.assertEqual(len(updated_again["was_generated_by"][0]["carried_out_by"]), 1)
+        self.assertEqual(updated_again["was_generated_by"][0]["has_qualitative_attribute"], [])
+        Draft202012Validator(self.INITIAL_DRAFT_SCHEMA).validate(updated_again)
 
     def test_final_profile_cleanup_removes_parameter_noise_but_keeps_nmr_signals(self):
         document = {
@@ -1181,21 +1555,21 @@ class ExtractionDomainTests(unittest.TestCase):
                     category="resource_signal",
                     observation="Dataset name is 1H NMR",
                     evidence_text="dataset name: 1H NMR",
-                    profile_worthiness="high",
+                    signal_level="high",
                 ),
                 EvidenceNote(
                     note_id="bfreq_setting",
                     category="method_signal",
                     observation="BFREQ parameter is set to 500.13.",
                     evidence_text="##$BFREQ= 500.13",
-                    profile_worthiness="high",
+                    signal_level="high",
                 ),
                 EvidenceNote(
                     note_id="blocks",
                     category="resource_signal",
                     observation="single block structure",
                     evidence_text="##BLOCKS=1",
-                    profile_worthiness="high",
+                    signal_level="high",
                 ),
             ]
         )
@@ -1224,7 +1598,7 @@ class ExtractionDomainTests(unittest.TestCase):
                     file_path="10.edit.jdx",
                     start_idx=10,
                     end_idx=20,
-                    profile_worthiness="high",
+                    signal_level="high",
                 ),
                 EvidenceNote(
                     note_id="jcamp_dx_version_2",
@@ -1234,7 +1608,7 @@ class ExtractionDomainTests(unittest.TestCase):
                     file_path="10.edit.jdx",
                     start_idx=10,
                     end_idx=20,
-                    profile_worthiness="high",
+                    signal_level="high",
                 ),
             ]
         )
@@ -1270,6 +1644,7 @@ class ExtractionDomainTests(unittest.TestCase):
                     file_path="10/acqus",
                     start_idx=1,
                     end_idx=2,
+                    signal_level="high",
                 )
             ]
         )

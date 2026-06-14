@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 from app.core.task_registry import TaskStatus
 from app.domain.extraction import (
+    ChunkRepairMode,
     CompleteWorkflowProgress,
     ExtractionRunProgress,
     ExtractionRunResult,
@@ -14,9 +15,12 @@ from app.api.v1.schemas.datasources import DataPackageResponse
 
 class ExtractionRunRequest(BaseModel):
     data_package_id: str = Field(..., description="ID of the uploaded data package.")
-    profile_identifier: str = Field(
-        ...,
-        description="Identifier of the registered extraction profile.",
+    profile_identifier: str | None = Field(
+        default=None,
+        description=(
+            "Identifier of the registered extraction profile. Required for profile, "
+            "grounding, and complete runs; omitted for profile-agnostic context runs."
+        ),
     )
     qualitative_vocab_identifiers: list[str] | None = Field(
         default=None,
@@ -29,6 +33,10 @@ class ExtractionRunRequest(BaseModel):
     target_stage: Literal["context", "profile", "grounding", "complete"] = Field(
         default="complete",
         description="Workflow stage to run up to.",
+    )
+    chunk_repair_mode: ChunkRepairMode = Field(
+        default="deferred",
+        description="How to handle repairable chunk structured-output failures.",
     )
 
 
