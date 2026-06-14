@@ -1,3 +1,4 @@
+import re
 import unittest
 
 from jsonschema import Draft202012Validator
@@ -21,6 +22,7 @@ from app.domain.extraction import (
     GroundedExtractionObject,
     ProfileObjectPatchResult,
     ProfileTargetWriteDocument,
+    PromptTokenBudgeter,
     QualitativeAttribute,
     QuantitativeAttribute,
     RankedFile,
@@ -343,60 +345,101 @@ classes:
         self.assertIn("Suppress repeated boilerplate", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
         self.assertIn("signal_level", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
 
-    def test_evidence_prompt_prevents_file_headers_from_becoming_dataset_identity(self):
-        self.assertIn("Do not turn file-local headers into dataset-level claims", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
-        self.assertIn("audit file title, not the dataset title", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
-        self.assertIn("generic OWNER", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
-        self.assertIn("Do not infer dataset creation software or instrument identity from a file title alone", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
-        self.assertIn("ORIGIN/manufacturer labels", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
-        self.assertIn('For evidence_text "##TITLE= Audit trail, TOPSPIN Version 3.2"', EVIDENCE_CONTEXT_SYSTEM_PROMPT)
-        self.assertIn('do not write "Dataset was created by TOPSPIN"', EVIDENCE_CONTEXT_SYSTEM_PROMPT)
-        self.assertIn('do not write "Instrument/device used is Bruker BioSpin GmbH"', EVIDENCE_CONTEXT_SYSTEM_PROMPT)
-        self.assertNotIn('Examples: "Dataset title is ..."', EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+    def test_evidence_prompt_prevents_file_local_signals_from_becoming_dataset_identity(self):
+        self.assertIn("Do not promote a file-local header", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("whole dataset, package, study, or submission", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("file/resource-local", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("Generic owner, origin, vendor, manufacturer, software, or organization labels", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("named devices", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertNotIn("TOPSPIN", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertNotIn("Bruker", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertNotIn("NPOINTS", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertNotIn("Counterexamples", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
 
     def test_evidence_prompt_keeps_method_facts_but_downgrades_numeric_geometry(self):
         self.assertIn("pulse sequence, observed nucleus, solvent, and observation frequency may be high", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
-        self.assertIn("Numeric spectrum geometry, point counts, axis min/max values", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
-        self.assertIn("processing thresholds", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
-        self.assertIn("SFO7, SFO8, BF*, O*, Nus*, NPOINTS", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
-        self.assertIn('For evidence_text like "##NPOINTS= 3516"', EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("Numeric geometry, point counts, axis/range min/max values", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("thresholds", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("Numbered, channel-specific, namespace-prefixed, or code-like parameters", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
 
     def test_evidence_chunk_prompt_normalizes_control_characters(self):
         prompt = build_evidence_context_prompt(
             EvidenceChunkContext(
-                content='##TITLE= Audit trail, TOPSPIN\t\tVersion 3.2\r\n<path "C:/NMR Data">\x00',
+                content='title: local resource\t\tlabel\r\n<path "C:/Research Data">\x00',
                 metadata=EvidenceChunkMetadata(
                     start_idx=0,
                     end_idx=2,
-                    file_path="audita.txt",
+                    file_path="metadata.txt",
                     data_package_name="package",
                 ),
             )
         )
 
-        self.assertIn("##TITLE= Audit trail, TOPSPIN Version 3.2", prompt)
-        self.assertIn('<path "C:/NMR Data">', prompt)
+        self.assertIn("title: local resource label", prompt)
+        self.assertIn('<path "C:/Research Data">', prompt)
         self.assertNotIn("\r", prompt)
         self.assertNotIn("\t", prompt)
         self.assertNotIn("\x00", prompt)
 
-    def test_evidence_system_prompt_uses_compact_orientation_budget(self):
+    def test_prompt_token_budgeter_truncates_by_token_offsets(self):
+        class FakeEncoding:
+            def __init__(self, text: str):
+                matches = list(re.finditer(r"\S+", text))
+                self.ids = list(range(len(matches)))
+                self.offsets = [(match.start(), match.end()) for match in matches]
+
+        class FakeTokenizer:
+            def encode(self, text: str, add_special_tokens: bool = False):
+                return FakeEncoding(text)
+
+        budgeter = PromptTokenBudgeter(tokenizer=FakeTokenizer())
+
+        truncated = budgeter.truncate(
+            "alpha beta gamma delta epsilon",
+            max_tokens=4,
+        )
+
+        self.assertEqual(truncated, "alpha beta\n[orientation truncated]")
+        self.assertLessEqual(budgeter.count(truncated), 4)
+
+    def test_prompt_token_budgeter_falls_back_to_estimated_tokens(self):
+        budgeter = PromptTokenBudgeter.from_tokenizer_source("")
+
+        truncated = budgeter.truncate("x" * 200, max_tokens=20)
+
+        self.assertTrue(budgeter.uses_fallback)
+        self.assertIsNotNone(budgeter.fallback_reason)
+        self.assertIn("[orientation truncated]", truncated)
+        self.assertLessEqual(budgeter.count(truncated), 20)
+
+    def test_evidence_system_prompt_uses_token_orientation_budget(self):
+        class FakeEncoding:
+            def __init__(self, text: str):
+                matches = list(re.finditer(r"\S+", text))
+                self.ids = list(range(len(matches)))
+                self.offsets = [(match.start(), match.end()) for match in matches]
+
+        class FakeTokenizer:
+            def encode(self, text: str, add_special_tokens: bool = False):
+                return FakeEncoding(text)
+
+        budgeter = PromptTokenBudgeter(tokenizer=FakeTokenizer())
         overview = ExtractionOverview(
-            source_file_paths=["audita.txt", "other.txt"],
-            observed_signals=[f"Observed signal {index} " + "x" * 80 for index in range(12)],
+            source_file_paths=["metadata.txt", "other.txt"],
+            observed_signals=[f"Observed signal {index} " + "x " * 80 for index in range(12)],
             suggested_interpretations=[
-                f"Suggested interpretation {index} " + "y" * 80
+                f"Suggested interpretation {index} " + "y " * 80
                 for index in range(12)
             ],
             conflicts_or_uncertainties=[
-                f"Uncertainty {index} " + "z" * 80
+                f"Uncertainty {index} " + "z " * 80
                 for index in range(12)
             ],
             file_roles=[
                 {
-                    "file_path": "audita.txt",
-                    "role": "audit trail",
-                    "extraction_notes": ["contains software, owner, and timestamp metadata"],
+                    "file_path": "metadata.txt",
+                    "role": "resource metadata",
+                    "extraction_notes": ["contains file-local labels and timestamp metadata"],
                 },
                 {
                     "file_path": "other.txt",
@@ -406,13 +449,13 @@ classes:
             ],
         )
         summary = ExtractionFileSummary(
-            file_path="audita.txt",
+            file_path="metadata.txt",
             rank=2,
             status="summarized",
-            data_format="JCAMP-DX",
-            data_characteristics=["audit trail", "metadata", "software version"],
-            metadata_signals=["TOPSPIN 3.2", "Bruker BioSpin GmbH", "owner nmr"],
-            detected_identifiers=["TOPSPIN 3.2", "CZC412575Q"],
+            data_format="text",
+            data_characteristics=["metadata", "file-local labels"],
+            metadata_signals=["local title", "generic owner", "timestamp"],
+            detected_identifiers=["resource-id"],
         )
 
         prompt = build_evidence_system_prompt_with_overview(
@@ -420,14 +463,20 @@ classes:
             overview=overview,
             overview_status="structured",
             file_summary=summary,
-            max_overview_chars=700,
-            max_file_summary_chars=500,
+            token_budgeter=budgeter,
+            max_overview_tokens=60,
+            max_file_summary_tokens=40,
         )
 
-        self.assertLess(len(prompt), len(EVIDENCE_CONTEXT_SYSTEM_PROMPT) + 1500)
         self.assertIn("Current file role", prompt)
-        self.assertIn("audita.txt: audit trail", prompt)
+        self.assertIn("metadata.txt: resource metadata", prompt)
         self.assertNotIn("other.txt: irrelevant", prompt)
+        orientation = prompt.removeprefix(EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("[orientation truncated]", orientation)
+        self.assertLessEqual(
+            budgeter.count(orientation),
+            110,
+        )
 
     def test_signal_filter_keeps_only_high_level_evidence(self):
         context = EvidenceContext(

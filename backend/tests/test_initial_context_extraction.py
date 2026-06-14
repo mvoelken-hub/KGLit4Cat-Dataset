@@ -23,6 +23,7 @@ from app.domain.extraction import (
     FilteredEvidenceLedger,
     FileRankingResult,
     GroundedExtractionObject,
+    PromptTokenBudgeter,
     ProfilePatchDocument,
     RankedFile,
     Resource,
@@ -1808,6 +1809,82 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [chunk.status for chunk in output_repository.run_state.chunk_results],
             ["completed", "completed"],
+        )
+
+    async def test_context_extraction_uses_configured_prompt_tokenizer_budget(self):
+        class FakeEncoding:
+            def __init__(self, text: str):
+                parts = text.split()
+                self.ids = list(range(len(parts)))
+                offset = 0
+                offsets = []
+                for part in parts:
+                    start = text.find(part, offset)
+                    end = start + len(part)
+                    offsets.append((start, end))
+                    offset = end
+                self.offsets = offsets
+
+        class FakeTokenizer:
+            def encode(self, text: str, add_special_tokens: bool = False):
+                return FakeEncoding(text)
+
+        service, task_registry, output_repository = make_service(
+            [[make_chunk(0, "sample one")]]
+        )
+        service.settings.ollama_chat_tokenizer = "example/tokenizer"
+        assert output_repository.run_state is not None
+        output_repository.run_state.initial_extraction_overview = ExtractionOverview(
+            source_fingerprint="overview",
+            source_file_paths=["README.md"],
+            observed_signals=["signal " + "word " * 500],
+        )
+        budgeter = PromptTokenBudgeter(tokenizer=FakeTokenizer())
+        captured_system_prompts: list[str] = []
+
+        async def fake_generate(*_args, **kwargs):
+            if kwargs["output_type"] is EvidenceContext:
+                captured_system_prompts.append(kwargs["system"])
+                return CompletionResult(
+                    output=EvidenceContext(
+                        notes=[
+                            EvidenceNote(
+                                note_id="resource-one",
+                                category="resource_signal",
+                                observation="First chunk evidence.",
+                                evidence_text="sample one",
+                                signal_level="high",
+                            )
+                        ]
+                    ),
+                    usage=RunUsage(requests=1, input_tokens=20, output_tokens=5),
+                )
+            return CompletionResult(output={"id": "dataset"}, usage=RunUsage(requests=1))
+
+        with (
+            patch("app.services.extraction_service.generate_structured", side_effect=fake_generate),
+            patch(
+                "app.services.extraction_service.PromptTokenBudgeter.from_tokenizer_source",
+                return_value=budgeter,
+            ) as tokenizer_loader,
+        ):
+            result, status = await service.run_extraction(
+                data_package_id="package-id",
+                profile_identifier="profile",
+                target_stage="context",
+            )
+            self.assertIsNone(result)
+            self.assertEqual(status, TaskStatus.RUNNING)
+            await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
+
+        tokenizer_loader.assert_called_once_with("example/tokenizer")
+        self.assertEqual(len(captured_system_prompts), 1)
+        self.assertIn("[orientation truncated]", captured_system_prompts[0])
+        self.assertFalse(
+            any(
+                "conservative estimates" in warning
+                for warning in output_repository.warnings
+            )
         )
 
     async def test_disabled_chunk_repair_leaves_first_pass_failure_failed(self):

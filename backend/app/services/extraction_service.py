@@ -70,6 +70,7 @@ from app.domain.extraction import (
     ProfileFieldNormalization,
     ProfileObjectPatchResult,
     ProfilePatchDocument,
+    PromptTokenBudgeter,
     SchemaBranch,
     ProfileTargetWriteDocument,
     ProfileTargetDecision,
@@ -1266,6 +1267,17 @@ class ExtractionService:
 
         progress.stage = "chunk_extraction"
         chunk_repairs: list[tuple[ExtractionChunkResult, MaxRetriesExceeded]] = []
+        evidence_prompt_budgeter = PromptTokenBudgeter.from_tokenizer_source(
+            getattr(self.settings, "ollama_chat_tokenizer", "")
+        )
+        evidence_prompt_budget_warning = (
+            (
+                "Evidence prompt token budgeting is using conservative estimates: "
+                + evidence_prompt_budgeter.fallback_reason
+            )
+            if evidence_prompt_budgeter.fallback_reason
+            else None
+        )
 
         try:
             for chunk_result, chunk in zip(state.chunk_results, ordered_chunks):
@@ -1305,6 +1317,7 @@ class ExtractionService:
                                 state,
                                 file_path=chunk.file_path,
                             ),
+                            token_budgeter=evidence_prompt_budgeter,
                         ),
                         prompt=build_evidence_context_prompt(
                             EvidenceChunkContext(
@@ -1502,6 +1515,11 @@ class ExtractionService:
             state=state,
             duplicate_records=duplicate_records,
         )
+        if (
+            evidence_prompt_budget_warning
+            and evidence_prompt_budget_warning not in warnings
+        ):
+            warnings.append(evidence_prompt_budget_warning)
         warnings.extend(self._filtered_evidence_summary_warnings(state, duplicate_records))
 
         if target_stage == "context":

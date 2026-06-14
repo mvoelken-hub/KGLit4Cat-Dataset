@@ -7,6 +7,7 @@ from app.core.task_registry import TaskRegistry, TaskInfo, TaskType, TaskStatus
 
 from app.domain.datasources import DataPackage, FileEntry, ContentChunk, FileEntryNotFoundError
 from app.domain.datasources.text_quality import TextQualityConfig, classify_text_line
+from app.domain.token_budget import PromptTokenBudgeter
 from app.repositories.datasource_blob_repository import DataSourceBlobRepository
 
 class DataSourceService:
@@ -226,6 +227,13 @@ class DataSourceService:
             if embedding_num_gpu is not None
             else self.ollama_client.get_embeddings
         )
+        token_budgeter = PromptTokenBudgeter.from_tokenizer_source(
+            getattr(self.settings, "ollama_chat_tokenizer", "")
+        )
+        max_tokens_per_chunk = max(
+            1,
+            int(getattr(self.settings, "max_context_length", 8192) * 0.5),
+        )
         
         for file_entry in files:
             file_protected = protected_line_indices.get(file_entry.file_path) if protected_line_indices else None
@@ -238,5 +246,7 @@ class DataSourceService:
                 embedding_batch_size=self.settings.embedding_batch_size,
                 semantic_chunking_threshold=semantic_chunking_threshold,
                 protected_line_indices=file_protected,
+                max_tokens_per_chunk=max_tokens_per_chunk,
+                token_budgeter=token_budgeter,
             )
             self.blob_repository.save_content_chunks(content_chunks)

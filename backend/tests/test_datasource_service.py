@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 from app.core.task_registry import TaskStatus
 from app.domain.datasources import ContentChunk, DataPackage, FileEntry
@@ -86,6 +87,8 @@ class FakeTaskRegistry:
 
 class FakeSettings:
     embedding_batch_size = 32
+    max_context_length = 4096
+    ollama_chat_tokenizer = ""
 
 
 class DataSourceServiceTests(unittest.IsolatedAsyncioTestCase):
@@ -201,6 +204,34 @@ class DataSourceServiceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(blob_repository.saved_chunks)
         self.assertEqual(set(ollama_client.embedding_num_gpu_values), {0})
+
+    async def test_chunking_task_caps_chunks_to_half_context_window(self):
+        ollama_client = FakeOllamaClient()
+        service, blob_repository, _ = self.make_service(
+            chunks_by_file_path={},
+            task_status=None,
+            ollama_client=ollama_client,
+        )
+        service.settings.max_context_length = 3000
+        captured: dict[str, object] = {}
+
+        async def fake_create_chunks(**kwargs):
+            captured.update(kwargs)
+            return [make_chunk()]
+
+        with patch.object(
+            ContentChunk,
+            "create_chunks_for_file_entry",
+            side_effect=fake_create_chunks,
+        ):
+            await service._run_chunking_task(
+                data_package_id="package-id",
+                buffer_window_size=1,
+                semantic_chunking_threshold=95.0,
+            )
+
+        self.assertEqual(captured["max_tokens_per_chunk"], 1500)
+        self.assertIn("token_budgeter", captured)
 
     async def test_chunk_request_replace_existing_starts_task_and_deletes_chunks(self):
         chunk = make_chunk()

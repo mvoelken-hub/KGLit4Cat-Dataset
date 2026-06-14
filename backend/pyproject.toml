@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "charset-normalizer>=3.4.7",
     "fastapi[standard]>=0.136.1",
+    "huggingface-hub>=1.19.0",
     "jsonpatch>=1.33",
     "jsonschema>=4.26.0",
     "linkml>=1.11.0",
@@ -19,6 +20,7 @@ dependencies = [
     "pyyaml>=6.0.3",
     "rdflib>=7.6.0",
     "rdflib-neo4j>=1.1",
+    "tokenizers>=0.23.1",
     "typer>=0.15.0",
 ]
 

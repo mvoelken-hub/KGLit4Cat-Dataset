@@ -1,4 +1,3 @@
-import math
 from typing import Awaitable, Callable
 import numpy as np
 from hashlib import sha256
@@ -21,12 +20,10 @@ from app.domain.datasources.errors import (
     EmbeddingDistanceCalcError
 )
 
-_ESTIMATED_CHARS_PER_TOKEN = 4
+from app.domain.token_budget import PromptTokenBudgeter
+
 _DEFAULT_MAX_TOKENS_PER_CHUNK = 1024
 
-
-def _estimated_tokens(text: str) -> int:
-    return math.ceil(len(text) / _ESTIMATED_CHARS_PER_TOKEN)
 
 @dataclass
 class FilteredLine:
@@ -70,7 +67,9 @@ class ContentChunk(BaseModel):
         semantic_chunking_threshold: float = 95.0,
         protected_line_indices: list[int] | None = None,
         max_tokens_per_chunk: int = _DEFAULT_MAX_TOKENS_PER_CHUNK,
+        token_budgeter: PromptTokenBudgeter | None = None,
     ) -> list["ContentChunk"]:
+        token_budgeter = token_budgeter or PromptTokenBudgeter()
         
         chunk_list: list[ContentChunk] = []
         
@@ -115,6 +114,7 @@ class ContentChunk(BaseModel):
                     data_package_id=data_package_id,
                     file_path=file_entry.file_path,
                     max_tokens_per_chunk=max_tokens_per_chunk,
+                    token_budgeter=token_budgeter,
                 )
             return [single_chunk]
         
@@ -166,6 +166,7 @@ class ContentChunk(BaseModel):
                 data_package_id=data_package_id,
                 file_path=file_entry.file_path,
                 max_tokens_per_chunk=max_tokens_per_chunk,
+                token_budgeter=token_budgeter,
             )
 
         return chunk_list
@@ -179,10 +180,11 @@ class ContentChunk(BaseModel):
         data_package_id: str,
         file_path: str,
         max_tokens_per_chunk: int,
+        token_budgeter: PromptTokenBudgeter,
     ) -> list["ContentChunk"]:
         bounded: list[ContentChunk] = []
         for chunk in chunks:
-            if _estimated_tokens(chunk.content) <= max_tokens_per_chunk:
+            if token_budgeter.count(chunk.content) <= max_tokens_per_chunk:
                 bounded.append(chunk)
                 continue
             lines_in_chunk = [
@@ -193,7 +195,7 @@ class ContentChunk(BaseModel):
             window: list[FilteredLine] = []
             window_tokens = 0
             for line in lines_in_chunk:
-                line_tokens = _estimated_tokens(line.text)
+                line_tokens = token_budgeter.count(line.text)
                 if window and window_tokens + line_tokens > max_tokens_per_chunk:
                     bounded.append(cls._chunk_from_filtered_lines(
                         window,

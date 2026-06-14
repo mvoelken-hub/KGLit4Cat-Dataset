@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 from app.domain.datasources.chunking import ContentChunk, FilteredLine
 from app.domain.datasources.datasource import FileEntry
 from app.domain.datasources.text_quality import classify_text_line, DecisionKind
+from app.domain.token_budget import PromptTokenBudgeter
 
 
 class FakeFileEntry(FileEntry):
@@ -157,6 +158,33 @@ class ProtectedLineIndicesTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(len(chunks), 1)
         for chunk in chunks:
             self.assertLessEqual((len(chunk.content) + 3) // 4, 60)
+
+    async def test_token_cap_uses_configured_token_budgeter(self):
+        class FakeTokenizerBudgeter(PromptTokenBudgeter):
+            def count(self, value: str) -> int:
+                return len(value.split())
+
+        content = "".join(
+            f"line {index} alpha beta gamma delta epsilon\n"
+            for index in range(8)
+        )
+        file_entry = FakeFileEntry(content)
+
+        async def embed(texts):
+            return [[0.1] * 4 for _ in texts]
+
+        chunks = await ContentChunk.create_chunks_for_file_entry(
+            data_package_id="pkg",
+            file_entry=file_entry,
+            embedding_func=embed,
+            min_lines_for_chunking=3,
+            max_tokens_per_chunk=12,
+            token_budgeter=FakeTokenizerBudgeter(),
+        )
+
+        self.assertGreater(len(chunks), 1)
+        for chunk in chunks:
+            self.assertLessEqual(len(chunk.content.split()), 12)
 
     async def test_single_oversized_line_does_not_crash_token_cap(self):
         content = ("sample metadata words " * 30) + "\n"

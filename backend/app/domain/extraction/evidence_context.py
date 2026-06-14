@@ -6,6 +6,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.domain.token_budget import PromptTokenBudgeter
+
 from app.domain.extraction.overview import (
     ExtractionFileSummary,
     ExtractionOverview,
@@ -32,9 +34,9 @@ FilteredEvidenceReason = Literal[
 ]
 
 EVIDENCE_MATCH_THRESHOLD = 0.90
-EVIDENCE_OVERVIEW_PROMPT_BUDGET_CHARS = 900
-EVIDENCE_FILE_SUMMARY_PROMPT_BUDGET_CHARS = 800
-EVIDENCE_ORIENTATION_LINE_CHARS = 180
+EVIDENCE_OVERVIEW_PROMPT_BUDGET_TOKENS = 220
+EVIDENCE_FILE_SUMMARY_PROMPT_BUDGET_TOKENS = 200
+EVIDENCE_ORIENTATION_LINE_TOKENS = 45
 EVIDENCE_ORIENTATION_VALUES_PER_SECTION = 4
 
 
@@ -130,24 +132,19 @@ Rules:
 - Suppress repeated boilerplate/header-only facts such as repeated versions, empty origin, generic DATA TYPE, generic OWNER, local paths, audit labels, or repeated parameter-file titles unless they add new profile-worthy meaning.
 - Group adjacent low-level parameters into one broader note when they describe the same interpretable method or instrument configuration; otherwise leave raw parameters as medium or low signal.
 - Use only these categories: resource_signal, method_signal, measurement_signal, entity_signal, agent_signal, data_quality_signal, uncertainty, other.
-- Put the useful semantic role into observation as natural language, not as structured fields. Examples: "Dataset name is ...", "Instrument/device used is ...", "File/resource format is ...", "Acquisition method uses ...", "Measured entity/sample solvent is ...", or "Low-level parameter TD is ...".
-- Do not turn file-local headers into dataset-level claims. A header like "##TITLE= Audit trail, TOPSPIN Version 3.2" is the audit file title, not the dataset title. A parameter-file title, local path, generic OWNER, or ORIGIN header is file/resource-local unless the chunk explicitly says it names the whole dataset/package.
-- Do not infer dataset creation software or instrument identity from a file title alone. A file title mentioning TOPSPIN is software/header context, not proof that the dataset was created by that software.
+- Put the useful semantic role into observation as natural language, not as structured fields.
+- Dataset-level identity, creator, date, origin, owner, or title claims require evidence that explicitly names the whole dataset, package, study, or submission. Do not promote a file-local header, local path, parameter-file label, audit label, or resource title into a dataset-level claim.
+- File-local headers should be described as file/resource-local when useful, and should be medium or low unless they identify a meaningful distribution/resource format or a clearly reusable dataset resource.
+- Generic owner, origin, vendor, manufacturer, software, or organization labels identify provenance context only. Do not infer an instrument/device, dataset creator, or dataset owner from such labels unless the evidence explicitly states that role.
 - Instruments, spectrometers, probes, software-controlled acquisition hardware, and named devices should use category agent_signal and an observation that explicitly says instrument/device.
-- ORIGIN/manufacturer labels such as "Bruker BioSpin GmbH" identify file provenance or software/vendor context unless the evidence names a concrete instrument model or device.
 - Scientific method facts such as pulse sequence, observed nucleus, solvent, and observation frequency may be high when the evidence supports an interpretable method statement.
-- Numeric spectrum geometry, point counts, axis min/max values, scaling factors, processing thresholds, routing keys, local file paths, raw instrument parameters, repeated file headers, and empty/off toggles should be described as technical or low-level parameters and should usually have medium or low signal_level.
-- Numbered/channel-specific parameters such as SFO7, SFO8, BF*, O*, Nus*, NPOINTS, and processing counters are technical settings. Keep them medium or low unless grouped into a clear higher-level method observation.
+- Numeric geometry, point counts, axis/range min/max values, scaling factors, thresholds, routing keys, checksums, local file paths, raw instrument parameters, repeated file headers, and empty/off toggles should be described as technical or low-level parameters and should usually have medium or low signal_level.
+- Numbered, channel-specific, namespace-prefixed, or code-like parameters are technical settings. Keep them medium or low unless grouped into a clearly supported higher-level method observation.
 - Record uncertainty when labels are ambiguous, evidence is only technical, or a setting cannot be safely interpreted.
 - Set signal_level to high only for stable, profile-agnostic metadata facts likely to describe explicit dataset identity, creator/agent, instrument/device, distribution/resource format, interpretable method/activity, measured entity, sample, identifier, date, or meaningful file syntax.
 - Set signal_level to medium for interpretable technical context that may help debugging but should not drive profile generation by itself.
 - Set signal_level to low for raw parameters, boilerplate, repeated syntax/header declarations, empty settings, or unclear technical fields.
 - Only high signal notes are forwarded downstream; medium and low notes are retained in debug artifacts only.
-
-Counterexamples:
-- For evidence_text "##TITLE= Audit trail, TOPSPIN Version 3.2", do not write "Dataset was created by TOPSPIN" and do not write "Instrument/device used is TOPSPIN". At most write a medium/low note such as "Audit file title mentions TOPSPIN Version 3.2."
-- For evidence_text "##ORIGIN= Bruker BioSpin GmbH", do not write "Instrument/device used is Bruker BioSpin GmbH". At most write a medium note that the file declares Bruker BioSpin GmbH as origin/vendor.
-- For evidence_text like "##NPOINTS= 3516", do not write a high signal note. It is a technical point-count parameter.
 """
 
 def build_evidence_context_prompt(chunk_context: EvidenceChunkContext) -> str:
@@ -167,15 +164,18 @@ def build_evidence_system_prompt_with_overview(
     overview: ExtractionOverview | None,
     overview_status: ExtractionOverviewStatus | None,
     file_summary: ExtractionFileSummary | None = None,
-    max_overview_chars: int = EVIDENCE_OVERVIEW_PROMPT_BUDGET_CHARS,
-    max_file_summary_chars: int = EVIDENCE_FILE_SUMMARY_PROMPT_BUDGET_CHARS,
+    token_budgeter: PromptTokenBudgeter | None = None,
+    max_overview_tokens: int = EVIDENCE_OVERVIEW_PROMPT_BUDGET_TOKENS,
+    max_file_summary_tokens: int = EVIDENCE_FILE_SUMMARY_PROMPT_BUDGET_TOKENS,
 ) -> str:
+    token_budgeter = token_budgeter or PromptTokenBudgeter()
     sections: list[str] = []
     overview_text = compact_evidence_overview_to_prompt_text(
         overview,
         status=overview_status,
         current_file_path=file_summary.file_path if file_summary else None,
-        max_chars=max_overview_chars,
+        max_tokens=max_overview_tokens,
+        token_budgeter=token_budgeter,
     )
     if overview_text:
         sections.append(
@@ -184,7 +184,8 @@ def build_evidence_system_prompt_with_overview(
         )
     file_summary_text = _cap_prompt_text(
         file_summary_to_prompt_text(file_summary),
-        max_chars=max_file_summary_chars,
+        max_tokens=max_file_summary_tokens,
+        token_budgeter=token_budgeter,
     )
     if file_summary_text:
         sections.append(
@@ -199,10 +200,12 @@ def compact_evidence_overview_to_prompt_text(
     *,
     status: ExtractionOverviewStatus | None = None,
     current_file_path: str | None = None,
-    max_chars: int = EVIDENCE_OVERVIEW_PROMPT_BUDGET_CHARS,
+    max_tokens: int = EVIDENCE_OVERVIEW_PROMPT_BUDGET_TOKENS,
+    token_budgeter: PromptTokenBudgeter | None = None,
 ) -> str:
     if overview is None:
         return ""
+    token_budgeter = token_budgeter or PromptTokenBudgeter()
     parts: list[str] = []
     if status:
         parts.append(f"Overview status: {status}")
@@ -213,7 +216,11 @@ def compact_evidence_overview_to_prompt_text(
         if matching_roles:
             role_lines = []
             for role in matching_roles[:2]:
-                notes = _compact_prompt_values(role.extraction_notes, limit=2)
+                notes = _compact_prompt_values(
+                    role.extraction_notes,
+                    limit=2,
+                    token_budgeter=token_budgeter,
+                )
                 role_lines.append(
                     f"- {role.file_path}: {role.role}"
                     + (f" ({'; '.join(notes)})" if notes else "")
@@ -227,10 +234,15 @@ def compact_evidence_overview_to_prompt_text(
         compact_values = _compact_prompt_values(
             values,
             limit=EVIDENCE_ORIENTATION_VALUES_PER_SECTION,
+            token_budgeter=token_budgeter,
         )
         if compact_values:
             parts.append(label + ":\n" + "\n".join(f"- {value}" for value in compact_values))
-    return _cap_prompt_text("\n\n".join(parts), max_chars=max_chars)
+    return _cap_prompt_text(
+        "\n\n".join(parts),
+        max_tokens=max_tokens,
+        token_budgeter=token_budgeter,
+    )
 
 
 def normalize_chunk_text_for_evidence_prompt(content: str) -> str:
@@ -435,11 +447,16 @@ def _normalize_evidence_text(value: str) -> str:
     return normalized.strip()
 
 
-def _compact_prompt_values(values: list[str], *, limit: int) -> list[str]:
+def _compact_prompt_values(
+    values: list[str],
+    *,
+    limit: int,
+    token_budgeter: PromptTokenBudgeter,
+) -> list[str]:
     compact: list[str] = []
     seen: set[str] = set()
     for value in values:
-        cleaned = _compact_prompt_line(value)
+        cleaned = _compact_prompt_line(value, token_budgeter=token_budgeter)
         if not cleaned:
             continue
         key = cleaned.lower()
@@ -452,21 +469,25 @@ def _compact_prompt_values(values: list[str], *, limit: int) -> list[str]:
     return compact
 
 
-def _compact_prompt_line(value: str) -> str:
+def _compact_prompt_line(value: str, *, token_budgeter: PromptTokenBudgeter) -> str:
     cleaned = normalize_chunk_text_for_evidence_prompt(value)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
-    if len(cleaned) <= EVIDENCE_ORIENTATION_LINE_CHARS:
-        return cleaned
-    return cleaned[: EVIDENCE_ORIENTATION_LINE_CHARS - 1].rstrip() + "..."
+    return token_budgeter.truncate(
+        cleaned,
+        max_tokens=EVIDENCE_ORIENTATION_LINE_TOKENS,
+    )
 
 
-def _cap_prompt_text(value: str, *, max_chars: int) -> str:
+def _cap_prompt_text(
+    value: str,
+    *,
+    max_tokens: int,
+    token_budgeter: PromptTokenBudgeter,
+) -> str:
     cleaned = normalize_chunk_text_for_evidence_prompt(value)
-    if not cleaned or max_chars <= 0:
+    if not cleaned or max_tokens <= 0:
         return ""
-    if len(cleaned) <= max_chars:
-        return cleaned
-    return cleaned[: max(0, max_chars - 28)].rstrip() + "\n[orientation truncated]"
+    return token_budgeter.truncate(cleaned, max_tokens=max_tokens)
 
 
 def _filtered_record(
