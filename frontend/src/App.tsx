@@ -20,7 +20,7 @@ import {
   saveCuratedDocument,
   updateVocabQueryConfig,
 } from './api/extraction';
-import { deleteProfile, exportProfileDocumentJsonLd, getProfileJsonSchema, listProfiles, registerProfile } from './api/profiles';
+import { deleteProfile, getProfileJsonSchema, listProfiles, registerProfile } from './api/profiles';
 import {
   getLlmBudget,
   getOllamaConfig,
@@ -33,7 +33,7 @@ import {
   type OllamaPerformanceTest,
 } from './api/system';
 import { listVocabularies } from './api/semantic';
-import { JsonEditor, type JsonObject, type JsonPatchMarker, type JsonSchemaDocument } from './components/JsonEditor';
+import { JsonEditor, type JsonPatchMarker, type JsonSchemaDocument } from './components/JsonEditor';
 import { ChunkingDialog } from './components/ChunkingDialog';
 import { VocabularyPanel } from './components/VocabularyPanel';
 import type { ChunkRequestResponse, ChunkResponse, DataPackageResponse, FileEntryResponse, InitialContext, ProfileManifestResponse, TextQualityConfig, VocabQueryResult } from './api/types';
@@ -91,16 +91,6 @@ function jsonPointerToEditorPath(path: string): string {
     .split('/')
     .map((part) => part.replace(/~1/g, '/').replace(/~0/g, '~'))
     .join('.');
-}
-
-function downloadJsonFile(filename: string, payload: unknown) {
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
 }
 
 function sourceContextJsonPointer(query: ExtractionVocabQueryRecord): string | null {
@@ -1719,29 +1709,9 @@ function ProjectionWorkflowPanel({
   const totalCount = Math.max(evidenceNoteTotal, processedCount);
   const pendingCount = Math.max(0, totalCount - processedCount);
   const scaffoldEntries = progress?.initial_draft_scaffold?.entries ?? [];
-  const touchedTargets = new Set(ledger.map((record) => record.target_path).filter(Boolean));
-  const remainingScaffoldTargets = scaffoldEntries.filter((entry) => (
-    entry.prune_if_unchanged && entry.path && !touchedTargets.has(entry.path)
-  ));
   const projectedRecords = ledger.filter((record) => record.status === 'projected');
   const attentionRecords = ledger.filter((record) => record.status !== 'projected');
-  const targetedRecords = ledger.filter((record) => record.target_path);
-  const failedWriteRecords = ledger.filter((record) => record.status === 'user_edit_required');
   const descriptionSelectedRecords = ledger.filter((record) => record.target_path === '/description');
-  const confidenceCounts = ledger.reduce((counts, record) => {
-    const values = record.evidence_quality?.interpretation_confidence ?? {};
-    Object.entries(values).forEach(([key, value]) => {
-      counts[key] = (counts[key] ?? 0) + (typeof value === 'number' ? value : 0);
-    });
-    return counts;
-  }, {} as Record<string, number>);
-  const worthinessCounts = ledger.reduce((counts, record) => {
-    const values = record.evidence_quality?.profile_worthiness ?? {};
-    Object.entries(values).forEach(([key, value]) => {
-      counts[key] = (counts[key] ?? 0) + (typeof value === 'number' ? value : 0);
-    });
-    return counts;
-  }, {} as Record<string, number>);
   const projectedPathCount = projectedRecords.reduce((sum, record) => sum + Math.max(1, record.projected_paths.length), 0);
   const descriptionPathCount = projectedRecords.reduce((sum, record) => (
     sum + record.projected_paths.filter((path) => projectionPathBucket(path) === '/description').length
@@ -1758,10 +1728,6 @@ function ProjectionWorkflowPanel({
     .sort((left, right) => right[1] - left[1])
     .slice(0, 6);
   const descriptionShare = projectedPathCount ? Math.round((descriptionPathCount / projectedPathCount) * 100) : 0;
-  const lastRecord = ledger[ledger.length - 1] ?? null;
-  const latestLabel = lastRecord
-    ? `${formatExtractionStage(lastRecord.status)}: ${lastRecord.target_path || lastRecord.object_identifier}`
-    : 'No projection attempts yet';
 
   return (
     <section className="projection-workflow-panel">
@@ -1776,22 +1742,6 @@ function ProjectionWorkflowPanel({
         </div>
       </div>
       <div className="patch-progress-track" aria-hidden="true"><div style={{ width: `${progressPercent}%` }} /></div>
-      <div className="projection-workflow-metrics">
-        <span>{ledger.length} evidence groups</span>
-        <span>{projectedRecords.length} projected</span>
-        <span>{failedWriteRecords.length} failed writes</span>
-        <span>{targetedRecords.length} planner targets</span>
-        <span>{projectedRecords.length} target writes</span>
-        <span>{evidenceNoteTotal} evidence notes</span>
-        <span>{remainingScaffoldTargets.length} initial targets unfilled</span>
-        <span>{descriptionShare}% of projected paths in description</span>
-      </div>
-      {(Object.keys(confidenceCounts).length > 0 || Object.keys(worthinessCounts).length > 0) && (
-        <div className="projection-workflow-metrics">
-          <span>confidence H/M/L: {confidenceCounts.high ?? 0}/{confidenceCounts.medium ?? 0}/{confidenceCounts.low ?? 0}</span>
-          <span>worthiness H/M/L: {worthinessCounts.high ?? 0}/{worthinessCounts.medium ?? 0}/{worthinessCounts.low ?? 0}</span>
-        </div>
-      )}
       {scaffoldEntries.length > 0 && (
         <p className="projection-sink-note">
           Initial draft: {scaffoldEntries.length} scaffold target{scaffoldEntries.length === 1 ? '' : 's'} prepared for projection.
@@ -1817,11 +1767,6 @@ function ProjectionWorkflowPanel({
           ))}
         </div>
       )}
-      <div className="projection-latest">
-        <span>Latest attempt</span>
-        <strong>{latestLabel}</strong>
-        {lastRecord?.source_evidence && <small>{projectionEvidencePreview(lastRecord)}</small>}
-      </div>
       {tokenUsageSummary}
       {attentionRecords.length > 0 && (
         <details className="projection-issues">
@@ -2904,6 +2849,7 @@ export function App() {
   const [message, setMessage] = useState('Loading workspace.');
   const [railCollapsed, setRailCollapsed] = useState(true);
   const [chunkingDialogOpen, setChunkingDialogOpen] = useState(false);
+  const [curatedEditorOpen, setCuratedEditorOpen] = useState(false);
   const [profileFormOpen, setProfileFormOpen] = useState(false);
   const [profileIdentifier, setProfileIdentifier] = useState('');
   const [profileTargetClass, setProfileTargetClass] = useState('Dataset');
@@ -3720,26 +3666,6 @@ export function App() {
     }
   }
 
-  async function onExportCuratedJson() {
-    if (!selectedPackageId || !curatedDocument) return;
-    downloadJsonFile(`${selectedPackageId}-curated-document.json`, curatedDocument);
-    setMessage('Curated JSON exported.');
-  }
-
-  async function onExportCuratedJsonLd() {
-    if (!selectedPackageId || !selectedProfile || !curatedDocument) return;
-    setBusy('patch');
-    try {
-      const exported = await exportProfileDocumentJsonLd(selectedProfile, curatedDocument);
-      downloadJsonFile(`${selectedPackageId}-curated-document.jsonld`, exported.document);
-      setMessage(`Curated JSON-LD exported with ${exported.triple_count} triples.`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Curated JSON-LD export failed.');
-    } finally {
-      setBusy(null);
-    }
-  }
-
   async function refreshExtractionProgress() {
     if (!selectedPackageId) return;
     const packageId = selectedPackageId;
@@ -3865,101 +3791,6 @@ export function App() {
           </button>
           {!railCollapsed && (
             <>
-              <div className="panel compact">
-                <div className="panel-heading">
-                  <span>Datasets</span>
-                  <button onClick={() => datasetUploadInputRef.current?.click()} disabled={!!busy}>
-                    {busy === 'upload' ? 'Uploading...' : 'Upload ZIP'}
-                  </button>
-                </div>
-                <input
-                  ref={datasetUploadInputRef}
-                  className="hidden-file-input"
-                  type="file"
-                  accept=".zip"
-                  onChange={(event) => void onUpload(event.target.files?.[0])}
-                />
-                <select value={selectedPackageId} onChange={(event) => handlePackageSelection(event.target.value)}>
-                  <option value="">No package selected</option>
-                  {packages.map((item) => <option key={item.id} value={item.id}>{item.file_name}</option>)}
-                </select>
-                <button
-                  className="ghost dataset-remove-button"
-                  onClick={() => void onDeleteDataPackage()}
-                  disabled={!selectedPackageId || !!busy}
-                >
-                  {busy === 'dataset-delete' ? 'Removing...' : 'Remove selected'}
-                </button>
-              </div>
-              <div className="panel compact">
-                <div className="panel-heading">
-                  <span>Profile</span>
-                  <button onClick={() => setProfileFormOpen((open) => !open)} disabled={!!busy}>
-                    {profileFormOpen ? 'Close' : 'Register'}
-                  </button>
-                </div>
-                <select value={selectedProfile} onChange={(event) => setSelectedProfile(event.target.value)}>
-                  <option value="">No profile selected</option>
-                  {profiles.map((profile) => <option key={profile.identifier} value={profile.identifier}>{profile.identifier}</option>)}
-                </select>
-                <button
-                  className="ghost profile-remove-button"
-                  onClick={() => void onDeleteProfile()}
-                  disabled={!selectedProfile || !!busy}
-                >
-                  {busy === 'profile-delete' ? 'Removing...' : 'Remove selected'}
-                </button>
-                {profileFormOpen && (
-                  <div className="profile-register-form">
-                    <label>
-                      <span>Identifier</span>
-                      <input value={profileIdentifier} onChange={(event) => setProfileIdentifier(event.target.value)} placeholder="my-profile" />
-                    </label>
-                    <label>
-                      <span>Target class</span>
-                      <input value={profileTargetClass} onChange={(event) => setProfileTargetClass(event.target.value)} placeholder="Dataset" />
-                    </label>
-                    <div className="profile-source-toggle">
-                      <button
-                        className={profileSourceMode === 'url' ? '' : 'ghost'}
-                        onClick={() => setProfileSourceMode('url')}
-                        type="button"
-                      >
-                        URL
-                      </button>
-                      <button
-                        className={profileSourceMode === 'upload' ? '' : 'ghost'}
-                        onClick={() => setProfileSourceMode('upload')}
-                        type="button"
-                      >
-                        Upload
-                      </button>
-                    </div>
-                    {profileSourceMode === 'url' ? (
-                      <label>
-                        <span>Schema URL</span>
-                        <input value={profileSchemaUrl} onChange={(event) => setProfileSchemaUrl(event.target.value)} placeholder="https://..." />
-                      </label>
-                    ) : (
-                      <label>
-                        <span>Schema file</span>
-                        <input type="file" accept=".yaml,.yml,.json" onChange={(event) => setProfileSchemaFile(event.target.files?.[0] ?? null)} />
-                      </label>
-                    )}
-                    <label>
-                      <span>Version</span>
-                      <input value={profileVersion} onChange={(event) => setProfileVersion(event.target.value)} placeholder="optional" />
-                    </label>
-                    <label>
-                      <span>Enrichable fields</span>
-                      <input value={profileEnrichableFields} onChange={(event) => setProfileEnrichableFields(event.target.value)} placeholder="field_a, field_b" />
-                    </label>
-                    <button onClick={() => void onRegisterProfile()} disabled={busy === 'profile'}>
-                      {busy === 'profile' ? 'Registering...' : 'Register profile'}
-                    </button>
-                  </div>
-                )}
-              </div>
               <OllamaSettingsPanel
                 config={ollamaConfig}
                 budget={llmBudget}
@@ -3984,6 +3815,34 @@ export function App() {
             description="The archive is stored as a data package. File contents can be inspected before running any extraction stage."
             active
           >
+              <div className="dataset-upload-panel">
+                <input
+                  ref={datasetUploadInputRef}
+                  className="hidden-file-input"
+                  type="file"
+                  accept=".zip"
+                  onChange={(event) => void onUpload(event.target.files?.[0])}
+                />
+                <label className="dataset-package-select">
+                  <span>Dataset package</span>
+                  <select value={selectedPackageId} onChange={(event) => handlePackageSelection(event.target.value)}>
+                    <option value="">No package selected</option>
+                    {packages.map((item) => <option key={item.id} value={item.id}>{item.file_name}</option>)}
+                  </select>
+                </label>
+                <div className="dataset-upload-actions">
+                  <button onClick={() => datasetUploadInputRef.current?.click()} disabled={!!busy}>
+                    {busy === 'upload' ? 'Uploading...' : 'Upload ZIP'}
+                  </button>
+                  <button
+                    className="ghost dataset-remove-button"
+                    onClick={() => void onDeleteDataPackage()}
+                    disabled={!selectedPackageId || !!busy}
+                  >
+                    {busy === 'dataset-delete' ? 'Removing...' : 'Remove selected'}
+                  </button>
+                </div>
+              </div>
               {selectedPackage && (
                 <div className="file-list">
                   {selectedPackage.files.map((file) => {
@@ -4130,6 +3989,80 @@ export function App() {
               <button className="ghost draft-refresh-button" onClick={() => void refreshExtractionProgress()} disabled={!selectedPackageId || busy === 'load'}>Refresh</button>
             )}
           >
+              <div className="profile-selection-panel">
+                <div className="panel-heading profile-selection-heading">
+                  <span>Profile</span>
+                  <button onClick={() => setProfileFormOpen((open) => !open)} disabled={!!busy}>
+                    {profileFormOpen ? 'Close' : 'Register'}
+                  </button>
+                </div>
+                <div className="profile-selection-row">
+                  <label className="profile-select">
+                    <span>Profile document</span>
+                    <select value={selectedProfile} onChange={(event) => setSelectedProfile(event.target.value)}>
+                      <option value="">No profile selected</option>
+                      {profiles.map((profile) => <option key={profile.identifier} value={profile.identifier}>{profile.identifier}</option>)}
+                    </select>
+                  </label>
+                  <button
+                    className="ghost profile-remove-button"
+                    onClick={() => void onDeleteProfile()}
+                    disabled={!selectedProfile || !!busy}
+                  >
+                    {busy === 'profile-delete' ? 'Removing...' : 'Remove selected'}
+                  </button>
+                </div>
+                {profileFormOpen && (
+                  <div className="profile-register-form">
+                    <label>
+                      <span>Identifier</span>
+                      <input value={profileIdentifier} onChange={(event) => setProfileIdentifier(event.target.value)} placeholder="my-profile" />
+                    </label>
+                    <label>
+                      <span>Target class</span>
+                      <input value={profileTargetClass} onChange={(event) => setProfileTargetClass(event.target.value)} placeholder="Dataset" />
+                    </label>
+                    <div className="profile-source-toggle">
+                      <button
+                        className={profileSourceMode === 'url' ? '' : 'ghost'}
+                        onClick={() => setProfileSourceMode('url')}
+                        type="button"
+                      >
+                        URL
+                      </button>
+                      <button
+                        className={profileSourceMode === 'upload' ? '' : 'ghost'}
+                        onClick={() => setProfileSourceMode('upload')}
+                        type="button"
+                      >
+                        Upload
+                      </button>
+                    </div>
+                    {profileSourceMode === 'url' ? (
+                      <label>
+                        <span>Schema URL</span>
+                        <input value={profileSchemaUrl} onChange={(event) => setProfileSchemaUrl(event.target.value)} placeholder="https://..." />
+                      </label>
+                    ) : (
+                      <label>
+                        <span>Schema file</span>
+                        <input type="file" accept=".yaml,.yml,.json" onChange={(event) => setProfileSchemaFile(event.target.files?.[0] ?? null)} />
+                      </label>
+                    )}
+                    <label>
+                      <span>Version</span>
+                      <input value={profileVersion} onChange={(event) => setProfileVersion(event.target.value)} placeholder="optional" />
+                    </label>
+                    <label>
+                      <span>Enrichable fields</span>
+                      <input value={profileEnrichableFields} onChange={(event) => setProfileEnrichableFields(event.target.value)} placeholder="field_a, field_b" />
+                    </label>
+                    <button onClick={() => void onRegisterProfile()} disabled={busy === 'profile'}>
+                      {busy === 'profile' ? 'Registering...' : 'Register profile'}
+                    </button>
+                  </div>
+                )}
+              </div>
               <div className={hasProfileArtifacts ? 'draft-actions' : 'actions'}>
                 {!generatedFinalDraft ? (
                   <button onClick={() => void onGenerateDraft({ mode: 'build' })} disabled={!selectedPackageId || !selectedProfile || !!busy || isPatching || !context}>{busy === 'draft' ? 'Building generated draft...' : isProfileBuildRunning ? 'Building generated draft...' : 'Build generated final draft'}</button>
@@ -4140,8 +4073,7 @@ export function App() {
                         {busy === 'draft' ? 'Continuing...' : 'Continue projection'}
                       </button>
                     )}
-                    <button className="ghost" onClick={() => void onExportCuratedJson()} disabled={!curatedDocument || !!busy}>Export curated JSON</button>
-                    <button className="ghost" onClick={() => void onExportCuratedJsonLd()} disabled={!curatedDocument || !selectedProfile || !!busy}>Export curated JSON-LD</button>
+                    <button className="ghost" onClick={() => setCuratedEditorOpen(true)} disabled={!curatedDocument}>Edit</button>
                     <button className="ghost draft-recreate-button" onClick={() => void onGenerateDraft({ mode: 'rebuild' })} disabled={!selectedPackageId || !selectedProfile || !!busy || isPatching}>{busy === 'draft' ? 'Rebuilding...' : isProfileBuildRunning ? 'Rebuilding...' : 'Rebuild generated draft'}</button>
                   </>
                 )}
@@ -4201,18 +4133,32 @@ export function App() {
               {generatedFinalDraft && (
                 <JsonDetails title="Generated final draft (machine artifact)" value={generatedFinalDraft} />
               )}
-              {curatedDocument && (
-                <JsonEditor
-                  value={curatedDocument as Record<string, unknown>}
-                  onChange={(updated) => onCuratedDocumentChange(updated)}
-                  patchMarkers={curationMarkers}
-                  schema={activeProfileSchema}
-                  targetClass={selectedProfileManifest?.target_class}
-                />
-              )}
           </StepPanel>
         </section>
       </section>
+      {curatedEditorOpen && curatedDocument && createPortal(
+        <div className="vocab-dialog-overlay" onClick={() => setCuratedEditorOpen(false)}>
+          <div className="vocab-dialog curated-editor-dialog" onClick={(event) => event.stopPropagation()}>
+            <div className="vocab-dialog-header">
+              <div>
+                <span>Curated document</span>
+                <strong>Edit curated JSON</strong>
+              </div>
+              <button className="ghost" type="button" onClick={() => setCuratedEditorOpen(false)}>Close</button>
+            </div>
+            <div className="vocab-dialog-body curated-editor-dialog-body">
+              <JsonEditor
+                value={curatedDocument as Record<string, unknown>}
+                onChange={(updated) => onCuratedDocumentChange(updated)}
+                patchMarkers={curationMarkers}
+                schema={activeProfileSchema}
+                targetClass={selectedProfileManifest?.target_class}
+              />
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
     </main>
   );
 }
