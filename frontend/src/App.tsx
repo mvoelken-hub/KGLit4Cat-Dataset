@@ -3803,7 +3803,6 @@ export function App() {
                 onRemoveModel={(model) => removeOllamaModelFromUi(model)}
                 onRunPerformanceTest={(values) => runOllamaSwitchTest(values)}
               />
-              <VocabularyPanel onError={setMessage} />
             </>
           )}
         </aside>
@@ -4094,8 +4093,29 @@ export function App() {
                   )}
                 />
               )}
-              {hasProfileArtifacts && (
-                <section className="patch-progress">
+              {(hasProfileArtifacts || isProfileBuildRunning) && patchStatus === 'running' && (
+                <div className="patch-progress">
+                  <div className="patch-progress-header">
+                    <span>Status: <strong>{formatExtractionStage(patchProgress?.stage || patchStatus)}</strong></span>
+                    {!hasProfileArtifacts && <span>Generating draft artifact</span>}
+                  </div>
+                </div>
+              )}
+              {generatedFinalDraft && (
+                <JsonDetails title="Generated final draft (machine artifact)" value={generatedFinalDraft} />
+              )}
+          </StepPanel>
+
+          <StepPanel
+            number="06"
+            title="Grounding and validation"
+            description="Review projection validity, run vocabulary grounding, and manage the vocabulary resources used for enrichment."
+            actions={hasProfileArtifacts && (
+              <button className="ghost draft-refresh-button" onClick={() => void refreshExtractionProgress()} disabled={!selectedPackageId || busy === 'load'}>Refresh</button>
+            )}
+          >
+              {hasProfileArtifacts ? (
+                <section className="patch-progress grounding-validation-summary">
                   <div className="patch-progress-header">
                     <span>Projection and validation</span>
                     <span>
@@ -4109,14 +4129,8 @@ export function App() {
                     <span>{fieldIssueCount} field issue{fieldIssueCount === 1 ? '' : 's'}</span>
                   </div>
                 </section>
-              )}
-              {(hasProfileArtifacts || isProfileBuildRunning) && patchStatus === 'running' && (
-                <div className="patch-progress">
-                  <div className="patch-progress-header">
-                    <span>Status: <strong>{formatExtractionStage(patchProgress?.stage || patchStatus)}</strong></span>
-                    {!hasProfileArtifacts && <span>Generating draft artifact</span>}
-                  </div>
-                </div>
+              ) : (
+                <p className="muted">Build the generated profile before reviewing projection validation.</p>
               )}
               {hasProfileArtifacts && (
                 <DraftGroundingPanel
@@ -4130,9 +4144,9 @@ export function App() {
                   onMarkUnresolved={(query) => void onMarkVocabularyUnresolved(query)}
                 />
               )}
-              {generatedFinalDraft && (
-                <JsonDetails title="Generated final draft (machine artifact)" value={generatedFinalDraft} />
-              )}
+              <div className="workflow-vocabulary-panel">
+                <VocabularyPanel onError={setMessage} />
+              </div>
           </StepPanel>
         </section>
       </section>

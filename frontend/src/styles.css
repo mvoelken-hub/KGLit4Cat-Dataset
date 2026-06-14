@@ -239,6 +239,11 @@ h2 { margin: 0; font-size: clamp(1.6rem, 3vw, 2.6rem); letter-spacing: -0.04em; 
 .chunk-vocab-query { border: 1px solid var(--line); border-radius: 7px; background: rgba(255,255,255,0.5); overflow: hidden; }
 .chunk-vocab-query.running { border-color: rgba(202, 116, 6, 0.48); }
 .chunk-vocab-query.failed { border-color: rgba(188, 57, 43, 0.58); background: rgba(255,239,236,0.74); }
+.draft-grounding-panel > summary { display: flex; align-items: center; gap: 10px; cursor: pointer; list-style: none; }
+.draft-grounding-panel > summary::-webkit-details-marker { display: none; }
+.draft-grounding-panel > summary > div { min-width: 0; display: grid; gap: 3px; }
+.draft-grounding-panel > summary span { display: block; color: var(--muted); font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; }
+.draft-grounding-panel > summary strong { display: block; overflow-wrap: anywhere; font-size: 0.96rem; }
 .chunk-vocab-query > summary { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 10px; cursor: pointer; list-style: none; }
 .chunk-vocab-query > summary::-webkit-details-marker { display: none; }
 .chunk-vocab-query > summary div { min-width: 0; }
@@ -437,6 +442,7 @@ textarea.json-editor-input { resize: vertical; min-height: 80px; }
 
 /* Patch progress panel */
 .patch-progress { margin-top: 14px; padding: 14px; border: 1px solid var(--line); border-radius: 1rem; background: rgba(255, 255, 255, 0.5); }
+.grounding-validation-summary { margin-top: 0; }
 .patch-progress-header { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .patch-progress span { font-size: 0.86rem; color: var(--muted); }
 .patch-progress-track { height: 8px; margin-top: 10px; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; background: rgba(255, 255, 255, 0.72); }
@@ -561,6 +567,8 @@ textarea.json-editor-input { resize: vertical; min-height: 80px; }
 button.small { padding: 0.4rem 0.7rem; font-size: 0.78rem; }
 
 .vocab-list { display: grid; gap: 8px; }
+.workflow-vocabulary-panel .panel { margin-top: 14px; border-radius: 8px; box-shadow: none; background: rgba(255, 255, 255, 0.48); }
+.workflow-vocabulary-panel .vocab-list { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
 .vocab-row { width: 100%; display: block; padding: 10px 14px; border-radius: 8px; border-color: var(--line); background: rgba(255,255,255,0.56); color: var(--ink); text-align: center; }
 .vocab-row:hover:not(:disabled) { background: rgba(99, 154, 0, 0.1); color: var(--ink); border-color: rgba(99, 154, 0, 0.45); }
 .vocab-row span { display: block; max-width: 100%; white-space: normal; overflow-wrap: anywhere; word-break: break-word; font-size: 0.88rem; font-weight: 700; line-height: 1.35; }
