@@ -10087,6 +10087,8 @@ class ExtractionService:
     @staticmethod
     def _usage_int(usage: Any, field_name: str) -> int:
         try:
+            if isinstance(usage, dict):
+                return int(usage.get(field_name, 0) or 0)
             return int(getattr(usage, field_name, 0) or 0)
         except (TypeError, ValueError):
             return 0
