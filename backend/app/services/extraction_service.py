@@ -22,12 +22,8 @@ from app.domain.extraction import (
     EXTRACTION_FILE_SUMMARY_SYSTEM_PROMPT,
     EXTRACTION_OVERVIEW_FALLBACK_SYSTEM_PROMPT,
     EXTRACTION_OVERVIEW_SYSTEM_PROMPT,
-    PROFILE_PROJECTION_SYSTEM_PROMPT,
-    PROFILE_PATCH_SYSTEM_PROMPT,
     QUDT_QUANTITY_KIND_VOCAB,
     QUDT_UNIT_VOCAB,
-    PROFILE_TARGET_PLANNER_SYSTEM_PROMPT,
-    PROFILE_TARGET_WRITER_SYSTEM_PROMPT,
     VOCAB_CANDIDATE_SELECTION_SYSTEM_PROMPT,
     VOCAB_FALLBACK_QUERY_SYSTEM_PROMPT,
     VOCAB_OBJECT_GROUNDING_SELECTION_SYSTEM_PROMPT,
@@ -80,11 +76,14 @@ from app.domain.extraction import (
     GroundedExtractionObject,
     ProfileFieldNormalization,
     ProfileObjectPatchResult,
-    ProfilePatchDocument,
     PromptTokenBudgeter,
     SchemaBranch,
-    ProfileTargetWriteDocument,
-    ProfileTargetDecision,
+    HYBRID_CLASS_DECIDER_SYSTEM_PROMPT,
+    HYBRID_INSTANCE_BUILDER_SYSTEM_PROMPT,
+    InstanceProjectionGroup,
+    ProjectedInstance,
+    ProjectionClassDecision,
+    ProjectionInstanceWriteDocument,
     ProjectionLedgerRecord,
     QualitativeAttribute,
     QualitativeAttributeNormalization,
@@ -114,14 +113,12 @@ from app.domain.extraction import (
     build_fallback_query_prompt_components,
     build_object_grounding_selection_prompt,
     build_object_grounding_selection_prompt_components,
-    build_profile_patch_prompt,
-    build_profile_patch_prompt_components,
-    build_profile_projection_prompt,
-    build_profile_projection_prompt_components,
-    build_profile_target_planner_prompt,
-    build_profile_target_planner_prompt_components,
-    build_profile_target_write_prompt,
-    build_profile_target_write_prompt_components,
+    ambiguous_candidates,
+    assemble_hybrid_dataset_projection,
+    build_class_decision_prompt_components,
+    build_instance_builder_prompt_components,
+    instance_builder_output_schema,
+    prepare_hybrid_projection,
     build_schema_branch_index,
     build_schema_search_query,
     build_qualitative_vocab_query,
@@ -139,6 +136,7 @@ from app.domain.extraction import (
 from app.domain.profiles import (
     ProfileValidationIssue,
     remove_null_values,
+    validate_document_against_profile,
     validation_schema_for_target_class,
 )
 from app.domain.semantics import VocabQuery, VocabQueryResult
@@ -4064,138 +4062,338 @@ class ExtractionService:
         progress: ExtractionRunProgress,
         warnings: list[str],
     ) -> dict[str, Any]:
-        if state.generated_final_draft is None:
-            document, scaffold = self._initial_profile_document(
-                data_package_id=data_package_id,
-                evidence_context=evidence_context,
-                validation_schema=validation_schema,
-            )
-            state.initial_draft_scaffold = scaffold
-            state.generated_final_draft = document
-            progress.generated_final_draft = document
-            progress.initial_draft_scaffold = scaffold
-        else:
-            document = state.generated_final_draft
+        if state.generated_final_draft is not None and state.curated_document is not None:
+            progress.generated_final_draft = state.generated_final_draft
             progress.initial_draft_scaffold = state.initial_draft_scaffold
+            progress.projection_ledger = state.projection_ledger
+            return state.generated_final_draft
+
+        base_document, scaffold = self._initial_profile_document(
+            data_package_id=data_package_id,
+            evidence_context=evidence_context,
+            validation_schema=validation_schema,
+        )
+        state.initial_draft_scaffold = scaffold
+        progress.initial_draft_scaffold = scaffold
+
+        initial_preparation = prepare_hybrid_projection(
+            data_package_id=data_package_id,
+            evidence_context=evidence_context,
+        )
+        resolved_class_choices = await self._resolve_ambiguous_projection_classes(
+            data_package_id=data_package_id,
+            preparation=initial_preparation,
+            validation_schema=validation_schema,
+            warnings=warnings,
+        )
+        preparation = prepare_hybrid_projection(
+            data_package_id=data_package_id,
+            evidence_context=evidence_context,
+            resolved_class_choices=resolved_class_choices,
+        )
+        projected_instances = [
+            await self._build_hybrid_projection_instance(
+                data_package_id=data_package_id,
+                group=group,
+                validation_schema=validation_schema,
+                warnings=warnings,
+            )
+            for group in preparation.groups
+        ]
+        projection = assemble_hybrid_dataset_projection(
+            data_package_id=data_package_id,
+            base_document=base_document,
+            evidence_context=evidence_context,
+            projected_instances=projected_instances,
+            preparation_ledger=preparation.ledger,
+        )
+        document = remove_null_values(projection.document)
+        state.projection_ledger = projection.ledger
+        state.generated_final_draft = document
+        progress.generated_final_draft = document
+        progress.projection_ledger = state.projection_ledger
+        progress.warnings = list(warnings)
         validation = self.profile_service.validate_document(
             identifier=profile_identifier,
             document=document,
         )
-        if not validation.valid:
-            warnings.append(
-                "Initial profile skeleton was not schema-valid: "
-                + "; ".join(f"{issue.path}: {issue.message}" for issue in validation.errors)
+        state.validation = DraftValidationResult(
+            status="valid" if validation.valid else "invalid",
+            errors=validation.errors,
+            warnings=[],
+        )
+        self._save_run_state(data_package_id, state)
+        self._persist_state_artifacts(data_package_id, state)
+        self._update_progress(data_package_id, progress)
+        return document
+
+    async def _resolve_ambiguous_projection_classes(
+        self,
+        *,
+        data_package_id: str,
+        preparation,
+        validation_schema: dict[str, Any],
+        warnings: list[str],
+    ) -> dict[str, str | None]:
+        resolved: dict[str, str | None] = {}
+        class_summaries = {
+            name: str(definition.get("description") or definition.get("title") or "")
+            for name, definition in validation_schema.get("$defs", {}).items()
+            if isinstance(definition, dict)
+        }
+        for candidate in ambiguous_candidates(preparation):
+            assert self.ollama_client is not None
+            prompt_components = build_class_decision_prompt_components(
+                note=candidate.portable_note,
+                candidate_classes=candidate.candidate_classes,
+                class_summaries={
+                    name: class_summaries.get(name, "")
+                    for name in candidate.candidate_classes
+                },
+            )
+            try:
+                result = await generate_structured(
+                    self.ollama_client,
+                    model=self.ollama_client.chat_model,
+                    system=HYBRID_CLASS_DECIDER_SYSTEM_PROMPT,
+                    prompt="".join(text for _, text in prompt_components),
+                    system_components=[
+                        ("hybrid_class_decider_system_prompt", HYBRID_CLASS_DECIDER_SYSTEM_PROMPT),
+                    ],
+                    prompt_components=prompt_components,
+                    token_budgeter=self._prompt_token_budgeter(),
+                    operation_id=self._prompt_operation_id(
+                        "hybrid_projection_class_decider",
+                        candidate.candidate_id,
+                    ),
+                    agent_name="hybrid_projection_class_decider",
+                    diagnostic_metadata={
+                        "candidate_id": candidate.candidate_id,
+                        "candidate_classes": candidate.candidate_classes,
+                    },
+                    output_type=ProjectionClassDecision,
+                    num_ctx=self.ollama_client.max_context_length,
+                )
+                self._record_llm_call_result(
+                    data_package_id=data_package_id,
+                    result=result,
+                    agent_name="hybrid_projection_class_decider",
+                )
+                decision = (
+                    result.output
+                    if isinstance(result.output, ProjectionClassDecision)
+                    else ProjectionClassDecision.model_validate(result.output)
+                )
+            except CompletionError as exc:
+                self._record_llm_call_exception(
+                    data_package_id=data_package_id,
+                    exc=exc,
+                    agent_name="hybrid_projection_class_decider",
+                )
+                warnings.append(f"Projection class decision skipped for '{candidate.candidate_id}': {exc}")
+                resolved[candidate.candidate_id] = None
+                continue
+            if (
+                decision.status == "targeted"
+                and decision.target_class in candidate.candidate_classes
+            ):
+                resolved[candidate.candidate_id] = decision.target_class
+            else:
+                resolved[candidate.candidate_id] = None
+        return resolved
+
+    async def _build_hybrid_projection_instance(
+        self,
+        *,
+        data_package_id: str,
+        group: InstanceProjectionGroup,
+        validation_schema: dict[str, Any],
+        warnings: list[str],
+    ) -> ProjectedInstance:
+        assert self.ollama_client is not None
+        target_schema = validation_schema_for_target_class(
+            json_schema=validation_schema,
+            target_class=group.target_class,
+        )
+        output_schema = instance_builder_output_schema(
+            json_schema=validation_schema,
+            target_class=group.target_class,
+        )
+        prompt_components = build_instance_builder_prompt_components(
+            data_package_id=data_package_id,
+            group=group,
+            target_schema=target_schema,
+        )
+        try:
+            result = await generate_structured(
+                self.ollama_client,
+                model=self.ollama_client.chat_model,
+                system=HYBRID_INSTANCE_BUILDER_SYSTEM_PROMPT,
+                prompt="".join(text for _, text in prompt_components),
+                system_components=[
+                    ("hybrid_instance_builder_system_prompt", HYBRID_INSTANCE_BUILDER_SYSTEM_PROMPT),
+                ],
+                prompt_components=prompt_components,
+                token_budgeter=self._prompt_token_budgeter(),
+                operation_id=self._prompt_operation_id(
+                    "hybrid_projection_instance_builder",
+                    group.group_id,
+                ),
+                agent_name="hybrid_projection_instance_builder",
+                diagnostic_metadata={
+                    "group_id": group.group_id,
+                    "target_class": group.target_class,
+                    "target_path": group.target_path,
+                },
+                output_type=output_schema,
+                num_ctx=self.ollama_client.max_context_length,
+            )
+            self._record_llm_call_result(
+                data_package_id=data_package_id,
+                result=result,
+                agent_name="hybrid_projection_instance_builder",
+            )
+            write = ProjectionInstanceWriteDocument.model_validate(result.output)
+        except (CompletionError, ValidationError) as exc:
+            self._record_llm_call_exception(
+                data_package_id=data_package_id,
+                exc=exc,
+                agent_name="hybrid_projection_instance_builder",
+            )
+            warnings.append(f"Projection instance builder failed for '{group.group_id}': {exc}")
+            return ProjectedInstance(
+                group=group,
+                value=None,
+                status="user_edit_required",
+                reason="LLM instance builder failed.",
+                error=str(exc),
             )
 
-        target_catalog = self._target_catalog_from_document(
-            document=document,
-            validation_schema=validation_schema,
-            scaffold=state.initial_draft_scaffold,
-        )
-        schema_branches = self._schema_branches_for_profile(
-            profile_identifier=profile_identifier,
-            profile_target_class=profile_target_class,
-            warnings=warnings,
-        )
-        patched_identifiers = {
-            record.object_identifier
-            for record in state.projection_ledger
-        }
-        for group in self._projection_groups_for_evidence(evidence_context):
-            if group.group_id in patched_identifiers:
-                continue
-            schema_searches, schema_candidate_branches = self._schema_candidates_for_group(
+        if write.status == "skip":
+            return ProjectedInstance(
                 group=group,
-                schema_branches=schema_branches,
+                value=None,
+                status="not_projected",
+                reason=write.reason or "LLM skipped projection instance.",
+                used_portable_note_ids=write.used_portable_note_ids,
+                used_contextual_note_ids=write.used_contextual_note_ids,
+                skipped_note_ids=write.skipped_note_ids,
             )
-            group_target_catalog = (
-                schema_branches_to_catalog(schema_candidate_branches)
-                + target_catalog
-            )
-            target_decision = await self._plan_profile_target_for_evidence_group(
+
+        value = remove_null_values(write.value)
+        validation = validate_document_against_profile(
+            document=value if isinstance(value, dict) else {},
+            json_schema=validation_schema,
+            target_class=group.target_class,
+        )
+        if not validation.valid:
+            error = "; ".join(f"{issue.path}: {issue.message}" for issue in validation.errors)
+            repaired = await self._repair_hybrid_projection_instance(
                 data_package_id=data_package_id,
-                profile_identifier=profile_identifier,
-                profile_target_class=profile_target_class,
                 group=group,
-                file_inventory=evidence_context.file_inventory,
+                failed_value=write.model_dump(mode="json"),
+                error=ValueError(error),
+                output_schema=output_schema,
+                validation_schema=validation_schema,
                 warnings=warnings,
-                target_catalog=group_target_catalog,
             )
-            selected_schema_branch = self._selected_schema_branch(
-                target_decision.target_path,
-                schema_candidate_branches,
-            )
-            if target_decision.status == "skip" or not target_decision.target_path:
-                patch_result = ProfileObjectPatchResult(
-                    object_identifier=group.group_id,
-                    object_kind=group.object_kind,
-                    status="skipped",
-                    target_path=target_decision.target_path,
-                    target_class=target_decision.target_class,
-                    planner_status=target_decision.status,
-                    planner_reason=target_decision.reason,
-                    reason=target_decision.reason,
-                    schema_queries=[search.model_dump(mode="json") for search in schema_searches],
-                    candidate_paths=[branch.path for branch in schema_candidate_branches],
-                    selected_schema_branch=(
-                        selected_schema_branch.model_dump(mode="json")
-                        if selected_schema_branch
-                        else None
-                    ),
-                )
-            else:
-                patch_result = await self._write_profile_target_with_evidence_group(
-                    data_package_id=data_package_id,
-                    profile_identifier=profile_identifier,
-                    profile_target_class=profile_target_class,
-                    current_document=document,
-                    group=group,
-                    target_decision=target_decision,
-                    validation_schema=validation_schema,
-                    file_inventory=evidence_context.file_inventory,
-                    warnings=warnings,
-                )
-                patch_result.schema_queries = [
-                    search.model_dump(mode="json") for search in schema_searches
-                ]
-                patch_result.candidate_paths = [
-                    branch.path for branch in schema_candidate_branches
-                ]
-                patch_result.selected_schema_branch = (
-                    selected_schema_branch.model_dump(mode="json")
-                    if selected_schema_branch
-                    else None
-                )
-            if patch_result.status == "applied":
-                document = self._apply_profile_target_write(
-                    document,
-                    patch_result.target_path or group.target_hint,
-                    patch_result.target_value,
-                )
-                target_catalog = self._target_catalog_from_document(
-                    document=document,
-                    validation_schema=validation_schema,
-                    scaffold=state.initial_draft_scaffold,
-                )
-            projection_record = self._projection_record_from_group_patch_result(
+            if repaired is not None:
+                return repaired
+            return ProjectedInstance(
                 group=group,
-                patch_result=patch_result,
+                value=value,
+                status="user_edit_required",
+                reason=write.reason or "LLM instance failed schema validation.",
+                used_portable_note_ids=write.used_portable_note_ids,
+                used_contextual_note_ids=write.used_contextual_note_ids,
+                skipped_note_ids=write.skipped_note_ids,
+                error=error,
             )
-            state.projection_ledger = [
-                record
-                for record in state.projection_ledger
-                if record.object_identifier != group.group_id
-            ]
-            state.projection_ledger.append(projection_record)
-            state.generated_final_draft = document
-            progress.generated_final_draft = document
-            progress.initial_draft_scaffold = state.initial_draft_scaffold
-            progress.projection_ledger = state.projection_ledger
-            progress.warnings = list(warnings)
-            self._save_run_state(data_package_id, state)
-            self._persist_state_artifacts(data_package_id, state)
-            self._update_progress(data_package_id, progress)
-        return document
+
+        return ProjectedInstance(
+            group=group,
+            value=value,
+            status="projected",
+            reason=write.reason or "LLM built schema-valid projection instance.",
+            used_portable_note_ids=write.used_portable_note_ids,
+            used_contextual_note_ids=write.used_contextual_note_ids,
+            skipped_note_ids=write.skipped_note_ids,
+        )
+
+    async def _repair_hybrid_projection_instance(
+        self,
+        *,
+        data_package_id: str,
+        group: InstanceProjectionGroup,
+        failed_value: dict[str, Any],
+        error: Exception,
+        output_schema: dict[str, Any],
+        validation_schema: dict[str, Any],
+        warnings: list[str],
+    ) -> ProjectedInstance | None:
+        assert self.ollama_client is not None
+        try:
+            result = await repair_structured_output(
+                self.ollama_client,
+                model=self.ollama_client.chat_model,
+                failed_response=json.dumps(failed_value, ensure_ascii=False),
+                error=error,
+                output_type=output_schema,
+                token_budgeter=self._prompt_token_budgeter(),
+                operation_id=self._prompt_operation_id(
+                    "hybrid_projection_instance_repair",
+                    group.group_id,
+                ),
+                agent_name="hybrid_projection_instance_repair",
+                diagnostic_metadata={
+                    "group_id": group.group_id,
+                    "target_class": group.target_class,
+                    "target_path": group.target_path,
+                },
+                retries=0,
+                num_ctx=self.ollama_client.max_context_length,
+            )
+            self._record_llm_call_result(
+                data_package_id=data_package_id,
+                result=result,
+                agent_name="hybrid_projection_instance_repair",
+            )
+            write = ProjectionInstanceWriteDocument.model_validate(result.output)
+        except (CompletionError, ValidationError) as exc:
+            self._record_llm_call_exception(
+                data_package_id=data_package_id,
+                exc=exc,
+                agent_name="hybrid_projection_instance_repair",
+            )
+            warnings.append(f"Projection instance repair failed for '{group.group_id}': {exc}")
+            return None
+        if write.status == "skip":
+            return ProjectedInstance(
+                group=group,
+                value=None,
+                status="not_projected",
+                reason=write.reason or "Repair skipped projection instance.",
+                used_portable_note_ids=write.used_portable_note_ids,
+                used_contextual_note_ids=write.used_contextual_note_ids,
+                skipped_note_ids=write.skipped_note_ids,
+            )
+        value = remove_null_values(write.value)
+        validation = validate_document_against_profile(
+            document=value if isinstance(value, dict) else {},
+            json_schema=validation_schema,
+            target_class=group.target_class,
+        )
+        if not validation.valid:
+            return None
+        return ProjectedInstance(
+            group=group,
+            value=value,
+            status="projected",
+            reason=write.reason or "Repair produced schema-valid projection instance.",
+            used_portable_note_ids=write.used_portable_note_ids,
+            used_contextual_note_ids=write.used_contextual_note_ids,
+            skipped_note_ids=write.skipped_note_ids,
+        )
 
     def _schema_branches_for_profile(
         self,
@@ -4405,530 +4603,6 @@ class ExtractionService:
                 "sensor",
                 "apparatus",
             )
-        )
-
-    async def _plan_profile_target_for_evidence_group(
-        self,
-        *,
-        data_package_id: str,
-        profile_identifier: str,
-        profile_target_class: str,
-        group: _EvidenceProjectionGroup,
-        file_inventory: list[Any],
-        warnings: list[str],
-        target_catalog: list[dict[str, Any]],
-    ) -> ProfileTargetDecision:
-        assert self.ollama_client is not None
-        try:
-            prompt_components = build_profile_target_planner_prompt_components(
-                data_package_id=data_package_id,
-                profile_identifier=profile_identifier,
-                profile_target_class=profile_target_class,
-                evidence_notes=group.notes,
-                target_catalog=target_catalog,
-                file_inventory=file_inventory,
-            )
-            prompt_budgeter = self._prompt_token_budgeter()
-            result = await generate_structured(
-                self.ollama_client,
-                model=self.ollama_client.chat_model,
-                system=PROFILE_TARGET_PLANNER_SYSTEM_PROMPT,
-                prompt="".join(text for _, text in prompt_components),
-                system_components=[
-                    ("profile_target_planner_system_prompt", PROFILE_TARGET_PLANNER_SYSTEM_PROMPT),
-                ],
-                prompt_components=prompt_components,
-                token_budgeter=prompt_budgeter,
-                operation_id=self._prompt_operation_id(
-                    "profile_target_planner",
-                    group.group_id,
-                ),
-                agent_name="profile_target_planner",
-                diagnostic_metadata={
-                    "group_id": group.group_id,
-                    "target_hint": group.target_hint,
-                    "object_kind": group.object_kind,
-                },
-                output_type=ProfileTargetDecision,
-                num_ctx=self.ollama_client.max_context_length,
-            )
-            self._record_llm_call_result(
-                data_package_id=data_package_id,
-                result=result,
-                agent_name="profile_target_planner",
-            )
-            decision = (
-                result.output
-                if isinstance(result.output, ProfileTargetDecision)
-                else ProfileTargetDecision.model_validate(result.output)
-            )
-        except CompletionError as exc:
-            self._record_llm_call_exception(
-                data_package_id=data_package_id,
-                exc=exc,
-                agent_name="profile_target_planner",
-            )
-            warnings.append(f"Profile target planning fell back for '{group.group_id}': {exc}")
-            decision = self._fallback_target_decision_for_group(group, target_catalog)
-        catalog_paths = {
-            item.get("path")
-            for item in target_catalog
-            if isinstance(item.get("path"), str)
-        }
-        if decision.target_path not in catalog_paths:
-            fallback = self._fallback_target_decision_for_group(group, target_catalog)
-            fallback.reason = (
-                f"Planner selected unavailable target {decision.target_path!r}; "
-                f"using deterministic hint {fallback.target_path!r}."
-            )
-            return fallback
-        return decision
-
-    @staticmethod
-    def _fallback_target_decision_for_group(
-        group: _EvidenceProjectionGroup,
-        target_catalog: list[dict[str, Any]],
-    ) -> ProfileTargetDecision:
-        paths = {
-            item.get("path"): item
-            for item in target_catalog
-            if isinstance(item.get("path"), str)
-        }
-        target = paths.get(group.target_hint) or paths.get("/description")
-        if target is None:
-            return ProfileTargetDecision(
-                status="skip",
-                reason="No usable projection target is available.",
-            )
-        return ProfileTargetDecision(
-            status="targeted",
-            target_path=target["path"],
-            target_class=target.get("target_class") or group.target_class_hint,
-            target_label=target.get("label", ""),
-            reason="Deterministic evidence-category target hint.",
-        )
-
-    async def _patch_profile_with_extraction_object(
-        self,
-        *,
-        data_package_id: str,
-        profile_identifier: str,
-        profile_target_class: str,
-        current_document: dict[str, Any],
-        evidence_note: EvidenceNote,
-        object_identifier: str,
-        file_inventory: list[Any],
-        schema_slice: dict[str, Any],
-        warnings: list[str],
-    ) -> ProfileObjectPatchResult:
-        assert self.ollama_client is not None
-        object_kind = evidence_note.category
-        try:
-            prompt_components = build_profile_patch_prompt_components(
-                data_package_id=data_package_id,
-                profile_identifier=profile_identifier,
-                profile_target_class=profile_target_class,
-                current_document=current_document,
-                evidence_notes=[evidence_note],
-                file_inventory=file_inventory,
-                schema_slice=schema_slice,
-                target_path="/description",
-                target_class=None,
-            )
-            prompt_budgeter = self._prompt_token_budgeter()
-            patch = await generate_structured(
-                self.ollama_client,
-                model=self.ollama_client.chat_model,
-                system=PROFILE_PATCH_SYSTEM_PROMPT,
-                prompt="".join(text for _, text in prompt_components),
-                system_components=[
-                    ("profile_patch_system_prompt", PROFILE_PATCH_SYSTEM_PROMPT),
-                ],
-                prompt_components=prompt_components,
-                token_budgeter=prompt_budgeter,
-                operation_id=self._prompt_operation_id(
-                    "profile_patch",
-                    object_identifier,
-                ),
-                agent_name="profile_patch",
-                diagnostic_metadata={
-                    "object_identifier": object_identifier,
-                    "object_kind": object_kind,
-                    "target_path": "/description",
-                },
-                output_type=ProfilePatchDocument,
-                num_ctx=self.ollama_client.max_context_length,
-            )
-            self._record_llm_call_result(
-                data_package_id=data_package_id,
-                result=patch,
-                agent_name="profile_patch",
-            )
-        except CompletionError as exc:
-            self._record_llm_call_exception(
-                data_package_id=data_package_id,
-                exc=exc,
-                agent_name="profile_patch",
-            )
-            warnings.append(f"Profile patch failed for '{object_identifier}': {exc}")
-            return ProfileObjectPatchResult(
-                object_identifier=object_identifier,
-                object_kind=object_kind,
-                status="failed",
-                error=str(exc),
-            )
-
-        patch_document = (
-            patch.output
-            if isinstance(patch.output, ProfilePatchDocument)
-            else ProfilePatchDocument.model_validate(patch.output)
-        )
-        operations = patch_document.operations
-        if not operations:
-            return ProfileObjectPatchResult(
-                object_identifier=object_identifier,
-                object_kind=object_kind,
-                status="skipped",
-                reason=patch_document.reason,
-            )
-        try:
-            candidate = self._apply_profile_patch(current_document, operations)
-        except Exception as exc:
-            warnings.append(f"Profile patch skipped for '{object_identifier}': {exc}")
-            return ProfileObjectPatchResult(
-                object_identifier=object_identifier,
-                object_kind=object_kind,
-                status="failed",
-                operations=operations,
-                error=str(exc),
-                reason=patch_document.reason,
-            )
-        validation = self.profile_service.validate_document(
-            identifier=profile_identifier,
-            document=candidate,
-        )
-        if not validation.valid:
-            error = "; ".join(
-                f"{issue.path}: {issue.message}" for issue in validation.errors
-            )
-            warnings.append(
-                f"Profile patch skipped for '{object_identifier}' because it broke schema validation: {error}"
-            )
-            return ProfileObjectPatchResult(
-                object_identifier=object_identifier,
-                object_kind=object_kind,
-                status="failed",
-                operations=operations,
-                error=error,
-                reason=patch_document.reason,
-            )
-        return ProfileObjectPatchResult(
-            object_identifier=object_identifier,
-            object_kind=object_kind,
-            status="applied",
-            operations=operations,
-            reason=patch_document.reason,
-        )
-
-    async def _write_profile_target_with_evidence_group(
-        self,
-        *,
-        data_package_id: str,
-        profile_identifier: str,
-        profile_target_class: str,
-        current_document: dict[str, Any],
-        group: _EvidenceProjectionGroup,
-        target_decision: ProfileTargetDecision,
-        validation_schema: dict[str, Any],
-        file_inventory: list[Any],
-        warnings: list[str],
-    ) -> ProfileObjectPatchResult:
-        assert self.ollama_client is not None
-        target_path = target_decision.target_path or group.target_hint
-        target_schema = self._schema_slice_for_json_path(
-            validation_schema,
-            target_path,
-            max_depth=3,
-        )
-        current_target_value = self._value_at_json_pointer(current_document, target_path)
-        unsuitable_reason = self._profile_target_unsuitable_reason(
-            target_path=target_path,
-            notes=group.notes,
-        )
-        if unsuitable_reason:
-            return ProfileObjectPatchResult(
-                object_identifier=group.group_id,
-                object_kind=group.object_kind,
-                status="skipped",
-                target_path=target_path,
-                target_class=target_decision.target_class,
-                planner_status=target_decision.status,
-                planner_reason=target_decision.reason,
-                reason=unsuitable_reason,
-            )
-        if target_path == "/description" and not self._description_target_worthy(group.notes):
-            return ProfileObjectPatchResult(
-                object_identifier=group.group_id,
-                object_kind=group.object_kind,
-                status="skipped",
-                target_path=target_path,
-                target_class=target_decision.target_class,
-                planner_status=target_decision.status,
-                planner_reason=target_decision.reason,
-                reason="Description is reserved for dataset-level prose; grouped evidence is better handled by structured targets or skipped.",
-            )
-        try:
-            prompt_components = build_profile_target_write_prompt_components(
-                data_package_id=data_package_id,
-                profile_identifier=profile_identifier,
-                profile_target_class=profile_target_class,
-                target_path=target_path,
-                target_class=target_decision.target_class,
-                target_label=target_decision.target_label,
-                current_target_value=current_target_value,
-                evidence_notes=group.notes,
-                file_inventory=file_inventory,
-                schema_slice=target_schema,
-            )
-            prompt_budgeter = self._prompt_token_budgeter()
-            write = await generate_structured(
-                self.ollama_client,
-                model=self.ollama_client.chat_model,
-                system=PROFILE_TARGET_WRITER_SYSTEM_PROMPT,
-                prompt="".join(text for _, text in prompt_components),
-                system_components=[
-                    ("profile_target_writer_system_prompt", PROFILE_TARGET_WRITER_SYSTEM_PROMPT),
-                ],
-                prompt_components=prompt_components,
-                token_budgeter=prompt_budgeter,
-                operation_id=self._prompt_operation_id(
-                    "profile_target_writer",
-                    group.group_id,
-                    target_path,
-                ),
-                agent_name="profile_target_writer",
-                diagnostic_metadata={
-                    "group_id": group.group_id,
-                    "object_kind": group.object_kind,
-                    "target_path": target_path,
-                    "target_class": target_decision.target_class,
-                },
-                output_type=ProfileTargetWriteDocument,
-                num_ctx=self.ollama_client.max_context_length,
-            )
-            self._record_llm_call_result(
-                data_package_id=data_package_id,
-                result=write,
-                agent_name="profile_target_writer",
-            )
-        except CompletionError as exc:
-            self._record_llm_call_exception(
-                data_package_id=data_package_id,
-                exc=exc,
-                agent_name="profile_target_writer",
-            )
-            fallback = self._deterministic_profile_target_write_result(
-                profile_identifier=profile_identifier,
-                current_document=current_document,
-                group=group,
-                target_path=target_path,
-                target_class=target_decision.target_class,
-                planner_status=target_decision.status,
-                planner_reason=target_decision.reason,
-                current_target_value=current_target_value,
-                reason_prefix="Deterministic schema-safe target fallback after model writer failure",
-            )
-            if fallback is not None:
-                warnings.append(
-                    f"Profile target write used deterministic fallback for '{group.group_id}' after model failure: {exc}"
-                )
-                return fallback
-            warnings.append(f"Profile target write failed for '{group.group_id}': {exc}")
-            return ProfileObjectPatchResult(
-                object_identifier=group.group_id,
-                object_kind=group.object_kind,
-                status="failed",
-                target_path=target_path,
-                target_class=target_decision.target_class,
-                planner_status=target_decision.status,
-                planner_reason=target_decision.reason,
-                error=str(exc),
-            )
-
-        write_document = (
-            write.output
-            if isinstance(write.output, ProfileTargetWriteDocument)
-            else ProfileTargetWriteDocument.model_validate(write.output)
-        )
-        if write_document.status == "skip":
-            return ProfileObjectPatchResult(
-                object_identifier=group.group_id,
-                object_kind=group.object_kind,
-                status="skipped",
-                target_path=target_path,
-                target_class=target_decision.target_class,
-                planner_status=target_decision.status,
-                planner_reason=target_decision.reason,
-                reason=write_document.reason or target_decision.reason,
-            )
-
-        target_value = self._coerce_profile_target_value(
-            target_path=target_path,
-            current_value=current_target_value,
-            proposed_value=write_document.value,
-        )
-        target_value = self._curate_profile_target_value(
-            target_path=target_path,
-            value=target_value,
-        )
-        if self._target_write_is_empty(current_target_value, target_value):
-            return ProfileObjectPatchResult(
-                object_identifier=group.group_id,
-                object_kind=group.object_kind,
-                status="skipped",
-                target_path=target_path,
-                target_class=target_decision.target_class,
-                planner_status=target_decision.status,
-                planner_reason=target_decision.reason,
-                reason="Target write only contained low-level instrument configuration or duplicate values.",
-            )
-        try:
-            candidate = self._apply_profile_target_write(
-                current_document,
-                target_path,
-                target_value,
-            )
-        except Exception as exc:
-            warnings.append(f"Profile target write skipped for '{group.group_id}': {exc}")
-            return ProfileObjectPatchResult(
-                object_identifier=group.group_id,
-                object_kind=group.object_kind,
-                status="failed",
-                target_path=target_path,
-                target_class=target_decision.target_class,
-                planner_status=target_decision.status,
-                planner_reason=target_decision.reason,
-                target_value=target_value,
-                error=str(exc),
-                reason=write_document.reason,
-            )
-        validation = self.profile_service.validate_document(
-            identifier=profile_identifier,
-            document=candidate,
-        )
-        if not validation.valid:
-            error = "; ".join(
-                f"{issue.path}: {issue.message}" for issue in validation.errors
-            )
-            fallback = self._deterministic_profile_target_write_result(
-                profile_identifier=profile_identifier,
-                current_document=current_document,
-                group=group,
-                target_path=target_path,
-                target_class=target_decision.target_class,
-                planner_status=target_decision.status,
-                planner_reason=target_decision.reason,
-                current_target_value=current_target_value,
-                reason_prefix=f"Deterministic schema-safe target fallback after invalid writer value ({error})",
-            )
-            if fallback is not None:
-                warnings.append(
-                    f"Profile target write repaired for '{group.group_id}' with deterministic fallback after validation failed: {error}"
-                )
-                return fallback
-            warnings.append(
-                f"Profile target write skipped for '{group.group_id}' because it broke schema validation: {error}"
-            )
-            return ProfileObjectPatchResult(
-                object_identifier=group.group_id,
-                object_kind=group.object_kind,
-                status="failed",
-                target_path=target_path,
-                target_class=target_decision.target_class,
-                planner_status=target_decision.status,
-                planner_reason=target_decision.reason,
-                target_value=target_value,
-                error=error,
-                reason=write_document.reason,
-            )
-        return ProfileObjectPatchResult(
-            object_identifier=group.group_id,
-            object_kind=group.object_kind,
-            status="applied",
-            target_path=target_path,
-            target_class=target_decision.target_class,
-            planner_status=target_decision.status,
-            planner_reason=target_decision.reason,
-            target_value=target_value,
-            merge_status="merged",
-            reason=write_document.reason or target_decision.reason,
-        )
-
-    def _deterministic_profile_target_write_result(
-        self,
-        *,
-        profile_identifier: str,
-        current_document: dict[str, Any],
-        group: _EvidenceProjectionGroup,
-        target_path: str,
-        target_class: str | None,
-        planner_status: str | None,
-        planner_reason: str | None,
-        current_target_value: Any,
-        reason_prefix: str,
-    ) -> ProfileObjectPatchResult | None:
-        fallback_value = self._fallback_profile_target_value(
-            target_path=target_path,
-            current_value=current_target_value,
-            notes=group.notes,
-        )
-        if fallback_value is None:
-            return ProfileObjectPatchResult(
-                object_identifier=group.group_id,
-                object_kind=group.object_kind,
-                status="skipped",
-                target_path=target_path,
-                target_class=target_class,
-                planner_status=planner_status,
-                planner_reason=planner_reason,
-                reason=f"{reason_prefix}; no profile-worthy schema-safe value could be derived.",
-        )
-        try:
-            candidate = self._apply_profile_target_write(
-                current_document,
-                target_path,
-                fallback_value,
-            )
-        except Exception as exc:
-            return ProfileObjectPatchResult(
-                object_identifier=group.group_id,
-                object_kind=group.object_kind,
-                status="failed",
-                target_path=target_path,
-                target_class=target_class,
-                planner_status=planner_status,
-                planner_reason=planner_reason,
-                target_value=fallback_value,
-                error=str(exc),
-                reason=reason_prefix,
-            )
-        validation = self.profile_service.validate_document(
-            identifier=profile_identifier,
-            document=candidate,
-        )
-        if not validation.valid:
-            return None
-        return ProfileObjectPatchResult(
-            object_identifier=group.group_id,
-            object_kind=group.object_kind,
-            status="applied",
-            target_path=target_path,
-            target_class=target_class,
-            planner_status=planner_status,
-            planner_reason=planner_reason,
-            target_value=fallback_value,
-            merge_status="merged",
-            reason=reason_prefix,
         )
 
     @classmethod
@@ -5749,175 +5423,6 @@ class ExtractionService:
             seen.add(key)
             merged.append(item)
         return merged
-
-    async def _patch_profile_with_extraction_group(
-        self,
-        *,
-        data_package_id: str,
-        profile_identifier: str,
-        profile_target_class: str,
-        current_document: dict[str, Any],
-        group: _EvidenceProjectionGroup,
-        target_decision: ProfileTargetDecision,
-        validation_schema: dict[str, Any],
-        file_inventory: list[Any],
-        warnings: list[str],
-    ) -> ProfileObjectPatchResult:
-        assert self.ollama_client is not None
-        target_path = target_decision.target_path or group.target_hint
-        target_schema = self._schema_slice_for_json_path(
-            validation_schema,
-            target_path,
-            max_depth=2,
-        )
-        try:
-            prompt_components = build_profile_patch_prompt_components(
-                data_package_id=data_package_id,
-                profile_identifier=profile_identifier,
-                profile_target_class=profile_target_class,
-                current_document=current_document,
-                evidence_notes=group.notes,
-                file_inventory=file_inventory,
-                schema_slice=target_schema,
-                target_path=target_path,
-                target_class=target_decision.target_class,
-            )
-            prompt_budgeter = self._prompt_token_budgeter()
-            patch = await generate_structured(
-                self.ollama_client,
-                model=self.ollama_client.chat_model,
-                system=PROFILE_PATCH_SYSTEM_PROMPT,
-                prompt="".join(text for _, text in prompt_components),
-                system_components=[
-                    ("profile_patch_system_prompt", PROFILE_PATCH_SYSTEM_PROMPT),
-                ],
-                prompt_components=prompt_components,
-                token_budgeter=prompt_budgeter,
-                operation_id=self._prompt_operation_id(
-                    "profile_patch",
-                    group.group_id,
-                    target_path,
-                ),
-                agent_name="profile_patch",
-                diagnostic_metadata={
-                    "group_id": group.group_id,
-                    "object_kind": group.object_kind,
-                    "target_path": target_path,
-                    "target_class": target_decision.target_class,
-                },
-                output_type=ProfilePatchDocument,
-                num_ctx=self.ollama_client.max_context_length,
-            )
-            self._record_llm_call_result(
-                data_package_id=data_package_id,
-                result=patch,
-                agent_name="profile_patch",
-            )
-        except CompletionError as exc:
-            self._record_llm_call_exception(
-                data_package_id=data_package_id,
-                exc=exc,
-                agent_name="profile_patch",
-            )
-            warnings.append(f"Profile patch failed for '{group.group_id}': {exc}")
-            return ProfileObjectPatchResult(
-                object_identifier=group.group_id,
-                object_kind=group.object_kind,
-                status="failed",
-                target_path=target_path,
-                target_class=target_decision.target_class,
-                planner_status=target_decision.status,
-                planner_reason=target_decision.reason,
-                error=str(exc),
-            )
-
-        patch_document = (
-            patch.output
-            if isinstance(patch.output, ProfilePatchDocument)
-            else ProfilePatchDocument.model_validate(patch.output)
-        )
-        operations = patch_document.operations
-        if not operations:
-            return ProfileObjectPatchResult(
-                object_identifier=group.group_id,
-                object_kind=group.object_kind,
-                status="skipped",
-                target_path=target_path,
-                target_class=target_decision.target_class,
-                planner_status=target_decision.status,
-                planner_reason=target_decision.reason,
-                reason=patch_document.reason or target_decision.reason,
-            )
-        invalid_paths = [
-            operation.path
-            for operation in operations
-            if not self._patch_path_allowed_for_target(operation.path, target_path)
-        ]
-        if invalid_paths:
-            error = f"Patch wrote outside selected target {target_path}: {', '.join(invalid_paths)}"
-            warnings.append(f"Profile patch skipped for '{group.group_id}': {error}")
-            return ProfileObjectPatchResult(
-                object_identifier=group.group_id,
-                object_kind=group.object_kind,
-                status="failed",
-                operations=operations,
-                target_path=target_path,
-                target_class=target_decision.target_class,
-                planner_status=target_decision.status,
-                planner_reason=target_decision.reason,
-                error=error,
-                reason=patch_document.reason,
-            )
-        try:
-            candidate = self._apply_profile_patch(current_document, operations)
-        except Exception as exc:
-            warnings.append(f"Profile patch skipped for '{group.group_id}': {exc}")
-            return ProfileObjectPatchResult(
-                object_identifier=group.group_id,
-                object_kind=group.object_kind,
-                status="failed",
-                operations=operations,
-                target_path=target_path,
-                target_class=target_decision.target_class,
-                planner_status=target_decision.status,
-                planner_reason=target_decision.reason,
-                error=str(exc),
-                reason=patch_document.reason,
-            )
-        validation = self.profile_service.validate_document(
-            identifier=profile_identifier,
-            document=candidate,
-        )
-        if not validation.valid:
-            error = "; ".join(
-                f"{issue.path}: {issue.message}" for issue in validation.errors
-            )
-            warnings.append(
-                f"Profile patch skipped for '{group.group_id}' because it broke schema validation: {error}"
-            )
-            return ProfileObjectPatchResult(
-                object_identifier=group.group_id,
-                object_kind=group.object_kind,
-                status="failed",
-                operations=operations,
-                target_path=target_path,
-                target_class=target_decision.target_class,
-                planner_status=target_decision.status,
-                planner_reason=target_decision.reason,
-                error=error,
-                reason=patch_document.reason,
-            )
-        return ProfileObjectPatchResult(
-            object_identifier=group.group_id,
-            object_kind=group.object_kind,
-            status="applied",
-            operations=operations,
-            target_path=target_path,
-            target_class=target_decision.target_class,
-            planner_status=target_decision.status,
-            planner_reason=target_decision.reason,
-            reason=patch_document.reason or target_decision.reason,
-        )
 
     @staticmethod
     def _patch_path_allowed_for_target(path: str, target_path: str) -> bool:

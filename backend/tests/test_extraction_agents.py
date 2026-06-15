@@ -1,5 +1,7 @@
+import json
 import re
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from jsonschema import Draft202012Validator
@@ -39,6 +41,13 @@ from app.domain.extraction import (
     build_quantity_kind_vocab_query,
     build_unit_vocab_query,
     fallback_file_ranking,
+    InstanceProjectionGroup,
+    ProjectedInstance,
+    assemble_hybrid_dataset_projection,
+    group_instance_candidates,
+    prepare_hybrid_projection,
+    route_portable_evidence_note,
+    select_contextual_evidence_for_group,
     normalize_chunk_text_for_evidence_prompt,
     search_schema_branches,
     validate_evidence_context_for_chunk,
@@ -1404,6 +1413,345 @@ classes:
         self.assertEqual(record.evidence_quality["note_count"], 1)
         self.assertEqual(len(record.evidence_note_identifiers), 1)
         self.assertIn("metadata.txt#1-2#sample", record.evidence_note_identifiers)
+
+    def test_hybrid_projection_routes_portable_evidence_to_instance_candidates(self):
+        notes = [
+            EvidenceNote(
+                note_id="dataset_name",
+                category="entity_signal",
+                claim="The dataset name is 1H NMR.",
+                evidence_text="dataset name: 1H NMR",
+            ),
+            EvidenceNote(
+                note_id="file",
+                category="resource_signal",
+                claim="The dataset contains a file named data.csv.",
+                evidence_text="data.csv 155c4170754232f3d940fc21c9fd5b58",
+            ),
+            EvidenceNote(
+                note_id="instrument",
+                category="agent_signal",
+                claim="The instrument used is Bruker Avance 500 MHz.",
+                evidence_text="instrument: Bruker Avance 500 MHz",
+            ),
+            EvidenceNote(
+                note_id="owner",
+                category="agent_signal",
+                claim="The owner is nmr.",
+                evidence_text="##OWNER= nmr",
+            ),
+            EvidenceNote(
+                note_id="method",
+                category="method_signal",
+                claim="The acquisition mode is set to LONG.",
+                evidence_text="DI_MODE LONG",
+            ),
+        ]
+
+        candidates = [
+            route_portable_evidence_note(note, data_package_id="package-id")
+            for note in notes
+        ]
+        target_classes = {candidate.target_class for candidate in candidates}
+
+        self.assertIn("Dataset", target_classes)
+        self.assertIn("Distribution", target_classes)
+        self.assertIn("AgenticEntity", target_classes)
+        self.assertIn("Agent", target_classes)
+        self.assertIn("DataGeneratingActivity", target_classes)
+
+    def test_hybrid_projection_ambiguous_measurement_needs_class_choice(self):
+        notes = [
+            EvidenceNote(
+                note_id="ambiguous_measurement",
+                category="measurement_signal",
+                claim="FW= 125000",
+                evidence_text="FW= 125000",
+            ),
+        ]
+
+        preparation = prepare_hybrid_projection(
+            data_package_id="package-id",
+            evidence_context=EvidenceContext(notes=notes),
+        )
+
+        self.assertEqual(preparation.groups, [])
+        self.assertEqual(len(preparation.ledger), 1)
+        self.assertIn("Ambiguous target class", preparation.ledger[0].reason)
+
+    def test_hybrid_projection_merges_only_matching_identity_keys(self):
+        same_file_notes = [
+            EvidenceNote(
+                note_id="file_a",
+                category="resource_signal",
+                claim="The dataset contains a file named data.csv.",
+                evidence_text="data.csv",
+                file_path="manifest.txt",
+                start_idx=0,
+                end_idx=1,
+            ),
+            EvidenceNote(
+                note_id="file_a_repeat",
+                category="resource_signal",
+                claim="The distribution file is data.csv.",
+                evidence_text="data.csv",
+                file_path="manifest.txt",
+                start_idx=2,
+                end_idx=3,
+            ),
+            EvidenceNote(
+                note_id="file_b",
+                category="resource_signal",
+                claim="The dataset contains a file named other.csv.",
+                evidence_text="other.csv",
+                file_path="manifest.txt",
+                start_idx=4,
+                end_idx=5,
+            ),
+        ]
+
+        candidates = [
+            route_portable_evidence_note(note, data_package_id="package-id")
+            for note in same_file_notes
+        ]
+        groups = group_instance_candidates(
+            data_package_id="package-id",
+            candidates=candidates,
+            contextual_notes=[],
+        )
+        group_sizes = sorted(len(group.portable_notes) for group in groups)
+
+        self.assertEqual(group_sizes, [1, 2])
+
+    def test_hybrid_projection_candidates_without_identity_do_not_merge(self):
+        notes = [
+            EvidenceNote(
+                note_id="method_a",
+                category="method_signal",
+                claim="The acquisition mode is set to LONG.",
+                evidence_text="DI_MODE LONG",
+                file_path="acqus",
+                start_idx=0,
+                end_idx=1,
+            ),
+            EvidenceNote(
+                note_id="method_b",
+                category="method_signal",
+                claim="The processing method includes a filter.",
+                evidence_text="BC_mod qfil",
+                file_path="procs",
+                start_idx=0,
+                end_idx=1,
+            ),
+        ]
+
+        candidates = [
+            route_portable_evidence_note(note, data_package_id="package-id")
+            for note in notes
+        ]
+        groups = group_instance_candidates(
+            data_package_id="package-id",
+            candidates=candidates,
+            contextual_notes=[],
+        )
+
+        self.assertEqual(len(groups), 2)
+
+    def test_hybrid_contextual_selection_uses_same_file_span_distance_and_cap(self):
+        portable = [
+            EvidenceNote(
+                note_id="method",
+                category="method_signal",
+                claim="The acquisition method is defined.",
+                evidence_text="method",
+                file_path="acqus",
+                start_idx=10,
+                end_idx=12,
+            )
+        ]
+        contextual = [
+            EvidenceNote(
+                note_id=f"context_{index}",
+                category="method_signal" if index % 2 == 0 else "agent_signal",
+                claim=f"Context {index}",
+                evidence_text=f"Context {index}",
+                file_path="acqus",
+                start_idx=index,
+                end_idx=index + 1,
+            )
+            for index in range(20)
+        ] + [
+            EvidenceNote(
+                note_id="other_file",
+                category="method_signal",
+                claim="Other file context",
+                evidence_text="Other",
+                file_path="other",
+                start_idx=10,
+                end_idx=11,
+            )
+        ]
+
+        selected = select_contextual_evidence_for_group(
+            portable_notes=portable,
+            contextual_notes=contextual,
+            target_class="DataGeneratingActivity",
+        )
+
+        self.assertGreaterEqual(len(selected), 3)
+        self.assertLessEqual(len(selected), 10)
+        self.assertTrue(all(note.file_path == "acqus" for note in selected))
+        self.assertEqual(selected[0].note_id, "context_10")
+
+    def test_hybrid_projection_assembles_schema_valid_dcat_ap_plus_dataset(self):
+        schema_path = Path(".runtime/profiles/dcat-ap-plus/json_schema.json")
+        if not schema_path.exists():
+            self.skipTest("dcat-ap-plus runtime profile is not registered")
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        dataset_schema = {"$ref": "#/$defs/Dataset", "$defs": schema["$defs"]}
+        notes = [
+            EvidenceNote(
+                note_id="dataset_name",
+                category="entity_signal",
+                claim="The dataset name is 1H NMR.",
+                evidence_text="dataset name: 1H NMR",
+                file_path="dataset_description.txt",
+                start_idx=0,
+                end_idx=1,
+            ),
+            EvidenceNote(
+                note_id="file",
+                category="resource_signal",
+                claim="The dataset contains a file named 10.edit.jdx.",
+                evidence_text="10.edit.jdx 155c4170754232f3d940fc21c9fd5b58",
+                file_path="dataset_description.txt",
+                start_idx=1,
+                end_idx=2,
+            ),
+            EvidenceNote(
+                note_id="instrument",
+                category="agent_signal",
+                claim="The instrument used is Bruker Avance 500 MHz.",
+                evidence_text="instrument: Bruker Avance 500 MHz",
+                file_path="dataset_description.txt",
+                start_idx=2,
+                end_idx=3,
+            ),
+            EvidenceNote(
+                note_id="mode",
+                category="method_signal",
+                claim="The acquisition mode is set to LONG.",
+                evidence_text="DI_MODE LONG",
+                file_path="format.temp",
+                start_idx=0,
+                end_idx=1,
+            ),
+            EvidenceNote(
+                note_id="ambiguous_measurement",
+                category="measurement_signal",
+                claim="FW= 125000",
+                evidence_text="FW= 125000",
+                file_path="acqus",
+                start_idx=0,
+                end_idx=1,
+            ),
+        ]
+        base_document = {
+            "id": "package-id",
+            "title": [],
+            "description": [],
+            "was_generated_by": [],
+            "identifier": [],
+        }
+
+        evidence_context = EvidenceContext(notes=notes)
+        preparation = prepare_hybrid_projection(
+            data_package_id="package-id",
+            evidence_context=evidence_context,
+        )
+        projected_instances = [
+            ProjectedInstance(
+                group=group,
+                value={
+                    "id": "package-id:activity:long",
+                    "title": ["Data generation activity"],
+                    "description": ["NMR acquisition activity."],
+                    "has_qualitative_attribute": [],
+                    "has_quantitative_attribute": [],
+                    "evaluated_activity": [],
+                    "evaluated_entity": [],
+                    "carried_out_by": [],
+                } if group.target_class == "DataGeneratingActivity" else {
+                    "access_URL": [{"id": "package-id:distribution:data"}],
+                    "title": ["data distribution"],
+                    "description": ["Dataset file distribution."],
+                } if group.target_class == "Distribution" else {
+                    "id": "package-id:agentic-entity:bruker",
+                    "title": "Bruker Avance 500 MHz",
+                    "description": "Instrument used for the activity.",
+                    "has_qualitative_attribute": [],
+                    "has_quantitative_attribute": [],
+                    "has_part": [],
+                    "part_of": [],
+                    "other_identifier": [],
+                } if group.target_class == "AgenticEntity" else {
+                    "name": ["nmr"],
+                } if group.target_class == "Agent" else {
+                    "title": ["1H NMR"],
+                    "description": ["SIMONE metadata draft for 1H NMR."],
+                    "id": "package-id",
+                    "was_generated_by": [],
+                },
+                status="projected",
+                reason="mocked valid instance",
+            )
+            for group in preparation.groups
+        ]
+
+        result = assemble_hybrid_dataset_projection(
+            data_package_id="package-id",
+            base_document=base_document,
+            evidence_context=evidence_context,
+            projected_instances=projected_instances,
+            preparation_ledger=preparation.ledger,
+        )
+
+        errors = sorted(Draft202012Validator(dataset_schema).iter_errors(result.document), key=str)
+        self.assertEqual(errors, [])
+        self.assertEqual(result.document["title"], ["1H NMR"])
+        self.assertEqual(result.document["was_generated_by"][0]["id"], "package-id:activity:long")
+        self.assertIn("carried_out_by", result.document["was_generated_by"][0])
+        self.assertIn("dataset_distribution", result.document)
+        ambiguous_records = [
+            record
+            for record in result.ledger
+            if record.status == "not_projected"
+        ]
+        self.assertTrue(any("Ambiguous measurement" in record.reason for record in ambiguous_records))
+
+    def test_hybrid_projection_scaffold_records_required_fallbacks(self):
+        evidence_context = EvidenceContext(notes=[])
+        result = assemble_hybrid_dataset_projection(
+            data_package_id="package-id",
+            base_document={
+                "id": "package-id",
+                "title": [],
+                "description": [],
+                "was_generated_by": [],
+            },
+            evidence_context=evidence_context,
+            projected_instances=[],
+            preparation_ledger=[],
+        )
+
+        self.assertEqual(result.document["title"], ["package-id"])
+        self.assertEqual(result.document["description"], ["SIMONE metadata draft for package-id."])
+        scaffold_paths = {
+            record.target_path
+            for record in result.ledger
+            if record.object_kind == "ScaffoldFact"
+        }
+        self.assertEqual(scaffold_paths, {"/title", "/description", "/was_generated_by/0"})
 if __name__ == "__main__":
     unittest.main()
 

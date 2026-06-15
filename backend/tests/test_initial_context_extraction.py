@@ -27,7 +27,9 @@ from app.domain.extraction import (
     FilteredEvidenceLedger,
     FileRankingResult,
     GroundedExtractionObject,
+    InstanceProjectionGroup,
     PromptTokenBudgeter,
+    ProjectedInstance,
     ProfilePatchDocument,
     ProfileTargetDecision,
     ProfileTargetWriteDocument,
@@ -571,6 +573,70 @@ def target_decision(path: str, target_class: str | None = None) -> CompletionRes
 def target_write(value) -> CompletionResult[ProfileTargetWriteDocument]:
     return CompletionResult(
         output=ProfileTargetWriteDocument(value=value),
+        usage=RunUsage(requests=1),
+    )
+
+
+def hybrid_instance_write(output_type) -> CompletionResult[dict]:
+    target_ref = (
+        output_type.get("properties", {})
+        .get("value", {})
+        .get("anyOf", [{}])[0]
+        .get("$ref", "")
+    )
+    target_class = target_ref.rsplit("/", 1)[-1]
+    value = {
+        "Dataset": {
+            "id": "package-id",
+            "title": ["Dataset"],
+            "description": ["Dataset metadata."],
+            "was_generated_by": [],
+        },
+        "Distribution": {
+            "access_URL": [{"id": "package-id:distribution:access"}],
+            "title": ["Dataset distribution"],
+            "description": ["Dataset distribution."],
+        },
+        "DataGeneratingActivity": {
+            "id": "package-id:activity:generated",
+            "title": ["Data generation activity"],
+            "description": ["Data generation activity."],
+            "has_qualitative_attribute": [],
+            "has_quantitative_attribute": [],
+            "evaluated_activity": [],
+            "evaluated_entity": [],
+            "carried_out_by": [],
+        },
+        "EvaluatedEntity": {
+            "id": "package-id:entity:generated",
+            "title": "Evaluated entity",
+            "description": "Evaluated entity.",
+            "has_qualitative_attribute": [],
+            "has_quantitative_attribute": [],
+            "was_generated_by": [],
+        },
+        "AgenticEntity": {
+            "id": "package-id:agentic-entity:generated",
+            "title": "Agentic entity",
+            "description": "Agentic entity.",
+            "has_qualitative_attribute": [],
+            "has_quantitative_attribute": [],
+            "has_part": [],
+            "part_of": [],
+            "other_identifier": [],
+        },
+        "Agent": {"name": ["Agent"]},
+        "Concept": {"preferred_label": ["dataset"]},
+    }.get(target_class)
+    return CompletionResult(
+        output={
+            "status": "write" if value is not None else "skip",
+            "value": value,
+            "used_portable_note_ids": [],
+            "used_contextual_note_ids": [],
+            "skipped_note_ids": [],
+            "reason": "Test hybrid projection instance.",
+        },
         usage=RunUsage(requests=1),
     )
 
@@ -2164,6 +2230,8 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 return target_decision("/description")
             if _kwargs["output_type"] is ProfileTargetWriteDocument:
                 return target_write("measurement file.")
+            if isinstance(_kwargs["output_type"], dict):
+                return hybrid_instance_write(_kwargs["output_type"])
             return CompletionResult(
                 output={"id": "dataset"},
                 usage=RunUsage(requests=1, input_tokens=30, output_tokens=8),
@@ -2184,7 +2252,20 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(output_repository.evidence_contexts[1].notes), 2)
         self.assertIsNotNone(output_repository.result)
         self.assertEqual(output_repository.result.generated_final_draft["id"], "package-id")
-        self.assertEqual(len(output_repository.run_state.projection_ledger), 2)
+        self.assertGreaterEqual(len(output_repository.run_state.projection_ledger), 2)
+        self.assertTrue(
+            any(
+                record.planner_status == "deterministic"
+                or record.planner_status == "hybrid_instance_builder"
+                for record in output_repository.run_state.projection_ledger
+            )
+        )
+        self.assertTrue(
+            any(
+                record.object_kind == "ScaffoldFact"
+                for record in output_repository.run_state.projection_ledger
+            )
+        )
         self.assertIn("chunk_extraction", output_repository.token_usage)
 
     async def test_context_target_stops_after_interim_context_without_result(self):
@@ -2291,7 +2372,9 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 return target_decision("/type")
             if kwargs["output_type"] is ProfileTargetWriteDocument:
                 return target_write([{"preferred_label": ["dataset"]}])
-            raise AssertionError("Only profile target generation is expected")
+            if isinstance(kwargs["output_type"], dict):
+                return hybrid_instance_write(kwargs["output_type"])
+            raise AssertionError("Only hybrid profile generation is expected")
 
         with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
             result, status = await service.run_extraction(
@@ -2312,6 +2395,158 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(status, TaskStatus.COMPLETED)
         self.assertIsNotNone(progress)
         self.assertEqual(progress.stage, "profile_draft")
+
+    async def test_hybrid_instance_builder_inserts_valid_mocked_instance(self):
+        service, _, _ = make_service([[make_chunk()]])
+        group = InstanceProjectionGroup(
+            group_id="instance:distribution:test",
+            target_class="Distribution",
+            target_path="/dataset_distribution",
+            portable_notes=[
+                EvidenceNote(
+                    note_id="file",
+                    category="resource_signal",
+                    claim="The dataset contains a file named data.csv.",
+                    evidence_text="data.csv",
+                )
+            ],
+            contextual_notes=[],
+            identity_key="distribution:data-csv",
+            reason="test",
+        )
+        schema = {
+            "$defs": {
+                "Distribution": {
+                    "type": "object",
+                    "required": ["title"],
+                    "properties": {"title": {"type": "string"}},
+                    "additionalProperties": False,
+                }
+            }
+        }
+
+        async def fake_generate(*_args, **_kwargs):
+            return CompletionResult(
+                output={
+                    "status": "write",
+                    "value": {"title": "data.csv"},
+                    "used_portable_note_ids": ["file"],
+                    "used_contextual_note_ids": [],
+                    "skipped_note_ids": [],
+                    "reason": "valid",
+                },
+                usage=RunUsage(requests=1),
+            )
+
+        with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
+            instance = await service._build_hybrid_projection_instance(
+                data_package_id="package-id",
+                group=group,
+                validation_schema=schema,
+                warnings=[],
+            )
+
+        self.assertEqual(instance.status, "projected")
+        self.assertEqual(instance.value, {"title": "data.csv"})
+
+    async def test_hybrid_instance_builder_skips_when_model_skips(self):
+        service, _, _ = make_service([[make_chunk()]])
+        group = InstanceProjectionGroup(
+            group_id="instance:distribution:test",
+            target_class="Distribution",
+            target_path="/dataset_distribution",
+            portable_notes=[EvidenceNote(note_id="file", category="resource_signal", claim="file", evidence_text="file")],
+            contextual_notes=[],
+            identity_key=None,
+            reason="test",
+        )
+        schema = {"$defs": {"Distribution": {"type": "object", "additionalProperties": True}}}
+
+        async def fake_generate(*_args, **_kwargs):
+            return CompletionResult(
+                output={
+                    "status": "skip",
+                    "value": None,
+                    "used_portable_note_ids": [],
+                    "used_contextual_note_ids": [],
+                    "skipped_note_ids": ["file"],
+                    "reason": "not useful",
+                },
+                usage=RunUsage(requests=1),
+            )
+
+        with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
+            instance = await service._build_hybrid_projection_instance(
+                data_package_id="package-id",
+                group=group,
+                validation_schema=schema,
+                warnings=[],
+            )
+
+        self.assertEqual(instance.status, "not_projected")
+        self.assertEqual(instance.skipped_note_ids, ["file"])
+
+    async def test_hybrid_instance_builder_repairs_invalid_mocked_instance(self):
+        service, _, _ = make_service([[make_chunk()]])
+        group = InstanceProjectionGroup(
+            group_id="instance:distribution:test",
+            target_class="Distribution",
+            target_path="/dataset_distribution",
+            portable_notes=[EvidenceNote(note_id="file", category="resource_signal", claim="file", evidence_text="file")],
+            contextual_notes=[],
+            identity_key=None,
+            reason="test",
+        )
+        schema = {
+            "$defs": {
+                "Distribution": {
+                    "type": "object",
+                    "required": ["title"],
+                    "properties": {"title": {"type": "string"}},
+                    "additionalProperties": False,
+                }
+            }
+        }
+
+        async def fake_generate(*_args, **_kwargs):
+            return CompletionResult(
+                output={
+                    "status": "write",
+                    "value": {"description": "invalid"},
+                    "used_portable_note_ids": [],
+                    "used_contextual_note_ids": [],
+                    "skipped_note_ids": [],
+                    "reason": "invalid",
+                },
+                usage=RunUsage(requests=1),
+            )
+
+        async def fake_repair(*_args, **_kwargs):
+            return CompletionResult(
+                output={
+                    "status": "write",
+                    "value": {"title": "data.csv"},
+                    "used_portable_note_ids": ["file"],
+                    "used_contextual_note_ids": [],
+                    "skipped_note_ids": [],
+                    "reason": "repaired",
+                },
+                usage=RunUsage(requests=1),
+            )
+
+        with (
+            patch("app.services.extraction_service.generate_structured", side_effect=fake_generate),
+            patch("app.services.extraction_service.repair_structured_output", side_effect=fake_repair),
+        ):
+            instance = await service._build_hybrid_projection_instance(
+                data_package_id="package-id",
+                group=group,
+                validation_schema=schema,
+                warnings=[],
+            )
+
+        self.assertEqual(instance.status, "projected")
+        self.assertEqual(instance.value, {"title": "data.csv"})
 
     async def test_grounding_target_uses_manual_interim_profile_and_writes_result(self):
         service, task_registry, output_repository = make_service([[make_chunk()]])
@@ -2485,6 +2720,9 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             if output_type is ProfilePatchDocument:
                 call_order.append("profile_patch")
                 return empty_profile_patch()
+            if isinstance(output_type, dict):
+                call_order.append("profile")
+                return hybrid_instance_write(output_type)
             call_order.append("profile")
             return CompletionResult(
                 output={"id": "dataset"},

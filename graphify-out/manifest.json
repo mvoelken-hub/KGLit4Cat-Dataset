@@ -150,9 +150,9 @@
     "semantic_hash": "a7523bdcf94736a02af78a36c8de9688"
   },
   "backend/app/domain/extraction/__init__.py": {
-    "mtime": 1781545463.4690905,
-    "ast_hash": "68b04a996ab8985ca098f8d6a1bbff37",
-    "semantic_hash": "68b04a996ab8985ca098f8d6a1bbff37"
+    "mtime": 1781563814.04475,
+    "ast_hash": "08e3e061a7e6f95230563216b20c769a",
+    "semantic_hash": ""
   },
   "backend/app/domain/extraction/extraction_context.py": {
     "mtime": 1781522761.4210541,
@@ -170,9 +170,9 @@
     "semantic_hash": "5c5aec28ec37a82ef1d60e41f9be0034"
   },
   "backend/app/domain/extraction/profile_projection.py": {
-    "mtime": 1781529523.1323154,
-    "ast_hash": "de0c5bd009456c177ae59c7d874c853a",
-    "semantic_hash": "de0c5bd009456c177ae59c7d874c853a"
+    "mtime": 1781563800.6231833,
+    "ast_hash": "109114cb0c011bb5855096fb9b512fdd",
+    "semantic_hash": ""
   },
   "backend/app/domain/extraction/vocabulary.py": {
     "mtime": 1781529546.4175196,
@@ -320,9 +320,9 @@
     "semantic_hash": "fb99458348a438519f9cd27df37fab70"
   },
   "backend/app/services/extraction_service.py": {
-    "mtime": 1781546419.3349538,
-    "ast_hash": "d493ca164de64d27ecea42cc858e7ef6",
-    "semantic_hash": "d493ca164de64d27ecea42cc858e7ef6"
+    "mtime": 1781563916.7467928,
+    "ast_hash": "8fd42fefcc0d785b9d77d186c489db2c",
+    "semantic_hash": ""
   },
   "backend/app/services/profile_service.py": {
     "mtime": 1781427084.7429636,
@@ -380,9 +380,9 @@
     "semantic_hash": "409701f6ae2a9cd3f8d9a550b1a12557"
   },
   "backend/tests/test_extraction_agents.py": {
-    "mtime": 1781546098.29353,
-    "ast_hash": "e887f4d0a1d0daf6f4aa35fa9c6decf0",
-    "semantic_hash": "e887f4d0a1d0daf6f4aa35fa9c6decf0"
+    "mtime": 1781563260.2306712,
+    "ast_hash": "8272af1a2fe08555b48ba3d88bb07879",
+    "semantic_hash": ""
   },
   "backend/tests/test_extraction_profiles.py": {
     "mtime": 1779492452.4851677,
@@ -395,9 +395,9 @@
     "semantic_hash": "7586d7eded7fed026732640870068b46"
   },
   "backend/tests/test_initial_context_extraction.py": {
-    "mtime": 1781546306.6994429,
-    "ast_hash": "73f7e85960766e06da1eaab782e87713",
-    "semantic_hash": "73f7e85960766e06da1eaab782e87713"
+    "mtime": 1781563503.2761514,
+    "ast_hash": "f86df337747c3c86fd2ced3269db240d",
+    "semantic_hash": ""
   },
   "backend/tests/test_neo4j_driver.py": {
     "mtime": 1779292358.5664568,
@@ -680,8 +680,8 @@
     "semantic_hash": ""
   },
   "docs/WORKFLOW.md": {
-    "mtime": 1781296432.125655,
-    "ast_hash": "30909b459af63210b7ecd94814d44514",
+    "mtime": 1781546461.8057632,
+    "ast_hash": "a8c1ce73a4ca612dcf38744f8ff8dcb3",
     "semantic_hash": ""
   },
   "docs/evaluation/preliminary_evaluation.md": {
@@ -803,5 +803,10 @@
     "mtime": 1781529028.6212332,
     "ast_hash": "79e2dd126fc3658f6beb116fefef0b52",
     "semantic_hash": "79e2dd126fc3658f6beb116fefef0b52"
+  },
+  "backend/app/domain/extraction/deterministic_projection.py": {
+    "mtime": 1781563314.487632,
+    "ast_hash": "4ba53f08aa4f0b2e8138ad3d304df8a9",
+    "semantic_hash": ""
   }
 }
