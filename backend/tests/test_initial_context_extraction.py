@@ -26,10 +26,11 @@ from app.domain.extraction import (
     GroundedExtractionObject,
     PromptTokenBudgeter,
     ProfilePatchDocument,
+    ProfileTargetDecision,
+    ProfileTargetWriteDocument,
     RankedFile,
     Resource,
     TracedExtractionObject,
-    VocabularyFallbackQuery,
     VocabularyCandidateSelection,
     VocabularyTermMapping,
     build_extraction_overview_prompt,
@@ -99,7 +100,13 @@ class FakeProfileService:
     schema = {
         "type": "object",
         "required": ["id"],
-        "properties": {"id": {"type": "string"}},
+        "properties": {
+            "id": {"type": "string"},
+            "description": {"type": "string"},
+            "type": {"type": "string"},
+            "has_quantity_type": {"type": "string"},
+            "unit": {"type": "string"},
+        },
         "additionalProperties": True,
     }
 
@@ -132,9 +139,8 @@ class TitleProfileService(FakeProfileService):
 
 class FakeOutputRepository:
     def __init__(self):
-        self.context: ExtractionContext | None = None
-        self.contexts: list[ExtractionContext] = []
         self.evidence_context: EvidenceContext | None = None
+        self.evidence_contexts: list[EvidenceContext] = []
         self.filtered_evidence_notes = FilteredEvidenceLedger()
         self.result: ExtractionRunResult | None = None
         self.run_state: ExtractionRunState | None = None
@@ -153,17 +159,9 @@ class FakeOutputRepository:
         self.warnings: list[str] = []
         self.token_usage: dict[str, dict[str, int]] = {}
 
-    def save_extraction_context(self, *, workflow_id: str, extraction_context: ExtractionContext):
-        self.context = extraction_context
-        self.contexts.append(extraction_context)
-
-    def load_extraction_context(self, workflow_id: str) -> ExtractionContext:
-        if self.context is None:
-            raise FileNotFoundError
-        return self.context
-
     def save_evidence_context(self, *, workflow_id: str, evidence_context: EvidenceContext):
         self.evidence_context = evidence_context
+        self.evidence_contexts.append(evidence_context)
 
     def load_evidence_context(self, workflow_id: str) -> EvidenceContext:
         if self.evidence_context is None:
@@ -317,9 +315,8 @@ class FakeOutputRepository:
         return self.token_usage
 
     def clear_extraction_run(self, workflow_id: str):
-        self.context = None
-        self.contexts = []
         self.evidence_context = None
+        self.evidence_contexts = []
         self.filtered_evidence_notes = FilteredEvidenceLedger()
         self.result = None
         self.run_state = None
@@ -337,9 +334,8 @@ class FakeOutputRepository:
         self.token_usage = {}
 
     def clear_extraction_downstream(self, workflow_id: str):
-        self.context = None
-        self.contexts = []
         self.evidence_context = None
+        self.evidence_contexts = []
         self.filtered_evidence_notes = FilteredEvidenceLedger()
         self.result = None
         if self.run_state is not None:
@@ -370,6 +366,28 @@ def make_chunk(start_idx: int = 0, content: str = "sample measured at 20 C") -> 
         file_path="README.md",
         start_idx=start_idx,
         end_idx=start_idx,
+    )
+
+
+def evidence_context(
+    identifier: str,
+    observation: str,
+    evidence_text: str | None = None,
+    *,
+    category: str = "resource_signal",
+    file_path: str = "README.md",
+) -> EvidenceContext:
+    return EvidenceContext(
+        notes=[
+            EvidenceNote(
+                note_id=identifier,
+                category=category,
+                observation=observation,
+                evidence_text=evidence_text or observation,
+                signal_level="high",
+                file_path=file_path,
+            )
+        ]
     )
 
 
@@ -469,23 +487,21 @@ def empty_profile_patch() -> CompletionResult[ProfilePatchDocument]:
     )
 
 
-def type_profile_patch(value: str = "dataset") -> CompletionResult[ProfilePatchDocument]:
+def target_decision(path: str, target_class: str | None = None) -> CompletionResult[ProfileTargetDecision]:
     return CompletionResult(
-        output=ProfilePatchDocument(
-            operations=[{"op": "add", "path": "/type", "value": value}]
+        output=ProfileTargetDecision(
+            target_path=path,
+            target_class=target_class,
+            target_label=path.strip("/") or "root",
+            reason="Test target.",
         ),
         usage=RunUsage(requests=1),
     )
 
 
-def quantity_profile_patch() -> CompletionResult[ProfilePatchDocument]:
+def target_write(value) -> CompletionResult[ProfileTargetWriteDocument]:
     return CompletionResult(
-        output=ProfilePatchDocument(
-            operations=[
-                {"op": "add", "path": "/has_quantity_type", "value": "temperature"},
-                {"op": "add", "path": "/unit", "value": "K"},
-            ]
-        ),
+        output=ProfileTargetWriteDocument(value=value),
         usage=RunUsage(requests=1),
     )
 
@@ -1579,7 +1595,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         service, task_registry, output_repository = make_service([[make_chunk()]])
         output_repository.result = ExtractionRunResult(
             generated_final_draft={"id": "old"},
-            machine_extraction_context=ExtractionContext(),
+            machine_evidence_context=EvidenceContext(),
             curated_document={"id": "old"},
             draft_quality_state="imperfect_final_draft",
             validation={"status": "valid", "errors": [], "warnings": []},
@@ -1621,7 +1637,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         service, task_registry, output_repository = make_service([[make_chunk()]])
         output_repository.result = ExtractionRunResult(
             generated_final_draft={"id": "stale"},
-            machine_extraction_context=ExtractionContext(),
+            machine_evidence_context=EvidenceContext(),
             curated_document={"id": "stale"},
             draft_quality_state="imperfect_final_draft",
             validation={"status": "valid", "errors": [], "warnings": []},
@@ -1703,7 +1719,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         service, _, output_repository = make_service([[make_chunk()]])
         output_repository.result = ExtractionRunResult(
             generated_final_draft={"id": "done"},
-            machine_extraction_context=ExtractionContext(),
+            machine_evidence_context=EvidenceContext(),
             curated_document={"id": "done"},
             draft_quality_state="imperfect_final_draft",
             validation={"status": "valid", "errors": [], "warnings": []},
@@ -1718,7 +1734,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     start_idx=0,
                     end_idx=0,
                     status="completed",
-                    extraction_context=ExtractionContext(),
+                    evidence_context=EvidenceContext(),
                 )
             ],
         )
@@ -1738,32 +1754,23 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
     async def test_profile_skeleton_creates_minimal_valid_document(self):
         service, _, output_repository = make_service([[make_chunk()]])
         service.profile_service = TitleProfileService()  # type: ignore[assignment]
-        context = ExtractionContext.model_validate(
-            {
-                "extraction_objects": [
-                    {
-                        "object_kind": "EvaluatedEntity",
-                        "extracted_object": {
-                            "identifier": "SG-V4050",
-                            "description": "Sample SG-V4050",
-                            "type": "sample",
-                        },
-                        "source_text": "##TITLE=SG-V4050",
-                    }
-                ]
-            }
+        context = evidence_context(
+            "sample-title",
+            "Sample SG-V4050",
+            "##TITLE=SG-V4050",
+            category="entity_signal",
         )
         warnings: list[str] = []
 
         document = service._fallback_profile_document(
             data_package_id="package-id",
-            extraction_context=context,
+            evidence_context=context,
             validation_schema=TitleProfileService.schema,
         )
         result = await service._save_profile_result(
             data_package_id="package-id",
             profile_identifier="profile",
-            extraction_context=context,
+            evidence_context=context,
             normalization=ExtractionNormalization(),
             document=document,
             profile_manifest=SimpleNamespace(enrichable_fields=[]),
@@ -1772,70 +1779,9 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             warnings=warnings,
         )
 
-        self.assertEqual(result.generated_final_draft, {"title": "SG-V4050", "identifier": "package-id"})
+        self.assertEqual(result.generated_final_draft, {"title": ["SG-V4050"], "identifier": "package-id"})
         self.assertEqual(result.curated_document, result.generated_final_draft)
         self.assertEqual(output_repository.result, result)
-
-    async def test_profile_patching_applies_valid_patch_and_persists_interim_document(self):
-        service, _, output_repository = make_service([[make_chunk()]])
-        context = resource_context("spectrum", "NMR spectrum file.")
-        state = ExtractionRunState(profile_identifier="profile")
-        progress = ExtractionRunProgress(stage="profile_projection")
-
-        async def fake_generate(*_args, **kwargs):
-            if kwargs["output_type"] is ProfilePatchDocument:
-                return type_profile_patch("spectrum")
-            raise AssertionError("Only profile patch generation is expected")
-
-        with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
-            document = await service._build_profile_document_by_patching(
-                data_package_id="package-id",
-                profile_identifier="profile",
-                profile_target_class="Dataset",
-                extraction_context=context,
-                validation_schema=FakeProfileService.schema,
-                state=state,
-                progress=progress,
-                warnings=[],
-            )
-
-        self.assertEqual(document["type"], "spectrum")
-        self.assertEqual(state.generated_final_draft, document)
-        self.assertEqual(state.projection_ledger[0].status, "projected")
-        self.assertEqual(output_repository.run_state.generated_final_draft, document)
-
-    async def test_profile_patching_skips_invalid_patch_with_warning(self):
-        service, _, _ = make_service([[make_chunk()]])
-        context = resource_context("spectrum", "NMR spectrum file.")
-        state = ExtractionRunState(profile_identifier="profile")
-        progress = ExtractionRunProgress(stage="profile_projection")
-        warnings: list[str] = []
-
-        async def fake_generate(*_args, **kwargs):
-            if kwargs["output_type"] is ProfilePatchDocument:
-                return CompletionResult(
-                    output=ProfilePatchDocument(
-                        operations=[{"op": "replace", "path": "/id", "value": 12}]
-                    ),
-                    usage=RunUsage(requests=1),
-                )
-            raise AssertionError("Only profile patch generation is expected")
-
-        with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
-            document = await service._build_profile_document_by_patching(
-                data_package_id="package-id",
-                profile_identifier="profile",
-                profile_target_class="Dataset",
-                extraction_context=context,
-                validation_schema=FakeProfileService.schema,
-                state=state,
-                progress=progress,
-                warnings=warnings,
-            )
-
-        self.assertEqual(document["id"], "package-id")
-        self.assertEqual(state.projection_ledger[0].status, "user_edit_required")
-        self.assertIn("broke schema validation", warnings[0])
 
     def test_profile_vocab_sources_use_only_quantity_unit_and_enrichable_fields(self):
         sources = ExtractionService._profile_vocab_sources(
@@ -1949,23 +1895,35 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         )
         outputs = [
             CompletionResult(
-                output=resource_context("alpha-resource", "Alpha catalyst metadata."),
+                output=evidence_context(
+                    "alpha-resource",
+                    "Alpha catalyst metadata.",
+                    "sample one",
+                ),
                 usage=RunUsage(requests=1, input_tokens=20, output_tokens=5),
             ),
             CompletionResult(
-                output=resource_context("beta-spectrum", "Beta NMR spectrum file."),
+                output=evidence_context(
+                    "beta-spectrum",
+                    "Beta NMR spectrum file.",
+                    "sample two",
+                    category="measurement_signal",
+                ),
                 usage=RunUsage(requests=1, input_tokens=20, output_tokens=5),
-            ),
-            CompletionResult(
-                output={"id": "dataset"},
-                usage=RunUsage(requests=1, input_tokens=30, output_tokens=8),
             ),
         ]
 
         async def fake_generate(*_args, **_kwargs):
-            if _kwargs["output_type"] is ProfilePatchDocument:
-                return empty_profile_patch()
-            return outputs.pop(0)
+            if _kwargs["output_type"] is EvidenceContext:
+                return outputs.pop(0)
+            if _kwargs["output_type"] is ProfileTargetDecision:
+                return target_decision("/description")
+            if _kwargs["output_type"] is ProfileTargetWriteDocument:
+                return target_write("NMR spectrum file.")
+            return CompletionResult(
+                output={"id": "dataset"},
+                usage=RunUsage(requests=1, input_tokens=30, output_tokens=8),
+            )
 
         with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
             result, status = await service.run_extraction(
@@ -1976,13 +1934,13 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(status, TaskStatus.RUNNING)
             await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
 
-        self.assertIsNotNone(output_repository.context)
-        self.assertGreaterEqual(len(output_repository.contexts), 2)
-        self.assertEqual(output_repository.contexts[0].resources[0].identifier, "alpha-resource")
-        self.assertEqual(len(output_repository.contexts[1].resources), 2)
+        self.assertIsNotNone(output_repository.evidence_context)
+        self.assertGreaterEqual(len(output_repository.evidence_contexts), 2)
+        self.assertEqual(output_repository.evidence_contexts[0].notes[0].note_id, "alpha-resource")
+        self.assertEqual(len(output_repository.evidence_contexts[1].notes), 2)
         self.assertIsNotNone(output_repository.result)
         self.assertEqual(output_repository.result.generated_final_draft["id"], "package-id")
-        self.assertEqual(len(output_repository.run_state.projection_ledger), 3)
+        self.assertEqual(len(output_repository.run_state.projection_ledger), 2)
         self.assertIn("chunk_extraction", output_repository.token_usage)
 
     async def test_context_target_stops_after_interim_context_without_result(self):
@@ -2062,19 +2020,22 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                         start_idx=0,
                         end_idx=0,
                         status="completed",
-                        extraction_context=resource_context("profile-resource", "Profile resource."),
+                        evidence_context=evidence_context("profile-resource", "Dataset type dataset."),
                     ),
                 ],
             ),
         )
-        output_repository.save_extraction_context(
+        output_repository.save_evidence_context(
             workflow_id="package-id",
-            extraction_context=resource_context("profile-resource", "Profile resource."),
+            evidence_context=evidence_context("profile-resource", "Dataset type dataset."),
         )
 
         async def fake_generate(*_args, **kwargs):
-            self.assertIs(kwargs["output_type"], ProfilePatchDocument)
-            return type_profile_patch()
+            if kwargs["output_type"] is ProfileTargetDecision:
+                return target_decision("/type")
+            if kwargs["output_type"] is ProfileTargetWriteDocument:
+                return target_write([{"preferred_label": ["dataset"]}])
+            raise AssertionError("Only profile target generation is expected")
 
         with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
             result, status = await service.run_extraction(
@@ -2089,7 +2050,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(output_repository.result)
         self.assertIsNotNone(output_repository.run_state.generated_final_draft)
-        self.assertEqual(output_repository.run_state.generated_final_draft["type"], "dataset")
+        self.assertEqual(output_repository.run_state.generated_final_draft["id"], "package-id")
         self.assertEqual(output_repository.run_state.vocab_queries, [])
         status, progress = await service.get_extraction_progress(data_package_id="package-id")
         self.assertEqual(status, TaskStatus.COMPLETED)
@@ -2123,16 +2084,16 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                         start_idx=0,
                         end_idx=0,
                         status="completed",
-                        extraction_context=resource_context("grounding-resource", "Grounding resource."),
+                        evidence_context=evidence_context("grounding-resource", "Grounding resource."),
                     ),
                 ],
                 generated_final_draft={"id": "manual-id", "type": "dataset"},
                 curated_document={"id": "manual-id", "type": "dataset"},
             ),
         )
-        output_repository.save_extraction_context(
+        output_repository.save_evidence_context(
             workflow_id="package-id",
-            extraction_context=resource_context("grounding-resource", "Grounding resource."),
+            evidence_context=evidence_context("grounding-resource", "Grounding resource."),
         )
 
         async def fake_generate(*_args, **kwargs):
@@ -2177,7 +2138,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                         start_idx=0,
                         end_idx=0,
                         status="completed",
-                        extraction_context=resource_context("resource", "Persisted result."),
+                        evidence_context=evidence_context("resource", "Persisted result."),
                     ),
                 ],
                 generated_final_draft={"id": "generated", "type": "dataset"},
@@ -2207,9 +2168,9 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_progress_returns_persisted_interim_context(self):
         service, _, output_repository = make_service([[make_chunk()]])
-        output_repository.save_extraction_context(
+        output_repository.save_evidence_context(
             workflow_id="package-id",
-            extraction_context=resource_context("interim-dataset", "Persisted partial context."),
+            evidence_context=evidence_context("interim-dataset", "Persisted partial context."),
         )
 
         status, progress = await service.get_extraction_progress(
@@ -2218,10 +2179,10 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(status, TaskStatus.UNKNOWN)
         self.assertIsNotNone(progress)
-        self.assertEqual(progress.stage, "interim_context")
-        self.assertIsNotNone(progress.interim_context)
+        self.assertEqual(progress.stage, "interim_evidence_context")
+        self.assertIsNotNone(progress.interim_evidence_context)
         self.assertEqual(
-            progress.interim_context.resources[0].identifier,
+            progress.interim_evidence_context.notes[0].note_id,
             "interim-dataset",
         )
 
@@ -2615,7 +2576,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                         start_idx=0,
                         end_idx=0,
                         status="completed",
-                        extraction_context=resource_context(
+                        evidence_context=evidence_context(
                             "already-extracted",
                             "Persisted alpha catalyst result.",
                         ),
@@ -2632,19 +2593,17 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         )
         outputs = [
             CompletionResult(
-                output=resource_context("resumed-chunk", "NMR spectrum details."),
-                usage=RunUsage(requests=1, input_tokens=20, output_tokens=5),
-            ),
-            CompletionResult(
-                output={"id": "dataset"},
+                output=evidence_context("resumed-chunk", "NMR spectrum details.", "sample two"),
                 usage=RunUsage(requests=1, input_tokens=30, output_tokens=8),
             ),
         ]
 
         async def fake_generate(*_args, **_kwargs):
+            if _kwargs["output_type"] is EvidenceContext:
+                return outputs.pop(0)
             if _kwargs["output_type"] is ProfilePatchDocument:
                 return empty_profile_patch()
-            return outputs.pop(0)
+            return CompletionResult(output={"id": "dataset"}, usage=RunUsage(requests=1))
 
         with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
             result, status = await service.run_extraction(
@@ -2656,7 +2615,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(status, TaskStatus.RUNNING)
             await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
 
-        self.assertEqual(len(outputs), 1)
+        self.assertEqual(len(outputs), 0)
         self.assertIsNotNone(output_repository.result)
         self.assertIsNotNone(output_repository.run_state)
         self.assertEqual(
@@ -2664,139 +2623,9 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             ["completed", "completed"],
         )
         self.assertEqual(
-            [resource.identifier for resource in output_repository.context.resources],
-            ["already-extracted", "resumed-chunk", "README.md"],
+            [note.note_id for note in output_repository.evidence_context.notes],
+            ["already-extracted", "resumed-chunk"],
         )
-
-    async def test_vocab_candidate_discovery_starts_after_all_chunks_finish(self):
-        service, task_registry, output_repository = make_service(
-            [[make_chunk(0, "sample one"), make_chunk(1, "sample two")]]
-        )
-        semantic_service = FakeSemanticService()
-        service.semantic_service = semantic_service  # type: ignore[assignment]
-        service.settings.extraction_vocab_query_concurrency = 1
-        call_order: list[str] = []
-
-        async def fake_generate(*_args, **kwargs):
-            output_type = kwargs["output_type"]
-            if output_type is ExtractionContext:
-                if len([item for item in call_order if item.startswith("extract")]) == 1:
-                    self.assertEqual(semantic_service.query_calls, [])
-                call_order.append("extract")
-                return CompletionResult(
-                    output=qualitative_context("sample", "phase", "liquid"),
-                    usage=RunUsage(requests=1),
-                )
-            if output_type is ProfilePatchDocument:
-                call_order.append("profile_patch")
-                return type_profile_patch()
-            call_order.append("profile")
-            return CompletionResult(output={"id": "dataset"}, usage=RunUsage(requests=1))
-
-        with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
-            await service.run_extraction(
-                data_package_id="package-id",
-                profile_identifier="profile",
-            )
-            await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
-
-        self.assertGreaterEqual(len(semantic_service.query_calls), 1)
-        self.assertIsNotNone(output_repository.run_state)
-        vocab_queries = output_repository.run_state.vocab_queries
-        self.assertGreaterEqual(len(vocab_queries), 1)
-        self.assertEqual(vocab_queries[0].status, "completed")
-        self.assertIsNotNone(vocab_queries[0].query)
-        self.assertIsNotNone(vocab_queries[0].result)
-
-    async def test_profile_type_field_gets_voc4cat_query_after_patching(self):
-        service, task_registry, output_repository = make_service(
-            [[make_chunk(0, "first"), make_chunk(1, "second")]]
-        )
-        semantic_service = FakeSemanticService()
-        service.semantic_service = semantic_service  # type: ignore[assignment]
-        contexts = [
-            resource_context("resource-a", "First resource."),
-            resource_context("resource-b", "Second resource."),
-        ]
-
-        async def fake_generate(*_args, **kwargs):
-            output_type = kwargs["output_type"]
-            if output_type is ExtractionContext:
-                return CompletionResult(
-                    output=contexts.pop(0),
-                    usage=RunUsage(requests=1),
-                )
-            if output_type is ProfilePatchDocument:
-                return type_profile_patch()
-            return CompletionResult(output={"id": "dataset"}, usage=RunUsage(requests=1))
-
-        with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
-            await service.run_extraction(
-                data_package_id="package-id",
-                profile_identifier="profile",
-            )
-            await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
-
-        self.assertIsNotNone(output_repository.run_state)
-        object_queries = [
-            record
-            for record in output_repository.run_state.vocab_queries
-            if record.kind == "profile_type"
-        ]
-        self.assertEqual(len(object_queries), 1)
-        self.assertEqual(
-            [record.source_context["json_path"] for record in object_queries],
-            ["/type"],
-        )
-
-    async def test_profile_quantity_fields_are_queried_once_after_patching(self):
-        service, task_registry, output_repository = make_service(
-            [[make_chunk(0, "first"), make_chunk(1, "second")]]
-        )
-        semantic_service = FakeSemanticService()
-        service.semantic_service = semantic_service  # type: ignore[assignment]
-
-        async def fake_generate(*_args, **kwargs):
-            output_type = kwargs["output_type"]
-            if output_type is ExtractionContext:
-                return CompletionResult(
-                    output=quantitative_context("same-resource"),
-                    usage=RunUsage(requests=1),
-                )
-            if output_type is ProfilePatchDocument:
-                return quantity_profile_patch()
-            if output_type is VocabularyFallbackQuery:
-                return CompletionResult(
-                    output=VocabularyFallbackQuery(
-                        vector_query="temperature",
-                        fulltext_query="temperature",
-                    ),
-                    usage=RunUsage(requests=1),
-                )
-            return CompletionResult(output={"id": "dataset"}, usage=RunUsage(requests=1))
-
-        with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
-            await service.run_extraction(
-                data_package_id="package-id",
-                profile_identifier="profile",
-            )
-            await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
-
-        self.assertIsNotNone(output_repository.run_state)
-        records = output_repository.run_state.vocab_queries
-        quantity_records = [
-            record
-            for record in records
-            if record.kind in {"profile_has_quantity_type", "profile_unit"}
-        ]
-        object_records = [
-            record for record in records if record.kind == "profile_type"
-        ]
-        self.assertEqual(
-            [record.kind for record in quantity_records],
-            ["profile_has_quantity_type", "profile_unit"],
-        )
-        self.assertEqual(len(object_records), 0)
 
     async def test_vocab_query_config_update_persists_in_run_state_and_progress(self):
         service, _, output_repository = make_service([[make_chunk()]])
@@ -2811,7 +2640,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                         start_idx=0,
                         end_idx=0,
                         status="completed",
-                        extraction_context=resource_context("resource", "Persisted result."),
+                        evidence_context=evidence_context("resource", "Persisted result."),
                     )
                 ],
             ),
@@ -2995,7 +2824,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(max_active, 2)
 
-    async def test_chunk_initial_context_is_scoped_to_same_file(self):
+    async def test_chunk_evidence_context_is_scoped_to_same_file(self):
         state = ExtractionRunState(
             chunk_results=[
                 ExtractionChunkResult(
@@ -3004,7 +2833,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     start_idx=0,
                     end_idx=0,
                     status="completed",
-                    extraction_context=resource_context(
+                    evidence_context=evidence_context(
                         "readme-context",
                         "README context.",
                     ),
@@ -3015,28 +2844,27 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     start_idx=0,
                     end_idx=0,
                     status="completed",
-                    extraction_context=resource_context(
+                    evidence_context=evidence_context(
                         "data-context",
                         "Data file context.",
+                        file_path="data.csv",
                     ),
                 ),
             ],
         )
 
-        context = ExtractionService._merged_completed_chunk_context_or_none(
+        context = ExtractionService._merged_completed_evidence_context_or_none(
             state,
             file_path="data.csv",
         )
 
         self.assertIsNotNone(context)
         self.assertEqual(
-            [resource.identifier for resource in context.resources],
+            [note.note_id for note in context.notes],
             ["data-context"],
         )
 
-    async def test_chunk_initial_context_for_prompt_is_full_when_previous_usage_is_under_threshold(self):
-        service, _, _ = make_service([[make_chunk()]])
-        service.settings.initial_extraction_context_token_threshold = 100
+    async def test_global_evidence_context_for_prompt_uses_previous_completed_chunks(self):
         state = ExtractionRunState(
             chunk_results=[
                 ExtractionChunkResult(
@@ -3046,57 +2874,25 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     end_idx=index,
                     status="completed",
                     context_tokens=20,
-                    extraction_context=resource_context(
+                    evidence_context=evidence_context(
                         f"resource-{index}",
-                        f"Verbose metadata context {index} " * 10,
+                        f"Evidence note {index}.",
                     ),
                 )
                 for index in range(4)
             ],
         )
 
-        context = service._initial_extraction_context_for_prompt(
+        context = ExtractionService._global_evidence_context_for_prompt(
             state,
-            file_path="README.md",
-            current_chunk_index=4,
+            current_chunk_index=2,
         )
 
         self.assertIsNotNone(context)
         self.assertEqual(
-            [resource.identifier for resource in context.resources],
-            ["resource-0", "resource-1", "resource-2", "resource-3"],
+            [note.note_id for note in context.notes],
+            ["resource-0", "resource-1"],
         )
-
-    async def test_chunk_initial_context_for_prompt_is_capped_after_high_previous_usage(self):
-        service, _, _ = make_service([[make_chunk()]])
-        service.settings.initial_extraction_context_token_threshold = 50
-        state = ExtractionRunState(
-            chunk_results=[
-                ExtractionChunkResult(
-                    chunk_index=index,
-                    file_path="README.md",
-                    start_idx=index,
-                    end_idx=index,
-                    status="completed",
-                    context_tokens=100 if index == 3 else 20,
-                    extraction_context=resource_context(
-                        f"resource-{index}",
-                        f"Verbose metadata context {index} " * 10,
-                    ),
-                )
-                for index in range(4)
-            ],
-        )
-
-        context = service._initial_extraction_context_for_prompt(
-            state,
-            file_path="README.md",
-            current_chunk_index=4,
-        )
-
-        self.assertIsNotNone(context)
-        self.assertLess(len(context.resources), 4)
-        self.assertEqual(context.resources[-1].identifier, "resource-3")
 
     async def test_pause_extraction_cancels_task_and_marks_running_chunk_pending(self):
         service, task_registry, output_repository = make_service([[make_chunk()]])
@@ -3104,7 +2900,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
         async def fake_generate(*_args, **kwargs):
             output_type = kwargs["output_type"]
-            if output_type is ExtractionContext:
+            if output_type is EvidenceContext:
                 extraction_started.set()
                 await asyncio.Event().wait()
             return CompletionResult(

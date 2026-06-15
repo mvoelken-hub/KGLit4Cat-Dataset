@@ -4,15 +4,12 @@ import unittest
 from jsonschema import Draft202012Validator
 
 from app.domain.extraction import (
-    ChunkContext,
-    ChunkMetadata,
     DefinedTerm,
     EvidenceContext,
     EvidenceChunkContext,
     EvidenceChunkMetadata,
     EvidenceNote,
     EVIDENCE_CONTEXT_SYSTEM_PROMPT,
-    EXTRACTION_CONTEXT_SYSTEM_PROMPT,
     ExtractionContext,
     ExtractionFileSummary,
     ExtractionNormalization,
@@ -23,13 +20,10 @@ from app.domain.extraction import (
     ProfileObjectPatchResult,
     ProfileTargetWriteDocument,
     PromptTokenBudgeter,
-    QualitativeAttribute,
     QuantitativeAttribute,
     RankedFile,
-    DataGeneratingActivity,
     Resource,
     TracedExtractionObject,
-    build_extraction_context_prompt,
     build_evidence_context_prompt,
     build_evidence_system_prompt_with_overview,
     build_schema_branch_index,
@@ -42,9 +36,7 @@ from app.domain.extraction import (
     build_object_grounding_selection_prompt,
     build_quantity_kind_vocab_query,
     build_unit_vocab_query,
-    cap_extraction_context_for_prompt,
     fallback_file_ranking,
-    merge_extraction_context_results,
     normalize_chunk_text_for_evidence_prompt,
     search_schema_branches,
     validate_evidence_context_for_chunk,
@@ -261,26 +253,6 @@ classes:
         )
 
         self.assertEqual(result.files[0].file_path, "README.md")
-
-    def test_chunk_prompt_contains_file_span_and_content(self):
-        prompt = build_extraction_context_prompt(
-            ChunkContext(
-                content="temperature 20 C",
-                metadata=ChunkMetadata(
-                    start_idx=4,
-                    end_idx=6,
-                    file_path="metadata.txt",
-                    data_package_name="package",
-                ),
-            )
-        )
-
-        self.assertIn("Chunk context metadata:", prompt)
-        self.assertIn("Chunk content", prompt)
-        self.assertIn("metadata.txt", prompt)
-        self.assertIn('"start_idx":4', prompt)
-        self.assertIn('"end_idx":6', prompt)
-        self.assertIn("temperature 20 C", prompt)
 
     def test_evidence_validation_accepts_exact_and_whitespace_normalized_matches(self):
         chunk = "##TITLE= Sample A\n##OWNER= Lab Team\n##XUNITS= 1/CM"
@@ -584,222 +556,6 @@ classes:
         self.assertTrue(is_noisy_payload_chunk(payload))
         self.assertFalse(is_noisy_payload_chunk(header))
 
-    def test_extraction_system_prompt_limits_evaluated_entity_fallback(self):
-        self.assertIn("Do not use evaluated_entity as a fallback class", EXTRACTION_CONTEXT_SYSTEM_PROMPT)
-        self.assertIn("Attach quantitative attributes", EXTRACTION_CONTEXT_SYSTEM_PROMPT)
-        self.assertIn("skip it", EXTRACTION_CONTEXT_SYSTEM_PROMPT)
-        self.assertIn("instead of producing one object per header or parameter line", EXTRACTION_CONTEXT_SYSTEM_PROMPT)
-
-    def test_merge_extraction_context_deduplicates_items(self):
-        first = ExtractionContext.model_validate(
-            {
-                "extraction_objects": [
-                    {
-                        "object_kind": "Method",
-                        "extracted_object": {
-                            "identifier": "sample-method",
-                            "description": "Method for sample A.",
-                            "keywords": ["sample"],
-                        },
-                        "source_text": "Method for sample A.",
-                    }
-                ]
-            }
-        )
-        second = ExtractionContext.model_validate(
-            {
-                "extraction_objects": [
-                    {
-                        "object_kind": "Method",
-                        "extracted_object": {
-                            "identifier": "sample method",
-                            "description": "Method for sample A with more detail.",
-                            "keywords": ["experiment"],
-                        },
-                        "source_text": "Method for sample A with more detail.",
-                    }
-                ]
-            }
-        )
-
-        merged = merge_extraction_context_results([first, second])
-
-        self.assertEqual(len(merged.methods), 1)
-        self.assertEqual(merged.methods[0].keywords, ["experiment", "sample"])
-
-    def test_merge_extraction_context_deduplicates_by_shared_qualitative_attribute(self):
-        first = ExtractionContext.model_validate(
-            {
-                "extraction_objects": [
-                    {
-                        "object_kind": "Method",
-                        "extracted_object": {
-                            "identifier": "method-a",
-                            "type": "NMR acquisition",
-                            "description": "Acquisition method.",
-                            "keywords": ["NMR"],
-                            "has_qualitative_attributes": [
-                                {"title": "pulse sequence", "value": "zg30"}
-                            ],
-                        },
-                        "source_text": "pulse sequence zg30",
-                    }
-                ]
-            }
-        )
-        second = ExtractionContext.model_validate(
-            {
-                "extraction_objects": [
-                    {
-                        "object_kind": "Method",
-                        "extracted_object": {
-                            "identifier": "method-b",
-                            "type": "nmr acquisition",
-                            "description": "More detailed acquisition method.",
-                            "keywords": ["spectrum"],
-                            "has_qualitative_attributes": [
-                                {"title": "Pulse Sequence", "value": "ZG30"}
-                            ],
-                        },
-                        "source_text": "Pulse Sequence ZG30",
-                    }
-                ]
-            }
-        )
-
-        merged = merge_extraction_context_results([first, second])
-
-        self.assertEqual(len(merged.methods), 1)
-        self.assertEqual(merged.methods[0].keywords, ["NMR", "spectrum"])
-        self.assertEqual(len(merged.methods[0].has_qualitative_attributes), 1)
-
-    def test_merge_extraction_context_deduplicates_by_shared_quantitative_attribute(self):
-        first = ExtractionContext.model_validate(
-            {
-                "extraction_objects": [
-                    {
-                        "object_kind": "DataGeneratingActivity",
-                        "extracted_object": {
-                            "identifier": "run-a",
-                            "type": "temperature program",
-                            "description": "Temperature ramp.",
-                            "has_quantitative_attributes": [
-                                {
-                                    "identifier": "temperature",
-                                    "value": "300",
-                                    "unit": "K",
-                                    "quantity_kind": "temperature",
-                                }
-                            ],
-                        },
-                        "source_text": "300 K",
-                    }
-                ]
-            }
-        )
-        second = ExtractionContext.model_validate(
-            {
-                "extraction_objects": [
-                    {
-                        "object_kind": "DataGeneratingActivity",
-                        "extracted_object": {
-                            "identifier": "run-b",
-                            "type": "Temperature Program",
-                            "description": "Temperature ramp with hold.",
-                            "has_quantitative_attributes": [
-                                {
-                                    "identifier": "Temperature",
-                                    "value": "300",
-                                    "unit": "k",
-                                    "quantity_kind": "Temperature",
-                                }
-                            ],
-                        },
-                        "source_text": "Temperature 300 k",
-                    }
-                ]
-            }
-        )
-
-        merged = merge_extraction_context_results([first, second])
-
-        self.assertEqual(len(merged.data_generating_activities), 1)
-        self.assertEqual(
-            len(merged.data_generating_activities[0].has_quantitative_attributes),
-            1,
-        )
-
-    def test_merge_extraction_context_keeps_different_object_kinds_separate(self):
-        first = ExtractionContext.model_validate(
-            {
-                "extraction_objects": [
-                    {
-                        "object_kind": "Method",
-                        "extracted_object": {
-                            "identifier": "shared-id",
-                            "description": "Shared description.",
-                        },
-                        "source_text": "method",
-                    }
-                ]
-            }
-        )
-        second = ExtractionContext.model_validate(
-            {
-                "extraction_objects": [
-                    {
-                        "object_kind": "Resource",
-                        "extracted_object": {
-                            "identifier": "shared-id",
-                            "description": "Shared description.",
-                        },
-                        "source_text": "resource",
-                    }
-                ]
-            }
-        )
-
-        merged = merge_extraction_context_results([first, second])
-
-        self.assertEqual(len(merged.methods), 1)
-        self.assertEqual(len(merged.resources), 1)
-
-    def test_cap_extraction_context_for_prompt_keeps_recent_compact_objects(self):
-        context = ExtractionContext.model_validate(
-            {
-                "extraction_objects": [
-                    {
-                        "object_kind": "Resource",
-                        "extracted_object": {
-                            "identifier": f"resource-{index}",
-                            "type": "dataset",
-                            "description": "long description " * 20,
-                        },
-                        "source_text": "long source text " * 20,
-                    }
-                    for index in range(4)
-                ]
-            }
-        )
-
-        recent_two = ExtractionContext(
-            extraction_objects=context.extraction_objects[-2:]
-        )
-        capped = cap_extraction_context_for_prompt(
-            context,
-            max_json_chars=len(recent_two.model_dump_json()),
-        )
-
-        self.assertIsNotNone(capped)
-        self.assertEqual(
-            [resource.identifier for resource in capped.resources],
-            ["resource-2", "resource-3"],
-        )
-        self.assertLessEqual(
-            len(capped.model_dump_json()),
-            len(recent_two.model_dump_json()),
-        )
-
     def test_qudt_query_builders_target_expected_types(self):
         quantity = QuantitativeAttribute(
             identifier="temperature",
@@ -953,163 +709,6 @@ classes:
         self.assertEqual(round_trip.extracted_object.identifier, "spectrum")
         self.assertEqual(round_trip.extracted_object.type, "spectrum")
         self.assertEqual(round_trip.source_text, "IR spectrum")
-
-
-
-
-    def test_score_prefers_specific_identifiers(self):
-        specific = TracedExtractionObject(
-            object_kind="Resource",
-            extracted_object=Resource(identifier="HMS-Q11-p", description="A sample"),
-            source_text="HMS-Q11-p",
-        )
-        generic = TracedExtractionObject(
-            object_kind="DataGeneratingActivity",
-            extracted_object=DataGeneratingActivity(identifier="measurement", description="A run"),
-            source_text="measurement",
-        )
-        from app.domain.extraction.extraction_context import _score_extraction_object
-        self.assertGreater(_score_extraction_object(specific), _score_extraction_object(generic))
-
-    def test_score_rewards_attribute_richness(self):
-        sparse = TracedExtractionObject(
-            object_kind="DataGeneratingActivity",
-            extracted_object=DataGeneratingActivity(identifier="run-1", description="A run"),
-            source_text="run-1",
-        )
-        rich = TracedExtractionObject(
-            object_kind="DataGeneratingActivity",
-            extracted_object=DataGeneratingActivity(
-                identifier="run-1",
-                description="A run with many attributes",
-                has_quantitative_attributes=[QuantitativeAttribute(identifier="t", value="300", unit="K", quantity_kind="temperature")],
-                has_qualitative_attributes=[QualitativeAttribute(title="mode", value="batch")],
-                keywords=["batch", "reactor"],
-            ),
-            source_text="run-1 batch reactor",
-        )
-        from app.domain.extraction.extraction_context import _score_extraction_object
-        self.assertGreater(_score_extraction_object(rich), _score_extraction_object(sparse))
-
-    def test_build_system_prompt_returns_base_when_no_context(self):
-        from app.domain.extraction.extraction_context import build_system_prompt_with_context, EXTRACTION_CONTEXT_SYSTEM_PROMPT
-        result = build_system_prompt_with_context(
-            base_prompt=EXTRACTION_CONTEXT_SYSTEM_PROMPT,
-            global_context=None,
-            num_ctx=8192,
-        )
-        self.assertEqual(result, EXTRACTION_CONTEXT_SYSTEM_PROMPT)
-
-    def test_build_system_prompt_includes_all_when_space_available(self):
-        from app.domain.extraction.extraction_context import build_system_prompt_with_context, EXTRACTION_CONTEXT_SYSTEM_PROMPT, ExtractionContext
-        ctx = ExtractionContext(extraction_objects=[
-            TracedExtractionObject(
-                object_kind="Resource",
-                extracted_object=Resource(identifier="file.txt", description="A file"),
-                source_text="file.txt",
-            ),
-        ])
-        result = build_system_prompt_with_context(
-            base_prompt=EXTRACTION_CONTEXT_SYSTEM_PROMPT,
-            global_context=ctx,
-            num_ctx=8192,
-        )
-        self.assertIn("file.txt", result)
-        self.assertIn("Previously extracted objects", result)
-
-    def test_build_system_prompt_triages_when_space_limited(self):
-        from app.domain.extraction.extraction_context import build_system_prompt_with_context, EXTRACTION_CONTEXT_SYSTEM_PROMPT, ExtractionContext
-        objects = [
-            TracedExtractionObject(
-                object_kind="Resource",
-                extracted_object=Resource(identifier=f"file-{i}.txt", description=f"File {i}"),
-                source_text=f"file-{i}.txt",
-            )
-            for i in range(50)
-        ]
-        ctx = ExtractionContext(extraction_objects=objects)
-        result = build_system_prompt_with_context(
-            base_prompt=EXTRACTION_CONTEXT_SYSTEM_PROMPT,
-            global_context=ctx,
-            num_ctx=16384,
-            schema_buffer_chars=500,
-        )
-        self.assertIn("Previously extracted objects", result)
-        # With a small context, not all 50 objects should fit
-        self.assertGreater(result.count("file-"), 0)
-
-    def test_build_system_prompt_with_overview_uses_overview_and_same_file_memory(self):
-        from app.domain.extraction.extraction_context import (
-            EXTRACTION_CONTEXT_SYSTEM_PROMPT,
-            ExtractionContext,
-            build_system_prompt_with_overview,
-        )
-        from app.domain.extraction.overview import ExtractionFileSummary, ExtractionOverview
-
-        same_file = ExtractionContext(extraction_objects=[
-            TracedExtractionObject(
-                object_kind="Resource",
-                extracted_object=Resource(identifier="same-file.dx", description="Same file resource"),
-                source_text="same-file.dx",
-            ),
-        ])
-        overview = ExtractionOverview(
-            nodes=[
-                {
-                    "node_id": "file:same-file.dx",
-                    "label": "same-file.dx",
-                    "kind": "file",
-                    "file_path": "same-file.dx",
-                    "summary": "same-file.dx contains spectroscopy-like syntax.",
-                },
-                {
-                    "node_id": "group:acquisition",
-                    "label": "acquisition context",
-                    "kind": "group",
-                    "summary": "Attach parameter labels to an acquisition context.",
-                },
-            ],
-            edges=[
-                {
-                    "source": "group:acquisition",
-                    "target": "file:same-file.dx",
-                    "relation": "describes",
-                }
-            ],
-            uncertainties=["PLW1 is a pulse power parameter, not a sample."],
-        )
-        file_summary = ExtractionFileSummary(
-            file_path="same-file.dx",
-            data_format="JCAMP-DX-like spectroscopy export",
-            instrument_or_software_terms_and_settings=["PULPROG"],
-            quantitative_signals=["PLW1 is a visible pulse power label"],
-        )
-
-        result = build_system_prompt_with_overview(
-            base_prompt=EXTRACTION_CONTEXT_SYSTEM_PROMPT,
-            overview=overview,
-            overview_status="structured",
-            file_summary=file_summary,
-            same_file_context=same_file,
-            num_ctx=8192,
-        )
-
-        self.assertIn("Initial extraction overview", result)
-        self.assertIn("same-file.dx contains spectroscopy-like syntax", result)
-        self.assertIn("Attach parameter labels to an acquisition context", result)
-        self.assertIn("Current file summary", result)
-        self.assertIn("JCAMP-DX-like spectroscopy export", result)
-        self.assertIn("Earlier extracted objects from this same file", result)
-        self.assertIn("same-file.dx", result)
-        self.assertIn("orientation only", result)
-
-    def test_extraction_prompt_warns_that_instrument_parameters_are_not_objects(self):
-        from app.domain.extraction.extraction_context import EXTRACTION_CONTEXT_SYSTEM_PROMPT
-
-        self.assertIn("PLW1", EXTRACTION_CONTEXT_SYSTEM_PROMPT)
-        self.assertIn("PULPROG", EXTRACTION_CONTEXT_SYSTEM_PROMPT)
-        self.assertIn("parameter keys, not standalone scientific objects", EXTRACTION_CONTEXT_SYSTEM_PROMPT)
-        self.assertIn("File names and generated artifacts", EXTRACTION_CONTEXT_SYSTEM_PROMPT)
 
     def test_global_context_includes_all_prior_completed_chunks(self):
         from app.domain.extraction.workflow import ExtractionRunState, ExtractionChunkResult

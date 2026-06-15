@@ -49,7 +49,6 @@ class Settings(BaseSettings):
     embedding_batch_size: int = 32
     max_context_length: int = 8192
     ollama_timeout_seconds: int | None = Field(default=None, validation_alias="OLLAMA_TIMEOUT_SECONDS")
-    initial_extraction_context_token_threshold: int | None = None
     extraction_vocab_query_concurrency: int = 4
     vocab_selection_llm_concurrency: int = 1
     vocab_selection_parallel_mode: str = "conservative"

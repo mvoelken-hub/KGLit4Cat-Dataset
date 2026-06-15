@@ -18,7 +18,6 @@ from app.domain.datasources import ContentChunk, FileType
 from app.domain.extraction import (
     DEFAULT_QUALITATIVE_VOCAB_IDENTIFIERS,
     EVIDENCE_CONTEXT_SYSTEM_PROMPT,
-    EXTRACTION_CONTEXT_SYSTEM_PROMPT,
     EXTRACTION_FILE_SUMMARY_SYSTEM_PROMPT,
     EXTRACTION_OVERVIEW_FALLBACK_SYSTEM_PROMPT,
     EXTRACTION_OVERVIEW_SYSTEM_PROMPT,
@@ -31,8 +30,6 @@ from app.domain.extraction import (
     VOCAB_CANDIDATE_SELECTION_SYSTEM_PROMPT,
     VOCAB_FALLBACK_QUERY_SYSTEM_PROMPT,
     VOCAB_OBJECT_GROUNDING_SELECTION_SYSTEM_PROMPT,
-    ChunkContext,
-    ChunkMetadata,
     ChunkingRequiredError,
     CompleteWorkflowProgress,
     CompleteWorkflowStepProgress,
@@ -95,7 +92,6 @@ from app.domain.extraction import (
     build_evidence_system_prompt_with_overview,
     dedupe_repeated_evidence_notes,
     build_candidate_selection_prompt,
-    build_extraction_context_prompt,
     build_extraction_file_summary_prompt,
     build_extraction_overview_fallback_prompt,
     build_extraction_overview_prompt_components,
@@ -103,7 +99,6 @@ from app.domain.extraction import (
     filtered_evidence_ledger,
     filter_evidence_context_by_signal_level,
     is_noisy_payload_chunk,
-    build_system_prompt_with_overview,
     build_fallback_query_prompt,
     build_object_grounding_selection_prompt,
     build_profile_patch_prompt,
@@ -115,11 +110,9 @@ from app.domain.extraction import (
     build_qualitative_vocab_query,
     build_quantity_kind_vocab_query,
     build_unit_vocab_query,
-    cap_extraction_context_for_prompt,
     fallback_file_ranking,
     rank_summarized_files,
     merge_evidence_contexts,
-    merge_extraction_context_results,
     normalize_chunk_text_for_evidence_prompt,
     schema_branches_to_catalog,
     search_schema_branches,
@@ -7552,22 +7545,6 @@ class ExtractionService:
                 return summary
         return None
 
-    @staticmethod
-    def _completed_chunk_results(
-        state: ExtractionRunState,
-        *,
-        file_path: str,
-        before_chunk_index: int,
-    ) -> list[ExtractionChunkResult]:
-        return [
-            result
-            for result in state.chunk_results
-            if result.status in {"completed", "skipped"}
-            and result.evidence_context is not None
-            and result.file_path == file_path
-            and result.chunk_index < before_chunk_index
-        ]
-
     @classmethod
     def _global_evidence_context_for_prompt(
         cls,
@@ -7585,38 +7562,6 @@ class ExtractionService:
         if not contexts:
             return None
         return merge_evidence_contexts(contexts)
-
-    def _latest_completed_chunk_result_with_tokens(
-        cls,
-        state: ExtractionRunState,
-        *,
-        file_path: str,
-        before_chunk_index: int,
-    ) -> ExtractionChunkResult | None:
-        results = [
-            result
-            for result in cls._completed_chunk_results(
-                state,
-                file_path=file_path,
-                before_chunk_index=before_chunk_index,
-            )
-            if result.context_tokens is not None
-        ]
-        return max(results, key=lambda result: result.chunk_index, default=None)
-
-    def _initial_extraction_context_token_threshold(self) -> int:
-        configured_threshold = getattr(
-            self.settings,
-            "initial_extraction_context_token_threshold",
-            None,
-        )
-        if configured_threshold is not None:
-            return max(0, int(configured_threshold))
-        max_context_length = (
-            getattr(self.ollama_client, "max_context_length", None)
-            or getattr(self.settings, "max_context_length", 8192)
-        )
-        return max(1, int(max_context_length * 0.75))
 
     async def _normalize_from_candidate_tasks(
         self,

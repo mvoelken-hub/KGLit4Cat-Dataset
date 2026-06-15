@@ -622,7 +622,7 @@ function nthLineStart(content: string, lineNumber: number) {
   return index;
 }
 
-function ExtractionContextOverview({
+function EvidenceContextOverview({
   chunkResults,
   currentChunk,
   chunksByFile,
@@ -4291,7 +4291,7 @@ export function App() {
                   )}
                 </div>
               )}
-              <ExtractionContextOverview
+              <EvidenceContextOverview
                 chunkResults={patchProgress?.chunk_results ?? []}
                 currentChunk={patchProgress?.current_chunk ?? null}
                 chunksByFile={chunksByFile}
