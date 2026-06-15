@@ -209,35 +209,59 @@ def compact_evidence_overview_to_prompt_text(
     parts: list[str] = []
     if status:
         parts.append(f"Overview status: {status}")
-    if current_file_path and overview.file_roles:
-        matching_roles = [
-            role for role in overview.file_roles if role.file_path == current_file_path
-        ]
-        if matching_roles:
-            role_lines = []
-            for role in matching_roles[:2]:
-                notes = _compact_prompt_values(
-                    role.extraction_notes,
-                    limit=2,
-                    token_budgeter=token_budgeter,
-                )
-                role_lines.append(
-                    f"- {role.file_path}: {role.role}"
-                    + (f" ({'; '.join(notes)})" if notes else "")
-                )
-            parts.append("Current file role:\n" + "\n".join(role_lines))
-    for label, values in (
-        ("Observed signals", overview.observed_signals),
-        ("Suggested interpretations", overview.suggested_interpretations),
-        ("Conflicts/uncertainties", overview.conflicts_or_uncertainties),
-    ):
-        compact_values = _compact_prompt_values(
-            values,
-            limit=EVIDENCE_ORIENTATION_VALUES_PER_SECTION,
-            token_budgeter=token_budgeter,
+    node_by_id = {node.node_id: node for node in overview.nodes}
+    selected_node_ids: set[str] = set()
+    if current_file_path:
+        selected_node_ids.update(
+            node.node_id
+            for node in overview.nodes
+            if node.file_path == current_file_path or node.node_id == f"file:{current_file_path}"
         )
-        if compact_values:
-            parts.append(label + ":\n" + "\n".join(f"- {value}" for value in compact_values))
+    if selected_node_ids:
+        neighborhood_edges = [
+            edge
+            for edge in overview.edges
+            if edge.source in selected_node_ids or edge.target in selected_node_ids
+        ][:EVIDENCE_ORIENTATION_VALUES_PER_SECTION]
+        for edge in neighborhood_edges:
+            selected_node_ids.add(edge.source)
+            selected_node_ids.add(edge.target)
+        node_lines: list[str] = []
+        for node_id in list(selected_node_ids)[: EVIDENCE_ORIENTATION_VALUES_PER_SECTION * 2]:
+            node = node_by_id.get(node_id)
+            if not node:
+                continue
+            summary = _cap_prompt_text(
+                node.summary,
+                max_tokens=18,
+                token_budgeter=token_budgeter,
+            )
+            node_lines.append(
+                f"- {node.node_id}: {node.label} [{node.kind}]"
+                + (f" path={node.file_path}" if node.file_path else "")
+                + (f" - {summary}" if summary else "")
+            )
+        if node_lines:
+            parts.append("Current file graph neighborhood nodes:\n" + "\n".join(node_lines))
+        if neighborhood_edges:
+            parts.append(
+                "Current file graph neighborhood relations:\n"
+                + "\n".join(
+                    f"- {edge.source} -[{edge.relation}]-> {edge.target}"
+                    + (f" ({_cap_prompt_text(edge.note, max_tokens=18, token_budgeter=token_budgeter)})" if edge.note else "")
+                    for edge in neighborhood_edges
+                )
+            )
+    compact_uncertainties = _compact_prompt_values(
+        overview.uncertainties,
+        limit=EVIDENCE_ORIENTATION_VALUES_PER_SECTION,
+        token_budgeter=token_budgeter,
+    )
+    if compact_uncertainties:
+        parts.append(
+            "Package graph uncertainties:\n"
+            + "\n".join(f"- {value}" for value in compact_uncertainties)
+        )
     return _cap_prompt_text(
         "\n\n".join(parts),
         max_tokens=max_tokens,

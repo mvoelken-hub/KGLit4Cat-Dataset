@@ -13,6 +13,7 @@ from app.domain.extraction import (
     EvidenceContext,
     FilteredEvidenceLedger,
     ExtractionFileSummary,
+    InitialFileSummaryDiagnostics,
     InitialFileSummaryStatus,
     ExtractionOverview,
     ExtractionOverviewStatus,
@@ -31,6 +32,7 @@ EXTRACTION_RUN_STATE_FILE = "extraction_run_state.json"
 EXTRACTION_WARNINGS_FILE = "extraction_warnings.json"
 TOKEN_USAGE_FILE = "token_usage.json"
 INITIAL_FILE_SUMMARIES_FILE = "initial_file_summaries.json"
+INITIAL_FILE_SUMMARY_DIAGNOSTICS_FILE = "initial_file_summary_diagnostics.json"
 INITIAL_EXTRACTION_OVERVIEW_FILE = "initial_extraction_overview.json"
 INITIAL_EXTRACTION_OVERVIEW_DIAGNOSTIC_FILE = "initial_extraction_overview_diagnostic.json"
 GENERATED_FINAL_DRAFT_FILE = "generated_final_draft.json"
@@ -183,6 +185,19 @@ class FileSystemExtractionOutputRepository:
         if status not in {"completed", "partial", "failed", None}:
             status = "failed"
         return summaries, status
+
+    def save_initial_file_summary_diagnostics(
+        self,
+        *,
+        workflow_id: str,
+        diagnostics: InitialFileSummaryDiagnostics | None,
+        chat_model: str | None = None,
+    ) -> None:
+        path = self._workflow_dir(workflow_id, chat_model) / INITIAL_FILE_SUMMARY_DIAGNOSTICS_FILE
+        if diagnostics is None:
+            path.unlink(missing_ok=True)
+            return
+        self._write_json_file(path, diagnostics.model_dump(mode="json"))
 
     def save_initial_extraction_overview(
         self,

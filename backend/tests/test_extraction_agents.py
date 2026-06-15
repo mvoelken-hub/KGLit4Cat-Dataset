@@ -426,36 +426,50 @@ classes:
         budgeter = PromptTokenBudgeter(tokenizer=FakeTokenizer())
         overview = ExtractionOverview(
             source_file_paths=["metadata.txt", "other.txt"],
-            observed_signals=[f"Observed signal {index} " + "x " * 80 for index in range(12)],
-            suggested_interpretations=[
-                f"Suggested interpretation {index} " + "y " * 80
-                for index in range(12)
-            ],
-            conflicts_or_uncertainties=[
-                f"Uncertainty {index} " + "z " * 80
-                for index in range(12)
-            ],
-            file_roles=[
+            nodes=[
                 {
+                    "node_id": "file:metadata.txt",
+                    "label": "metadata.txt",
+                    "kind": "file",
                     "file_path": "metadata.txt",
-                    "role": "resource metadata",
-                    "extraction_notes": ["contains file-local labels and timestamp metadata"],
+                    "summary": "resource metadata " + "x " * 80,
                 },
                 {
+                    "node_id": "file:other.txt",
+                    "label": "other.txt",
+                    "kind": "file",
                     "file_path": "other.txt",
-                    "role": "irrelevant",
-                    "extraction_notes": ["should not dominate chunk prompt"],
+                    "summary": "should not dominate chunk prompt",
+                },
+                {
+                    "node_id": "group:metadata",
+                    "label": "resource metadata",
+                    "kind": "group",
+                    "summary": "contains file-local labels and timestamp metadata",
                 },
             ],
+            edges=[
+                {
+                    "source": "group:metadata",
+                    "target": "file:metadata.txt",
+                    "relation": "describes",
+                    "note": "contains file-local labels and timestamp metadata",
+                }
+            ],
+            uncertainties=[f"Uncertainty {index} " + "z " * 80 for index in range(12)],
         )
         summary = ExtractionFileSummary(
             file_path="metadata.txt",
             rank=2,
             status="summarized",
             data_format="text",
-            data_characteristics=["metadata", "file-local labels"],
-            metadata_signals=["local title", "generic owner", "timestamp"],
-            detected_identifiers=["resource-id"],
+            metadata_signals=[
+                "metadata",
+                "file-local labels",
+                "local title",
+                "generic owner",
+                "timestamp",
+            ],
         )
 
         prompt = build_evidence_system_prompt_with_overview(
@@ -468,9 +482,9 @@ classes:
             max_file_summary_tokens=40,
         )
 
-        self.assertIn("Current file role", prompt)
-        self.assertIn("metadata.txt: resource metadata", prompt)
-        self.assertNotIn("other.txt: irrelevant", prompt)
+        self.assertIn("Current file graph neighborhood", prompt)
+        self.assertIn("file:metadata.txt", prompt)
+        self.assertNotIn("file:other.txt", prompt)
         orientation = prompt.removeprefix(EVIDENCE_CONTEXT_SYSTEM_PROMPT)
         self.assertIn("[orientation truncated]", orientation)
         self.assertLessEqual(
@@ -1041,16 +1055,36 @@ classes:
             ),
         ])
         overview = ExtractionOverview(
-            observed_signals=["same-file.dx contains spectroscopy-like syntax."],
-            suggested_interpretations=["Attach parameter labels to an acquisition context."],
-            conflicts_or_uncertainties=["PLW1 is a pulse power parameter, not a sample."],
+            nodes=[
+                {
+                    "node_id": "file:same-file.dx",
+                    "label": "same-file.dx",
+                    "kind": "file",
+                    "file_path": "same-file.dx",
+                    "summary": "same-file.dx contains spectroscopy-like syntax.",
+                },
+                {
+                    "node_id": "group:acquisition",
+                    "label": "acquisition context",
+                    "kind": "group",
+                    "summary": "Attach parameter labels to an acquisition context.",
+                },
+            ],
+            edges=[
+                {
+                    "source": "group:acquisition",
+                    "target": "file:same-file.dx",
+                    "relation": "describes",
+                }
+            ],
+            uncertainties=["PLW1 is a pulse power parameter, not a sample."],
         )
         file_summary = ExtractionFileSummary(
             file_path="same-file.dx",
             rank=1,
             data_format="JCAMP-DX-like spectroscopy export",
-            parameter_terms=["PULPROG", "PLW1"],
-            known_traps=["Parameter labels should attach to the acquisition context."],
+            instrument_or_software_terms_and_settings=["PULPROG"],
+            quantitative_signals=["PLW1 is a visible pulse power label"],
         )
 
         result = build_system_prompt_with_overview(

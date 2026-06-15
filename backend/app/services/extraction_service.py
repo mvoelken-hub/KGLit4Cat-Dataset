@@ -52,9 +52,13 @@ from app.domain.extraction import (
     ExtractionFileContentWindow,
     ExtractionFileSummary,
     ExtractionOverview,
+    ExtractionOverviewEdge,
     ExtractionOverviewFilePreview,
     ExtractionOverviewInspectedFile,
+    ExtractionOverviewNode,
     ExtractionOverviewStatus,
+    InitialFileSummaryDiagnosticRecord,
+    InitialFileSummaryDiagnostics,
     InitialOverviewFailureDiagnostic,
     ExtractionNormalization,
     ExtractionResultNotFoundError,
@@ -146,25 +150,161 @@ INITIAL_OVERVIEW_FAILURE_EXCERPT_TOKENS = 300
 INITIAL_FILE_SUMMARY_CONTEXT_RATIO = 0.35
 ESTIMATED_CHARS_PER_TOKEN = 4
 OVERVIEW_SUMMARY_LIST_LIMITS = {
-    "data_characteristics": 3,
     "purpose_evidence": 2,
     "metadata_signals": 3,
-    "detected_identifiers": 3,
-    "instrument_or_software_terms": 4,
-    "parameter_terms": 4,
-    "uncertainty_notes": 2,
-    "known_traps": 2,
+    "instrument_or_software_terms_and_settings": 4,
+    "quantitative_signals": 4,
 }
 OVERVIEW_SUMMARY_REDUCTION_ORDER = (
-    "parameter_terms",
-    "detected_identifiers",
+    "quantitative_signals",
     "metadata_signals",
-    "data_characteristics",
-    "uncertainty_notes",
-    "known_traps",
     "purpose_evidence",
-    "instrument_or_software_terms",
+    "instrument_or_software_terms_and_settings",
 )
+INITIAL_OVERVIEW_WEAK_EDGE_EVIDENCE = {
+    "",
+    "rank",
+    "ranked",
+    "listed",
+    "top file",
+    "top ranked",
+    "ranked file",
+    "ranked files",
+    "file list",
+    "listed file",
+    "listed files",
+}
+
+
+@dataclass
+class _InitialOverviewGroupRule:
+    node_id: str
+    label: str
+    summary: str
+    relation: str
+    keywords: tuple[str, ...]
+
+
+INITIAL_OVERVIEW_GROUP_RULES = (
+    _InitialOverviewGroupRule(
+        node_id="group:dataset_documentation",
+        label="Dataset documentation",
+        summary="Files that explicitly document the package or dataset.",
+        relation="documents",
+        keywords=(
+            "dataset description",
+            "dataset documentation",
+            "data descriptor",
+            "human-readable",
+        ),
+    ),
+    _InitialOverviewGroupRule(
+        node_id="group:audit_provenance",
+        label="Audit and provenance",
+        summary="Audit, provenance, log, history, and integrity-check resources.",
+        relation="documents",
+        keywords=("audit", "provenance", "trail", "log", "history", "hash"),
+    ),
+    _InitialOverviewGroupRule(
+        node_id="group:acquisition_settings",
+        label="Acquisition settings",
+        summary="Configuration and parameter files for data acquisition.",
+        relation="parameterizes",
+        keywords=(
+            "acquisition",
+            "acquire",
+            "measurement setting",
+            "acquisition parameter",
+        ),
+    ),
+    _InitialOverviewGroupRule(
+        node_id="group:processing_settings",
+        label="Processing settings",
+        summary="Configuration and parameter files for data processing.",
+        relation="parameterizes",
+        keywords=(
+            "processing",
+            "process parameter",
+            "processing parameter",
+            "processed parameter",
+        ),
+    ),
+    _InitialOverviewGroupRule(
+        node_id="group:instrument_settings",
+        label="Instrument settings",
+        summary="Instrument tuning, calibration, probe, or setting resources.",
+        relation="parameterizes",
+        keywords=("instrument settings", "shim", "calibration", "probe"),
+    ),
+    _InitialOverviewGroupRule(
+        node_id="group:method_program",
+        label="Method or program logic",
+        summary="Executable or declarative method/program logic for the experiment.",
+        relation="configures",
+        keywords=(
+            "pulse program",
+            "pulse sequence",
+            "method program",
+            "experiment program",
+            "method logic",
+        ),
+    ),
+    _InitialOverviewGroupRule(
+        node_id="group:raw_data",
+        label="Raw data",
+        summary="Primary or raw measurement data resources.",
+        relation="describes",
+        keywords=("raw data", "raw measurements", "primary measurements"),
+    ),
+    _InitialOverviewGroupRule(
+        node_id="group:processed_data",
+        label="Processed data",
+        summary="Processed data or transformed measurement output resources.",
+        relation="describes",
+        keywords=("processed data", "processed spectrum", "processed output"),
+    ),
+    _InitialOverviewGroupRule(
+        node_id="group:derived_results",
+        label="Derived results",
+        summary="Derived result, peak, annotation, or result-table resources.",
+        relation="describes",
+        keywords=("derived result", "peak list", "result table", "annotation"),
+    ),
+    _InitialOverviewGroupRule(
+        node_id="group:parameter_settings",
+        label="Parameter settings",
+        summary="Parameter/configuration resources whose role is not more specific.",
+        relation="parameterizes",
+        keywords=(
+            "parameter file",
+            "parameter values",
+            "configuration",
+            "settings",
+            "key-value pairs",
+            "parameters",
+        ),
+    ),
+    _InitialOverviewGroupRule(
+        node_id="group:ambiguous_supporting_resources",
+        label="Ambiguous supporting resources",
+        summary="Resources with unclear purpose that may still orient extraction.",
+        relation="uncertain_relation",
+        keywords=(
+            "unclear",
+            "not clear",
+            "purpose cannot",
+            "empty content",
+            "arbitrary units",
+        ),
+    ),
+)
+
+INITIAL_OVERVIEW_SPECIFIC_SETTING_GROUPS = {
+    "group:acquisition_settings",
+    "group:processing_settings",
+    "group:instrument_settings",
+    "group:method_program",
+}
 
 
 @dataclass
@@ -1720,17 +1860,24 @@ class ExtractionService:
         state: ExtractionRunState,
         warnings: list[str],
     ) -> None:
+        diagnostics = InitialFileSummaryDiagnostics()
         if not hasattr(self.ollama_client, "ollama_client"):
             state.initial_file_summaries = [
                 self._failed_initial_file_summary(
                     ranked_file=ranked_file,
                     reason="No Ollama client is available for file summary generation.",
+                    diagnostics=diagnostics,
                 )
                 for ranked_file in self._top_initial_context_ranked_files(ranking)
             ]
             state.initial_file_summary_status = "failed"
             self._save_run_state(data_package_id, state)
             self._persist_initial_file_summaries(data_package_id, state)
+            self._persist_initial_file_summary_diagnostics(
+                data_package_id,
+                state,
+                diagnostics=diagnostics,
+            )
             return
 
         files_by_path = {file.file_path: file for file in data_package.files}
@@ -1743,6 +1890,7 @@ class ExtractionService:
                     self._failed_initial_file_summary(
                         ranked_file=ranked_file,
                         reason="Ranked file is not present in the data package.",
+                        diagnostics=diagnostics,
                     )
                 )
                 continue
@@ -1751,19 +1899,20 @@ class ExtractionService:
                 warnings.append(
                     f"Initial file summary skipped for {ranked_file.file_path}: image files are not text-extractable."
                 )
+                diagnostics.records.append(
+                    InitialFileSummaryDiagnosticRecord(
+                        file_path=ranked_file.file_path,
+                        rank=ranked_file.rank,
+                        reason="skipped",
+                        message="Image files are not text-extractable.",
+                    )
+                )
                 continue
             try:
                 extracted_content = file_entry.get_extracted_content()
                 content_windows = self._initial_file_summary_content_windows(
                     extracted_content,
                     num_ctx=self.ollama_client.max_context_length,
-                )
-                source_fingerprint = self._initial_file_summary_source_fingerprint(
-                    data_package=data_package,
-                    ranked_file=ranked_file,
-                    byte_size=len(file_entry.raw_content),
-                    extracted_char_count=len(extracted_content),
-                    content_windows=content_windows,
                 )
                 result = await generate_structured(
                     self.ollama_client,
@@ -1792,11 +1941,11 @@ class ExtractionService:
                     self._validated_initial_file_summary(
                         result.output,
                         ranked_file=ranked_file,
-                        source_fingerprint=source_fingerprint,
                         sampled_text="\n".join(
                             window.text for window in content_windows
                         ),
                         warnings=warnings,
+                        diagnostics=diagnostics,
                     )
                 )
             except CompletionError as exc:
@@ -1814,6 +1963,7 @@ class ExtractionService:
                     self._failed_initial_file_summary(
                         ranked_file=ranked_file,
                         reason=str(exc),
+                        diagnostics=diagnostics,
                     )
                 )
             except Exception as exc:
@@ -1832,6 +1982,7 @@ class ExtractionService:
                     self._failed_initial_file_summary(
                         ranked_file=ranked_file,
                         reason=str(exc),
+                        diagnostics=diagnostics,
                     )
                 )
 
@@ -1847,6 +1998,11 @@ class ExtractionService:
             state.initial_file_summary_status = "failed"
         self._save_run_state(data_package_id, state)
         self._persist_initial_file_summaries(data_package_id, state)
+        self._persist_initial_file_summary_diagnostics(
+            data_package_id,
+            state,
+            diagnostics=diagnostics,
+        )
 
     async def _generate_initial_extraction_overview(
         self,
@@ -1880,6 +2036,12 @@ class ExtractionService:
         )
         summarized_file_summaries = self._summarized_initial_file_summaries(state)
         fallback_previews = [] if summarized_file_summaries else previews
+        seeded_overview = self._seed_initial_overview_graph(
+            data_package_name=data_package.file_name,
+            ranked_files=overview_ranked_files,
+            file_summaries=summarized_file_summaries,
+            file_previews=previews,
+        )
         overview_prompt_budgeter = PromptTokenBudgeter.from_tokenizer_source(
             getattr(self.settings, "ollama_chat_tokenizer", "")
         )
@@ -1898,6 +2060,7 @@ class ExtractionService:
             ranked_files=overview_ranked_files,
             file_summaries=summarized_file_summaries,
             file_previews=fallback_previews,
+            seeded_overview=seeded_overview,
             token_budgeter=overview_prompt_budgeter,
             max_input_tokens=overview_input_budget,
         )
@@ -1918,9 +2081,11 @@ class ExtractionService:
                 agent_name="initial_extraction_overview",
                 usage=result.usage,
             )
-            sanitized_overview = self._sanitize_initial_overview_file_roles(
+            sanitized_overview = self._sanitize_initial_overview_graph(
                 result.output,
                 allowed_file_paths=preview_file_paths,
+                seed_overview=seeded_overview,
+                summaries_available=bool(summarized_file_summaries),
                 warnings=warnings,
             )
             state.initial_extraction_overview = self._with_initial_overview_provenance(
@@ -2001,11 +2166,14 @@ class ExtractionService:
             if not text:
                 raise CompletionError("Initial extraction overview fallback returned an empty response.")
             state.initial_extraction_overview = self._with_initial_overview_provenance(
-                ExtractionOverview(
-                    observed_signals=[text],
-                    conflicts_or_uncertainties=[
-                        "This overview is an unstructured fallback and is orientation only."
-                    ],
+                seeded_overview.model_copy(
+                    update={
+                        "uncertainties": [
+                            *seeded_overview.uncertainties,
+                            text,
+                            "This overview is an unstructured fallback and is orientation only.",
+                        ]
+                    }
                 ),
                 source_fingerprint=source_fingerprint,
                 previews=previews,
@@ -2044,6 +2212,7 @@ class ExtractionService:
         ranked_files: list[RankedFile],
         file_summaries: list[ExtractionFileSummary],
         file_previews: list[ExtractionOverviewFilePreview],
+        seeded_overview: ExtractionOverview,
         token_budgeter: PromptTokenBudgeter,
         max_input_tokens: int,
     ) -> tuple[str, dict[str, Any]]:
@@ -2052,6 +2221,7 @@ class ExtractionService:
             ranked_files=ranked_files,
             file_summaries=file_summaries,
             file_previews=file_previews,
+            seeded_overview=seeded_overview,
         )
         original_prompt_tokens = token_budgeter.count(
             EXTRACTION_OVERVIEW_SYSTEM_PROMPT + original_prompt
@@ -2072,6 +2242,7 @@ class ExtractionService:
                 ranked_files=used_ranked_files,
                 file_summaries=compacted_summaries,
                 file_previews=used_file_previews,
+                seeded_overview=seeded_overview,
             )
 
         prompt = build_prompt()
@@ -2179,14 +2350,10 @@ class ExtractionService:
             if not changed:
                 compact = compact.model_copy(
                     update={
-                        "data_characteristics": [],
                         "purpose_evidence": [],
                         "metadata_signals": [],
-                        "detected_identifiers": [],
-                        "instrument_or_software_terms": [],
-                        "parameter_terms": [],
-                        "uncertainty_notes": [],
-                        "known_traps": [],
+                        "instrument_or_software_terms_and_settings": [],
+                        "quantitative_signals": [],
                     }
                 )
                 break
@@ -2377,38 +2544,15 @@ class ExtractionService:
         ]
 
     @staticmethod
-    def _initial_file_summary_source_fingerprint(
-        *,
-        data_package: Any,
-        ranked_file: Any,
-        byte_size: int | None,
-        extracted_char_count: int,
-        content_windows: list[ExtractionFileContentWindow],
-    ) -> str:
-        payload = {
-            "data_package_name": getattr(data_package, "file_name", ""),
-            "rank": ranked_file.rank,
-            "file_path": ranked_file.file_path,
-            "byte_size": byte_size,
-            "extracted_char_count": extracted_char_count,
-            "content_windows": [
-                window.model_dump(mode="json") for window in content_windows
-            ],
-        }
-        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        return sha1(encoded).hexdigest()
-
-    @staticmethod
     def _validated_initial_file_summary(
         summary: ExtractionFileSummary,
         *,
         ranked_file: Any,
-        source_fingerprint: str,
         sampled_text: str,
         warnings: list[str],
+        diagnostics: InitialFileSummaryDiagnostics | None = None,
     ) -> ExtractionFileSummary:
         update: dict[str, Any] = {
-            "source_fingerprint": source_fingerprint,
             "file_path": ranked_file.file_path,
             "rank": ranked_file.rank,
             "status": "summarized",
@@ -2432,16 +2576,38 @@ class ExtractionService:
             warnings.append(
                 f"Initial file summary for {ranked_file.file_path} included purpose evidence not found in the sampled file text; dropping unsupported evidence."
             )
+            if diagnostics is not None:
+                diagnostics.records.append(
+                    InitialFileSummaryDiagnosticRecord(
+                        file_path=ranked_file.file_path,
+                        rank=ranked_file.rank,
+                        reason="unsupported_purpose_evidence",
+                        message="Purpose evidence was not found in the sampled file text.",
+                        details={
+                            "dropped": [
+                                evidence
+                                for evidence in summary.purpose_evidence
+                                if evidence and evidence not in sampled_text
+                            ]
+                        },
+                    )
+                )
             update["purpose_evidence"] = verified_purpose_evidence
         if summary.explicit_purpose and not verified_purpose_evidence:
             warnings.append(
                 f"Initial file summary for {ranked_file.file_path} included an explicit purpose without evidence; clearing it."
             )
             update["explicit_purpose"] = ""
-            update["uncertainty_notes"] = [
-                *summary.uncertainty_notes,
-                "No direct purpose evidence was provided by the summary output.",
-            ]
+            if diagnostics is not None:
+                diagnostics.records.append(
+                    InitialFileSummaryDiagnosticRecord(
+                        file_path=ranked_file.file_path,
+                        rank=ranked_file.rank,
+                        reason="unsupported_explicit_purpose",
+                        message="Explicit purpose was cleared because no direct purpose evidence was provided.",
+                        details={"explicit_purpose": summary.explicit_purpose},
+                    )
+                )
         return summary.model_copy(update=update)
 
     @staticmethod
@@ -2449,15 +2615,21 @@ class ExtractionService:
         *,
         ranked_file: Any,
         reason: str,
+        diagnostics: InitialFileSummaryDiagnostics | None = None,
     ) -> ExtractionFileSummary:
+        if diagnostics is not None:
+            diagnostics.records.append(
+                InitialFileSummaryDiagnosticRecord(
+                    file_path=ranked_file.file_path,
+                    rank=ranked_file.rank,
+                    reason="failed",
+                    message=reason,
+                )
+            )
         return ExtractionFileSummary(
             file_path=ranked_file.file_path,
             rank=ranked_file.rank,
             status="failed",
-            uncertainty_notes=[reason],
-            known_traps=[
-                "No reliable file summary is available; use only current chunk evidence."
-            ],
         )
 
     @staticmethod
@@ -2471,21 +2643,453 @@ class ExtractionService:
         ]
 
     @staticmethod
-    def _sanitize_initial_overview_file_roles(
+    def _seed_initial_overview_graph(
+        *,
+        data_package_name: str,
+        ranked_files: list[RankedFile],
+        file_summaries: list[ExtractionFileSummary],
+        file_previews: list[ExtractionOverviewFilePreview],
+    ) -> ExtractionOverview:
+        summary_by_path = {summary.file_path: summary for summary in file_summaries}
+        rank_by_path = {ranked.file_path: ranked.rank for ranked in ranked_files}
+        preview_paths = [preview.file_path for preview in file_previews]
+        nodes: list[ExtractionOverviewNode] = [
+            ExtractionOverviewNode(
+                node_id="package:root",
+                label=data_package_name,
+                kind="package",
+                summary="Package root; directory and file containment is derived from archive paths.",
+            )
+        ]
+        edges: list[ExtractionOverviewEdge] = []
+        node_ids = {"package:root"}
+        edge_keys: set[tuple[str, str, str]] = set()
+
+        def add_directory(path: str) -> str:
+            node_id = f"dir:{path}"
+            if node_id not in node_ids:
+                nodes.append(
+                    ExtractionOverviewNode(
+                        node_id=node_id,
+                        label=path.rsplit("/", 1)[-1],
+                        kind="directory",
+                        summary="Directory inferred from package file paths.",
+                    )
+                )
+                node_ids.add(node_id)
+            return node_id
+
+        def add_contains(source: str, target: str) -> None:
+            key = (source, "contains", target)
+            if key in edge_keys:
+                return
+            edge_keys.add(key)
+            edges.append(
+                ExtractionOverviewEdge(
+                    edge_id=f"{source}-contains-{target}",
+                    source=source,
+                    target=target,
+                    relation="contains",
+                    evidence=["path structure"],
+                    note="Deterministic package path containment.",
+                )
+            )
+
+        def add_group(rule: _InitialOverviewGroupRule) -> str:
+            if rule.node_id not in node_ids:
+                nodes.append(
+                    ExtractionOverviewNode(
+                        node_id=rule.node_id,
+                        label=rule.label,
+                        kind="group",
+                        summary=rule.summary,
+                    )
+                )
+                node_ids.add(rule.node_id)
+            return rule.node_id
+
+        def add_semantic_edge(
+            source: str,
+            relation: str,
+            target: str,
+            *,
+            evidence: list[str],
+            note: str,
+        ) -> None:
+            key = (source, relation, target)
+            if key in edge_keys:
+                return
+            edge_keys.add(key)
+            edges.append(
+                ExtractionOverviewEdge(
+                    edge_id=f"{source}-{relation}-{target}",
+                    source=source,
+                    target=target,
+                    relation=relation,
+                    evidence=evidence,
+                    note=note,
+                )
+            )
+
+        for file_path in preview_paths:
+            parts = [part for part in file_path.split("/") if part]
+            if not parts:
+                continue
+            parent_id = "package:root"
+            directory_parts: list[str] = []
+            for part in parts[:-1]:
+                directory_parts.append(part)
+                directory_path = "/".join(directory_parts)
+                directory_id = add_directory(directory_path)
+                add_contains(parent_id, directory_id)
+                parent_id = directory_id
+
+            file_node_id = f"file:{file_path}"
+            if file_node_id not in node_ids:
+                nodes.append(
+                    ExtractionOverviewNode(
+                        node_id=file_node_id,
+                        label=parts[-1],
+                        kind="file",
+                        file_path=file_path,
+                        rank=rank_by_path.get(file_path),
+                        summary=ExtractionService._seed_file_overview_summary(
+                            summary_by_path.get(file_path)
+                        ),
+                    )
+                )
+                node_ids.add(file_node_id)
+            add_contains(parent_id, file_node_id)
+
+        seeded_group_ids: set[str] = set()
+        for file_path in preview_paths:
+            summary = summary_by_path.get(file_path)
+            if summary is None:
+                continue
+            file_node_id = f"file:{file_path}"
+            matches = ExtractionService._initial_overview_group_matches_for_summary(
+                summary
+            )
+            for rule, evidence in matches:
+                group_id = add_group(rule)
+                seeded_group_ids.add(group_id)
+                add_semantic_edge(
+                    file_node_id,
+                    rule.relation,
+                    group_id,
+                    evidence=[evidence],
+                    note="Deterministic group assignment from validated file summary.",
+                )
+
+        inferred_role_edges = (
+            (
+                "group:method_program",
+                "configures",
+                "group:acquisition_settings",
+                ["method/program logic", "acquisition settings"],
+            ),
+            (
+                "group:instrument_settings",
+                "parameterizes",
+                "group:acquisition_settings",
+                ["instrument settings", "acquisition settings"],
+            ),
+            (
+                "group:acquisition_settings",
+                "parameterizes",
+                "group:raw_data",
+                ["acquisition settings", "raw data"],
+            ),
+            (
+                "group:processing_settings",
+                "parameterizes",
+                "group:processed_data",
+                ["processing settings", "processed data"],
+            ),
+            (
+                "group:processed_data",
+                "derives_from",
+                "group:raw_data",
+                ["processed data", "raw data"],
+            ),
+            (
+                "group:derived_results",
+                "derives_from",
+                "group:processed_data",
+                ["derived results", "processed data"],
+            ),
+        )
+        for source, relation, target, evidence in inferred_role_edges:
+            if source in seeded_group_ids and target in seeded_group_ids:
+                add_semantic_edge(
+                    source,
+                    relation,
+                    target,
+                    evidence=evidence,
+                    note="Conservative relation inferred from seeded package roles.",
+                )
+
+        return ExtractionOverview(nodes=nodes, edges=edges)
+
+    @staticmethod
+    def _seed_file_overview_summary(summary: ExtractionFileSummary | None) -> str:
+        if summary is None:
+            return ""
+        values: list[str] = []
+        if summary.explicit_purpose:
+            values.append(summary.explicit_purpose)
+        if summary.data_format:
+            values.append(summary.data_format)
+        values.extend(summary.metadata_signals[:3])
+        values.extend(summary.instrument_or_software_terms_and_settings[:2])
+        values.extend(summary.quantitative_signals[:2])
+        seen: set[str] = set()
+        compacted: list[str] = []
+        for value in values:
+            normalized = value.strip()
+            if not normalized or normalized.lower() in seen:
+                continue
+            seen.add(normalized.lower())
+            compacted.append(normalized)
+        return "; ".join(compacted[:5])
+
+    @staticmethod
+    def _initial_overview_summary_values(summary: ExtractionFileSummary) -> list[str]:
+        values: list[str] = [
+            summary.data_format,
+            summary.explicit_purpose,
+        ]
+        values.extend(summary.purpose_evidence)
+        values.extend(summary.metadata_signals)
+        values.extend(summary.instrument_or_software_terms_and_settings)
+        values.extend(summary.quantitative_signals)
+        return [" ".join(value.split()) for value in values if value and value.strip()]
+
+    @classmethod
+    def _initial_overview_group_matches_for_summary(
+        cls,
+        summary: ExtractionFileSummary,
+    ) -> list[tuple[_InitialOverviewGroupRule, str]]:
+        values = cls._initial_overview_summary_values(summary)
+        matches: list[tuple[_InitialOverviewGroupRule, str]] = []
+        matched_group_ids: set[str] = set()
+        for rule in INITIAL_OVERVIEW_GROUP_RULES:
+            evidence = cls._first_matching_overview_summary_value(
+                values,
+                keywords=rule.keywords,
+            )
+            if evidence is None:
+                continue
+            matches.append((rule, evidence))
+            matched_group_ids.add(rule.node_id)
+
+        if (
+            "group:parameter_settings" in matched_group_ids
+            and matched_group_ids.intersection(INITIAL_OVERVIEW_SPECIFIC_SETTING_GROUPS)
+        ):
+            matches = [
+                (rule, evidence)
+                for rule, evidence in matches
+                if rule.node_id != "group:parameter_settings"
+            ]
+        return matches
+
+    @staticmethod
+    def _first_matching_overview_summary_value(
+        values: list[str],
+        *,
+        keywords: tuple[str, ...],
+    ) -> str | None:
+        for value in values:
+            normalized_value = value.casefold()
+            if any(
+                keyword in normalized_value
+                and not ExtractionService._overview_keyword_is_negated(
+                    normalized_value,
+                    keyword,
+                )
+                for keyword in keywords
+            ):
+                return value
+        return None
+
+    @staticmethod
+    def _overview_keyword_is_negated(value: str, keyword: str) -> bool:
+        index = value.find(keyword)
+        if index < 0:
+            return False
+        prefix = value[max(0, index - 40) : index]
+        return any(
+            marker in prefix
+            for marker in (
+                "not ",
+                "no ",
+                "without ",
+                "rather than ",
+                "instead of ",
+                "non-",
+            )
+        )
+
+    @staticmethod
+    def _overview_edge_has_meaningful_evidence(edge: ExtractionOverviewEdge) -> bool:
+        return any(
+            evidence.strip().lower() not in INITIAL_OVERVIEW_WEAK_EDGE_EVIDENCE
+            for evidence in edge.evidence
+            if evidence.strip()
+        )
+
+    @staticmethod
+    def _sanitize_initial_overview_graph(
         overview: ExtractionOverview,
         *,
         allowed_file_paths: set[str],
+        seed_overview: ExtractionOverview,
+        summaries_available: bool = False,
         warnings: list[str],
     ) -> ExtractionOverview:
-        filtered_roles = [
-            role for role in overview.file_roles if role.file_path in allowed_file_paths
-        ]
-        dropped = len(overview.file_roles) - len(filtered_roles)
-        if dropped:
-            warnings.append(
-                f"Initial extraction overview referenced {dropped} unknown file role(s); they were removed."
+        filtered_nodes: list[ExtractionOverviewNode] = list(seed_overview.nodes)
+        used_node_ids: set[str] = {node.node_id for node in filtered_nodes}
+        node_id_map: dict[str, str] = {node.node_id: node.node_id for node in filtered_nodes}
+        dropped_file_nodes = 0
+        dropped_duplicate_nodes = 0
+        for index, node in enumerate(overview.nodes):
+            original_node_id = node.node_id
+            if node.kind == "file":
+                if not node.file_path or node.file_path not in allowed_file_paths:
+                    dropped_file_nodes += 1
+                    continue
+                normalized_node = node.model_copy(
+                    update={
+                        "node_id": f"file:{node.file_path}",
+                        "label": node.label or node.file_path,
+                    }
+                )
+            else:
+                normalized_node = node
+                if not normalized_node.node_id:
+                    normalized_node = normalized_node.model_copy(
+                        update={"node_id": f"{normalized_node.kind}:{index}"}
+                    )
+            if normalized_node.node_id in used_node_ids:
+                node_id_map[original_node_id] = normalized_node.node_id
+                dropped_duplicate_nodes += 1
+                continue
+            used_node_ids.add(normalized_node.node_id)
+            node_id_map[original_node_id] = normalized_node.node_id
+            filtered_nodes.append(normalized_node)
+
+        remapped_ids = {node.node_id for node in filtered_nodes}
+        filtered_edges: list[ExtractionOverviewEdge] = list(seed_overview.edges)
+        seed_edge_keys = {
+            (edge.source, edge.relation, edge.target)
+            for edge in seed_overview.edges
+        }
+        edge_keys = set(seed_edge_keys)
+        dropped_dangling_edges = 0
+        dropped_contains_edges = 0
+        dropped_self_edges = 0
+        dropped_weak_evidence_edges = 0
+        dropped_duplicate_edges = 0
+        for index, edge in enumerate(overview.edges):
+            source = node_id_map.get(edge.source, edge.source)
+            target = node_id_map.get(edge.target, edge.target)
+            if source not in remapped_ids or target not in remapped_ids:
+                dropped_dangling_edges += 1
+                continue
+            if source == target:
+                dropped_self_edges += 1
+                continue
+            edge_key = (source, edge.relation, target)
+            if edge.relation == "contains":
+                if edge_key not in seed_edge_keys:
+                    dropped_contains_edges += 1
+                continue
+            if not ExtractionService._overview_edge_has_meaningful_evidence(edge):
+                dropped_weak_evidence_edges += 1
+                continue
+            if edge_key in edge_keys:
+                dropped_duplicate_edges += 1
+                continue
+            edge_keys.add(edge_key)
+            filtered_edges.append(
+                edge.model_copy(
+                    update={
+                        "source": source,
+                        "target": target,
+                        "edge_id": edge.edge_id
+                        or f"{source}-{edge.relation}-{target}-{index}"
+                    }
+                )
             )
-        return overview.model_copy(update={"file_roles": filtered_roles})
+        if dropped_file_nodes:
+            warnings.append(
+                f"Initial extraction overview referenced {dropped_file_nodes} unknown file node(s); they were removed."
+            )
+        if dropped_duplicate_nodes:
+            warnings.append(
+                f"Initial extraction overview repeated {dropped_duplicate_nodes} seeded graph node(s); seeded nodes were kept."
+            )
+        if dropped_dangling_edges:
+            warnings.append(
+                f"Initial extraction overview referenced {dropped_dangling_edges} dangling graph edge(s); they were removed."
+            )
+        if dropped_contains_edges:
+            warnings.append(
+                f"Initial extraction overview proposed {dropped_contains_edges} non-path containment edge(s); seeded path containment was kept."
+            )
+        if dropped_self_edges:
+            warnings.append(
+                f"Initial extraction overview proposed {dropped_self_edges} self-loop edge(s); they were removed."
+            )
+        if dropped_weak_evidence_edges:
+            warnings.append(
+                f"Initial extraction overview proposed {dropped_weak_evidence_edges} semantic edge(s) with weak placeholder evidence; they were removed."
+            )
+        if dropped_duplicate_edges:
+            warnings.append(
+                f"Initial extraction overview repeated {dropped_duplicate_edges} graph edge(s); duplicates were removed."
+            )
+        filtered_uncertainties = list(overview.uncertainties)
+        if summaries_available:
+            before_uncertainty_count = len(filtered_uncertainties)
+            filtered_uncertainties = [
+                uncertainty
+                for uncertainty in filtered_uncertainties
+                if not ExtractionService._overview_uncertainty_contradicts_summaries(
+                    uncertainty
+                )
+            ]
+            dropped_uncertainties = before_uncertainty_count - len(filtered_uncertainties)
+            if dropped_uncertainties:
+                warnings.append(
+                    f"Initial extraction overview made {dropped_uncertainties} uncertainty claim(s) contradicted by available file summaries; they were removed."
+                )
+        return overview.model_copy(
+            update={
+                "nodes": filtered_nodes,
+                "edges": filtered_edges,
+                "uncertainties": filtered_uncertainties,
+            }
+        )
+
+    @staticmethod
+    def _overview_uncertainty_contradicts_summaries(uncertainty: str) -> bool:
+        normalized = uncertainty.strip().lower()
+        if not normalized:
+            return False
+        summary_terms = ("summary", "summaries", "per-file")
+        unavailable_terms = (
+            "no ",
+            "not available",
+            "unavailable",
+            "absent",
+            "missing",
+            "without summaries",
+        )
+        return any(term in normalized for term in summary_terms) and any(
+            term in normalized for term in unavailable_terms
+        )
 
     @staticmethod
     def _with_initial_overview_provenance(
@@ -2542,8 +3146,10 @@ class ExtractionService:
                 source_index += 1
         if source_index != len(source_file_paths):
             return False
-        overview_role_paths = {role.file_path for role in overview.file_roles}
-        if any(path not in ranked_paths for path in overview_role_paths):
+        overview_file_paths = {
+            node.file_path for node in overview.nodes if node.kind == "file" and node.file_path
+        }
+        if any(path not in ranked_paths for path in overview_file_paths):
             return False
         return True
 
@@ -4991,6 +5597,21 @@ class ExtractionService:
             chat_model=state.chat_model,
         )
 
+    def _persist_initial_file_summary_diagnostics(
+        self,
+        data_package_id: str,
+        state: ExtractionRunState,
+        *,
+        diagnostics: InitialFileSummaryDiagnostics,
+    ) -> None:
+        if self.output_repository is None:
+            return
+        self.output_repository.save_initial_file_summary_diagnostics(
+            workflow_id=data_package_id,
+            diagnostics=diagnostics if diagnostics.records else None,
+            chat_model=state.chat_model,
+        )
+
     def _persist_initial_file_summaries(
         self,
         data_package_id: str,
@@ -6436,7 +7057,7 @@ class ExtractionService:
                     for part in (
                         summary.data_format,
                         summary.explicit_purpose,
-                        "; ".join(summary.data_characteristics),
+                        "; ".join(summary.metadata_signals[:3]),
                     )
                     if part
                 ]

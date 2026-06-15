@@ -4,6 +4,7 @@ from app.domain.extraction import (
     CurationLedgerRecord,
     DraftValidationResult,
     ExtractionFileSummary,
+    InitialFileSummaryDiagnostics,
     InitialFileSummaryStatus,
     ExtractionOverview,
     ExtractionOverviewStatus,
@@ -70,6 +71,15 @@ class ExtractionOutputRepository(Protocol):
         workflow_id: str,
         chat_model: str | None = None,
     ) -> tuple[list[ExtractionFileSummary], InitialFileSummaryStatus | None]:
+        ...
+
+    def save_initial_file_summary_diagnostics(
+        self,
+        *,
+        workflow_id: str,
+        diagnostics: InitialFileSummaryDiagnostics | None,
+        chat_model: str | None = None,
+    ) -> None:
         ...
 
     def save_initial_extraction_overview(

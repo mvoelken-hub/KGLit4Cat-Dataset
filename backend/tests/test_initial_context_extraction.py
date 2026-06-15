@@ -14,6 +14,7 @@ from app.domain.extraction import (
     ExtractionContext,
     ExtractionFileSummary,
     ExtractionOverview,
+    ExtractionOverviewFilePreview,
     ExtractionNormalization,
     ExtractionRunResult,
     ExtractionRunProgress,
@@ -137,6 +138,7 @@ class FakeOutputRepository:
         self.run_state: ExtractionRunState | None = None
         self.initial_file_summaries: list[ExtractionFileSummary] = []
         self.initial_file_summary_status = None
+        self.initial_file_summary_diagnostics = None
         self.initial_extraction_overview = None
         self.initial_extraction_overview_status = None
         self.initial_extraction_overview_diagnostic = None
@@ -208,6 +210,15 @@ class FakeOutputRepository:
         if self.initial_file_summary_status is None:
             raise FileNotFoundError
         return self.initial_file_summaries, self.initial_file_summary_status
+
+    def save_initial_file_summary_diagnostics(
+        self,
+        *,
+        workflow_id: str,
+        diagnostics,
+        chat_model: str | None = None,
+    ):
+        self.initial_file_summary_diagnostics = diagnostics
 
     def save_initial_extraction_overview(
         self,
@@ -360,6 +371,30 @@ def make_chunk(start_idx: int = 0, content: str = "sample measured at 20 C") -> 
     )
 
 
+def overview_for_file(
+    file_path: str = "README.md",
+    *,
+    source_fingerprint: str = "",
+    summary: str = "File is present.",
+    uncertainty: str = "Use graph orientation only.",
+) -> ExtractionOverview:
+    return ExtractionOverview(
+        source_fingerprint=source_fingerprint,
+        source_file_paths=[file_path],
+        nodes=[
+            {
+                "node_id": f"file:{file_path}",
+                "label": file_path,
+                "kind": "file",
+                "file_path": file_path,
+                "summary": summary,
+            }
+        ],
+        edges=[],
+        uncertainties=[uncertainty] if uncertainty else [],
+    )
+
+
 def resource_context(identifier: str, description: str) -> ExtractionContext:
     return ExtractionContext.model_validate(
         {
@@ -504,10 +539,9 @@ def make_service(
                 )
             ],
             initial_file_summary_status="completed",
-            initial_extraction_overview=ExtractionOverview(
+            initial_extraction_overview=overview_for_file(
                 source_fingerprint="overview",
-                source_file_paths=["README.md"],
-                observed_signals=["README.md is present."],
+                summary="README.md is present.",
             ),
             initial_extraction_overview_status="structured",
         )
@@ -650,14 +684,16 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn('"label":"end"', kwargs["prompt"])
             self.assertIn("common metadata categories", kwargs["prompt"])
             self.assertIn("These categories are examples only", kwargs["prompt"])
-            self.assertNotIn("such as PLW1", kwargs["prompt"])
+            self.assertIn("quantitative_signals", kwargs["prompt"])
+            self.assertNotIn("parameter_terms", kwargs["prompt"])
             return CompletionResult(
                 output=ExtractionFileSummary(
                     file_path="made-up.py",
                     rank=5,
                     data_format="JCAMP-DX spectroscopy export",
                     explicit_purpose="Stores final NMR evidence.",
-                    parameter_terms=["PULPROG", "PLW1"],
+                    instrument_or_software_terms_and_settings=["PULPROG=zg30"],
+                    quantitative_signals=["explicit numeric settings"],
                 ),
                 usage=RunUsage(requests=1),
             )
@@ -678,8 +714,9 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(summary.file_path, "HMS-Q11-p_10.dx")
         self.assertEqual(summary.rank, 1)
         self.assertEqual(summary.explicit_purpose, "")
-        self.assertIn("PULPROG", summary.parameter_terms)
-        self.assertTrue(summary.source_fingerprint)
+        self.assertIn("PULPROG=zg30", summary.instrument_or_software_terms_and_settings)
+        self.assertIn("explicit numeric settings", summary.quantitative_signals)
+        self.assertIsNotNone(output_repository.initial_file_summary_diagnostics)
         self.assertEqual(output_repository.initial_file_summaries, state.initial_file_summaries)
         self.assertTrue(any("mismatched file_path" in warning for warning in warnings))
         self.assertTrue(any("without evidence" in warning for warning in warnings))
@@ -770,24 +807,40 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         async def fake_generate(*_args, **kwargs):
             self.assertIs(kwargs["output_type"], ExtractionOverview)
             self.assertIn("scientific data archivist", kwargs["system"])
-            self.assertIn("conservative package triage map", kwargs["system"])
-            self.assertIn("observed_signals", kwargs["system"])
-            self.assertIn("suggested_interpretations", kwargs["system"])
-            self.assertIn("conflicts_or_uncertainties", kwargs["system"])
-            self.assertIn("instrument term versus measurement modality", kwargs["system"])
-            self.assertIn("package triage, not final scientific interpretation", kwargs["prompt"])
-            self.assertIn("do not connect an instrument term to a technique", kwargs["prompt"])
+            self.assertIn("file-centered package graph", kwargs["system"])
+            self.assertIn("nodes", kwargs["system"])
+            self.assertIn("edges", kwargs["system"])
+            self.assertIn("uncertainties", kwargs["system"])
+            self.assertIn("controlled relation", kwargs["system"])
+            self.assertIn("Do not create contains edges", kwargs["system"])
+            self.assertIn("Ranked order is prioritization metadata only", kwargs["system"])
+            self.assertIn("First group files by shared package role", kwargs["system"])
+            self.assertIn("connect files to group nodes first", kwargs["system"])
+            self.assertIn("package graph triage, not final scientific interpretation", kwargs["prompt"])
+            self.assertIn("Backend-seeded package/directory/file/group graph JSON", kwargs["prompt"])
+            self.assertIn("Ranked order means extraction priority only", kwargs["prompt"])
+            self.assertIn("Group files first", kwargs["prompt"])
             self.assertIn("dataset_description.txt", kwargs["prompt"])
             self.assertIn("##$PULPROG=zg30", kwargs["prompt"])
             return CompletionResult(
                 output=ExtractionOverview(
-                    observed_signals=[
-                        "dataset_description.txt explicitly mentions 1H NMR."
+                    nodes=[
+                        {
+                            "node_id": "group:raw-data",
+                            "label": "raw data",
+                            "kind": "group",
+                        },
                     ],
-                    suggested_interpretations=[
-                        "HMS-Q11-p_10.dx may contain raw spectral data."
+                    edges=[
+                        {
+                            "source": "file:HMS-Q11-p_10.dx",
+                            "target": "group:raw-data",
+                            "relation": "describes",
+                            "evidence": ["##.OBSERVE NUCLEUS=1H"],
+                            "note": "Raw data grouping is suggested by file summary.",
+                        }
                     ],
-                    conflicts_or_uncertainties=[
+                    uncertainties=[
                         "Do not resolve instrument or method identity without chunk evidence."
                     ],
                 ),
@@ -816,17 +869,334 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             ["dataset_description.txt", "HMS-Q11-p_10.dx"],
         )
         self.assertEqual(
-            overview.observed_signals,
-            ["dataset_description.txt explicitly mentions 1H NMR."],
+            [node.file_path for node in overview.nodes if node.kind == "file"],
+            ["dataset_description.txt", "HMS-Q11-p_10.dx"],
+        )
+        self.assertIn("package:root", {node.node_id for node in overview.nodes})
+        self.assertEqual(overview.edges[0].relation, "contains")
+        self.assertTrue(
+            any(
+                edge.source == "file:HMS-Q11-p_10.dx"
+                and edge.target == "group:raw-data"
+                and edge.relation == "describes"
+                for edge in overview.edges
+            )
         )
         self.assertEqual(
-            overview.suggested_interpretations,
-            ["HMS-Q11-p_10.dx may contain raw spectral data."],
-        )
-        self.assertEqual(
-            overview.conflicts_or_uncertainties,
+            overview.uncertainties,
             ["Do not resolve instrument or method identity without chunk evidence."],
         )
+
+    def test_initial_overview_seed_graph_creates_path_containment(self):
+        seed = ExtractionService._seed_initial_overview_graph(
+            data_package_name="package",
+            ranked_files=[
+                RankedFile(rank=1, file_path="metadata.txt"),
+                RankedFile(rank=2, file_path="raw/run1/data.txt"),
+            ],
+            file_summaries=[
+                ExtractionFileSummary(
+                    file_path="raw/run1/data.txt",
+                    rank=2,
+                    data_format="text",
+                    metadata_signals=["raw measurements"],
+                )
+            ],
+            file_previews=[
+                ExtractionOverviewFilePreview(rank=1, file_path="metadata.txt"),
+                ExtractionOverviewFilePreview(rank=2, file_path="raw/run1/data.txt"),
+            ],
+        )
+
+        node_ids = {node.node_id for node in seed.nodes}
+        self.assertIn("package:root", node_ids)
+        self.assertIn("dir:raw", node_ids)
+        self.assertIn("dir:raw/run1", node_ids)
+        self.assertIn("file:metadata.txt", node_ids)
+        self.assertIn("file:raw/run1/data.txt", node_ids)
+        edge_keys = {(edge.source, edge.relation, edge.target) for edge in seed.edges}
+        self.assertIn(("package:root", "contains", "file:metadata.txt"), edge_keys)
+        self.assertIn(("package:root", "contains", "dir:raw"), edge_keys)
+        self.assertIn(("dir:raw", "contains", "dir:raw/run1"), edge_keys)
+        self.assertIn(("dir:raw/run1", "contains", "file:raw/run1/data.txt"), edge_keys)
+
+    def test_initial_overview_seed_graph_creates_summary_supported_groups(self):
+        seed = ExtractionService._seed_initial_overview_graph(
+            data_package_name="package",
+            ranked_files=[
+                RankedFile(rank=1, file_path="dataset_description.txt"),
+                RankedFile(rank=2, file_path="audit/log.txt"),
+                RankedFile(rank=3, file_path="method/program.txt"),
+                RankedFile(rank=4, file_path="settings/acquisition.txt"),
+                RankedFile(rank=5, file_path="settings/processing.txt"),
+                RankedFile(rank=6, file_path="settings/instrument.txt"),
+                RankedFile(rank=7, file_path="data/raw.txt"),
+                RankedFile(rank=8, file_path="data/processed.txt"),
+            ],
+            file_summaries=[
+                ExtractionFileSummary(
+                    file_path="dataset_description.txt",
+                    rank=1,
+                    explicit_purpose="dataset description",
+                    metadata_signals=["human-readable"],
+                ),
+                ExtractionFileSummary(
+                    file_path="audit/log.txt",
+                    rank=2,
+                    metadata_signals=["audit trail", "hash values"],
+                ),
+                ExtractionFileSummary(
+                    file_path="method/program.txt",
+                    rank=3,
+                    instrument_or_software_terms_and_settings=["pulse sequence"],
+                ),
+                ExtractionFileSummary(
+                    file_path="settings/acquisition.txt",
+                    rank=4,
+                    explicit_purpose="acquisition parameter configuration",
+                    metadata_signals=["settings"],
+                    quantitative_signals=["explicit numeric settings"],
+                ),
+                ExtractionFileSummary(
+                    file_path="settings/processing.txt",
+                    rank=5,
+                    explicit_purpose="processing parameter file",
+                    metadata_signals=["parameter file"],
+                ),
+                ExtractionFileSummary(
+                    file_path="settings/instrument.txt",
+                    rank=6,
+                    instrument_or_software_terms_and_settings=[
+                        "instrument settings",
+                        "calibration",
+                    ],
+                ),
+                ExtractionFileSummary(
+                    file_path="data/raw.txt",
+                    rank=7,
+                    metadata_signals=["raw measurements"],
+                ),
+                ExtractionFileSummary(
+                    file_path="data/processed.txt",
+                    rank=8,
+                    metadata_signals=["processed data"],
+                ),
+            ],
+            file_previews=[
+                ExtractionOverviewFilePreview(rank=1, file_path="dataset_description.txt"),
+                ExtractionOverviewFilePreview(rank=2, file_path="audit/log.txt"),
+                ExtractionOverviewFilePreview(rank=3, file_path="method/program.txt"),
+                ExtractionOverviewFilePreview(rank=4, file_path="settings/acquisition.txt"),
+                ExtractionOverviewFilePreview(rank=5, file_path="settings/processing.txt"),
+                ExtractionOverviewFilePreview(rank=6, file_path="settings/instrument.txt"),
+                ExtractionOverviewFilePreview(rank=7, file_path="data/raw.txt"),
+                ExtractionOverviewFilePreview(rank=8, file_path="data/processed.txt"),
+            ],
+        )
+
+        node_ids = {node.node_id for node in seed.nodes}
+        self.assertIn("group:dataset_documentation", node_ids)
+        self.assertIn("group:audit_provenance", node_ids)
+        self.assertIn("group:method_program", node_ids)
+        self.assertIn("group:acquisition_settings", node_ids)
+        self.assertIn("group:processing_settings", node_ids)
+        self.assertIn("group:instrument_settings", node_ids)
+        self.assertIn("group:raw_data", node_ids)
+        self.assertIn("group:processed_data", node_ids)
+        self.assertNotIn("group:parameter_settings", node_ids)
+
+        edge_keys = {(edge.source, edge.relation, edge.target) for edge in seed.edges}
+        self.assertIn(
+            (
+                "file:dataset_description.txt",
+                "documents",
+                "group:dataset_documentation",
+            ),
+            edge_keys,
+        )
+        self.assertIn(
+            ("file:settings/acquisition.txt", "parameterizes", "group:acquisition_settings"),
+            edge_keys,
+        )
+        self.assertIn(
+            ("file:method/program.txt", "configures", "group:method_program"),
+            edge_keys,
+        )
+        self.assertIn(
+            ("group:method_program", "configures", "group:acquisition_settings"),
+            edge_keys,
+        )
+        self.assertIn(
+            ("group:processed_data", "derives_from", "group:raw_data"),
+            edge_keys,
+        )
+
+    def test_initial_overview_seed_graph_ignores_negated_group_signals(self):
+        seed = ExtractionService._seed_initial_overview_graph(
+            data_package_name="package",
+            ranked_files=[
+                RankedFile(rank=1, file_path="not-raw.txt"),
+                RankedFile(rank=2, file_path="minimal.txt"),
+            ],
+            file_summaries=[
+                ExtractionFileSummary(
+                    file_path="not-raw.txt",
+                    rank=1,
+                    metadata_signals=["support file format, not raw data"],
+                ),
+                ExtractionFileSummary(
+                    file_path="minimal.txt",
+                    rank=2,
+                    metadata_signals=["minimal content, no detailed parameters"],
+                ),
+            ],
+            file_previews=[
+                ExtractionOverviewFilePreview(rank=1, file_path="not-raw.txt"),
+                ExtractionOverviewFilePreview(rank=2, file_path="minimal.txt"),
+            ],
+        )
+
+        node_ids = {node.node_id for node in seed.nodes}
+        self.assertNotIn("group:raw_data", node_ids)
+        self.assertNotIn("group:parameter_settings", node_ids)
+
+    def test_initial_overview_sanitizer_removes_ranked_star_containment(self):
+        seed = ExtractionService._seed_initial_overview_graph(
+            data_package_name="package",
+            ranked_files=[
+                RankedFile(rank=1, file_path="10.infer.json"),
+                RankedFile(rank=2, file_path="dataset_description.txt"),
+            ],
+            file_summaries=[],
+            file_previews=[
+                ExtractionOverviewFilePreview(rank=1, file_path="10.infer.json"),
+                ExtractionOverviewFilePreview(rank=2, file_path="dataset_description.txt"),
+            ],
+        )
+        warnings: list[str] = []
+
+        sanitized = ExtractionService._sanitize_initial_overview_graph(
+            ExtractionOverview(
+                nodes=[
+                    {
+                        "node_id": "file:10.infer.json",
+                        "label": "10.infer.json",
+                        "kind": "file",
+                        "file_path": "10.infer.json",
+                    },
+                    {
+                        "node_id": "file:dataset_description.txt",
+                        "label": "dataset_description.txt",
+                        "kind": "file",
+                        "file_path": "dataset_description.txt",
+                    },
+                ],
+                edges=[
+                    {
+                        "edge_id": "bad-star-edge",
+                        "source": "file:10.infer.json",
+                        "target": "file:dataset_description.txt",
+                        "relation": "contains",
+                        "evidence": ["ranked"],
+                    }
+                ],
+            ),
+            allowed_file_paths={"10.infer.json", "dataset_description.txt"},
+            seed_overview=seed,
+            warnings=warnings,
+        )
+
+        edge_keys = {(edge.source, edge.relation, edge.target) for edge in sanitized.edges}
+        self.assertNotIn(
+            ("file:10.infer.json", "contains", "file:dataset_description.txt"),
+            edge_keys,
+        )
+        self.assertIn(("package:root", "contains", "file:10.infer.json"), edge_keys)
+        self.assertIn(("package:root", "contains", "file:dataset_description.txt"), edge_keys)
+        self.assertTrue(any("non-path containment" in warning for warning in warnings))
+
+    def test_initial_overview_sanitizer_drops_placeholder_semantic_evidence(self):
+        seed = ExtractionService._seed_initial_overview_graph(
+            data_package_name="package",
+            ranked_files=[
+                RankedFile(rank=1, file_path="settings.txt"),
+                RankedFile(rank=2, file_path="data.txt"),
+            ],
+            file_summaries=[],
+            file_previews=[
+                ExtractionOverviewFilePreview(rank=1, file_path="settings.txt"),
+                ExtractionOverviewFilePreview(rank=2, file_path="data.txt"),
+            ],
+        )
+        warnings: list[str] = []
+
+        sanitized = ExtractionService._sanitize_initial_overview_graph(
+            ExtractionOverview(
+                edges=[
+                    {
+                        "source": "file:settings.txt",
+                        "target": "file:data.txt",
+                        "relation": "configures",
+                        "evidence": ["ranked"],
+                    },
+                    {
+                        "source": "file:settings.txt",
+                        "target": "file:data.txt",
+                        "relation": "documents",
+                        "evidence": ["parameter labels"],
+                    },
+                ],
+            ),
+            allowed_file_paths={"settings.txt", "data.txt"},
+            seed_overview=seed,
+            warnings=warnings,
+        )
+
+        semantic_edges = [
+            edge for edge in sanitized.edges
+            if edge.relation != "contains"
+        ]
+        self.assertEqual(len(semantic_edges), 1)
+        self.assertEqual(semantic_edges[0].relation, "documents")
+        self.assertEqual(semantic_edges[0].evidence, ["parameter labels"])
+        self.assertTrue(any("weak placeholder evidence" in warning for warning in warnings))
+
+    def test_initial_overview_sanitizer_removes_false_missing_summary_uncertainty(self):
+        seed = ExtractionService._seed_initial_overview_graph(
+            data_package_name="package",
+            ranked_files=[RankedFile(rank=1, file_path="settings.txt")],
+            file_summaries=[
+                ExtractionFileSummary(
+                    file_path="settings.txt",
+                    rank=1,
+                    data_format="text",
+                    metadata_signals=["settings"],
+                )
+            ],
+            file_previews=[
+                ExtractionOverviewFilePreview(rank=1, file_path="settings.txt"),
+            ],
+        )
+        warnings: list[str] = []
+
+        sanitized = ExtractionService._sanitize_initial_overview_graph(
+            ExtractionOverview(
+                uncertainties=[
+                    "No per-file summaries available to extract additional semantic relations.",
+                    "Processing/raw relation remains ambiguous.",
+                ]
+            ),
+            allowed_file_paths={"settings.txt"},
+            seed_overview=seed,
+            summaries_available=True,
+            warnings=warnings,
+        )
+
+        self.assertEqual(
+            sanitized.uncertainties,
+            ["Processing/raw relation remains ambiguous."],
+        )
+        self.assertTrue(any("contradicted by available file summaries" in warning for warning in warnings))
 
     async def test_initial_overview_skips_images_from_previews_and_provenance(self):
         service, _, output_repository = make_service([[make_chunk()]])
@@ -864,9 +1234,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("spectrum.png", kwargs["prompt"])
             self.assertIn("notes.txt", kwargs["prompt"])
             return CompletionResult(
-                output=ExtractionOverview(
-                    observed_signals=["notes.txt contains text notes."],
-                ),
+                output=overview_for_file("notes.txt", summary="notes.txt contains text notes."),
                 usage=RunUsage(requests=1),
             )
 
@@ -913,8 +1281,9 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     rank=1,
                     data_format="plain text",
                     metadata_signals=[f"metadata signal {index}" for index in range(40)],
-                    parameter_terms=[f"parameter term {index}" for index in range(120)],
-                    uncertainty_notes=[f"uncertainty note {index}" for index in range(20)],
+                    quantitative_signals=[
+                        f"quantitative signal {index}" for index in range(120)
+                    ],
                 )
             ],
             initial_file_summary_status="completed",
@@ -922,8 +1291,8 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
         async def fake_generate(*_args, **kwargs):
             prompt = kwargs["prompt"]
-            self.assertIn("parameter term 0", prompt)
-            self.assertNotIn("parameter term 119", prompt)
+            self.assertIn("quantitative signal 0", prompt)
+            self.assertNotIn("quantitative signal 119", prompt)
             self.assertLessEqual(
                 budgeter.count(EXTRACTION_OVERVIEW_SYSTEM_PROMPT + prompt),
                 service._initial_overview_input_token_budget(
@@ -931,7 +1300,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 ),
             )
             return CompletionResult(
-                output=ExtractionOverview(observed_signals=["parameters.txt was summarized."]),
+                output=overview_for_file("parameters.txt", summary="parameters.txt was summarized."),
                 usage=RunUsage(requests=1, input_tokens=100, output_tokens=20),
             )
 
@@ -994,7 +1363,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         async def fake_generate(*_args, **_kwargs):
             raise MaxRetriesExceeded(
                 last_error=OutputParsingError("bad json"),
-                failed_response='{"observed_signals": ["unterminated"',
+                failed_response='{"nodes": [{"node_id": "unterminated"',
                 usage=RunUsage(requests=2, input_tokens=200, output_tokens=50),
             )
 
@@ -1062,9 +1431,9 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     )
                 ],
                 "initial_file_summary_status": "completed",
-                "initial_extraction_overview": ExtractionOverview(
-                    source_file_paths=[chunk.file_path],
-                    observed_signals=[f"{chunk.file_path} is present."],
+                "initial_extraction_overview": overview_for_file(
+                    chunk.file_path,
+                    summary=f"{chunk.file_path} is present.",
                 ),
                 "initial_extraction_overview_status": "structured",
             }
@@ -1085,9 +1454,9 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
         stale_overview = persisted_without_overview.model_copy(
             update={
-                "initial_extraction_overview": ExtractionOverview(
-                    source_file_paths=["sunrise.jpg"],
-                    observed_signals=["sunrise.jpg is present."],
+                "initial_extraction_overview": overview_for_file(
+                    "sunrise.jpg",
+                    summary="sunrise.jpg is present.",
                 ),
                 "initial_extraction_overview_status": "structured",
             }
@@ -1567,9 +1936,9 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     )
                 ],
                 initial_file_summary_status="completed",
-                initial_extraction_overview=ExtractionOverview(
-                    source_file_paths=["README.md"],
-                    observed_signals=["README.md is present."],
+                initial_extraction_overview=overview_for_file(
+                    "README.md",
+                    summary="README.md is present.",
                 ),
                 initial_extraction_overview_status="structured",
                 chunk_results=[
@@ -1629,9 +1998,9 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     )
                 ],
                 initial_file_summary_status="completed",
-                initial_extraction_overview=ExtractionOverview(
-                    source_file_paths=["README.md"],
-                    observed_signals=["README.md is present."],
+                initial_extraction_overview=overview_for_file(
+                    "README.md",
+                    summary="README.md is present.",
                 ),
                 initial_extraction_overview_status="structured",
                 chunk_results=[
@@ -1992,10 +2361,10 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         )
         service.settings.ollama_chat_tokenizer = "example/tokenizer"
         assert output_repository.run_state is not None
-        output_repository.run_state.initial_extraction_overview = ExtractionOverview(
+        output_repository.run_state.initial_extraction_overview = overview_for_file(
+            "README.md",
             source_fingerprint="overview",
-            source_file_paths=["README.md"],
-            observed_signals=["signal " + "word " * 500],
+            summary="signal " + "word " * 500,
         )
         budgeter = PromptTokenBudgeter(tokenizer=FakeTokenizer())
         captured_system_prompts: list[str] = []
@@ -2122,9 +2491,9 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     )
                 ],
                 initial_file_summary_status="completed",
-                initial_extraction_overview=ExtractionOverview(
-                    source_file_paths=["README.md"],
-                    observed_signals=["README.md is present."],
+                initial_extraction_overview=overview_for_file(
+                    "README.md",
+                    summary="README.md is present.",
                 ),
                 initial_extraction_overview_status="structured",
                 chunk_results=[

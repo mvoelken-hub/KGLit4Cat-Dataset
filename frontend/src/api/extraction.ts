@@ -126,28 +126,29 @@ export type ExtractionFileSummaryStatus = 'summarized' | 'failed' | string;
 export type InitialFileSummaryStatus = 'completed' | 'partial' | 'failed' | string;
 
 export type ExtractionFileSummary = {
-  source_fingerprint: string;
   file_path: string;
   rank: number;
   status: ExtractionFileSummaryStatus;
   data_format: string;
-  data_characteristics: string[];
   explicit_purpose: string;
   purpose_evidence: string[];
   metadata_signals: string[];
-  detected_identifiers: string[];
-  instrument_or_software_terms: string[];
-  parameter_terms: string[];
-  uncertainty_notes: string[];
-  known_traps: string[];
+  instrument_or_software_terms_and_settings: string[];
+  quantitative_signals: string[];
 };
 
-export type ExtractionOverviewFileRole = {
-  file_path: string;
-  role: string;
-  extraction_notes: string[];
-  read_reason?: string;
-};
+export type ExtractionOverviewNodeKind = 'package' | 'directory' | 'file' | 'group' | string;
+export type ExtractionOverviewRelation =
+  | 'contains'
+  | 'describes'
+  | 'derives_from'
+  | 'documents'
+  | 'configures'
+  | 'parameterizes'
+  | 'generated_by'
+  | 'related_to'
+  | 'uncertain_relation'
+  | string;
 
 export type ExtractionOverviewInspectedFile = {
   file_path: string;
@@ -156,14 +157,31 @@ export type ExtractionOverviewInspectedFile = {
   reason: string;
 };
 
+export type ExtractionOverviewNode = {
+  node_id: string;
+  label: string;
+  kind: ExtractionOverviewNodeKind;
+  file_path?: string | null;
+  rank?: number | null;
+  summary?: string;
+};
+
+export type ExtractionOverviewEdge = {
+  edge_id: string;
+  source: string;
+  target: string;
+  relation: ExtractionOverviewRelation;
+  evidence: string[];
+  note?: string;
+};
+
 export type ExtractionOverview = {
   source_fingerprint: string;
   source_file_paths: string[];
   inspected_files: ExtractionOverviewInspectedFile[];
-  file_roles: ExtractionOverviewFileRole[];
-  observed_signals: string[];
-  suggested_interpretations: string[];
-  conflicts_or_uncertainties: string[];
+  nodes: ExtractionOverviewNode[];
+  edges: ExtractionOverviewEdge[];
+  uncertainties: string[];
 };
 
 export type ExtractionVocabQueryRecord = {

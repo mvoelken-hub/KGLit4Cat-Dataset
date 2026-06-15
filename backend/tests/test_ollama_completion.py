@@ -82,6 +82,18 @@ class StripMarkdownFencesTests(unittest.TestCase):
             '{"x": 1}',
         )
 
+    def test_strips_non_json_language_fence_on_one_line(self):
+        self.assertEqual(
+            _strip_markdown_fences('```python {"x": 1} ```'),
+            '{"x": 1}',
+        )
+
+    def test_strips_non_json_language_fence_with_newline(self):
+        self.assertEqual(
+            _strip_markdown_fences('```python\n{"x": 1}\n```'),
+            '{"x": 1}',
+        )
+
     def test_no_fence_passthrough(self):
         self.assertEqual(
             _strip_markdown_fences('{"x": 1}'),
@@ -333,6 +345,22 @@ class GenerateStructuredHappyPathTests(IsolatedAsyncioTestCase):
             system="You are helpful.",
             prompt="Give me data.",
             output_type=SimpleOutput,
+        )
+
+        self.assertEqual(result.output.answer, "yo")
+
+    async def test_non_json_markdown_fence_language_is_stripped(self):
+        client = FakeOllamaClient([
+            FakeGenerateResponse(response='```python {"answer": "yo", "score": 1} ```'),
+        ])
+
+        result = await generate_structured(
+            client,
+            model="test-model",
+            system="You are helpful.",
+            prompt="Give me data.",
+            output_type=SimpleOutput,
+            retries=0,
         )
 
         self.assertEqual(result.output.answer, "yo")

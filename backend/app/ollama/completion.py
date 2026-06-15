@@ -39,8 +39,10 @@ ThinkMode: TypeAlias = bool | Literal["low", "medium", "high"] | None
 T = TypeVar("T")
 ModelT = TypeVar("ModelT", bound=BaseModel)
 
-# Regex to strip markdown JSON fences (```json ... ```)
-_MARKDOWN_FENCE_RE = re.compile(r"^```(?:json)?\s*\n?|\n?```\s*$")
+_MARKDOWN_FENCE_RE = re.compile(
+    r"^\s*```[a-zA-Z0-9_-]*\s*(?P<body>.*?)\s*```\s*$",
+    re.DOTALL,
+)
 _REPAIR_SYSTEM_PROMPT = (
     "You repair malformed structured JSON. Preserve the factual content and "
     "field values from the failed response. Do not solve the original task "
@@ -77,7 +79,8 @@ class CompletionResult(Generic[T]):
 
 def _strip_markdown_fences(text: str) -> str:
     """Remove markdown code fences and surrounding whitespace."""
-    cleaned = _MARKDOWN_FENCE_RE.sub("", text)
+    match = _MARKDOWN_FENCE_RE.match(text)
+    cleaned = match.group("body") if match else text
     # Also strip any leading/trailing whitespace and stray backticks
     cleaned = cleaned.strip().strip("`").strip()
     return cleaned

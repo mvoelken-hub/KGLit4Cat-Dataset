@@ -13,12 +13,31 @@ from app.domain.extraction import (
     ExtractionRunState,
     FilteredEvidenceLedger,
     FilteredEvidenceNote,
+    InitialFileSummaryDiagnosticRecord,
+    InitialFileSummaryDiagnostics,
     InitialOverviewFailureDiagnostic,
 )
 from infra.filesystem_extraction_output_repository import (
     FileSystemExtractionOutputRepository,
     _atomic_replace,
 )
+
+
+def overview_for_file(file_path: str, summary: str, uncertainty: str) -> ExtractionOverview:
+    return ExtractionOverview(
+        source_file_paths=[file_path],
+        nodes=[
+            {
+                "node_id": f"file:{file_path}",
+                "label": file_path,
+                "kind": "file",
+                "file_path": file_path,
+                "summary": summary,
+            }
+        ],
+        edges=[],
+        uncertainties=[uncertainty],
+    )
 
 
 class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
@@ -63,10 +82,10 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
                     )
                 ],
                 initial_file_summary_status="completed",
-                initial_extraction_overview=ExtractionOverview(
-                    observed_signals=["dataset_description.txt mentions NMR."],
-                    suggested_interpretations=["Use NMR context as orientation only."],
-                    conflicts_or_uncertainties=["Instrument identity is unresolved."],
+                initial_extraction_overview=overview_for_file(
+                    "dataset_description.txt",
+                    "dataset_description.txt mentions NMR.",
+                    "Instrument identity is unresolved.",
                 ),
                 initial_extraction_overview_status="structured",
                 curated_document={"id": "curated", "title": "Curated"},
@@ -125,7 +144,7 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
             self.assertEqual(summary_status, "completed")
             self.assertEqual(summaries[0].file_path, "dataset_description.txt")
             self.assertEqual(overview_status, "structured")
-            self.assertEqual(overview.observed_signals, ["dataset_description.txt mentions NMR."])
+            self.assertEqual(overview.nodes[0].summary, "dataset_description.txt mentions NMR.")
             self.assertEqual(repo.load_generated_final_draft(workflow_id, chat_model)["id"], "generated")
             self.assertEqual(repo.load_curated_document(workflow_id, chat_model)["id"], "curated")
             self.assertEqual(repo.load_projection_ledger(workflow_id, chat_model)[0].status, "projected")
@@ -142,7 +161,7 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
             self.assertEqual(summary_status, "completed")
             self.assertEqual(summaries[0].file_path, "dataset_description.txt")
             self.assertEqual(overview_status, "structured")
-            self.assertEqual(overview.suggested_interpretations, ["Use NMR context as orientation only."])
+            self.assertEqual(overview.uncertainties, ["Instrument identity is unresolved."])
             with self.assertRaises(FileNotFoundError):
                 repo.load_extraction_result(workflow_id, chat_model)
             with self.assertRaises(FileNotFoundError):
@@ -194,7 +213,7 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
                 message="Max retries exceeded",
                 last_error_type="OutputParsingError",
                 last_error="bad json",
-                failed_response_excerpt='{"observed_signals": [',
+                failed_response_excerpt='{"nodes": [',
                 prompt_budget={"total_input_tokens": 2000},
                 usage={"requests": 2},
             )
@@ -217,6 +236,45 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
             repo.save_initial_extraction_overview_diagnostic(
                 workflow_id=workflow_id,
                 diagnostic=None,
+                chat_model=chat_model,
+            )
+
+            self.assertFalse(path.exists())
+
+    def test_initial_file_summary_diagnostics_write_and_clear(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = FileSystemExtractionOutputRepository(Path(directory))
+            workflow_id = "test_workflow"
+            chat_model = "model:tag"
+            diagnostics = InitialFileSummaryDiagnostics(
+                records=[
+                    InitialFileSummaryDiagnosticRecord(
+                        file_path="metadata.txt",
+                        rank=1,
+                        reason="unsupported_explicit_purpose",
+                        message="Purpose was cleared.",
+                        details={"explicit_purpose": "Dataset title"},
+                    )
+                ]
+            )
+
+            repo.save_initial_file_summary_diagnostics(
+                workflow_id=workflow_id,
+                diagnostics=diagnostics,
+                chat_model=chat_model,
+            )
+
+            path = (
+                repo._workflow_dir(workflow_id, chat_model)
+                / "initial_file_summary_diagnostics.json"
+            )
+            self.assertTrue(path.exists())
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["records"][0]["reason"], "unsupported_explicit_purpose")
+
+            repo.save_initial_file_summary_diagnostics(
+                workflow_id=workflow_id,
+                diagnostics=None,
                 chat_model=chat_model,
             )
 
