@@ -148,14 +148,29 @@ Rules:
 """
 
 def build_evidence_context_prompt(chunk_context: EvidenceChunkContext) -> str:
+    return "".join(text for _, text in build_evidence_context_prompt_components(chunk_context))
+
+
+def build_evidence_context_prompt_components(
+    chunk_context: EvidenceChunkContext,
+) -> list[tuple[str, str]]:
     normalized_content = normalize_chunk_text_for_evidence_prompt(chunk_context.content)
-    return (
-        "Chunk context metadata:\n"
-        f"{chunk_context.metadata.model_dump_json()}\n\n"
-        "Chunk content (normalized residual lines after text-quality filtering):\n"
-        f"{normalized_content}\n"
-        "Extract broad evidence notes from the current chunk content."
-    )
+    return [
+        (
+            "chunk_metadata",
+            "Chunk context metadata:\n"
+            f"{chunk_context.metadata.model_dump_json()}\n\n",
+        ),
+        (
+            "chunk_content",
+            "Chunk content (normalized residual lines after text-quality filtering):\n"
+            f"{normalized_content}\n",
+        ),
+        (
+            "evidence_task_instruction",
+            "Extract broad evidence notes from the current chunk content.",
+        ),
+    ]
 
 
 def build_evidence_system_prompt_with_overview(
@@ -168,8 +183,32 @@ def build_evidence_system_prompt_with_overview(
     max_overview_tokens: int = EVIDENCE_OVERVIEW_PROMPT_BUDGET_TOKENS,
     max_file_summary_tokens: int = EVIDENCE_FILE_SUMMARY_PROMPT_BUDGET_TOKENS,
 ) -> str:
+    return "".join(
+        text
+        for _, text in build_evidence_system_prompt_components_with_overview(
+            base_prompt,
+            overview=overview,
+            overview_status=overview_status,
+            file_summary=file_summary,
+            token_budgeter=token_budgeter,
+            max_overview_tokens=max_overview_tokens,
+            max_file_summary_tokens=max_file_summary_tokens,
+        )
+    )
+
+
+def build_evidence_system_prompt_components_with_overview(
+    base_prompt: str,
+    *,
+    overview: ExtractionOverview | None,
+    overview_status: ExtractionOverviewStatus | None,
+    file_summary: ExtractionFileSummary | None = None,
+    token_budgeter: PromptTokenBudgeter | None = None,
+    max_overview_tokens: int = EVIDENCE_OVERVIEW_PROMPT_BUDGET_TOKENS,
+    max_file_summary_tokens: int = EVIDENCE_FILE_SUMMARY_PROMPT_BUDGET_TOKENS,
+) -> list[tuple[str, str]]:
     token_budgeter = token_budgeter or PromptTokenBudgeter()
-    sections: list[str] = []
+    sections: list[tuple[str, str]] = [("evidence_system_prompt", base_prompt)]
     overview_text = compact_evidence_overview_to_prompt_text(
         overview,
         status=overview_status,
@@ -179,8 +218,11 @@ def build_evidence_system_prompt_with_overview(
     )
     if overview_text:
         sections.append(
-            "\n\nInitial extraction overview (orientation only; not evidence):\n"
-            + overview_text
+            (
+                "initial_overview_orientation",
+                "\n\nInitial extraction overview (orientation only; not evidence):\n"
+                + overview_text,
+            )
         )
     file_summary_text = _cap_prompt_text(
         file_summary_to_prompt_text(file_summary),
@@ -189,10 +231,13 @@ def build_evidence_system_prompt_with_overview(
     )
     if file_summary_text:
         sections.append(
-            "\n\nCurrent file summary (orientation only; not evidence):\n"
-            + file_summary_text
+            (
+                "current_file_summary_orientation",
+                "\n\nCurrent file summary (orientation only; not evidence):\n"
+                + file_summary_text,
+            )
         )
-    return base_prompt + "".join(sections)
+    return sections
 
 
 def compact_evidence_overview_to_prompt_text(

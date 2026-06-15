@@ -90,9 +90,12 @@ from app.domain.extraction import (
     VocabularyFallbackQuery,
     VocabularyTermMapping,
     build_evidence_context_prompt,
+    build_evidence_context_prompt_components,
+    build_evidence_system_prompt_components_with_overview,
     build_evidence_system_prompt_with_overview,
     dedupe_repeated_evidence_notes,
     build_candidate_selection_prompt,
+    build_candidate_selection_prompt_components,
     build_extraction_file_summary_prompt,
     build_extraction_overview_fallback_prompt,
     build_extraction_overview_prompt_components,
@@ -102,11 +105,17 @@ from app.domain.extraction import (
     filter_evidence_context_by_signal_level,
     is_noisy_payload_chunk,
     build_fallback_query_prompt,
+    build_fallback_query_prompt_components,
     build_object_grounding_selection_prompt,
+    build_object_grounding_selection_prompt_components,
     build_profile_patch_prompt,
+    build_profile_patch_prompt_components,
     build_profile_projection_prompt,
+    build_profile_projection_prompt_components,
     build_profile_target_planner_prompt,
+    build_profile_target_planner_prompt_components,
     build_profile_target_write_prompt,
+    build_profile_target_write_prompt_components,
     build_schema_branch_index,
     build_schema_search_query,
     build_qualitative_vocab_query,
@@ -128,6 +137,7 @@ from app.domain.profiles import (
 from app.domain.semantics import VocabQuery, VocabQueryResult
 from app.ollama.completion import generate_structured, repair_structured_output
 from app.ollama.errors import CompletionError, MaxRetriesExceeded
+from app.ollama.prompt_diagnostics import PromptCompletionDiagnostics
 from app.ollama.usage import RunUsage
 from app.repositories.extraction_output_repository import ExtractionOutputRepository
 
@@ -412,6 +422,7 @@ class ExtractionService:
 
         if not resume:
             self._clear_downstream_extraction_outputs(data_package_id)
+            self._clear_prompt_diagnostics(data_package_id)
         await self.task_registry.create_task(
             coro=self._run_extraction_task(
                 data_package_id=data_package_id,
@@ -464,6 +475,8 @@ class ExtractionService:
 
         if force_rerun:
             self.output_repository.clear_extraction_run(data_package_id)
+        else:
+            self._clear_prompt_diagnostics(data_package_id)
 
         await self.task_registry.create_task(
             coro=self._run_initial_context_task(data_package_id=data_package_id),
@@ -1474,9 +1487,7 @@ class ExtractionService:
 
         progress.stage = "chunk_extraction"
         chunk_repairs: list[tuple[ExtractionChunkResult, MaxRetriesExceeded]] = []
-        evidence_prompt_budgeter = PromptTokenBudgeter.from_tokenizer_source(
-            getattr(self.settings, "ollama_chat_tokenizer", "")
-        )
+        evidence_prompt_budgeter = self._prompt_token_budgeter()
         evidence_prompt_budget_warning = (
             (
                 "Evidence prompt token budgeting is using conservative estimates: "
@@ -1513,30 +1524,49 @@ class ExtractionService:
                 self._update_progress(data_package_id, progress)
 
                 try:
+                    current_file_summary = self._initial_file_summary_for_prompt(
+                        state,
+                        file_path=chunk.file_path,
+                    )
+                    evidence_system_components = build_evidence_system_prompt_components_with_overview(
+                        EVIDENCE_CONTEXT_SYSTEM_PROMPT,
+                        overview=state.initial_extraction_overview,
+                        overview_status=state.initial_extraction_overview_status,
+                        file_summary=current_file_summary,
+                        token_budgeter=evidence_prompt_budgeter,
+                    )
+                    evidence_chunk_context = EvidenceChunkContext(
+                        content=normalized_chunk_content,
+                        metadata=EvidenceChunkMetadata(
+                            start_idx=chunk.start_idx,
+                            end_idx=chunk.end_idx,
+                            file_path=chunk.file_path,
+                            data_package_name=data_package.file_name,
+                        ),
+                    )
+                    evidence_prompt_components = build_evidence_context_prompt_components(
+                        evidence_chunk_context
+                    )
                     result = await generate_structured(
                         self.ollama_client,
                         model=self.ollama_client.chat_model,
-                        system=build_evidence_system_prompt_with_overview(
-                            base_prompt=EVIDENCE_CONTEXT_SYSTEM_PROMPT,
-                            overview=state.initial_extraction_overview,
-                            overview_status=state.initial_extraction_overview_status,
-                            file_summary=self._initial_file_summary_for_prompt(
-                                state,
-                                file_path=chunk.file_path,
-                            ),
-                            token_budgeter=evidence_prompt_budgeter,
+                        system="".join(text for _, text in evidence_system_components),
+                        prompt="".join(text for _, text in evidence_prompt_components),
+                        system_components=evidence_system_components,
+                        prompt_components=evidence_prompt_components,
+                        token_budgeter=evidence_prompt_budgeter,
+                        operation_id=self._prompt_operation_id(
+                            "chunk_extraction",
+                            chunk.file_path,
+                            chunk_result.chunk_index,
                         ),
-                        prompt=build_evidence_context_prompt(
-                            EvidenceChunkContext(
-                                content=normalized_chunk_content,
-                                metadata=EvidenceChunkMetadata(
-                                    start_idx=chunk.start_idx,
-                                    end_idx=chunk.end_idx,
-                                    file_path=chunk.file_path,
-                                    data_package_name=data_package.file_name,
-                                ),
-                            )
-                        ),
+                        agent_name="chunk_extraction",
+                        diagnostic_metadata={
+                            "file_path": chunk.file_path,
+                            "chunk_index": chunk_result.chunk_index,
+                            "start_idx": chunk.start_idx,
+                            "end_idx": chunk.end_idx,
+                        },
                         output_type=EvidenceContext,
                         retries=2,
                         temperature=0.1,
@@ -1544,6 +1574,11 @@ class ExtractionService:
                         num_ctx=self.ollama_client.max_context_length,
                     )
                 except MaxRetriesExceeded as exc:
+                    self._record_llm_call_exception(
+                        data_package_id=data_package_id,
+                        exc=exc,
+                        agent_name="chunk_extraction",
+                    )
                     logger.exception(
                         "Chunk extraction structured output failed",
                         extra={
@@ -1553,11 +1588,6 @@ class ExtractionService:
                             "error_type": type(exc).__name__,
                             "repair_queued": bool(exc.failed_response),
                         },
-                    )
-                    self._record_workflow_token_usage(
-                        data_package_id=data_package_id,
-                        agent_name="chunk_extraction",
-                        usage=exc.usage,
                     )
                     repairable = bool(exc.failed_response)
                     chunk_result.status = (
@@ -1578,7 +1608,7 @@ class ExtractionService:
                         exc.usage,
                         "response_duration_ms",
                     )
-                    chunk_result.context_tokens = self._usage_int(exc.usage, "input_tokens")
+                    chunk_result.context_tokens = self._single_attempt_input_tokens(exc)
                     progress.current_chunk = None
                     progress.chunk_results = state.chunk_results
                     self._save_run_state(data_package_id, state)
@@ -1605,6 +1635,11 @@ class ExtractionService:
                         self._update_progress(data_package_id, progress)
                     continue
                 except CompletionError as exc:
+                    self._record_llm_call_exception(
+                        data_package_id=data_package_id,
+                        exc=exc,
+                        agent_name="chunk_extraction",
+                    )
                     logger.exception(
                         "Chunk extraction completion failed",
                         extra={
@@ -1635,10 +1670,10 @@ class ExtractionService:
                     self._update_progress(data_package_id, progress)
                     raise
 
-                self._record_workflow_token_usage(
+                self._record_llm_call_result(
                     data_package_id=data_package_id,
+                    result=result,
                     agent_name="chunk_extraction",
-                    usage=result.usage,
                 )
                 validated_context = self._validate_and_filter_evidence_context_for_chunk(
                     result.output,
@@ -1652,7 +1687,7 @@ class ExtractionService:
                     result.usage,
                     "response_duration_ms",
                 )
-                chunk_result.context_tokens = self._usage_int(result.usage, "input_tokens")
+                chunk_result.context_tokens = self._single_attempt_input_tokens(result)
                 self._save_run_state(data_package_id, state)
 
                 partial_context = self._save_current_evidence_artifacts(
@@ -2042,27 +2077,75 @@ class ExtractionService:
                     extracted_content,
                     num_ctx=self.ollama_client.max_context_length,
                 )
-                result = await generate_structured(
-                    self.ollama_client,
-                    model=self.ollama_client.chat_model,
-                    system=EXTRACTION_FILE_SUMMARY_SYSTEM_PROMPT,
-                    prompt=build_extraction_file_summary_prompt(
-                        data_package_name=data_package.file_name,
-                        file_path=file_entry.file_path,
-                        byte_size=len(file_entry.raw_content),
-                        extracted_char_count=len(extracted_content),
-                        content_windows=content_windows,
-                    ),
-                    output_type=ExtractionFileSummary,
-                    retries=1,
-                    temperature=0.0,
-                    think=None,
-                    num_ctx=self.ollama_client.max_context_length,
+                file_summary_prompt = build_extraction_file_summary_prompt(
+                    data_package_name=data_package.file_name,
+                    file_path=file_entry.file_path,
+                    byte_size=len(file_entry.raw_content),
+                    extracted_char_count=len(extracted_content),
+                    content_windows=content_windows,
                 )
-                self._record_workflow_token_usage(
+                try:
+                    result = await generate_structured(
+                        self.ollama_client,
+                        model=self.ollama_client.chat_model,
+                        system=EXTRACTION_FILE_SUMMARY_SYSTEM_PROMPT,
+                        prompt=file_summary_prompt,
+                        system_components=[
+                            ("file_summary_system_prompt", EXTRACTION_FILE_SUMMARY_SYSTEM_PROMPT),
+                        ],
+                        prompt_components=[
+                            (
+                                "task_intro",
+                                "Summarize one file for later extraction orientation.\n\n",
+                            ),
+                            (
+                                "file_metadata",
+                                f"Data package name: {data_package.file_name}\n"
+                                f"File path: {file_entry.file_path}\n"
+                                f"Byte size: {len(file_entry.raw_content)}\n"
+                                f"Extracted character count: {len(extracted_content)}\n\n",
+                            ),
+                            (
+                                "content_windows_json",
+                                "Sampled content windows JSON:\n"
+                                + "["
+                                + ",\n".join(window.model_dump_json() for window in content_windows)
+                                + "]\n\n",
+                            ),
+                            (
+                                "return_instruction",
+                                "Return an ExtractionFileSummary for this exact file_path. "
+                                "Keep the summary compact: prefer 3-6 high-level, non-repetitive signals per list. "
+                                "Use common metadata categories as orientation only, such as instrument settings, "
+                                "software settings, acquisition settings, processing settings, calibration or reference settings, "
+                                "sample conditions, identifiers, units, and quantity labels. "
+                                "These categories are examples only: do not copy them into the output and do not enumerate every parameter. "
+                                "Use metadata_signals for concise file-local orientation, instrument_or_software_terms_and_settings for visible "
+                                "instrument/software/method/setting terms, and quantitative_signals only for coarse quantitative orientation. "
+                                "Do not repeat identical timestamps, labels, units, or values.",
+                            ),
+                        ],
+                        token_budgeter=self._prompt_token_budgeter(),
+                        operation_id=self._prompt_operation_id(
+                            "initial_file_summary",
+                            file_entry.file_path,
+                        ),
+                        agent_name="initial_file_summary",
+                        diagnostic_metadata={
+                            "file_path": file_entry.file_path,
+                        },
+                        output_type=ExtractionFileSummary,
+                        retries=1,
+                        temperature=0.0,
+                        think=None,
+                        num_ctx=self.ollama_client.max_context_length,
+                    )
+                except CompletionError:
+                    raise
+                self._record_llm_call_result(
                     data_package_id=data_package_id,
+                    result=result,
                     agent_name="initial_file_summary",
-                    usage=result.usage,
                 )
                 summaries.append(
                     self._validated_initial_file_summary(
@@ -2077,13 +2160,11 @@ class ExtractionService:
                 )
                 publish_summary_progress()
             except CompletionError as exc:
-                usage = getattr(exc, "usage", None)
-                if usage is not None:
-                    self._record_workflow_token_usage(
-                        data_package_id=data_package_id,
-                        agent_name="initial_file_summary",
-                        usage=usage,
-                    )
+                self._record_llm_call_exception(
+                    data_package_id=data_package_id,
+                    exc=exc,
+                    agent_name="initial_file_summary",
+                )
                 warnings.append(
                     f"Initial file summary failed for {file_entry.file_path}: {exc}"
                 )
@@ -2190,9 +2271,7 @@ class ExtractionService:
             file_summaries=summarized_file_summaries,
             file_previews=previews,
         )
-        overview_prompt_budgeter = PromptTokenBudgeter.from_tokenizer_source(
-            getattr(self.settings, "ollama_chat_tokenizer", "")
-        )
+        overview_prompt_budgeter = self._prompt_token_budgeter()
         if overview_prompt_budgeter.fallback_reason:
             warning = (
                 "Initial overview prompt budgeting used conservative estimates: "
@@ -2218,21 +2297,36 @@ class ExtractionService:
                 token_budgeter=overview_prompt_budgeter,
                 max_input_tokens=overview_input_budget,
             )
+            overview_prompt_components = [
+                (str(component.get("name", "component")), str(component.get("text", "")))
+                for component in overview_prompt_report.get("final_prompt_components", [])
+            ]
             result = await generate_structured(
                 self.ollama_client,
                 model=self.ollama_client.chat_model,
                 system=EXTRACTION_OVERVIEW_SYSTEM_PROMPT,
                 prompt=overview_prompt,
+                system_components=[
+                    ("initial_overview_system_prompt", EXTRACTION_OVERVIEW_SYSTEM_PROMPT),
+                ],
+                prompt_components=overview_prompt_components,
+                token_budgeter=overview_prompt_budgeter,
+                operation_id=self._prompt_operation_id("initial_extraction_overview"),
+                agent_name="initial_extraction_overview",
+                diagnostic_metadata={
+                    "data_package_id": data_package_id,
+                    "data_package_name": data_package.file_name,
+                },
                 output_type=ExtractionOverviewModelOutput,
                 retries=1,
                 temperature=0.1,
                 think=None,
                 num_ctx=self.ollama_client.max_context_length,
             )
-            self._record_workflow_token_usage(
+            self._record_llm_call_result(
                 data_package_id=data_package_id,
+                result=result,
                 agent_name="initial_extraction_overview",
-                usage=result.usage,
             )
             sanitized_overview = self._sanitize_initial_overview_graph(
                 result.output.to_extraction_overview(),
@@ -2284,13 +2378,11 @@ class ExtractionService:
         except (CompletionError, ValueError) as exc:
             if not isinstance(exc, CompletionError):
                 exc = CompletionError(str(exc))
-            usage = getattr(exc, "usage", None)
-            if usage is not None:
-                self._record_workflow_token_usage(
-                    data_package_id=data_package_id,
-                    agent_name="initial_extraction_overview",
-                    usage=usage,
-                )
+            self._record_llm_call_exception(
+                data_package_id=data_package_id,
+                exc=exc,
+                agent_name="initial_extraction_overview",
+            )
             warnings.append(
                 "Initial extraction overview structured generation failed; using free-text fallback."
             )
@@ -2875,6 +2967,14 @@ class ExtractionService:
             token_budgeter=token_budgeter,
             prompt=prompt,
         )
+        final_prompt_components = build_extraction_overview_prompt_components(
+            data_package_name=data_package_name,
+            ranked_files=used_ranked_files,
+            file_summaries=used_compacted_summaries,
+            file_previews=used_file_previews,
+            seeded_overview=seeded_overview,
+            seeded_overview_prompt_text=seeded_prompt_text,
+        )
         prompt_tokens = token_budgeter.count(prompt)
 
         report = {
@@ -2952,6 +3052,10 @@ class ExtractionService:
                     token_budgeter=token_budgeter,
                 ),
             },
+            "final_prompt_components": [
+                {"name": name, "text": text}
+                for name, text in final_prompt_components
+            ],
         }
         return prompt, report
 
@@ -4303,25 +4407,42 @@ class ExtractionService:
     ) -> ProfileTargetDecision:
         assert self.ollama_client is not None
         try:
+            prompt_components = build_profile_target_planner_prompt_components(
+                data_package_id=data_package_id,
+                profile_identifier=profile_identifier,
+                profile_target_class=profile_target_class,
+                evidence_notes=group.notes,
+                target_catalog=target_catalog,
+                file_inventory=file_inventory,
+            )
+            prompt_budgeter = self._prompt_token_budgeter()
             result = await generate_structured(
                 self.ollama_client,
                 model=self.ollama_client.chat_model,
                 system=PROFILE_TARGET_PLANNER_SYSTEM_PROMPT,
-                prompt=build_profile_target_planner_prompt(
-                    data_package_id=data_package_id,
-                    profile_identifier=profile_identifier,
-                    profile_target_class=profile_target_class,
-                    evidence_notes=group.notes,
-                    target_catalog=target_catalog,
-                    file_inventory=file_inventory,
+                prompt="".join(text for _, text in prompt_components),
+                system_components=[
+                    ("profile_target_planner_system_prompt", PROFILE_TARGET_PLANNER_SYSTEM_PROMPT),
+                ],
+                prompt_components=prompt_components,
+                token_budgeter=prompt_budgeter,
+                operation_id=self._prompt_operation_id(
+                    "profile_target_planner",
+                    group.group_id,
                 ),
+                agent_name="profile_target_planner",
+                diagnostic_metadata={
+                    "group_id": group.group_id,
+                    "target_hint": group.target_hint,
+                    "object_kind": group.object_kind,
+                },
                 output_type=ProfileTargetDecision,
                 num_ctx=self.ollama_client.max_context_length,
             )
-            self._record_workflow_token_usage(
+            self._record_llm_call_result(
                 data_package_id=data_package_id,
+                result=result,
                 agent_name="profile_target_planner",
-                usage=result.usage,
             )
             decision = (
                 result.output
@@ -4329,6 +4450,11 @@ class ExtractionService:
                 else ProfileTargetDecision.model_validate(result.output)
             )
         except CompletionError as exc:
+            self._record_llm_call_exception(
+                data_package_id=data_package_id,
+                exc=exc,
+                agent_name="profile_target_planner",
+            )
             warnings.append(f"Profile target planning fell back for '{group.group_id}': {exc}")
             decision = self._fallback_target_decision_for_group(group, target_catalog)
         catalog_paths = {
@@ -4385,30 +4511,52 @@ class ExtractionService:
         assert self.ollama_client is not None
         object_kind = evidence_note.category
         try:
+            prompt_components = build_profile_patch_prompt_components(
+                data_package_id=data_package_id,
+                profile_identifier=profile_identifier,
+                profile_target_class=profile_target_class,
+                current_document=current_document,
+                evidence_notes=[evidence_note],
+                file_inventory=file_inventory,
+                schema_slice=schema_slice,
+                target_path="/description",
+                target_class=None,
+            )
+            prompt_budgeter = self._prompt_token_budgeter()
             patch = await generate_structured(
                 self.ollama_client,
                 model=self.ollama_client.chat_model,
                 system=PROFILE_PATCH_SYSTEM_PROMPT,
-                prompt=build_profile_patch_prompt(
-                    data_package_id=data_package_id,
-                    profile_identifier=profile_identifier,
-                    profile_target_class=profile_target_class,
-                    current_document=current_document,
-                    evidence_notes=[evidence_note],
-                    file_inventory=file_inventory,
-                    schema_slice=schema_slice,
-                    target_path="/description",
-                    target_class=None,
+                prompt="".join(text for _, text in prompt_components),
+                system_components=[
+                    ("profile_patch_system_prompt", PROFILE_PATCH_SYSTEM_PROMPT),
+                ],
+                prompt_components=prompt_components,
+                token_budgeter=prompt_budgeter,
+                operation_id=self._prompt_operation_id(
+                    "profile_patch",
+                    object_identifier,
                 ),
+                agent_name="profile_patch",
+                diagnostic_metadata={
+                    "object_identifier": object_identifier,
+                    "object_kind": object_kind,
+                    "target_path": "/description",
+                },
                 output_type=ProfilePatchDocument,
                 num_ctx=self.ollama_client.max_context_length,
             )
-            self._record_workflow_token_usage(
+            self._record_llm_call_result(
                 data_package_id=data_package_id,
+                result=patch,
                 agent_name="profile_patch",
-                usage=patch.usage,
             )
         except CompletionError as exc:
+            self._record_llm_call_exception(
+                data_package_id=data_package_id,
+                exc=exc,
+                agent_name="profile_patch",
+            )
             warnings.append(f"Profile patch failed for '{object_identifier}': {exc}")
             return ProfileObjectPatchResult(
                 object_identifier=object_identifier,
@@ -4517,31 +4665,55 @@ class ExtractionService:
                 reason="Description is reserved for dataset-level prose; grouped evidence is better handled by structured targets or skipped.",
             )
         try:
+            prompt_components = build_profile_target_write_prompt_components(
+                data_package_id=data_package_id,
+                profile_identifier=profile_identifier,
+                profile_target_class=profile_target_class,
+                target_path=target_path,
+                target_class=target_decision.target_class,
+                target_label=target_decision.target_label,
+                current_target_value=current_target_value,
+                evidence_notes=group.notes,
+                file_inventory=file_inventory,
+                schema_slice=target_schema,
+            )
+            prompt_budgeter = self._prompt_token_budgeter()
             write = await generate_structured(
                 self.ollama_client,
                 model=self.ollama_client.chat_model,
                 system=PROFILE_TARGET_WRITER_SYSTEM_PROMPT,
-                prompt=build_profile_target_write_prompt(
-                    data_package_id=data_package_id,
-                    profile_identifier=profile_identifier,
-                    profile_target_class=profile_target_class,
-                    target_path=target_path,
-                    target_class=target_decision.target_class,
-                    target_label=target_decision.target_label,
-                    current_target_value=current_target_value,
-                    evidence_notes=group.notes,
-                    file_inventory=file_inventory,
-                    schema_slice=target_schema,
+                prompt="".join(text for _, text in prompt_components),
+                system_components=[
+                    ("profile_target_writer_system_prompt", PROFILE_TARGET_WRITER_SYSTEM_PROMPT),
+                ],
+                prompt_components=prompt_components,
+                token_budgeter=prompt_budgeter,
+                operation_id=self._prompt_operation_id(
+                    "profile_target_writer",
+                    group.group_id,
+                    target_path,
                 ),
+                agent_name="profile_target_writer",
+                diagnostic_metadata={
+                    "group_id": group.group_id,
+                    "object_kind": group.object_kind,
+                    "target_path": target_path,
+                    "target_class": target_decision.target_class,
+                },
                 output_type=ProfileTargetWriteDocument,
                 num_ctx=self.ollama_client.max_context_length,
             )
-            self._record_workflow_token_usage(
+            self._record_llm_call_result(
                 data_package_id=data_package_id,
+                result=write,
                 agent_name="profile_target_writer",
-                usage=write.usage,
             )
         except CompletionError as exc:
+            self._record_llm_call_exception(
+                data_package_id=data_package_id,
+                exc=exc,
+                agent_name="profile_target_writer",
+            )
             fallback = self._deterministic_profile_target_write_result(
                 profile_identifier=profile_identifier,
                 current_document=current_document,
@@ -5752,30 +5924,54 @@ class ExtractionService:
             max_depth=2,
         )
         try:
+            prompt_components = build_profile_patch_prompt_components(
+                data_package_id=data_package_id,
+                profile_identifier=profile_identifier,
+                profile_target_class=profile_target_class,
+                current_document=current_document,
+                evidence_notes=group.notes,
+                file_inventory=file_inventory,
+                schema_slice=target_schema,
+                target_path=target_path,
+                target_class=target_decision.target_class,
+            )
+            prompt_budgeter = self._prompt_token_budgeter()
             patch = await generate_structured(
                 self.ollama_client,
                 model=self.ollama_client.chat_model,
                 system=PROFILE_PATCH_SYSTEM_PROMPT,
-                prompt=build_profile_patch_prompt(
-                    data_package_id=data_package_id,
-                    profile_identifier=profile_identifier,
-                    profile_target_class=profile_target_class,
-                    current_document=current_document,
-                    evidence_notes=group.notes,
-                    file_inventory=file_inventory,
-                    schema_slice=target_schema,
-                    target_path=target_path,
-                    target_class=target_decision.target_class,
+                prompt="".join(text for _, text in prompt_components),
+                system_components=[
+                    ("profile_patch_system_prompt", PROFILE_PATCH_SYSTEM_PROMPT),
+                ],
+                prompt_components=prompt_components,
+                token_budgeter=prompt_budgeter,
+                operation_id=self._prompt_operation_id(
+                    "profile_patch",
+                    group.group_id,
+                    target_path,
                 ),
+                agent_name="profile_patch",
+                diagnostic_metadata={
+                    "group_id": group.group_id,
+                    "object_kind": group.object_kind,
+                    "target_path": target_path,
+                    "target_class": target_decision.target_class,
+                },
                 output_type=ProfilePatchDocument,
                 num_ctx=self.ollama_client.max_context_length,
             )
-            self._record_workflow_token_usage(
+            self._record_llm_call_result(
                 data_package_id=data_package_id,
+                result=patch,
                 agent_name="profile_patch",
-                usage=patch.usage,
             )
         except CompletionError as exc:
+            self._record_llm_call_exception(
+                data_package_id=data_package_id,
+                exc=exc,
+                agent_name="profile_patch",
+            )
             warnings.append(f"Profile patch failed for '{group.group_id}': {exc}")
             return ProfileObjectPatchResult(
                 object_identifier=group.group_id,
@@ -7618,6 +7814,7 @@ class ExtractionService:
         self._save_run_state(data_package_id, state)
         self._update_progress(data_package_id, progress)
 
+        repair_prompt_budgeter = self._prompt_token_budgeter()
         try:
             repair = await repair_structured_output(
                 self.ollama_client,
@@ -7625,18 +7822,29 @@ class ExtractionService:
                 failed_response=failure.failed_response or "",
                 error=failure.last_error or failure,
                 output_type=EvidenceContext,
+                token_budgeter=repair_prompt_budgeter,
+                operation_id=self._prompt_operation_id(
+                    "chunk_extraction_repair",
+                    chunk_result.file_path,
+                    chunk_result.chunk_index,
+                ),
+                agent_name="chunk_extraction_repair",
+                diagnostic_metadata={
+                    "file_path": chunk_result.file_path,
+                    "chunk_index": chunk_result.chunk_index,
+                    "start_idx": chunk_result.start_idx,
+                    "end_idx": chunk_result.end_idx,
+                },
                 temperature=0.1,
                 think=None,
                 num_ctx=self.ollama_client.max_context_length,
             )
         except CompletionError as exc:
-            usage = getattr(exc, "usage", None)
-            if usage is not None:
-                self._record_workflow_token_usage(
-                    data_package_id=data_package_id,
-                    agent_name="chunk_extraction_repair",
-                    usage=usage,
-                )
+            self._record_llm_call_exception(
+                data_package_id=data_package_id,
+                exc=exc,
+                agent_name="chunk_extraction_repair",
+            )
             chunk_result.status = "failed"
             chunk_result.error = str(exc)
             warnings.append(
@@ -7650,10 +7858,10 @@ class ExtractionService:
             self._update_progress(data_package_id, progress)
             return
 
-        self._record_workflow_token_usage(
+        self._record_llm_call_result(
             data_package_id=data_package_id,
+            result=repair,
             agent_name="chunk_extraction_repair",
-            usage=repair.usage,
         )
         validated_context = self._validate_and_filter_evidence_context_for_chunk(
             repair.output,
@@ -7667,7 +7875,7 @@ class ExtractionService:
             repair.usage,
             "response_duration_ms",
         )
-        chunk_result.context_tokens = self._usage_int(repair.usage, "input_tokens")
+        chunk_result.context_tokens = self._single_attempt_input_tokens(repair)
         self._save_run_state(data_package_id, state)
 
         partial_context = self._save_current_evidence_artifacts(
@@ -8675,24 +8883,52 @@ class ExtractionService:
             return None
         async with selection_semaphore:
             assert self.ollama_client is not None
-            result = await generate_structured(
-                self.ollama_client,
-                model=self.ollama_client.chat_model,
-                system=VOCAB_OBJECT_GROUNDING_SELECTION_SYSTEM_PROMPT,
-                prompt=build_object_grounding_selection_prompt(
-                    object_identifier=object_identifier,
-                    object_kind=object_kind,
-                    raw_type=raw_type,
-                    source_context=source_context,
-                    candidates=candidates,
-                ),
-                output_type=VocabularyCandidateSelection,
-                num_ctx=self.ollama_client.max_context_length,
+            prompt_components = build_object_grounding_selection_prompt_components(
+                object_identifier=object_identifier,
+                object_kind=object_kind,
+                raw_type=raw_type,
+                source_context=source_context,
+                candidates=candidates,
             )
-        self._record_workflow_token_usage(
+            prompt_budgeter = self._prompt_token_budgeter()
+            try:
+                result = await generate_structured(
+                    self.ollama_client,
+                    model=self.ollama_client.chat_model,
+                    system=VOCAB_OBJECT_GROUNDING_SELECTION_SYSTEM_PROMPT,
+                    prompt="".join(text for _, text in prompt_components),
+                    system_components=[
+                        (
+                            "object_grounding_vocab_selection_system_prompt",
+                            VOCAB_OBJECT_GROUNDING_SELECTION_SYSTEM_PROMPT,
+                        ),
+                    ],
+                    prompt_components=prompt_components,
+                    token_budgeter=prompt_budgeter,
+                    operation_id=self._prompt_operation_id(
+                        "object_grounding_vocab_selection",
+                        object_identifier,
+                    ),
+                    agent_name="object_grounding_vocab_selection",
+                    diagnostic_metadata={
+                        "object_identifier": object_identifier,
+                        "object_kind": object_kind,
+                        "raw_type": raw_type,
+                    },
+                    output_type=VocabularyCandidateSelection,
+                    num_ctx=self.ollama_client.max_context_length,
+                )
+            except CompletionError as exc:
+                self._record_llm_call_exception(
+                    data_package_id=data_package_id,
+                    exc=exc,
+                    agent_name="object_grounding_vocab_selection",
+                )
+                raise
+        self._record_llm_call_result(
             data_package_id=data_package_id,
+            result=result,
             agent_name="object_grounding_vocab_selection",
-            usage=result.usage,
         )
         selection = (
             result.output
@@ -8977,34 +9213,48 @@ class ExtractionService:
                 )
         assert self.ollama_client is not None
         try:
+            prompt_components = build_candidate_selection_prompt_components(
+                source_value=source_value,
+                source_context=source_context,
+                candidates=candidates,
+            )
+            prompt_budgeter = self._prompt_token_budgeter()
             result = await generate_structured(
                 self.ollama_client,
                 model=self.ollama_client.chat_model,
                 system=VOCAB_CANDIDATE_SELECTION_SYSTEM_PROMPT,
-                prompt=build_candidate_selection_prompt(
-                    source_value=source_value,
-                    source_context=source_context,
-                    candidates=candidates,
+                prompt="".join(text for _, text in prompt_components),
+                system_components=[
+                    ("vocab_candidate_selection_system_prompt", VOCAB_CANDIDATE_SELECTION_SYSTEM_PROMPT),
+                ],
+                prompt_components=prompt_components,
+                token_budgeter=prompt_budgeter,
+                operation_id=self._prompt_operation_id(
+                    agent_name,
+                    source_value,
                 ),
+                agent_name=agent_name,
+                diagnostic_metadata={
+                    "source_value": source_value,
+                    "candidate_count": len(candidates),
+                },
                 output_type=VocabularyCandidateSelection,
                 num_ctx=self.ollama_client.max_context_length,
             )
         except CompletionError as exc:
-            usage = getattr(exc, "usage", None)
-            if usage is not None:
-                self._record_workflow_token_usage(
-                    data_package_id=data_package_id,
-                    agent_name=agent_name,
-                    usage=usage,
-                )
+            self._record_llm_call_exception(
+                data_package_id=data_package_id,
+                exc=exc,
+                agent_name=agent_name,
+            )
             warnings.append(
                 f"Vocabulary selector left '{source_value}' unresolved after model failure: {exc}"
             )
             return None
-        self._record_workflow_token_usage(
+        self._record_llm_call_result(
             data_package_id=data_package_id,
+            result=result,
             agent_name=agent_name,
-            usage=result.usage,
         )
         selected = result.output.selected_uri
         if selected is None:
@@ -9068,25 +9318,47 @@ class ExtractionService:
                 )
         assert self.ollama_client is not None
         try:
+            prompt_components = build_fallback_query_prompt_components(
+                source_value=source_value,
+                source_context=source_context,
+                failed_candidates=failed_candidates,
+            )
+            prompt_budgeter = self._prompt_token_budgeter()
             result = await generate_structured(
                 self.ollama_client,
                 model=self.ollama_client.chat_model,
                 system=VOCAB_FALLBACK_QUERY_SYSTEM_PROMPT,
-                prompt=build_fallback_query_prompt(
-                    source_value=source_value,
-                    source_context=source_context,
-                    failed_candidates=failed_candidates,
+                prompt="".join(text for _, text in prompt_components),
+                system_components=[
+                    ("vocab_fallback_query_system_prompt", VOCAB_FALLBACK_QUERY_SYSTEM_PROMPT),
+                ],
+                prompt_components=prompt_components,
+                token_budgeter=prompt_budgeter,
+                operation_id=self._prompt_operation_id(
+                    agent_name,
+                    "fallback_query",
+                    source_value,
                 ),
+                agent_name=agent_name,
+                diagnostic_metadata={
+                    "source_value": source_value,
+                    "failed_candidate_count": len(failed_candidates),
+                },
                 output_type=VocabularyFallbackQuery,
                 num_ctx=self.ollama_client.max_context_length,
             )
         except CompletionError as exc:
+            self._record_llm_call_exception(
+                data_package_id=data_package_id,
+                exc=exc,
+                agent_name=agent_name,
+            )
             warnings.append(f"Fallback vocabulary query generation failed: {exc}")
             return None
-        self._record_workflow_token_usage(
+        self._record_llm_call_result(
             data_package_id=data_package_id,
+            result=result,
             agent_name=agent_name,
-            usage=result.usage,
         )
         return result.output
 
@@ -9684,6 +9956,134 @@ class ExtractionService:
             token_usage=totals,
         )
 
+    def _record_llm_call_result(
+        self,
+        *,
+        data_package_id: str,
+        result: Any,
+        agent_name: str | None = None,
+    ) -> None:
+        resolved_agent_name = self._llm_call_agent_name(result, fallback=agent_name)
+        if resolved_agent_name:
+            self._record_workflow_token_usage(
+                data_package_id=data_package_id,
+                agent_name=resolved_agent_name,
+                usage=result.usage,
+            )
+        self._persist_result_prompt_diagnostics(
+            data_package_id=data_package_id,
+            result=result,
+        )
+
+    def _record_llm_call_exception(
+        self,
+        *,
+        data_package_id: str,
+        exc: BaseException,
+        agent_name: str | None = None,
+    ) -> None:
+        usage = getattr(exc, "usage", None)
+        resolved_agent_name = self._llm_call_agent_name(exc, fallback=agent_name)
+        if usage is not None and resolved_agent_name:
+            self._record_workflow_token_usage(
+                data_package_id=data_package_id,
+                agent_name=resolved_agent_name,
+                usage=usage,
+            )
+        self._persist_exception_prompt_diagnostics(
+            data_package_id=data_package_id,
+            exc=exc,
+        )
+
+    @staticmethod
+    def _llm_call_agent_name(source: Any, *, fallback: str | None = None) -> str | None:
+        diagnostics = getattr(source, "prompt_diagnostics", None)
+        if diagnostics is not None and getattr(diagnostics, "agent_name", None):
+            return diagnostics.agent_name
+        return fallback
+
+    def _single_attempt_input_tokens(self, source: Any) -> int | None:
+        diagnostics = getattr(source, "prompt_diagnostics", None)
+        attempt_inputs: list[int] = []
+        for attempt in getattr(diagnostics, "attempts", []) or []:
+            usage = getattr(attempt, "usage", None) or {}
+            tokens = self._usage_int(usage, "input_tokens")
+            if tokens:
+                attempt_inputs.append(tokens)
+        if attempt_inputs:
+            return max(attempt_inputs)
+        usage = getattr(source, "usage", None)
+        if usage is None:
+            return None
+        return self._usage_int(usage, "input_tokens")
+
+    def _persist_prompt_diagnostics(
+        self,
+        *,
+        data_package_id: str,
+        diagnostics: PromptCompletionDiagnostics | None,
+        status: str | None = None,
+    ) -> None:
+        if self.output_repository is None or diagnostics is None:
+            return
+        if status is not None:
+            diagnostics.status = status
+        self.output_repository.append_prompt_diagnostic(
+            workflow_id=data_package_id,
+            chat_model=self.ollama_client.chat_model if self.ollama_client else None,
+            diagnostic=diagnostics.model_dump(mode="json"),
+        )
+
+    def _persist_result_prompt_diagnostics(
+        self,
+        *,
+        data_package_id: str,
+        result: Any,
+    ) -> None:
+        self._persist_prompt_diagnostics(
+            data_package_id=data_package_id,
+            diagnostics=getattr(result, "prompt_diagnostics", None),
+            status="completed",
+        )
+
+    def _persist_exception_prompt_diagnostics(
+        self,
+        *,
+        data_package_id: str,
+        exc: BaseException,
+    ) -> None:
+        self._persist_prompt_diagnostics(
+            data_package_id=data_package_id,
+            diagnostics=getattr(exc, "prompt_diagnostics", None),
+            status="failed",
+        )
+
+    def _clear_prompt_diagnostics(self, data_package_id: str) -> None:
+        if self.output_repository is None:
+            return
+        self.output_repository.clear_prompt_diagnostics(
+            data_package_id,
+            chat_model=self.ollama_client.chat_model if self.ollama_client else None,
+        )
+
+    def _prompt_token_budgeter(self) -> PromptTokenBudgeter:
+        return PromptTokenBudgeter.from_tokenizer_source(
+            getattr(self.settings, "ollama_chat_tokenizer", ""),
+            hf_token=getattr(self.settings, "hf_token", ""),
+        )
+
+    @staticmethod
+    def _prompt_operation_id(
+        agent_name: str,
+        *parts: Any,
+    ) -> str:
+        normalized = [
+            re.sub(r"[^A-Za-z0-9_.-]+", "_", str(part)).strip("_")
+            for part in parts
+            if part is not None and str(part) != ""
+        ]
+        return "__".join([agent_name, *normalized]) if normalized else agent_name
+
     @staticmethod
     def _usage_int(usage: Any, field_name: str) -> int:
         try:
@@ -9842,3 +10242,5 @@ def _resource_title(properties: dict[str, Any]) -> str | None:
         if isinstance(value, list) and value:
             return str(value[0])
     return None
+
+

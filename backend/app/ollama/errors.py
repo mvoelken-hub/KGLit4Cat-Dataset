@@ -39,6 +39,7 @@ class MaxRetriesExceeded(CompletionError):
         failed_response: str | None = None,
         first_response: str | None = None,
         usage: RunUsage | None = None,
+        prompt_diagnostics: Any | None = None,
     ):
         details = dict(details or {})
         if last_error is not None:
@@ -53,3 +54,4 @@ class MaxRetriesExceeded(CompletionError):
         self.failed_response = failed_response
         self.first_response = first_response
         self.usage = usage or RunUsage()
+        self.prompt_diagnostics = prompt_diagnostics

@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -159,6 +159,7 @@ class FakeOutputRepository:
         self.validation: dict | None = None
         self.warnings: list[str] = []
         self.token_usage: dict[str, dict[str, int]] = {}
+        self.prompt_diagnostics: list[dict] = []
 
     def save_evidence_context(self, *, workflow_id: str, evidence_context: EvidenceContext):
         self.evidence_context = evidence_context
@@ -315,6 +316,12 @@ class FakeOutputRepository:
     def load_token_usage(self, workflow_id: str) -> dict[str, dict[str, int]]:
         return self.token_usage
 
+    def append_prompt_diagnostic(self, *, workflow_id: str, diagnostic: dict, chat_model: str | None = None):
+        self.prompt_diagnostics.append(diagnostic)
+
+    def clear_prompt_diagnostics(self, workflow_id: str, chat_model: str | None = None):
+        self.prompt_diagnostics = []
+
     def clear_extraction_run(self, workflow_id: str):
         self.evidence_context = None
         self.evidence_contexts = []
@@ -333,12 +340,14 @@ class FakeOutputRepository:
         self.validation = None
         self.warnings = []
         self.token_usage = {}
+        self.prompt_diagnostics = []
 
     def clear_extraction_downstream(self, workflow_id: str):
         self.evidence_context = None
         self.evidence_contexts = []
         self.filtered_evidence_notes = FilteredEvidenceLedger()
         self.result = None
+        self.prompt_diagnostics = []
         if self.run_state is not None:
             self.run_state = self.run_state.model_copy(
                 update={
@@ -763,6 +772,8 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("common metadata categories", kwargs["prompt"])
             self.assertIn("These categories are examples only", kwargs["prompt"])
             self.assertIn("quantitative_signals", kwargs["prompt"])
+            self.assertIn("Keep the summary compact", kwargs["prompt"])
+            self.assertIn("Do not repeat identical timestamps", kwargs["prompt"])
             self.assertNotIn("parameter_terms", kwargs["prompt"])
             return CompletionResult(
                 output=ExtractionFileSummary(
@@ -1428,7 +1439,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 warnings=[],
             )
 
-        tokenizer_loader.assert_called_once_with("fake/tokenizer")
+        tokenizer_loader.assert_called_once_with("fake/tokenizer", hf_token="")
         self.assertEqual(state.initial_extraction_overview_status, "structured")
         diagnostic = output_repository.initial_extraction_overview_diagnostic
         self.assertIsNotNone(diagnostic)
@@ -2131,9 +2142,12 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_context_target_stops_after_interim_context_without_result(self):
         service, task_registry, output_repository = make_service([[make_chunk()]])
+        seen_components: dict[str, list[str]] = {}
 
         async def fake_generate(*_args, **kwargs):
             self.assertIs(kwargs["output_type"], EvidenceContext)
+            seen_components["system"] = [name for name, _ in kwargs["system_components"]]
+            seen_components["prompt"] = [name for name, _ in kwargs["prompt_components"]]
             return CompletionResult(
                 output=EvidenceContext(
                     notes=[
@@ -2162,6 +2176,10 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(output_repository.result)
         self.assertIsNone(output_repository.run_state.profile_identifier)
         self.assertIsNone(output_repository.run_state.generated_final_draft)
+        self.assertIn("initial_overview_orientation", seen_components["system"])
+        self.assertIn("current_file_summary_orientation", seen_components["system"])
+        self.assertIn("chunk_metadata", seen_components["prompt"])
+        self.assertIn("chunk_content", seen_components["prompt"])
 
         status, progress = await service.get_extraction_progress(data_package_id="package-id")
         self.assertEqual(status, TaskStatus.COMPLETED)
@@ -2664,7 +2682,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(status, TaskStatus.RUNNING)
             await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
 
-        tokenizer_loader.assert_called_once_with("example/tokenizer")
+        tokenizer_loader.assert_called_once_with("example/tokenizer", hf_token="")
         self.assertEqual(len(captured_system_prompts), 1)
         self.assertIn("[orientation truncated]", captured_system_prompts[0])
         self.assertFalse(
@@ -3581,3 +3599,4 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

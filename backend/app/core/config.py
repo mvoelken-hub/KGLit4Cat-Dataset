@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     ollama_embed_model: str = "qwen3-embedding:0.6b"
     ollama_chat_model: str = "gemma4:31b-cloud"
     ollama_chat_tokenizer: str = ""
+    hf_token: str = Field(default="", validation_alias="HF_TOKEN", exclude=True)
     ollama_embed_dimensions: int = 768
     embedding_batch_size: int = 32
     max_context_length: int = 8192

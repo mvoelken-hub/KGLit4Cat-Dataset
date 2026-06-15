@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -19,25 +20,20 @@ class PromptTokenBudgeter:
     truncation_marker: str = DEFAULT_TRUNCATION_MARKER
 
     @classmethod
-    def from_tokenizer_source(cls, tokenizer_source: str | None) -> PromptTokenBudgeter:
+    def from_tokenizer_source(
+        cls,
+        tokenizer_source: str | None,
+        *,
+        hf_token: str | None = None,
+    ) -> PromptTokenBudgeter:
         source = (tokenizer_source or "").strip()
         if not source:
             return cls(
                 tokenizer=None,
                 fallback_reason="No Hugging Face tokenizer configured; using conservative token estimates.",
             )
-        try:
-            path = Path(source)
-            tokenizer = Tokenizer.from_file(str(path)) if path.exists() else Tokenizer.from_pretrained(source)
-        except Exception as exc:  # pragma: no cover - exact exception types depend on tokenizers/hub internals.
-            return cls(
-                tokenizer=None,
-                fallback_reason=(
-                    f"Could not load Hugging Face tokenizer '{source}'; "
-                    f"using conservative token estimates ({type(exc).__name__}: {exc})."
-                ),
-            )
-        return cls(tokenizer=tokenizer)
+        tokenizer, fallback_reason = _load_tokenizer(source, (hf_token or "").strip() or None)
+        return cls(tokenizer=tokenizer, fallback_reason=fallback_reason)
 
     @property
     def uses_fallback(self) -> bool:
@@ -71,6 +67,25 @@ class PromptTokenBudgeter:
 
 def estimated_tokens(value: str) -> int:
     return math.ceil(len(value) / ESTIMATED_CHARS_PER_TOKEN)
+
+
+@lru_cache(maxsize=8)
+def _load_tokenizer(source: str, hf_token: str | None) -> tuple[Any | None, str | None]:
+    try:
+        path = Path(source)
+        if path.exists():
+            tokenizer = Tokenizer.from_file(str(path))
+        else:
+            tokenizer = Tokenizer.from_pretrained(source, token=hf_token)
+    except Exception as exc:  # pragma: no cover - exact exception types depend on tokenizers/hub internals.
+        return (
+            None,
+            (
+                f"Could not load Hugging Face tokenizer '{source}'; "
+                f"using conservative token estimates ({type(exc).__name__}: {exc})."
+            ),
+        )
+    return tokenizer, None
 
 
 def truncate_by_estimated_tokens(

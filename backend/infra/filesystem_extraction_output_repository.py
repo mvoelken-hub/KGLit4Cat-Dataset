@@ -1,4 +1,5 @@
 import json
+import hashlib
 import re
 import os
 import shutil
@@ -32,6 +33,7 @@ EXTRACTION_RESULT_FILE = "extraction_result.json"
 EXTRACTION_RUN_STATE_FILE = "extraction_run_state.json"
 EXTRACTION_WARNINGS_FILE = "extraction_warnings.json"
 TOKEN_USAGE_FILE = "token_usage.json"
+PROMPT_DIAGNOSTICS_DIR = "prompt_diagnostics"
 INITIAL_FILE_SUMMARIES_FILE = "initial_file_summaries.json"
 INITIAL_FILE_SUMMARY_DIAGNOSTICS_FILE = "initial_file_summary_diagnostics.json"
 INITIAL_EXTRACTION_OVERVIEW_FILE = "initial_extraction_overview.json"
@@ -505,10 +507,34 @@ class FileSystemExtractionOutputRepository:
             }
         return result
 
+    def append_prompt_diagnostic(
+        self,
+        *,
+        workflow_id: str,
+        diagnostic: dict[str, Any],
+        chat_model: str | None = None,
+    ) -> None:
+        diagnostics_dir = self._workflow_dir(workflow_id, chat_model) / PROMPT_DIAGNOSTICS_DIR
+        diagnostics_dir.mkdir(parents=True, exist_ok=True)
+        operation_id = str(diagnostic.get("operation_id") or "structured_completion")
+        safe_id = hashlib.sha256(operation_id.encode("utf-8")).hexdigest()[:16]
+        existing = sorted(diagnostics_dir.glob(f"{safe_id}__*.json"))
+        path = diagnostics_dir / f"{safe_id}__{len(existing) + 1:04d}.json"
+        self._write_json_file(path, diagnostic)
+
+    def clear_prompt_diagnostics(
+        self,
+        workflow_id: str,
+        chat_model: str | None = None,
+    ) -> None:
+        diagnostics_dir = self._workflow_dir(workflow_id, chat_model) / PROMPT_DIAGNOSTICS_DIR
+        if diagnostics_dir.exists():
+            _remove_tree(diagnostics_dir)
+
     def clear_extraction_run(self, workflow_id: str) -> None:
         workflow_dir = self._workflow_dir(workflow_id)
         if workflow_dir.exists():
-            shutil.rmtree(workflow_dir)
+            _remove_tree(workflow_dir)
 
     def clear_extraction_downstream(self, workflow_id: str) -> None:
         workflow_dir = self._workflow_dir(workflow_id)
@@ -524,10 +550,13 @@ class FileSystemExtractionOutputRepository:
             FIELD_COMPLETION_LEDGER_FILE,
             CURATION_LEDGER_FILE,
             VALIDATION_FILE,
+            PROMPT_DIAGNOSTICS_DIR,
         }
         for path in workflow_dir.rglob("*"):
             if path.is_file() and path.name in downstream_files:
                 path.unlink()
+            elif path.is_dir() and path.name in downstream_files:
+                _remove_tree(path)
 
     def _workflow_dir(self, workflow_id: str, chat_model: str | None = None) -> Path:
         base_path = self.base_path.resolve()
@@ -553,6 +582,7 @@ class FileSystemExtractionOutputRepository:
 
     @staticmethod
     def _write_json_file(path: Path, content: Any) -> None:
+        path = path.resolve()
         path.parent.mkdir(parents=True, exist_ok=True)
         temp_path: Path | None = None
         try:
@@ -589,11 +619,40 @@ def _atomic_replace(src: Path, dst: Path, *, retries: int = 5, delay: float = 0.
     holds an open handle on the destination file.  Retrying with a short back-
     off gives the other process time to release the handle.
     """
+    replace_src = _long_path_for_windows(src)
+    replace_dst = _long_path_for_windows(dst)
     for attempt in range(retries):
         try:
-            os.replace(src, dst)
+            os.replace(replace_src, replace_dst)
             return
         except PermissionError:
             if attempt == retries - 1:
                 raise
             time.sleep(delay * (attempt + 1))
+
+
+def _remove_tree(path: Path) -> None:
+    """Remove a directory tree while tolerating Windows cleanup races."""
+    try:
+        shutil.rmtree(_long_path_for_windows(path), onexc=_ignore_missing_rmtree_error)
+    except FileNotFoundError:
+        return
+
+
+def _ignore_missing_rmtree_error(
+    function: Any,
+    path: str,
+    exc: BaseException,
+) -> None:
+    if isinstance(exc, FileNotFoundError):
+        return
+    raise exc
+
+
+def _long_path_for_windows(path: Path) -> str:
+    resolved = str(path.resolve())
+    if os.name != "nt" or resolved.startswith("\\\\?\\"):
+        return resolved
+    if resolved.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + resolved[2:]
+    return "\\\\?\\" + resolved

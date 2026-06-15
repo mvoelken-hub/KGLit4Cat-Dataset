@@ -150,7 +150,7 @@ async def get_current_settings(settings: Settings = Depends(get_settings)):
     """
     Return current application settings.
     """
-    return settings.model_dump(mode="json")
+    return settings.model_dump(mode="json", exclude={"hf_token"})
 
 
 @router.get("/llm-budget")

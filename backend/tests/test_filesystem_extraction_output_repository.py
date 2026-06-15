@@ -67,6 +67,41 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
                 (repo._workflow_dir(workflow_id, chat_model) / "extraction_run_state.json").exists()
             )
 
+    def test_prompt_diagnostics_append_and_clear(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = FileSystemExtractionOutputRepository(Path(directory))
+            workflow_id = "test_workflow"
+            chat_model = "model:tag"
+
+            repo.append_prompt_diagnostic(
+                workflow_id=workflow_id,
+                chat_model=chat_model,
+                diagnostic={
+                    "operation_id": "chunk/a",
+                    "agent_name": "chunk_extraction",
+                    "attempts": [],
+                },
+            )
+            repo.append_prompt_diagnostic(
+                workflow_id=workflow_id,
+                chat_model=chat_model,
+                diagnostic={
+                    "operation_id": "chunk/a",
+                    "agent_name": "chunk_extraction",
+                    "attempts": [],
+                },
+            )
+
+            diagnostics_dir = repo._workflow_dir(workflow_id, chat_model) / "prompt_diagnostics"
+            files = sorted(diagnostics_dir.glob("*.json"))
+            self.assertEqual(len(files), 2)
+            self.assertTrue(files[0].name.endswith("__0001.json"))
+            self.assertTrue(files[1].name.endswith("__0002.json"))
+
+            repo.clear_prompt_diagnostics(workflow_id, chat_model)
+
+            self.assertFalse(diagnostics_dir.exists())
+
     def test_extraction_result_writes_and_clears_new_artifacts(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = FileSystemExtractionOutputRepository(Path(directory))
@@ -170,6 +205,30 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
             repo.clear_extraction_run(workflow_id)
 
             self.assertFalse((Path(directory) / workflow_id).exists())
+
+    def test_clear_extraction_run_ignores_missing_child_during_tree_removal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = FileSystemExtractionOutputRepository(Path(directory))
+            workflow_id = "test_workflow"
+            workflow_dir = repo._workflow_dir(workflow_id)
+            diagnostics_dir = workflow_dir / "model" / "prompt_diagnostics"
+            diagnostics_dir.mkdir(parents=True)
+            (diagnostics_dir / "diagnostic.json").write_text("{}", encoding="utf-8")
+
+            def simulate_missing_child(path, *, onexc):
+                onexc(
+                    lambda _path: None,
+                    str(diagnostics_dir / "diagnostic.json"),
+                    FileNotFoundError(),
+                )
+
+            with patch(
+                "infra.filesystem_extraction_output_repository.shutil.rmtree",
+                side_effect=simulate_missing_child,
+            ) as rmtree:
+                repo.clear_extraction_run(workflow_id)
+
+            rmtree.assert_called_once()
 
     def test_filtered_evidence_notes_artifact_round_trips_and_clears(self):
         with tempfile.TemporaryDirectory() as directory:

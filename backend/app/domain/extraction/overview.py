@@ -319,9 +319,10 @@ Your output is guidance only. It is not extraction evidence for later chunk call
 
 Summarize only facts visible in this file's sampled content, filename, or obvious syntax.
 The explicit_purpose field is strict: fill it only when the sampled content or filename directly states the file's purpose. Otherwise leave it empty.
-metadata_signals should absorb useful observable characteristics and file-local metadata cues without inventing dataset-level identity.
-instrument_or_software_terms_and_settings should list concrete visible instrument, software, method, and setting terms when supported.
-quantitative_signals should be coarse orientation only, such as explicit numeric settings, quantity labels, or visible units. Do not dump exhaustive parameter labels and do not create structured quantity facts.
+Keep the response small: prefer 3-6 high-level, non-repetitive signals per list.
+metadata_signals should absorb useful observable characteristics and coarse file-local metadata cues without inventing dataset-level identity.
+instrument_or_software_terms_and_settings should list only the most important visible instrument, software, method, and setting terms when supported.
+quantitative_signals should be coarse orientation only, such as a few representative explicit numeric settings, quantity labels, or visible units. Do not dump exhaustive parameter labels, repeated timestamps, full numeric tables, or structured quantity facts.
 Evidence fields must quote short snippets from this file only.
 Do not output known traps, detected identifiers, uncertainty notes, exhaustive parameter terms, or structured quantitative attributes.
 Do not invent dataset purpose, instrument names, file roles, sample identities, or software-project files.
@@ -537,12 +538,14 @@ def build_extraction_file_summary_prompt(
         "Sampled content windows JSON:\n"
         f"[{windows_json}]\n\n"
         "Return an ExtractionFileSummary for this exact file_path. "
+        "Keep the summary compact: prefer 3-6 high-level, non-repetitive signals per list. "
         "Use common metadata categories as orientation only, such as instrument settings, "
         "software settings, acquisition settings, processing settings, calibration or reference settings, "
         "sample conditions, identifiers, units, and quantity labels. "
-        "These categories are examples only: do not copy them into the output. "
+        "These categories are examples only: do not copy them into the output and do not enumerate every parameter. "
         "Use metadata_signals for concise file-local orientation, instrument_or_software_terms_and_settings for visible "
-        "instrument/software/method/setting terms, and quantitative_signals only for coarse quantitative orientation."
+        "instrument/software/method/setting terms, and quantitative_signals only for coarse quantitative orientation. "
+        "Do not repeat identical timestamps, labels, units, or values."
     )
 
 

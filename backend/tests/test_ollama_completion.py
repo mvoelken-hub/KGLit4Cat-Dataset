@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from app.ollama.completion import (
     CompletionResult,
     _extract_json_schema,
+    _failed_response_for_repair,
     _schema_example,
     _strip_markdown_fences,
     generate_structured,
@@ -67,6 +68,14 @@ class FakeOllamaClient:
             return r
         # Default empty response if exhausted
         return FakeGenerateResponse(response="{}")
+
+
+class WhitespaceBudgeter:
+    uses_fallback = False
+    fallback_reason = None
+
+    def count(self, value: str) -> int:
+        return len(value.split()) if value else 0
 
 
 class StripMarkdownFencesTests(unittest.TestCase):
@@ -257,6 +266,48 @@ class GenerateStructuredHappyPathTests(IsolatedAsyncioTestCase):
 
         self.assertEqual(result.output, {"required_field": "present"})
 
+    async def test_prompt_diagnostics_include_components_and_schema(self):
+        client = FakeOllamaClient([
+            FakeGenerateResponse(
+                response='{"answer": "hello", "score": 1}',
+                prompt_eval_count=12,
+                eval_count=3,
+            ),
+        ])
+
+        result = await generate_structured(
+            client,
+            model="test-model",
+            system="base system",
+            prompt="first part second part",
+            system_components=[("base_system", "base system")],
+            prompt_components=[
+                ("first", "first part "),
+                ("second", "second part"),
+            ],
+            token_budgeter=WhitespaceBudgeter(),
+            operation_id="op-1",
+            agent_name="agent",
+            diagnostic_metadata={"file_path": "a.txt"},
+            output_type=SimpleOutput,
+        )
+
+        diagnostics = result.prompt_diagnostics
+        self.assertIsNotNone(diagnostics)
+        assert diagnostics is not None
+        self.assertEqual(diagnostics.operation_id, "op-1")
+        self.assertEqual(diagnostics.agent_name, "agent")
+        self.assertEqual(diagnostics.metadata["file_path"], "a.txt")
+        self.assertEqual(len(diagnostics.attempts), 1)
+        component_names = [component.name for component in diagnostics.attempts[0].components]
+        self.assertIn("base_system", component_names)
+        self.assertIn("system_schema", component_names)
+        self.assertIn("first", component_names)
+        self.assertEqual(diagnostics.attempts[0].usage["input_tokens"], 12)
+        first = next(component for component in diagnostics.attempts[0].components if component.name == "first")
+        self.assertEqual(first.text, "first part ")
+        self.assertEqual(first.tokens, 2)
+
     async def test_passes_options_to_generate(self):
         client = FakeOllamaClient([
             FakeGenerateResponse(response='{"answer": "x", "score": 1}'),
@@ -442,6 +493,49 @@ class GenerateStructuredRetryTests(IsolatedAsyncioTestCase):
 
         self.assertEqual(result.output.answer, "fixed")
         self.assertEqual(result.usage.requests, 2)
+        self.assertIsNotNone(result.prompt_diagnostics)
+        assert result.prompt_diagnostics is not None
+        self.assertEqual(len(result.prompt_diagnostics.attempts), 2)
+        self.assertEqual(result.prompt_diagnostics.attempts[0].attempt_kind, "initial")
+        self.assertEqual(result.prompt_diagnostics.attempts[1].attempt_kind, "repair")
+        repair_names = [
+            component.name
+            for component in result.prompt_diagnostics.attempts[1].components
+        ]
+        self.assertIn("failed_response", repair_names)
+
+    async def test_repair_prompt_compacts_runaway_failed_response(self):
+        runaway = (
+            "```python\n"
+            "{\n"
+            '  "answer": "started",\n'
+            '  "metadata_signals": [\n'
+            + "\n".join('    "1632482437 timestamp",' for _ in range(300))
+            + "\n  ]\n"
+            "}\n"
+        )
+        client = FakeOllamaClient([
+            FakeGenerateResponse(response=runaway, eval_count=16384),
+            FakeGenerateResponse(response='{"answer": "fixed", "score": 99}'),
+        ])
+
+        result = await generate_structured(
+            client,
+            model="test-model",
+            system="Be precise.",
+            prompt="Return JSON.",
+            output_type=SimpleOutput,
+            retries=1,
+        )
+
+        self.assertEqual(result.output.answer, "fixed")
+        repair_prompt = client.calls[1]["prompt"]
+        self.assertIn("failed response compacted before repair", repair_prompt)
+        self.assertLess(repair_prompt.count("1632482437 timestamp"), 10)
+        self.assertLess(len(repair_prompt), len(runaway))
+
+    def test_failed_response_for_repair_keeps_small_failures_unchanged(self):
+        self.assertEqual(_failed_response_for_repair("bad json"), "bad json")
 
     async def test_retry_on_pydantic_validation_error(self):
         client = FakeOllamaClient([
@@ -543,6 +637,10 @@ class GenerateStructuredRetryTests(IsolatedAsyncioTestCase):
         self.assertEqual(error.exception.failed_response, "still bad")
         self.assertEqual(error.exception.first_response, "still bad")
         self.assertEqual(error.exception.details["first_response"], "still bad")
+        self.assertIsNotNone(error.exception.prompt_diagnostics)
+        diagnostics = error.exception.prompt_diagnostics
+        self.assertEqual(diagnostics.status, "failed")
+        self.assertEqual(len(diagnostics.attempts), 3)
 
     async def test_api_error_after_first_structured_failure_keeps_first_response(self):
         client = FakeOllamaClient([

@@ -189,15 +189,31 @@ def build_candidate_selection_prompt(
     source_context: dict[str, Any],
     candidates: list[dict[str, Any]],
 ) -> str:
-    return (
-        "Source value:\n"
-        f"{source_value}\n\n"
-        "Source context JSON:\n"
-        f"{source_context}\n\n"
-        "Candidate terms JSON:\n"
-        f"{candidates}\n\n"
-        "Select the best candidate URI, or return null if none fits."
+    return "".join(
+        text
+        for _, text in build_candidate_selection_prompt_components(
+            source_value=source_value,
+            source_context=source_context,
+            candidates=candidates,
+        )
     )
+
+
+def build_candidate_selection_prompt_components(
+    *,
+    source_value: str,
+    source_context: dict[str, Any],
+    candidates: list[dict[str, Any]],
+) -> list[tuple[str, str]]:
+    return [
+        ("source_value", "Source value:\n" f"{source_value}\n\n"),
+        ("source_context", "Source context JSON:\n" f"{source_context}\n\n"),
+        ("candidate_terms", "Candidate terms JSON:\n" f"{candidates}\n\n"),
+        (
+            "selection_instruction",
+            "Select the best candidate URI, or return null if none fits.",
+        ),
+    ]
 
 
 def build_object_grounding_selection_prompt(
@@ -208,20 +224,38 @@ def build_object_grounding_selection_prompt(
     source_context: dict[str, Any],
     candidates: list[dict[str, Any]],
 ) -> str:
-    return (
-        "Object identifier:\n"
-        f"{object_identifier}\n\n"
-        "Object kind:\n"
-        f"{object_kind}\n\n"
-        "Raw object type:\n"
-        f"{raw_type}\n\n"
-        "Source context JSON:\n"
-        f"{source_context}\n\n"
-        "Candidate voc4cat terms JSON:\n"
-        f"{candidates}\n\n"
-        "Pick the single candidate that best matches the object's type, or return null if no "
-        "candidate is a clear fit."
+    return "".join(
+        text
+        for _, text in build_object_grounding_selection_prompt_components(
+            object_identifier=object_identifier,
+            object_kind=object_kind,
+            raw_type=raw_type,
+            source_context=source_context,
+            candidates=candidates,
+        )
     )
+
+
+def build_object_grounding_selection_prompt_components(
+    *,
+    object_identifier: str,
+    object_kind: str,
+    raw_type: str,
+    source_context: dict[str, Any],
+    candidates: list[dict[str, Any]],
+) -> list[tuple[str, str]]:
+    return [
+        ("object_identifier", "Object identifier:\n" f"{object_identifier}\n\n"),
+        ("object_kind", "Object kind:\n" f"{object_kind}\n\n"),
+        ("raw_object_type", "Raw object type:\n" f"{raw_type}\n\n"),
+        ("source_context", "Source context JSON:\n" f"{source_context}\n\n"),
+        ("candidate_terms", "Candidate voc4cat terms JSON:\n" f"{candidates}\n\n"),
+        (
+            "selection_instruction",
+            "Pick the single candidate that best matches the object's type, or return null if no "
+            "candidate is a clear fit.",
+        ),
+    ]
 
 
 def build_fallback_query_prompt(
@@ -230,13 +264,32 @@ def build_fallback_query_prompt(
     source_context: dict[str, Any],
     failed_candidates: list[dict[str, Any]],
 ) -> str:
-    return (
-        "The deterministic vocabulary query did not produce a fitting candidate.\n\n"
-        "Source value:\n"
-        f"{source_value}\n\n"
-        "Source context JSON:\n"
-        f"{source_context}\n\n"
-        "Failed candidates JSON:\n"
-        f"{failed_candidates}\n\n"
-        "Create a better short vector/fulltext query for the same vocabulary."
+    return "".join(
+        text
+        for _, text in build_fallback_query_prompt_components(
+            source_value=source_value,
+            source_context=source_context,
+            failed_candidates=failed_candidates,
+        )
     )
+
+
+def build_fallback_query_prompt_components(
+    *,
+    source_value: str,
+    source_context: dict[str, Any],
+    failed_candidates: list[dict[str, Any]],
+) -> list[tuple[str, str]]:
+    return [
+        (
+            "fallback_reason",
+            "The deterministic vocabulary query did not produce a fitting candidate.\n\n",
+        ),
+        ("source_value", "Source value:\n" f"{source_value}\n\n"),
+        ("source_context", "Source context JSON:\n" f"{source_context}\n\n"),
+        ("failed_candidates", "Failed candidates JSON:\n" f"{failed_candidates}\n\n"),
+        (
+            "fallback_query_instruction",
+            "Create a better short vector/fulltext query for the same vocabulary.",
+        ),
+    ]

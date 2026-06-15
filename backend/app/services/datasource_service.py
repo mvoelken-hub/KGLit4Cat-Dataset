@@ -228,7 +228,8 @@ class DataSourceService:
             else self.ollama_client.get_embeddings
         )
         token_budgeter = PromptTokenBudgeter.from_tokenizer_source(
-            getattr(self.settings, "ollama_chat_tokenizer", "")
+            getattr(self.settings, "ollama_chat_tokenizer", ""),
+            hf_token=getattr(self.settings, "hf_token", ""),
         )
         max_tokens_per_chunk = max(
             1,
@@ -250,3 +251,5 @@ class DataSourceService:
                 token_budgeter=token_budgeter,
             )
             self.blob_repository.save_content_chunks(content_chunks)
+
+

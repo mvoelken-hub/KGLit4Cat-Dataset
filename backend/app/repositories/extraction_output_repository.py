@@ -243,6 +243,22 @@ class ExtractionOutputRepository(Protocol):
     def load_token_usage(self, workflow_id: str) -> dict[str, dict[str, int]]:
         ...
 
+    def append_prompt_diagnostic(
+        self,
+        *,
+        workflow_id: str,
+        diagnostic: dict[str, Any],
+        chat_model: str | None = None,
+    ) -> None:
+        ...
+
+    def clear_prompt_diagnostics(
+        self,
+        workflow_id: str,
+        chat_model: str | None = None,
+    ) -> None:
+        ...
+
     def clear_extraction_run(self, workflow_id: str) -> None:
         ...
 

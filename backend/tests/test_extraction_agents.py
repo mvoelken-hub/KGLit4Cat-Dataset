@@ -1,5 +1,6 @@
-﻿import re
+import re
 import unittest
+from unittest.mock import patch
 
 from jsonschema import Draft202012Validator
 
@@ -383,6 +384,34 @@ classes:
         self.assertIsNotNone(budgeter.fallback_reason)
         self.assertIn("[orientation truncated]", truncated)
         self.assertLessEqual(budgeter.count(truncated), 20)
+
+    def test_prompt_token_budgeter_reuses_loaded_tokenizer(self):
+        class FakeEncoding:
+            ids = [1]
+
+        class FakeTokenizer:
+            def encode(self, text: str, add_special_tokens: bool = False):
+                return FakeEncoding()
+
+        from app.domain import token_budget
+
+        token_budget._load_tokenizer.cache_clear()
+        try:
+            with patch("app.domain.token_budget.Tokenizer.from_pretrained", return_value=FakeTokenizer()) as loader:
+                first = PromptTokenBudgeter.from_tokenizer_source(
+                    "example/tokenizer",
+                    hf_token="hf_test_token",
+                )
+                second = PromptTokenBudgeter.from_tokenizer_source(
+                    "example/tokenizer",
+                    hf_token="hf_test_token",
+                )
+
+            self.assertEqual(first.count("alpha"), 1)
+            self.assertEqual(second.count("beta"), 1)
+            loader.assert_called_once_with("example/tokenizer", token="hf_test_token")
+        finally:
+            token_budget._load_tokenizer.cache_clear()
 
     def test_evidence_system_prompt_uses_token_orientation_budget(self):
         class FakeEncoding:
@@ -1353,3 +1382,4 @@ classes:
         self.assertIn("10/acqus#1-2#nucleus", record.evidence_note_identifiers)
 if __name__ == "__main__":
     unittest.main()
+

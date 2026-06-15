@@ -6,6 +6,12 @@ from app.ollama.errors import (
     MaxRetriesExceeded,
     OutputParsingError,
 )
+from app.ollama.prompt_diagnostics import (
+    PromptAttemptDiagnostic,
+    PromptCompletionDiagnostics,
+    PromptComponent,
+    PromptComponentDiagnostic,
+)
 from app.ollama.usage import RunUsage
 
 __all__ = [
@@ -17,5 +23,9 @@ __all__ = [
     "EmptyResponseError",
     "OutputParsingError",
     "MaxRetriesExceeded",
+    "PromptAttemptDiagnostic",
+    "PromptCompletionDiagnostics",
+    "PromptComponent",
+    "PromptComponentDiagnostic",
     "RunUsage",
 ]
