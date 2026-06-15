@@ -165,9 +165,9 @@
     "semantic_hash": "b174062562ff4d3d95171f1549292e0f"
   },
   "backend/app/domain/extraction/overview.py": {
-    "mtime": 1781533160.965377,
-    "ast_hash": "5c5aec28ec37a82ef1d60e41f9be0034",
-    "semantic_hash": "5c5aec28ec37a82ef1d60e41f9be0034"
+    "mtime": 1781565355.9961088,
+    "ast_hash": "d909233631f86324fbc7a96359d44b1e",
+    "semantic_hash": ""
   },
   "backend/app/domain/extraction/profile_projection.py": {
     "mtime": 1781563800.6231833,
@@ -275,9 +275,9 @@
     "semantic_hash": "e91f363561afb530a5b7bf6fb8e33e11"
   },
   "backend/app/ollama/completion.py": {
-    "mtime": 1781536027.9339972,
-    "ast_hash": "9ff84fed81781294c7fc712a185f5746",
-    "semantic_hash": "9ff84fed81781294c7fc712a185f5746"
+    "mtime": 1781565320.7662616,
+    "ast_hash": "23e60202745356602dcf256a55d5ac9b",
+    "semantic_hash": ""
   },
   "backend/app/ollama/errors.py": {
     "mtime": 1781529124.6018913,
@@ -320,8 +320,8 @@
     "semantic_hash": "fb99458348a438519f9cd27df37fab70"
   },
   "backend/app/services/extraction_service.py": {
-    "mtime": 1781563916.7467928,
-    "ast_hash": "8fd42fefcc0d785b9d77d186c489db2c",
+    "mtime": 1781565780.3774722,
+    "ast_hash": "2901e300c89425a6308edc163082e89a",
     "semantic_hash": ""
   },
   "backend/app/services/profile_service.py": {
@@ -395,8 +395,8 @@
     "semantic_hash": "7586d7eded7fed026732640870068b46"
   },
   "backend/tests/test_initial_context_extraction.py": {
-    "mtime": 1781563503.2761514,
-    "ast_hash": "f86df337747c3c86fd2ced3269db240d",
+    "mtime": 1781565785.5821602,
+    "ast_hash": "0177b75f34c5707bf7a203802b1ccde2",
     "semantic_hash": ""
   },
   "backend/tests/test_neo4j_driver.py": {
@@ -415,9 +415,9 @@
     "semantic_hash": "ae20e6b3a10bc1d880c4127666b4b56e"
   },
   "backend/tests/test_ollama_completion.py": {
-    "mtime": 1781533185.0119727,
-    "ast_hash": "132b3fd249afd87a899b511481470213",
-    "semantic_hash": "132b3fd249afd87a899b511481470213"
+    "mtime": 1781565384.8995636,
+    "ast_hash": "d0d108b9d5b42abac00948c6a5ffc8cb",
+    "semantic_hash": ""
   },
   "backend/tests/test_patch_quality.py": {
     "mtime": 1779961629.518368,

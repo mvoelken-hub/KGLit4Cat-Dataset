@@ -165,36 +165,19 @@ class ExtractionOverviewModelOutputNode(BaseModel):
 
 
 class ExtractionOverviewModelOutput(BaseModel):
-    source_fingerprint: str = Field(
-        "",
-        description="Leave empty; backend will stamp the source fingerprint.",
-    )
-    source_file_paths: list[str] = Field(
-        default_factory=list,
-        description="File paths used to create this overview.",
-    )
-    inspected_files: list[ExtractionOverviewInspectedFile] = Field(
-        default_factory=list,
-        description="Files whose extracted text was included in the overview input.",
-    )
     nodes: list[ExtractionOverviewModelOutputNode] = Field(
         default_factory=list,
-        description="File-centered package graph nodes. Do not include rank.",
+        max_length=8,
+        description="Additional non-seeded graph nodes only. Do not include rank.",
     )
     edges: list[ExtractionOverviewEdge] = Field(
         default_factory=list,
-        description="Controlled package graph relations.",
-    )
-    uncertainties: list[str] = Field(
-        default_factory=list,
-        description="Unresolved graph-level scope, identity, and relation uncertainties.",
+        max_length=16,
+        description="Additional non-seeded controlled package graph relations only.",
     )
 
     def to_extraction_overview(self) -> ExtractionOverview:
         return ExtractionOverview(
-            source_fingerprint=self.source_fingerprint,
-            source_file_paths=self.source_file_paths,
-            inspected_files=self.inspected_files,
             nodes=[
                 ExtractionOverviewNode(
                     node_id=node.node_id,
@@ -206,7 +189,6 @@ class ExtractionOverviewModelOutput(BaseModel):
                 for node in self.nodes
             ],
             edges=self.edges,
-            uncertainties=self.uncertainties,
         )
 
 
@@ -250,27 +232,13 @@ class ExtractionOverviewFilePreview(BaseModel):
     first_lines: list[str] = Field(default_factory=list)
 
 
-EXTRACTION_OVERVIEW_SYSTEM_PROMPT = """You are a scientific data archivist creating a conservative file-centered package graph for heterogeneous scientific data.
+EXTRACTION_OVERVIEW_SYSTEM_PROMPT = """You are a scientific data archivist suggesting conservative additions to a backend-seeded file-centered package graph for heterogeneous scientific data.
 Your output is guidance only. It is not evidence. Later extraction calls must still cite source_text from their current chunk.
 Return raw JSON only. Never wrap the JSON in Markdown fences, code blocks, language labels, or prose.
 
-Use this minimal valid ExtractionOverview shape as the field-name reference. Replace
-the example identifiers with actual input file paths and supported groups, or use
-empty arrays when no supported relations exist:
+Return only new nodes and new edges to add to the seeded graph. Do not repeat seeded package, directory, file, group, or containment structure. Use this exact shape:
 {
-  "source_fingerprint": "",
-  "source_file_paths": ["metadata.txt"],
-  "inspected_files": [
-    {"file_path": "metadata.txt", "byte_size": 0, "chars_read": 0, "reason": ""}
-  ],
   "nodes": [
-    {
-      "node_id": "file:metadata.txt",
-      "label": "metadata.txt",
-      "kind": "file",
-      "file_path": "metadata.txt",
-      "summary": "File-local orientation note."
-    },
     {
       "node_id": "group:dataset_documentation",
       "label": "Dataset documentation",
@@ -288,29 +256,26 @@ empty arrays when no supported relations exist:
       "evidence": ["dataset description"],
       "note": "Why this relation is useful orientation."
     }
-  ],
-  "uncertainties": []
+  ]
 }
 
-Create graph nodes, controlled relation edges, and unresolved uncertainties:
-- The backend has already seeded package, directory, file, conservative group nodes, real path-containment edges, and conservative summary-supported group edges.
+Suggest at most 8 nodes and at most 16 edges:
+- The backend has already seeded package, directory, file, conservative group nodes, real path-containment edges, and conservative summary-supported group edges. Do not recall or repeat them.
 - Do not create contains edges. Ranked order is prioritization metadata only; it is never containment evidence.
 - Do not output rank fields. File ranking is already tracked by the backend and is only input metadata for prioritization.
-- First group files by shared package role before adding file-to-file relations.
-- nodes: add inferred group nodes when summaries explicitly support shared roles such as dataset documentation, acquisition settings, processing settings, audit/provenance, instrument settings, method/program logic, raw data, processed data, derived results, or ambiguous supporting resources. Reuse seeded file/directory node IDs when connecting relations.
-- edges: connect files to group nodes first using describes, documents, configures, parameterizes, generated_by, related_to, or uncertain_relation. Add group-to-group edges only when supported. File-to-file semantic edges are secondary.
-- uncertainties: unresolved scope, identity, modality, provenance, raw/processed, or title/owner/origin ambiguities.
+- nodes: only add missing inferred group nodes when summaries explicitly support shared roles not already present in the seeded graph.
+- edges: add only useful missing file-to-group, group-to-group, or secondary file-to-file edges using describes, documents, configures, parameterizes, generated_by, related_to, or uncertain_relation.
 
 Keep the graph file-centered. Prefer files, directories, and generic groups such as raw data, processed data, acquisition settings, processing settings, audit/provenance, metadata, derived results, and quality notes.
 Only create scientific/domain group nodes when summaries explicitly support the grouping. Do not invent final metadata, sample identity, method identity, instrument identity, creator, owner, or dataset title.
-Do not turn file-local headers, local titles, audit labels, or resource titles into dataset-level identity. Represent them as file-local nodes/notes or uncertainties when useful.
-When one explicit signal appears inconsistent with another, preserve the unresolved relation with uncertain_relation or uncertainties instead of selecting one interpretation.
+Do not turn file-local headers, local titles, audit labels, or resource titles into dataset-level identity.
+When one explicit signal appears inconsistent with another, preserve the unresolved relation with uncertain_relation instead of selecting one interpretation.
 When validated per-file summaries are present, do not claim that summaries are unavailable. If no group can be formed, explain which specific relation evidence is missing.
 
 Do not invent final metadata.
 Do not mention files that are not present in the ranked files or per-file summaries.
-Every semantic edge must include evidence phrases from summaries or previews. Placeholder evidence such as ranked, listed, top file, or empty evidence is not useful; use uncertainties instead.
-Fill every field with concise evidence-grounded values. Use empty lists when no additional semantic nodes, group-oriented edges, or uncertainties can be identified.
+Every semantic edge must include evidence phrases from summaries or previews. Placeholder evidence such as ranked, listed, top file, or empty evidence is not useful; omit the edge instead.
+Fill every field with concise evidence-grounded values. Use empty lists when no additional semantic nodes or edges can be identified.
 """
 
 
@@ -405,16 +370,17 @@ def build_extraction_overview_prompt_components(
         ),
         (
             "final_task_instructions",
-            "Create an ExtractionOverview package graph that will orient later one-shot chunk extraction calls. "
+            "Suggest additions to the backend-seeded ExtractionOverview package graph that will orient later one-shot chunk extraction calls. "
             "Use the per-file summaries as the primary input and previews only as fallback context when summaries are absent. "
             "Treat this as package graph triage, not final scientific interpretation. "
             "Do not create contains edges: the backend will add real package/directory/file containment from paths. "
             "Ranked order means extraction priority only; it is not evidence that one file contains another. "
-            "Group files first: create generic group nodes for shared package roles, then connect file nodes to those groups with semantic edges. "
+            "Do not repeat seeded nodes or edges. Add only missing generic group nodes and missing semantic edges. "
             "Prefer file-to-group and group-to-group edges over file-to-file edges. "
             "When connecting to files, use file node IDs exactly as file:<file_path> from the ranked files JSON. "
             "When summaries are present, do not claim that per-file summaries are unavailable. "
-            "Use uncertain_relation or uncertainties for weak or ambiguous links. "
+            "Use uncertain_relation for weak or ambiguous links. "
+            "Return at most 8 nodes and 16 edges. "
             "Later extracted objects must still be supported "
             "by source_text from the current chunk only.",
         ),

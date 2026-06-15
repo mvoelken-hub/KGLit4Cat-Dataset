@@ -142,7 +142,7 @@ from app.domain.profiles import (
 from app.domain.semantics import VocabQuery, VocabQueryResult
 from app.ollama.completion import generate_structured, repair_structured_output
 from app.ollama.errors import CompletionError, MaxRetriesExceeded
-from app.ollama.prompt_diagnostics import PromptCompletionDiagnostics
+from app.ollama.prompt_diagnostics import PromptCompletionDiagnostics, run_usage_to_dict
 from app.ollama.usage import RunUsage
 from app.repositories.extraction_output_repository import ExtractionOutputRepository
 
@@ -159,6 +159,7 @@ INITIAL_OVERVIEW_PREVIEW_LINE_LIMIT = 80
 INITIAL_OVERVIEW_MAX_LINE_CHARS = 500
 INITIAL_OVERVIEW_MIN_INPUT_TOKENS = 1200
 INITIAL_OVERVIEW_EXPECTED_OUTPUT_TOKENS = 1000
+INITIAL_OVERVIEW_MAX_OUTPUT_TOKENS = 1200
 INITIAL_OVERVIEW_INPUT_SAFETY_MARGIN_TOKENS = 250
 INITIAL_OVERVIEW_RANKED_FILE_BUDGET_RATIO = 0.05
 INITIAL_OVERVIEW_SUMMARY_BUDGET_RATIO = 0.45
@@ -2336,6 +2337,7 @@ class ExtractionService:
                 temperature=0.1,
                 think=None,
                 num_ctx=self.ollama_client.max_context_length,
+                num_predict=INITIAL_OVERVIEW_MAX_OUTPUT_TOKENS,
             )
             self._record_llm_call_result(
                 data_package_id=data_package_id,
@@ -2379,6 +2381,7 @@ class ExtractionService:
                 hard_truncated=bool(
                     overview_prompt_report.get("hard_truncated", False)
                 ),
+                usage=run_usage_to_dict(result.usage),
             )
             state.initial_extraction_overview_diagnostic = overview_diagnostic
             self._save_run_state(data_package_id, state)

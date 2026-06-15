@@ -556,6 +556,7 @@ async def generate_structured(
     seed: int = 42,
     think: ThinkMode = None,
     num_ctx: int | None = None,
+    num_predict: int | None = None,
     keep_alive: float | str | None = -1,
     repair_model: str | None = None,
     api_retries: int = 2,
@@ -582,6 +583,7 @@ async def generate_structured(
     seed: int = 42,
     think: ThinkMode = None,
     num_ctx: int | None = None,
+    num_predict: int | None = None,
     keep_alive: float | str | None = -1,
     repair_model: str | None = None,
     api_retries: int = 2,
@@ -608,6 +610,7 @@ async def generate_structured(
     seed: int = 42,
     think: ThinkMode = None,
     num_ctx: int | None = None,
+    num_predict: int | None = None,
     keep_alive: float | str | None = -1,
     repair_model: str | None = None,
     api_retries: int = 2,
@@ -628,6 +631,8 @@ async def generate_structured(
         think: Enable thinking mode (for qwen3.5 etc)
         num_ctx: Context window size; passed via options["num_ctx"].
                  If None, uses whatever the Ollama host has configured.
+        num_predict: Maximum generated tokens; passed via options["num_predict"].
+                     If None, uses the model/server default.
         keep_alive: How long to keep the model loaded. Default -1 = keep in RAM.
         repair_model: Optional model name for repair attempts. Defaults to model.
         api_retries: Max retries for Ollama API/transport failures per structured attempt.
@@ -647,6 +652,7 @@ async def generate_structured(
         temperature=temperature,
         seed=seed,
         num_ctx=num_ctx,
+        num_predict=num_predict,
     )
 
     base_system_components = _normalize_prompt_components(
@@ -930,6 +936,7 @@ async def repair_structured_output(
     seed: int = 42,
     think: ThinkMode = None,
     num_ctx: int | None = None,
+    num_predict: int | None = None,
     keep_alive: float | str | None = -1,
     repair_model: str | None = None,
 ) -> CompletionResult[ModelT]: ...
@@ -952,6 +959,7 @@ async def repair_structured_output(
     seed: int = 42,
     think: ThinkMode = None,
     num_ctx: int | None = None,
+    num_predict: int | None = None,
     keep_alive: float | str | None = -1,
     repair_model: str | None = None,
 ) -> CompletionResult[Any]:
@@ -974,6 +982,7 @@ async def repair_structured_output(
     seed: int = 42,
     think: ThinkMode = None,
     num_ctx: int | None = None,
+    num_predict: int | None = None,
     keep_alive: float | str | None = -1,
     repair_model: str | None = None,
 ) -> CompletionResult[Any]:
@@ -1000,6 +1009,7 @@ async def repair_structured_output(
         seed=seed,
         think=think,
         num_ctx=num_ctx,
+        num_predict=num_predict,
         keep_alive=keep_alive,
         repair_model=repair_model,
     )

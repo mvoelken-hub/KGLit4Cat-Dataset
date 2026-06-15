@@ -761,7 +761,9 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         )
 
     def test_extraction_overview_system_prompt_shows_valid_shape_and_rank_rule(self):
-        self.assertIn('"node_id": "file:metadata.txt"', EXTRACTION_OVERVIEW_SYSTEM_PROMPT)
+        self.assertIn('"source": "file:metadata.txt"', EXTRACTION_OVERVIEW_SYSTEM_PROMPT)
+        self.assertIn('"node_id": "group:dataset_documentation"', EXTRACTION_OVERVIEW_SYSTEM_PROMPT)
+        self.assertNotIn('"uncertainties"', EXTRACTION_OVERVIEW_SYSTEM_PROMPT)
         self.assertNotIn('"rank"', EXTRACTION_OVERVIEW_SYSTEM_PROMPT)
         self.assertIn("Do not output rank fields", EXTRACTION_OVERVIEW_SYSTEM_PROMPT)
 
@@ -1052,16 +1054,16 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("file-centered package graph", kwargs["system"])
             self.assertIn("nodes", kwargs["system"])
             self.assertIn("edges", kwargs["system"])
-            self.assertIn("uncertainties", kwargs["system"])
-            self.assertIn("controlled relation", kwargs["system"])
+            self.assertIn("using describes, documents, configures", kwargs["system"])
             self.assertIn("Do not create contains edges", kwargs["system"])
             self.assertIn("Ranked order is prioritization metadata only", kwargs["system"])
-            self.assertIn("First group files by shared package role", kwargs["system"])
-            self.assertIn("connect files to group nodes first", kwargs["system"])
+            self.assertIn("Do not repeat seeded", kwargs["system"])
+            self.assertIn("Suggest at most 8 nodes and at most 16 edges", kwargs["system"])
             self.assertIn("package graph triage, not final scientific interpretation", kwargs["prompt"])
             self.assertIn("Backend-seeded package graph endpoints and deterministic hints", kwargs["prompt"])
             self.assertIn("Ranked order means extraction priority only", kwargs["prompt"])
-            self.assertIn("Group files first", kwargs["prompt"])
+            self.assertIn("Do not repeat seeded nodes or edges", kwargs["prompt"])
+            self.assertEqual(kwargs["num_predict"], 1200)
             self.assertIn("dataset_description.txt", kwargs["prompt"])
             self.assertIn("##$PULPROG=zg30", kwargs["prompt"])
             return CompletionResult(
@@ -1082,11 +1084,8 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                             "note": "Raw data grouping is suggested by file summary.",
                         }
                     ],
-                    uncertainties=[
-                        "Do not resolve instrument or method identity without chunk evidence."
-                    ],
                 ),
-                usage=RunUsage(requests=1),
+                usage=RunUsage(requests=1, input_tokens=2704, output_tokens=312),
             )
 
         with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
@@ -1124,9 +1123,18 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 for edge in overview.edges
             )
         )
+        self.assertEqual(overview.uncertainties, [])
         self.assertEqual(
-            overview.uncertainties,
-            ["Do not resolve instrument or method identity without chunk evidence."],
+            state.initial_extraction_overview_diagnostic.usage,
+            {
+                "requests": 1,
+                "input_tokens": 2704,
+                "output_tokens": 312,
+                "prompt_eval_duration_ms": 0,
+                "load_duration_ms": 0,
+                "response_duration_ms": 0,
+                "total_duration_ms": 0,
+            },
         )
 
     def test_initial_overview_seed_graph_creates_path_containment(self):

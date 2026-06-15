@@ -225,6 +225,22 @@ class GenerateStructuredHappyPathTests(IsolatedAsyncioTestCase):
         self.assertEqual(result.usage.input_tokens, 100)
         self.assertEqual(result.usage.output_tokens, 20)
 
+    async def test_num_predict_passed_to_ollama_options(self):
+        client = FakeOllamaClient([
+            FakeGenerateResponse(response='{"answer": "hello", "score": 42}'),
+        ])
+
+        await generate_structured(
+            client,
+            model="test-model",
+            system="You are helpful.",
+            prompt="Give me data.",
+            output_type=SimpleOutput,
+            num_predict=1200,
+        )
+
+        self.assertEqual(client.calls[0]["options"].num_predict, 1200)
+
     async def test_dict_output_type_returns_raw_dict(self):
         client = FakeOllamaClient([
             FakeGenerateResponse(
