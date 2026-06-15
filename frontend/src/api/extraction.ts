@@ -88,6 +88,8 @@ export type ExtractionVocabQueryConfig = {
 export type RankedExtractionFile = {
   rank: number;
   file_path: string;
+  score?: number | null;
+  reasons?: string[];
 };
 
 export type ExtractionChunkRef = {
@@ -127,7 +129,6 @@ export type InitialFileSummaryStatus = 'completed' | 'partial' | 'failed' | stri
 
 export type ExtractionFileSummary = {
   file_path: string;
-  rank: number;
   status: ExtractionFileSummaryStatus;
   data_format: string;
   explicit_purpose: string;

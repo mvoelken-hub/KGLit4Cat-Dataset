@@ -79,7 +79,6 @@ class ExtractionFileContentWindow(BaseModel):
 
 class ExtractionFileSummary(BaseModel):
     file_path: str
-    rank: int = Field(..., ge=1)
     status: ExtractionFileSummaryStatus = "summarized"
     data_format: str = Field(
         "",
@@ -100,7 +99,6 @@ class ExtractionFileSummary(BaseModel):
 
 class InitialFileSummaryDiagnosticRecord(BaseModel):
     file_path: str
-    rank: int | None = Field(default=None, ge=1)
     reason: str
     message: str
     details: dict[str, Any] = Field(default_factory=dict)
@@ -222,7 +220,7 @@ def build_extraction_overview_prompt(
     )
     return (
         "Analyze the research artifact archive and extract a graph-shaped ExtractionOverview. "
-        "The backend has listed ranked files, summarized the top ranked files, and seeded deterministic path containment.\n\n"
+        "The backend has summarized text-extractable files, ranked summarized files, and seeded deterministic path containment.\n\n"
         f"Data package name: {data_package_name}\n"
         f"Ranked file count: {len(ranked_files)}\n"
         f"Per-file summary count: {len(file_summaries or [])}\n"
@@ -252,7 +250,6 @@ def build_extraction_overview_prompt(
 def build_extraction_file_summary_prompt(
     *,
     data_package_name: str,
-    rank: int,
     file_path: str,
     byte_size: int | None,
     extracted_char_count: int,
@@ -260,15 +257,14 @@ def build_extraction_file_summary_prompt(
 ) -> str:
     windows_json = ",\n".join(window.model_dump_json() for window in content_windows)
     return (
-        "Summarize one ranked file for later extraction orientation.\n\n"
+        "Summarize one file for later extraction orientation.\n\n"
         f"Data package name: {data_package_name}\n"
-        f"Rank: {rank}\n"
         f"File path: {file_path}\n"
         f"Byte size: {byte_size if byte_size is not None else 'unknown'}\n"
         f"Extracted character count: {extracted_char_count}\n\n"
         "Sampled content windows JSON:\n"
         f"[{windows_json}]\n\n"
-        "Return an ExtractionFileSummary for this exact file_path and rank. "
+        "Return an ExtractionFileSummary for this exact file_path. "
         "Use common metadata categories as orientation only, such as instrument settings, "
         "software settings, acquisition settings, processing settings, calibration or reference settings, "
         "sample conditions, identifiers, units, and quantity labels. "
@@ -346,7 +342,6 @@ def file_summary_to_prompt_text(summary: ExtractionFileSummary | None) -> str:
         return ""
     parts = [
         f"File path: {summary.file_path}",
-        f"Rank: {summary.rank}",
         f"Summary status: {summary.status}",
     ]
     if summary.data_format:

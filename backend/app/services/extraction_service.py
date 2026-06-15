@@ -114,6 +114,7 @@ from app.domain.extraction import (
     build_unit_vocab_query,
     cap_extraction_context_for_prompt,
     fallback_file_ranking,
+    rank_summarized_files,
     merge_evidence_contexts,
     merge_extraction_context_results,
     normalize_chunk_text_for_evidence_prompt,
@@ -512,13 +513,8 @@ class ExtractionService:
 
         data_package = self.datasource_service.get_data_package(data_package_id)
         warnings: list[str] = []
-        progress = ExtractionRunProgress(stage="file_ranking")
-        self._update_initial_context_progress(data_package_id, progress)
-
-        ranking = await self._rank_files(data_package_id, data_package, warnings)
         state = ExtractionRunState(
             chat_model=self.ollama_client.chat_model if self.ollama_client else None,
-            ranked_files=ranking.files,
         )
         self._save_run_state(data_package_id, state)
         progress = self._initial_context_progress_from_state(
@@ -531,10 +527,19 @@ class ExtractionService:
         await self._generate_initial_file_summaries(
             data_package_id=data_package_id,
             data_package=data_package,
-            ranking=ranking,
             state=state,
             warnings=warnings,
         )
+        progress = self._initial_context_progress_from_state(
+            state,
+            warnings=warnings,
+            stage="file_ranking",
+        )
+        self._update_initial_context_progress(data_package_id, progress)
+
+        ranking = self._rank_files_from_summaries(data_package=data_package, state=state)
+        state.ranked_files = ranking.files
+        self._save_run_state(data_package_id, state)
         progress = self._initial_context_progress_from_state(
             state,
             warnings=warnings,
@@ -1377,11 +1382,15 @@ class ExtractionService:
         )
         self._update_progress(data_package_id, progress)
 
-        ranking = (
-            FileRankingResult(files=persisted_state.ranked_files)
-            if persisted_state and persisted_state.ranked_files
-            else await self._rank_files(data_package_id, data_package, warnings)
-        )
+        if persisted_state and persisted_state.ranked_files:
+            ranking = FileRankingResult(files=persisted_state.ranked_files)
+        elif persisted_state and persisted_state.initial_file_summaries:
+            ranking = self._rank_files_from_summaries(
+                data_package=data_package,
+                state=persisted_state,
+            )
+        else:
+            ranking = await self._rank_files(data_package_id, data_package, warnings)
         ordered_chunks = self._ordered_chunks(chunks_by_file, ranking)
         state = self._prepare_run_state(
             ranking=ranking,
@@ -1851,24 +1860,52 @@ class ExtractionService:
         ]
         return fallback_file_ranking(files)
 
+    def _rank_files_from_summaries(
+        self,
+        *,
+        data_package: Any,
+        state: ExtractionRunState,
+    ) -> FileRankingResult:
+        file_contexts = {
+            file.file_path: FileContext(
+                file_path=file.file_path,
+                byte_size=len(file.raw_content),
+            )
+            for file in data_package.files
+        }
+        return rank_summarized_files(
+            state.initial_file_summaries,
+            file_contexts=file_contexts,
+        )
+
     async def _generate_initial_file_summaries(
         self,
         *,
         data_package_id: str,
         data_package: Any,
-        ranking: FileRankingResult,
         state: ExtractionRunState,
         warnings: list[str],
     ) -> None:
         diagnostics = InitialFileSummaryDiagnostics()
+        candidate_files = list(self._initial_file_summary_candidate_files(data_package))
         if not hasattr(self.ollama_client, "ollama_client"):
+            for file_entry in candidate_files:
+                if self._should_skip_initial_file_summary(file_entry):
+                    diagnostics.records.append(
+                        InitialFileSummaryDiagnosticRecord(
+                            file_path=file_entry.file_path,
+                            reason="skipped",
+                            message="Image files are not text-extractable.",
+                        )
+                    )
             state.initial_file_summaries = [
                 self._failed_initial_file_summary(
-                    ranked_file=ranked_file,
+                    file_path=file_entry.file_path,
                     reason="No Ollama client is available for file summary generation.",
                     diagnostics=diagnostics,
                 )
-                for ranked_file in self._top_initial_context_ranked_files(ranking)
+                for file_entry in candidate_files
+                if not self._should_skip_initial_file_summary(file_entry)
             ]
             state.initial_file_summary_status = "failed"
             self._save_run_state(data_package_id, state)
@@ -1880,29 +1917,17 @@ class ExtractionService:
             )
             return
 
-        files_by_path = {file.file_path: file for file in data_package.files}
         summaries: list[ExtractionFileSummary] = []
         skipped_count = 0
-        for ranked_file in self._top_initial_context_ranked_files(ranking):
-            file_entry = files_by_path.get(ranked_file.file_path)
-            if file_entry is None:
-                summaries.append(
-                    self._failed_initial_file_summary(
-                        ranked_file=ranked_file,
-                        reason="Ranked file is not present in the data package.",
-                        diagnostics=diagnostics,
-                    )
-                )
-                continue
+        for file_entry in candidate_files:
             if self._should_skip_initial_file_summary(file_entry):
                 skipped_count += 1
                 warnings.append(
-                    f"Initial file summary skipped for {ranked_file.file_path}: image files are not text-extractable."
+                    f"Initial file summary skipped for {file_entry.file_path}: image files are not text-extractable."
                 )
                 diagnostics.records.append(
                     InitialFileSummaryDiagnosticRecord(
-                        file_path=ranked_file.file_path,
-                        rank=ranked_file.rank,
+                        file_path=file_entry.file_path,
                         reason="skipped",
                         message="Image files are not text-extractable.",
                     )
@@ -1910,6 +1935,19 @@ class ExtractionService:
                 continue
             try:
                 extracted_content = file_entry.get_extracted_content()
+                if not extracted_content.strip():
+                    skipped_count += 1
+                    warnings.append(
+                        f"Initial file summary skipped for {file_entry.file_path}: no extractable text content."
+                    )
+                    diagnostics.records.append(
+                        InitialFileSummaryDiagnosticRecord(
+                            file_path=file_entry.file_path,
+                            reason="skipped",
+                            message="No extractable text content.",
+                        )
+                    )
+                    continue
                 content_windows = self._initial_file_summary_content_windows(
                     extracted_content,
                     num_ctx=self.ollama_client.max_context_length,
@@ -1920,8 +1958,7 @@ class ExtractionService:
                     system=EXTRACTION_FILE_SUMMARY_SYSTEM_PROMPT,
                     prompt=build_extraction_file_summary_prompt(
                         data_package_name=data_package.file_name,
-                        rank=ranked_file.rank,
-                        file_path=ranked_file.file_path,
+                        file_path=file_entry.file_path,
                         byte_size=len(file_entry.raw_content),
                         extracted_char_count=len(extracted_content),
                         content_windows=content_windows,
@@ -1940,7 +1977,7 @@ class ExtractionService:
                 summaries.append(
                     self._validated_initial_file_summary(
                         result.output,
-                        ranked_file=ranked_file,
+                        file_path=file_entry.file_path,
                         sampled_text="\n".join(
                             window.text for window in content_windows
                         ),
@@ -1957,30 +1994,30 @@ class ExtractionService:
                         usage=usage,
                     )
                 warnings.append(
-                    f"Initial file summary failed for {ranked_file.file_path}: {exc}"
+                    f"Initial file summary failed for {file_entry.file_path}: {exc}"
                 )
                 summaries.append(
                     self._failed_initial_file_summary(
-                        ranked_file=ranked_file,
+                        file_path=file_entry.file_path,
                         reason=str(exc),
                         diagnostics=diagnostics,
                     )
                 )
             except Exception as exc:
                 warnings.append(
-                    f"Initial file summary failed for {ranked_file.file_path}: {exc}"
+                    f"Initial file summary failed for {file_entry.file_path}: {exc}"
                 )
                 logger.warning(
                     "Initial file summary failed",
                     extra={
                         "data_package_id": data_package_id,
-                        "file_path": ranked_file.file_path,
+                        "file_path": file_entry.file_path,
                         "error_type": type(exc).__name__,
                     },
                 )
                 summaries.append(
                     self._failed_initial_file_summary(
-                        ranked_file=ranked_file,
+                        file_path=file_entry.file_path,
                         reason=str(exc),
                         diagnostics=diagnostics,
                     )
@@ -2035,6 +2072,10 @@ class ExtractionService:
             previews=previews,
         )
         summarized_file_summaries = self._summarized_initial_file_summaries(state)
+        ranked_file_summaries = self._rank_ordered_initial_file_summaries(
+            summaries=summarized_file_summaries,
+            ranking=ranking,
+        )
         fallback_previews = [] if summarized_file_summaries else previews
         seeded_overview = self._seed_initial_overview_graph(
             data_package_name=data_package.file_name,
@@ -2058,7 +2099,7 @@ class ExtractionService:
         overview_prompt, overview_prompt_report = self._build_budgeted_initial_overview_prompt(
             data_package_name=data_package.file_name,
             ranked_files=overview_ranked_files,
-            file_summaries=summarized_file_summaries,
+            file_summaries=ranked_file_summaries,
             file_previews=fallback_previews,
             seeded_overview=seeded_overview,
             token_budgeter=overview_prompt_budgeter,
@@ -2442,24 +2483,32 @@ class ExtractionService:
         data_package: Any,
         ranking: FileRankingResult,
     ) -> list[ExtractionOverviewFilePreview]:
-        files_by_path = {file.file_path: file for file in data_package.files}
+        rank_by_path = {file.file_path: file.rank for file in ranking.files}
+        package_files = sorted(
+            enumerate(data_package.files),
+            key=lambda item: (
+                rank_by_path.get(item[1].file_path, 10_000),
+                item[0],
+            ),
+        )
         previews: list[ExtractionOverviewFilePreview] = []
-        for ranked_file in sorted(ranking.files, key=lambda item: item.rank)[
-            :INITIAL_OVERVIEW_TOP_FILE_LIMIT
-        ]:
-            file_entry = files_by_path.get(ranked_file.file_path)
-            if file_entry is None:
-                continue
+        fallback_rank = len(ranking.files)
+        for inventory_index, file_entry in package_files:
             if self._should_skip_initial_file_summary(file_entry):
-                continue
-            try:
-                lines = file_entry.get_extracted_content().splitlines()
-            except Exception as exc:
-                lines = [f"[Text extraction failed: {exc}]"]
+                lines = []
+            else:
+                try:
+                    lines = file_entry.get_extracted_content().splitlines()
+                except Exception as exc:
+                    lines = [f"[Text extraction failed: {exc}]"]
+            preview_rank = rank_by_path.get(
+                file_entry.file_path,
+                fallback_rank + inventory_index + 1,
+            )
             previews.append(
                 ExtractionOverviewFilePreview(
-                    rank=ranked_file.rank,
-                    file_path=ranked_file.file_path,
+                    rank=preview_rank,
+                    file_path=file_entry.file_path,
                     byte_size=len(file_entry.raw_content),
                     first_lines=[
                         self._truncate_overview_preview_line(line)
@@ -2544,28 +2593,26 @@ class ExtractionService:
         ]
 
     @staticmethod
+    def _initial_file_summary_candidate_files(data_package: Any) -> list[Any]:
+        return list(getattr(data_package, "files", []) or [])
+
+    @staticmethod
     def _validated_initial_file_summary(
         summary: ExtractionFileSummary,
         *,
-        ranked_file: Any,
+        file_path: str,
         sampled_text: str,
         warnings: list[str],
         diagnostics: InitialFileSummaryDiagnostics | None = None,
     ) -> ExtractionFileSummary:
         update: dict[str, Any] = {
-            "file_path": ranked_file.file_path,
-            "rank": ranked_file.rank,
+            "file_path": file_path,
             "status": "summarized",
         }
-        if summary.file_path != ranked_file.file_path:
+        if summary.file_path != file_path:
             warnings.append(
                 "Initial file summary returned a mismatched file_path; "
-                f"expected {ranked_file.file_path}, got {summary.file_path}."
-            )
-        if summary.rank != ranked_file.rank:
-            warnings.append(
-                "Initial file summary returned a mismatched rank; "
-                f"expected {ranked_file.rank}, got {summary.rank}."
+                f"expected {file_path}, got {summary.file_path}."
             )
         verified_purpose_evidence = [
             evidence
@@ -2574,13 +2621,12 @@ class ExtractionService:
         ]
         if len(verified_purpose_evidence) != len(summary.purpose_evidence):
             warnings.append(
-                f"Initial file summary for {ranked_file.file_path} included purpose evidence not found in the sampled file text; dropping unsupported evidence."
+                f"Initial file summary for {file_path} included purpose evidence not found in the sampled file text; dropping unsupported evidence."
             )
             if diagnostics is not None:
                 diagnostics.records.append(
                     InitialFileSummaryDiagnosticRecord(
-                        file_path=ranked_file.file_path,
-                        rank=ranked_file.rank,
+                        file_path=file_path,
                         reason="unsupported_purpose_evidence",
                         message="Purpose evidence was not found in the sampled file text.",
                         details={
@@ -2595,14 +2641,13 @@ class ExtractionService:
             update["purpose_evidence"] = verified_purpose_evidence
         if summary.explicit_purpose and not verified_purpose_evidence:
             warnings.append(
-                f"Initial file summary for {ranked_file.file_path} included an explicit purpose without evidence; clearing it."
+                f"Initial file summary for {file_path} included an explicit purpose without evidence; clearing it."
             )
             update["explicit_purpose"] = ""
             if diagnostics is not None:
                 diagnostics.records.append(
                     InitialFileSummaryDiagnosticRecord(
-                        file_path=ranked_file.file_path,
-                        rank=ranked_file.rank,
+                        file_path=file_path,
                         reason="unsupported_explicit_purpose",
                         message="Explicit purpose was cleared because no direct purpose evidence was provided.",
                         details={"explicit_purpose": summary.explicit_purpose},
@@ -2613,22 +2658,20 @@ class ExtractionService:
     @staticmethod
     def _failed_initial_file_summary(
         *,
-        ranked_file: Any,
+        file_path: str,
         reason: str,
         diagnostics: InitialFileSummaryDiagnostics | None = None,
     ) -> ExtractionFileSummary:
         if diagnostics is not None:
             diagnostics.records.append(
                 InitialFileSummaryDiagnosticRecord(
-                    file_path=ranked_file.file_path,
-                    rank=ranked_file.rank,
+                    file_path=file_path,
                     reason="failed",
                     message=reason,
                 )
             )
         return ExtractionFileSummary(
-            file_path=ranked_file.file_path,
-            rank=ranked_file.rank,
+            file_path=file_path,
             status="failed",
         )
 
@@ -2641,6 +2684,21 @@ class ExtractionService:
             for summary in state.initial_file_summaries
             if summary.status == "summarized"
         ]
+
+    @staticmethod
+    def _rank_ordered_initial_file_summaries(
+        *,
+        summaries: list[ExtractionFileSummary],
+        ranking: FileRankingResult,
+    ) -> list[ExtractionFileSummary]:
+        rank_by_path = {ranked.file_path: ranked.rank for ranked in ranking.files}
+        return sorted(
+            summaries,
+            key=lambda summary: (
+                rank_by_path.get(summary.file_path, 10_000),
+                summary.file_path,
+            ),
+        )
 
     @staticmethod
     def _seed_initial_overview_graph(
@@ -3135,21 +3193,10 @@ class ExtractionService:
             return False
         ranked_paths = [file.file_path for file in sorted(ranking.files, key=lambda item: item.rank)]
         ranked_path_set = set(ranked_paths)
-        if any(path not in ranked_path_set for path in source_file_paths):
-            return False
-        source_index = 0
-        for ranked_path in ranked_paths:
-            if (
-                source_index < len(source_file_paths)
-                and source_file_paths[source_index] == ranked_path
-            ):
-                source_index += 1
-        if source_index != len(source_file_paths):
-            return False
-        overview_file_paths = {
-            node.file_path for node in overview.nodes if node.kind == "file" and node.file_path
-        }
-        if any(path not in ranked_paths for path in overview_file_paths):
+        source_ranked_paths = [
+            path for path in source_file_paths if path in ranked_path_set
+        ]
+        if source_ranked_paths != ranked_paths[: len(source_ranked_paths)]:
             return False
         return True
 
@@ -3162,16 +3209,13 @@ class ExtractionService:
     ) -> bool:
         if status is None or not summaries:
             return False
-        ranked_paths = [
-            file.file_path
-            for file in sorted(ranking.files, key=lambda item: item.rank)[
-                :INITIAL_OVERVIEW_TOP_FILE_LIMIT
-            ]
-        ]
-        summary_paths = [summary.file_path for summary in summaries]
-        if summary_paths != ranked_paths[: len(summary_paths)]:
-            return False
-        if any(summary.rank < 1 for summary in summaries):
+        ranked_paths = {file.file_path for file in ranking.files}
+        summary_paths = {
+            summary.file_path
+            for summary in summaries
+            if summary.status == "summarized"
+        }
+        if summary_paths != ranked_paths:
             return False
         return True
 

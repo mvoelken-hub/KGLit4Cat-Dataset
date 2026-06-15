@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -532,9 +532,7 @@ def make_service(
             ranked_files=[RankedFile(rank=1, file_path="README.md")],
             initial_file_summaries=[
                 ExtractionFileSummary(
-                    source_fingerprint="summary",
                     file_path="README.md",
-                    rank=1,
                     data_format="markdown",
                 )
             ],
@@ -649,11 +647,12 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             ranking=ranking,
         )
 
-        self.assertEqual([preview.file_path for preview in previews], ["b.txt", "a.txt", "c.txt"])
+        self.assertEqual([preview.file_path for preview in previews], ["b.txt", "plot.png", "a.txt", "c.txt"])
         self.assertEqual(previews[0].first_lines, ["b-0", "b-1"])
-        self.assertEqual(len(previews[1].first_lines), 80)
-        self.assertEqual(previews[1].first_lines[0], "a-0")
-        self.assertEqual(previews[1].first_lines[-1], "a-79")
+        self.assertEqual(previews[1].first_lines, [])
+        self.assertEqual(len(previews[2].first_lines), 80)
+        self.assertEqual(previews[2].first_lines[0], "a-0")
+        self.assertEqual(previews[2].first_lines[-1], "a-79")
 
     async def test_initial_file_summaries_use_budgeted_windows_and_sanitize_purpose(self):
         service, _, output_repository = make_service([[make_chunk()]])
@@ -674,7 +673,6 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 )
             ],
         )
-        ranking = FileRankingResult(files=[RankedFile(rank=1, file_path="HMS-Q11-p_10.dx")])
         state = ExtractionRunState(profile_identifier="profile")
 
         async def fake_generate(*_args, **kwargs):
@@ -689,7 +687,6 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             return CompletionResult(
                 output=ExtractionFileSummary(
                     file_path="made-up.py",
-                    rank=5,
                     data_format="JCAMP-DX spectroscopy export",
                     explicit_purpose="Stores final NMR evidence.",
                     instrument_or_software_terms_and_settings=["PULPROG=zg30"],
@@ -703,7 +700,6 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             await service._generate_initial_file_summaries(
                 data_package_id="package-id",
                 data_package=data_package,
-                ranking=ranking,
                 state=state,
                 warnings=warnings,
             )
@@ -712,7 +708,6 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(state.initial_file_summaries), 1)
         summary = state.initial_file_summaries[0]
         self.assertEqual(summary.file_path, "HMS-Q11-p_10.dx")
-        self.assertEqual(summary.rank, 1)
         self.assertEqual(summary.explicit_purpose, "")
         self.assertIn("PULPROG=zg30", summary.instrument_or_software_terms_and_settings)
         self.assertIn("explicit numeric settings", summary.quantitative_signals)
@@ -741,10 +736,6 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 ),
             ],
         )
-        ranking = FileRankingResult(files=[
-            RankedFile(rank=1, file_path="spectrum.png"),
-            RankedFile(rank=2, file_path="notes.txt"),
-        ])
         state = ExtractionRunState(profile_identifier="profile")
         calls: list[dict] = []
 
@@ -753,7 +744,6 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             return CompletionResult(
                 output=ExtractionFileSummary(
                     file_path="notes.txt",
-                    rank=2,
                     data_format="text",
                     metadata_signals=["instrument: Bruker Alpha-P ATR"],
                 ),
@@ -765,7 +755,6 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             await service._generate_initial_file_summaries(
                 data_package_id="package-id",
                 data_package=data_package,
-                ranking=ranking,
                 state=state,
                 warnings=warnings,
             )
@@ -897,7 +886,6 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             file_summaries=[
                 ExtractionFileSummary(
                     file_path="raw/run1/data.txt",
-                    rank=2,
                     data_format="text",
                     metadata_signals=["raw measurements"],
                 )
@@ -936,36 +924,30 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             file_summaries=[
                 ExtractionFileSummary(
                     file_path="dataset_description.txt",
-                    rank=1,
                     explicit_purpose="dataset description",
                     metadata_signals=["human-readable"],
                 ),
                 ExtractionFileSummary(
                     file_path="audit/log.txt",
-                    rank=2,
                     metadata_signals=["audit trail", "hash values"],
                 ),
                 ExtractionFileSummary(
                     file_path="method/program.txt",
-                    rank=3,
                     instrument_or_software_terms_and_settings=["pulse sequence"],
                 ),
                 ExtractionFileSummary(
                     file_path="settings/acquisition.txt",
-                    rank=4,
                     explicit_purpose="acquisition parameter configuration",
                     metadata_signals=["settings"],
                     quantitative_signals=["explicit numeric settings"],
                 ),
                 ExtractionFileSummary(
                     file_path="settings/processing.txt",
-                    rank=5,
                     explicit_purpose="processing parameter file",
                     metadata_signals=["parameter file"],
                 ),
                 ExtractionFileSummary(
                     file_path="settings/instrument.txt",
-                    rank=6,
                     instrument_or_software_terms_and_settings=[
                         "instrument settings",
                         "calibration",
@@ -973,12 +955,10 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 ),
                 ExtractionFileSummary(
                     file_path="data/raw.txt",
-                    rank=7,
                     metadata_signals=["raw measurements"],
                 ),
                 ExtractionFileSummary(
                     file_path="data/processed.txt",
-                    rank=8,
                     metadata_signals=["processed data"],
                 ),
             ],
@@ -1041,12 +1021,10 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             file_summaries=[
                 ExtractionFileSummary(
                     file_path="not-raw.txt",
-                    rank=1,
                     metadata_signals=["support file format, not raw data"],
                 ),
                 ExtractionFileSummary(
                     file_path="minimal.txt",
-                    rank=2,
                     metadata_signals=["minimal content, no detailed parameters"],
                 ),
             ],
@@ -1168,7 +1146,6 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             file_summaries=[
                 ExtractionFileSummary(
                     file_path="settings.txt",
-                    rank=1,
                     data_format="text",
                     metadata_signals=["settings"],
                 )
@@ -1219,19 +1196,18 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
         ranking = FileRankingResult(files=[
-            RankedFile(rank=1, file_path="spectrum.png"),
-            RankedFile(rank=2, file_path="notes.txt"),
+            RankedFile(rank=1, file_path="notes.txt"),
         ])
         state = ExtractionRunState(
             profile_identifier="profile",
             initial_file_summaries=[
-                ExtractionFileSummary(file_path="notes.txt", rank=2),
+                ExtractionFileSummary(file_path="notes.txt"),
             ],
             initial_file_summary_status="completed",
         )
 
         async def fake_generate(*_args, **kwargs):
-            self.assertNotIn("spectrum.png", kwargs["prompt"])
+            self.assertIn("spectrum.png", kwargs["prompt"])
             self.assertIn("notes.txt", kwargs["prompt"])
             return CompletionResult(
                 output=overview_for_file("notes.txt", summary="notes.txt contains text notes."),
@@ -1249,10 +1225,10 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
         overview = state.initial_extraction_overview
         self.assertIsNotNone(overview)
-        self.assertEqual(overview.source_file_paths, ["notes.txt"])
+        self.assertEqual(overview.source_file_paths, ["notes.txt", "spectrum.png"])
         self.assertEqual(
             [file.file_path for file in overview.inspected_files],
-            ["notes.txt"],
+            ["notes.txt", "spectrum.png"],
         )
         self.assertEqual(output_repository.initial_extraction_overview, overview)
 
@@ -1278,7 +1254,6 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             initial_file_summaries=[
                 ExtractionFileSummary(
                     file_path="parameters.txt",
-                    rank=1,
                     data_format="plain text",
                     metadata_signals=[f"metadata signal {index}" for index in range(40)],
                     quantitative_signals=[
@@ -1355,7 +1330,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         state = ExtractionRunState(
             profile_identifier="profile",
             initial_file_summaries=[
-                ExtractionFileSummary(file_path="metadata.txt", rank=1, data_format="plain text")
+                ExtractionFileSummary(file_path="metadata.txt", data_format="plain text")
             ],
             initial_file_summary_status="completed",
         )
@@ -1426,7 +1401,6 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 "initial_file_summaries": [
                     ExtractionFileSummary(
                         file_path=chunk.file_path,
-                        rank=1,
                         data_format="text",
                     )
                 ],
@@ -1827,6 +1801,67 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             [file.file_path for file in ranking.files],
             ["README.md"],
         )
+        self.assertIsNotNone(ranking.files[0].score)
+        self.assertTrue(ranking.files[0].reasons)
+
+    async def test_summary_aware_file_ranking_prioritizes_metadata_context(self):
+        service, _, _ = make_service([[make_chunk()]])
+        data_package = DataPackage(
+            file_name="package",
+            files=[
+                FileEntry(
+                    file_path="numbers.txt",
+                    file_name="numbers.txt",
+                    file_extension=".txt",
+                    raw_content=b"1\n2\n3\n4",
+                ),
+                FileEntry(
+                    file_path="dataset_description.txt",
+                    file_name="dataset_description.txt",
+                    file_extension=".txt",
+                    raw_content=b"dataset description",
+                ),
+                FileEntry(
+                    file_path="acquisition.txt",
+                    file_name="acquisition.txt",
+                    file_extension=".txt",
+                    raw_content=b"acquisition settings",
+                ),
+            ],
+        )
+        state = ExtractionRunState(
+            initial_file_summaries=[
+                ExtractionFileSummary(
+                    file_path="numbers.txt",
+                    data_format="plain text",
+                    quantitative_signals=["single column numeric values"],
+                ),
+                ExtractionFileSummary(
+                    file_path="dataset_description.txt",
+                    explicit_purpose="dataset description",
+                    purpose_evidence=["dataset description"],
+                    metadata_signals=["instrument: Raman microscope"],
+                ),
+                ExtractionFileSummary(
+                    file_path="acquisition.txt",
+                    metadata_signals=["acquisition settings"],
+                    instrument_or_software_terms_and_settings=["instrument settings"],
+                ),
+            ],
+        )
+
+        ranking = service._rank_files_from_summaries(
+            data_package=data_package,
+            state=state,
+        )
+
+        self.assertEqual(
+            [file.file_path for file in ranking.files],
+            ["dataset_description.txt", "acquisition.txt", "numbers.txt"],
+        )
+        self.assertGreater(ranking.files[0].score or 0, ranking.files[-1].score or 0)
+        self.assertIn("explicit dataset/package documentation", ranking.files[0].reasons)
+        self.assertTrue(all(file.reasons for file in ranking.files))
 
     async def test_run_extraction_processes_task_and_persists_interim_context(self):
         service, task_registry, output_repository = make_service(
@@ -1931,7 +1966,6 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 initial_file_summaries=[
                     ExtractionFileSummary(
                         file_path="README.md",
-                        rank=1,
                         data_format="plain text",
                     )
                 ],
@@ -1993,7 +2027,6 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 initial_file_summaries=[
                     ExtractionFileSummary(
                         file_path="README.md",
-                        rank=1,
                         data_format="plain text",
                     )
                 ],
@@ -2486,7 +2519,6 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 initial_file_summaries=[
                     ExtractionFileSummary(
                         file_path="README.md",
-                        rank=1,
                         data_format="plain text",
                     )
                 ],

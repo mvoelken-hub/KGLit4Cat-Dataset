@@ -1,4 +1,4 @@
-import json
+﻿import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -77,7 +77,6 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
                 initial_file_summaries=[
                     ExtractionFileSummary(
                         file_path="dataset_description.txt",
-                        rank=1,
                         data_format="plain text",
                     )
                 ],
@@ -250,7 +249,6 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
                 records=[
                     InitialFileSummaryDiagnosticRecord(
                         file_path="metadata.txt",
-                        rank=1,
                         reason="unsupported_explicit_purpose",
                         message="Purpose was cleared.",
                         details={"explicit_purpose": "Dataset title"},

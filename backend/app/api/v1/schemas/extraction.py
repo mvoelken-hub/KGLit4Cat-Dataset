@@ -54,7 +54,7 @@ class ExtractionProgressResponse(BaseModel):
 class InitialContextRunRequest(BaseModel):
     force_rerun: bool = Field(
         default=False,
-        description="Clear previous extraction outputs and regenerate ranked file summaries and run overview.",
+        description="Clear previous extraction outputs and regenerate file summaries, ranking, and run overview.",
     )
 
 

@@ -3,6 +3,7 @@ from app.domain.extraction.file_ranking import (
     FileRankingResult,
     RankedFile,
     fallback_file_ranking,
+    rank_summarized_files,
     build_file_ranking_prompt,
     FILE_RANKING_SYSTEM_PROMPT,
 )
@@ -165,6 +166,7 @@ __all__ = [
     "FileRankingResult",
     "RankedFile",
     "fallback_file_ranking",
+    "rank_summarized_files",
     "build_file_ranking_prompt",
     "FILE_RANKING_SYSTEM_PROMPT",
     "AgenticEntity",

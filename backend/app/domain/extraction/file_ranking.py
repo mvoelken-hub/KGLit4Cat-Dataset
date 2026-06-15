@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -13,6 +15,16 @@ class RankedFile(BaseModel):
     """
     rank: int = Field(..., description="1-based rank of the file, with 1 being the most relevant.", ge=1)
     file_path: str = Field(..., description="Path to the file within the data package.")
+    score: float | None = Field(
+        default=None,
+        description="Deterministic usefulness score for metadata extraction priority.",
+        ge=0.0,
+        le=1.0,
+    )
+    reasons: list[str] = Field(
+        default_factory=list,
+        description="Short deterministic reasons explaining the rank.",
+    )
 
 
 class FileRankingResult(BaseModel):
@@ -64,11 +76,40 @@ def fallback_file_ranking(
     files: list[FileContext],
 ) -> FileRankingResult:
     scored_files = [(file, _fallback_score(file)) for file in files]
-    scored_files.sort(key=lambda x: x[1], reverse=True)
+    scored_files.sort(key=lambda x: (-x[1], x[0].file_path))
     return FileRankingResult(
         files=[
-            RankedFile(rank=i + 1, file_path=file.file_path)
+            RankedFile(
+                rank=i + 1,
+                file_path=file.file_path,
+                score=score,
+                reasons=_fallback_reasons(file),
+            )
             for i, (file, score) in enumerate(scored_files)
+        ]
+    )
+
+
+def rank_summarized_files(
+    summaries: list[Any],
+    *,
+    file_contexts: dict[str, FileContext] | None = None,
+) -> FileRankingResult:
+    scored = [
+        (summary, *_summary_score(summary, file_contexts.get(summary.file_path) if file_contexts else None))
+        for summary in summaries
+        if getattr(summary, "status", None) == "summarized"
+    ]
+    scored.sort(key=lambda item: (-item[1], getattr(item[0], "file_path", "")))
+    return FileRankingResult(
+        files=[
+            RankedFile(
+                rank=index + 1,
+                file_path=summary.file_path,
+                score=score,
+                reasons=reasons,
+            )
+            for index, (summary, score, reasons) in enumerate(scored)
         ]
     )
 
@@ -91,6 +132,104 @@ def _fallback_score(file: FileContext) -> float:
         score -= 0.1
 
     return round(max(0.0, min(1.0, score)), 2)
+
+
+def _summary_score(summary: Any, file: FileContext | None) -> tuple[float, list[str]]:
+    values = _summary_values(summary)
+    text = " ".join(values).lower()
+    score = 0.08
+    reasons: list[str] = []
+
+    if _contains_any(text, ("dataset description", "package description", "readme", "metadata", "manifest")):
+        score += 0.38
+        reasons.append("explicit dataset/package documentation")
+    if _contains_any(text, ("method", "protocol", "pulse program", "pulse sequence", "program logic")):
+        score += 0.28
+        reasons.append("method or protocol orientation")
+    if _contains_any(text, ("acquisition", "measurement settings", "experiment parameters")):
+        score += 0.26
+        reasons.append("acquisition settings")
+    if _contains_any(text, ("processing", "processed", "post-processing", "process parameters")):
+        score += 0.22
+        reasons.append("processing settings")
+    if _contains_any(text, ("instrument", "software", "spectrometer", "device", "calibration", "reference")):
+        score += 0.2
+        reasons.append("instrument/software/settings terms")
+    if _contains_any(text, ("sample", "specimen", "material", "condition", "solvent")):
+        score += 0.16
+        reasons.append("sample or condition context")
+    if _contains_any(text, ("audit", "provenance", "history", "log")):
+        score += 0.1
+        reasons.append("audit/provenance context")
+
+    metadata_count = len(getattr(summary, "metadata_signals", []) or [])
+    instrument_count = len(getattr(summary, "instrument_or_software_terms_and_settings", []) or [])
+    quantitative_count = len(getattr(summary, "quantitative_signals", []) or [])
+    if metadata_count:
+        score += min(0.12, metadata_count * 0.025)
+        reasons.append("metadata signals")
+    if instrument_count:
+        score += min(0.12, instrument_count * 0.03)
+    if quantitative_count and (metadata_count or instrument_count):
+        score += min(0.06, quantitative_count * 0.01)
+        reasons.append("quantitative orientation")
+    if quantitative_count > 8 and metadata_count <= 2 and instrument_count <= 2:
+        score -= 0.18
+        reasons.append("mostly low-context quantitative values")
+    if not any(values):
+        score -= 0.12
+        reasons.append("empty or low-signal summary")
+
+    if file is not None:
+        path_score = _fallback_score(file)
+        score += (path_score - 0.2) * 0.25
+        for reason in _fallback_reasons(file):
+            if reason not in reasons:
+                reasons.append(reason)
+
+    score = round(max(0.0, min(1.0, score)), 3)
+    if not reasons:
+        reasons.append("stable fallback ordering")
+    return score, reasons[:6]
+
+
+def _summary_values(summary: Any) -> list[str]:
+    values = [
+        getattr(summary, "file_path", ""),
+        getattr(summary, "data_format", ""),
+        getattr(summary, "explicit_purpose", ""),
+    ]
+    for field in (
+        "purpose_evidence",
+        "metadata_signals",
+        "instrument_or_software_terms_and_settings",
+        "quantitative_signals",
+    ):
+        values.extend(str(value) for value in (getattr(summary, field, []) or []))
+    return [value for value in values if value]
+
+
+def _contains_any(text: str, needles: tuple[str, ...]) -> bool:
+    return any(needle in text for needle in needles)
+
+
+def _fallback_reasons(file: FileContext) -> list[str]:
+    text = f"{file.file_path}".lower()
+    extension = _file_extension(file).lower()
+    reasons: list[str] = []
+    if any(marker in text for marker in ("readme", "metadata", "manifest", "method", "protocol")):
+        reasons.append("metadata-oriented path")
+    if any(marker in text for marker in ("sample", "instrument", "experiment", "report", "summary")):
+        reasons.append("context-oriented path")
+    if extension in {".md", ".txt", ".csv", ".tsv", ".json", ".yaml", ".yml", ".xml", ".xlsx", ".xls", ".pdf"}:
+        reasons.append("text-like extension")
+    if extension in {".ipynb", ".py", ".r", ".m"}:
+        reasons.append("script/notebook extension")
+    if extension in {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".zip", ".gz", ".raw", ".h5", ".hdf5", ".npy"}:
+        reasons.append("low-context or opaque extension")
+    if file.byte_size is not None and file.byte_size > 100_000:
+        reasons.append("large file penalty")
+    return reasons or ["path/extension fallback"]
 
 def _file_extension(file: FileContext) -> str:
     return "." + file.file_path.rsplit(".", 1)[-1] if "." in file.file_path else ""

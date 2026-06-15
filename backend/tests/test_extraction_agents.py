@@ -1,4 +1,4 @@
-import re
+﻿import re
 import unittest
 
 from jsonschema import Draft202012Validator
@@ -460,7 +460,6 @@ classes:
         )
         summary = ExtractionFileSummary(
             file_path="metadata.txt",
-            rank=2,
             status="summarized",
             data_format="text",
             metadata_signals=[
@@ -1081,7 +1080,6 @@ classes:
         )
         file_summary = ExtractionFileSummary(
             file_path="same-file.dx",
-            rank=1,
             data_format="JCAMP-DX-like spectroscopy export",
             instrument_or_software_terms_and_settings=["PULPROG"],
             quantitative_signals=["PLW1 is a visible pulse power label"],
