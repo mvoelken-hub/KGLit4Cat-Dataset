@@ -501,25 +501,19 @@ Each model call receives:
 
 The prompt builder serializes this as chunk metadata plus residual chunk content. 
 
-### 9.3 Structured output
+### 9.3 Candidate extraction and routed evidence
 
-The model is called through `generate_structured()` with output type `ExtractionContext`.  The `ExtractionContext` consists of traced extraction objects. 
+The chunk model is called through `generate_structured()` with output type `EvidenceContext`. This first call is intentionally high-recall: it extracts grounded evidence candidates and does not decide which candidates are valuable enough for profile projection.
 
-The main intermediate object types are:
+Each candidate contains a molecular claim, copied evidence text, a descriptive category, scope, explicitness, and uncertainty. The workflow then validates the copied evidence text against the current chunk, calls an independent domain-agnostic evidence critic, and routes candidates into a `RoutedEvidenceContext`:
 
-| Object type              | Meaning                                                                      |
-| ------------------------ | ---------------------------------------------------------------------------- |
-| `DataGeneratingActivity` | measurement, acquisition, analysis, processing, or other data-generating run |
-| `Method`                 | protocol, procedure, acquisition method, processing method                   |
-| `EvaluatedEntity`        | sample, material, catalyst, specimen, or evaluated target                    |
-| `AgenticEntity`          | person, organization, instrument, or software system                         |
-| `Resource`               | file, dataset, spectrum, report, peak table, data artifact                   |
-| `QuantitativeAttribute`  | measured/calculated/selected quantity with value, unit, quantity kind        |
-| `QualitativeAttribute`   | label, mode, setting, or observed characteristic                             |
+| Route                 | Meaning                                                                 |
+| --------------------- | ----------------------------------------------------------------------- |
+| `portable_evidence`   | grounded, self-contained, scoped, interpretable, portable candidates    |
+| `contextual_evidence` | grounded but ambiguous, technical, local, or insufficiently portable    |
+| `rejected_evidence`   | unsupported, malformed, duplicate, or non-semantic payload candidates   |
 
-The model definitions for quantitative and qualitative attributes are defined in the extraction context domain.  The main extraction object classes carry quantitative and qualitative attributes. 
-
-Each extracted object is wrapped in a `TracedExtractionObject`, which stores object type, extracted object, and the exact source-text substring from the chunk. 
+The critic uses generic dimensions such as groundedness, self-containedness, scope clarity, portability, semantic interpretability, environment dependence, specificity, novelty, and uncertainty. It does not encode domain-specific keys, instruments, file formats, vendors, or scientific concepts.
 
 ---
 
@@ -527,7 +521,7 @@ Each extracted object is wrapped in a `TracedExtractionObject`, which stores obj
 
 If a chunk extraction fails because the structured model output cannot be parsed or validated, SIMONE can queue the failed response for repair. In the first extraction pass, a `MaxRetriesExceeded` exception marks the chunk as failed but repairable if a failed response exists. 
 
-After the first pass, queued chunk repairs are processed with `repair_structured_output()`, again targeting `ExtractionContext`. 
+After the first pass, queued chunk repairs are processed with `repair_structured_output()`, again targeting candidate evidence output before validation, criticism, and routing. 
 
 This gives the workflow a two-stage extraction strategy:
 
@@ -549,15 +543,13 @@ After each successful chunk extraction, the workflow:
 
 1. records token usage,
 2. marks the chunk as completed,
-3. stores the `ExtractionContext`,
-4. schedules vocabulary candidate discovery,
-5. merges completed chunk contexts,
-6. saves interim extraction context,
+3. stores the routed chunk evidence context,
+4. merges completed routed contexts,
+5. saves interim routed evidence context,
+6. updates the routed evidence artifacts,
 7. updates progress.
 
-This is visible in the extraction loop. 
-
-Merged context is produced by concatenating and deduplicating extraction contexts. 
+This is visible in the extraction loop. Merged context is produced by concatenating and deduplicating routed evidence contexts. Profile projection consumes `portable_evidence` by default; contextual evidence remains available for inspection and later target-aware recovery.
 
 The workflow also uses previous completed chunk context as optional prompt context for later chunks of the same file. If the accumulated context would become too large, it is capped according to token/context thresholds.  
 

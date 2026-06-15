@@ -217,7 +217,11 @@ function extractionContextHasStructuredItems(context?: Record<string, unknown> |
 }
 
 function evidenceContextNotes(context?: Record<string, unknown> | null) {
-  return asRecordArray(context?.notes);
+  return asRecordArray(context?.portable_evidence);
+}
+
+function evidenceContextRouteCount(context: Record<string, unknown> | null | undefined, key: string): number {
+  return asRecordArray(context?.[key]).length;
 }
 
 function evidenceContextHasNotes(context?: Record<string, unknown> | null): boolean {
@@ -258,11 +262,17 @@ function extractionContextTraceLabel(trace: { objectKind: string; object: Record
 
 function EvidenceContextResultView({ context }: { context?: Record<string, unknown> | null }) {
   if (!context) return <p className="muted">No extraction result is available for this chunk yet.</p>;
+  const portableCount = evidenceContextRouteCount(context, 'portable_evidence');
+  const contextualCount = evidenceContextRouteCount(context, 'contextual_evidence');
+  const rejectedCount = evidenceContextRouteCount(context, 'rejected_evidence');
   return (
     <div className="extraction-context-results">
       {!evidenceContextHasNotes(context) && (
-        <p className="muted">The model call completed, but this chunk did not yield validated evidence notes.</p>
+        <p className="muted">The model call completed, but this chunk did not yield portable evidence.</p>
       )}
+      <p className="muted">
+        Portable {portableCount} · Contextual {contextualCount} · Rejected {rejectedCount}
+      </p>
       <JsonDetails title="Evidence context JSON" value={context} />
     </div>
   );

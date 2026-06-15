@@ -8,6 +8,8 @@ from app.domain.datasources import ContentChunk, DataPackage, FileEntry
 from app.domain.extraction import (
     ChunkingRequiredError,
     DefinedTerm,
+    EvidenceAssessment,
+    EvidenceAssessmentContext,
     EvidenceContext,
     EvidenceNote,
     ExtractionChunkResult,
@@ -397,6 +399,46 @@ def evidence_context(
                 signal_level="high",
                 file_path=file_path,
             )
+        ]
+    )
+
+
+def portable_assessments_for(context: EvidenceContext) -> EvidenceAssessmentContext:
+    return EvidenceAssessmentContext(
+        assessments=[
+            EvidenceAssessment(
+                candidate_id=candidate.candidate_id,
+                groundedness="yes",
+                self_containedness="yes",
+                scope_clarity="yes",
+                portability="yes",
+                semantic_interpretability="yes",
+                environment_dependence="low",
+                specificity="yes",
+                novelty="yes",
+                uncertainty="low",
+            )
+            for candidate in context.candidates
+        ]
+    )
+
+
+def portable_assessment_context(*candidate_ids: str) -> EvidenceAssessmentContext:
+    return EvidenceAssessmentContext(
+        assessments=[
+            EvidenceAssessment(
+                candidate_id=candidate_id,
+                groundedness="yes",
+                self_containedness="yes",
+                scope_clarity="yes",
+                portability="yes",
+                semantic_interpretability="yes",
+                environment_dependence="low",
+                specificity="yes",
+                novelty="yes",
+                uncertainty="low",
+            )
+            for candidate_id in candidate_ids
         ]
     )
 
@@ -1078,7 +1120,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 ),
                 ExtractionFileSummary(
                     file_path="method/program.txt",
-                    instrument_or_software_terms_and_settings=["pulse sequence"],
+                    instrument_or_software_terms_and_settings=["protocol"],
                 ),
                 ExtractionFileSummary(
                     file_path="settings/acquisition.txt",
@@ -2113,10 +2155,15 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         async def fake_generate(*_args, **_kwargs):
             if _kwargs["output_type"] is EvidenceContext:
                 return outputs.pop(0)
+            if _kwargs["output_type"] is EvidenceAssessmentContext:
+                return CompletionResult(
+                    output=portable_assessment_context("alpha-resource", "beta-spectrum"),
+                    usage=RunUsage(requests=1, input_tokens=10, output_tokens=4),
+                )
             if _kwargs["output_type"] is ProfileTargetDecision:
                 return target_decision("/description")
             if _kwargs["output_type"] is ProfileTargetWriteDocument:
-                return target_write("NMR spectrum file.")
+                return target_write("measurement file.")
             return CompletionResult(
                 output={"id": "dataset"},
                 usage=RunUsage(requests=1, input_tokens=30, output_tokens=8),
@@ -2145,6 +2192,11 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         seen_components: dict[str, list[str]] = {}
 
         async def fake_generate(*_args, **kwargs):
+            if kwargs["output_type"] is EvidenceAssessmentContext:
+                return CompletionResult(
+                    output=portable_assessment_context("context-only"),
+                    usage=RunUsage(requests=1),
+                )
             self.assertIs(kwargs["output_type"], EvidenceContext)
             seen_components["system"] = [name for name, _ in kwargs["system_components"]]
             seen_components["prompt"] = [name for name, _ in kwargs["prompt_components"]]
@@ -2425,6 +2477,11 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 if isinstance(output, Exception):
                     raise output
                 return output
+            if output_type is EvidenceAssessmentContext:
+                return CompletionResult(
+                    output=portable_assessment_context("resource-one", "resource-two"),
+                    usage=RunUsage(requests=1, input_tokens=10, output_tokens=4),
+                )
             if output_type is ProfilePatchDocument:
                 call_order.append("profile_patch")
                 return empty_profile_patch()
@@ -2509,6 +2566,11 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 if isinstance(output, Exception):
                     raise output
                 return output
+            if output_type is EvidenceAssessmentContext:
+                return CompletionResult(
+                    output=portable_assessment_context("resource-one"),
+                    usage=RunUsage(requests=1),
+                )
             if output_type is ProfilePatchDocument:
                 return empty_profile_patch()
             return CompletionResult(
@@ -2576,6 +2638,11 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 if isinstance(output, Exception):
                     raise output
                 return output
+            if kwargs["output_type"] is EvidenceAssessmentContext:
+                return CompletionResult(
+                    output=portable_assessment_context("resource-one", "resource-two"),
+                    usage=RunUsage(requests=1),
+                )
             return CompletionResult(output={"id": "dataset"}, usage=RunUsage(requests=1))
 
         async def fake_repair(*_args, **_kwargs):
@@ -2664,6 +2731,11 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     ),
                     usage=RunUsage(requests=1, input_tokens=20, output_tokens=5),
                 )
+            if kwargs["output_type"] is EvidenceAssessmentContext:
+                return CompletionResult(
+                    output=portable_assessment_context("resource-one"),
+                    usage=RunUsage(requests=1),
+                )
             return CompletionResult(output={"id": "dataset"}, usage=RunUsage(requests=1))
 
         with (
@@ -2682,7 +2754,8 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(status, TaskStatus.RUNNING)
             await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
 
-        tokenizer_loader.assert_called_once_with("example/tokenizer", hf_token="")
+        self.assertEqual(tokenizer_loader.call_count, 2)
+        tokenizer_loader.assert_any_call("example/tokenizer", hf_token="")
         self.assertEqual(len(captured_system_prompts), 1)
         self.assertIn("[orientation truncated]", captured_system_prompts[0])
         self.assertFalse(
@@ -2725,6 +2798,11 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 if isinstance(output, Exception):
                     raise output
                 return output
+            if kwargs["output_type"] is EvidenceAssessmentContext:
+                return CompletionResult(
+                    output=portable_assessment_context("resource-two"),
+                    usage=RunUsage(requests=1),
+                )
             return CompletionResult(output={"id": "dataset"}, usage=RunUsage(requests=1))
 
         async def fake_repair(*_args, **_kwargs):
@@ -2797,7 +2875,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         )
         outputs = [
             CompletionResult(
-                output=evidence_context("resumed-chunk", "NMR spectrum details.", "sample two"),
+                output=evidence_context("resumed-chunk", "Measurement details.", "sample two"),
                 usage=RunUsage(requests=1, input_tokens=30, output_tokens=8),
             ),
         ]
@@ -2805,6 +2883,11 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         async def fake_generate(*_args, **_kwargs):
             if _kwargs["output_type"] is EvidenceContext:
                 return outputs.pop(0)
+            if _kwargs["output_type"] is EvidenceAssessmentContext:
+                return CompletionResult(
+                    output=portable_assessment_context("resumed-chunk"),
+                    usage=RunUsage(requests=1),
+                )
             if _kwargs["output_type"] is ProfilePatchDocument:
                 return empty_profile_patch()
             return CompletionResult(output={"id": "dataset"}, usage=RunUsage(requests=1))

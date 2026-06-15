@@ -234,15 +234,15 @@ def score_schema_branch(branch: SchemaBranch, query: SchemaSearchQuery) -> int:
 def _semantic_hints_from_text(text: str) -> list[str]:
     normalized = _normalize(text)
     hints: set[str] = set()
-    if any(term in normalized for term in ("dataset name", "dataset title", "spectrum title")):
+    if any(term in normalized for term in ("dataset name", "dataset title", "study title", "package title")):
         hints.add("dataset_identity")
-    if any(term in normalized for term in ("instrument", "device", "spectrometer", "probehead", "bruker avance")):
+    if any(term in normalized for term in ("instrument", "device", "equipment", "sensor", "apparatus")):
         hints.add("device")
-    if any(term in normalized for term in ("jcamp", ".jdx", ".dx", "file format", "format is")):
+    if any(term in normalized for term in ("file format", "format is", "media type", "distribution")):
         hints.add("file_format")
-    if re.search(r"\b(pulse sequence|pulse program|pulprog|method|acquisition)\b", normalized):
+    if re.search(r"\b(method|procedure|workflow|protocol|acquisition|generation)\b", normalized):
         hints.add("method")
-    if any(term in normalized for term in ("sample", "solvent", "nucleus", "observe nucleus", "cdcl3", "chloroform-d")):
+    if any(term in normalized for term in ("sample", "specimen", "material", "subject", "target entity")):
         hints.add("measured_entity")
     if any(term in normalized for term in ("identifier", "checksum", " id ")):
         hints.add("identifier")

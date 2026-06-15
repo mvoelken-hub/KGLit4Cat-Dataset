@@ -237,26 +237,25 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
             ledger = FilteredEvidenceLedger(
                 filtered_notes=[
                     FilteredEvidenceNote(
-                        reason="signal_level_filtered",
+                        reason="candidate_rejected",
                         note=EvidenceNote(
                             note_id="low",
                             category="method_signal",
                             observation="Low-level parameter.",
                             evidence_text="parameter",
-                            signal_level="low",
                         ),
                         file_path="acqu",
                         chunk_index=3,
                     )
                 ],
-                summary={"signal_level_filtered": 1},
+                summary={"candidate_rejected": 1},
             )
 
             repo.save_filtered_evidence_notes(workflow_id=workflow_id, ledger=ledger)
 
             loaded = repo.load_filtered_evidence_notes(workflow_id)
-            self.assertEqual(loaded.summary, {"signal_level_filtered": 1})
-            self.assertEqual(loaded.filtered_notes[0].note.signal_level, "low")
+            self.assertEqual(loaded.summary, {"candidate_rejected": 1})
+            self.assertEqual(loaded.filtered_notes[0].note.candidate_id, "low")
 
             repo.clear_extraction_downstream(workflow_id)
 

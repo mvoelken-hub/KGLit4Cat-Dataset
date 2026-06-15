@@ -8,7 +8,6 @@ from app.domain.extraction import (
     InitialFileSummaryStatus,
     ExtractionOverview,
     ExtractionOverviewStatus,
-    EvidenceContext,
     FilteredEvidenceLedger,
     ExtractionRunResult,
     ExtractionRunState,
@@ -16,6 +15,7 @@ from app.domain.extraction import (
     InitialOverviewFailureDiagnostic,
     InitialOverviewPromptDiagnostic,
     ProjectionLedgerRecord,
+    RoutedEvidenceContext,
 )
 
 
@@ -24,11 +24,11 @@ class ExtractionOutputRepository(Protocol):
         self,
         *,
         workflow_id: str,
-        evidence_context: EvidenceContext,
+        evidence_context: RoutedEvidenceContext,
     ) -> None:
         ...
 
-    def load_evidence_context(self, workflow_id: str) -> EvidenceContext:
+    def load_evidence_context(self, workflow_id: str) -> RoutedEvidenceContext:
         ...
 
     def save_filtered_evidence_notes(

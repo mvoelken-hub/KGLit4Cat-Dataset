@@ -5,7 +5,11 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from app.core.task_registry import TaskStatus
-from app.domain.extraction.evidence_context import EvidenceContext, FilteredEvidenceNote
+from app.domain.extraction.evidence_context import (
+    EvidenceCriticGranularity,
+    FilteredEvidenceNote,
+    RoutedEvidenceContext,
+)
 from app.domain.extraction.vocabulary import ExtractionNormalization
 from app.domain.extraction.file_ranking import RankedFile
 from app.domain.extraction.overview import (
@@ -80,7 +84,7 @@ class ExtractionVocabQueryRecord(BaseModel):
 
 class ExtractionChunkResult(ExtractionChunkRef):
     status: str = Field("pending", pattern="^(pending|running|repair_pending|completed|failed|skipped)$")
-    evidence_context: EvidenceContext | None = None
+    evidence_context: RoutedEvidenceContext | None = None
     skip_reason: str | None = None
     error: str | None = None
     response_duration_ms: float | None = None
@@ -169,6 +173,7 @@ class CurationLedgerRecord(BaseModel):
 class ExtractionRunState(BaseModel):
     profile_identifier: str | None = None
     chunk_repair_mode: ChunkRepairMode = "deferred"
+    evidence_critic_granularity: EvidenceCriticGranularity = "per_chunk"
     vocab_query_config: ExtractionVocabQueryConfig = Field(default_factory=ExtractionVocabQueryConfig)
     chat_model: str | None = None
     ranked_files: list[RankedFile] = Field(default_factory=list)
@@ -197,11 +202,12 @@ class ExtractionRunState(BaseModel):
 class ExtractionRunProgress(BaseModel):
     stage: str = "pending"
     chunk_repair_mode: ChunkRepairMode = "deferred"
+    evidence_critic_granularity: EvidenceCriticGranularity = "per_chunk"
     processed_chunks: int = 0
     total_chunks: int = 0
     normalized_quantities: int = 0
     normalized_qualitative_attributes: int = 0
-    interim_evidence_context: EvidenceContext | None = None
+    interim_evidence_context: RoutedEvidenceContext | None = None
     vocab_query_config: ExtractionVocabQueryConfig = Field(default_factory=ExtractionVocabQueryConfig)
     ranked_files: list[RankedFile] = Field(default_factory=list)
     initial_file_summaries: list[ExtractionFileSummary] = Field(default_factory=list)
@@ -246,7 +252,7 @@ class CompleteWorkflowProgress(BaseModel):
 
 class ExtractionRunResult(BaseModel):
     generated_final_draft: dict[str, Any]
-    machine_evidence_context: EvidenceContext
+    machine_evidence_context: RoutedEvidenceContext
     initial_file_summaries: list[ExtractionFileSummary] = Field(default_factory=list)
     initial_file_summary_status: InitialFileSummaryStatus | None = None
     initial_extraction_overview: ExtractionOverview | None = None

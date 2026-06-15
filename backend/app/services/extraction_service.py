@@ -18,6 +18,7 @@ from app.domain.datasources import ContentChunk, FileType
 from app.domain.extraction import (
     DEFAULT_QUALITATIVE_VOCAB_IDENTIFIERS,
     EVIDENCE_CONTEXT_SYSTEM_PROMPT,
+    EVIDENCE_CRITIC_SYSTEM_PROMPT,
     EXTRACTION_FILE_SUMMARY_SYSTEM_PROMPT,
     EXTRACTION_OVERVIEW_FALLBACK_SYSTEM_PROMPT,
     EXTRACTION_OVERVIEW_SYSTEM_PROMPT,
@@ -37,12 +38,17 @@ from app.domain.extraction import (
     DefinedTerm,
     DraftValidationResult,
     ChunkRepairMode,
+    EvidenceAssessment,
+    EvidenceAssessmentContext,
+    EvidenceCandidate,
+    EvidenceCriticGranularity,
     EvidenceChunkContext,
     EvidenceChunkMetadata,
     EvidenceContext,
     EvidenceNote,
     FilteredEvidenceNote,
     FileInventoryItem,
+    RoutedEvidenceContext,
     ExtractionChunkRef,
     ExtractionChunkResult,
     ExtractionContext,
@@ -89,6 +95,7 @@ from app.domain.extraction import (
     VocabularyCandidateSelection,
     VocabularyFallbackQuery,
     VocabularyTermMapping,
+    build_evidence_critic_prompt_components,
     build_evidence_context_prompt,
     build_evidence_context_prompt_components,
     build_evidence_system_prompt_components_with_overview,
@@ -102,7 +109,6 @@ from app.domain.extraction import (
     build_extraction_overview_prompt,
     compact_seeded_overview_for_prompt,
     filtered_evidence_ledger,
-    filter_evidence_context_by_signal_level,
     is_noisy_payload_chunk,
     build_fallback_query_prompt,
     build_fallback_query_prompt_components,
@@ -125,9 +131,10 @@ from app.domain.extraction import (
     rank_summarized_files,
     merge_evidence_contexts,
     normalize_chunk_text_for_evidence_prompt,
+    route_evidence_candidates,
     schema_branches_to_catalog,
     search_schema_branches,
-    validate_evidence_context_for_chunk,
+    validate_evidence_candidates,
 )
 from app.domain.profiles import (
     ProfileValidationIssue,
@@ -256,11 +263,11 @@ INITIAL_OVERVIEW_GROUP_RULES = (
         summary="Executable or declarative method/program logic for the experiment.",
         relation="configures",
         keywords=(
-            "pulse program",
-            "pulse sequence",
             "method program",
             "experiment program",
             "method logic",
+            "protocol",
+            "workflow",
         ),
     ),
     _InitialOverviewGroupRule(
@@ -388,6 +395,7 @@ class ExtractionService:
         resume: bool = False,
         target_stage: ExtractionTargetStage = "complete",
         chunk_repair_mode: ChunkRepairMode = "deferred",
+        evidence_critic_granularity: EvidenceCriticGranularity = "per_chunk",
     ) -> tuple[ExtractionRunResult | None, TaskStatus]:
         self._require_runtime_dependencies()
         assert self.datasource_service is not None
@@ -431,6 +439,7 @@ class ExtractionService:
                 resume=resume,
                 target_stage=target_stage,
                 chunk_repair_mode=chunk_repair_mode,
+                evidence_critic_granularity=evidence_critic_granularity,
             ),
             type=TaskType.WORKFLOW,
             name=task_name,
@@ -1340,6 +1349,7 @@ class ExtractionService:
         resume: bool = False,
         target_stage: ExtractionTargetStage = "complete",
         chunk_repair_mode: ChunkRepairMode = "deferred",
+        evidence_critic_granularity: EvidenceCriticGranularity = "per_chunk",
     ) -> ExtractionRunResult | None:
         self._require_runtime_dependencies()
         assert self.datasource_service is not None
@@ -1369,6 +1379,7 @@ class ExtractionService:
         progress = ExtractionRunProgress(
             stage="file_ranking",
             chunk_repair_mode=chunk_repair_mode,
+            evidence_critic_granularity=evidence_critic_granularity,
             total_chunks=sum(len(chunks) for chunks in chunks_by_file),
             ranked_files=persisted_state.ranked_files if persisted_state else [],
             initial_file_summaries=(
@@ -1445,10 +1456,12 @@ class ExtractionService:
             profile_identifier=profile_identifier,
             vocab_query_config=progress.vocab_query_config,
             chunk_repair_mode=chunk_repair_mode,
+            evidence_critic_granularity=evidence_critic_granularity,
         )
         self._save_run_state(data_package_id, state)
 
         progress.chunk_repair_mode = state.chunk_repair_mode
+        progress.evidence_critic_granularity = state.evidence_critic_granularity
         progress.ranked_files = state.ranked_files
         progress.initial_file_summaries = state.initial_file_summaries
         progress.initial_file_summary_status = state.initial_file_summary_status
@@ -1506,7 +1519,7 @@ class ExtractionService:
                     chunk_result.status = "skipped"
                     chunk_result.error = None
                     chunk_result.skip_reason = "encoded_or_payload_dominated_chunk"
-                    chunk_result.evidence_context = EvidenceContext()
+                    chunk_result.evidence_context = RoutedEvidenceContext()
                     progress.processed_chunks = self._completed_chunk_count(state)
                     progress.current_chunk = None
                     progress.chunk_results = state.chunk_results
@@ -1675,11 +1688,14 @@ class ExtractionService:
                     result=result,
                     agent_name="chunk_extraction",
                 )
-                validated_context = self._validate_and_filter_evidence_context_for_chunk(
+                validated_context = await self._validate_assess_and_route_evidence_context_for_chunk(
                     result.output,
                     chunk_content=normalized_chunk_content,
+                    chunk_context=evidence_chunk_context,
                     chunk_result=chunk_result,
                     state=state,
+                    critic_granularity=evidence_critic_granularity,
+                    data_package_id=data_package_id,
                 )
                 chunk_result.status = "completed"
                 chunk_result.evidence_context = validated_context
@@ -4309,12 +4325,9 @@ class ExtractionService:
 
     @staticmethod
     def _evidence_quality_summary(notes: list[EvidenceNote]) -> dict[str, Any]:
-        signal_level: dict[str, int] = {"high": 0, "medium": 0, "low": 0}
-        for note in notes:
-            signal_level[note.signal_level] = signal_level.get(note.signal_level, 0) + 1
         return {
             "note_count": len(notes),
-            "signal_level": signal_level,
+            "routes": {"portable_evidence": len(notes)},
         }
 
     @classmethod
@@ -4325,7 +4338,7 @@ class ExtractionService:
         max_group_size: int = 6,
     ) -> list[_EvidenceProjectionGroup]:
         buckets: dict[tuple[str, str, str, str], list[EvidenceNote]] = {}
-        for note in evidence_context.notes:
+        for note in evidence_context.portable_evidence:
             if not cls._note_has_curatable_profile_signal(note):
                 continue
             target_hint, target_class_hint = cls._target_hint_for_evidence_note(note)
@@ -4366,11 +4379,11 @@ class ExtractionService:
             return "/creator/0", "Agent"
         if note.category in {"entity_signal", "measurement_signal"}:
             return "/is_about_entity/0", "EvaluatedEntity"
-        if any(term in text for term in ("format", "jcamp", "file", "distribution", "download", "access")):
+        if any(term in text for term in ("format", "file", "distribution", "download", "access")):
             return "/dataset_distribution/0", "Distribution"
-        if note.category == "method_signal" or any(term in text for term in ("pulse", "method", "experiment", "acquisition")):
+        if note.category == "method_signal" or any(term in text for term in ("method", "experiment", "acquisition", "procedure", "workflow")):
             return "/was_generated_by/0", "DataGeneratingActivity"
-        if any(term in text for term in ("dataset name", "title", "spectrum title")):
+        if any(term in text for term in ("dataset name", "title", "name")):
             return "/title", None
         if any(term in text for term in ("date", "timestamp", "modified", "modification")):
             return "/modification_date", None
@@ -4388,9 +4401,9 @@ class ExtractionService:
             for term in (
                 "instrument",
                 "device",
-                "spectrometer",
-                "probehead",
-                "bruker avance",
+                "equipment",
+                "sensor",
+                "apparatus",
             )
         )
 
@@ -5114,7 +5127,7 @@ class ExtractionService:
             return cls._fallback_activity_value(
                 current_value,
                 notes,
-                default_title="NMR data generation activity",
+                default_title="Data generation activity",
             )
         if target_path == "/was_generated_by/0/carried_out_by/-":
             return cls._fallback_agentic_entity_value(notes)
@@ -5122,7 +5135,7 @@ class ExtractionService:
             return cls._fallback_activity_value(
                 current_value,
                 notes,
-                default_title="NMR acquisition activity",
+                default_title="Data acquisition activity",
             )
         if target_path == "/is_about_entity/0":
             return cls._fallback_entity_value(current_value, notes)
@@ -5163,13 +5176,10 @@ class ExtractionService:
         for note in notes:
             text = f"{note.evidence_text}\n{note.observation}"
             match = re.search(
-                r"(?:instrument|spectrometer|probehead)\s*(?:used\s*)?(?:is|:|=)\s*<?([^>\r\n;]+)>?",
+                r"(?:instrument|device|equipment|sensor|apparatus)\s*(?:used\s*)?(?:is|:|=)\s*<?([^>\r\n;]+)>?",
                 text,
                 re.IGNORECASE,
             )
-            if match:
-                return match.group(1).strip()
-            match = re.search(r"\b(Bruker\s+Avance[^\r\n;]*)", text, re.IGNORECASE)
             if match:
                 return match.group(1).strip()
         return None
@@ -5183,11 +5193,6 @@ class ExtractionService:
     ) -> str | None:
         if not notes:
             return "No evidence notes were available for profile projection."
-        if all(cls._is_low_level_parameter_note(note) for note in notes):
-            return (
-                "Evidence contains only low-level instrument configuration; "
-                "leaving it out of the dataset-level DCAT-AP-plus object."
-            )
         if target_path in {"/description", "/keyword"}:
             useful_keywords = cls._profile_keywords_for_notes(notes)
             if not useful_keywords and all(
@@ -5211,11 +5216,8 @@ class ExtractionService:
         names: list[str] = []
         for note in notes:
             key, value = cls._assignment_from_note(note)
-            text = cls._note_search_text(note)
             if key and key.lower() in {"origin", "owner", "author", "creator"} and value:
                 names.append(value)
-            elif "bruker" in text:
-                names.append("Bruker BioSpin GmbH")
         if not names:
             return None
         value = cls._clone_json_object(current_value)
@@ -5234,16 +5236,16 @@ class ExtractionService:
         file_like = any(
             term in cls._note_search_text(note)
             for note in notes
-            for term in ("jcamp", ".jdx", ".dx", "topspin", "zip", "file", "format")
+            for term in ("file", "format", "distribution", "download", "archive")
         )
         if not file_like and not keywords:
             return None
         value = cls._clone_json_object(current_value)
-        title = "Primary NMR data distribution" if "NMR spectroscopy" in keywords or "1H NMR" in keywords else "Primary dataset distribution"
+        title = "Primary dataset distribution"
         value["title"] = cls._merge_unique_strings(value.get("title", []), [title])
         description_parts = cls._profile_observation_sentences(notes, max_count=2)
         if not description_parts:
-            description_parts = ["Dataset files contain NMR data and associated metadata."]
+            description_parts = ["Dataset files contain data and associated metadata."]
         value["description"] = cls._merge_unique_strings(value.get("description", []), description_parts)
         if not isinstance(value.get("access_URL"), list) or not value.get("access_URL"):
             value["access_URL"] = current_value.get("access_URL", [])
@@ -5312,10 +5314,6 @@ class ExtractionService:
         if not isinstance(current_value, dict):
             return None
         labels = cls._profile_keywords_for_notes(notes)
-        if "1H NMR" in labels:
-            labels.insert(0, "1H NMR dataset")
-        elif "NMR spectroscopy" in labels:
-            labels.insert(0, "NMR spectroscopy dataset")
         labels = cls._dedupe_strings(labels)
         if not labels:
             return None
@@ -5326,8 +5324,6 @@ class ExtractionService:
     @classmethod
     def _description_target_worthy(cls, notes: list[EvidenceNote]) -> bool:
         if not notes:
-            return False
-        if all(cls._is_low_level_parameter_note(note) for note in notes):
             return False
         category_set = {note.category for note in notes}
         if category_set <= {"method_signal", "measurement_signal", "resource_signal"}:
@@ -5342,95 +5338,18 @@ class ExtractionService:
     def _evidence_group_has_profile_signal(cls, notes: list[EvidenceNote]) -> bool:
         if not notes:
             return False
-        if not any(note.signal_level == "high" for note in notes):
-            return False
-        return any(not cls._is_low_level_parameter_note(note) for note in notes)
+        return any(bool(note.claim.strip()) for note in notes)
 
     @classmethod
     def _is_low_level_parameter_note(cls, note: EvidenceNote) -> bool:
         text = cls._note_search_text(note)
-        note_id = (note.note_id or "").lower()
-        low_level_keys = {
-            "acb",
-            "aq",
-            "aq_mod",
-            "aqmod",
-            "autopos",
-            "bacdel",
-            "bacsair",
-            "bacscap",
-            "bfreq",
-            "bf1",
-            "bgaeth1",
-            "birds",
-            "bla01eth",
-            "bla01nam",
-            "bla01pn",
-            "bla01sn",
-            "bsms",
-            "bsmseth",
-            "cnst",
-            "comdig2",
-            "decim",
-            "digi140",
-            "dspfirm",
-            "dspfvs",
-            "ds",
-            "dw",
-            "fw",
-            "ns",
-            "nus",
-            "o1",
-            "phcor",
-            "pl",
-            "plstrt",
-            "pqphase",
-            "rg",
-            "ro",
-            "sfo1",
-            "sw",
-            "td",
-            "te",
-            "vtueth",
-            "xfac",
-        }
         key, _value = cls._assignment_from_note(note)
-        high_level_keys = {"solvent", "nuc1", "pulprog", "origin", "owner", "title"}
-        if key and key.lower().strip("$") in high_level_keys:
-            return False
         normalized_key = key.lower().strip("$") if key else ""
-        low_level_prefixes = (
-            "bacs",
-            "bga",
-            "bla",
-            "bsms",
-            "cfa",
-            "cnf",
-            "com",
-            "cpdb",
-            "crc",
-            "csw",
-            "ctb",
-            "digi",
-            "dru",
-            "rxf",
-            "samchg",
-            "sgu",
-            "shim",
-            "tfx",
-            "triplo",
-            "vtu",
-            "wb",
-            "user",
-        )
-        key_is_low = bool(
-            normalized_key
-            and (
-                normalized_key in low_level_keys
-                or normalized_key.startswith(low_level_prefixes)
-            )
-        )
-        if key_is_low or note_id.endswith("_setting") or note_id in low_level_keys:
+        if normalized_key and re.fullmatch(r"[a-z]{1,4}\d{1,4}[a-z0-9_]*", normalized_key):
+            return True
+        if re.search(r"\b[A-Z][A-Z0-9_]{1,16}\s+(?:parameter|setting)\b", note.observation):
+            return True
+        if re.search(r"\bparameter\s+[A-Z][A-Z0-9_]{1,16}\b", note.observation):
             return True
         low_level_observation_terms = (
             "parameter is set",
@@ -5439,30 +5358,12 @@ class ExtractionService:
             "network configuration",
             "ethernet",
             "tcp/ip",
-            "switchbox routing",
-            "shim settings",
-            "digital signal processing configuration",
+            "routing",
+            "checksum",
+            "local path",
         )
         if any(term in text for term in low_level_observation_terms):
             return True
-        high_level_terms = {
-            "solvent",
-            "nuc1",
-            "nucleus",
-            "pulprog",
-            "pulse program",
-            "origin",
-            "owner",
-            "author",
-            "creator",
-            "title",
-            "jcamp",
-            "topspin",
-            "1h",
-            "nmr",
-        }
-        if any(term in text for term in high_level_terms):
-            return False
         return False
 
     @classmethod
@@ -5526,15 +5427,7 @@ class ExtractionService:
             for key in ("value", "description")
         )
         lower = text.lower()
-        return cls._is_low_level_profile_text(text) or any(
-            term in lower
-            for term in (
-                "solvent off setting",
-                "instrument parameter structure",
-                "parameter structure",
-                "name\tinstrum",
-            )
-        )
+        return cls._is_low_level_profile_text(text) or "parameter structure" in lower
 
     @classmethod
     def _curate_profile_target_value(
@@ -5580,29 +5473,17 @@ class ExtractionService:
         normalized = re.sub(r"\s+", " ", text).strip()
         if not normalized or cls._is_low_level_profile_text(normalized):
             return False
-        allowed_exact = {
-            "1h nmr",
-            "nmr spectroscopy",
-            "jcamp-dx",
-            "bruker",
-            "bruker topspin",
-            "bruker avance 500 mhz",
-            "cdcl3",
-            "nmr pulse program",
-            "data analysis",
-        }
         lower = normalized.lower()
-        if lower in allowed_exact:
-            return True
         return any(
             term in lower
             for term in (
-                "nmr",
-                "jcamp",
-                "bruker avance",
-                "spectrum",
-                "spectroscopy",
                 "dataset",
+                "experiment",
+                "method",
+                "sample",
+                "measurement",
+                "analysis",
+                "workflow",
             )
         )
 
@@ -5616,13 +5497,12 @@ class ExtractionService:
             term in lower
             for term in (
                 "dataset",
-                "1h nmr",
-                "nmr",
-                "spectrum",
-                "spectroscopy",
                 "instrument",
                 "sample",
-                "jcamp",
+                "method",
+                "metadata",
+                "measurement",
+                "experiment",
                 "file",
             )
         )
@@ -5639,17 +5519,12 @@ class ExtractionService:
         noisy_terms = (
             "tcp/ip",
             "ethernet",
-            "switchbox",
-            "shim_setting",
-            "shim settings",
             "routing",
             "blanking",
             "configuration settings",
-            "digital signal processing configuration",
-            "powerlevels",
-            "npoints",
             "parameter values",
-            "parameter file from topspin",
+            "parameter file",
+            "local path",
         )
         return any(term in lower for term in noisy_terms)
 
@@ -5692,21 +5567,9 @@ class ExtractionService:
         for note in notes:
             if cls._is_low_level_parameter_note(note):
                 continue
-            text = cls._note_search_text(note)
-            if "1h" in text or "proton" in text:
-                keywords.append("1H NMR")
-            if "nmr" in text:
-                keywords.append("NMR spectroscopy")
-            if "jcamp" in text or ".jdx" in text or ".dx" in text:
-                keywords.append("JCAMP-DX")
-            if "topspin" in text:
-                keywords.append("Bruker TopSpin")
-            if "bruker" in text:
-                keywords.append("Bruker")
-            if "cdcl3" in text or "chloroform-d" in text:
-                keywords.append("CDCl3")
-            if "pulse" in text or "pulprog" in text:
-                keywords.append("NMR pulse program")
+            for term in ("dataset", "experiment", "method", "measurement", "sample", "workflow", "analysis"):
+                if term in cls._note_search_text(note):
+                    keywords.append(term)
         return cls._dedupe_strings(keywords)
 
     @classmethod
@@ -5734,7 +5597,7 @@ class ExtractionService:
     @classmethod
     def _qualitative_attributes_for_notes(cls, notes: list[EvidenceNote]) -> list[dict[str, str]]:
         attributes: list[dict[str, str]] = []
-        allowed_keys = {"solvent", "nuc1", "pulprog", "origin", "owner", "probehead", "instrument"}
+        allowed_keys = {"origin", "owner", "author", "creator", "instrument", "device", "sample", "method"}
         for note in notes:
             key, value = cls._assignment_from_note(note)
             if not key or not value:
@@ -5785,10 +5648,6 @@ class ExtractionService:
             if title:
                 return title
         keywords = cls._profile_keywords_for_notes(notes)
-        if "1H NMR" in keywords:
-            return "1H NMR dataset"
-        if "NMR spectroscopy" in keywords:
-            return "NMR spectroscopy dataset"
         observations = cls._profile_observation_sentences(notes, max_count=1)
         return observations[0] if observations else None
 
@@ -5796,13 +5655,9 @@ class ExtractionService:
     def _note_has_curatable_profile_signal(cls, note: EvidenceNote) -> bool:
         if cls._is_low_level_parameter_note(note):
             return False
-        if note.signal_level != "high":
-            return False
         key, value = cls._assignment_from_note(note)
         normalized_key = key.lower().strip("$") if key else ""
         if normalized_key in {"origin", "owner", "author", "creator"}:
-            return bool(value)
-        if normalized_key in {"solvent", "nuc1", "pulprog"}:
             return bool(value)
         if normalized_key == "title":
             return cls._title_value_from_note(note) is not None
@@ -5811,17 +5666,14 @@ class ExtractionService:
             "dataset name",
             "dataset contains",
             "instrument",
-            "bruker avance",
-            "1h nmr",
-            "nmr spectrum",
-            "nmr spectroscopy",
-            "jcamp",
-            ".jdx",
-            ".dx",
-            "topspin",
-            "pulse program",
-            "solvent",
-            "nucleus",
+            "device",
+            "equipment",
+            "format",
+            "file",
+            "distribution",
+            "method",
+            "measurement",
+            "experiment",
             "sample",
             "modification date",
             "timestamp",
@@ -5834,11 +5686,6 @@ class ExtractionService:
 
     @classmethod
     def _entity_title_for_notes(cls, notes: list[EvidenceNote]) -> str | None:
-        text = " ".join(cls._note_search_text(note) for note in notes)
-        if "1h" in text or "proton" in text:
-            return "1H NMR measurement target"
-        if "cdcl3" in text or "solvent" in text:
-            return "NMR sample environment"
         observations = cls._profile_observation_sentences(notes, max_count=1)
         return observations[0] if observations else None
 
@@ -6943,7 +6790,7 @@ class ExtractionService:
                     )
                 )
 
-        evidence_categories = {note.category for note in evidence_context.notes}
+        evidence_categories = {note.category for note in evidence_context.portable_evidence}
         core_slots = {
             "creator",
             "dataset_distribution",
@@ -7460,14 +7307,14 @@ class ExtractionService:
     @staticmethod
     def _fallback_title(
         data_package_id: str,
-        evidence_context: EvidenceContext,
+        evidence_context: RoutedEvidenceContext,
     ) -> str:
-        for note in evidence_context.notes:
+        for note in evidence_context.portable_evidence:
             title = ExtractionService._title_value_from_note(note)
             if title:
                 return title
         for category in ("entity_signal", "measurement_signal", "method_signal", "resource_signal"):
-            for note in evidence_context.notes:
+            for note in evidence_context.portable_evidence:
                 if (
                     note.category == category
                     and note.observation.strip()
@@ -7561,6 +7408,7 @@ class ExtractionService:
         profile_identifier: str | None,
         vocab_query_config: ExtractionVocabQueryConfig,
         chunk_repair_mode: ChunkRepairMode = "deferred",
+        evidence_critic_granularity: EvidenceCriticGranularity = "per_chunk",
     ) -> ExtractionRunState:
         preserve_initial_context = (
             persisted_state is not None
@@ -7616,6 +7464,7 @@ class ExtractionService:
         return ExtractionRunState(
             profile_identifier=profile_identifier,
             chunk_repair_mode=chunk_repair_mode,
+            evidence_critic_granularity=evidence_critic_granularity,
             chat_model=self.ollama_client.chat_model if self.ollama_client else None,
             vocab_query_config=(
                 persisted_state.vocab_query_config
@@ -7711,7 +7560,7 @@ class ExtractionService:
         state: ExtractionRunState,
         *,
         file_path: str | None = None,
-    ) -> list[EvidenceContext]:
+    ) -> list[RoutedEvidenceContext]:
         return [
             result.evidence_context
             for result in state.chunk_results
@@ -7730,7 +7579,7 @@ class ExtractionService:
         state: ExtractionRunState,
         *,
         file_path: str | None = None,
-    ) -> EvidenceContext:
+    ) -> RoutedEvidenceContext:
         return merge_evidence_contexts(
             cls._completed_chunk_evidence_contexts(state, file_path=file_path)
         )
@@ -7740,7 +7589,7 @@ class ExtractionService:
         state: ExtractionRunState,
         *,
         file_path: str | None = None,
-    ) -> tuple[EvidenceContext, list[FilteredEvidenceNote]]:
+    ) -> tuple[RoutedEvidenceContext, list[FilteredEvidenceNote]]:
         context = self._merged_completed_evidence_context(state, file_path=file_path)
         rank_by_path = {ranked.file_path: ranked.rank for ranked in state.ranked_files}
         return dedupe_repeated_evidence_notes(
@@ -7762,15 +7611,18 @@ class ExtractionService:
             ledger=filtered_evidence_ledger(records),
         )
 
-    def _validate_and_filter_evidence_context_for_chunk(
+    async def _validate_assess_and_route_evidence_context_for_chunk(
         self,
         context: EvidenceContext,
         *,
         chunk_content: str,
+        chunk_context: EvidenceChunkContext,
         chunk_result: ExtractionChunkResult,
         state: ExtractionRunState,
-    ) -> EvidenceContext:
-        validated_context, dropped_notes = validate_evidence_context_for_chunk(
+        critic_granularity: EvidenceCriticGranularity,
+        data_package_id: str,
+    ) -> RoutedEvidenceContext:
+        validated_context, dropped_candidates = validate_evidence_candidates(
             context,
             chunk_content=chunk_content,
             file_path=chunk_result.file_path,
@@ -7780,20 +7632,139 @@ class ExtractionService:
         state.filtered_evidence_notes.extend(
             FilteredEvidenceNote(
                 reason="evidence_text_unsupported",
-                note=dropped,
-                file_path=dropped.file_path,
-                start_idx=dropped.start_idx,
-                end_idx=dropped.end_idx,
+                note=dropped_candidate,
+                file_path=dropped_candidate.file_path,
+                start_idx=dropped_candidate.start_idx,
+                end_idx=dropped_candidate.end_idx,
                 chunk_index=chunk_result.chunk_index,
             )
-            for dropped in dropped_notes
+            for dropped_candidate in dropped_candidates
         )
-        high_signal_context, signal_filtered = filter_evidence_context_by_signal_level(
+        assessments = await self._assess_evidence_candidates(
+            data_package_id=data_package_id,
+            candidates=validated_context.candidates,
+            chunk_context=chunk_context,
+            critic_granularity=critic_granularity,
+            chunk_result=chunk_result,
+        )
+        routed_context = route_evidence_candidates(
             validated_context,
+            assessments=assessments,
+            rejected_candidates=dropped_candidates,
             chunk_index=chunk_result.chunk_index,
         )
-        state.filtered_evidence_notes.extend(signal_filtered)
-        return high_signal_context
+        state.filtered_evidence_notes.extend(
+            FilteredEvidenceNote(
+                reason="candidate_rejected",
+                note=record.candidate,
+                file_path=record.candidate.file_path,
+                start_idx=record.candidate.start_idx,
+                end_idx=record.candidate.end_idx,
+                chunk_index=chunk_result.chunk_index,
+            )
+            for record in routed_context.rejected_evidence
+            if record.reason != "evidence_text_unsupported"
+        )
+        return routed_context
+
+    async def _assess_evidence_candidates(
+        self,
+        *,
+        data_package_id: str,
+        candidates: list[EvidenceCandidate],
+        chunk_context: EvidenceChunkContext,
+        critic_granularity: EvidenceCriticGranularity,
+        chunk_result: ExtractionChunkResult,
+    ) -> list[EvidenceAssessment]:
+        if not candidates:
+            return []
+        if critic_granularity == "disabled":
+            return [
+                EvidenceAssessment(
+                    candidate_id=candidate.candidate_id,
+                    rationale="Evidence critic disabled; routed conservatively.",
+                )
+                for candidate in candidates
+            ]
+        if critic_granularity == "per_candidate":
+            assessments: list[EvidenceAssessment] = []
+            for candidate in candidates:
+                assessments.extend(
+                    await self._run_evidence_critic(
+                        data_package_id=data_package_id,
+                        candidates=[candidate],
+                        chunk_context=chunk_context,
+                        chunk_result=chunk_result,
+                    )
+                )
+            return assessments
+        return await self._run_evidence_critic(
+            data_package_id=data_package_id,
+            candidates=candidates,
+            chunk_context=chunk_context,
+            chunk_result=chunk_result,
+        )
+
+    async def _run_evidence_critic(
+        self,
+        *,
+        data_package_id: str,
+        candidates: list[EvidenceCandidate],
+        chunk_context: EvidenceChunkContext,
+        chunk_result: ExtractionChunkResult,
+    ) -> list[EvidenceAssessment]:
+        assert self.ollama_client is not None
+        prompt_components = build_evidence_critic_prompt_components(
+            candidates=candidates,
+            chunk_context=chunk_context,
+        )
+        try:
+            result = await generate_structured(
+                self.ollama_client,
+                model=self.ollama_client.chat_model,
+                system=EVIDENCE_CRITIC_SYSTEM_PROMPT,
+                prompt="".join(text for _, text in prompt_components),
+                system_components=[("evidence_critic_system_prompt", EVIDENCE_CRITIC_SYSTEM_PROMPT)],
+                prompt_components=prompt_components,
+                token_budgeter=self._prompt_token_budgeter(),
+                operation_id=self._prompt_operation_id(
+                    "evidence_critic",
+                    chunk_result.file_path,
+                    chunk_result.chunk_index,
+                    str(len(candidates)),
+                ),
+                agent_name="evidence_critic",
+                diagnostic_metadata={
+                    "file_path": chunk_result.file_path,
+                    "chunk_index": chunk_result.chunk_index,
+                    "candidate_count": len(candidates),
+                },
+                output_type=EvidenceAssessmentContext,
+                retries=1,
+                temperature=0.1,
+                think=None,
+                num_ctx=self.ollama_client.max_context_length,
+            )
+            self._record_llm_call_result(
+                data_package_id=data_package_id,
+                result=result,
+                agent_name="evidence_critic",
+            )
+            return result.output.assessments
+        except Exception as exc:
+            if isinstance(exc, CompletionError):
+                self._record_llm_call_exception(
+                    data_package_id=data_package_id,
+                    exc=exc,
+                    agent_name="evidence_critic",
+                )
+            return [
+                EvidenceAssessment(
+                    candidate_id=candidate.candidate_id,
+                    rationale=f"Evidence critic failed; routed conservatively: {exc}",
+                )
+                for candidate in candidates
+            ]
 
     async def _repair_chunk_evidence_context(
         self,
@@ -7863,11 +7834,23 @@ class ExtractionService:
             result=repair,
             agent_name="chunk_extraction_repair",
         )
-        validated_context = self._validate_and_filter_evidence_context_for_chunk(
+        repair_chunk_context = EvidenceChunkContext(
+            content=chunk_content,
+            metadata=EvidenceChunkMetadata(
+                start_idx=chunk_result.start_idx,
+                end_idx=chunk_result.end_idx,
+                file_path=chunk_result.file_path,
+                data_package_name=data_package_id,
+            ),
+        )
+        validated_context = await self._validate_assess_and_route_evidence_context_for_chunk(
             repair.output,
             chunk_content=chunk_content,
+            chunk_context=repair_chunk_context,
             chunk_result=chunk_result,
             state=state,
+            critic_granularity=state.evidence_critic_granularity,
+            data_package_id=data_package_id,
         )
         chunk_result.status = "completed"
         chunk_result.evidence_context = validated_context
@@ -7894,8 +7877,8 @@ class ExtractionService:
         *,
         data_package_id: str,
         state: ExtractionRunState,
-        evidence_context: EvidenceContext | None = None,
-    ) -> EvidenceContext:
+        evidence_context: RoutedEvidenceContext | None = None,
+    ) -> RoutedEvidenceContext:
         assert self.output_repository is not None
         if evidence_context is None:
             evidence_context, duplicate_records = self._filtered_completed_evidence_context(state)
@@ -7928,9 +7911,9 @@ class ExtractionService:
         for record in records:
             summary[record.reason] = summary.get(record.reason, 0) + 1
         labels = {
-            "evidence_text_unsupported": "unsupported evidence-text notes",
-            "signal_level_filtered": "medium/low signal notes",
-            "duplicate_evidence": "duplicate evidence notes",
+            "evidence_text_unsupported": "unsupported evidence candidates",
+            "candidate_rejected": "rejected evidence candidates",
+            "duplicate_evidence": "duplicate evidence candidates",
         }
         return [
             "Filtered evidence notes: "
@@ -7945,9 +7928,9 @@ class ExtractionService:
     def _evidence_context_with_file_inventory(
         *,
         data_package: Any,
-        context: EvidenceContext,
+        context: RoutedEvidenceContext,
         state: ExtractionRunState,
-    ) -> EvidenceContext:
+    ) -> RoutedEvidenceContext:
         rank_by_path = {ranked.file_path: ranked.rank for ranked in state.ranked_files}
         summary_by_path = {
             summary.file_path: summary
@@ -7995,7 +7978,7 @@ class ExtractionService:
         state: ExtractionRunState,
         *,
         file_path: str | None = None,
-    ) -> EvidenceContext | None:
+    ) -> RoutedEvidenceContext | None:
         contexts = cls._completed_chunk_evidence_contexts(state, file_path=file_path)
         if not contexts:
             return None
@@ -8018,7 +8001,7 @@ class ExtractionService:
         state: ExtractionRunState,
         *,
         current_chunk_index: int,
-    ) -> EvidenceContext | None:
+    ) -> RoutedEvidenceContext | None:
         contexts = [
             result.evidence_context
             for result in state.chunk_results
@@ -10246,3 +10229,4 @@ def _resource_title(properties: dict[str, Any]) -> str | None:
     return None
 
 
+    RoutedEvidenceContext,

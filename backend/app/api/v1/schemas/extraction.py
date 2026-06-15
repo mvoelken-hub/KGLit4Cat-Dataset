@@ -6,6 +6,7 @@ from app.core.task_registry import TaskStatus
 from app.domain.extraction import (
     ChunkRepairMode,
     CompleteWorkflowProgress,
+    EvidenceCriticGranularity,
     ExtractionRunProgress,
     ExtractionRunResult,
     ExtractionVocabQueryConfig,
@@ -37,6 +38,10 @@ class ExtractionRunRequest(BaseModel):
     chunk_repair_mode: ChunkRepairMode = Field(
         default="deferred",
         description="How to handle repairable chunk structured-output failures.",
+    )
+    evidence_critic_granularity: EvidenceCriticGranularity = Field(
+        default="per_chunk",
+        description="How to batch independent evidence critic assessments.",
     )
 
 

@@ -11,7 +11,6 @@ from typing import Any
 from app.domain.extraction import (
     CurationLedgerRecord,
     DraftValidationResult,
-    EvidenceContext,
     FilteredEvidenceLedger,
     ExtractionFileSummary,
     InitialFileSummaryDiagnostics,
@@ -24,10 +23,15 @@ from app.domain.extraction import (
     InitialOverviewFailureDiagnostic,
     InitialOverviewPromptDiagnostic,
     ProjectionLedgerRecord,
+    RoutedEvidenceContext,
 )
 
 
 EVIDENCE_CONTEXT_FILE = "evidence_context.json"
+PORTABLE_EVIDENCE_FILE = "portable_evidence.json"
+CONTEXTUAL_EVIDENCE_FILE = "contextual_evidence.json"
+REJECTED_EVIDENCE_FILE = "rejected_evidence.json"
+EVIDENCE_ASSESSMENTS_FILE = "evidence_assessments.json"
 FILTERED_EVIDENCE_NOTES_FILE = "filtered_evidence_notes.json"
 EXTRACTION_RESULT_FILE = "extraction_result.json"
 EXTRACTION_RUN_STATE_FILE = "extraction_run_state.json"
@@ -54,20 +58,22 @@ class FileSystemExtractionOutputRepository:
         self,
         *,
         workflow_id: str,
-        evidence_context: EvidenceContext,
+        evidence_context: RoutedEvidenceContext,
     ) -> None:
-        self._write_json_file(
-            self._workflow_dir(workflow_id) / EVIDENCE_CONTEXT_FILE,
-            evidence_context.model_dump(mode="json"),
-        )
+        workflow_dir = self._workflow_dir(workflow_id)
+        self._write_json_file(workflow_dir / EVIDENCE_CONTEXT_FILE, evidence_context.model_dump(mode="json"))
+        self._write_json_file(workflow_dir / PORTABLE_EVIDENCE_FILE, [item.model_dump(mode="json") for item in evidence_context.portable_evidence])
+        self._write_json_file(workflow_dir / CONTEXTUAL_EVIDENCE_FILE, [item.model_dump(mode="json") for item in evidence_context.contextual_evidence])
+        self._write_json_file(workflow_dir / REJECTED_EVIDENCE_FILE, [item.model_dump(mode="json") for item in evidence_context.rejected_evidence])
+        self._write_json_file(workflow_dir / EVIDENCE_ASSESSMENTS_FILE, [item.model_dump(mode="json") for item in evidence_context.assessments])
 
-    def load_evidence_context(self, workflow_id: str) -> EvidenceContext:
+    def load_evidence_context(self, workflow_id: str) -> RoutedEvidenceContext:
         path = self._workflow_dir(workflow_id) / EVIDENCE_CONTEXT_FILE
         if not path.exists():
             raise FileNotFoundError(
                 f"Evidence context output not found for workflow '{workflow_id}'."
             )
-        return EvidenceContext.model_validate(self._read_json_file(path))
+        return RoutedEvidenceContext.model_validate(self._read_json_file(path))
 
     def save_filtered_evidence_notes(
         self,

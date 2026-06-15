@@ -128,6 +128,7 @@ async def run_extraction(
             resume=request.resume,
             target_stage=request.target_stage,
             chunk_repair_mode=request.chunk_repair_mode,
+            evidence_critic_granularity=request.evidence_critic_granularity,
         )
         _, progress = await extraction_service.get_extraction_progress(
             data_package_id=request.data_package_id,

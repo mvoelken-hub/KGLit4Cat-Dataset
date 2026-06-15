@@ -7,6 +7,7 @@ from jsonschema import Draft202012Validator
 from app.domain.extraction import (
     DefinedTerm,
     EvidenceContext,
+    EvidenceAssessment,
     EvidenceChunkContext,
     EvidenceChunkMetadata,
     EvidenceNote,
@@ -31,7 +32,7 @@ from app.domain.extraction import (
     build_schema_search_query,
     dedupe_repeated_evidence_notes,
     evidence_text_match_score,
-    filter_evidence_context_by_signal_level,
+    route_evidence_candidates,
     build_file_ranking_prompt,
     is_noisy_payload_chunk,
     build_object_grounding_selection_prompt,
@@ -286,16 +287,15 @@ classes:
         self.assertEqual(dropped, [])
         self.assertTrue(all(note.evidence_match_score >= 0.9 for note in validated.notes))
 
-    def test_evidence_note_tracks_signal_level_separately_from_match_score(self):
-        chunk = "##$PULPROG= <zg30>\n##$SOLVENT= <CDCl3>"
+    def test_evidence_candidate_tracks_grounding_separately_from_quality(self):
+        chunk = "title: Sample A\nmethod: calibration experiment"
         context = EvidenceContext(
-            notes=[
+            candidates=[
                 EvidenceNote(
-                    note_id="method_group",
+                    candidate_id="method_group",
                     category="method_signal",
-                    observation="Acquisition uses zg30 with CDCl3.",
-                    evidence_text="##$PULPROG= <zg30>\n##$SOLVENT= <CDCl3>",
-                    signal_level="high",
+                    claim="The resource states a calibration experiment method.",
+                    evidence_text="method: calibration experiment",
                 )
             ]
         )
@@ -310,30 +310,28 @@ classes:
 
         self.assertEqual(dropped, [])
         self.assertEqual(validated.notes[0].evidence_match_score, 1.0)
-        self.assertEqual(validated.notes[0].signal_level, "high")
+        self.assertFalse(hasattr(validated.notes[0], "signal_level"))
         self.assertFalse(hasattr(validated.notes[0], "interpretation_confidence"))
         self.assertFalse(hasattr(validated.notes[0], "profile_worthiness"))
 
     def test_evidence_prompt_discourages_boilerplate_and_requires_quality(self):
-        self.assertIn("Suppress repeated boilerplate", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
-        self.assertIn("signal_level", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("high-recall", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("Do not decide whether a candidate is valuable", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertNotIn("signal_level", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
 
     def test_evidence_prompt_prevents_file_local_signals_from_becoming_dataset_identity(self):
-        self.assertIn("Do not promote a file-local header", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
-        self.assertIn("whole dataset, package, study, or submission", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
-        self.assertIn("file/resource-local", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
-        self.assertIn("Generic owner, origin, vendor, manufacturer, software, or organization labels", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
-        self.assertIn("named devices", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("scope to package, resource, section, execution_environment, or unknown", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("A later critic will route them", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
         self.assertNotIn("TOPSPIN", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
         self.assertNotIn("Bruker", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
         self.assertNotIn("NPOINTS", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
         self.assertNotIn("Counterexamples", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
 
-    def test_evidence_prompt_keeps_method_facts_but_downgrades_numeric_geometry(self):
-        self.assertIn("pulse sequence, observed nucleus, solvent, and observation frequency may be high", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
-        self.assertIn("Numeric geometry, point counts, axis/range min/max values", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
-        self.assertIn("thresholds", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
-        self.assertIn("Numbered, channel-specific, namespace-prefixed, or code-like parameters", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+    def test_evidence_prompt_is_domain_agnostic(self):
+        self.assertIn("Do not use domain-specific key names", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertNotIn("nucleus", EVIDENCE_CONTEXT_SYSTEM_PROMPT.lower())
+        self.assertNotIn("solvent", EVIDENCE_CONTEXT_SYSTEM_PROMPT.lower())
+        self.assertNotIn("pulse", EVIDENCE_CONTEXT_SYSTEM_PROMPT.lower())
 
     def test_evidence_chunk_prompt_normalizes_control_characters(self):
         prompt = build_evidence_context_prompt(
@@ -492,20 +490,48 @@ classes:
             110,
         )
 
-    def test_signal_filter_keeps_only_high_level_evidence(self):
+    def test_route_evidence_candidates_uses_generic_assessment(self):
         context = EvidenceContext(
-            notes=[
-                EvidenceNote(note_id="high", category="agent_signal", observation="Instrument/device used is Bruker Avance.", evidence_text="Bruker Avance", signal_level="high"),
-                EvidenceNote(note_id="medium", category="method_signal", observation="Technical acquisition context is present.", evidence_text="technical context", signal_level="medium"),
-                EvidenceNote(note_id="low", category="method_signal", observation="Low-level parameter setting.", evidence_text="parameter setting", signal_level="low"),
+            candidates=[
+                EvidenceNote(candidate_id="portable", category="resource_signal", claim="Dataset title is Sample A.", evidence_text="Dataset title: Sample A"),
+                EvidenceNote(candidate_id="contextual", category="method_signal", claim="A local runtime path is present.", evidence_text="Path: C:/tmp/run"),
             ]
         )
 
-        filtered, dropped = filter_evidence_context_by_signal_level(context, chunk_index=2)
+        routed = route_evidence_candidates(
+            context,
+            assessments=[
+                EvidenceAssessment(
+                    candidate_id="portable",
+                    groundedness="yes",
+                    self_containedness="yes",
+                    scope_clarity="yes",
+                    portability="yes",
+                    semantic_interpretability="yes",
+                    environment_dependence="low",
+                    specificity="yes",
+                    novelty="yes",
+                    uncertainty="low",
+                ),
+                EvidenceAssessment(
+                    candidate_id="contextual",
+                    groundedness="yes",
+                    self_containedness="partial",
+                    scope_clarity="no",
+                    portability="no",
+                    semantic_interpretability="partial",
+                    environment_dependence="high",
+                    specificity="partial",
+                    novelty="partial",
+                    uncertainty="medium",
+                ),
+            ],
+            chunk_index=2,
+        )
 
-        self.assertEqual([note.note_id for note in filtered.notes], ["high"])
-        self.assertEqual([record.reason for record in dropped], ["signal_level_filtered", "signal_level_filtered"])
-        self.assertEqual([record.chunk_index for record in dropped], [2, 2])
+        self.assertEqual([note.candidate_id for note in routed.portable_evidence], ["portable"])
+        self.assertEqual([note.candidate_id for note in routed.contextual_evidence], ["contextual"])
+        self.assertEqual(routed.rejected_evidence, [])
 
     def test_repeated_evidence_dedupe_keeps_best_representative(self):
         context = EvidenceContext(
@@ -1087,11 +1113,10 @@ classes:
             },
             notes=[
                 EvidenceNote(
-                    note_id="pulprog_setting",
+                    note_id="method_setting",
                     category="method_signal",
-                    observation="Pulse program is zg30.",
-                    evidence_text="##$PULPROG= <zg30>",
-                    signal_level="high",
+                    observation="The workflow uses a calibration method.",
+                    evidence_text="method = calibration",
                 )
             ],
         )
@@ -1106,20 +1131,19 @@ classes:
             },
             notes=[
                 EvidenceNote(
-                    note_id="jcamp_file",
+                    note_id="format_file",
                     category="resource_signal",
-                    observation="The file is a JCAMP-DX NMR spectral export.",
-                    evidence_text="##TITLE= JCAMP-DX NMR spectrum",
-                    file_path="10.edit.jdx",
-                    signal_level="high",
+                    observation="The file declares a structured data format.",
+                    evidence_text="format = structured text",
+                    file_path="data.txt",
                 )
             ],
         )
 
         self.assertIsNotNone(method_value)
-        self.assertIn({"title": "pulprog", "value": "zg30"}, method_value["has_qualitative_attribute"])
+        self.assertIn("The workflow uses a calibration method.", method_value["description"])
         self.assertIsNotNone(distribution_value)
-        self.assertIn("Primary NMR data distribution", distribution_value["title"])
+        self.assertIn("Primary dataset distribution", distribution_value["title"])
 
     def test_device_fallback_writes_agentic_entity_not_qualitative_attribute(self):
         note = EvidenceNote(
@@ -1173,30 +1197,30 @@ classes:
         self.assertEqual(updated_again["was_generated_by"][0]["has_qualitative_attribute"], [])
         Draft202012Validator(self.INITIAL_DRAFT_SCHEMA).validate(updated_again)
 
-    def test_final_profile_cleanup_removes_parameter_noise_but_keeps_nmr_signals(self):
+    def test_final_profile_cleanup_removes_parameter_noise_but_keeps_generic_metadata(self):
         document = {
             "id": "package-id",
-            "title": ["1H NMR"],
+            "title": ["Catalyst measurements"],
             "description": [
-                "SIMONE metadata draft for 1H NMR.",
+                "SIMONE metadata draft for catalyst measurements.",
                 "TD parameter set to 65536.",
                 "Transmitter routing uses TCP/IP 149.236.99.254.",
             ],
             "keyword": [
-                "NMR Spectroscopy",
+                "measurement",
                 "TD parameter set to 65536",
                 "Bla01Eth parameter is set to '<149.236.99.254>'",
-                "JCAMP-DX",
+                "dataset",
             ],
             "dataset_distribution": [
                 {
                     "access_URL": [{"id": "package-id:distribution:primary:access"}],
-                    "title": ["Primary NMR data distribution"],
+                    "title": ["Primary dataset distribution"],
                     "description": [
-                        "JCAMP-DX spectral data files.",
+                        "Structured measurement data files.",
                         "NPOINTS parameter values from the Bruker file.",
                         "Nucleus FPNZ is no",
-                        "This is a parameter file from TOPSPIN software version 3.2",
+                        "This is a parameter file from installed software version 3.2",
                     ],
                 }
             ],
@@ -1205,8 +1229,8 @@ classes:
                     "id": "package-id:activity:metadata-extraction",
                     "has_qualitative_attribute": [
                         {
-                            "value": "Pulse sequence is zg30",
-                            "description": "Pulse sequence is zg30",
+                            "value": "Calibration method",
+                            "description": "Calibration method",
                         },
                         {
                             "value": "SOLVENT OFF setting",
@@ -1223,15 +1247,15 @@ classes:
 
         curated = ExtractionService._curate_generated_profile_document(document)
 
-        self.assertEqual(curated["description"], ["SIMONE metadata draft for 1H NMR."])
-        self.assertEqual(curated["keyword"], ["NMR Spectroscopy", "JCAMP-DX"])
+        self.assertEqual(curated["description"], ["SIMONE metadata draft for catalyst measurements."])
+        self.assertEqual(curated["keyword"], ["measurement", "dataset"])
         self.assertEqual(
             curated["dataset_distribution"][0]["description"],
-            ["JCAMP-DX spectral data files."],
+            ["Structured measurement data files."],
         )
         self.assertEqual(
             curated["was_generated_by"][0]["has_qualitative_attribute"],
-            [{"value": "Pulse sequence is zg30", "description": "Pulse sequence is zg30"}],
+            [{"value": "Calibration method", "description": "Calibration method"}],
         )
 
     def test_fallback_title_prefers_explicit_dataset_name_over_audit_noise(self):
@@ -1300,21 +1324,21 @@ classes:
         evidence = EvidenceContext(
             notes=[
                 EvidenceNote(
-                    note_id="jcamp_dx_version_1",
+                    note_id="format_version_1",
                     category="resource_signal",
-                    observation="JCAMP-DX format version 5.00",
-                    evidence_text="##JCAMP-DX=5.00",
-                    file_path="10.edit.jdx",
+                    observation="Structured data format version 5.00",
+                    evidence_text="FORMAT=5.00",
+                    file_path="data.txt",
                     start_idx=10,
                     end_idx=20,
                     signal_level="high",
                 ),
                 EvidenceNote(
-                    note_id="jcamp_dx_version_2",
+                    note_id="format_version_2",
                     category="resource_signal",
-                    observation="JCAMP-DX format version 5.00",
-                    evidence_text="##JCAMP-DX=5.00",
-                    file_path="10.edit.jdx",
+                    observation="Structured data format version 5.00",
+                    evidence_text="FORMAT=5.00",
+                    file_path="data.txt",
                     start_idx=10,
                     end_idx=20,
                     signal_level="high",
@@ -1346,11 +1370,11 @@ classes:
         evidence = EvidenceContext(
             notes=[
                 EvidenceNote(
-                    note_id="nucleus",
+                    note_id="sample",
                     category="entity_signal",
-                    observation="Primary nucleus is 1H.",
-                    evidence_text="NUC1= <1H>",
-                    file_path="10/acqus",
+                    observation="Primary sample is catalyst batch A.",
+                    evidence_text="sample = catalyst batch A",
+                    file_path="metadata.txt",
                     start_idx=1,
                     end_idx=2,
                     signal_level="high",
@@ -1368,7 +1392,7 @@ classes:
                 target_class="EvaluatedEntity",
                 planner_status="targeted",
                 planner_reason="Entity evidence.",
-                target_value={"id": "entity:primary", "title": "1H nucleus"},
+                target_value={"id": "entity:primary", "title": "catalyst batch A"},
             ),
         )
 
@@ -1379,7 +1403,7 @@ classes:
         self.assertEqual(record.projected_paths, ["/is_about_entity/0"])
         self.assertEqual(record.evidence_quality["note_count"], 1)
         self.assertEqual(len(record.evidence_note_identifiers), 1)
-        self.assertIn("10/acqus#1-2#nucleus", record.evidence_note_identifiers)
+        self.assertIn("metadata.txt#1-2#sample", record.evidence_note_identifiers)
 if __name__ == "__main__":
     unittest.main()
 

@@ -4,6 +4,7 @@ import type { InitialContext } from './types';
 export type PatchTaskStatus = 'unknown' | 'running' | 'completed' | 'cancelled' | 'crashed';
 export type ExtractionTargetStage = 'context' | 'profile' | 'grounding' | 'complete';
 export type ChunkRepairMode = 'deferred' | 'immediate' | 'disabled';
+export type EvidenceCriticGranularity = 'per_chunk' | 'per_candidate' | 'disabled';
 
 export type PatchTokenUsageEntry = {
   input_tokens: number;
@@ -37,6 +38,7 @@ export type PatchTokenUsage = {
 export type ExtractionRunProgress = {
   stage: string;
   chunk_repair_mode?: ChunkRepairMode;
+  evidence_critic_granularity?: EvidenceCriticGranularity;
   processed_chunks: number;
   total_chunks: number;
   normalized_quantities: number;
@@ -270,7 +272,7 @@ export type ProjectionLedgerRecord = {
   planner_reason?: string | null;
   evidence_quality?: {
     note_count?: number;
-    signal_level?: Record<string, number>;
+    routes?: Record<string, number>;
     [key: string]: unknown;
   };
   reason: string;
@@ -398,6 +400,7 @@ export async function runExtraction(input: {
   resume?: boolean;
   target_stage?: ExtractionTargetStage;
   chunk_repair_mode?: ChunkRepairMode;
+  evidence_critic_granularity?: EvidenceCriticGranularity;
 }): Promise<ExtractionRunResponse> {
   return readJson(await fetch(apiBaseUrl + '/extraction/run', {
     method: 'POST',
@@ -594,7 +597,7 @@ export async function resolvePatchReview(input: {
 }
 
 export function initialContextFromEvidenceContext(context: Record<string, unknown>): InitialContext {
-  const notes = arrayOfRecords(context.notes);
+  const notes = arrayOfRecords(context.portable_evidence);
   const observations = notes
     .map((note) => stringValue(note.observation))
     .filter((value): value is string => Boolean(value));

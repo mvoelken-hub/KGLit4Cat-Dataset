@@ -4,7 +4,7 @@ import re
 from difflib import SequenceMatcher
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.domain.token_budget import PromptTokenBudgeter
 
@@ -26,9 +26,20 @@ EvidenceCategory = Literal[
     "uncertainty",
     "other",
 ]
-EvidenceSignalLevel = Literal["high", "medium", "low"]
+EvidenceScope = Literal[
+    "package",
+    "resource",
+    "section",
+    "execution_environment",
+    "unknown",
+]
+EvidenceExplicitness = Literal["explicit", "lightly_normalized", "synthesized"]
+EvidenceRoute = Literal["portable_evidence", "contextual_evidence", "rejected_evidence"]
+EvidenceCriticGranularity = Literal["per_chunk", "per_candidate", "disabled"]
+EvidenceAssessmentJudgement = Literal["yes", "partial", "no"]
+EvidenceAssessmentUncertainty = Literal["low", "medium", "high"]
 FilteredEvidenceReason = Literal[
-    "signal_level_filtered",
+    "candidate_rejected",
     "duplicate_evidence",
     "evidence_text_unsupported",
 ]
@@ -40,19 +51,20 @@ EVIDENCE_ORIENTATION_LINE_TOKENS = 45
 EVIDENCE_ORIENTATION_VALUES_PER_SECTION = 4
 
 
-class EvidenceNote(BaseModel):
-    note_id: str = Field(..., description="Stable note identifier within the chunk.")
+class EvidenceCandidate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    candidate_id: str = Field(..., description="Stable candidate identifier within the chunk.")
     category: EvidenceCategory = Field(
         "other",
         description="Broad evidence category. Do not use ontology class labels here.",
     )
-    observation: str = Field(
+    claim: str = Field(
         ...,
         description=(
-            "Concise free-text observation supported by the evidence text. "
-            "Include the useful semantic role in natural language, such as "
-            "'instrument/device', 'dataset title', 'file format', 'method', "
-            "'measured entity', or 'low-level parameter', when the evidence supports it."
+            "A concise, molecular claim supported by the evidence text. "
+            "The claim should be specific enough to verify but contextualized enough "
+            "to stand alone without hidden local prompt context."
         ),
     )
     evidence_text: str = Field(
@@ -63,18 +75,106 @@ class EvidenceNote(BaseModel):
         "",
         description="Short uncertainty note; empty string when the evidence is straightforward.",
     )
-    signal_level: EvidenceSignalLevel = Field(
-        "medium",
-        description=(
-            "Profile-agnostic semantic level. Use high for stable metadata facts worth "
-            "forwarding, medium for interpretable technical context, and low for raw "
-            "parameters, boilerplate, or unclear settings."
-        ),
-    )
+    scope: EvidenceScope = "unknown"
+    explicitness: EvidenceExplicitness = "explicit"
     file_path: str = ""
     start_idx: int = Field(0, ge=0)
     end_idx: int = Field(0, ge=0)
     evidence_match_score: float = Field(0.0, ge=0.0, le=1.0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_legacy_names(cls, data):
+        if isinstance(data, dict):
+            if "candidate_id" not in data and "note_id" in data:
+                data = {**data, "candidate_id": data["note_id"]}
+            if "claim" not in data and "observation" in data:
+                data = {**data, "claim": data["observation"]}
+        return data
+
+    @property
+    def note_id(self) -> str:
+        return self.candidate_id
+
+    @property
+    def observation(self) -> str:
+        return self.claim
+
+
+EvidenceNote = EvidenceCandidate
+
+
+class EvidenceContext(BaseModel):
+    candidates: list[EvidenceCandidate] = Field(default_factory=list)
+    file_inventory: list["FileInventoryItem"] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_legacy_notes(cls, data):
+        if isinstance(data, dict) and "candidates" not in data and "notes" in data:
+            return {**data, "candidates": data["notes"]}
+        return data
+
+    @property
+    def notes(self) -> list[EvidenceCandidate]:
+        return self.candidates
+
+    @property
+    def portable_evidence(self) -> list[EvidenceCandidate]:
+        return self.candidates
+
+
+class EvidenceAssessment(BaseModel):
+    candidate_id: str
+    groundedness: EvidenceAssessmentJudgement = "partial"
+    self_containedness: EvidenceAssessmentJudgement = "partial"
+    scope_clarity: EvidenceAssessmentJudgement = "partial"
+    portability: EvidenceAssessmentJudgement = "partial"
+    semantic_interpretability: EvidenceAssessmentJudgement = "partial"
+    environment_dependence: EvidenceAssessmentUncertainty = "medium"
+    specificity: EvidenceAssessmentJudgement = "partial"
+    novelty: EvidenceAssessmentJudgement = "partial"
+    uncertainty: EvidenceAssessmentUncertainty = "medium"
+    rationale: str = ""
+
+
+class EvidenceAssessmentContext(BaseModel):
+    assessments: list[EvidenceAssessment] = Field(default_factory=list)
+
+
+class RoutedEvidenceRecord(BaseModel):
+    route: EvidenceRoute
+    reason: str
+    candidate: EvidenceCandidate
+    assessment: EvidenceAssessment | None = None
+    chunk_index: int | None = None
+
+
+class RoutedEvidenceContext(BaseModel):
+    portable_evidence: list[EvidenceCandidate] = Field(default_factory=list)
+    contextual_evidence: list[EvidenceCandidate] = Field(default_factory=list)
+    rejected_evidence: list[RoutedEvidenceRecord] = Field(default_factory=list)
+    assessments: list[EvidenceAssessment] = Field(default_factory=list)
+    file_inventory: list["FileInventoryItem"] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_candidate_context(cls, data):
+        if isinstance(data, EvidenceContext):
+            return {
+                "portable_evidence": data.candidates,
+                "file_inventory": data.file_inventory,
+            }
+        if isinstance(data, dict) and "portable_evidence" not in data:
+            if "candidates" in data:
+                return {**data, "portable_evidence": data["candidates"]}
+            if "notes" in data:
+                return {**data, "portable_evidence": data["notes"]}
+        return data
+
+    @property
+    def notes(self) -> list[EvidenceCandidate]:
+        return self.portable_evidence
 
 
 class FileInventoryItem(BaseModel):
@@ -85,14 +185,9 @@ class FileInventoryItem(BaseModel):
     summary: str | None = None
 
 
-class EvidenceContext(BaseModel):
-    notes: list[EvidenceNote] = Field(default_factory=list)
-    file_inventory: list[FileInventoryItem] = Field(default_factory=list)
-
-
 class FilteredEvidenceNote(BaseModel):
     reason: FilteredEvidenceReason
-    note: EvidenceNote
+    note: EvidenceCandidate
     file_path: str = ""
     start_idx: int = Field(0, ge=0)
     end_idx: int = Field(0, ge=0)
@@ -118,33 +213,42 @@ class EvidenceChunkContext(BaseModel):
 
 
 EVIDENCE_CONTEXT_SYSTEM_PROMPT = """
-You extract broad, traceable evidence observations from scientific data-package chunks. These observations later feed into a DCAT application profile for dataset metadata.
-Your output is NOT an ontology object model and NOT a final profile document.
+You extract high-recall, traceable evidence candidates from scientific data-package chunks.
+Your output is NOT an ontology object model, NOT a final profile document, and NOT a value-ranking decision.
 
 Return only a valid EvidenceContext JSON object.
 
 Rules:
-- Produce concise evidence notes only when the current chunk contains human-readable evidence.
+- Produce concise evidence candidates only when the current chunk contains human-readable evidence.
 - Every evidence_text must be a short substring copied from the current chunk. Do not paraphrase evidence_text.
 - Use initial overview and file summary only to understand context; do not cite them as evidence.
-- If the chunk contains only encoded payload, raw numeric signal rows, checksums, empty declarations, or unreadable data, return notes: [].
-- Prefer a broad perspective: one note may summarize several adjacent headers or settings when they clearly describe the same scientific method, instrument, file format, sample, or dataset-level signal.
-- Suppress repeated boilerplate/header-only facts such as repeated versions, empty origin, generic DATA TYPE, generic OWNER, local paths, audit labels, or repeated parameter-file titles unless they add new profile-worthy meaning.
-- Group adjacent low-level parameters into one broader note when they describe the same interpretable method or instrument configuration; otherwise leave raw parameters as medium or low signal.
+- If the chunk contains only encoded payload, raw numeric signal rows, checksums, empty declarations, or unreadable data, return candidates: [].
+- Extract reasonably interpretable candidates even when they are technical, local, operational, or ambiguous. A later critic will route them.
+- Do not decide whether a candidate is valuable enough for profile projection.
+- Do not use domain-specific key names, file formats, instruments, vendors, or scientific concepts as quality criteria.
 - Use only these categories: resource_signal, method_signal, measurement_signal, entity_signal, agent_signal, data_quality_signal, uncertainty, other.
-- Put the useful semantic role into observation as natural language, not as structured fields.
-- Dataset-level identity, creator, date, origin, owner, or title claims require evidence that explicitly names the whole dataset, package, study, or submission. Do not promote a file-local header, local path, parameter-file label, audit label, or resource title into a dataset-level claim.
-- File-local headers should be described as file/resource-local when useful, and should be medium or low unless they identify a meaningful distribution/resource format or a clearly reusable dataset resource.
-- Generic owner, origin, vendor, manufacturer, software, or organization labels identify provenance context only. Do not infer an instrument/device, dataset creator, or dataset owner from such labels unless the evidence explicitly states that role.
-- Instruments, spectrometers, probes, software-controlled acquisition hardware, and named devices should use category agent_signal and an observation that explicitly says instrument/device.
-- Scientific method facts such as pulse sequence, observed nucleus, solvent, and observation frequency may be high when the evidence supports an interpretable method statement.
-- Numeric geometry, point counts, axis/range min/max values, scaling factors, thresholds, routing keys, checksums, local file paths, raw instrument parameters, repeated file headers, and empty/off toggles should be described as technical or low-level parameters and should usually have medium or low signal_level.
-- Numbered, channel-specific, namespace-prefixed, or code-like parameters are technical settings. Keep them medium or low unless grouped into a clearly supported higher-level method observation.
+- Use claim for the candidate fact. Prefer molecular claims that can be checked against evidence_text.
+- Set scope to package, resource, section, execution_environment, or unknown.
+- Set explicitness to explicit when the claim is directly stated, lightly_normalized when only formatting is normalized, and synthesized only when adjacent evidence is combined.
 - Record uncertainty when labels are ambiguous, evidence is only technical, or a setting cannot be safely interpreted.
-- Set signal_level to high only for stable, profile-agnostic metadata facts likely to describe explicit dataset identity, creator/agent, instrument/device, distribution/resource format, interpretable method/activity, measured entity, sample, identifier, date, or meaningful file syntax.
-- Set signal_level to medium for interpretable technical context that may help debugging but should not drive profile generation by itself.
-- Set signal_level to low for raw parameters, boilerplate, repeated syntax/header declarations, empty settings, or unclear technical fields.
-- Only high signal notes are forwarded downstream; medium and low notes are retained in debug artifacts only.
+"""
+
+
+EVIDENCE_CRITIC_SYSTEM_PROMPT = """
+You assess grounded evidence candidates using only domain-agnostic quality criteria.
+Do not decide relevance by recognizing a particular scientific domain, instrument, vendor, file format, or key name.
+Return only a valid EvidenceAssessmentContext JSON object.
+
+Assess each candidate independently using categorical judgments:
+- groundedness: whether evidence_text supports the claim.
+- self_containedness: whether the claim can be understood without hidden prompt context.
+- scope_clarity: whether package/resource/section/environment scope is clear.
+- portability: whether the claim remains meaningful when the package is copied elsewhere.
+- semantic_interpretability: whether the claim is meaningful rather than raw unexplained syntax.
+- environment_dependence: low/medium/high dependence on local machine, session, user, installation, or network context.
+- specificity: whether the claim is concrete without overinterpretation.
+- novelty: whether it adds information beyond repeated template content.
+- uncertainty: low/medium/high ambiguity.
 """
 
 def build_evidence_context_prompt(chunk_context: EvidenceChunkContext) -> str:
@@ -168,7 +272,46 @@ def build_evidence_context_prompt_components(
         ),
         (
             "evidence_task_instruction",
-            "Extract broad evidence notes from the current chunk content.",
+            "Extract high-recall evidence candidates from the current chunk content.",
+        ),
+    ]
+
+
+def build_evidence_critic_prompt(
+    *,
+    candidates: list[EvidenceCandidate],
+    chunk_context: EvidenceChunkContext,
+) -> str:
+    return "".join(
+        text
+        for _, text in build_evidence_critic_prompt_components(
+            candidates=candidates,
+            chunk_context=chunk_context,
+        )
+    )
+
+
+def build_evidence_critic_prompt_components(
+    *,
+    candidates: list[EvidenceCandidate],
+    chunk_context: EvidenceChunkContext,
+) -> list[tuple[str, str]]:
+    normalized_content = normalize_chunk_text_for_evidence_prompt(chunk_context.content)
+    return [
+        (
+            "chunk_metadata",
+            "Chunk context metadata:\n"
+            f"{chunk_context.metadata.model_dump_json()}\n\n",
+        ),
+        (
+            "validated_candidates",
+            "Validated evidence candidates JSON:\n"
+            f"{[candidate.model_dump(mode='json') for candidate in candidates]}\n\n",
+        ),
+        (
+            "local_chunk_context",
+            "Local chunk context for assessment:\n"
+            f"{normalized_content}\n",
         ),
     ]
 
@@ -325,71 +468,68 @@ def normalize_chunk_text_for_evidence_prompt(content: str) -> str:
     return normalized.strip()
 
 
-def merge_evidence_contexts(contexts: list[EvidenceContext]) -> EvidenceContext:
-    notes: list[EvidenceNote] = []
+def merge_evidence_contexts(contexts: list[RoutedEvidenceContext]) -> RoutedEvidenceContext:
+    portable: list[EvidenceCandidate] = []
+    contextual: list[EvidenceCandidate] = []
+    rejected: list[RoutedEvidenceRecord] = []
+    assessments: list[EvidenceAssessment] = []
     inventory_by_path: dict[str, FileInventoryItem] = {}
-    seen_notes: set[tuple[str, int, int, str]] = set()
+    seen_portable: set[tuple[str, int, int, str]] = set()
+    seen_contextual: set[tuple[str, int, int, str]] = set()
     for context in contexts:
         for item in context.file_inventory:
             inventory_by_path.setdefault(item.file_path, item)
-        for note in context.notes:
+        for note in context.portable_evidence:
             key = (
                 note.file_path,
                 note.start_idx,
                 note.end_idx,
                 _normalize_evidence_text(note.evidence_text),
             )
-            if key in seen_notes:
+            if key in seen_portable:
                 continue
-            seen_notes.add(key)
-            notes.append(note)
-    return EvidenceContext(
-        notes=notes,
+            seen_portable.add(key)
+            portable.append(note)
+        for note in context.contextual_evidence:
+            key = (
+                note.file_path,
+                note.start_idx,
+                note.end_idx,
+                _normalize_evidence_text(note.evidence_text),
+            )
+            if key in seen_contextual:
+                continue
+            seen_contextual.add(key)
+            contextual.append(note)
+        rejected.extend(context.rejected_evidence)
+        assessments.extend(context.assessments)
+    return RoutedEvidenceContext(
+        portable_evidence=portable,
+        contextual_evidence=contextual,
+        rejected_evidence=rejected,
+        assessments=assessments,
         file_inventory=sorted(inventory_by_path.values(), key=lambda item: item.file_path),
     )
 
 
-def filter_evidence_context_by_signal_level(
-    context: EvidenceContext,
-    *,
-    keep_level: EvidenceSignalLevel = "high",
-    chunk_index: int | None = None,
-) -> tuple[EvidenceContext, list[FilteredEvidenceNote]]:
-    kept: list[EvidenceNote] = []
-    dropped: list[FilteredEvidenceNote] = []
-    for note in context.notes:
-        if note.signal_level == keep_level:
-            kept.append(note)
-            continue
-        dropped.append(
-            _filtered_record(
-                note,
-                reason="signal_level_filtered",
-                chunk_index=chunk_index,
-            )
-        )
-    return (
-        context.model_copy(update={"notes": kept}),
-        dropped,
-    )
-
-
 def dedupe_repeated_evidence_notes(
-    context: EvidenceContext,
+    context: RoutedEvidenceContext | EvidenceContext,
     *,
     file_rank_by_path: dict[str, int] | None = None,
-) -> tuple[EvidenceContext, list[FilteredEvidenceNote]]:
+) -> tuple[RoutedEvidenceContext, list[FilteredEvidenceNote]]:
+    if isinstance(context, EvidenceContext):
+        context = RoutedEvidenceContext(portable_evidence=context.candidates, file_inventory=context.file_inventory)
     file_rank_by_path = file_rank_by_path or {}
-    grouped: dict[str, list[tuple[int, EvidenceNote]]] = {}
-    unique_without_key: list[tuple[int, EvidenceNote]] = []
-    for index, note in enumerate(context.notes):
+    grouped: dict[str, list[tuple[int, EvidenceCandidate]]] = {}
+    unique_without_key: list[tuple[int, EvidenceCandidate]] = []
+    for index, note in enumerate(context.portable_evidence):
         key = _normalize_evidence_text(note.evidence_text)
         if not key:
             unique_without_key.append((index, note))
             continue
         grouped.setdefault(key, []).append((index, note))
 
-    kept_with_order: list[tuple[int, EvidenceNote]] = list(unique_without_key)
+    kept_with_order: list[tuple[int, EvidenceCandidate]] = list(unique_without_key)
     dropped: list[FilteredEvidenceNote] = []
     for group in grouped.values():
         if len(group) == 1:
@@ -415,10 +555,10 @@ def dedupe_repeated_evidence_notes(
                 )
             )
     kept = [note for _, note in sorted(kept_with_order, key=lambda item: item[0])]
-    return context.model_copy(update={"notes": kept}), dropped
+    return context.model_copy(update={"portable_evidence": kept}), dropped
 
 
-def validate_evidence_context_for_chunk(
+def validate_evidence_candidates(
     context: EvidenceContext,
     *,
     chunk_content: str,
@@ -426,14 +566,15 @@ def validate_evidence_context_for_chunk(
     start_idx: int,
     end_idx: int,
     threshold: float = EVIDENCE_MATCH_THRESHOLD,
-) -> tuple[EvidenceContext, list[EvidenceNote]]:
-    kept: list[EvidenceNote] = []
-    dropped: list[EvidenceNote] = []
-    for index, note in enumerate(context.notes):
-        score = evidence_text_match_score(note.evidence_text, chunk_content)
-        updated = note.model_copy(
+) -> tuple[EvidenceContext, list[EvidenceCandidate]]:
+    kept: list[EvidenceCandidate] = []
+    dropped: list[EvidenceCandidate] = []
+    for index, candidate in enumerate(context.candidates):
+        score = evidence_text_match_score(candidate.evidence_text, chunk_content)
+        candidate_id = candidate.candidate_id or f"{file_path}:{start_idx}:{end_idx}:{index}"
+        updated = candidate.model_copy(
             update={
-                "note_id": note.note_id or f"{file_path}:{start_idx}:{end_idx}:{index}",
+                "candidate_id": candidate_id,
                 "file_path": file_path,
                 "start_idx": start_idx,
                 "end_idx": end_idx,
@@ -444,7 +585,112 @@ def validate_evidence_context_for_chunk(
             kept.append(updated)
         else:
             dropped.append(updated)
-    return EvidenceContext(notes=kept, file_inventory=context.file_inventory), dropped
+    return EvidenceContext(candidates=kept, file_inventory=context.file_inventory), dropped
+
+
+def validate_evidence_context_for_chunk(
+    context: EvidenceContext,
+    *,
+    chunk_content: str,
+    file_path: str,
+    start_idx: int,
+    end_idx: int,
+    threshold: float = EVIDENCE_MATCH_THRESHOLD,
+) -> tuple[EvidenceContext, list[EvidenceCandidate]]:
+    return validate_evidence_candidates(
+        context,
+        chunk_content=chunk_content,
+        file_path=file_path,
+        start_idx=start_idx,
+        end_idx=end_idx,
+        threshold=threshold,
+    )
+
+
+def route_evidence_candidates(
+    context: EvidenceContext,
+    *,
+    assessments: list[EvidenceAssessment],
+    rejected_candidates: list[EvidenceCandidate] | None = None,
+    chunk_index: int | None = None,
+) -> RoutedEvidenceContext:
+    rejected_candidates = rejected_candidates or []
+    assessment_by_id = {assessment.candidate_id: assessment for assessment in assessments}
+    portable: list[EvidenceCandidate] = []
+    contextual: list[EvidenceCandidate] = []
+    rejected: list[RoutedEvidenceRecord] = [
+        RoutedEvidenceRecord(
+            route="rejected_evidence",
+            reason="evidence_text_unsupported",
+            candidate=candidate,
+            chunk_index=chunk_index,
+        )
+        for candidate in rejected_candidates
+    ]
+    seen: set[tuple[str, str]] = set()
+    for candidate in context.candidates:
+        key = (candidate.file_path, _normalize_evidence_text(candidate.evidence_text))
+        if key in seen:
+            rejected.append(
+                RoutedEvidenceRecord(
+                    route="rejected_evidence",
+                    reason="duplicate_evidence",
+                    candidate=candidate,
+                    assessment=assessment_by_id.get(candidate.candidate_id),
+                    chunk_index=chunk_index,
+                )
+            )
+            continue
+        seen.add(key)
+        assessment = assessment_by_id.get(candidate.candidate_id) or EvidenceAssessment(
+            candidate_id=candidate.candidate_id,
+            rationale="No critic assessment was available; routed conservatively.",
+        )
+        route, reason = _route_for_assessment(assessment)
+        if route == "portable_evidence":
+            portable.append(candidate)
+        elif route == "contextual_evidence":
+            contextual.append(candidate)
+        else:
+            rejected.append(
+                RoutedEvidenceRecord(
+                    route=route,
+                    reason=reason,
+                    candidate=candidate,
+                    assessment=assessment,
+                    chunk_index=chunk_index,
+                )
+            )
+    return RoutedEvidenceContext(
+        portable_evidence=portable,
+        contextual_evidence=contextual,
+        rejected_evidence=rejected,
+        assessments=assessments,
+        file_inventory=context.file_inventory,
+    )
+
+
+def _route_for_assessment(assessment: EvidenceAssessment) -> tuple[EvidenceRoute, str]:
+    if assessment.groundedness == "no":
+        return "rejected_evidence", "critic_not_grounded"
+    if (
+        assessment.self_containedness == "no"
+        or assessment.scope_clarity == "no"
+        or assessment.uncertainty == "high"
+    ):
+        return "contextual_evidence", "borderline_or_ambiguous"
+    if (
+        assessment.groundedness == "yes"
+        and assessment.self_containedness == "yes"
+        and assessment.scope_clarity in {"yes", "partial"}
+        and assessment.portability == "yes"
+        and assessment.semantic_interpretability == "yes"
+        and assessment.environment_dependence != "high"
+        and assessment.specificity == "yes"
+        and assessment.uncertainty != "high"
+    ):
+        return "portable_evidence", "portable_grounded_evidence"
+    return "contextual_evidence", "conservative_contextual_default"
 
 
 def filtered_evidence_ledger(
@@ -578,12 +824,11 @@ def _filtered_record(
 
 
 def _dedupe_representative_rank(
-    note: EvidenceNote,
+    note: EvidenceCandidate,
     *,
     original_index: int,
     file_rank_by_path: dict[str, int],
 ) -> tuple[int, int, int, int]:
-    signal_rank = {"high": 0, "medium": 1, "low": 2}.get(note.signal_level, 3)
     file_rank = file_rank_by_path.get(note.file_path, 10_000)
-    richness = len(note.observation.strip())
-    return (signal_rank, file_rank, -richness, original_index)
+    richness = len(note.claim.strip())
+    return (file_rank, -richness, original_index, 0)
