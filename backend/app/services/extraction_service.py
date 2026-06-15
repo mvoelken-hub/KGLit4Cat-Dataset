@@ -52,6 +52,7 @@ from app.domain.extraction import (
     ExtractionOverviewEdge,
     ExtractionOverviewFilePreview,
     ExtractionOverviewInspectedFile,
+    ExtractionOverviewModelOutput,
     ExtractionOverviewNode,
     ExtractionOverviewStatus,
     InitialFileSummaryDiagnosticRecord,
@@ -96,6 +97,7 @@ from app.domain.extraction import (
     build_extraction_overview_fallback_prompt,
     build_extraction_overview_prompt_components,
     build_extraction_overview_prompt,
+    compact_seeded_overview_for_prompt,
     filtered_evidence_ledger,
     filter_evidence_context_by_signal_level,
     is_noisy_payload_chunk,
@@ -140,8 +142,13 @@ ExtractionTargetStage = Literal["context", "profile", "grounding", "complete"]
 INITIAL_OVERVIEW_TOP_FILE_LIMIT = 16
 INITIAL_OVERVIEW_PREVIEW_LINE_LIMIT = 80
 INITIAL_OVERVIEW_MAX_LINE_CHARS = 500
-INITIAL_OVERVIEW_INPUT_CONTEXT_RATIO = 0.45
 INITIAL_OVERVIEW_MIN_INPUT_TOKENS = 1200
+INITIAL_OVERVIEW_EXPECTED_OUTPUT_TOKENS = 1000
+INITIAL_OVERVIEW_INPUT_SAFETY_MARGIN_TOKENS = 250
+INITIAL_OVERVIEW_RANKED_FILE_BUDGET_RATIO = 0.05
+INITIAL_OVERVIEW_SUMMARY_BUDGET_RATIO = 0.45
+INITIAL_OVERVIEW_GRAPH_BUDGET_RATIO = 0.22
+INITIAL_OVERVIEW_PREVIEW_BUDGET_RATIO = 0.20
 INITIAL_OVERVIEW_SUMMARY_TOKEN_BUDGET = 80
 INITIAL_OVERVIEW_FAILURE_EXCERPT_TOKENS = 300
 INITIAL_FILE_SUMMARY_CONTEXT_RATIO = 0.35
@@ -2085,6 +2092,7 @@ class ExtractionService:
                     self._failed_initial_file_summary(
                         file_path=file_entry.file_path,
                         reason=str(exc),
+                        details=self._structured_completion_debug_details(exc),
                         diagnostics=diagnostics,
                     )
                 )
@@ -2195,22 +2203,27 @@ class ExtractionService:
         overview_input_budget = self._initial_overview_input_token_budget(
             self.ollama_client.max_context_length
         )
-        overview_prompt, overview_prompt_report = self._build_budgeted_initial_overview_prompt(
-            data_package_name=data_package.file_name,
-            ranked_files=overview_ranked_files,
-            file_summaries=ranked_file_summaries,
-            file_previews=fallback_previews,
-            seeded_overview=seeded_overview,
-            token_budgeter=overview_prompt_budgeter,
-            max_input_tokens=overview_input_budget,
-        )
+        overview_prompt_report: dict[str, Any] = {
+            "max_input_tokens": overview_input_budget,
+            "expected_output_token_reserve": INITIAL_OVERVIEW_EXPECTED_OUTPUT_TOKENS,
+            "input_safety_margin_tokens": INITIAL_OVERVIEW_INPUT_SAFETY_MARGIN_TOKENS,
+        }
         try:
+            overview_prompt, overview_prompt_report = self._build_budgeted_initial_overview_prompt(
+                data_package_name=data_package.file_name,
+                ranked_files=overview_ranked_files,
+                file_summaries=ranked_file_summaries,
+                file_previews=fallback_previews,
+                seeded_overview=seeded_overview,
+                token_budgeter=overview_prompt_budgeter,
+                max_input_tokens=overview_input_budget,
+            )
             result = await generate_structured(
                 self.ollama_client,
                 model=self.ollama_client.chat_model,
                 system=EXTRACTION_OVERVIEW_SYSTEM_PROMPT,
                 prompt=overview_prompt,
-                output_type=ExtractionOverview,
+                output_type=ExtractionOverviewModelOutput,
                 retries=1,
                 temperature=0.1,
                 think=None,
@@ -2222,7 +2235,7 @@ class ExtractionService:
                 usage=result.usage,
             )
             sanitized_overview = self._sanitize_initial_overview_graph(
-                result.output,
+                result.output.to_extraction_overview(),
                 allowed_file_paths=preview_file_paths,
                 seed_overview=seeded_overview,
                 summaries_available=bool(summarized_file_summaries),
@@ -2268,7 +2281,9 @@ class ExtractionService:
                 diagnostic=overview_diagnostic,
             )
             return
-        except CompletionError as exc:
+        except (CompletionError, ValueError) as exc:
+            if not isinstance(exc, CompletionError):
+                exc = CompletionError(str(exc))
             usage = getattr(exc, "usage", None)
             if usage is not None:
                 self._record_workflow_token_usage(
@@ -2368,10 +2383,14 @@ class ExtractionService:
     @classmethod
     def _initial_overview_input_token_budget(cls, num_ctx: int | None) -> int:
         context_window = num_ctx or 8192
-        return max(
-            INITIAL_OVERVIEW_MIN_INPUT_TOKENS,
-            int(context_window * INITIAL_OVERVIEW_INPUT_CONTEXT_RATIO),
+        reserve_safe_budget = (
+            context_window
+            - INITIAL_OVERVIEW_EXPECTED_OUTPUT_TOKENS
+            - INITIAL_OVERVIEW_INPUT_SAFETY_MARGIN_TOKENS
         )
+        if reserve_safe_budget <= 0:
+            return 1
+        return reserve_safe_budget
 
     @classmethod
     def _initial_overview_prompt_component_breakdown(
@@ -2382,6 +2401,7 @@ class ExtractionService:
         file_summaries: list[ExtractionFileSummary],
         file_previews: list[ExtractionOverviewFilePreview],
         seeded_overview: ExtractionOverview,
+        seeded_overview_prompt_text: str,
         token_budgeter: PromptTokenBudgeter,
         prompt: str,
     ) -> dict[str, Any]:
@@ -2391,6 +2411,7 @@ class ExtractionService:
             file_summaries=file_summaries,
             file_previews=file_previews,
             seeded_overview=seeded_overview,
+            seeded_overview_prompt_text=seeded_overview_prompt_text,
         )
         rows: list[dict[str, Any]] = []
         system_prompt = EXTRACTION_OVERVIEW_SYSTEM_PROMPT
@@ -2465,6 +2486,7 @@ class ExtractionService:
         used_file_previews: list[ExtractionOverviewFilePreview],
         file_previews: list[ExtractionOverviewFilePreview],
         seeded_overview: ExtractionOverview,
+        seeded_overview_prompt_text: str,
         token_budgeter: PromptTokenBudgeter,
     ) -> dict[str, Any]:
         seed_payload = json.loads(seeded_overview.model_dump_json(exclude_defaults=True))
@@ -2552,6 +2574,14 @@ class ExtractionService:
                     for uncertainty in seed_uncertainties
                 ),
             },
+            "seeded_graph_compact_text": {
+                "tokens": cls._isolated_token_count(
+                    token_budgeter,
+                    seeded_overview_prompt_text,
+                ),
+                "chars": len(seeded_overview_prompt_text),
+                "line_count": len(seeded_overview_prompt_text.splitlines()),
+            },
         }
 
     @classmethod
@@ -2571,6 +2601,7 @@ class ExtractionService:
             ranked_files_to_include: list[RankedFile],
             summaries_to_include: list[ExtractionFileSummary],
             previews_to_include: list[ExtractionOverviewFilePreview],
+            seeded_overview_prompt_text: str,
         ) -> str:
             return build_extraction_overview_prompt(
                 data_package_name=data_package_name,
@@ -2578,12 +2609,113 @@ class ExtractionService:
                 file_summaries=summaries_to_include,
                 file_previews=previews_to_include,
                 seeded_overview=seeded_overview,
+                seeded_overview_prompt_text=seeded_overview_prompt_text,
             )
 
+        def component_text(
+            *,
+            ranked_files_to_include: list[RankedFile],
+            summaries_to_include: list[ExtractionFileSummary],
+            previews_to_include: list[ExtractionOverviewFilePreview],
+            seeded_overview_prompt_text: str,
+            component_names: set[str],
+        ) -> str:
+            components = build_extraction_overview_prompt_components(
+                data_package_name=data_package_name,
+                ranked_files=ranked_files_to_include,
+                file_summaries=summaries_to_include,
+                file_previews=previews_to_include,
+                seeded_overview=seeded_overview,
+                seeded_overview_prompt_text=seeded_overview_prompt_text,
+            )
+            return "".join(text for name, text in components if name in component_names)
+
+        def take_ranked_files_within_budget(
+            candidates: list[RankedFile],
+            max_tokens: int,
+        ) -> list[RankedFile]:
+            selected: list[RankedFile] = []
+            for candidate in candidates:
+                trial = selected + [candidate]
+                tokens = cls._isolated_token_count(
+                    token_budgeter,
+                    ",\n".join(file.model_dump_json() for file in trial),
+                )
+                if tokens > max_tokens and selected:
+                    break
+                if tokens > max_tokens:
+                    continue
+                selected = trial
+            return selected
+
+        def take_summaries_within_budget(
+            candidates: list[ExtractionFileSummary],
+            max_tokens: int,
+        ) -> list[ExtractionFileSummary]:
+            selected: list[ExtractionFileSummary] = []
+            for candidate in candidates:
+                trial = selected + [candidate]
+                tokens = cls._isolated_token_count(
+                    token_budgeter,
+                    ",\n".join(
+                        summary.model_dump_json(exclude_defaults=True)
+                        for summary in trial
+                    ),
+                )
+                if tokens > max_tokens and selected:
+                    break
+                if tokens > max_tokens:
+                    continue
+                selected = trial
+            return selected
+
+        def take_previews_within_budget(
+            candidates: list[ExtractionOverviewFilePreview],
+            max_tokens: int,
+        ) -> list[ExtractionOverviewFilePreview]:
+            selected: list[ExtractionOverviewFilePreview] = []
+            for candidate in candidates:
+                trial = selected + [candidate]
+                tokens = cls._isolated_token_count(
+                    token_budgeter,
+                    ",\n".join(preview.model_dump_json() for preview in trial),
+                )
+                if tokens > max_tokens and selected:
+                    break
+                if tokens > max_tokens:
+                    continue
+                selected = trial
+            return selected
+
+        def truncate_lines_to_budget(text: str, max_tokens: int) -> tuple[str, bool]:
+            if max_tokens <= 0:
+                return "", bool(text)
+            if token_budgeter.count(text) <= max_tokens:
+                return text, False
+            kept: list[str] = []
+            for line in text.splitlines():
+                trial = "\n".join([*kept, line])
+                if token_budgeter.count(trial) > max_tokens:
+                    break
+                kept.append(line)
+            if not kept:
+                return token_budgeter.truncate(text, max_tokens=max_tokens), True
+            return "\n".join([*kept, "... compact graph truncated ..."]), True
+
+        compacted_summaries = [
+            cls._compact_initial_file_summary_for_overview(
+                summary,
+                token_budgeter=token_budgeter,
+            )
+            for summary in file_summaries
+        ]
+        all_compacted_summaries = list(compacted_summaries)
+        full_seeded_prompt_text = compact_seeded_overview_for_prompt(seeded_overview)
         original_prompt = build_prompt_for(
             ranked_files_to_include=ranked_files,
             summaries_to_include=file_summaries,
             previews_to_include=file_previews,
+            seeded_overview_prompt_text=full_seeded_prompt_text,
         )
         original_prompt_tokens = token_budgeter.count(
             EXTRACTION_OVERVIEW_SYSTEM_PROMPT + original_prompt
@@ -2594,25 +2726,65 @@ class ExtractionService:
             file_summaries=file_summaries,
             file_previews=file_previews,
             seeded_overview=seeded_overview,
+            seeded_overview_prompt_text=full_seeded_prompt_text,
             token_budgeter=token_budgeter,
             prompt=original_prompt,
         )
-        compacted_summaries = [
-            cls._compact_initial_file_summary_for_overview(
-                summary,
-                token_budgeter=token_budgeter,
+
+        protected_text = component_text(
+            ranked_files_to_include=[],
+            summaries_to_include=[],
+            previews_to_include=[],
+            seeded_overview_prompt_text="",
+            component_names={"intro_and_counts", "final_task_instructions"},
+        )
+        protected_section_tokens = token_budgeter.count(
+            EXTRACTION_OVERVIEW_SYSTEM_PROMPT + protected_text
+        )
+        if protected_section_tokens > max_input_tokens:
+            raise ValueError(
+                "Initial overview prompt budget cannot fit protected prompt sections "
+                f"({protected_section_tokens} tokens > {max_input_tokens})."
             )
-            for summary in file_summaries
-        ]
-        all_compacted_summaries = list(compacted_summaries)
-        used_ranked_files = list(ranked_files)
-        used_file_previews = list(file_previews)
+
+        summary_target_tokens = int(
+            max_input_tokens * INITIAL_OVERVIEW_SUMMARY_BUDGET_RATIO
+        )
+        graph_target_tokens = int(
+            max_input_tokens * INITIAL_OVERVIEW_GRAPH_BUDGET_RATIO
+        )
+        ranked_target_tokens = int(
+            max_input_tokens * INITIAL_OVERVIEW_RANKED_FILE_BUDGET_RATIO
+        )
+        preview_target_tokens = (
+            int(max_input_tokens * INITIAL_OVERVIEW_PREVIEW_BUDGET_RATIO)
+            if not compacted_summaries
+            else 0
+        )
+
+        used_compacted_summaries = take_summaries_within_budget(
+            compacted_summaries,
+            summary_target_tokens,
+        )
+        used_ranked_files = take_ranked_files_within_budget(
+            ranked_files,
+            ranked_target_tokens,
+        )
+        used_file_previews = take_previews_within_budget(
+            file_previews,
+            preview_target_tokens,
+        )
+        seeded_prompt_text, graph_text_truncated = truncate_lines_to_budget(
+            full_seeded_prompt_text,
+            graph_target_tokens,
+        )
 
         def build_prompt() -> str:
             return build_prompt_for(
                 ranked_files_to_include=used_ranked_files,
-                summaries_to_include=compacted_summaries,
+                summaries_to_include=used_compacted_summaries,
                 previews_to_include=used_file_previews,
+                seeded_overview_prompt_text=seeded_prompt_text,
             )
 
         prompt = build_prompt()
@@ -2622,35 +2794,54 @@ class ExtractionService:
         compacted_component_breakdown = cls._initial_overview_prompt_component_breakdown(
             data_package_name=data_package_name,
             ranked_files=used_ranked_files,
-            file_summaries=compacted_summaries,
+            file_summaries=used_compacted_summaries,
             file_previews=used_file_previews,
             seeded_overview=seeded_overview,
+            seeded_overview_prompt_text=seeded_prompt_text,
             token_budgeter=token_budgeter,
             prompt=prompt,
         )
-        dropped_summary_paths: list[str] = []
-        dropped_ranked_paths: list[str] = []
-        dropped_preview_paths: list[str] = []
+        dropped_summary_paths = [
+            summary.file_path
+            for summary in compacted_summaries
+            if summary.file_path not in {used.file_path for used in used_compacted_summaries}
+        ]
+        dropped_ranked_paths = [
+            file.file_path
+            for file in ranked_files
+            if file.file_path not in {used.file_path for used in used_ranked_files}
+        ]
+        dropped_preview_paths = [
+            preview.file_path
+            for preview in file_previews
+            if preview.file_path not in {used.file_path for used in used_file_previews}
+        ]
 
-        while (
-            compacted_summaries
-            and token_budgeter.count(EXTRACTION_OVERVIEW_SYSTEM_PROMPT + prompt) > max_input_tokens
-        ):
-            dropped_summary_paths.append(compacted_summaries.pop().file_path)
-            prompt = build_prompt()
-
-        while (
-            used_file_previews
-            and token_budgeter.count(EXTRACTION_OVERVIEW_SYSTEM_PROMPT + prompt) > max_input_tokens
-        ):
+        while used_file_previews and token_budgeter.count(
+            EXTRACTION_OVERVIEW_SYSTEM_PROMPT + prompt
+        ) > max_input_tokens:
             dropped_preview_paths.append(used_file_previews.pop().file_path)
             prompt = build_prompt()
 
-        while (
-            len(used_ranked_files) > 1
-            and token_budgeter.count(EXTRACTION_OVERVIEW_SYSTEM_PROMPT + prompt) > max_input_tokens
-        ):
+        while used_ranked_files and token_budgeter.count(
+            EXTRACTION_OVERVIEW_SYSTEM_PROMPT + prompt
+        ) > max_input_tokens:
             dropped_ranked_paths.append(used_ranked_files.pop().file_path)
+            prompt = build_prompt()
+
+        if token_budgeter.count(EXTRACTION_OVERVIEW_SYSTEM_PROMPT + prompt) > max_input_tokens:
+            remaining_for_graph = max(0, graph_target_tokens // 2)
+            seeded_prompt_text, graph_text_truncated_again = truncate_lines_to_budget(
+                seeded_prompt_text,
+                remaining_for_graph,
+            )
+            graph_text_truncated = graph_text_truncated or graph_text_truncated_again
+            prompt = build_prompt()
+
+        while len(used_compacted_summaries) > 1 and token_budgeter.count(
+            EXTRACTION_OVERVIEW_SYSTEM_PROMPT + prompt
+        ) > max_input_tokens:
+            dropped_summary_paths.append(used_compacted_summaries.pop().file_path)
             prompt = build_prompt()
 
         system_tokens = token_budgeter.count(EXTRACTION_OVERVIEW_SYSTEM_PROMPT)
@@ -2660,43 +2851,74 @@ class ExtractionService:
             cls._initial_overview_prompt_component_breakdown(
                 data_package_name=data_package_name,
                 ranked_files=used_ranked_files,
-                file_summaries=compacted_summaries,
+                file_summaries=used_compacted_summaries,
                 file_previews=used_file_previews,
                 seeded_overview=seeded_overview,
+                seeded_overview_prompt_text=seeded_prompt_text,
                 token_budgeter=token_budgeter,
                 prompt=prompt_before_hard_truncation,
             )
         )
         hard_truncated = False
         if system_tokens + prompt_tokens > max_input_tokens:
-            prompt = token_budgeter.truncate(
-                prompt,
-                max_tokens=max(1, max_input_tokens - system_tokens),
+            raise ValueError(
+                "Initial overview prompt budget could not fit protected sections "
+                "after optional context reduction."
             )
-            hard_truncated = True
-            prompt_tokens = token_budgeter.count(prompt)
         final_sent_breakdown = cls._initial_overview_prompt_component_breakdown(
             data_package_name=data_package_name,
             ranked_files=used_ranked_files,
-            file_summaries=compacted_summaries,
+            file_summaries=used_compacted_summaries,
             file_previews=used_file_previews,
             seeded_overview=seeded_overview,
+            seeded_overview_prompt_text=seeded_prompt_text,
             token_budgeter=token_budgeter,
             prompt=prompt,
         )
+        prompt_tokens = token_budgeter.count(prompt)
 
         report = {
             "max_input_tokens": max_input_tokens,
+            "expected_output_token_reserve": INITIAL_OVERVIEW_EXPECTED_OUTPUT_TOKENS,
+            "input_safety_margin_tokens": INITIAL_OVERVIEW_INPUT_SAFETY_MARGIN_TOKENS,
+            "protected_section_tokens": protected_section_tokens,
             "system_tokens": system_tokens,
             "prompt_tokens": prompt_tokens,
             "total_input_tokens": system_tokens + prompt_tokens,
             "original_total_input_tokens": original_prompt_tokens,
             "compacted_total_input_tokens_before_drop": compacted_prompt_tokens,
+            "token_budget_targets": {
+                "ranked_files": ranked_target_tokens,
+                "compact_summaries": summary_target_tokens,
+                "seeded_graph_compact_text": graph_target_tokens,
+                "fallback_previews": preview_target_tokens,
+            },
+            "token_budget_actuals": {
+                "ranked_files": cls._isolated_token_count(
+                    token_budgeter,
+                    ",\n".join(file.model_dump_json() for file in used_ranked_files),
+                ),
+                "compact_summaries": cls._isolated_token_count(
+                    token_budgeter,
+                    ",\n".join(
+                        summary.model_dump_json(exclude_defaults=True)
+                        for summary in used_compacted_summaries
+                    ),
+                ),
+                "seeded_graph_compact_text": cls._isolated_token_count(
+                    token_budgeter,
+                    seeded_prompt_text,
+                ),
+                "fallback_previews": cls._isolated_token_count(
+                    token_budgeter,
+                    ",\n".join(preview.model_dump_json() for preview in used_file_previews),
+                ),
+            },
             "tokenizer_fallback": token_budgeter.uses_fallback,
-            "compact_summary_count": len(compacted_summaries),
+            "compact_summary_count": len(used_compacted_summaries),
             "original_summary_count": len(file_summaries),
             "included_summary_paths": [
-                summary.file_path for summary in compacted_summaries
+                summary.file_path for summary in used_compacted_summaries
             ],
             "dropped_summary_paths": dropped_summary_paths,
             "ranked_file_count": len(used_ranked_files),
@@ -2712,6 +2934,7 @@ class ExtractionService:
             ],
             "dropped_preview_paths": dropped_preview_paths,
             "hard_truncated": hard_truncated,
+            "compact_graph_truncated": graph_text_truncated,
             "token_component_breakdown": {
                 "original": original_component_breakdown,
                 "compacted_before_drop": compacted_component_breakdown,
@@ -2721,10 +2944,11 @@ class ExtractionService:
                     ranked_files=ranked_files,
                     used_ranked_files=used_ranked_files,
                     compacted_summaries=all_compacted_summaries,
-                    used_compacted_summaries=compacted_summaries,
+                    used_compacted_summaries=used_compacted_summaries,
                     used_file_previews=used_file_previews,
                     file_previews=file_previews,
                     seeded_overview=seeded_overview,
+                    seeded_overview_prompt_text=seeded_prompt_text,
                     token_budgeter=token_budgeter,
                 ),
             },
@@ -2834,6 +3058,10 @@ class ExtractionService:
             "failed_response",
             "",
         )
+        first_response = getattr(exc, "first_response", None) or exc.details.get(
+            "first_response",
+            "",
+        )
         usage = getattr(exc, "usage", RunUsage())
         return InitialOverviewFailureDiagnostic(
             error_type=type(exc).__name__,
@@ -2849,6 +3077,8 @@ class ExtractionService:
                 token_budgeter=token_budgeter,
                 max_tokens=INITIAL_OVERVIEW_FAILURE_EXCERPT_TOKENS,
             ),
+            first_model_output=str(first_response),
+            failed_model_output=str(failed_response),
             prompt_budget=prompt_budget,
             usage={
                 "requests": usage.requests,
@@ -3044,6 +3274,7 @@ class ExtractionService:
         *,
         file_path: str,
         reason: str,
+        details: dict[str, Any] | None = None,
         diagnostics: InitialFileSummaryDiagnostics | None = None,
     ) -> ExtractionFileSummary:
         if diagnostics is not None:
@@ -3052,12 +3283,40 @@ class ExtractionService:
                     file_path=file_path,
                     reason="failed",
                     message=reason,
+                    details=details or {},
                 )
             )
         return ExtractionFileSummary(
             file_path=file_path,
             status="failed",
         )
+
+    @staticmethod
+    def _structured_completion_debug_details(exc: CompletionError) -> dict[str, Any]:
+        first_response = getattr(exc, "first_response", None) or exc.details.get(
+            "first_response",
+            "",
+        )
+        failed_response = getattr(exc, "failed_response", None) or exc.details.get(
+            "failed_response",
+            "",
+        )
+        details: dict[str, Any] = {}
+        if first_response:
+            details["first_model_output"] = str(first_response)
+        if failed_response:
+            details["failed_model_output"] = str(failed_response)
+        if exc.details.get("last_error_type"):
+            details["last_error_type"] = str(exc.details.get("last_error_type", ""))
+        if exc.details.get("last_error"):
+            details["last_error"] = str(exc.details.get("last_error", ""))
+        if exc.details.get("error_type"):
+            details["error_type"] = str(exc.details.get("error_type", ""))
+        if exc.details.get("api_attempts") is not None:
+            details["api_attempts"] = exc.details.get("api_attempts")
+        if exc.details.get("model"):
+            details["model"] = str(exc.details.get("model", ""))
+        return details
 
     @staticmethod
     def _summarized_initial_file_summaries(

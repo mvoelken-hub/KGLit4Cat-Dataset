@@ -15,6 +15,7 @@ from app.domain.extraction import (
     ExtractionFileSummary,
     ExtractionOverview,
     ExtractionOverviewFilePreview,
+    ExtractionOverviewModelOutput,
     ExtractionNormalization,
     ExtractionRunResult,
     ExtractionRunProgress,
@@ -415,6 +416,23 @@ def overview_for_file(
     )
 
 
+def model_output_for_file(
+    file_path: str = "README.md",
+    *,
+    source_fingerprint: str = "",
+    summary: str = "File is present.",
+    uncertainty: str = "Use graph orientation only.",
+) -> ExtractionOverviewModelOutput:
+    return ExtractionOverviewModelOutput.model_validate(
+        overview_for_file(
+            file_path=file_path,
+            source_fingerprint=source_fingerprint,
+            summary=summary,
+            uncertainty=uncertainty,
+        ).model_dump()
+    )
+
+
 def resource_context(identifier: str, description: str) -> ExtractionContext:
     return ExtractionContext.model_validate(
         {
@@ -619,11 +637,16 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 "intro_and_counts",
                 "ranked_files_json",
                 "validated_summaries_json",
-                "seeded_graph_json",
+                "seeded_graph_compact_text",
                 "fallback_previews_json",
                 "final_task_instructions",
             ],
         )
+
+    def test_extraction_overview_system_prompt_shows_valid_shape_and_rank_rule(self):
+        self.assertIn('"node_id": "file:metadata.txt"', EXTRACTION_OVERVIEW_SYSTEM_PROMPT)
+        self.assertNotIn('"rank"', EXTRACTION_OVERVIEW_SYSTEM_PROMPT)
+        self.assertIn("Do not output rank fields", EXTRACTION_OVERVIEW_SYSTEM_PROMPT)
 
     async def test_initial_context_run_does_not_require_chunks_or_profile(self):
         service, task_registry, output_repository = make_service(
@@ -829,6 +852,55 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(output_repository.initial_file_summaries, state.initial_file_summaries)
         self.assertTrue(any("spectrum.png" in warning and "skipped" in warning for warning in warnings))
 
+    async def test_initial_file_summary_failure_persists_exact_model_output(self):
+        service, _, output_repository = make_service([[make_chunk()]])
+        service.ollama_client.ollama_client = SimpleNamespace()  # type: ignore[attr-defined]
+        data_package = DataPackage(
+            file_name="tiny-package",
+            files=[
+                FileEntry(
+                    file_path="title",
+                    file_name="title",
+                    file_extension="",
+                    raw_content=b"AK BRaese, Jasmin Seibert, JTS112-01-04-F3\r\n",
+                )
+            ],
+        )
+        state = ExtractionRunState(profile_identifier="profile")
+
+        async def fake_generate(*_args, **_kwargs):
+            raise MaxRetriesExceeded(
+                last_error=OutputParsingError("rank must be >= 1"),
+                failed_response='{"file_path": "title", "status": "failed"}',
+                first_response='{"file_path": "title", "rank": 0}',
+                usage=RunUsage(requests=2, input_tokens=20, output_tokens=5),
+            )
+
+        warnings: list[str] = []
+        with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
+            await service._generate_initial_file_summaries(
+                data_package_id="package-id",
+                data_package=data_package,
+                state=state,
+                warnings=warnings,
+            )
+
+        self.assertEqual(state.initial_file_summary_status, "failed")
+        diagnostics = output_repository.initial_file_summary_diagnostics
+        self.assertIsNotNone(diagnostics)
+        failure = diagnostics.records[0]
+        self.assertEqual(failure.file_path, "title")
+        self.assertEqual(failure.reason, "failed")
+        self.assertEqual(
+            failure.details["first_model_output"],
+            '{"file_path": "title", "rank": 0}',
+        )
+        self.assertEqual(
+            failure.details["failed_model_output"],
+            '{"file_path": "title", "status": "failed"}',
+        )
+        self.assertEqual(failure.details["last_error_type"], "OutputParsingError")
+
     async def test_initial_overview_generation_stamps_file_provenance(self):
         service, _, output_repository = make_service([[make_chunk()]])
         service.ollama_client.ollama_client = SimpleNamespace()  # type: ignore[attr-defined]
@@ -856,7 +928,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         state = ExtractionRunState(profile_identifier="profile")
 
         async def fake_generate(*_args, **kwargs):
-            self.assertIs(kwargs["output_type"], ExtractionOverview)
+            self.assertIs(kwargs["output_type"], ExtractionOverviewModelOutput)
             self.assertIn("scientific data archivist", kwargs["system"])
             self.assertIn("file-centered package graph", kwargs["system"])
             self.assertIn("nodes", kwargs["system"])
@@ -868,13 +940,13 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("First group files by shared package role", kwargs["system"])
             self.assertIn("connect files to group nodes first", kwargs["system"])
             self.assertIn("package graph triage, not final scientific interpretation", kwargs["prompt"])
-            self.assertIn("Backend-seeded package/directory/file/group graph JSON", kwargs["prompt"])
+            self.assertIn("Backend-seeded package graph endpoints and deterministic hints", kwargs["prompt"])
             self.assertIn("Ranked order means extraction priority only", kwargs["prompt"])
             self.assertIn("Group files first", kwargs["prompt"])
             self.assertIn("dataset_description.txt", kwargs["prompt"])
             self.assertIn("##$PULPROG=zg30", kwargs["prompt"])
             return CompletionResult(
-                output=ExtractionOverview(
+                output=ExtractionOverviewModelOutput(
                     nodes=[
                         {
                             "node_id": "group:raw-data",
@@ -1272,7 +1344,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("spectrum.png", kwargs["prompt"])
             self.assertIn("notes.txt", kwargs["prompt"])
             return CompletionResult(
-                output=overview_for_file("notes.txt", summary="notes.txt contains text notes."),
+                output=model_output_for_file("notes.txt", summary="notes.txt contains text notes."),
                 usage=RunUsage(requests=1),
             )
 
@@ -1337,7 +1409,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 ),
             )
             return CompletionResult(
-                output=overview_for_file("parameters.txt", summary="parameters.txt was summarized."),
+                output=model_output_for_file("parameters.txt", summary="parameters.txt was summarized."),
                 usage=RunUsage(requests=1, input_tokens=100, output_tokens=20),
             )
 
@@ -1378,10 +1450,115 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             breakdown["final_sent"]["message_total_tokens"],
             diagnostic.prompt_budget["total_input_tokens"],
         )
+        self.assertIn("token_budget_targets", diagnostic.prompt_budget)
+        self.assertIn("token_budget_actuals", diagnostic.prompt_budget)
+        self.assertGreater(diagnostic.prompt_budget["protected_section_tokens"], 0)
         compact_payload = breakdown["payloads"]["compact_summaries"]
         self.assertEqual(compact_payload["original_count"], 1)
         self.assertEqual(compact_payload["per_file"][0]["file_path"], "parameters.txt")
         self.assertIn("json_tokens", compact_payload["per_file"][0])
+        self.assertIn("seeded_graph_compact_text", breakdown["payloads"])
+
+    def test_initial_overview_input_budget_reserves_output_and_safety_margin(self):
+        self.assertEqual(
+            ExtractionService._initial_overview_input_token_budget(4096),
+            2846,
+        )
+        self.assertEqual(
+            ExtractionService._initial_overview_input_token_budget(1000),
+            1,
+        )
+
+    def test_initial_overview_prompt_uses_compact_seeded_graph_not_full_json(self):
+        budgeter = PromptTokenBudgeter(tokenizer=self.WhitespaceTokenizer())
+        ranked_files = [
+            RankedFile(rank=1, file_path="settings/acquisition.txt"),
+            RankedFile(rank=2, file_path="method/program.txt"),
+        ]
+        summaries = [
+            ExtractionFileSummary(
+                file_path="settings/acquisition.txt",
+                explicit_purpose="acquisition parameter configuration",
+            ),
+            ExtractionFileSummary(
+                file_path="method/program.txt",
+                instrument_or_software_terms_and_settings=["pulse sequence"],
+            ),
+        ]
+        seed = ExtractionService._seed_initial_overview_graph(
+            data_package_name="package",
+            ranked_files=ranked_files,
+            file_summaries=summaries,
+            file_previews=[
+                ExtractionOverviewFilePreview(rank=1, file_path="settings/acquisition.txt"),
+                ExtractionOverviewFilePreview(rank=2, file_path="method/program.txt"),
+            ],
+        )
+
+        prompt, report = ExtractionService._build_budgeted_initial_overview_prompt(
+            data_package_name="package",
+            ranked_files=ranked_files,
+            file_summaries=summaries,
+            file_previews=[],
+            seeded_overview=seed,
+            token_budgeter=budgeter,
+            max_input_tokens=1200,
+        )
+
+        self.assertIn("FILES", prompt)
+        self.assertIn("PATH TREE", prompt)
+        self.assertIn("GROUPS", prompt)
+        self.assertIn("file:settings/acquisition.txt", prompt)
+        self.assertIn("group:acquisition_settings", prompt)
+        self.assertNotIn('"nodes"', prompt)
+        self.assertNotIn('"edges"', prompt)
+        self.assertFalse(report["hard_truncated"])
+        self.assertIn("seeded_graph_compact_text", report["token_budget_actuals"])
+
+    def test_initial_overview_tight_budget_keeps_summaries_and_task_instructions(self):
+        budgeter = PromptTokenBudgeter(tokenizer=self.WhitespaceTokenizer())
+        summaries = [
+            ExtractionFileSummary(
+                file_path=f"file-{index}.txt",
+                data_format="plain text",
+                metadata_signals=[f"metadata signal {index}"],
+                quantitative_signals=[f"quantitative signal {index}"],
+            )
+            for index in range(12)
+        ]
+        ranked_files = [
+            RankedFile(rank=index + 1, file_path=summary.file_path)
+            for index, summary in enumerate(summaries)
+        ]
+        seed = ExtractionService._seed_initial_overview_graph(
+            data_package_name="package",
+            ranked_files=ranked_files,
+            file_summaries=summaries,
+            file_previews=[
+                ExtractionOverviewFilePreview(rank=file.rank, file_path=file.file_path)
+                for file in ranked_files
+            ],
+        )
+
+        prompt, report = ExtractionService._build_budgeted_initial_overview_prompt(
+            data_package_name="package",
+            ranked_files=ranked_files,
+            file_summaries=summaries,
+            file_previews=[],
+            seeded_overview=seed,
+            token_budgeter=budgeter,
+            max_input_tokens=1200,
+        )
+
+        self.assertIn("Validated per-file summaries JSON", prompt)
+        self.assertIn("metadata signal 0", prompt)
+        self.assertIn("Later extracted objects must still be supported", prompt)
+        self.assertGreater(len(report["included_summary_paths"]), 0)
+        self.assertLessEqual(
+            budgeter.count(EXTRACTION_OVERVIEW_SYSTEM_PROMPT + prompt),
+            1200,
+        )
+        self.assertFalse(report["hard_truncated"])
 
     async def test_initial_overview_structured_failure_persists_diagnostic(self):
         service, _, output_repository = make_service([[make_chunk()]])
@@ -1425,6 +1602,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             raise MaxRetriesExceeded(
                 last_error=OutputParsingError("bad json"),
                 failed_response='{"nodes": [{"node_id": "unterminated"',
+                first_response='{"nodes": [{"node_id": "", "rank": 0}]}',
                 usage=RunUsage(requests=2, input_tokens=200, output_tokens=50),
             )
 
@@ -1450,6 +1628,14 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(diagnostic.last_error_type, "OutputParsingError")
         self.assertIn("bad json", diagnostic.last_error)
         self.assertIn("unterminated", diagnostic.failed_response_excerpt)
+        self.assertEqual(
+            diagnostic.first_model_output,
+            '{"nodes": [{"node_id": "", "rank": 0}]}',
+        )
+        self.assertEqual(
+            diagnostic.failed_model_output,
+            '{"nodes": [{"node_id": "unterminated"',
+        )
         self.assertEqual(diagnostic.usage["requests"], 2)
         self.assertIn("total_input_tokens", diagnostic.prompt_budget)
 

@@ -123,6 +123,23 @@ class ExtractJsonSchemaTests(unittest.TestCase):
 
 
 class SchemaExampleTests(unittest.TestCase):
+    def test_integer_example_respects_minimum(self):
+        schema = {
+            "type": "object",
+            "properties": {
+                "rank": {"type": "integer", "minimum": 1},
+                "score": {"type": "number", "minimum": 0.25},
+            },
+        }
+
+        self.assertEqual(
+            _schema_example(schema),
+            {
+                "rank": 1,
+                "score": 0.25,
+            },
+        )
+
     def test_recursive_ref_cycle_is_truncated(self):
         schema = {
             "$defs": {
@@ -524,6 +541,30 @@ class GenerateStructuredRetryTests(IsolatedAsyncioTestCase):
         self.assertIsInstance(error.exception.last_error, OutputParsingError)
         self.assertEqual(error.exception.details["last_error_type"], "OutputParsingError")
         self.assertEqual(error.exception.failed_response, "still bad")
+        self.assertEqual(error.exception.first_response, "still bad")
+        self.assertEqual(error.exception.details["first_response"], "still bad")
+
+    async def test_api_error_after_first_structured_failure_keeps_first_response(self):
+        client = FakeOllamaClient([
+            FakeGenerateResponse(response="bad json"),
+            RuntimeError("repair rejected"),
+            RuntimeError("repair rejected"),
+            RuntimeError("repair rejected"),
+        ])
+
+        with self.assertRaises(CompletionError) as error:
+            await generate_structured(
+                client,
+                model="test-model",
+                system="Be precise.",
+                prompt="Return JSON.",
+                output_type=SimpleOutput,
+                retries=1,
+            )
+
+        self.assertEqual(client.call_index, 4)
+        self.assertEqual(error.exception.details["first_response"], "bad json")
+        self.assertEqual(getattr(error.exception, "first_response"), "bad json")
 
     async def test_failed_response_can_be_repaired_later(self):
         first_pass = FakeOllamaClient([

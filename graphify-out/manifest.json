@@ -150,9 +150,9 @@
     "semantic_hash": "a7523bdcf94736a02af78a36c8de9688"
   },
   "backend/app/domain/extraction/__init__.py": {
-    "mtime": 1781522771.1117034,
-    "ast_hash": "baaf5b8f9c799447e6f66208dd23bdf3",
-    "semantic_hash": "baaf5b8f9c799447e6f66208dd23bdf3"
+    "mtime": 1781526489.1161847,
+    "ast_hash": "732b8df24096950d1504055a3be0bfe6",
+    "semantic_hash": ""
   },
   "backend/app/domain/extraction/extraction_context.py": {
     "mtime": 1781522761.4210541,
@@ -165,9 +165,9 @@
     "semantic_hash": "b174062562ff4d3d95171f1549292e0f"
   },
   "backend/app/domain/extraction/overview.py": {
-    "mtime": 1781521160.2619188,
-    "ast_hash": "cfd65fbbffa9f0f7470c564a05c8d31c",
-    "semantic_hash": "cfd65fbbffa9f0f7470c564a05c8d31c"
+    "mtime": 1781526489.1161847,
+    "ast_hash": "7492f39686ec834fa5c6157c375870fe",
+    "semantic_hash": ""
   },
   "backend/app/domain/extraction/profile_projection.py": {
     "mtime": 1781427252.826606,
@@ -275,14 +275,14 @@
     "semantic_hash": "e91f363561afb530a5b7bf6fb8e33e11"
   },
   "backend/app/ollama/completion.py": {
-    "mtime": 1781470224.8272004,
-    "ast_hash": "c4c737cbd71111efe2929ce71d4693dd",
-    "semantic_hash": "c4c737cbd71111efe2929ce71d4693dd"
+    "mtime": 1781526408.1747935,
+    "ast_hash": "bce2a195e318296afbaf16278e4ad6f7",
+    "semantic_hash": ""
   },
   "backend/app/ollama/errors.py": {
-    "mtime": 1779961629.5053692,
-    "ast_hash": "e1f86f0d2ceba04ddfe2d7357bf63276",
-    "semantic_hash": "e1f86f0d2ceba04ddfe2d7357bf63276"
+    "mtime": 1781525569.919784,
+    "ast_hash": "1c45b77348df532cb3e60a48756557f5",
+    "semantic_hash": ""
   },
   "backend/app/ollama/runtime.py": {
     "mtime": 1779961629.5063868,
@@ -320,9 +320,9 @@
     "semantic_hash": "928435e19ae89d89e22c4f620460aad3"
   },
   "backend/app/services/extraction_service.py": {
-    "mtime": 1781522243.4321008,
-    "ast_hash": "dbd29a2416e96e7d0235d7b820b86af6",
-    "semantic_hash": "dbd29a2416e96e7d0235d7b820b86af6"
+    "mtime": 1781526489.1161847,
+    "ast_hash": "d604da6b7e35d7852f89c77fde54e9ac",
+    "semantic_hash": ""
   },
   "backend/app/services/profile_service.py": {
     "mtime": 1781427084.7429636,
@@ -395,9 +395,9 @@
     "semantic_hash": "e4bfc558137d17df33149dfe43922a1f"
   },
   "backend/tests/test_initial_context_extraction.py": {
-    "mtime": 1781523031.7774775,
-    "ast_hash": "be87c93a511125028431bc6c21451ddd",
-    "semantic_hash": "be87c93a511125028431bc6c21451ddd"
+    "mtime": 1781526536.966897,
+    "ast_hash": "82dfa67ef98c1fdeccb949dcdb47db2a",
+    "semantic_hash": ""
   },
   "backend/tests/test_neo4j_driver.py": {
     "mtime": 1779292358.5664568,
@@ -415,9 +415,9 @@
     "semantic_hash": "ae20e6b3a10bc1d880c4127666b4b56e"
   },
   "backend/tests/test_ollama_completion.py": {
-    "mtime": 1781470241.5307472,
-    "ast_hash": "c1970ea2a8bb29678b422372a2cce9b0",
-    "semantic_hash": "c1970ea2a8bb29678b422372a2cce9b0"
+    "mtime": 1781526408.1747935,
+    "ast_hash": "841f25af6e24c1daa2c6cbc688dae146",
+    "semantic_hash": ""
   },
   "backend/tests/test_patch_quality.py": {
     "mtime": 1779961629.518368,

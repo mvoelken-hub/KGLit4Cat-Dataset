@@ -177,8 +177,16 @@ def _schema_example_from_node(
             )
         ]
     if node_type == "integer":
+        if isinstance(node.get("minimum"), int | float):
+            return int(math.ceil(node["minimum"]))
+        if isinstance(node.get("exclusiveMinimum"), int | float):
+            return int(math.floor(node["exclusiveMinimum"]) + 1)
         return 0
     if node_type == "number":
+        if isinstance(node.get("minimum"), int | float):
+            return node["minimum"]
+        if isinstance(node.get("exclusiveMinimum"), int | float):
+            return node["exclusiveMinimum"] + 1
         return 0.0
     if node_type == "boolean":
         return False
@@ -258,12 +266,14 @@ def _structured_failure(
     last_error: Exception | None,
     *,
     failed_response: str,
+    first_response: str,
     usage: RunUsage,
 ) -> MaxRetriesExceeded:
     return MaxRetriesExceeded(
         "Max retries exceeded while generating structured output",
         last_error=last_error,
         failed_response=failed_response,
+        first_response=first_response,
         usage=usage,
     )
 
@@ -388,6 +398,7 @@ async def generate_structured(
     total_usage = RunUsage()
 
     last_error: Exception | None = None
+    first_response = ""
 
     for attempt in range(retries + 1):
         try:
@@ -403,7 +414,10 @@ async def generate_structured(
                 api_retries=api_retries,
                 api_retry_backoff_seconds=api_retry_backoff_seconds,
             )
-        except CompletionError:
+        except CompletionError as exc:
+            if first_response:
+                exc.details.setdefault("first_response", first_response)
+                setattr(exc, "first_response", first_response)
             raise
 
         # Accumulate token usage from Ollama response metadata
@@ -412,6 +426,8 @@ async def generate_structured(
         raw = response.response or ""
         if not raw:
             raise EmptyResponseError()
+        if not first_response:
+            first_response = raw
 
         # Strip markdown fences if present
         cleaned = _strip_markdown_fences(raw)
@@ -431,7 +447,12 @@ async def generate_structured(
                 current_prompt = _repair_prompt(failed_response=raw, error=last_error)
                 current_model = repair_model or model
                 continue
-            raise _structured_failure(last_error, failed_response=raw, usage=total_usage) from e
+            raise _structured_failure(
+                last_error,
+                failed_response=raw,
+                first_response=first_response,
+                usage=total_usage,
+            ) from e
 
         # Validate against Pydantic model if provided
         if isinstance(output_type, type) and issubclass(output_type, BaseModel):
@@ -449,7 +470,12 @@ async def generate_structured(
                     current_prompt = _repair_prompt(failed_response=raw, error=last_error)
                     current_model = repair_model or model
                     continue
-                raise _structured_failure(last_error, failed_response=raw, usage=total_usage) from e
+                raise _structured_failure(
+                    last_error,
+                    failed_response=raw,
+                    first_response=first_response,
+                    usage=total_usage,
+                ) from e
             return CompletionResult(output=validated, usage=total_usage)
 
         # Raw dict schema output validated with jsonschema.
@@ -469,7 +495,12 @@ async def generate_structured(
                     current_prompt = _repair_prompt(failed_response=raw, error=last_error)
                     current_model = repair_model or model
                     continue
-                raise _structured_failure(last_error, failed_response=raw, usage=total_usage) from last_error
+                raise _structured_failure(
+                    last_error,
+                    failed_response=raw,
+                    first_response=first_response,
+                    usage=total_usage,
+                ) from last_error
         return CompletionResult(output=parsed, usage=total_usage)
 
     raise _max_retries_exceeded(last_error)
