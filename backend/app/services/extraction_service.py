@@ -59,7 +59,9 @@ from app.domain.extraction import (
     ExtractionOverviewStatus,
     InitialFileSummaryDiagnosticRecord,
     InitialFileSummaryDiagnostics,
+    InitialFileSummaryProgress,
     InitialOverviewFailureDiagnostic,
+    InitialOverviewPromptDiagnostic,
     ExtractionNormalization,
     ExtractionResultNotFoundError,
     ExtractionRunProgress,
@@ -826,9 +828,15 @@ class ExtractionService:
                     vocab_query_config=state.vocab_query_config if state else self._default_vocab_query_config(None),
                     ranked_files=state.ranked_files if state else [],
                     initial_file_summaries=result.initial_file_summaries,
+                    initial_file_summary_progress=(
+                        state.initial_file_summary_progress if state else None
+                    ),
                     initial_file_summary_status=result.initial_file_summary_status,
                     initial_extraction_overview=result.initial_extraction_overview,
                     initial_extraction_overview_status=result.initial_extraction_overview_status,
+                    initial_extraction_overview_diagnostic=(
+                        state.initial_extraction_overview_diagnostic if state else None
+                    ),
                     chunk_results=state.chunk_results if state else [],
                     vocab_queries=state.vocab_queries if state else [],
                     generated_final_draft=result.generated_final_draft,
@@ -864,9 +872,15 @@ class ExtractionService:
                     vocab_query_config=state.vocab_query_config if state else self._default_vocab_query_config(None),
                     ranked_files=state.ranked_files if state else [],
                     initial_file_summaries=state.initial_file_summaries if state else [],
+                    initial_file_summary_progress=(
+                        state.initial_file_summary_progress if state else None
+                    ),
                     initial_file_summary_status=state.initial_file_summary_status if state else None,
                     initial_extraction_overview=state.initial_extraction_overview if state else None,
                     initial_extraction_overview_status=state.initial_extraction_overview_status if state else None,
+                    initial_extraction_overview_diagnostic=(
+                        state.initial_extraction_overview_diagnostic if state else None
+                    ),
                     chunk_results=state.chunk_results if state else [],
                     vocab_queries=state.vocab_queries if state else [],
                     generated_final_draft=state.generated_final_draft if state else None,
@@ -908,9 +922,11 @@ class ExtractionService:
                     vocab_query_config=state.vocab_query_config,
                     ranked_files=state.ranked_files,
                     initial_file_summaries=state.initial_file_summaries,
+                    initial_file_summary_progress=state.initial_file_summary_progress,
                     initial_file_summary_status=state.initial_file_summary_status,
                     initial_extraction_overview=state.initial_extraction_overview,
                     initial_extraction_overview_status=state.initial_extraction_overview_status,
+                    initial_extraction_overview_diagnostic=state.initial_extraction_overview_diagnostic,
                     chunk_results=state.chunk_results,
                     vocab_queries=state.vocab_queries,
                     generated_final_draft=state.generated_final_draft,
@@ -982,9 +998,11 @@ class ExtractionService:
             vocab_query_config=state.vocab_query_config,
             ranked_files=state.ranked_files,
             initial_file_summaries=state.initial_file_summaries,
+            initial_file_summary_progress=state.initial_file_summary_progress,
             initial_file_summary_status=state.initial_file_summary_status,
             initial_extraction_overview=state.initial_extraction_overview,
             initial_extraction_overview_status=state.initial_extraction_overview_status,
+            initial_extraction_overview_diagnostic=state.initial_extraction_overview_diagnostic,
             chunk_results=state.chunk_results,
             vocab_queries=state.vocab_queries,
             generated_final_draft=state.generated_final_draft,
@@ -1053,9 +1071,11 @@ class ExtractionService:
             vocab_query_config=state.vocab_query_config,
             ranked_files=state.ranked_files,
             initial_file_summaries=state.initial_file_summaries,
+            initial_file_summary_progress=state.initial_file_summary_progress,
             initial_file_summary_status=state.initial_file_summary_status,
             initial_extraction_overview=state.initial_extraction_overview,
             initial_extraction_overview_status=state.initial_extraction_overview_status,
+            initial_extraction_overview_diagnostic=state.initial_extraction_overview_diagnostic,
             chunk_results=state.chunk_results,
             vocab_queries=state.vocab_queries,
             generated_final_draft=state.generated_final_draft,
@@ -1115,9 +1135,11 @@ class ExtractionService:
             vocab_query_config=state.vocab_query_config,
             ranked_files=state.ranked_files,
             initial_file_summaries=state.initial_file_summaries,
+            initial_file_summary_progress=state.initial_file_summary_progress,
             initial_file_summary_status=state.initial_file_summary_status,
             initial_extraction_overview=state.initial_extraction_overview,
             initial_extraction_overview_status=state.initial_extraction_overview_status,
+            initial_extraction_overview_diagnostic=state.initial_extraction_overview_diagnostic,
             chunk_results=state.chunk_results,
             vocab_queries=state.vocab_queries,
             generated_final_draft=state.generated_final_draft,
@@ -1227,9 +1249,11 @@ class ExtractionService:
             vocab_query_config=state.vocab_query_config,
             ranked_files=state.ranked_files,
             initial_file_summaries=state.initial_file_summaries,
+            initial_file_summary_progress=state.initial_file_summary_progress,
             initial_file_summary_status=state.initial_file_summary_status,
             initial_extraction_overview=state.initial_extraction_overview,
             initial_extraction_overview_status=state.initial_extraction_overview_status,
+            initial_extraction_overview_diagnostic=state.initial_extraction_overview_diagnostic,
             chunk_results=state.chunk_results,
             vocab_queries=state.vocab_queries,
             generated_final_draft=state.generated_final_draft,
@@ -1336,6 +1360,9 @@ class ExtractionService:
             initial_file_summaries=(
                 persisted_state.initial_file_summaries if persisted_state else []
             ),
+            initial_file_summary_progress=(
+                persisted_state.initial_file_summary_progress if persisted_state else None
+            ),
             initial_file_summary_status=(
                 persisted_state.initial_file_summary_status if persisted_state else None
             ),
@@ -1344,6 +1371,11 @@ class ExtractionService:
             ),
             initial_extraction_overview_status=(
                 persisted_state.initial_extraction_overview_status if persisted_state else None
+            ),
+            initial_extraction_overview_diagnostic=(
+                persisted_state.initial_extraction_overview_diagnostic
+                if persisted_state
+                else None
             ),
             chunk_results=persisted_state.chunk_results if persisted_state else [],
             vocab_queries=persisted_state.vocab_queries if persisted_state else [],
@@ -1888,6 +1920,17 @@ class ExtractionService:
     ) -> None:
         diagnostics = InitialFileSummaryDiagnostics()
         candidate_files = list(self._initial_file_summary_candidate_files(data_package))
+        summary_progress = InitialFileSummaryProgress(total_files=len(candidate_files))
+        state.initial_file_summary_progress = summary_progress
+        self._save_run_state(data_package_id, state)
+        self._update_initial_context_progress(
+            data_package_id,
+            self._initial_context_progress_from_state(
+                state,
+                warnings=warnings,
+                stage="initial_file_summaries",
+            ),
+        )
         if not hasattr(self.ollama_client, "ollama_client"):
             for file_entry in candidate_files:
                 if self._should_skip_initial_file_summary(file_entry):
@@ -1907,8 +1950,27 @@ class ExtractionService:
                 for file_entry in candidate_files
                 if not self._should_skip_initial_file_summary(file_entry)
             ]
+            state.initial_file_summary_progress = InitialFileSummaryProgress(
+                total_files=len(candidate_files),
+                processed_files=len(candidate_files),
+                summarized_files=0,
+                skipped_files=sum(
+                    1
+                    for file_entry in candidate_files
+                    if self._should_skip_initial_file_summary(file_entry)
+                ),
+                failed_files=len(state.initial_file_summaries),
+            )
             state.initial_file_summary_status = "failed"
             self._save_run_state(data_package_id, state)
+            self._update_initial_context_progress(
+                data_package_id,
+                self._initial_context_progress_from_state(
+                    state,
+                    warnings=warnings,
+                    stage="initial_file_summaries",
+                ),
+            )
             self._persist_initial_file_summaries(data_package_id, state)
             self._persist_initial_file_summary_diagnostics(
                 data_package_id,
@@ -1919,7 +1981,32 @@ class ExtractionService:
 
         summaries: list[ExtractionFileSummary] = []
         skipped_count = 0
+        failed_count = 0
+
+        def publish_summary_progress(current_file_path: str | None = None) -> None:
+            state.initial_file_summaries = list(summaries)
+            state.initial_file_summary_progress = InitialFileSummaryProgress(
+                total_files=len(candidate_files),
+                processed_files=len(summaries) + skipped_count,
+                summarized_files=sum(
+                    1 for summary in summaries if summary.status == "summarized"
+                ),
+                skipped_files=skipped_count,
+                failed_files=failed_count,
+                current_file_path=current_file_path,
+            )
+            self._save_run_state(data_package_id, state)
+            self._update_initial_context_progress(
+                data_package_id,
+                self._initial_context_progress_from_state(
+                    state,
+                    warnings=warnings,
+                    stage="initial_file_summaries",
+                ),
+            )
+
         for file_entry in candidate_files:
+            publish_summary_progress(current_file_path=file_entry.file_path)
             if self._should_skip_initial_file_summary(file_entry):
                 skipped_count += 1
                 warnings.append(
@@ -1932,6 +2019,7 @@ class ExtractionService:
                         message="Image files are not text-extractable.",
                     )
                 )
+                publish_summary_progress()
                 continue
             try:
                 extracted_content = file_entry.get_extracted_content()
@@ -1947,6 +2035,7 @@ class ExtractionService:
                             message="No extractable text content.",
                         )
                     )
+                    publish_summary_progress()
                     continue
                 content_windows = self._initial_file_summary_content_windows(
                     extracted_content,
@@ -1985,6 +2074,7 @@ class ExtractionService:
                         diagnostics=diagnostics,
                     )
                 )
+                publish_summary_progress()
             except CompletionError as exc:
                 usage = getattr(exc, "usage", None)
                 if usage is not None:
@@ -1996,6 +2086,7 @@ class ExtractionService:
                 warnings.append(
                     f"Initial file summary failed for {file_entry.file_path}: {exc}"
                 )
+                failed_count += 1
                 summaries.append(
                     self._failed_initial_file_summary(
                         file_path=file_entry.file_path,
@@ -2003,6 +2094,7 @@ class ExtractionService:
                         diagnostics=diagnostics,
                     )
                 )
+                publish_summary_progress()
             except Exception as exc:
                 warnings.append(
                     f"Initial file summary failed for {file_entry.file_path}: {exc}"
@@ -2015,6 +2107,7 @@ class ExtractionService:
                         "error_type": type(exc).__name__,
                     },
                 )
+                failed_count += 1
                 summaries.append(
                     self._failed_initial_file_summary(
                         file_path=file_entry.file_path,
@@ -2022,6 +2115,7 @@ class ExtractionService:
                         diagnostics=diagnostics,
                     )
                 )
+                publish_summary_progress()
 
         state.initial_file_summaries = summaries
         summarized_count = sum(1 for summary in summaries if summary.status == "summarized")
@@ -2033,7 +2127,18 @@ class ExtractionService:
             state.initial_file_summary_status = "completed"
         else:
             state.initial_file_summary_status = "failed"
+        state.initial_file_summary_progress = state.initial_file_summary_progress.model_copy(
+            update={"current_file_path": None}
+        ) if state.initial_file_summary_progress else None
         self._save_run_state(data_package_id, state)
+        self._update_initial_context_progress(
+            data_package_id,
+            self._initial_context_progress_from_state(
+                state,
+                warnings=warnings,
+                stage="initial_file_summaries",
+            ),
+        )
         self._persist_initial_file_summaries(data_package_id, state)
         self._persist_initial_file_summary_diagnostics(
             data_package_id,
@@ -2135,12 +2240,38 @@ class ExtractionService:
                 previews=previews,
             )
             state.initial_extraction_overview_status = "structured"
+            overview_diagnostic = InitialOverviewPromptDiagnostic(
+                status="structured_success",
+                prompt_budget=overview_prompt_report,
+                included_summary_paths=list(
+                    overview_prompt_report.get("included_summary_paths", [])
+                ),
+                dropped_summary_paths=list(
+                    overview_prompt_report.get("dropped_summary_paths", [])
+                ),
+                included_ranked_paths=list(
+                    overview_prompt_report.get("included_ranked_paths", [])
+                ),
+                dropped_ranked_paths=list(
+                    overview_prompt_report.get("dropped_ranked_paths", [])
+                ),
+                included_preview_paths=list(
+                    overview_prompt_report.get("included_preview_paths", [])
+                ),
+                dropped_preview_paths=list(
+                    overview_prompt_report.get("dropped_preview_paths", [])
+                ),
+                hard_truncated=bool(
+                    overview_prompt_report.get("hard_truncated", False)
+                ),
+            )
+            state.initial_extraction_overview_diagnostic = overview_diagnostic
             self._save_run_state(data_package_id, state)
             self._persist_initial_extraction_overview(data_package_id, state)
             self._persist_initial_extraction_overview_diagnostic(
                 data_package_id,
                 state,
-                diagnostic=None,
+                diagnostic=overview_diagnostic,
             )
             return
         except CompletionError as exc:
@@ -2161,14 +2292,17 @@ class ExtractionService:
                     "error_type": type(exc).__name__,
                 },
             )
+            overview_diagnostic = self._initial_overview_failure_diagnostic(
+                exc,
+                prompt_budget=overview_prompt_report,
+                token_budgeter=overview_prompt_budgeter,
+            )
+            state.initial_extraction_overview_diagnostic = overview_diagnostic
+            self._save_run_state(data_package_id, state)
             self._persist_initial_extraction_overview_diagnostic(
                 data_package_id,
                 state,
-                diagnostic=self._initial_overview_failure_diagnostic(
-                    exc,
-                    prompt_budget=overview_prompt_report,
-                    token_budgeter=overview_prompt_budgeter,
-                ),
+                diagnostic=overview_diagnostic,
             )
 
         try:
@@ -2336,12 +2470,21 @@ class ExtractionService:
             "tokenizer_fallback": token_budgeter.uses_fallback,
             "compact_summary_count": len(compacted_summaries),
             "original_summary_count": len(file_summaries),
+            "included_summary_paths": [
+                summary.file_path for summary in compacted_summaries
+            ],
             "dropped_summary_paths": dropped_summary_paths,
             "ranked_file_count": len(used_ranked_files),
             "original_ranked_file_count": len(ranked_files),
+            "included_ranked_paths": [
+                file.file_path for file in used_ranked_files
+            ],
             "dropped_ranked_paths": dropped_ranked_paths,
             "preview_count": len(used_file_previews),
             "original_preview_count": len(file_previews),
+            "included_preview_paths": [
+                preview.file_path for preview in used_file_previews
+            ],
             "dropped_preview_paths": dropped_preview_paths,
             "hard_truncated": hard_truncated,
         }
@@ -3268,9 +3411,11 @@ class ExtractionService:
                     vocab_query_config=state.vocab_query_config,
                     ranked_files=state.ranked_files,
                     initial_file_summaries=state.initial_file_summaries,
+                    initial_file_summary_progress=state.initial_file_summary_progress,
                     initial_file_summary_status=state.initial_file_summary_status,
                     initial_extraction_overview=state.initial_extraction_overview,
                     initial_extraction_overview_status=state.initial_extraction_overview_status,
+                    initial_extraction_overview_diagnostic=state.initial_extraction_overview_diagnostic,
                     chunk_results=state.chunk_results,
                     vocab_queries=state.vocab_queries,
                     generated_final_draft=result.generated_final_draft,
@@ -5631,7 +5776,7 @@ class ExtractionService:
         data_package_id: str,
         state: ExtractionRunState,
         *,
-        diagnostic: InitialOverviewFailureDiagnostic | None,
+        diagnostic: InitialOverviewPromptDiagnostic | InitialOverviewFailureDiagnostic | None,
     ) -> None:
         if self.output_repository is None:
             return
@@ -6787,6 +6932,11 @@ class ExtractionService:
                 if preserve_initial_context and persisted_state
                 else []
             ),
+            initial_file_summary_progress=(
+                persisted_state.initial_file_summary_progress
+                if preserve_initial_context and persisted_state
+                else None
+            ),
             initial_file_summary_status=(
                 persisted_state.initial_file_summary_status
                 if preserve_initial_context and persisted_state
@@ -6799,6 +6949,11 @@ class ExtractionService:
             ),
             initial_extraction_overview_status=(
                 persisted_state.initial_extraction_overview_status
+                if preserve_initial_context and persisted_state
+                else None
+            ),
+            initial_extraction_overview_diagnostic=(
+                persisted_state.initial_extraction_overview_diagnostic
                 if preserve_initial_context and persisted_state
                 else None
             ),
@@ -8665,9 +8820,11 @@ class ExtractionService:
             stage=stage,
             ranked_files=state.ranked_files,
             initial_file_summaries=state.initial_file_summaries,
+            initial_file_summary_progress=state.initial_file_summary_progress,
             initial_file_summary_status=state.initial_file_summary_status,
             initial_extraction_overview=state.initial_extraction_overview,
             initial_extraction_overview_status=state.initial_extraction_overview_status,
+            initial_extraction_overview_diagnostic=state.initial_extraction_overview_diagnostic,
             warnings=list(warnings),
         )
 
@@ -8706,9 +8863,15 @@ class ExtractionService:
                 interim_evidence_context=result.machine_evidence_context,
                 vocab_query_config=state.vocab_query_config if state else None,
                 initial_file_summaries=result.initial_file_summaries,
+                initial_file_summary_progress=(
+                    state.initial_file_summary_progress if state else None
+                ),
                 initial_file_summary_status=result.initial_file_summary_status,
                 initial_extraction_overview=result.initial_extraction_overview,
                 initial_extraction_overview_status=result.initial_extraction_overview_status,
+                initial_extraction_overview_diagnostic=(
+                    state.initial_extraction_overview_diagnostic if state else None
+                ),
                 chunk_results=state.chunk_results if state else [],
                 vocab_queries=state.vocab_queries if state else [],
                 generated_final_draft=result.generated_final_draft,
@@ -8783,9 +8946,15 @@ class ExtractionService:
                 interim_evidence_context=result.machine_evidence_context,
                 vocab_query_config=state.vocab_query_config if state else None,
                 initial_file_summaries=result.initial_file_summaries,
+                initial_file_summary_progress=(
+                    state.initial_file_summary_progress if state else None
+                ),
                 initial_file_summary_status=result.initial_file_summary_status,
                 initial_extraction_overview=result.initial_extraction_overview,
                 initial_extraction_overview_status=result.initial_extraction_overview_status,
+                initial_extraction_overview_diagnostic=(
+                    state.initial_extraction_overview_diagnostic if state else None
+                ),
                 chunk_results=state.chunk_results if state else [],
                 vocab_queries=state.vocab_queries if state else [],
                 generated_final_draft=result.generated_final_draft,
@@ -8821,9 +8990,11 @@ class ExtractionService:
                 vocab_query_config=state.vocab_query_config,
                 ranked_files=state.ranked_files,
                 initial_file_summaries=state.initial_file_summaries,
+                initial_file_summary_progress=state.initial_file_summary_progress,
                 initial_file_summary_status=state.initial_file_summary_status,
                 initial_extraction_overview=state.initial_extraction_overview,
                 initial_extraction_overview_status=state.initial_extraction_overview_status,
+                initial_extraction_overview_diagnostic=state.initial_extraction_overview_diagnostic,
                 chunk_results=state.chunk_results,
                 vocab_queries=state.vocab_queries,
                 generated_final_draft=state.generated_final_draft,

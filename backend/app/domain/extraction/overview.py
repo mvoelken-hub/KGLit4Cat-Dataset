@@ -108,6 +108,15 @@ class InitialFileSummaryDiagnostics(BaseModel):
     records: list[InitialFileSummaryDiagnosticRecord] = Field(default_factory=list)
 
 
+class InitialFileSummaryProgress(BaseModel):
+    total_files: int = Field(default=0, ge=0)
+    processed_files: int = Field(default=0, ge=0)
+    summarized_files: int = Field(default=0, ge=0)
+    skipped_files: int = Field(default=0, ge=0)
+    failed_files: int = Field(default=0, ge=0)
+    current_file_path: str | None = None
+
+
 class ExtractionOverview(BaseModel):
     source_fingerprint: str = Field(
         "",
@@ -143,6 +152,24 @@ class InitialOverviewFailureDiagnostic(BaseModel):
     last_error: str = ""
     failed_response_excerpt: str = ""
     prompt_budget: dict[str, Any] = Field(default_factory=dict)
+    usage: dict[str, int] = Field(default_factory=dict)
+
+
+class InitialOverviewPromptDiagnostic(BaseModel):
+    status: Literal["structured_success", "structured_failure"] = "structured_success"
+    prompt_budget: dict[str, Any] = Field(default_factory=dict)
+    included_summary_paths: list[str] = Field(default_factory=list)
+    dropped_summary_paths: list[str] = Field(default_factory=list)
+    included_ranked_paths: list[str] = Field(default_factory=list)
+    dropped_ranked_paths: list[str] = Field(default_factory=list)
+    included_preview_paths: list[str] = Field(default_factory=list)
+    dropped_preview_paths: list[str] = Field(default_factory=list)
+    hard_truncated: bool = False
+    error_type: str = ""
+    message: str = ""
+    last_error_type: str = ""
+    last_error: str = ""
+    failed_response_excerpt: str = ""
     usage: dict[str, int] = Field(default_factory=dict)
 
 

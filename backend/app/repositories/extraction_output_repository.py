@@ -14,6 +14,7 @@ from app.domain.extraction import (
     ExtractionRunState,
     FieldCompletionLedgerRecord,
     InitialOverviewFailureDiagnostic,
+    InitialOverviewPromptDiagnostic,
     ProjectionLedgerRecord,
 )
 
@@ -103,7 +104,7 @@ class ExtractionOutputRepository(Protocol):
         self,
         *,
         workflow_id: str,
-        diagnostic: InitialOverviewFailureDiagnostic | None,
+        diagnostic: InitialOverviewPromptDiagnostic | InitialOverviewFailureDiagnostic | None,
         chat_model: str | None = None,
     ) -> None:
         ...

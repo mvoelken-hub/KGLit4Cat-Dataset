@@ -12,7 +12,10 @@ from app.domain.extraction.overview import (
     ExtractionFileSummary,
     ExtractionOverview,
     ExtractionOverviewStatus,
+    InitialFileSummaryProgress,
     InitialFileSummaryStatus,
+    InitialOverviewFailureDiagnostic,
+    InitialOverviewPromptDiagnostic,
 )
 from app.domain.profiles import ProfileValidationIssue
 from app.domain.semantics import VocabQuery, VocabQueryResult
@@ -170,9 +173,13 @@ class ExtractionRunState(BaseModel):
     chat_model: str | None = None
     ranked_files: list[RankedFile] = Field(default_factory=list)
     initial_file_summaries: list[ExtractionFileSummary] = Field(default_factory=list)
+    initial_file_summary_progress: InitialFileSummaryProgress | None = None
     initial_file_summary_status: InitialFileSummaryStatus | None = None
     initial_extraction_overview: ExtractionOverview | None = None
     initial_extraction_overview_status: ExtractionOverviewStatus | None = None
+    initial_extraction_overview_diagnostic: (
+        InitialOverviewPromptDiagnostic | InitialOverviewFailureDiagnostic | None
+    ) = None
     chunk_results: list[ExtractionChunkResult] = Field(default_factory=list)
     vocab_queries: list[ExtractionVocabQueryRecord] = Field(default_factory=list)
     generated_final_draft: dict[str, Any] | None = None
@@ -198,9 +205,13 @@ class ExtractionRunProgress(BaseModel):
     vocab_query_config: ExtractionVocabQueryConfig = Field(default_factory=ExtractionVocabQueryConfig)
     ranked_files: list[RankedFile] = Field(default_factory=list)
     initial_file_summaries: list[ExtractionFileSummary] = Field(default_factory=list)
+    initial_file_summary_progress: InitialFileSummaryProgress | None = None
     initial_file_summary_status: InitialFileSummaryStatus | None = None
     initial_extraction_overview: ExtractionOverview | None = None
     initial_extraction_overview_status: ExtractionOverviewStatus | None = None
+    initial_extraction_overview_diagnostic: (
+        InitialOverviewPromptDiagnostic | InitialOverviewFailureDiagnostic | None
+    ) = None
     chunk_results: list[ExtractionChunkResult] = Field(default_factory=list)
     vocab_queries: list[ExtractionVocabQueryRecord] = Field(default_factory=list)
     generated_final_draft: dict[str, Any] | None = None

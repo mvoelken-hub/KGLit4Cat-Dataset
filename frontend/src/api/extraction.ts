@@ -52,9 +52,11 @@ export type ExtractionRunProgress = {
   field_completion_ledger?: FieldCompletionLedgerRecord[];
   curation_ledger?: CurationLedgerRecord[];
   initial_file_summaries?: ExtractionFileSummary[];
+  initial_file_summary_progress?: InitialFileSummaryProgress | null;
   initial_file_summary_status?: InitialFileSummaryStatus | null;
   initial_extraction_overview?: ExtractionOverview | null;
   initial_extraction_overview_status?: ExtractionOverviewStatus | null;
+  initial_extraction_overview_diagnostic?: InitialOverviewDiagnostic | null;
   vocab_query_config?: ExtractionVocabQueryConfig;
   vocab_queries?: ExtractionVocabQueryRecord[];
   ranked_files?: RankedExtractionFile[];
@@ -90,6 +92,33 @@ export type RankedExtractionFile = {
   file_path: string;
   score?: number | null;
   reasons?: string[];
+};
+
+export type InitialFileSummaryProgress = {
+  total_files: number;
+  processed_files: number;
+  summarized_files: number;
+  skipped_files: number;
+  failed_files: number;
+  current_file_path?: string | null;
+};
+
+export type InitialOverviewDiagnostic = {
+  status?: 'structured_success' | 'structured_failure' | string;
+  prompt_budget?: Record<string, unknown>;
+  included_summary_paths?: string[];
+  dropped_summary_paths?: string[];
+  included_ranked_paths?: string[];
+  dropped_ranked_paths?: string[];
+  included_preview_paths?: string[];
+  dropped_preview_paths?: string[];
+  hard_truncated?: boolean;
+  error_type?: string;
+  message?: string;
+  last_error_type?: string;
+  last_error?: string;
+  failed_response_excerpt?: string;
+  usage?: Record<string, unknown>;
 };
 
 export type ExtractionChunkRef = {

@@ -1099,12 +1099,20 @@ function InitialFileUnderstandingPanel({
 }) {
   const rankedCount = progress?.ranked_files?.length ?? 0;
   const summaryCount = progress?.initial_file_summaries?.length ?? 0;
+  const summaryProgress = progress?.initial_file_summary_progress ?? null;
+  const summaryProgressTotal = summaryProgress?.total_files ?? summaryCount;
+  const summaryProgressProcessed = summaryProgress?.processed_files ?? summaryCount;
+  const summaryProgressPercent = summaryProgressTotal
+    ? Math.min(100, Math.round((summaryProgressProcessed / summaryProgressTotal) * 100))
+    : 0;
   const hasArtifacts = Boolean(
     rankedCount
     || summaryCount
+    || summaryProgress
     || progress?.initial_file_summary_status
     || progress?.initial_extraction_overview_status
-    || progress?.initial_extraction_overview,
+    || progress?.initial_extraction_overview
+    || progress?.initial_extraction_overview_diagnostic,
   );
 
   if (!hasArtifacts) {
@@ -1133,9 +1141,31 @@ function InitialFileUnderstandingPanel({
         </div>
         <div>
           <span>Summaries</span>
-          <strong>{summaryCount} files</strong>
+          <strong>
+            {summaryProgressTotal
+              ? `${summaryProgressProcessed}/${summaryProgressTotal} files`
+              : `${summaryCount} files`}
+          </strong>
         </div>
       </div>
+
+      {summaryProgress ? (
+        <div className="patch-progress summary-progress">
+          <div className="patch-progress-header">
+            <span>File summary progress</span>
+            <strong>{summaryProgressProcessed}/{summaryProgressTotal || 0}</strong>
+          </div>
+          <div className="patch-progress-track" aria-hidden="true"><div style={{ width: `${summaryProgressPercent}%` }} /></div>
+          <div className="patch-progress-summary">
+            <span>{summaryProgress.summarized_files} summarized</span>
+            <span>{summaryProgress.skipped_files} skipped</span>
+            <span>{summaryProgress.failed_files} failed</span>
+          </div>
+          {summaryProgress.current_file_path ? (
+            <p className="muted">Current file: <code>{summaryProgress.current_file_path}</code></p>
+          ) : null}
+        </div>
+      ) : null}
 
       {progress?.ranked_files?.length ? (
         <details className="initial-overview-panel">
@@ -1181,6 +1211,12 @@ function InitialFileUnderstandingPanel({
           ) : (
             <p className="muted">No overview guidance is available for this run.</p>
           )}
+          {progress?.initial_extraction_overview_diagnostic ? (
+            <JsonDetails
+              title="Overview prompt diagnostic"
+              value={progress.initial_extraction_overview_diagnostic}
+            />
+          ) : null}
         </details>
       ) : null}
 
@@ -4154,7 +4190,7 @@ export function App() {
           <StepPanel
             number="02"
             title="Initial file understanding"
-            description="Rank files, summarize the top files, and build a profile-independent run overview before chunking."
+            description="Summarize text-extractable files, rank them, and build a profile-independent run overview before chunking."
           >
               <div className="actions">
                 <button onClick={() => void onInitialContext(Boolean(hasInitialContextArtifacts))} disabled={!selectedPackageId || !!busy || isInitialContextRunning || isPatching}>

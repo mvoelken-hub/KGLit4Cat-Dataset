@@ -16,6 +16,7 @@ from app.domain.extraction import (
     InitialFileSummaryDiagnosticRecord,
     InitialFileSummaryDiagnostics,
     InitialOverviewFailureDiagnostic,
+    InitialOverviewPromptDiagnostic,
 )
 from infra.filesystem_extraction_output_repository import (
     FileSystemExtractionOutputRepository,
@@ -239,6 +240,40 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
             )
 
             self.assertFalse(path.exists())
+
+    def test_initial_overview_success_diagnostic_writes_prompt_budget(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = FileSystemExtractionOutputRepository(Path(directory))
+            workflow_id = "test_workflow"
+            chat_model = "model:tag"
+            diagnostic = InitialOverviewPromptDiagnostic(
+                prompt_budget={
+                    "total_input_tokens": 1800,
+                    "included_summary_paths": ["dataset_description.txt"],
+                    "dropped_summary_paths": ["raw.dat"],
+                },
+                included_summary_paths=["dataset_description.txt"],
+                dropped_summary_paths=["raw.dat"],
+                included_ranked_paths=["dataset_description.txt"],
+                dropped_ranked_paths=[],
+                hard_truncated=False,
+            )
+
+            repo.save_initial_extraction_overview_diagnostic(
+                workflow_id=workflow_id,
+                diagnostic=diagnostic,
+                chat_model=chat_model,
+            )
+
+            path = (
+                repo._workflow_dir(workflow_id, chat_model)
+                / "initial_extraction_overview_diagnostic.json"
+            )
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["status"], "structured_success")
+            self.assertEqual(payload["included_summary_paths"], ["dataset_description.txt"])
+            self.assertEqual(payload["dropped_summary_paths"], ["raw.dat"])
+            self.assertEqual(payload["prompt_budget"]["total_input_tokens"], 1800)
 
     def test_initial_file_summary_diagnostics_write_and_clear(self):
         with tempfile.TemporaryDirectory() as directory:

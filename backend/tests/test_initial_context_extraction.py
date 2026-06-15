@@ -713,6 +713,11 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("explicit numeric settings", summary.quantitative_signals)
         self.assertIsNotNone(output_repository.initial_file_summary_diagnostics)
         self.assertEqual(output_repository.initial_file_summaries, state.initial_file_summaries)
+        self.assertIsNotNone(state.initial_file_summary_progress)
+        self.assertEqual(state.initial_file_summary_progress.total_files, 1)
+        self.assertEqual(state.initial_file_summary_progress.processed_files, 1)
+        self.assertEqual(state.initial_file_summary_progress.summarized_files, 1)
+        self.assertIsNone(state.initial_file_summary_progress.current_file_path)
         self.assertTrue(any("mismatched file_path" in warning for warning in warnings))
         self.assertTrue(any("without evidence" in warning for warning in warnings))
 

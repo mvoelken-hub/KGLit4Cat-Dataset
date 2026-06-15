@@ -21,6 +21,7 @@ from app.domain.extraction import (
     ExtractionRunState,
     FieldCompletionLedgerRecord,
     InitialOverviewFailureDiagnostic,
+    InitialOverviewPromptDiagnostic,
     ProjectionLedgerRecord,
 )
 
@@ -247,7 +248,7 @@ class FileSystemExtractionOutputRepository:
         self,
         *,
         workflow_id: str,
-        diagnostic: InitialOverviewFailureDiagnostic | None,
+        diagnostic: InitialOverviewPromptDiagnostic | InitialOverviewFailureDiagnostic | None,
         chat_model: str | None = None,
     ) -> None:
         path = self._workflow_dir(workflow_id, chat_model) / INITIAL_EXTRACTION_OVERVIEW_DIAGNOSTIC_FILE
