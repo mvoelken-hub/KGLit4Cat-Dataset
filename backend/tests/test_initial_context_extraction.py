@@ -32,6 +32,8 @@ from app.domain.extraction import (
     VocabularyFallbackQuery,
     VocabularyCandidateSelection,
     VocabularyTermMapping,
+    build_extraction_overview_prompt,
+    build_extraction_overview_prompt_components,
 )
 from app.domain.semantics import CompactVocabResource, VocabQuery, VocabQueryResult, VocabSchemeInfo, VocabTermScheme
 from app.ollama.completion import CompletionResult
@@ -567,6 +569,45 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
     class WhitespaceTokenizer:
         def encode(self, text: str, add_special_tokens: bool = False):
             return ExtractionServiceWorkflowTests.WhitespaceEncoding(text)
+
+    def test_extraction_overview_prompt_is_joined_from_named_components(self):
+        ranked_files = [RankedFile(rank=1, file_path="metadata.txt")]
+        file_summaries = [
+            ExtractionFileSummary(
+                file_path="metadata.txt",
+                data_format="plain text",
+                metadata_signals=["dataset description"],
+            )
+        ]
+        seeded_overview = ExtractionOverview()
+
+        prompt = build_extraction_overview_prompt(
+            data_package_name="package",
+            ranked_files=ranked_files,
+            file_summaries=file_summaries,
+            file_previews=[],
+            seeded_overview=seeded_overview,
+        )
+        components = build_extraction_overview_prompt_components(
+            data_package_name="package",
+            ranked_files=ranked_files,
+            file_summaries=file_summaries,
+            file_previews=[],
+            seeded_overview=seeded_overview,
+        )
+
+        self.assertEqual(prompt, "".join(content for _, content in components))
+        self.assertEqual(
+            [name for name, _ in components],
+            [
+                "intro_and_counts",
+                "ranked_files_json",
+                "validated_summaries_json",
+                "seeded_graph_json",
+                "fallback_previews_json",
+                "final_task_instructions",
+            ],
+        )
 
     async def test_initial_context_run_does_not_require_chunks_or_profile(self):
         service, task_registry, output_repository = make_service(
@@ -1238,7 +1279,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(output_repository.initial_extraction_overview, overview)
 
     async def test_initial_overview_compacts_summaries_before_structured_call(self):
-        service, _, _ = make_service([[make_chunk()]])
+        service, _, output_repository = make_service([[make_chunk()]])
         service.ollama_client.ollama_client = SimpleNamespace()  # type: ignore[attr-defined]
         service.settings.ollama_chat_tokenizer = "fake/tokenizer"
         budgeter = PromptTokenBudgeter(tokenizer=self.WhitespaceTokenizer())
@@ -1301,6 +1342,30 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
         tokenizer_loader.assert_called_once_with("fake/tokenizer")
         self.assertEqual(state.initial_extraction_overview_status, "structured")
+        diagnostic = output_repository.initial_extraction_overview_diagnostic
+        self.assertIsNotNone(diagnostic)
+        breakdown = diagnostic.prompt_budget["token_component_breakdown"]
+        self.assertIn("original", breakdown)
+        self.assertIn("compacted_before_drop", breakdown)
+        self.assertIn("final_before_truncation", breakdown)
+        self.assertIn("final_sent", breakdown)
+        self.assertIn("payloads", breakdown)
+        final_components = breakdown["final_sent"]["components"]
+        self.assertEqual(final_components[0]["component"], "system_prompt")
+        self.assertTrue(
+            any(
+                component["component"] == "validated_summaries_json"
+                for component in final_components
+            )
+        )
+        self.assertEqual(
+            breakdown["final_sent"]["message_total_tokens"],
+            diagnostic.prompt_budget["total_input_tokens"],
+        )
+        compact_payload = breakdown["payloads"]["compact_summaries"]
+        self.assertEqual(compact_payload["original_count"], 1)
+        self.assertEqual(compact_payload["per_file"][0]["file_path"], "parameters.txt")
+        self.assertIn("json_tokens", compact_payload["per_file"][0])
 
     async def test_initial_overview_structured_failure_persists_diagnostic(self):
         service, _, output_repository = make_service([[make_chunk()]])
@@ -1376,7 +1441,17 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         service, _, _ = make_service([[make_chunk()]])
         chunk = make_chunk(content="new content")
         ranking = FileRankingResult(files=[RankedFile(rank=1, file_path=chunk.file_path)])
-        old_context = resource_context("old", "Old context")
+        old_context = EvidenceContext(
+            notes=[
+                EvidenceNote(
+                    note_id="old",
+                    category="resource_signal",
+                    observation="Old context",
+                    evidence_text="old evidence",
+                    signal_level="high",
+                )
+            ]
+        )
         persisted_without_overview = ExtractionRunState(
             chunk_results=[
                 ExtractionChunkResult(
@@ -1385,7 +1460,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     start_idx=chunk.start_idx,
                     end_idx=chunk.end_idx,
                     status="completed",
-                    extraction_context=old_context,
+                    evidence_context=old_context,
                 )
             ]
         )
@@ -1399,7 +1474,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(state.chunk_results[0].status, "pending")
-        self.assertIsNone(state.chunk_results[0].extraction_context)
+        self.assertIsNone(state.chunk_results[0].evidence_context)
 
         persisted_with_overview = persisted_without_overview.model_copy(
             update={
@@ -1427,7 +1502,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(resumed.chunk_results[0].status, "completed")
         self.assertEqual(
-            resumed.chunk_results[0].extraction_context.extraction_objects[0].extracted_object.identifier,
+            resumed.chunk_results[0].evidence_context.notes[0].note_id,
             "old",
         )
 
@@ -1451,7 +1526,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(fresh_state.initial_extraction_overview)
         self.assertIsNone(fresh_state.initial_extraction_overview_status)
         self.assertEqual(fresh_state.chunk_results[0].status, "pending")
-        self.assertIsNone(fresh_state.chunk_results[0].extraction_context)
+        self.assertIsNone(fresh_state.chunk_results[0].evidence_context)
 
     async def test_run_complete_workflow_chunks_then_starts_extraction(self):
         service, task_registry, _ = make_service([[make_chunk()]])

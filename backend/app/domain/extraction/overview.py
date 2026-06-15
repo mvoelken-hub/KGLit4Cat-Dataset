@@ -233,6 +233,26 @@ def build_extraction_overview_prompt(
     file_summaries: list[ExtractionFileSummary] | None = None,
     seeded_overview: ExtractionOverview | None = None,
 ) -> str:
+    return "".join(
+        content
+        for _, content in build_extraction_overview_prompt_components(
+            data_package_name=data_package_name,
+            ranked_files=ranked_files,
+            file_summaries=file_summaries,
+            file_previews=file_previews,
+            seeded_overview=seeded_overview,
+        )
+    )
+
+
+def build_extraction_overview_prompt_components(
+    *,
+    data_package_name: str,
+    ranked_files: list[RankedFile],
+    file_previews: list[ExtractionOverviewFilePreview],
+    file_summaries: list[ExtractionFileSummary] | None = None,
+    seeded_overview: ExtractionOverview | None = None,
+) -> list[tuple[str, str]]:
     preview_json = ",\n".join(preview.model_dump_json() for preview in file_previews)
     ranked_json = ",\n".join(file.model_dump_json() for file in ranked_files)
     summary_json = ",\n".join(
@@ -245,33 +265,43 @@ def build_extraction_overview_prompt(
         if file_summaries
         else ""
     )
-    return (
-        "Analyze the research artifact archive and extract a graph-shaped ExtractionOverview. "
-        "The backend has summarized text-extractable files, ranked summarized files, and seeded deterministic path containment.\n\n"
-        f"Data package name: {data_package_name}\n"
-        f"Ranked file count: {len(ranked_files)}\n"
-        f"Per-file summary count: {len(file_summaries or [])}\n"
-        f"Fallback preview file count: {len(file_previews)}\n\n"
-        "Ranked files JSON:\n"
-        f"[{ranked_json}]\n\n"
-        f"{summary_section}"
-        "Backend-seeded package/directory/file/group graph JSON:\n"
-        f"{seed_json}\n\n"
-        "Fallback raw file previews JSON:\n"
-        f"[{preview_json}]\n\n"
-        "Create an ExtractionOverview package graph that will orient later one-shot chunk extraction calls. "
-        "Use the per-file summaries as the primary input and previews only as fallback context when summaries are absent. "
-        "Treat this as package graph triage, not final scientific interpretation. "
-        "Do not create contains edges: the backend will add real package/directory/file containment from paths. "
-        "Ranked order means extraction priority only; it is not evidence that one file contains another. "
-        "Group files first: create generic group nodes for shared package roles, then connect file nodes to those groups with semantic edges. "
-        "Prefer file-to-group and group-to-group edges over file-to-file edges. "
-        "When connecting to files, use file node IDs exactly as file:<file_path> from the ranked files JSON. "
-        "When summaries are present, do not claim that per-file summaries are unavailable. "
-        "Use uncertain_relation or uncertainties for weak or ambiguous links. "
-        "Later extracted objects must still be supported "
-        "by source_text from the current chunk only."
-    )
+    return [
+        (
+            "intro_and_counts",
+            "Analyze the research artifact archive and extract a graph-shaped ExtractionOverview. "
+            "The backend has summarized text-extractable files, ranked summarized files, and seeded deterministic path containment.\n\n"
+            f"Data package name: {data_package_name}\n"
+            f"Ranked file count: {len(ranked_files)}\n"
+            f"Per-file summary count: {len(file_summaries or [])}\n"
+            f"Fallback preview file count: {len(file_previews)}\n\n",
+        ),
+        ("ranked_files_json", "Ranked files JSON:\n" f"[{ranked_json}]\n\n"),
+        ("validated_summaries_json", summary_section),
+        (
+            "seeded_graph_json",
+            "Backend-seeded package/directory/file/group graph JSON:\n"
+            f"{seed_json}\n\n",
+        ),
+        (
+            "fallback_previews_json",
+            "Fallback raw file previews JSON:\n" f"[{preview_json}]\n\n",
+        ),
+        (
+            "final_task_instructions",
+            "Create an ExtractionOverview package graph that will orient later one-shot chunk extraction calls. "
+            "Use the per-file summaries as the primary input and previews only as fallback context when summaries are absent. "
+            "Treat this as package graph triage, not final scientific interpretation. "
+            "Do not create contains edges: the backend will add real package/directory/file containment from paths. "
+            "Ranked order means extraction priority only; it is not evidence that one file contains another. "
+            "Group files first: create generic group nodes for shared package roles, then connect file nodes to those groups with semantic edges. "
+            "Prefer file-to-group and group-to-group edges over file-to-file edges. "
+            "When connecting to files, use file node IDs exactly as file:<file_path> from the ranked files JSON. "
+            "When summaries are present, do not claim that per-file summaries are unavailable. "
+            "Use uncertain_relation or uncertainties for weak or ambiguous links. "
+            "Later extracted objects must still be supported "
+            "by source_text from the current chunk only.",
+        ),
+    ]
 
 
 def build_extraction_file_summary_prompt(

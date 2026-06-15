@@ -98,6 +98,7 @@ from app.domain.extraction import (
     build_extraction_context_prompt,
     build_extraction_file_summary_prompt,
     build_extraction_overview_fallback_prompt,
+    build_extraction_overview_prompt_components,
     build_extraction_overview_prompt,
     filtered_evidence_ledger,
     filter_evidence_context_by_signal_level,
@@ -2380,6 +2381,187 @@ class ExtractionService:
         )
 
     @classmethod
+    def _initial_overview_prompt_component_breakdown(
+        cls,
+        *,
+        data_package_name: str,
+        ranked_files: list[RankedFile],
+        file_summaries: list[ExtractionFileSummary],
+        file_previews: list[ExtractionOverviewFilePreview],
+        seeded_overview: ExtractionOverview,
+        token_budgeter: PromptTokenBudgeter,
+        prompt: str,
+    ) -> dict[str, Any]:
+        components = build_extraction_overview_prompt_components(
+            data_package_name=data_package_name,
+            ranked_files=ranked_files,
+            file_summaries=file_summaries,
+            file_previews=file_previews,
+            seeded_overview=seeded_overview,
+        )
+        rows: list[dict[str, Any]] = []
+        system_prompt = EXTRACTION_OVERVIEW_SYSTEM_PROMPT
+        cumulative_text = system_prompt
+        cumulative_tokens = token_budgeter.count(cumulative_text)
+        rows.append(
+            {
+                "component": "system_prompt",
+                "delta_tokens": cumulative_tokens,
+                "cumulative_tokens": cumulative_tokens,
+                "chars": len(system_prompt),
+                "included_chars": len(system_prompt),
+            }
+        )
+
+        consumed_chars = 0
+        prompt_chars = len(prompt)
+        for component_name, component_text in components:
+            remaining_chars = max(0, prompt_chars - consumed_chars)
+            included_text = component_text[:remaining_chars]
+            consumed_chars += len(component_text)
+            if not included_text:
+                rows.append(
+                    {
+                        "component": component_name,
+                        "delta_tokens": 0,
+                        "cumulative_tokens": cumulative_tokens,
+                        "chars": len(component_text),
+                        "included_chars": 0,
+                    }
+                )
+                continue
+
+            next_text = cumulative_text + included_text
+            next_tokens = token_budgeter.count(next_text)
+            rows.append(
+                {
+                    "component": component_name,
+                    "delta_tokens": next_tokens - cumulative_tokens,
+                    "cumulative_tokens": next_tokens,
+                    "chars": len(component_text),
+                    "included_chars": len(included_text),
+                }
+            )
+            cumulative_text = next_text
+            cumulative_tokens = next_tokens
+
+        return {
+            "message_total_tokens": token_budgeter.count(system_prompt)
+            + token_budgeter.count(prompt),
+            "concatenated_total_tokens": cumulative_tokens,
+            "prompt_tokens": token_budgeter.count(prompt),
+            "prompt_chars": len(prompt),
+            "components": rows,
+        }
+
+    @staticmethod
+    def _isolated_token_count(
+        token_budgeter: PromptTokenBudgeter,
+        value: str,
+    ) -> int:
+        return token_budgeter.count(value)
+
+    @classmethod
+    def _initial_overview_payload_token_breakdown(
+        cls,
+        *,
+        ranked_files: list[RankedFile],
+        used_ranked_files: list[RankedFile],
+        compacted_summaries: list[ExtractionFileSummary],
+        used_compacted_summaries: list[ExtractionFileSummary],
+        used_file_previews: list[ExtractionOverviewFilePreview],
+        file_previews: list[ExtractionOverviewFilePreview],
+        seeded_overview: ExtractionOverview,
+        token_budgeter: PromptTokenBudgeter,
+    ) -> dict[str, Any]:
+        seed_payload = json.loads(seeded_overview.model_dump_json(exclude_defaults=True))
+        seed_nodes = seed_payload.get("nodes", [])
+        seed_edges = seed_payload.get("edges", [])
+        seed_uncertainties = seed_payload.get("uncertainties", [])
+        return {
+            "ranked_files": {
+                "original_count": len(ranked_files),
+                "included_count": len(used_ranked_files),
+                "original_json_tokens": cls._isolated_token_count(
+                    token_budgeter,
+                    ",\n".join(file.model_dump_json() for file in ranked_files),
+                ),
+                "included_json_tokens": cls._isolated_token_count(
+                    token_budgeter,
+                    ",\n".join(file.model_dump_json() for file in used_ranked_files),
+                ),
+            },
+            "compact_summaries": {
+                "original_count": len(compacted_summaries),
+                "included_count": len(used_compacted_summaries),
+                "json_tokens_total": sum(
+                    cls._isolated_token_count(
+                        token_budgeter,
+                        summary.model_dump_json(exclude_defaults=True),
+                    )
+                    for summary in compacted_summaries
+                ),
+                "per_file": [
+                    {
+                        "file_path": summary.file_path,
+                        "included": summary.file_path
+                        in {used.file_path for used in used_compacted_summaries},
+                        "json_tokens": cls._isolated_token_count(
+                            token_budgeter,
+                            summary.model_dump_json(exclude_defaults=True),
+                        ),
+                        "json_chars": len(summary.model_dump_json(exclude_defaults=True)),
+                    }
+                    for summary in compacted_summaries
+                ],
+            },
+            "file_previews": {
+                "original_count": len(file_previews),
+                "included_count": len(used_file_previews),
+                "original_json_tokens": cls._isolated_token_count(
+                    token_budgeter,
+                    ",\n".join(preview.model_dump_json() for preview in file_previews),
+                ),
+                "included_json_tokens": cls._isolated_token_count(
+                    token_budgeter,
+                    ",\n".join(
+                        preview.model_dump_json() for preview in used_file_previews
+                    ),
+                ),
+            },
+            "seeded_graph": {
+                "node_count": len(seed_nodes),
+                "edge_count": len(seed_edges),
+                "uncertainty_count": len(seed_uncertainties),
+                "json_tokens": cls._isolated_token_count(
+                    token_budgeter,
+                    seeded_overview.model_dump_json(exclude_defaults=True),
+                ),
+                "nodes_json_tokens": sum(
+                    cls._isolated_token_count(
+                        token_budgeter,
+                        json.dumps(node, separators=(",", ":")),
+                    )
+                    for node in seed_nodes
+                ),
+                "edges_json_tokens": sum(
+                    cls._isolated_token_count(
+                        token_budgeter,
+                        json.dumps(edge, separators=(",", ":")),
+                    )
+                    for edge in seed_edges
+                ),
+                "uncertainties_json_tokens": sum(
+                    cls._isolated_token_count(
+                        token_budgeter,
+                        json.dumps(uncertainty, separators=(",", ":")),
+                    )
+                    for uncertainty in seed_uncertainties
+                ),
+            },
+        }
+
+    @classmethod
     def _build_budgeted_initial_overview_prompt(
         cls,
         *,
@@ -2391,15 +2573,36 @@ class ExtractionService:
         token_budgeter: PromptTokenBudgeter,
         max_input_tokens: int,
     ) -> tuple[str, dict[str, Any]]:
-        original_prompt = build_extraction_overview_prompt(
+        def build_prompt_for(
+            *,
+            ranked_files_to_include: list[RankedFile],
+            summaries_to_include: list[ExtractionFileSummary],
+            previews_to_include: list[ExtractionOverviewFilePreview],
+        ) -> str:
+            return build_extraction_overview_prompt(
+                data_package_name=data_package_name,
+                ranked_files=ranked_files_to_include,
+                file_summaries=summaries_to_include,
+                file_previews=previews_to_include,
+                seeded_overview=seeded_overview,
+            )
+
+        original_prompt = build_prompt_for(
+            ranked_files_to_include=ranked_files,
+            summaries_to_include=file_summaries,
+            previews_to_include=file_previews,
+        )
+        original_prompt_tokens = token_budgeter.count(
+            EXTRACTION_OVERVIEW_SYSTEM_PROMPT + original_prompt
+        )
+        original_component_breakdown = cls._initial_overview_prompt_component_breakdown(
             data_package_name=data_package_name,
             ranked_files=ranked_files,
             file_summaries=file_summaries,
             file_previews=file_previews,
             seeded_overview=seeded_overview,
-        )
-        original_prompt_tokens = token_budgeter.count(
-            EXTRACTION_OVERVIEW_SYSTEM_PROMPT + original_prompt
+            token_budgeter=token_budgeter,
+            prompt=original_prompt,
         )
         compacted_summaries = [
             cls._compact_initial_file_summary_for_overview(
@@ -2408,21 +2611,29 @@ class ExtractionService:
             )
             for summary in file_summaries
         ]
+        all_compacted_summaries = list(compacted_summaries)
         used_ranked_files = list(ranked_files)
         used_file_previews = list(file_previews)
 
         def build_prompt() -> str:
-            return build_extraction_overview_prompt(
-                data_package_name=data_package_name,
-                ranked_files=used_ranked_files,
-                file_summaries=compacted_summaries,
-                file_previews=used_file_previews,
-                seeded_overview=seeded_overview,
+            return build_prompt_for(
+                ranked_files_to_include=used_ranked_files,
+                summaries_to_include=compacted_summaries,
+                previews_to_include=used_file_previews,
             )
 
         prompt = build_prompt()
         compacted_prompt_tokens = token_budgeter.count(
             EXTRACTION_OVERVIEW_SYSTEM_PROMPT + prompt
+        )
+        compacted_component_breakdown = cls._initial_overview_prompt_component_breakdown(
+            data_package_name=data_package_name,
+            ranked_files=used_ranked_files,
+            file_summaries=compacted_summaries,
+            file_previews=used_file_previews,
+            seeded_overview=seeded_overview,
+            token_budgeter=token_budgeter,
+            prompt=prompt,
         )
         dropped_summary_paths: list[str] = []
         dropped_ranked_paths: list[str] = []
@@ -2451,6 +2662,18 @@ class ExtractionService:
 
         system_tokens = token_budgeter.count(EXTRACTION_OVERVIEW_SYSTEM_PROMPT)
         prompt_tokens = token_budgeter.count(prompt)
+        prompt_before_hard_truncation = prompt
+        final_before_truncation_breakdown = (
+            cls._initial_overview_prompt_component_breakdown(
+                data_package_name=data_package_name,
+                ranked_files=used_ranked_files,
+                file_summaries=compacted_summaries,
+                file_previews=used_file_previews,
+                seeded_overview=seeded_overview,
+                token_budgeter=token_budgeter,
+                prompt=prompt_before_hard_truncation,
+            )
+        )
         hard_truncated = False
         if system_tokens + prompt_tokens > max_input_tokens:
             prompt = token_budgeter.truncate(
@@ -2459,6 +2682,15 @@ class ExtractionService:
             )
             hard_truncated = True
             prompt_tokens = token_budgeter.count(prompt)
+        final_sent_breakdown = cls._initial_overview_prompt_component_breakdown(
+            data_package_name=data_package_name,
+            ranked_files=used_ranked_files,
+            file_summaries=compacted_summaries,
+            file_previews=used_file_previews,
+            seeded_overview=seeded_overview,
+            token_budgeter=token_budgeter,
+            prompt=prompt,
+        )
 
         report = {
             "max_input_tokens": max_input_tokens,
@@ -2487,6 +2719,22 @@ class ExtractionService:
             ],
             "dropped_preview_paths": dropped_preview_paths,
             "hard_truncated": hard_truncated,
+            "token_component_breakdown": {
+                "original": original_component_breakdown,
+                "compacted_before_drop": compacted_component_breakdown,
+                "final_before_truncation": final_before_truncation_breakdown,
+                "final_sent": final_sent_breakdown,
+                "payloads": cls._initial_overview_payload_token_breakdown(
+                    ranked_files=ranked_files,
+                    used_ranked_files=used_ranked_files,
+                    compacted_summaries=all_compacted_summaries,
+                    used_compacted_summaries=compacted_summaries,
+                    used_file_previews=used_file_previews,
+                    file_previews=file_previews,
+                    seeded_overview=seeded_overview,
+                    token_budgeter=token_budgeter,
+                ),
+            },
         }
         return prompt, report
 
