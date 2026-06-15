@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field, model_validator
 
 from app.domain.datasources import DataPackage
+from app.domain.datasources.chunking import ChunkPostProcessingMetadata
 from app.domain.datasources.text_quality import TextQualityConfig
 
 from app.core.task_registry import TaskStatus
@@ -56,6 +57,7 @@ class ChunkResponse(BaseModel):
     end_idx: int
     filtered_line_indices: list[int] = []
     summary: str | None = None
+    post_processing: ChunkPostProcessingMetadata = Field(default_factory=ChunkPostProcessingMetadata)
 
 class ChunkRequestResponse(BaseModel):
     chunks: list[list[ChunkResponse]]

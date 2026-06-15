@@ -24,6 +24,11 @@ class FakeFileEntry(FileEntry):
         return self.raw_content.decode()
 
 
+class WordTokenizerBudgeter(PromptTokenBudgeter):
+    def count(self, value: str) -> int:
+        return len(value.split())
+
+
 class ProtectedLineIndicesTests(unittest.IsolatedAsyncioTestCase):
     async def test_protected_indices_keeps_dropped_header(self):
         """When protected_line_indices contains [0], a dropped header is retained."""
@@ -200,6 +205,158 @@ class ProtectedLineIndicesTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(chunks), 1)
         self.assertEqual(chunks[0].content, content)
+
+    async def test_post_processing_splits_large_filtered_line_gap(self):
+        content = "first metadata line\n" + ("\n" * 39) + "second metadata line\n"
+        file_entry = FakeFileEntry(content)
+
+        chunks = await ContentChunk.create_chunks_for_file_entry(
+            data_package_id="pkg",
+            file_entry=file_entry,
+            embedding_func=AsyncMock(return_value=[]),
+            min_lines_for_chunking=100,
+            max_tokens_per_chunk=100,
+            token_budgeter=WordTokenizerBudgeter(),
+        )
+
+        self.assertEqual([(chunk.start_idx, chunk.end_idx) for chunk in chunks], [(0, 0), (40, 40)])
+        for chunk in chunks:
+            self.assertIn("line_gap_split", chunk.post_processing.operations)
+
+    async def test_post_processing_does_not_split_gap_at_threshold(self):
+        content = "first metadata line\n" + ("\n" * 31) + "second metadata line\n"
+        file_entry = FakeFileEntry(content)
+
+        chunks = await ContentChunk.create_chunks_for_file_entry(
+            data_package_id="pkg",
+            file_entry=file_entry,
+            embedding_func=AsyncMock(return_value=[]),
+            min_lines_for_chunking=100,
+            max_tokens_per_chunk=100,
+            token_budgeter=WordTokenizerBudgeter(),
+        )
+
+        self.assertEqual(len(chunks), 1)
+        self.assertEqual(chunks[0].filtered_line_indices, [0, 32])
+        self.assertNotIn("line_gap_split", chunks[0].post_processing.operations)
+
+    def test_post_processing_merges_small_chunk_with_lowest_distance_neighbor(self):
+        lines = [
+            FilteredLine("left alpha beta gamma delta\n", 0),
+            FilteredLine("tiny\n", 1),
+            FilteredLine("right alpha beta gamma delta\n", 2),
+        ]
+        chunks = [
+            ContentChunk._chunk_from_filtered_lines([lines[0]], data_package_id="pkg", file_path="test.txt"),
+            ContentChunk._chunk_from_filtered_lines([lines[1]], data_package_id="pkg", file_path="test.txt"),
+            ContentChunk._chunk_from_filtered_lines([lines[2]], data_package_id="pkg", file_path="test.txt"),
+        ]
+
+        processed = ContentChunk._post_process_chunks(
+            chunks,
+            filtered_lines=lines,
+            data_package_id="pkg",
+            file_path="test.txt",
+            max_tokens_per_chunk=20,
+            min_tokens_per_chunk=5,
+            max_filtered_line_gap=32,
+            token_budgeter=WordTokenizerBudgeter(),
+            boundary_distances={0: 0.9, 1: 0.1},
+        )
+
+        self.assertEqual([chunk.filtered_line_indices for chunk in processed], [[0], [1, 2]])
+        self.assertIn("min_token_merge", processed[1].post_processing.operations)
+        self.assertEqual(processed[1].post_processing.source_chunk_count, 2)
+
+    def test_post_processing_falls_back_to_previous_neighbor_without_distances(self):
+        lines = [
+            FilteredLine("left alpha beta gamma delta\n", 0),
+            FilteredLine("tiny\n", 1),
+            FilteredLine("right alpha beta gamma delta\n", 2),
+        ]
+        chunks = [
+            ContentChunk._chunk_from_filtered_lines([lines[0]], data_package_id="pkg", file_path="test.txt"),
+            ContentChunk._chunk_from_filtered_lines([lines[1]], data_package_id="pkg", file_path="test.txt"),
+            ContentChunk._chunk_from_filtered_lines([lines[2]], data_package_id="pkg", file_path="test.txt"),
+        ]
+
+        processed = ContentChunk._post_process_chunks(
+            chunks,
+            filtered_lines=lines,
+            data_package_id="pkg",
+            file_path="test.txt",
+            max_tokens_per_chunk=20,
+            min_tokens_per_chunk=5,
+            max_filtered_line_gap=32,
+            token_budgeter=WordTokenizerBudgeter(),
+        )
+
+        self.assertEqual([chunk.filtered_line_indices for chunk in processed], [[0, 1], [2]])
+
+    def test_post_processing_never_merges_across_line_gap_barrier(self):
+        lines = [
+            FilteredLine("left alpha beta gamma\n", 0),
+            FilteredLine("tiny\n", 40),
+        ]
+        chunk = ContentChunk._chunk_from_filtered_lines(lines, data_package_id="pkg", file_path="test.txt")
+
+        processed = ContentChunk._post_process_chunks(
+            [chunk],
+            filtered_lines=lines,
+            data_package_id="pkg",
+            file_path="test.txt",
+            max_tokens_per_chunk=20,
+            min_tokens_per_chunk=5,
+            max_filtered_line_gap=32,
+            token_budgeter=WordTokenizerBudgeter(),
+        )
+
+        self.assertEqual([chunk.filtered_line_indices for chunk in processed], [[0], [40]])
+        self.assertTrue(all("min_token_merge" not in chunk.post_processing.operations for chunk in processed))
+
+    def test_post_processing_never_exceeds_max_tokens_when_merging(self):
+        lines = [
+            FilteredLine("one two three four\n", 0),
+            FilteredLine("five six seven eight\n", 1),
+        ]
+        chunks = [
+            ContentChunk._chunk_from_filtered_lines([lines[0]], data_package_id="pkg", file_path="test.txt"),
+            ContentChunk._chunk_from_filtered_lines([lines[1]], data_package_id="pkg", file_path="test.txt"),
+        ]
+
+        processed = ContentChunk._post_process_chunks(
+            chunks,
+            filtered_lines=lines,
+            data_package_id="pkg",
+            file_path="test.txt",
+            max_tokens_per_chunk=6,
+            min_tokens_per_chunk=5,
+            max_filtered_line_gap=32,
+            token_budgeter=WordTokenizerBudgeter(),
+            boundary_distances={0: 0.0},
+        )
+
+        self.assertEqual([chunk.filtered_line_indices for chunk in processed], [[0], [1]])
+
+    def test_post_processing_leaves_unmergeable_tiny_chunk_intact(self):
+        lines = [FilteredLine("tiny\n", 0)]
+        chunk = ContentChunk._chunk_from_filtered_lines(lines, data_package_id="pkg", file_path="test.txt")
+
+        processed = ContentChunk._post_process_chunks(
+            [chunk],
+            filtered_lines=lines,
+            data_package_id="pkg",
+            file_path="test.txt",
+            max_tokens_per_chunk=20,
+            min_tokens_per_chunk=5,
+            max_filtered_line_gap=32,
+            token_budgeter=WordTokenizerBudgeter(),
+        )
+
+        self.assertEqual(len(processed), 1)
+        self.assertEqual(processed[0].filtered_line_indices, [0])
+        self.assertEqual(processed[0].content, "tiny\n")
+        self.assertEqual(processed[0].post_processing.source_chunk_count, 1)
 
 
 if __name__ == "__main__":

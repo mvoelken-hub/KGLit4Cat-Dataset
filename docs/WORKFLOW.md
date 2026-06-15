@@ -355,7 +355,9 @@ For each file entry, SIMONE:
 8. calculates cosine distances between adjacent windows,
 9. computes a percentile threshold,
 10. creates chunk boundaries where distances exceed that threshold,
-11. stores chunks with original line indices.
+11. enforces the maximum token budget per chunk,
+12. post-processes chunks by splitting large retained-line gaps and merging undersized neighboring chunks when this does not cross a gap barrier or exceed the token cap,
+13. stores chunks with original line indices and compact post-processing metadata.
 
 This is implemented in `ContentChunk.create_chunks_for_file_entry()`.   
 
@@ -373,6 +375,7 @@ ContentChunk
     filtered_line_indices: retained original line numbers
     summary: optional
     embedding: optional
+    post_processing: source chunk count and compact operation labels
 ```
 
 The `ContentChunk` fields are defined in the chunking domain model. 

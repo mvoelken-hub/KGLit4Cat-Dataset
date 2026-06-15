@@ -21,6 +21,10 @@ export interface ChunkResponse {
   end_idx: number;
   filtered_line_indices?: number[];
   summary?: string | null;
+  post_processing?: {
+    source_chunk_count: number;
+    operations: string[];
+  };
 }
 
 export interface TextQualityConfig {

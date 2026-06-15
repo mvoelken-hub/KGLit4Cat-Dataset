@@ -11,6 +11,7 @@ from app.domain.datasources.file_types import (
 
 from app.domain.datasources.chunking import (
     ContentChunk,
+    ChunkPostProcessingMetadata,
 )
 
 from app.domain.datasources.text_quality import (
@@ -36,6 +37,7 @@ __all__ = [
     "determine_file_type",
     "extract_text_from_file",
     "ContentChunk",
+    "ChunkPostProcessingMetadata",
     "DecisionKind",
     "TextQualityDecision",
     "classify_text_line",

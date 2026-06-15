@@ -23,6 +23,8 @@ from app.domain.datasources.errors import (
 from app.domain.token_budget import PromptTokenBudgeter
 
 _DEFAULT_MAX_TOKENS_PER_CHUNK = 1024
+_DEFAULT_MIN_TOKENS_PER_CHUNK = 128
+_DEFAULT_MAX_FILTERED_LINE_GAP = 32
 
 
 @dataclass
@@ -38,6 +40,16 @@ class BufferWindow:
     distance_next: float | None = None
 
 
+@dataclass
+class ChunkSegment:
+    chunk: "ContentChunk"
+    barrier_before: bool = False
+
+
+class ChunkPostProcessingMetadata(BaseModel):
+    source_chunk_count: int = Field(1, ge=1)
+    operations: list[str] = Field(default_factory=list)
+
 
 class ContentChunk(BaseModel):
     content: str
@@ -48,6 +60,7 @@ class ContentChunk(BaseModel):
     filtered_line_indices: list[int] = Field(default_factory=list, description="Original line indices that passed the text quality filter and are included in this chunk")
     summary: str | None = None
     embedding: list[float] | None = None
+    post_processing: ChunkPostProcessingMetadata = Field(default_factory=ChunkPostProcessingMetadata)
 
     @computed_field
     @property
@@ -67,6 +80,8 @@ class ContentChunk(BaseModel):
         semantic_chunking_threshold: float = 95.0,
         protected_line_indices: list[int] | None = None,
         max_tokens_per_chunk: int = _DEFAULT_MAX_TOKENS_PER_CHUNK,
+        min_tokens_per_chunk: int = _DEFAULT_MIN_TOKENS_PER_CHUNK,
+        max_filtered_line_gap: int = _DEFAULT_MAX_FILTERED_LINE_GAP,
         token_budgeter: PromptTokenBudgeter | None = None,
     ) -> list["ContentChunk"]:
         token_budgeter = token_budgeter or PromptTokenBudgeter()
@@ -107,8 +122,9 @@ class ContentChunk(BaseModel):
                 end_idx=filtered_lines[-1].line_idx,
                 filtered_line_indices=[line.line_idx for line in filtered_lines]
             )
+            bounded = [single_chunk]
             if max_tokens_per_chunk and max_tokens_per_chunk > 0:
-                return cls._split_chunks_by_token_budget(
+                bounded = cls._split_chunks_by_token_budget(
                     [single_chunk],
                     filtered_lines=filtered_lines,
                     data_package_id=data_package_id,
@@ -116,7 +132,16 @@ class ContentChunk(BaseModel):
                     max_tokens_per_chunk=max_tokens_per_chunk,
                     token_budgeter=token_budgeter,
                 )
-            return [single_chunk]
+            return cls._post_process_chunks(
+                bounded,
+                filtered_lines=filtered_lines,
+                data_package_id=data_package_id,
+                file_path=file_entry.file_path,
+                max_tokens_per_chunk=max_tokens_per_chunk,
+                min_tokens_per_chunk=min_tokens_per_chunk,
+                max_filtered_line_gap=max_filtered_line_gap,
+                token_budgeter=token_budgeter,
+            )
         
         combined_lines = combine_lines(
             filtered_lines,
@@ -131,6 +156,11 @@ class ContentChunk(BaseModel):
                 item.embedding = embedding
 
         distances = attach_cosine_distances(combined_lines)
+        boundary_distances = {
+            item.line.line_idx: item.distance_next
+            for item in combined_lines
+            if item.distance_next is not None
+        }
 
         breakpoint_distance_threshold = np.percentile(distances, semantic_chunking_threshold)
 
@@ -159,8 +189,9 @@ class ContentChunk(BaseModel):
                 filtered_line_indices=[item.line.line_idx for item in group]
             ))
 
+        bounded_chunks = chunk_list
         if max_tokens_per_chunk and max_tokens_per_chunk > 0:
-            return cls._split_chunks_by_token_budget(
+            bounded_chunks = cls._split_chunks_by_token_budget(
                 chunk_list,
                 filtered_lines=filtered_lines,
                 data_package_id=data_package_id,
@@ -169,7 +200,17 @@ class ContentChunk(BaseModel):
                 token_budgeter=token_budgeter,
             )
 
-        return chunk_list
+        return cls._post_process_chunks(
+            bounded_chunks,
+            filtered_lines=filtered_lines,
+            data_package_id=data_package_id,
+            file_path=file_entry.file_path,
+            max_tokens_per_chunk=max_tokens_per_chunk,
+            min_tokens_per_chunk=min_tokens_per_chunk,
+            max_filtered_line_gap=max_filtered_line_gap,
+            token_budgeter=token_budgeter,
+            boundary_distances=boundary_distances,
+        )
 
     @classmethod
     def _split_chunks_by_token_budget(
@@ -201,6 +242,7 @@ class ContentChunk(BaseModel):
                         window,
                         data_package_id=data_package_id,
                         file_path=file_path,
+                        operations=["token_cap_split"],
                     ))
                     window = []
                     window_tokens = 0
@@ -211,6 +253,7 @@ class ContentChunk(BaseModel):
                         window,
                         data_package_id=data_package_id,
                         file_path=file_path,
+                        operations=["token_cap_split"],
                     ))
                     window = []
                     window_tokens = 0
@@ -219,8 +262,271 @@ class ContentChunk(BaseModel):
                     window,
                     data_package_id=data_package_id,
                     file_path=file_path,
+                    operations=(
+                        ["token_cap_split"]
+                        if token_budgeter.count(chunk.content) > max_tokens_per_chunk
+                        else None
+                    ),
                 ))
         return bounded
+
+    @classmethod
+    def _post_process_chunks(
+        cls,
+        chunks: list["ContentChunk"],
+        *,
+        filtered_lines: list[FilteredLine],
+        data_package_id: str,
+        file_path: str,
+        max_tokens_per_chunk: int,
+        min_tokens_per_chunk: int,
+        max_filtered_line_gap: int,
+        token_budgeter: PromptTokenBudgeter,
+        boundary_distances: dict[int, float] | None = None,
+    ) -> list["ContentChunk"]:
+        if not chunks:
+            return []
+        line_by_index = {line.line_idx: line for line in filtered_lines}
+        segments = cls._split_chunks_by_filtered_line_gap(
+            chunks,
+            line_by_index=line_by_index,
+            data_package_id=data_package_id,
+            file_path=file_path,
+            max_filtered_line_gap=max_filtered_line_gap,
+        )
+        merged = cls._merge_small_segments(
+            segments,
+            line_by_index=line_by_index,
+            data_package_id=data_package_id,
+            file_path=file_path,
+            max_tokens_per_chunk=max_tokens_per_chunk,
+            min_tokens_per_chunk=min_tokens_per_chunk,
+            token_budgeter=token_budgeter,
+            boundary_distances=boundary_distances or {},
+        )
+        return [segment.chunk for segment in merged]
+
+    @classmethod
+    def _split_chunks_by_filtered_line_gap(
+        cls,
+        chunks: list["ContentChunk"],
+        *,
+        line_by_index: dict[int, FilteredLine],
+        data_package_id: str,
+        file_path: str,
+        max_filtered_line_gap: int,
+    ) -> list[ChunkSegment]:
+        if max_filtered_line_gap <= 0:
+            return [ChunkSegment(chunk=chunk) for chunk in chunks]
+        segments: list[ChunkSegment] = []
+        for chunk in chunks:
+            lines = cls._lines_for_chunk(chunk, line_by_index)
+            if not lines:
+                segments.append(ChunkSegment(chunk=chunk))
+                continue
+            groups: list[list[FilteredLine]] = []
+            current: list[FilteredLine] = [lines[0]]
+            for previous, line in zip(lines, lines[1:]):
+                if line.line_idx - previous.line_idx > max_filtered_line_gap:
+                    groups.append(current)
+                    current = []
+                current.append(line)
+            groups.append(current)
+            if len(groups) == 1:
+                segments.append(ChunkSegment(chunk=chunk))
+                continue
+            for index, group in enumerate(groups):
+                segment_chunk = cls._chunk_from_filtered_lines(
+                    group,
+                    data_package_id=data_package_id,
+                    file_path=file_path,
+                    source_chunk_count=chunk.post_processing.source_chunk_count,
+                    operations=[
+                        *chunk.post_processing.operations,
+                        "line_gap_split",
+                    ],
+                )
+                segments.append(
+                    ChunkSegment(
+                        chunk=segment_chunk,
+                        barrier_before=index > 0,
+                    )
+                )
+        return segments
+
+    @classmethod
+    def _merge_small_segments(
+        cls,
+        segments: list[ChunkSegment],
+        *,
+        line_by_index: dict[int, FilteredLine],
+        data_package_id: str,
+        file_path: str,
+        max_tokens_per_chunk: int,
+        min_tokens_per_chunk: int,
+        token_budgeter: PromptTokenBudgeter,
+        boundary_distances: dict[int, float],
+    ) -> list[ChunkSegment]:
+        if min_tokens_per_chunk <= 0:
+            return segments
+        index = 0
+        while index < len(segments):
+            chunk = segments[index].chunk
+            if token_budgeter.count(chunk.content) >= min_tokens_per_chunk:
+                index += 1
+                continue
+            candidates = cls._merge_candidates(
+                segments,
+                index=index,
+                line_by_index=line_by_index,
+                max_tokens_per_chunk=max_tokens_per_chunk,
+                token_budgeter=token_budgeter,
+                boundary_distances=boundary_distances,
+            )
+            if not candidates:
+                index += 1
+                continue
+            _, direction = min(candidates, key=lambda item: item[0])
+            left_index = index - 1 if direction == "left" else index
+            right_index = index if direction == "left" else index + 1
+            merged_chunk = cls._merge_pair(
+                segments[left_index].chunk,
+                segments[right_index].chunk,
+                line_by_index=line_by_index,
+                data_package_id=data_package_id,
+                file_path=file_path,
+            )
+            segments[left_index:right_index + 1] = [
+                ChunkSegment(
+                    chunk=merged_chunk,
+                    barrier_before=segments[left_index].barrier_before,
+                )
+            ]
+            index = max(0, left_index - 1)
+        return segments
+
+    @classmethod
+    def _merge_candidates(
+        cls,
+        segments: list[ChunkSegment],
+        *,
+        index: int,
+        line_by_index: dict[int, FilteredLine],
+        max_tokens_per_chunk: int,
+        token_budgeter: PromptTokenBudgeter,
+        boundary_distances: dict[int, float],
+    ) -> list[tuple[tuple[int, float, int], str]]:
+        candidates: list[tuple[tuple[int, float, int], str]] = []
+        if index > 0 and not segments[index].barrier_before:
+            distance = cls._boundary_distance(
+                segments[index - 1].chunk,
+                segments[index].chunk,
+                boundary_distances,
+            )
+            if cls._can_merge(
+                segments[index - 1].chunk,
+                segments[index].chunk,
+                line_by_index=line_by_index,
+                max_tokens_per_chunk=max_tokens_per_chunk,
+                token_budgeter=token_budgeter,
+            ):
+                candidates.append(((0 if distance is not None else 1, distance or 0.0, 0), "left"))
+        if index + 1 < len(segments) and not segments[index + 1].barrier_before:
+            distance = cls._boundary_distance(
+                segments[index].chunk,
+                segments[index + 1].chunk,
+                boundary_distances,
+            )
+            if cls._can_merge(
+                segments[index].chunk,
+                segments[index + 1].chunk,
+                line_by_index=line_by_index,
+                max_tokens_per_chunk=max_tokens_per_chunk,
+                token_budgeter=token_budgeter,
+            ):
+                candidates.append(((0 if distance is not None else 1, distance or 0.0, 1), "right"))
+        return candidates
+
+    @classmethod
+    def _can_merge(
+        cls,
+        left: "ContentChunk",
+        right: "ContentChunk",
+        *,
+        line_by_index: dict[int, FilteredLine],
+        max_tokens_per_chunk: int,
+        token_budgeter: PromptTokenBudgeter,
+    ) -> bool:
+        if max_tokens_per_chunk <= 0:
+            return True
+        lines = cls._combined_lines_for_chunks(left, right, line_by_index=line_by_index)
+        content = "".join(line.text for line in lines)
+        return token_budgeter.count(content) <= max_tokens_per_chunk
+
+    @classmethod
+    def _merge_pair(
+        cls,
+        left: "ContentChunk",
+        right: "ContentChunk",
+        *,
+        line_by_index: dict[int, FilteredLine],
+        data_package_id: str,
+        file_path: str,
+    ) -> "ContentChunk":
+        operations = [
+            *left.post_processing.operations,
+            *right.post_processing.operations,
+            "min_token_merge",
+        ]
+        return cls._chunk_from_filtered_lines(
+            cls._combined_lines_for_chunks(left, right, line_by_index=line_by_index),
+            data_package_id=data_package_id,
+            file_path=file_path,
+            source_chunk_count=(
+                left.post_processing.source_chunk_count
+                + right.post_processing.source_chunk_count
+            ),
+            operations=operations,
+        )
+
+    @staticmethod
+    def _boundary_distance(
+        left: "ContentChunk",
+        right: "ContentChunk",
+        boundary_distances: dict[int, float],
+    ) -> float | None:
+        left_indices = left.filtered_line_indices
+        right_indices = right.filtered_line_indices
+        if not left_indices or not right_indices:
+            return None
+        boundary_index = left_indices[-1]
+        if boundary_index in boundary_distances:
+            return boundary_distances[boundary_index]
+        if right_indices[0] in boundary_distances:
+            return boundary_distances[right_indices[0]]
+        return None
+
+    @classmethod
+    def _combined_lines_for_chunks(
+        cls,
+        left: "ContentChunk",
+        right: "ContentChunk",
+        *,
+        line_by_index: dict[int, FilteredLine],
+    ) -> list[FilteredLine]:
+        indices = sorted(set(left.filtered_line_indices + right.filtered_line_indices))
+        return [line_by_index[index] for index in indices if index in line_by_index]
+
+    @staticmethod
+    def _lines_for_chunk(
+        chunk: "ContentChunk",
+        line_by_index: dict[int, FilteredLine],
+    ) -> list[FilteredLine]:
+        return [
+            line_by_index[index]
+            for index in chunk.filtered_line_indices
+            if index in line_by_index
+        ]
 
     @classmethod
     def _chunk_from_filtered_lines(
@@ -229,7 +535,10 @@ class ContentChunk(BaseModel):
         *,
         data_package_id: str,
         file_path: str,
+        source_chunk_count: int = 1,
+        operations: list[str] | None = None,
     ) -> "ContentChunk":
+        deduped_operations = list(dict.fromkeys(operations or []))
         return cls(
             content="".join(item.text for item in lines),
             data_package_id=data_package_id,
@@ -237,6 +546,10 @@ class ContentChunk(BaseModel):
             start_idx=lines[0].line_idx,
             end_idx=lines[-1].line_idx,
             filtered_line_indices=[item.line_idx for item in lines],
+            post_processing=ChunkPostProcessingMetadata(
+                source_chunk_count=source_chunk_count,
+                operations=deduped_operations,
+            ),
         )
 
     @staticmethod

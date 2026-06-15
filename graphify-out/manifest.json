@@ -50,9 +50,9 @@
     "semantic_hash": "9373edd3ea7e59ab4863813d6e7ea01b"
   },
   "backend/app/api/v1/schemas/datasources.py": {
-    "mtime": 1781358680.2489586,
-    "ast_hash": "ddea966add731f0e7d5115948df709e7",
-    "semantic_hash": "ddea966add731f0e7d5115948df709e7"
+    "mtime": 1781542617.683752,
+    "ast_hash": "ce838bec6c94b3c2c12a246ed39057d0",
+    "semantic_hash": "ce838bec6c94b3c2c12a246ed39057d0"
   },
   "backend/app/api/v1/schemas/extraction.py": {
     "mtime": 1781513162.411828,
@@ -120,14 +120,14 @@
     "semantic_hash": "b2559223323563388b438a5792d93546"
   },
   "backend/app/domain/datasources/__init__.py": {
-    "mtime": 1779292358.5276797,
-    "ast_hash": "b0fcd99ca19c6625b006e8f9b3e810ca",
-    "semantic_hash": "b0fcd99ca19c6625b006e8f9b3e810ca"
+    "mtime": 1781542613.7445638,
+    "ast_hash": "c064fd199d16b1fe08f0ce4436884976",
+    "semantic_hash": "c064fd199d16b1fe08f0ce4436884976"
   },
   "backend/app/domain/datasources/chunking.py": {
-    "mtime": 1781465607.12196,
-    "ast_hash": "e4f22473bf64d41540a550430f087aba",
-    "semantic_hash": "e4f22473bf64d41540a550430f087aba"
+    "mtime": 1781542592.26201,
+    "ast_hash": "475aacf2866cf80061f61226b500f7ec",
+    "semantic_hash": "475aacf2866cf80061f61226b500f7ec"
   },
   "backend/app/domain/datasources/datasource.py": {
     "mtime": 1779292358.5276797,
@@ -355,9 +355,9 @@
     "semantic_hash": "f0d7a5ad563df2af2370253f2218b9d9"
   },
   "backend/tests/test_chunking.py": {
-    "mtime": 1781465638.8160257,
-    "ast_hash": "27651093c5254eea9d91fc26812d43c6",
-    "semantic_hash": "27651093c5254eea9d91fc26812d43c6"
+    "mtime": 1781542742.7621167,
+    "ast_hash": "e7231cd5218adf8ecff589ac6ca7ae26",
+    "semantic_hash": "e7231cd5218adf8ecff589ac6ca7ae26"
   },
   "backend/tests/test_controlled_vocabularies.py": {
     "mtime": 1779492452.4851677,
@@ -500,9 +500,9 @@
     "semantic_hash": "a2672540bc720afe742ef06bcab1e94e"
   },
   "frontend/src/api/types.ts": {
-    "mtime": 1781278141.1725159,
-    "ast_hash": "08e0eb0f9a1c1d741fb870c14033fe4b",
-    "semantic_hash": "08e0eb0f9a1c1d741fb870c14033fe4b"
+    "mtime": 1781542621.397956,
+    "ast_hash": "99375bf497caa6baead3ccd1f0056550",
+    "semantic_hash": "99375bf497caa6baead3ccd1f0056550"
   },
   "frontend/src/components/ChunkingDialog.tsx": {
     "mtime": 1781358707.3272614,
@@ -790,9 +790,9 @@
     "semantic_hash": ""
   },
   "backend/app/domain/extraction/evidence_context.py": {
-    "mtime": 1781529406.4647613,
-    "ast_hash": "4455e656ce7bcf62cb43e3a85e77c954",
-    "semantic_hash": "4455e656ce7bcf62cb43e3a85e77c954"
+    "mtime": 1781540706.080222,
+    "ast_hash": "c3fa4329ce4d8801975a7633f509cef4",
+    "semantic_hash": "c3fa4329ce4d8801975a7633f509cef4"
   },
   "backend/app/domain/extraction/schema_projection.py": {
     "mtime": 1781438193.641894,
