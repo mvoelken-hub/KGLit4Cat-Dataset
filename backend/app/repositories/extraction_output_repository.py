@@ -3,6 +3,7 @@ from typing import Any, Protocol
 from app.domain.extraction import (
     CurationLedgerRecord,
     DraftValidationResult,
+    EvidenceQueryLedgerEntry,
     ExtractionFileSummary,
     InitialFileSummaryDiagnostics,
     InitialFileSummaryStatus,
@@ -199,6 +200,22 @@ class ExtractionOutputRepository(Protocol):
         workflow_id: str,
         chat_model: str | None = None,
     ) -> list[FieldCompletionLedgerRecord]:
+        ...
+
+    def save_evidence_query_ledger(
+        self,
+        *,
+        workflow_id: str,
+        ledger: list[EvidenceQueryLedgerEntry],
+        chat_model: str | None = None,
+    ) -> None:
+        ...
+
+    def load_evidence_query_ledger(
+        self,
+        workflow_id: str,
+        chat_model: str | None = None,
+    ) -> list[EvidenceQueryLedgerEntry]:
         ...
 
     def save_curation_ledger(

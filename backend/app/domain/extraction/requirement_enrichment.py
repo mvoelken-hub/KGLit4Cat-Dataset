@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from hashlib import sha1
 import re
 from typing import Any, Literal
 
@@ -43,6 +44,7 @@ class RequirementEvaluation(BaseModel):
 
 
 class RequirementEvidenceItem(BaseModel):
+    evidence_id: str = ""
     candidate_id: str
     category: str
     claim: str
@@ -493,7 +495,14 @@ def _class_hint_score(target_class: str, candidate: EvidenceCandidate) -> int:
     ):
         return 2
     if target_class == "QuantitativeAttribute" and category == "measurement_signal":
-        return 2
+        score = 2
+        if "observe frequency" in text or "observation frequency" in text:
+            score += 6
+        if any(term in text for term in ("frequency", "temperature", "spectral width", "data points")):
+            score += 2
+        if any(term in text for term in ("formula", "subrange", "range of", "0..", "rel ")):
+            score -= 2
+        return score
     return 0
 
 
@@ -515,6 +524,7 @@ def _dedupe_candidates(candidates: list[EvidenceCandidate]) -> list[EvidenceCand
 
 def _evidence_item(candidate: EvidenceCandidate) -> RequirementEvidenceItem:
     return RequirementEvidenceItem(
+        evidence_id=stable_evidence_id(candidate),
         candidate_id=candidate.candidate_id,
         category=str(candidate.category),
         claim=candidate.claim,
@@ -523,3 +533,19 @@ def _evidence_item(candidate: EvidenceCandidate) -> RequirementEvidenceItem:
         start_idx=candidate.start_idx,
         end_idx=candidate.end_idx,
     )
+
+
+def stable_evidence_id(candidate: EvidenceCandidate, *, run_id: str = "") -> str:
+    payload = "|".join(
+        [
+            run_id,
+            candidate.file_path,
+            str(candidate.start_idx),
+            str(candidate.end_idx),
+            str(candidate.category),
+            candidate.candidate_id,
+            candidate.claim,
+            candidate.evidence_text,
+        ]
+    )
+    return f"ev:{sha1(payload.encode('utf-8')).hexdigest()[:16]}"

@@ -146,6 +146,18 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
                         "enrichment_status": "not_grounded",
                     }
                 ],
+                evidence_query_ledger=[
+                    {
+                        "query_id": "requirement_query:method_plan:test",
+                        "requirement_id": "method_plan",
+                        "target_path": "/was_generated_by/0/realized_plan",
+                        "query": {"text": "pulse sequence"},
+                        "result_evidence_ids": ["ev:one", "ev:two"],
+                        "selected_evidence_ids": ["ev:one"],
+                        "rejected_result_reasons": {"ev:two": "context_window_only"},
+                        "ranking_explanation": ["hint match"],
+                    }
+                ],
                 curation_ledger=[
                     {
                         "json_path": "/title",
@@ -174,6 +186,7 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
                 "curated_document.json",
                 "projection_ledger.json",
                 "field_completion_ledger.json",
+                "evidence_query_ledger.json",
                 "curation_ledger.json",
                 "validation.json",
                 "extraction_result.json",
@@ -190,6 +203,10 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
             self.assertEqual(repo.load_curated_document(workflow_id, chat_model)["id"], "curated")
             self.assertEqual(repo.load_projection_ledger(workflow_id, chat_model)[0].status, "projected")
             self.assertEqual(repo.load_field_completion_ledger(workflow_id, chat_model)[0].json_path, "/title")
+            self.assertEqual(
+                repo.load_evidence_query_ledger(workflow_id, chat_model)[0].selected_evidence_ids,
+                ["ev:one"],
+            )
             self.assertEqual(repo.load_curation_ledger(workflow_id, chat_model)[0].status, "user_modified")
             generated_validation, curated_validation = repo.load_validation(workflow_id, chat_model)
             self.assertEqual(generated_validation.status, "invalid")
@@ -208,6 +225,7 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
             with self.assertRaises(FileNotFoundError):
                 repo.load_generated_final_draft(workflow_id, chat_model)
             self.assertFalse((workflow_dir / "dataset_summary.txt").exists())
+            self.assertEqual(repo.load_evidence_query_ledger(workflow_id, chat_model), [])
 
             repo.clear_extraction_run(workflow_id)
 

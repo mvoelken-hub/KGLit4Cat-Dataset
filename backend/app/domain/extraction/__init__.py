@@ -130,6 +130,7 @@ from app.domain.extraction.requirement_enrichment import (
     report_items_from_evaluation,
     score_requirement_report,
     select_requirement_evidence_packet,
+    stable_evidence_id,
 )
 
 from app.domain.extraction.schema_projection import (
@@ -210,9 +211,11 @@ from app.domain.extraction.workflow import (
     CompleteWorkflowProgress,
     CompleteWorkflowStepProgress,
     CurationLedgerRecord,
+    DocumentQualityState,
     DraftQualityState,
     DraftValidationResult,
     DraftValidationStatus,
+    EvidenceQueryLedgerEntry,
     ExtractionChunkRef,
     ExtractionChunkResult,
     ExtractionVocabQueryConfig,
@@ -227,6 +230,7 @@ from app.domain.extraction.workflow import (
     FieldValidationStatus,
     ProjectionLedgerRecord,
     ProjectionLedgerStatus,
+    QualityIssue,
 )
 
 __all__ = [
@@ -406,14 +410,17 @@ __all__ = [
     "report_items_from_evaluation",
     "score_requirement_report",
     "select_requirement_evidence_packet",
+    "stable_evidence_id",
     "ChunkingRequiredError",
     "ChunkRepairMode",
     "CompleteWorkflowProgress",
     "CompleteWorkflowStepProgress",
     "CurationLedgerRecord",
+    "DocumentQualityState",
     "DraftQualityState",
     "DraftValidationResult",
     "DraftValidationStatus",
+    "EvidenceQueryLedgerEntry",
     "ExtractionChunkRef",
     "ExtractionChunkResult",
     "ExtractionVocabQueryConfig",
@@ -428,4 +435,5 @@ __all__ = [
     "FieldValidationStatus",
     "ProjectionLedgerRecord",
     "ProjectionLedgerStatus",
+    "QualityIssue",
 ]

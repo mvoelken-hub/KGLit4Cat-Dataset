@@ -11,6 +11,7 @@ from typing import Any
 from app.domain.extraction import (
     CurationLedgerRecord,
     DraftValidationResult,
+    EvidenceQueryLedgerEntry,
     FilteredEvidenceLedger,
     ExtractionFileSummary,
     InitialFileSummaryDiagnostics,
@@ -50,6 +51,7 @@ DATASET_SUMMARY_FILE = "dataset_summary.txt"
 CURATED_DOCUMENT_FILE = "curated_document.json"
 PROJECTION_LEDGER_FILE = "projection_ledger.json"
 FIELD_COMPLETION_LEDGER_FILE = "field_completion_ledger.json"
+EVIDENCE_QUERY_LEDGER_FILE = "evidence_query_ledger.json"
 CURATION_LEDGER_FILE = "curation_ledger.json"
 VALIDATION_FILE = "validation.json"
 
@@ -145,6 +147,11 @@ class FileSystemExtractionOutputRepository:
         self.save_field_completion_ledger(
             workflow_id=workflow_id,
             ledger=result.field_completion_ledger,
+            chat_model=result.chat_model,
+        )
+        self.save_evidence_query_ledger(
+            workflow_id=workflow_id,
+            ledger=result.evidence_query_ledger,
             chat_model=result.chat_model,
         )
         self.save_curation_ledger(
@@ -420,6 +427,31 @@ class FileSystemExtractionOutputRepository:
             return []
         return [FieldCompletionLedgerRecord.model_validate(item) for item in payload]
 
+    def save_evidence_query_ledger(
+        self,
+        *,
+        workflow_id: str,
+        ledger: list[EvidenceQueryLedgerEntry],
+        chat_model: str | None = None,
+    ) -> None:
+        self._write_json_file(
+            self._workflow_dir(workflow_id, chat_model) / EVIDENCE_QUERY_LEDGER_FILE,
+            [item.model_dump(mode="json") for item in ledger],
+        )
+
+    def load_evidence_query_ledger(
+        self,
+        workflow_id: str,
+        chat_model: str | None = None,
+    ) -> list[EvidenceQueryLedgerEntry]:
+        path = self._workflow_dir(workflow_id, chat_model) / EVIDENCE_QUERY_LEDGER_FILE
+        if not path.exists():
+            return []
+        payload = self._read_json_file(path)
+        if not isinstance(payload, list):
+            return []
+        return [EvidenceQueryLedgerEntry.model_validate(item) for item in payload]
+
     def save_curation_ledger(
         self,
         *,
@@ -607,6 +639,7 @@ class FileSystemExtractionOutputRepository:
             CURATED_DOCUMENT_FILE,
             PROJECTION_LEDGER_FILE,
             FIELD_COMPLETION_LEDGER_FILE,
+            EVIDENCE_QUERY_LEDGER_FILE,
             CURATION_LEDGER_FILE,
             VALIDATION_FILE,
             PROMPT_DIAGNOSTICS_DIR,

@@ -32,6 +32,7 @@ from app.domain.extraction import (
     CompleteWorkflowStepProgress,
     CurationLedgerRecord,
     DefinedTerm,
+    DocumentQualityState,
     DraftValidationResult,
     EVIDENCE_INSTANCE_BUILDER_SYSTEM_PROMPT,
     EVIDENCE_INSTANCE_REPAIR_SYSTEM_PROMPT,
@@ -68,6 +69,7 @@ from app.domain.extraction import (
     EvidenceChunkMetadata,
     EvidenceContext,
     EvidenceNote,
+    EvidenceQueryLedgerEntry,
     FilteredEvidenceNote,
     FileInventoryItem,
     RoutedEvidenceContext,
@@ -109,6 +111,7 @@ from app.domain.extraction import (
     DatasetSummaryProjection,
     ShallowDatasetLevelProjection,
     ProjectionLedgerRecord,
+    QualityIssue,
     QualitativeAttribute,
     QualitativeAttributeNormalization,
     QuantitativeAttribute,
@@ -893,6 +896,7 @@ class ExtractionService:
                     vocab_queries=state.vocab_queries if state else [],
                     generated_final_draft=result.generated_final_draft,
                     curated_document=result.curated_document,
+                    document_quality_state=result.document_quality_state,
                     draft_quality_state=result.draft_quality_state,
                     validation=result.validation,
                     curated_validation=result.curated_validation,
@@ -937,6 +941,7 @@ class ExtractionService:
                     vocab_queries=state.vocab_queries if state else [],
                     generated_final_draft=state.generated_final_draft if state else None,
                     curated_document=state.curated_document if state else None,
+                    document_quality_state=state.document_quality_state if state else None,
                     draft_quality_state=state.draft_quality_state if state else None,
                     validation=state.validation if state else DraftValidationResult(),
                     curated_validation=state.curated_validation if state else None,
@@ -983,6 +988,7 @@ class ExtractionService:
                     vocab_queries=state.vocab_queries,
                     generated_final_draft=state.generated_final_draft,
                     curated_document=state.curated_document,
+                    document_quality_state=state.document_quality_state,
                     draft_quality_state=state.draft_quality_state,
                     validation=state.validation,
                     curated_validation=state.curated_validation,
@@ -1008,6 +1014,7 @@ class ExtractionService:
                 progress.vocab_queries = state.vocab_queries
                 progress.generated_final_draft = state.generated_final_draft
                 progress.curated_document = state.curated_document
+                progress.document_quality_state = state.document_quality_state
                 progress.draft_quality_state = state.draft_quality_state
                 progress.validation = state.validation
                 progress.curated_validation = state.curated_validation
@@ -1059,12 +1066,14 @@ class ExtractionService:
             vocab_queries=state.vocab_queries,
             generated_final_draft=state.generated_final_draft,
             curated_document=state.curated_document,
+            document_quality_state=state.document_quality_state,
             draft_quality_state=state.draft_quality_state,
             validation=state.validation,
             curated_validation=state.curated_validation,
             initial_draft_scaffold=state.initial_draft_scaffold,
             projection_ledger=state.projection_ledger,
             field_completion_ledger=state.field_completion_ledger,
+            evidence_query_ledger=state.evidence_query_ledger,
             curation_ledger=state.curation_ledger,
             current_chunk=None,
             warnings=self._load_warnings_or_empty(data_package_id),
@@ -1132,6 +1141,7 @@ class ExtractionService:
             vocab_queries=state.vocab_queries,
             generated_final_draft=state.generated_final_draft,
             curated_document=state.curated_document,
+            document_quality_state=state.document_quality_state,
             draft_quality_state=state.draft_quality_state,
             validation=state.validation,
             curated_validation=state.curated_validation,
@@ -1196,6 +1206,7 @@ class ExtractionService:
             vocab_queries=state.vocab_queries,
             generated_final_draft=state.generated_final_draft,
             curated_document=state.curated_document,
+            document_quality_state=state.document_quality_state,
             draft_quality_state=state.draft_quality_state,
             validation=state.validation,
             curated_validation=state.curated_validation,
@@ -1310,6 +1321,7 @@ class ExtractionService:
             vocab_queries=state.vocab_queries,
             generated_final_draft=state.generated_final_draft,
             curated_document=state.curated_document,
+            document_quality_state=state.document_quality_state,
             draft_quality_state=state.draft_quality_state,
             validation=state.validation,
             curated_validation=state.curated_validation,
@@ -1439,6 +1451,9 @@ class ExtractionService:
             ),
             curated_document=(
                 persisted_state.curated_document if persisted_state else None
+            ),
+            document_quality_state=(
+                persisted_state.document_quality_state if persisted_state else None
             ),
             draft_quality_state=(
                 persisted_state.draft_quality_state if persisted_state else None
@@ -4089,6 +4104,7 @@ class ExtractionService:
                     vocab_queries=state.vocab_queries,
                     generated_final_draft=result.generated_final_draft,
                     curated_document=result.curated_document,
+                    document_quality_state=result.document_quality_state,
                     draft_quality_state=result.draft_quality_state,
                     validation=result.validation,
                     curated_validation=result.curated_validation,
@@ -4300,6 +4316,9 @@ class ExtractionService:
         if state.generated_initial_draft is None:
             state.generated_initial_draft = self._clone_json_object(document)
             progress.generated_initial_draft = state.generated_initial_draft
+        document = self._remove_file_like_about_entities(document)
+        state.generated_final_draft = document
+        progress.generated_final_draft = document
 
         progress.stage = "metadata_completeness"
         requirements = list(DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS)
@@ -4323,6 +4342,14 @@ class ExtractionService:
             )
             item.selected_evidence = selected_evidence
             item.context_window = context_window
+            self._record_requirement_evidence_query(
+                state=state,
+                progress=progress,
+                requirement=requirement,
+                item=item,
+                selected_evidence=selected_evidence,
+                context_window=context_window,
+            )
             if item.status not in {"missing", "partial"} or not item.applicable:
                 continue
             if not selected_evidence:
@@ -4344,6 +4371,14 @@ class ExtractionService:
             state.generated_final_draft = document
             progress.generated_final_draft = document
             if patch_attempt.status == "applied":
+                self._record_requirement_patch_ledgers(
+                    state=state,
+                    progress=progress,
+                    requirement=requirement,
+                    item=item,
+                    patch_attempt=patch_attempt,
+                    document=document,
+                )
                 refreshed_evaluation = await self._evaluate_dcat_requirements(
                     data_package_id=data_package_id,
                     document=document,
@@ -4369,6 +4404,9 @@ class ExtractionService:
             )
             state.requirement_report = report
             progress.requirement_report = report
+            progress.projection_ledger = state.projection_ledger
+            progress.field_completion_ledger = state.field_completion_ledger
+            progress.evidence_query_ledger = state.evidence_query_ledger
             self._save_run_state(data_package_id, state)
             self._update_progress(data_package_id, progress)
 
@@ -4386,13 +4424,344 @@ class ExtractionService:
             report_items,
             schema_valid=validation.valid,
         )
+        state.document_quality_state = self._build_document_quality_state(
+            validation=state.validation,
+            requirement_report=state.requirement_report,
+            field_completion_ledger=state.field_completion_ledger,
+        )
         progress.validation = state.validation
         progress.generated_final_draft = document
         progress.requirement_report = state.requirement_report
+        progress.document_quality_state = state.document_quality_state
+        progress.projection_ledger = state.projection_ledger
+        progress.field_completion_ledger = state.field_completion_ledger
+        progress.evidence_query_ledger = state.evidence_query_ledger
         self._save_run_state(data_package_id, state)
         self._persist_state_artifacts(data_package_id, state)
         self._update_progress(data_package_id, progress)
         return document
+
+    @staticmethod
+    def _build_document_quality_state(
+        *,
+        validation: DraftValidationResult,
+        requirement_report: Any,
+        field_completion_ledger: list[FieldCompletionLedgerRecord],
+    ) -> DocumentQualityState:
+        blocking: list[QualityIssue] = []
+        warnings: list[QualityIssue] = []
+        schema_valid = validation.status == "valid"
+        if not schema_valid:
+            blocking.extend(
+                QualityIssue(
+                    code="schema_invalid",
+                    severity="blocking",
+                    message=issue.message,
+                    path=issue.path,
+                )
+                for issue in validation.errors
+            )
+        profile_conformant = schema_valid
+        metadata_score = None
+        if requirement_report is not None:
+            metadata_score = requirement_report.metadata_completeness_score
+            unmet = [
+                item
+                for item in requirement_report.requirements
+                if item.applicable and item.status not in {"fulfilled", "not_applicable"}
+            ]
+            if unmet:
+                profile_conformant = False
+                blocking.extend(
+                    QualityIssue(
+                        code="requirement_unmet",
+                        severity="blocking",
+                        message=f"{item.label} is {item.status}.",
+                        requirement_id=item.requirement_id,
+                    )
+                    for item in unmet
+                )
+            evidence_missing = [
+                item
+                for item in requirement_report.requirements
+                if item.applicable
+                and item.status == "fulfilled"
+                and item.requirement_id not in {"dataset_identity", "dataset_distributions"}
+                and not item.selected_evidence
+            ]
+            evidence_grounded = not evidence_missing
+            warnings.extend(
+                QualityIssue(
+                    code="fulfilled_without_selected_evidence",
+                    severity="warning",
+                    message=f"{item.label} is fulfilled without selected evidence trace.",
+                    requirement_id=item.requirement_id,
+                )
+                for item in evidence_missing
+            )
+        else:
+            profile_conformant = None
+            evidence_grounded = None
+        warnings.append(
+            QualityIssue(
+                code="semantic_vocabulary_validation_not_run",
+                severity="info",
+                message=(
+                    "Ontology term-role, quantity-kind, unit, and vocabulary validation "
+                    "are not part of this profile-stage run."
+                ),
+            )
+        )
+        warnings.append(
+            QualityIssue(
+                code="operational_fair_checks_not_run",
+                severity="info",
+                message=(
+                    "Publisher, license, contact, resolvable identifier, access URL, "
+                    "download URL, and FAIR publication checks are out of scope for this stage."
+                ),
+            )
+        )
+        unsupported_field_issues = [
+            record
+            for record in field_completion_ledger
+            if record.validation_status == "invalid" or record.issue_categories
+        ]
+        blocking.extend(
+            QualityIssue(
+                code="field_completion_issue",
+                severity="blocking",
+                message=record.edit_needed_reason or "Field completion has validation issues.",
+                path=record.json_path,
+            )
+            for record in unsupported_field_issues
+        )
+        return DocumentQualityState(
+            schema_valid=schema_valid,
+            profile_conformant=profile_conformant,
+            evidence_grounded=evidence_grounded,
+            semantic_valid=None,
+            metadata_completeness_score=metadata_score,
+            operational_access_score=None,
+            fair_assessment=None,
+            blocking_issues=blocking,
+            warnings=warnings,
+        )
+
+    @staticmethod
+    def _record_requirement_evidence_query(
+        *,
+        state: ExtractionRunState,
+        progress: ExtractionRunProgress,
+        requirement: DcatRequirement,
+        item: Any,
+        selected_evidence: list[Any],
+        context_window: list[Any],
+    ) -> None:
+        selected_ids = [
+            evidence.evidence_id
+            for evidence in selected_evidence
+            if getattr(evidence, "evidence_id", "")
+        ]
+        result_ids: list[str] = []
+        for evidence in list(selected_evidence) + list(context_window):
+            evidence_id = getattr(evidence, "evidence_id", "")
+            if evidence_id and evidence_id not in result_ids:
+                result_ids.append(evidence_id)
+        target_paths = getattr(item, "target_paths", None) or requirement.target_paths
+        target_path = target_paths[0] if target_paths else ""
+        hints = getattr(item, "evidence_search_hints", None) or requirement.evidence_hints
+        query_payload = {
+            "text": " ".join(hints),
+            "target_paths": target_paths,
+            "expected_target_class": (
+                getattr(item, "expected_target_class", None)
+                or requirement.expected_target_class
+            ),
+            "routes": ["portable", "contextual"],
+            "limit": {"selected": 5, "context": 12},
+        }
+        query_fingerprint = sha1(
+            json.dumps(
+                {
+                    "requirement_id": requirement.requirement_id,
+                    "target_paths": target_paths,
+                    "hints": hints,
+                    "target_class": query_payload["expected_target_class"],
+                },
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest()[:12]
+        query_id = f"requirement_query:{requirement.requirement_id}:{query_fingerprint}"
+        rejected_result_reasons = {
+            evidence_id: "context_window_only"
+            for evidence_id in result_ids
+            if evidence_id not in selected_ids
+        }
+        ranking_explanation = [
+            "Ranked portable and contextual evidence by requirement search hints.",
+            "Boosted candidates matching expected DCAT-AP+ target class.",
+        ]
+        if requirement.expected_target_class == "QuantitativeAttribute":
+            ranking_explanation.append(
+                "Observation-frequency measurement evidence is preferred over ranges and formula text."
+            )
+        state.evidence_query_ledger = [
+            record
+            for record in state.evidence_query_ledger
+            if record.query_id != query_id
+        ]
+        state.evidence_query_ledger.append(
+            EvidenceQueryLedgerEntry(
+                query_id=query_id,
+                requirement_id=requirement.requirement_id,
+                target_path=target_path,
+                query=query_payload,
+                result_evidence_ids=result_ids,
+                selected_evidence_ids=selected_ids,
+                rejected_result_reasons=rejected_result_reasons,
+                ranking_explanation=ranking_explanation,
+            )
+        )
+        progress.evidence_query_ledger = state.evidence_query_ledger
+
+    def _record_requirement_patch_ledgers(
+        self,
+        *,
+        state: ExtractionRunState,
+        progress: ExtractionRunProgress,
+        requirement: DcatRequirement,
+        item: Any,
+        patch_attempt: RequirementPatchAttempt,
+        document: dict[str, Any],
+    ) -> None:
+        target_path = patch_attempt.target_path or ""
+        actual_path = self._actual_requirement_patch_path(document=document, target_path=target_path)
+        evidence_ids = [
+            evidence.evidence_id
+            for evidence in getattr(item, "selected_evidence", []) or []
+            if getattr(evidence, "evidence_id", "")
+        ]
+        generated_value = self._value_at_json_pointer(document, actual_path) if actual_path else None
+        field_name = self._field_name_from_json_pointer(actual_path)
+        ledger_key = (actual_path, field_name)
+        state.field_completion_ledger = [
+            record
+            for record in state.field_completion_ledger
+            if (record.json_path, record.field_name) != ledger_key
+        ]
+        state.field_completion_ledger.append(
+            FieldCompletionLedgerRecord(
+                json_path=actual_path,
+                field_name=field_name,
+                generated_value=generated_value,
+                source_evidence=evidence_ids,
+                validation_status="valid",
+                enrichment_status="grounded",
+                issue_categories=[],
+                edit_needed_reason=f"{requirement.requirement_id}: {patch_attempt.reason}",
+            )
+        )
+        object_identifier = f"requirement_patch:{requirement.requirement_id}:{actual_path}"
+        state.projection_ledger = [
+            record
+            for record in state.projection_ledger
+            if record.object_identifier != object_identifier
+        ]
+        state.projection_ledger.append(
+            ProjectionLedgerRecord(
+                object_identifier=object_identifier,
+                object_kind="RequirementPatch",
+                source_evidence=evidence_ids[0] if evidence_ids else None,
+                evidence_note_identifiers=evidence_ids,
+                status="projected",
+                projected_paths=[actual_path] if actual_path else [],
+                target_path=actual_path or None,
+                target_class=patch_attempt.target_class,
+                planner_status=requirement.requirement_id,
+                planner_reason=patch_attempt.reason,
+                evidence_quality={
+                    "requirement_id": requirement.requirement_id,
+                    "selected_evidence_ids": evidence_ids,
+                    "construction_strategy": self._requirement_patch_construction_strategy(requirement),
+                },
+                merge_status="applied",
+                reason=patch_attempt.reason,
+            )
+        )
+        progress.field_completion_ledger = state.field_completion_ledger
+        progress.projection_ledger = state.projection_ledger
+
+    @classmethod
+    def _actual_requirement_patch_path(cls, *, document: dict[str, Any], target_path: str) -> str:
+        if not target_path.endswith("/-"):
+            return target_path
+        parent_path = target_path[:-2]
+        value = cls._value_at_json_pointer(document, parent_path)
+        if isinstance(value, list) and value:
+            return f"{parent_path}/{len(value) - 1}"
+        return parent_path
+
+    @staticmethod
+    def _field_name_from_json_pointer(path: str) -> str:
+        parts = [part for part in path.split("/") if part]
+        if not parts:
+            return ""
+        if parts[-1].isdigit() and len(parts) > 1:
+            return parts[-2]
+        return parts[-1]
+
+    @staticmethod
+    def _requirement_patch_construction_strategy(requirement: DcatRequirement) -> str:
+        if requirement.expected_target_class == "QuantitativeAttribute":
+            return "deterministic_quantitative_constructor_or_schema_sanitized_patch"
+        if requirement.expected_target_class == "Plan":
+            return "schema_sanitized_plan_patch"
+        return "schema_sanitized_requirement_patch"
+
+    @classmethod
+    def _remove_file_like_about_entities(cls, document: dict[str, Any]) -> dict[str, Any]:
+        entities = document.get("is_about_entity")
+        if not isinstance(entities, list):
+            return document
+        filtered = [
+            entity
+            for entity in entities
+            if not (isinstance(entity, dict) and cls._is_file_like_about_entity(entity))
+        ]
+        if len(filtered) != len(entities):
+            document = cls._clone_json_object(document)
+            if filtered:
+                document["is_about_entity"] = filtered
+            else:
+                document.pop("is_about_entity", None)
+        return document
+
+    @staticmethod
+    def _is_file_like_about_entity(entity: dict[str, Any]) -> bool:
+        text_parts: list[str] = []
+        for key in ("id", "title", "description"):
+            value = entity.get(key)
+            if isinstance(value, list):
+                text_parts.extend(str(part) for part in value)
+            elif value is not None:
+                text_parts.append(str(value))
+        text = " ".join(text_parts).lower()
+        scientific_terms = ("sample", "solvent", "nucleus", "material", "compound", "specimen")
+        if any(term in text for term in scientific_terms):
+            return False
+        file_terms = (
+            " file",
+            "acqus",
+            "acqu",
+            "fid",
+            "pdata",
+            "processed spectra",
+            "parameter",
+            "resource",
+            "distribution",
+        )
+        return any(term in text for term in file_terms)
 
     async def _evaluate_dcat_requirements(
         self,
@@ -4516,6 +4885,22 @@ class ExtractionService:
                     reason=f"Requirement patch generation failed: {exc}",
                 ),
             )
+        if (not patch.should_patch or not patch.instance) and (
+            target_class == "QuantitativeAttribute"
+            or any("/has_quantitative_attribute/" in path for path in (item.target_paths or requirement.target_paths))
+        ):
+            deterministic_instance = self._quantitative_attribute_from_evidence(item)
+            if deterministic_instance:
+                patch = RequirementPatchResult(
+                    should_patch=True,
+                    target_path=(item.target_paths or requirement.target_paths)[0],
+                    target_class="QuantitativeAttribute",
+                    instance=deterministic_instance,
+                    rationale=(
+                        "Deterministic quantitative constructor used selected measurement evidence "
+                        "after patch model declined to build an instance."
+                    ),
+                )
         if not patch.should_patch or not patch.instance:
             return (
                 document,
@@ -4647,6 +5032,8 @@ class ExtractionService:
         if target_class == "QuantitativeAttribute" or "/has_quantitative_attribute/" in actual_path:
             value.pop("id", None)
             value.pop("source", None)
+            value.pop("type", None)
+            value.pop("rdf_type", None)
 
     @classmethod
     def _sanitize_requirement_patch_instance(
@@ -4694,6 +5081,9 @@ class ExtractionService:
         instance: dict[str, Any],
         item: Any,
     ) -> dict[str, Any]:
+        deterministic = cls._quantitative_attribute_from_evidence(item)
+        if deterministic:
+            return deterministic
         evidence_text = " ".join(
             str(getattr(entry, "claim", "")) + " " + str(getattr(entry, "evidence_text", ""))
             for entry in list(getattr(item, "selected_evidence", []) or [])
@@ -4730,17 +5120,66 @@ class ExtractionService:
             )
         if unit:
             sanitized["unit"] = str(unit).strip()
-        for field in ("type", "rdf_type"):
-            value_obj = instance.get(field)
-            if isinstance(value_obj, dict):
-                sanitized[field] = {
-                    key: value_obj[key]
-                    for key in ("id", "title")
-                    if key in value_obj and value_obj[key]
-                }
-            elif isinstance(value_obj, str) and value_obj.strip():
-                sanitized[field] = {"title": value_obj.strip()}
         return sanitized
+
+    @classmethod
+    def _quantitative_attribute_from_evidence(cls, item: Any) -> dict[str, Any] | None:
+        evidence_items = list(getattr(item, "selected_evidence", []) or [])
+        if not evidence_items:
+            return None
+        ranked = sorted(
+            evidence_items,
+            key=lambda entry: cls._quantitative_evidence_rank(entry),
+            reverse=True,
+        )
+        for entry in ranked:
+            text = f"{getattr(entry, 'claim', '')} {getattr(entry, 'evidence_text', '')}"
+            value = cls._first_number(text)
+            quantity_type = cls._infer_quantity_type(text)
+            unit = cls._infer_quantity_unit(text)
+            if value is None or not quantity_type:
+                continue
+            title = cls._quantitative_attribute_title(text, quantity_type)
+            description = cls._quantitative_attribute_description(text, quantity_type, unit)
+            attribute: dict[str, Any] = {
+                "title": title,
+                "description": description,
+                "value": value,
+                "has_quantity_type": quantity_type,
+            }
+            if unit:
+                attribute["unit"] = unit
+            return attribute
+        return None
+
+    @staticmethod
+    def _quantitative_evidence_rank(entry: Any) -> tuple[int, int, int]:
+        text = f"{getattr(entry, 'claim', '')} {getattr(entry, 'evidence_text', '')}".lower()
+        explicit_observation = int("observe frequency" in text or "observation frequency" in text)
+        observed_value = int("=" in text and not any(marker in text for marker in ("rel ", "subrange", "range of", "0..")))
+        measurement_signal = int(str(getattr(entry, "category", "")) == "measurement_signal")
+        return (explicit_observation, observed_value, measurement_signal)
+
+    @staticmethod
+    def _quantitative_attribute_title(text: str, quantity_type: str) -> str:
+        lowered = text.lower()
+        if "observe frequency" in lowered or "observation frequency" in lowered:
+            return "1H observation frequency"
+        if quantity_type == "temperature":
+            return "Acquisition temperature"
+        if quantity_type == "spectral width":
+            return "Spectral width"
+        if quantity_type == "data points":
+            return "Data point count"
+        return quantity_type[:1].upper() + quantity_type[1:]
+
+    @staticmethod
+    def _quantitative_attribute_description(text: str, quantity_type: str, unit: str | None) -> str:
+        lowered = text.lower()
+        if "observe frequency" in lowered or "observation frequency" in lowered:
+            return "Observed proton frequency during NMR acquisition."
+        unit_suffix = f" in {unit}" if unit else ""
+        return f"Evidence-grounded {quantity_type}{unit_suffix}."
 
     @staticmethod
     def _first_number(value: Any) -> float | None:
@@ -4756,6 +5195,8 @@ class ExtractionService:
     def _infer_quantity_type(text: str) -> str | None:
         lowered = text.lower()
         quantity_hints = [
+            ("observe frequency", "frequency"),
+            ("observation frequency", "frequency"),
             ("temperature", "temperature"),
             ("frequency", "frequency"),
             ("spectral width", "spectral width"),
@@ -6629,6 +7070,11 @@ class ExtractionService:
             projection_ledger=state.projection_ledger,
             field_completion_ledger=state.field_completion_ledger,
         )
+        state.document_quality_state = self._build_document_quality_state(
+            validation=state.validation,
+            requirement_report=state.requirement_report,
+            field_completion_ledger=state.field_completion_ledger,
+        )
         token_usage = await self.get_token_usage(data_package_id)
         result = ExtractionRunResult(
             generated_final_draft=clean_document,
@@ -6640,6 +7086,7 @@ class ExtractionService:
             initial_extraction_overview=state.initial_extraction_overview,
             initial_extraction_overview_status=state.initial_extraction_overview_status,
             curated_document=state.curated_document,
+            document_quality_state=state.document_quality_state,
             draft_quality_state=state.draft_quality_state,
             validation=state.validation,
             curated_validation=state.curated_validation,
@@ -6908,6 +7355,11 @@ class ExtractionService:
         self.output_repository.save_field_completion_ledger(
             workflow_id=data_package_id,
             ledger=state.field_completion_ledger,
+            chat_model=chat_model,
+        )
+        self.output_repository.save_evidence_query_ledger(
+            workflow_id=data_package_id,
+            ledger=state.evidence_query_ledger,
             chat_model=chat_model,
         )
         self.output_repository.save_curation_ledger(
@@ -8185,6 +8637,9 @@ class ExtractionService:
             ),
             curated_document=(
                 persisted_state.curated_document if persisted_state else None
+            ),
+            document_quality_state=(
+                persisted_state.document_quality_state if persisted_state else None
             ),
             draft_quality_state=(
                 persisted_state.draft_quality_state if persisted_state else None
@@ -10281,6 +10736,7 @@ class ExtractionService:
                 vocab_queries=state.vocab_queries if state else [],
                 generated_final_draft=result.generated_final_draft,
                 curated_document=result.curated_document,
+                document_quality_state=result.document_quality_state,
                 draft_quality_state=result.draft_quality_state,
                 validation=result.validation,
                 curated_validation=result.curated_validation,
@@ -10364,6 +10820,7 @@ class ExtractionService:
                 vocab_queries=state.vocab_queries if state else [],
                 generated_final_draft=result.generated_final_draft,
                 curated_document=result.curated_document,
+                document_quality_state=result.document_quality_state,
                 draft_quality_state=result.draft_quality_state,
                 validation=result.validation,
                 curated_validation=result.curated_validation,
@@ -10404,6 +10861,7 @@ class ExtractionService:
                 vocab_queries=state.vocab_queries,
                 generated_final_draft=state.generated_final_draft,
                 curated_document=state.curated_document,
+                document_quality_state=state.document_quality_state,
                 draft_quality_state=state.draft_quality_state,
                 validation=state.validation,
                 curated_validation=state.curated_validation,

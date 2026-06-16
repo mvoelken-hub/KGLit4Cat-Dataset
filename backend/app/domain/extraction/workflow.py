@@ -131,6 +131,37 @@ class DraftValidationResult(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class QualityIssue(BaseModel):
+    code: str
+    severity: Literal["blocking", "warning", "info"] = "warning"
+    message: str
+    requirement_id: str | None = None
+    path: str | None = None
+
+
+class DocumentQualityState(BaseModel):
+    schema_valid: bool
+    profile_conformant: bool | None = None
+    evidence_grounded: bool | None = None
+    semantic_valid: bool | None = None
+    metadata_completeness_score: float | None = None
+    operational_access_score: float | None = None
+    fair_assessment: dict[str, Any] | None = None
+    blocking_issues: list[QualityIssue] = Field(default_factory=list)
+    warnings: list[QualityIssue] = Field(default_factory=list)
+
+
+class EvidenceQueryLedgerEntry(BaseModel):
+    query_id: str
+    requirement_id: str
+    target_path: str = ""
+    query: dict[str, Any] = Field(default_factory=dict)
+    result_evidence_ids: list[str] = Field(default_factory=list)
+    selected_evidence_ids: list[str] = Field(default_factory=list)
+    rejected_result_reasons: dict[str, str] = Field(default_factory=dict)
+    ranking_explanation: list[str] = Field(default_factory=list)
+
+
 class ProjectionLedgerRecord(BaseModel):
     object_identifier: str
     object_kind: str
@@ -194,12 +225,14 @@ class ExtractionRunState(BaseModel):
     curated_document: dict[str, Any] | None = None
     generated_initial_draft: dict[str, Any] | None = None
     requirement_report: RequirementReport | None = None
+    document_quality_state: DocumentQualityState | None = None
     draft_quality_state: DraftQualityState | None = None
     validation: DraftValidationResult = Field(default_factory=DraftValidationResult)
     curated_validation: DraftValidationResult | None = None
     initial_draft_scaffold: dict[str, Any] = Field(default_factory=dict)
     projection_ledger: list[ProjectionLedgerRecord] = Field(default_factory=list)
     field_completion_ledger: list[FieldCompletionLedgerRecord] = Field(default_factory=list)
+    evidence_query_ledger: list[EvidenceQueryLedgerEntry] = Field(default_factory=list)
     curation_ledger: list[CurationLedgerRecord] = Field(default_factory=list)
     filtered_evidence_notes: list[FilteredEvidenceNote] = Field(default_factory=list)
 
@@ -229,12 +262,14 @@ class ExtractionRunProgress(BaseModel):
     curated_document: dict[str, Any] | None = None
     generated_initial_draft: dict[str, Any] | None = None
     requirement_report: RequirementReport | None = None
+    document_quality_state: DocumentQualityState | None = None
     draft_quality_state: DraftQualityState | None = None
     validation: DraftValidationResult = Field(default_factory=DraftValidationResult)
     curated_validation: DraftValidationResult | None = None
     initial_draft_scaffold: dict[str, Any] = Field(default_factory=dict)
     projection_ledger: list[ProjectionLedgerRecord] = Field(default_factory=list)
     field_completion_ledger: list[FieldCompletionLedgerRecord] = Field(default_factory=list)
+    evidence_query_ledger: list[EvidenceQueryLedgerEntry] = Field(default_factory=list)
     curation_ledger: list[CurationLedgerRecord] = Field(default_factory=list)
     current_chunk: ExtractionChunkRef | None = None
     warnings: list[str] = Field(default_factory=list)
@@ -267,12 +302,14 @@ class ExtractionRunResult(BaseModel):
     initial_extraction_overview: ExtractionOverview | None = None
     initial_extraction_overview_status: ExtractionOverviewStatus | None = None
     curated_document: dict[str, Any] | None = None
+    document_quality_state: DocumentQualityState | None = None
     draft_quality_state: DraftQualityState
     validation: DraftValidationResult
     curated_validation: DraftValidationResult | None = None
     initial_draft_scaffold: dict[str, Any] = Field(default_factory=dict)
     projection_ledger: list[ProjectionLedgerRecord] = Field(default_factory=list)
     field_completion_ledger: list[FieldCompletionLedgerRecord] = Field(default_factory=list)
+    evidence_query_ledger: list[EvidenceQueryLedgerEntry] = Field(default_factory=list)
     curation_ledger: list[CurationLedgerRecord] = Field(default_factory=list)
     chat_model: str | None = None
     normalization: ExtractionNormalization | None = None

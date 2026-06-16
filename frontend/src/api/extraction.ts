@@ -48,12 +48,14 @@ export type ExtractionRunProgress = {
   curated_document?: Record<string, unknown> | null;
   generated_initial_draft?: Record<string, unknown> | null;
   requirement_report?: RequirementReport | null;
+  document_quality_state?: DocumentQualityState | null;
   draft_quality_state?: DraftQualityState | null;
   validation?: DraftValidationResult | null;
   curated_validation?: DraftValidationResult | null;
   initial_draft_scaffold?: InitialDraftScaffold;
   projection_ledger?: ProjectionLedgerRecord[];
   field_completion_ledger?: FieldCompletionLedgerRecord[];
+  evidence_query_ledger?: EvidenceQueryLedgerEntry[];
   curation_ledger?: CurationLedgerRecord[];
   initial_file_summaries?: ExtractionFileSummary[];
   initial_file_summary_progress?: InitialFileSummaryProgress | null;
@@ -72,6 +74,7 @@ export type ExtractionRunProgress = {
 export type RequirementStatus = 'fulfilled' | 'partial' | 'missing' | 'not_applicable';
 
 export type RequirementEvidenceItem = {
+  evidence_id?: string;
   candidate_id: string;
   category: string;
   claim: string;
@@ -112,6 +115,37 @@ export type RequirementReport = {
   applicable_weight: number;
   earned_weight: number;
   requirements: RequirementReportItem[];
+};
+
+export type EvidenceQueryLedgerEntry = {
+  query_id: string;
+  requirement_id: string;
+  target_path?: string;
+  query?: Record<string, unknown>;
+  result_evidence_ids?: string[];
+  selected_evidence_ids?: string[];
+  rejected_result_reasons?: Record<string, string>;
+  ranking_explanation?: string[];
+};
+
+export type QualityIssue = {
+  code: string;
+  severity: 'blocking' | 'warning' | 'info' | string;
+  message: string;
+  requirement_id?: string | null;
+  path?: string | null;
+};
+
+export type DocumentQualityState = {
+  schema_valid: boolean;
+  profile_conformant?: boolean | null;
+  evidence_grounded?: boolean | null;
+  semantic_valid?: boolean | null;
+  metadata_completeness_score?: number | null;
+  operational_access_score?: number | null;
+  fair_assessment?: Record<string, unknown> | null;
+  blocking_issues: QualityIssue[];
+  warnings: QualityIssue[];
 };
 
 export type ExtractionVocabQueryConfig = {
@@ -372,12 +406,14 @@ export type ExtractionRunResult = {
   initial_extraction_overview?: ExtractionOverview | null;
   initial_extraction_overview_status?: ExtractionOverviewStatus | null;
   curated_document?: Record<string, unknown> | null;
+  document_quality_state?: DocumentQualityState | null;
   draft_quality_state: DraftQualityState;
   validation: DraftValidationResult;
   curated_validation?: DraftValidationResult | null;
   initial_draft_scaffold?: InitialDraftScaffold;
   projection_ledger: ProjectionLedgerRecord[];
   field_completion_ledger: FieldCompletionLedgerRecord[];
+  evidence_query_ledger?: EvidenceQueryLedgerEntry[];
   curation_ledger: CurationLedgerRecord[];
   normalization?: Record<string, unknown> | null;
   warnings: string[];

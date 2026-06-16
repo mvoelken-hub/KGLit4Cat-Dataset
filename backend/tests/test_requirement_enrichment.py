@@ -11,12 +11,14 @@ from app.domain.extraction import (
     RequirementEvaluation,
     RequirementAssessment,
     RequirementPatchAttempt,
+    RequirementEvidenceItem,
     RequirementReportItem,
     normalized_requirement_evaluation,
     RoutedEvidenceContext,
     report_items_from_evaluation,
     score_requirement_report,
     select_requirement_evidence_packet,
+    stable_evidence_id,
 )
 from app.domain.extraction.workflow import ExtractionRunProgress, ExtractionRunState
 from app.domain.profiles import ProfileValidationResult
@@ -155,6 +157,28 @@ class RequirementScoringTests(unittest.TestCase):
 
 
 class RequirementEvidencePacketTests(unittest.TestCase):
+    def test_stable_evidence_id_disambiguates_repeated_candidate_ids(self):
+        left = EvidenceCandidate(
+            candidate_id="candidate-0",
+            category="measurement_signal",
+            claim="Observe frequency is 500 MHz.",
+            evidence_text="##.OBSERVE FREQUENCY=500.133088507478",
+            file_path="10.edit.jdx",
+            start_idx=0,
+            end_idx=58,
+        )
+        right = EvidenceCandidate(
+            candidate_id="candidate-0",
+            category="resource_signal",
+            claim="Parameter file.",
+            evidence_text="##TITLE= Parameter file",
+            file_path="10.zip/10/acqus",
+            start_idx=0,
+            end_idx=6,
+        )
+
+        self.assertNotEqual(stable_evidence_id(left), stable_evidence_id(right))
+
     def test_selects_requirement_packet_by_hints_and_class(self):
         requirement = next(
             req
@@ -210,6 +234,50 @@ class RequirementEvidencePacketTests(unittest.TestCase):
         self.assertEqual(selected[0].candidate_id, "m1")
         self.assertIn("m2", {entry.candidate_id for entry in window})
         self.assertNotIn("x1", {entry.candidate_id for entry in selected})
+
+    def test_quantitative_packet_prefers_observe_frequency(self):
+        requirement = next(
+            req
+            for req in DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS
+            if req.requirement_id == "semantic_attributes"
+        )
+        observe = EvidenceCandidate(
+            candidate_id="observe",
+            category="measurement_signal",
+            claim="The NMR spectrum was recorded at an observe frequency of 500.133088507478 MHz.",
+            evidence_text="##.OBSERVE FREQUENCY=500.133088507478",
+            file_path="10.edit.jdx",
+            start_idx=0,
+            end_idx=58,
+        )
+        max_y = EvidenceCandidate(
+            candidate_id="max_y",
+            category="measurement_signal",
+            claim="The maximum y-value in the NMR peak table is 6786105183.528301 arbitrary units.",
+            evidence_text="##MAXY=6786105183.528301",
+            file_path="10.edit.jdx",
+            start_idx=952,
+            end_idx=1010,
+        )
+        context = RoutedEvidenceContext(portable_evidence=[max_y, observe])
+        item = RequirementReportItem(
+            requirement_id=requirement.requirement_id,
+            label=requirement.label,
+            weight=requirement.weight,
+            status="missing",
+            applicable=True,
+            quality=0.0,
+            weighted_score=0.0,
+            evidence_search_hints=requirement.evidence_hints,
+        )
+
+        selected, _ = select_requirement_evidence_packet(
+            requirement=requirement,
+            assessment=item,
+            evidence_context=context,
+        )
+
+        self.assertEqual(selected[0].candidate_id, "observe")
 
 
 class FakeProfileService:
@@ -293,7 +361,46 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(document["was_generated_by"][0]["realized_plan"]["title"], "zg30")
         self.assertIsNotNone(state.generated_initial_draft)
         self.assertIsNotNone(state.requirement_report)
+        self.assertIsNotNone(state.document_quality_state)
+        self.assertTrue(state.document_quality_state.schema_valid)
+        self.assertIsNone(state.document_quality_state.semantic_valid)
+        self.assertIsNone(state.document_quality_state.operational_access_score)
+        self.assertTrue(
+            any(
+                issue.code == "semantic_vocabulary_validation_not_run"
+                for issue in state.document_quality_state.warnings
+            )
+        )
+        self.assertTrue(
+            any(
+                issue.code == "operational_fair_checks_not_run"
+                for issue in state.document_quality_state.warnings
+            )
+        )
         self.assertEqual(state.requirement_report.requirements[6].patch.status, "applied")
+        self.assertEqual(state.field_completion_ledger[0].json_path, "/was_generated_by/0/realized_plan")
+        self.assertEqual(state.field_completion_ledger[0].field_name, "realized_plan")
+        self.assertEqual(state.field_completion_ledger[0].enrichment_status, "grounded")
+        self.assertTrue(state.field_completion_ledger[0].source_evidence[0].startswith("ev:"))
+        self.assertTrue(
+            any(
+                record.object_kind == "RequirementPatch"
+                and record.target_path == "/was_generated_by/0/realized_plan"
+                for record in state.projection_ledger
+            )
+        )
+        self.assertTrue(state.evidence_query_ledger)
+        method_query = next(
+            record
+            for record in state.evidence_query_ledger
+            if record.requirement_id == "method_plan"
+        )
+        self.assertEqual(method_query.target_path, "/was_generated_by/0/realized_plan")
+        self.assertTrue(method_query.selected_evidence_ids[0].startswith("ev:"))
+        self.assertIn(
+            method_query.selected_evidence_ids[0],
+            method_query.result_evidence_ids,
+        )
         repo.save_requirement_report.assert_called()
         repo.save_generated_initial_draft.assert_called()
 
@@ -450,6 +557,44 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sanitized["unit"], "MHz")
         self.assertNotIn("id", sanitized)
         self.assertNotIn("source", sanitized)
+        self.assertNotIn("type", sanitized)
+        self.assertNotIn("rdf_type", sanitized)
+
+    def test_quantitative_patch_prefers_explicit_observation_frequency_evidence(self):
+        service = ExtractionService(
+            profile_service=FakeProfileService(),
+            settings=Settings(),
+            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
+        )
+
+        sanitized = service._sanitize_requirement_patch_instance(
+            instance={"value": "125000", "has_quantity_type": "width"},
+            target_class="QuantitativeAttribute",
+            target_path="/was_generated_by/0/has_quantitative_attribute/-",
+            item=Mock(
+                selected_evidence=[
+                    RequirementEvidenceItem(
+                        evidence_id="ev:width",
+                        candidate_id="candidate-1",
+                        category="measurement_signal",
+                        claim="Field width is 125000",
+                        evidence_text="FW= 125000",
+                    ),
+                    RequirementEvidenceItem(
+                        evidence_id="ev:frequency",
+                        candidate_id="candidate-0",
+                        category="measurement_signal",
+                        claim="The NMR spectrum was recorded at an observe frequency of 500.133088507478 MHz.",
+                        evidence_text="##.OBSERVE FREQUENCY=500.133088507478",
+                    ),
+                ]
+            ),
+        )
+
+        self.assertEqual(sanitized["title"], "1H observation frequency")
+        self.assertEqual(sanitized["value"], 500.133088507478)
+        self.assertEqual(sanitized["has_quantity_type"], "frequency")
+        self.assertEqual(sanitized["unit"], "MHz")
 
     def test_requirement_patch_strip_removes_auto_ids_from_schema_forbidden_targets(self):
         service = ExtractionService(
@@ -482,3 +627,29 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("id", document["was_generated_by"][0]["realized_plan"])
         self.assertNotIn("was_generated_by", document["was_generated_by"][0]["realized_plan"])
         self.assertNotIn("id", document["was_generated_by"][0]["has_quantitative_attribute"][0])
+
+    def test_file_like_about_entities_are_removed(self):
+        service = ExtractionService(
+            profile_service=FakeProfileService(),
+            settings=Settings(),
+            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
+        )
+        document = {
+            "is_about_entity": [
+                {
+                    "id": "pkg:entity:acqus",
+                    "title": "acqus file",
+                    "description": "NMR acquisition parameters file",
+                },
+                {
+                    "id": "pkg:entity:sample",
+                    "title": "CDCl3 solvent",
+                    "description": "Solvent used in NMR experiment",
+                },
+            ]
+        }
+
+        cleaned = service._remove_file_like_about_entities(document)
+
+        self.assertEqual(len(cleaned["is_about_entity"]), 1)
+        self.assertEqual(cleaned["is_about_entity"][0]["title"], "CDCl3 solvent")
