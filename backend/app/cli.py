@@ -950,7 +950,7 @@ def dev(
     fg: bool = typer.Option(
         False,
         "-fg",
-        help="Attach local API and frontend logs to this terminal instead of opening dev windows",
+        help="Run the local API in this terminal instead of opening a dev window. Frontend is started in its own window.",
     ),
     no_gpu: bool = typer.Option(False, "--no-gpu", help="Disable NVIDIA GPU reservations for Ollama (CPU-only mode)"),
 ) -> None:
@@ -1017,49 +1017,47 @@ def dev(
     existing_frontend = _find_frontend_pids() or _find_pids_by_window_title("SIMONE Frontend")
 
     if fg:
+        # Start the frontend in its own window/container, then run the API in this terminal.
+        if not use_docker_frontend:
+            if existing_frontend:
+                typer.echo("Local frontend is already running (PID " + str(existing_frontend) + "). Skipping.")
+            else:
+                frontend_cmd = "npm run dev -- --host 127.0.0.1"
+                typer.echo("Starting local frontend dev server in a separate window ...")
+                if sys.platform == "win32":
+                    subprocess.Popen(
+                        ["cmd", "/c", "start", "SIMONE Frontend", "powershell", "-ExecutionPolicy", "Bypass", "-Command", frontend_cmd],
+                        cwd=str(FRONTEND_DIR),
+                        creationflags=subprocess.CREATE_NEW_CONSOLE,
+                    )
+                else:
+                    subprocess.Popen(
+                        frontend_cmd,
+                        cwd=str(FRONTEND_DIR),
+                        shell=True,
+                    )
+        # Docker frontend is already started via compose above.
+
+        _wait_for_url(
+            _frontend_url(env_values),
+            timeout=60,
+            label="Frontend",
+            verbose=False,
+            env_file=ENV_FILE if use_docker_frontend else None,
+            compose_files=compose_files if use_docker_frontend else None,
+            log_services=["frontend"] if use_docker_frontend else None,
+        )
+        _print_links()
+
         if existing_api:
             typer.echo("Local API is already running (PID " + str(existing_api) + "). API logs are not attached.")
+            return
 
-        frontend_process: subprocess.Popen | None = None
-        frontend_log_process: subprocess.Popen | None = None
+        typer.echo("Starting local API with hot reload in this terminal. Press Ctrl+C to stop.")
+        process_env = os.environ.copy()
+        process_env.update(env_values)
+        process_env["APP_ENV"] = "development"
         try:
-            if use_docker_frontend:
-                typer.echo("Attaching Docker frontend logs in this terminal ...")
-                frontend_log_process = subprocess.Popen(
-                    _compose_base_cmd(ENV_FILE, compose_files) + ["logs", "-f", "frontend"],
-                    cwd=str(REPO_ROOT),
-                )
-            elif existing_frontend:
-                typer.echo("Local frontend is already running (PID " + str(existing_frontend) + "). Frontend logs are not attached.")
-            else:
-                typer.echo("Starting local frontend dev server in this terminal ...")
-                frontend_process = subprocess.Popen(
-                    [_npm_cmd(), "run", "dev", "--", "--host", "127.0.0.1"],
-                    cwd=str(FRONTEND_DIR),
-                )
-
-            _wait_for_url(
-                _frontend_url(env_values),
-                timeout=60,
-                label="Frontend",
-                verbose=False,
-                env_file=ENV_FILE if use_docker_frontend else None,
-                compose_files=compose_files if use_docker_frontend else None,
-                log_services=["frontend"] if use_docker_frontend else None,
-            )
-            _print_links()
-
-            if existing_api:
-                attached_process = frontend_process or frontend_log_process
-                if attached_process is not None:
-                    typer.echo("Press Ctrl+C to stop foreground frontend logs.")
-                    attached_process.wait()
-                return
-
-            typer.echo("Starting local API with hot reload in this terminal. Press Ctrl+C to stop foreground services.")
-            process_env = os.environ.copy()
-            process_env.update(env_values)
-            process_env["APP_ENV"] = "development"
             result = subprocess.run(
                 [
                     "uv",
@@ -1077,16 +1075,12 @@ def dev(
                 cwd=str(BACKEND_DIR),
                 env=process_env,
             )
-            if result.returncode != 0:
-                raise typer.Exit(result.returncode)
-            return
         except KeyboardInterrupt:
-            typer.echo("Stopping foreground dev services ...")
+            typer.echo("Stopping foreground API ...")
             raise typer.Exit(130)
-        finally:
-            for process in (frontend_process, frontend_log_process):
-                if process is not None and process.poll() is None:
-                    process.terminate()
+        if result.returncode != 0:
+            raise typer.Exit(result.returncode)
+        return
 
     if not use_docker_frontend:
         # Start local frontend in a new visible terminal window
