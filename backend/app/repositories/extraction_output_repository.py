@@ -15,6 +15,7 @@ from app.domain.extraction import (
     InitialOverviewFailureDiagnostic,
     InitialOverviewPromptDiagnostic,
     ProjectionLedgerRecord,
+    RequirementReport,
     RoutedEvidenceContext,
 )
 
@@ -109,11 +110,29 @@ class ExtractionOutputRepository(Protocol):
     ) -> None:
         ...
 
+    def save_generated_initial_draft(
+        self,
+        *,
+        workflow_id: str,
+        document: dict[str, Any],
+        chat_model: str | None = None,
+    ) -> None:
+        ...
+
     def save_generated_final_draft(
         self,
         *,
         workflow_id: str,
         document: dict[str, Any],
+        chat_model: str | None = None,
+    ) -> None:
+        ...
+
+    def save_requirement_report(
+        self,
+        *,
+        workflow_id: str,
+        report: RequirementReport,
         chat_model: str | None = None,
     ) -> None:
         ...

@@ -33,6 +33,30 @@ from app.domain.extraction import (
     CurationLedgerRecord,
     DefinedTerm,
     DraftValidationResult,
+    EVIDENCE_INSTANCE_BUILDER_SYSTEM_PROMPT,
+    EVIDENCE_INSTANCE_REPAIR_SYSTEM_PROMPT,
+    EVIDENCE_NOVELTY_EVALUATOR_SYSTEM_PROMPT,
+    EvidenceNoveltyDecision,
+    DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS,
+    REQUIREMENT_EVALUATOR_SYSTEM_PROMPT,
+    REQUIREMENT_PATCH_SYSTEM_PROMPT,
+    DcatRequirement,
+    RequirementEvaluation,
+    RequirementPatchAttempt,
+    RequirementPatchResult,
+    apply_evidence_instance,
+    assessment_for_report_item,
+    build_context_window_for_note,
+    build_instance_builder_prompt,
+    build_instance_repair_prompt,
+    build_novelty_evaluator_prompt,
+    build_requirement_evaluation_prompt,
+    build_requirement_patch_prompt,
+    builder_output_model_for_target,
+    report_items_from_evaluation,
+    route_evidence_note_to_target,
+    score_requirement_report,
+    select_requirement_evidence_packet,
     ChunkRepairMode,
     EvidenceAssessment,
     EvidenceAssessmentContext,
@@ -1443,6 +1467,7 @@ class ExtractionService:
         )
         if force_profile_rebuild and target_stage in {"profile", "grounding", "complete"}:
             self._clear_profile_projection_progress(progress)
+            self._clear_profile_projection_token_usage(data_package_id)
         self._update_progress(data_package_id, progress)
 
         if persisted_state and persisted_state.ranked_files:
@@ -1819,6 +1844,17 @@ class ExtractionService:
             warnings=warnings,
         )
 
+        if state.validation.status == "valid":
+            profile_document = await self._enrich_draft_with_requirements(
+                data_package_id=data_package_id,
+                profile_identifier=profile_identifier,
+                evidence_context=evidence_context,
+                validation_schema=validation_schema,
+                state=state,
+                progress=progress,
+                warnings=warnings,
+            )
+
         if target_stage == "profile":
             progress.stage = "profile_draft"
             progress.interim_evidence_context = evidence_context
@@ -1827,6 +1863,7 @@ class ExtractionService:
             progress.draft_quality_state = state.draft_quality_state
             progress.validation = state.validation
             progress.curated_validation = state.curated_validation
+            progress.requirement_report = state.requirement_report
             progress.initial_draft_scaffold = state.initial_draft_scaffold
             progress.projection_ledger = state.projection_ledger
             progress.field_completion_ledger = state.field_completion_ledger
@@ -4134,6 +4171,721 @@ class ExtractionService:
         self._update_progress(data_package_id, progress)
         return document
 
+    async def _enrich_draft_with_evidence(
+        self,
+        *,
+        data_package_id: str,
+        profile_identifier: str,
+        evidence_context: RoutedEvidenceContext,
+        validation_schema: dict[str, Any],
+        state: ExtractionRunState,
+        progress: ExtractionRunProgress,
+        warnings: list[str],
+    ) -> dict[str, Any]:
+        document = state.generated_final_draft
+        if document is None or self.ollama_client is None:
+            return state.generated_final_draft or {}
+        if state.generated_initial_draft is None:
+            state.generated_initial_draft = self._clone_json_object(document)
+            progress.generated_initial_draft = state.generated_initial_draft
+        for note in evidence_context.portable_evidence:
+            target_path, target_class = route_evidence_note_to_target(note)
+            if target_path is None or target_class is None:
+                state.projection_ledger.append(
+                    self._enrichment_ledger_record(
+                        note=note,
+                        status="not_projected",
+                        reason=f"Evidence note blocked or unmapped (target={target_path}, class={target_class}).",
+                        target_path=target_path,
+                        target_class=target_class,
+                    )
+                )
+                continue
+            contextual_notes = build_context_window_for_note(note, evidence_context)
+            excerpt_path = self._parent_excerpt_path(target_path)
+            draft_excerpt = self._value_at_json_pointer(document, excerpt_path)
+            schema_branch = self._compact_schema_branch_for_target(
+                validation_schema=validation_schema,
+                target_path=target_path,
+            )
+            novelty = await self._evaluate_evidence_novelty(
+                data_package_id=data_package_id,
+                note=note,
+                contextual_notes=contextual_notes,
+                draft_excerpt=draft_excerpt,
+                schema_branch=schema_branch,
+                target_path=target_path,
+                target_class=target_class,
+            )
+            if not novelty.is_novel:
+                state.projection_ledger.append(
+                    self._enrichment_ledger_record(
+                        note=note,
+                        status="not_projected",
+                        reason=f"Not novel: {novelty.reason}",
+                        target_path=novelty.corrected_target_path or target_path,
+                        target_class=novelty.corrected_target_class or target_class,
+                    )
+                )
+                continue
+            target_path = novelty.corrected_target_path or target_path
+            target_class = novelty.corrected_target_class or target_class
+            instance = await self._build_evidence_instance(
+                data_package_id=data_package_id,
+                note=note,
+                contextual_notes=contextual_notes,
+                draft_excerpt=draft_excerpt,
+                schema_branch=schema_branch,
+                target_path=target_path,
+                target_class=target_class,
+            )
+            if not instance:
+                state.projection_ledger.append(
+                    self._enrichment_ledger_record(
+                        note=note,
+                        status="not_projected",
+                        reason="Builder failed to produce a valid instance.",
+                        target_path=target_path,
+                        target_class=target_class,
+                    )
+                )
+                continue
+            schema_branch = self._compact_schema_branch_for_target(
+                validation_schema=validation_schema,
+                target_path=target_path,
+            )
+            document, record = await self._apply_and_validate_evidence_instance(
+                data_package_id=data_package_id,
+                profile_identifier=profile_identifier,
+                document=document,
+                note=note,
+                instance=instance,
+                target_path=target_path,
+                target_class=target_class,
+                schema_branch=schema_branch,
+            )
+            state.projection_ledger.append(record)
+            state.generated_final_draft = document
+            progress.generated_final_draft = document
+            progress.projection_ledger = state.projection_ledger
+            self._save_run_state(data_package_id, state)
+            self._update_progress(data_package_id, progress)
+        state.validation = DraftValidationResult(
+            status="valid",
+            errors=[],
+            warnings=[],
+        )
+        progress.validation = state.validation
+        self._save_run_state(data_package_id, state)
+        self._persist_state_artifacts(data_package_id, state)
+        self._update_progress(data_package_id, progress)
+        return document
+
+    async def _enrich_draft_with_requirements(
+        self,
+        *,
+        data_package_id: str,
+        profile_identifier: str,
+        evidence_context: RoutedEvidenceContext,
+        validation_schema: dict[str, Any],
+        state: ExtractionRunState,
+        progress: ExtractionRunProgress,
+        warnings: list[str],
+    ) -> dict[str, Any]:
+        document = state.generated_final_draft
+        if document is None or self.ollama_client is None:
+            return state.generated_final_draft or {}
+        if state.generated_initial_draft is None:
+            state.generated_initial_draft = self._clone_json_object(document)
+            progress.generated_initial_draft = state.generated_initial_draft
+
+        progress.stage = "metadata_completeness"
+        requirements = list(DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS)
+        evaluation = await self._evaluate_dcat_requirements(
+            data_package_id=data_package_id,
+            document=document,
+            requirements=requirements,
+        )
+        report_items = report_items_from_evaluation(
+            requirements=requirements,
+            evaluation=evaluation,
+        )
+        requirements_by_id = {item.requirement_id: item for item in requirements}
+
+        for item in report_items:
+            if item.status not in {"missing", "partial"} or not item.applicable:
+                continue
+            requirement = requirements_by_id[item.requirement_id]
+            selected_evidence, context_window = select_requirement_evidence_packet(
+                requirement=requirement,
+                assessment=item,
+                evidence_context=evidence_context,
+            )
+            item.selected_evidence = selected_evidence
+            item.context_window = context_window
+            if not selected_evidence:
+                item.patch = RequirementPatchAttempt(
+                    attempted=True,
+                    status="failed",
+                    reason="No matching evidence packet found for missing requirement.",
+                )
+                continue
+            document, patch_attempt = await self._patch_requirement_gap(
+                data_package_id=data_package_id,
+                profile_identifier=profile_identifier,
+                document=document,
+                requirement=requirement,
+                item=item,
+                validation_schema=validation_schema,
+            )
+            item.patch = patch_attempt
+            state.generated_final_draft = document
+            progress.generated_final_draft = document
+            report = score_requirement_report(
+                report_items,
+                schema_valid=state.validation.status == "valid",
+            )
+            state.requirement_report = report
+            progress.requirement_report = report
+            self._save_run_state(data_package_id, state)
+            self._update_progress(data_package_id, progress)
+
+        validation = self.profile_service.validate_document(
+            identifier=profile_identifier,
+            document=document,
+        )
+        state.validation = DraftValidationResult(
+            status="valid" if validation.valid else "invalid",
+            errors=validation.errors,
+            warnings=[],
+        )
+        state.generated_final_draft = document
+        state.requirement_report = score_requirement_report(
+            report_items,
+            schema_valid=validation.valid,
+        )
+        progress.validation = state.validation
+        progress.generated_final_draft = document
+        progress.requirement_report = state.requirement_report
+        self._save_run_state(data_package_id, state)
+        self._persist_state_artifacts(data_package_id, state)
+        self._update_progress(data_package_id, progress)
+        return document
+
+    async def _evaluate_dcat_requirements(
+        self,
+        *,
+        data_package_id: str,
+        document: dict[str, Any],
+        requirements: list[DcatRequirement],
+    ) -> RequirementEvaluation:
+        assert self.ollama_client is not None
+        prompt = build_requirement_evaluation_prompt(
+            document=document,
+            requirements=requirements,
+        )
+        try:
+            result = await generate_structured(
+                self.ollama_client,
+                model=self.ollama_client.chat_model,
+                system=REQUIREMENT_EVALUATOR_SYSTEM_PROMPT,
+                prompt=prompt,
+                output_type=RequirementEvaluation,
+                system_components=[
+                    ("requirement_evaluator_system_prompt", REQUIREMENT_EVALUATOR_SYSTEM_PROMPT),
+                ],
+                prompt_components=[],
+                token_budgeter=self._prompt_token_budgeter(),
+                operation_id=self._prompt_operation_id("metadata_completeness_evaluator"),
+                agent_name="metadata_completeness_evaluator",
+                num_ctx=self.ollama_client.max_context_length,
+            )
+            self._record_llm_call_result(
+                data_package_id=data_package_id,
+                result=result,
+                agent_name="metadata_completeness_evaluator",
+            )
+            if isinstance(result.output, RequirementEvaluation):
+                return result.output
+            return RequirementEvaluation.model_validate(result.output)
+        except (CompletionError, ValidationError) as exc:
+            self._record_llm_call_exception(
+                data_package_id=data_package_id,
+                exc=exc,
+                agent_name="metadata_completeness_evaluator",
+            )
+            return RequirementEvaluation()
+
+    async def _patch_requirement_gap(
+        self,
+        *,
+        data_package_id: str,
+        profile_identifier: str,
+        document: dict[str, Any],
+        requirement: DcatRequirement,
+        item: Any,
+        validation_schema: dict[str, Any],
+    ) -> tuple[dict[str, Any], RequirementPatchAttempt]:
+        assert self.ollama_client is not None
+        target_path = (item.target_paths or requirement.target_paths or [""])[0]
+        target_class = requirement.expected_target_class or item.requirement_id
+        if not target_path:
+            return (
+                document,
+                RequirementPatchAttempt(
+                    attempted=True,
+                    status="failed",
+                    reason="Requirement has no target path for patching.",
+                ),
+            )
+        schema_branch = self._compact_schema_branch_for_target(
+            validation_schema=validation_schema,
+            target_path=target_path,
+        )
+        draft_excerpt = self._value_at_json_pointer(document, self._parent_excerpt_path(target_path))
+        prompt = build_requirement_patch_prompt(
+            requirement=requirement,
+            assessment=assessment_for_report_item(item),
+            selected_evidence=item.selected_evidence,
+            context_window=item.context_window,
+            draft_excerpt=draft_excerpt,
+            schema_branch=schema_branch,
+        )
+        try:
+            result = await generate_structured(
+                self.ollama_client,
+                model=self.ollama_client.chat_model,
+                system=REQUIREMENT_PATCH_SYSTEM_PROMPT,
+                prompt=prompt,
+                output_type=RequirementPatchResult,
+                system_components=[
+                    ("requirement_patch_system_prompt", REQUIREMENT_PATCH_SYSTEM_PROMPT),
+                ],
+                prompt_components=[],
+                token_budgeter=self._prompt_token_budgeter(),
+                operation_id=self._prompt_operation_id("metadata_requirement_patcher"),
+                agent_name="metadata_requirement_patcher",
+                num_ctx=self.ollama_client.max_context_length,
+            )
+            self._record_llm_call_result(
+                data_package_id=data_package_id,
+                result=result,
+                agent_name="metadata_requirement_patcher",
+            )
+            patch = result.output if isinstance(result.output, RequirementPatchResult) else RequirementPatchResult.model_validate(result.output)
+        except (CompletionError, ValidationError) as exc:
+            self._record_llm_call_exception(
+                data_package_id=data_package_id,
+                exc=exc,
+                agent_name="metadata_requirement_patcher",
+            )
+            return (
+                document,
+                RequirementPatchAttempt(
+                    attempted=True,
+                    status="failed",
+                    target_path=target_path,
+                    target_class=target_class,
+                    reason=f"Requirement patch generation failed: {exc}",
+                ),
+            )
+        if not patch.should_patch or not patch.instance:
+            return (
+                document,
+                RequirementPatchAttempt(
+                    attempted=True,
+                    status="failed",
+                    target_path=patch.target_path or target_path,
+                    target_class=patch.target_class or target_class,
+                    reason=patch.rationale or "Patch model found insufficient evidence.",
+                ),
+            )
+        allowed_target_paths = set(item.target_paths or requirement.target_paths)
+        target_path = patch.target_path
+        if target_path not in allowed_target_paths:
+            return (
+                document,
+                RequirementPatchAttempt(
+                    attempted=True,
+                    status="failed",
+                    target_path=target_path,
+                    target_class=patch.target_class or target_class,
+                    reason=f"Patch target path is not allowed for requirement: {target_path}",
+                ),
+            )
+        target_class = patch.target_class or target_class
+        schema_branch = self._compact_schema_branch_for_target(
+            validation_schema=validation_schema,
+            target_path=target_path,
+        )
+        original = self._clone_json_object(document)
+        try:
+            updated = apply_evidence_instance(
+                document=document,
+                target_path=target_path,
+                instance=patch.instance,
+                data_package_id=data_package_id,
+                target_schema=schema_branch,
+            )
+        except ValueError as exc:
+            return (
+                original,
+                RequirementPatchAttempt(
+                    attempted=True,
+                    status="failed",
+                    target_path=target_path,
+                    target_class=target_class,
+                    reason=f"Could not apply requirement patch: {exc}",
+                ),
+            )
+        validation = self.profile_service.validate_document(
+            identifier=profile_identifier,
+            document=updated,
+        )
+        if validation.valid:
+            return (
+                updated,
+                RequirementPatchAttempt(
+                    attempted=True,
+                    status="applied",
+                    target_path=target_path,
+                    target_class=target_class,
+                    reason=patch.rationale or "Requirement patch applied and validated.",
+                ),
+            )
+        return (
+            original,
+            RequirementPatchAttempt(
+                attempted=True,
+                status="rolled_back",
+                target_path=target_path,
+                target_class=target_class,
+                validation_errors=[issue.message for issue in validation.errors],
+                reason="Requirement patch failed profile validation; restored previous draft.",
+            ),
+        )
+
+    @staticmethod
+    def _parent_excerpt_path(target_path: str) -> str:
+        if target_path.endswith("/-"):
+            return target_path[:-2]
+        return target_path
+
+    @classmethod
+    def _compact_schema_branch_for_target(
+        cls,
+        validation_schema: dict[str, Any],
+        target_path: str,
+    ) -> dict[str, Any]:
+        if target_path.endswith("/-"):
+            schema_path = target_path[:-2]
+        else:
+            schema_path = target_path
+        schema = cls._schema_for_json_pointer(validation_schema, schema_path)
+        if isinstance(schema.get("items"), dict):
+            schema = cls._resolve_schema_node(schema["items"], validation_schema)
+        if not isinstance(schema, dict):
+            return {}
+        return cls._schema_shell_value(schema, validation_schema, depth=0, required_only=False) or {}
+
+    async def _evaluate_evidence_novelty(
+        self,
+        *,
+        data_package_id: str,
+        note: EvidenceNote,
+        contextual_notes: list[EvidenceNote],
+        draft_excerpt: Any,
+        schema_branch: dict[str, Any],
+        target_path: str,
+        target_class: str,
+    ) -> EvidenceNoveltyDecision:
+        assert self.ollama_client is not None
+        prompt = build_novelty_evaluator_prompt(
+            note=note,
+            contextual_notes=contextual_notes,
+            draft_excerpt=draft_excerpt,
+            schema_branch=schema_branch,
+            target_path=target_path,
+            target_class=target_class,
+        )
+        try:
+            result = await generate_structured(
+                self.ollama_client,
+                model=self.ollama_client.chat_model,
+                system=EVIDENCE_NOVELTY_EVALUATOR_SYSTEM_PROMPT,
+                prompt=prompt,
+                output_type=EvidenceNoveltyDecision,
+                system_components=[
+                    ("evidence_novelty_evaluator_system_prompt", EVIDENCE_NOVELTY_EVALUATOR_SYSTEM_PROMPT),
+                ],
+                prompt_components=[],
+                token_budgeter=self._prompt_token_budgeter(),
+                operation_id=self._prompt_operation_id("evidence_novelty_evaluator"),
+                agent_name="evidence_novelty_evaluator",
+                num_ctx=self.ollama_client.max_context_length,
+            )
+            self._record_llm_call_result(
+                data_package_id=data_package_id,
+                result=result,
+                agent_name="evidence_novelty_evaluator",
+            )
+            if isinstance(result.output, EvidenceNoveltyDecision):
+                return result.output
+            return EvidenceNoveltyDecision.model_validate(result.output)
+        except (CompletionError, ValidationError) as exc:
+            self._record_llm_call_exception(
+                data_package_id=data_package_id,
+                exc=exc,
+                agent_name="evidence_novelty_evaluator",
+            )
+            return EvidenceNoveltyDecision(
+                is_novel=False,
+                reason=f"Novelty evaluation failed: {exc}",
+            )
+
+    async def _build_evidence_instance(
+        self,
+        *,
+        data_package_id: str,
+        note: EvidenceNote,
+        contextual_notes: list[EvidenceNote],
+        draft_excerpt: Any,
+        schema_branch: dict[str, Any],
+        target_path: str,
+        target_class: str,
+    ) -> dict[str, Any] | None:
+        assert self.ollama_client is not None
+        model = builder_output_model_for_target(target_class, schema_branch)
+        prompt = build_instance_builder_prompt(
+            target_path=target_path,
+            target_class=target_class,
+            schema_branch=schema_branch,
+            draft_excerpt=draft_excerpt,
+            note=note,
+            contextual_notes=contextual_notes,
+        )
+        try:
+            result = await generate_structured(
+                self.ollama_client,
+                model=self.ollama_client.chat_model,
+                system=EVIDENCE_INSTANCE_BUILDER_SYSTEM_PROMPT,
+                prompt=prompt,
+                output_type=model,
+                system_components=[
+                    ("evidence_instance_builder_system_prompt", EVIDENCE_INSTANCE_BUILDER_SYSTEM_PROMPT),
+                ],
+                prompt_components=[],
+                token_budgeter=self._prompt_token_budgeter(),
+                operation_id=self._prompt_operation_id("evidence_instance_builder"),
+                agent_name="evidence_instance_builder",
+                num_ctx=self.ollama_client.max_context_length,
+            )
+            self._record_llm_call_result(
+                data_package_id=data_package_id,
+                result=result,
+                agent_name="evidence_instance_builder",
+            )
+            output = result.output
+            if hasattr(output, "model_dump"):
+                return output.model_dump(mode="json", exclude_none=True)
+            return dict(output)
+        except (CompletionError, ValidationError) as exc:
+            self._record_llm_call_exception(
+                data_package_id=data_package_id,
+                exc=exc,
+                agent_name="evidence_instance_builder",
+            )
+            return None
+
+    async def _repair_evidence_instance(
+        self,
+        *,
+        data_package_id: str,
+        instance: dict[str, Any],
+        validation_errors: list[ProfileValidationIssue],
+        schema_branch: dict[str, Any],
+        target_path: str,
+        target_class: str,
+    ) -> dict[str, Any] | None:
+        assert self.ollama_client is not None
+        model = builder_output_model_for_target(target_class, schema_branch)
+        error_messages = [str(e.message) for e in validation_errors]
+        prompt = build_instance_repair_prompt(
+            target_path=target_path,
+            target_class=target_class,
+            schema_branch=schema_branch,
+            instance=instance,
+            validation_errors=error_messages,
+        )
+        try:
+            result = await generate_structured(
+                self.ollama_client,
+                model=self.ollama_client.chat_model,
+                system=EVIDENCE_INSTANCE_REPAIR_SYSTEM_PROMPT,
+                prompt=prompt,
+                output_type=model,
+                system_components=[
+                    ("evidence_instance_repair_system_prompt", EVIDENCE_INSTANCE_REPAIR_SYSTEM_PROMPT),
+                ],
+                prompt_components=[],
+                token_budgeter=self._prompt_token_budgeter(),
+                operation_id=self._prompt_operation_id("evidence_instance_repair"),
+                agent_name="evidence_instance_repair",
+                num_ctx=self.ollama_client.max_context_length,
+            )
+            self._record_llm_call_result(
+                data_package_id=data_package_id,
+                result=result,
+                agent_name="evidence_instance_repair",
+            )
+            output = result.output
+            if hasattr(output, "model_dump"):
+                return output.model_dump(mode="json", exclude_none=True)
+            return dict(output)
+        except (CompletionError, ValidationError) as exc:
+            self._record_llm_call_exception(
+                data_package_id=data_package_id,
+                exc=exc,
+                agent_name="evidence_instance_repair",
+            )
+            return None
+
+    async def _apply_and_validate_evidence_instance(
+        self,
+        *,
+        data_package_id: str,
+        profile_identifier: str,
+        document: dict[str, Any],
+        note: EvidenceNote,
+        instance: dict[str, Any],
+        target_path: str,
+        target_class: str,
+        schema_branch: dict[str, Any],
+    ) -> tuple[dict[str, Any], ProjectionLedgerRecord]:
+        original = self._clone_json_object(document)
+        try:
+            updated = apply_evidence_instance(
+                document=document,
+                target_path=target_path,
+                instance=instance,
+                data_package_id=data_package_id,
+                target_schema=schema_branch,
+            )
+        except ValueError as exc:
+            return (
+                original,
+                self._enrichment_ledger_record(
+                    note=note,
+                    status="not_projected",
+                    reason=f"Could not apply instance to {target_path}: {exc}",
+                    target_path=target_path,
+                    target_class=target_class,
+                ),
+            )
+        validation = self.profile_service.validate_document(
+            identifier=profile_identifier,
+            document=updated,
+        )
+        if validation.valid:
+            return (
+                updated,
+                self._enrichment_ledger_record(
+                    note=note,
+                    status="projected",
+                    reason=f"Enrichment instance applied and validated at {target_path}.",
+                    target_path=target_path,
+                    target_class=target_class,
+                    projected_paths=[target_path],
+                ),
+            )
+        repaired = await self._repair_evidence_instance(
+            data_package_id=data_package_id,
+            instance=instance,
+            validation_errors=validation.errors,
+            schema_branch=schema_branch,
+            target_path=target_path,
+            target_class=target_class,
+        )
+        if repaired is None:
+            return (
+                original,
+                self._enrichment_ledger_record(
+                    note=note,
+                    status="not_projected",
+                    reason=f"Instance invalid; repair attempt failed. Validation errors: {[e.message for e in validation.errors]}",
+                    target_path=target_path,
+                    target_class=target_class,
+                ),
+            )
+        try:
+            updated = apply_evidence_instance(
+                document=original,
+                target_path=target_path,
+                instance=repaired,
+                data_package_id=data_package_id,
+                target_schema=schema_branch,
+            )
+        except ValueError as exc:
+            return (
+                original,
+                self._enrichment_ledger_record(
+                    note=note,
+                    status="not_projected",
+                    reason=f"Repaired instance could not be applied: {exc}",
+                    target_path=target_path,
+                    target_class=target_class,
+                ),
+            )
+        validation = self.profile_service.validate_document(
+            identifier=profile_identifier,
+            document=updated,
+        )
+        if validation.valid:
+            return (
+                updated,
+                self._enrichment_ledger_record(
+                    note=note,
+                    status="projected",
+                    reason="Enrichment instance repaired and validated.",
+                    target_path=target_path,
+                    target_class=target_class,
+                    projected_paths=[target_path],
+                ),
+            )
+        return (
+            original,
+            self._enrichment_ledger_record(
+                note=note,
+                status="not_projected",
+                reason=f"Repaired instance still invalid; restored previous draft. Errors: {[e.message for e in validation.errors]}",
+                target_path=target_path,
+                target_class=target_class,
+            ),
+        )
+
+    @staticmethod
+    def _enrichment_ledger_record(
+        note: EvidenceNote,
+        status: ProjectionLedgerStatus,
+        reason: str,
+        target_path: str | None,
+        target_class: str | None,
+        projected_paths: list[str] | None = None,
+    ) -> ProjectionLedgerRecord:
+        return ProjectionLedgerRecord(
+            object_identifier=note.candidate_id or note.note_id or "unknown-note",
+            object_kind=note.category,
+            source_evidence=note.evidence_text,
+            evidence_note_identifiers=[note.candidate_id or note.note_id],
+            status=status,
+            projected_paths=projected_paths or [],
+            target_path=target_path,
+            target_class=target_class,
+            planner_status="evidence_enrichment",
+            reason=reason,
+        )
+
+
     async def _build_overview_shallow_projection(
         self,
         *,
@@ -5602,6 +6354,8 @@ class ExtractionService:
         result = ExtractionRunResult(
             generated_final_draft=clean_document,
             machine_evidence_context=evidence_context,
+            generated_initial_draft=state.generated_initial_draft,
+            requirement_report=state.requirement_report,
             initial_file_summaries=state.initial_file_summaries,
             initial_file_summary_status=state.initial_file_summary_status,
             initial_extraction_overview=state.initial_extraction_overview,
@@ -5849,6 +6603,18 @@ class ExtractionService:
                 document=state.generated_final_draft,
                 chat_model=chat_model,
             )
+        if state.generated_initial_draft is not None:
+            self.output_repository.save_generated_initial_draft(
+                workflow_id=data_package_id,
+                document=state.generated_initial_draft,
+                chat_model=chat_model,
+            )
+        if state.requirement_report is not None:
+            self.output_repository.save_requirement_report(
+                workflow_id=data_package_id,
+                report=state.requirement_report,
+                chat_model=chat_model,
+            )
         if state.curated_document is not None:
             self.output_repository.save_curated_document(
                 workflow_id=data_package_id,
@@ -5900,6 +6666,34 @@ class ExtractionService:
             }
         )
         self._save_run_state(data_package_id, cleared)
+
+    def _clear_profile_projection_token_usage(self, data_package_id: str) -> None:
+        if self.output_repository is None:
+            return
+        totals = self.output_repository.load_token_usage(data_package_id)
+        projection_agents = {
+            "dataset_summary",
+            "dataset_level_projection",
+            "dataset_level_projection_repair",
+            "profile_target_planner",
+            "profile_target_writer",
+            "profile_patch",
+            "profile_projection",
+            "evidence_novelty_evaluator",
+            "evidence_instance_builder",
+            "evidence_instance_repair",
+            "metadata_completeness_evaluator",
+            "metadata_requirement_patcher",
+        }
+        pruned = {
+            agent_name: values
+            for agent_name, values in totals.items()
+            if agent_name not in projection_agents
+        }
+        self.output_repository.save_token_usage(
+            workflow_id=data_package_id,
+            token_usage=pruned,
+        )
 
     def _persist_initial_extraction_overview(
         self,

@@ -23,6 +23,7 @@ from app.domain.extraction import (
     InitialOverviewFailureDiagnostic,
     InitialOverviewPromptDiagnostic,
     ProjectionLedgerRecord,
+    RequirementReport,
     RoutedEvidenceContext,
 )
 
@@ -42,7 +43,9 @@ INITIAL_FILE_SUMMARIES_FILE = "initial_file_summaries.json"
 INITIAL_FILE_SUMMARY_DIAGNOSTICS_FILE = "initial_file_summary_diagnostics.json"
 INITIAL_EXTRACTION_OVERVIEW_FILE = "initial_extraction_overview.json"
 INITIAL_EXTRACTION_OVERVIEW_DIAGNOSTIC_FILE = "initial_extraction_overview_diagnostic.json"
+GENERATED_INITIAL_DRAFT_FILE = "generated_initial_draft.json"
 GENERATED_FINAL_DRAFT_FILE = "generated_final_draft.json"
+REQUIREMENT_REPORT_FILE = "requirement_report.json"
 DATASET_SUMMARY_FILE = "dataset_summary.txt"
 CURATED_DOCUMENT_FILE = "curated_document.json"
 PROJECTION_LEDGER_FILE = "projection_ledger.json"
@@ -116,6 +119,18 @@ class FileSystemExtractionOutputRepository:
             document=result.generated_final_draft,
             chat_model=result.chat_model,
         )
+        if result.generated_initial_draft is not None:
+            self.save_generated_initial_draft(
+                workflow_id=workflow_id,
+                document=result.generated_initial_draft,
+                chat_model=result.chat_model,
+            )
+        if result.requirement_report is not None:
+            self.save_requirement_report(
+                workflow_id=workflow_id,
+                report=result.requirement_report,
+                chat_model=result.chat_model,
+            )
         if result.curated_document is not None:
             self.save_curated_document(
                 workflow_id=workflow_id,
@@ -266,6 +281,18 @@ class FileSystemExtractionOutputRepository:
             return
         self._write_json_file(path, diagnostic.model_dump(mode="json"))
 
+    def save_generated_initial_draft(
+        self,
+        *,
+        workflow_id: str,
+        document: dict[str, Any],
+        chat_model: str | None = None,
+    ) -> None:
+        self._write_json_file(
+            self._workflow_dir(workflow_id, chat_model) / GENERATED_INITIAL_DRAFT_FILE,
+            document,
+        )
+
     def save_generated_final_draft(
         self,
         *,
@@ -276,6 +303,18 @@ class FileSystemExtractionOutputRepository:
         self._write_json_file(
             self._workflow_dir(workflow_id, chat_model) / GENERATED_FINAL_DRAFT_FILE,
             document,
+        )
+
+    def save_requirement_report(
+        self,
+        *,
+        workflow_id: str,
+        report: RequirementReport,
+        chat_model: str | None = None,
+    ) -> None:
+        self._write_json_file(
+            self._workflow_dir(workflow_id, chat_model) / REQUIREMENT_REPORT_FILE,
+            report.model_dump(mode="json"),
         )
 
     def load_generated_final_draft(
@@ -563,6 +602,7 @@ class FileSystemExtractionOutputRepository:
             FILTERED_EVIDENCE_NOTES_FILE,
             EXTRACTION_RESULT_FILE,
             GENERATED_FINAL_DRAFT_FILE,
+            REQUIREMENT_REPORT_FILE,
             DATASET_SUMMARY_FILE,
             CURATED_DOCUMENT_FILE,
             PROJECTION_LEDGER_FILE,

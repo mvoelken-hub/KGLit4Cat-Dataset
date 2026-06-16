@@ -499,10 +499,30 @@ textarea.json-editor-input { resize: vertical; min-height: 80px; }
   50% { transform: translateX(220%); }
   100% { transform: translateX(520%); }
 }
-.projection-path-distribution { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 8px; }
-.projection-path-distribution div { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, 0.66); }
-.projection-path-distribution span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 0.78rem; }
-.projection-path-distribution strong { color: var(--ink); font-size: 0.84rem; }
+.projection-class-summary, .requirement-completeness-panel { display: grid; gap: 8px; padding: 10px; border: 1px solid rgba(99, 154, 0, 0.22); border-radius: 8px; background: rgba(255, 255, 255, 0.68); }
+.projection-class-summary > span, .requirement-score-heading span { color: var(--muted); font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; }
+.projection-class-summary > div { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; }
+.projection-class-summary article { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 8px; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: rgba(248, 250, 247, 0.72); }
+.projection-class-summary strong { overflow-wrap: anywhere; color: var(--ink); font-size: 0.82rem; }
+.projection-class-summary article > span { color: var(--accent-dark); font-size: 0.84rem; font-weight: 800; }
+.projection-class-summary small { grid-column: 1 / -1; color: var(--muted); font-size: 0.72rem; line-height: 1.35; overflow-wrap: anywhere; }
+.requirement-score-heading { display: flex; justify-content: space-between; gap: 12px; align-items: end; flex-wrap: wrap; }
+.requirement-score-heading > div { display: grid; gap: 2px; }
+.requirement-score-heading strong { color: var(--accent-dark); font-size: 1.12rem; line-height: 1; }
+.requirement-score-heading small { color: var(--muted); font-size: 0.76rem; }
+.requirement-score-track { height: 8px; overflow: hidden; border: 1px solid rgba(99, 154, 0, 0.24); border-radius: 999px; background: rgba(255, 255, 255, 0.72); }
+.requirement-score-track > div { height: 100%; border-radius: inherit; background: var(--accent); }
+.requirement-status-strip { display: flex; flex-wrap: wrap; gap: 6px; }
+.requirement-status-strip span { padding: 0.22rem 0.48rem; border: 1px solid var(--line); border-radius: 999px; background: rgba(248, 250, 247, 0.82); color: var(--muted); font-size: 0.7rem; font-weight: 800; }
+.requirement-breakdown { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 7px; }
+.requirement-row { display: grid; gap: 4px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: rgba(248, 250, 247, 0.72); }
+.requirement-row.fulfilled { border-color: rgba(99, 154, 0, 0.34); }
+.requirement-row.partial { border-color: rgba(202, 116, 6, 0.42); }
+.requirement-row.missing { border-color: rgba(188, 57, 43, 0.34); }
+.requirement-row > div { display: flex; justify-content: space-between; gap: 8px; min-width: 0; }
+.requirement-row strong { overflow-wrap: anywhere; color: var(--ink); font-size: 0.78rem; }
+.requirement-row span { flex-shrink: 0; color: var(--muted); font-size: 0.68rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; }
+.requirement-row small { color: var(--muted); font-size: 0.72rem; line-height: 1.35; }
 .projection-issues { border: 1px solid rgba(202, 116, 6, 0.34); border-radius: 8px; background: rgba(255, 255, 255, 0.68); overflow: hidden; }
 .projection-issues summary { padding: 9px 10px; cursor: pointer; color: var(--warn); font-size: 0.8rem; font-weight: 800; }
 .projection-issues > div { display: grid; gap: 8px; padding: 0 10px 10px; }

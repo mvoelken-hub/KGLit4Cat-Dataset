@@ -46,6 +46,8 @@ export type ExtractionRunProgress = {
   interim_evidence_context?: Record<string, unknown> | null;
   generated_final_draft?: Record<string, unknown> | null;
   curated_document?: Record<string, unknown> | null;
+  generated_initial_draft?: Record<string, unknown> | null;
+  requirement_report?: RequirementReport | null;
   draft_quality_state?: DraftQualityState | null;
   validation?: DraftValidationResult | null;
   curated_validation?: DraftValidationResult | null;
@@ -65,6 +67,51 @@ export type ExtractionRunProgress = {
   chunk_results?: ExtractionChunkResult[];
   current_chunk?: ExtractionChunkRef | null;
   warnings: string[];
+};
+
+export type RequirementStatus = 'fulfilled' | 'partial' | 'missing' | 'not_applicable';
+
+export type RequirementEvidenceItem = {
+  candidate_id: string;
+  category: string;
+  claim: string;
+  evidence_text: string;
+  file_path?: string;
+  start_idx?: number;
+  end_idx?: number;
+};
+
+export type RequirementPatchAttempt = {
+  attempted: boolean;
+  status: 'not_attempted' | 'applied' | 'failed' | 'rolled_back';
+  target_path?: string | null;
+  target_class?: string | null;
+  validation_errors?: string[];
+  reason?: string;
+};
+
+export type RequirementReportItem = {
+  requirement_id: string;
+  label: string;
+  weight: number;
+  status: RequirementStatus;
+  applicable: boolean;
+  quality: number;
+  weighted_score: number;
+  rationale?: string;
+  target_paths?: string[];
+  evidence_search_hints?: string[];
+  selected_evidence?: RequirementEvidenceItem[];
+  context_window?: RequirementEvidenceItem[];
+  patch?: RequirementPatchAttempt;
+};
+
+export type RequirementReport = {
+  schema_valid: boolean;
+  metadata_completeness_score: number;
+  applicable_weight: number;
+  earned_weight: number;
+  requirements: RequirementReportItem[];
 };
 
 export type ExtractionVocabQueryConfig = {
@@ -318,6 +365,8 @@ export type PatchProgress = ExtractionRunProgress & {
 export type ExtractionRunResult = {
   generated_final_draft: Record<string, unknown>;
   machine_evidence_context: Record<string, unknown>;
+  generated_initial_draft?: Record<string, unknown> | null;
+  requirement_report?: RequirementReport | null;
   initial_file_summaries?: ExtractionFileSummary[];
   initial_file_summary_status?: InitialFileSummaryStatus | null;
   initial_extraction_overview?: ExtractionOverview | null;

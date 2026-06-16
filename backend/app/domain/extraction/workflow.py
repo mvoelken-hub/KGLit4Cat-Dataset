@@ -10,6 +10,7 @@ from app.domain.extraction.evidence_context import (
     FilteredEvidenceNote,
     RoutedEvidenceContext,
 )
+from app.domain.extraction.requirement_enrichment import RequirementReport
 from app.domain.extraction.vocabulary import ExtractionNormalization
 from app.domain.extraction.file_ranking import RankedFile
 from app.domain.extraction.overview import (
@@ -191,6 +192,8 @@ class ExtractionRunState(BaseModel):
     vocab_queries: list[ExtractionVocabQueryRecord] = Field(default_factory=list)
     generated_final_draft: dict[str, Any] | None = None
     curated_document: dict[str, Any] | None = None
+    generated_initial_draft: dict[str, Any] | None = None
+    requirement_report: RequirementReport | None = None
     draft_quality_state: DraftQualityState | None = None
     validation: DraftValidationResult = Field(default_factory=DraftValidationResult)
     curated_validation: DraftValidationResult | None = None
@@ -224,6 +227,8 @@ class ExtractionRunProgress(BaseModel):
     vocab_queries: list[ExtractionVocabQueryRecord] = Field(default_factory=list)
     generated_final_draft: dict[str, Any] | None = None
     curated_document: dict[str, Any] | None = None
+    generated_initial_draft: dict[str, Any] | None = None
+    requirement_report: RequirementReport | None = None
     draft_quality_state: DraftQualityState | None = None
     validation: DraftValidationResult = Field(default_factory=DraftValidationResult)
     curated_validation: DraftValidationResult | None = None
@@ -255,6 +260,8 @@ class CompleteWorkflowProgress(BaseModel):
 class ExtractionRunResult(BaseModel):
     generated_final_draft: dict[str, Any]
     machine_evidence_context: RoutedEvidenceContext
+    generated_initial_draft: dict[str, Any] | None = None
+    requirement_report: RequirementReport | None = None
     initial_file_summaries: list[ExtractionFileSummary] = Field(default_factory=list)
     initial_file_summary_status: InitialFileSummaryStatus | None = None
     initial_extraction_overview: ExtractionOverview | None = None

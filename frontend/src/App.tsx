@@ -50,6 +50,7 @@ import type {
   ExtractionOverview,
   ExtractionOverviewNode,
   ProjectionLedgerRecord,
+  RequirementReport,
 } from './api/extraction';
 
 type BusyKey = 'upload' | 'initial-context' | 'chunk' | 'context' | 'pause' | 'draft' | 'patch' | 'load' | 'profile' | 'profile-delete' | 'dataset-delete' | 'ollama';
@@ -232,20 +233,6 @@ function evidenceContextNoteCount(context?: Record<string, unknown> | null): num
   return evidenceContextNotes(context).length;
 }
 
-function projectionPathBucket(path: string): string {
-  if (!path) return 'No profile path';
-  if (path === '/description' || path.startsWith('/description/')) return '/description';
-  if (path === '/title' || path.startsWith('/title/')) return '/title';
-  if (path === '/identifier' || path.startsWith('/identifier/')) return '/identifier';
-  const [, root] = path.split('/');
-  return root ? `/${root}` : path;
-}
-
-function projectionPathLabel(path: string): string {
-  if (path === 'No profile path') return path;
-  return path;
-}
-
 function projectionEvidencePreview(record: ProjectionLedgerRecord): string {
   const value = record.source_evidence || record.reason || record.error || record.object_identifier;
   return value.length > 180 ? `${value.slice(0, 177)}...` : value;
@@ -253,6 +240,52 @@ function projectionEvidencePreview(record: ProjectionLedgerRecord): string {
 
 function projectionFailureMessage(record: ProjectionLedgerRecord): string {
   return record.error || record.reason || 'No profile path was selected for this evidence note.';
+}
+
+function draftClassInstances(document?: Record<string, unknown> | null): Array<{ className: string; count: number; labels: string[] }> {
+  if (!document) return [];
+  const groups: Array<{ className: string; values: Record<string, unknown>[] }> = [
+    { className: 'Dataset', values: [document] },
+    { className: 'DataGeneratingActivity', values: asRecordArray(document.was_generated_by) },
+    { className: 'Distribution', values: asRecordArray(document.dataset_distribution) },
+    { className: 'EvaluatedEntity', values: asRecordArray(document.is_about_entity) },
+    { className: 'EvaluatedActivity', values: asRecordArray(document.is_about_activity) },
+    { className: 'Agent', values: asRecordArray(document.creator) },
+  ];
+  const nestedAgenticEntities = groups[1].values.flatMap((activity) => asRecordArray(activity.carried_out_by));
+  groups.push({ className: 'AgenticEntity', values: nestedAgenticEntities });
+  return groups
+    .filter((group) => group.values.length > 0)
+    .map((group) => ({
+      className: group.className,
+      count: group.values.length,
+      labels: group.values.slice(0, 3).map((value) => metadataObjectLabel(value)),
+    }));
+}
+
+function metadataObjectLabel(value: Record<string, unknown>): string {
+  const title = value.title;
+  const name = value.name;
+  const id = value.id;
+  if (Array.isArray(title) && title.length) return String(title[0]);
+  if (typeof title === 'string' && title.trim()) return title;
+  if (Array.isArray(name) && name.length) return String(name[0]);
+  if (typeof name === 'string' && name.trim()) return name;
+  if (typeof id === 'string' && id.trim()) return id.split(/[/:#]/).filter(Boolean).pop() || id;
+  return 'Untitled';
+}
+
+function requirementStatusSummary(report?: RequirementReport | null) {
+  const requirements = report?.requirements ?? [];
+  return requirements.reduce((acc, requirement) => {
+    acc[requirement.status] = (acc[requirement.status] ?? 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+}
+
+function formatPercentScore(value: number | undefined | null): string {
+  if (value == null || !Number.isFinite(value)) return '0%';
+  return `${Math.round(value * 100)}%`;
 }
 
 function extractionContextTraceLabel(trace: { objectKind: string; object: Record<string, unknown> | null }) {
@@ -2050,25 +2083,13 @@ function ProjectionWorkflowPanel({
   const groupDone = completedGroupRecords.length;
   const groupPercent = groupTotal ? Math.min(100, Math.round((groupDone / groupTotal) * 100)) : projectionRunning ? 8 : 0;
   const activeRecord = runningRecords[0] ?? pendingGroupRecords[0] ?? null;
-  const scaffoldEntries = progress?.initial_draft_scaffold?.entries ?? [];
   const projectedRecords = ledger.filter((record) => record.status === 'projected');
   const attentionRecords = ledger.filter((record) => record.status !== 'projected');
-  const descriptionSelectedRecords = ledger.filter((record) => record.target_path === '/description');
-  const projectedPathCount = projectedRecords.reduce((sum, record) => sum + Math.max(1, record.projected_paths.length), 0);
-  const descriptionPathCount = projectedRecords.reduce((sum, record) => (
-    sum + record.projected_paths.filter((path) => projectionPathBucket(path) === '/description').length
-  ), 0);
-  const pathBuckets = Array.from(projectedRecords.reduce((map, record) => {
-    const paths = record.projected_paths.length ? record.projected_paths : ['No profile path'];
-    paths.forEach((path) => {
-      const bucket = projectionPathBucket(path);
-      map.set(bucket, (map.get(bucket) ?? 0) + 1);
-    });
-    return map;
-  }, new Map<string, number>()).entries())
-    .sort((left, right) => right[1] - left[1])
-    .slice(0, 6);
-  const descriptionShare = projectedPathCount ? Math.round((descriptionPathCount / projectedPathCount) * 100) : 0;
+  const generatedInstances = draftClassInstances(progress?.generated_final_draft);
+  const requirementReport = progress?.requirement_report ?? null;
+  const requirementSummary = requirementStatusSummary(requirementReport);
+  const applicableRequirements = requirementReport?.requirements.filter((requirement) => requirement.applicable) ?? [];
+  const requirementPercent = requirementReport ? Math.round(requirementReport.metadata_completeness_score * 100) : null;
 
   return (
     <section className="projection-workflow-panel">
@@ -2098,30 +2119,55 @@ function ProjectionWorkflowPanel({
           Evidence coverage: {processedCount}/{totalCount || 0} notes resolved, {pendingCount} pending.
         </p>
       )}
-      {scaffoldEntries.length > 0 && (
-        <p className="projection-sink-note">
-          Initial draft: {scaffoldEntries.length} scaffold target{scaffoldEntries.length === 1 ? '' : 's'} prepared for projection.
-        </p>
+      {generatedInstances.length > 0 && (
+        <section className="projection-class-summary" aria-label="Generated DCAT-AP+ class instances">
+          <span>Generated DCAT-AP+ class instances</span>
+          <div>
+            {generatedInstances.map((item) => (
+              <article key={item.className}>
+                <strong>{item.className}</strong>
+                <span>{item.count}</span>
+                <small>{item.labels.join(', ')}</small>
+              </article>
+            ))}
+          </div>
+        </section>
       )}
-      {descriptionSelectedRecords.length > 0 && (
-        <p className="projection-sink-note warning">
-          Planner selected <code>/description</code> for {descriptionSelectedRecords.length} evidence group{descriptionSelectedRecords.length === 1 ? '' : 's'}.
-        </p>
-      )}
-      {descriptionPathCount > 0 && (
-        <p className={`projection-sink-note ${descriptionShare >= 50 ? 'warning' : ''}`}>
-          {descriptionPathCount} projected path{descriptionPathCount === 1 ? '' : 's'} currently land in <code>/description</code>.
-        </p>
-      )}
-      {pathBuckets.length > 0 && (
-        <div className="projection-path-distribution">
-          {pathBuckets.map(([path, count]) => (
-            <div key={path}>
-              <span>{projectionPathLabel(path)}</span>
-              <strong>{count}</strong>
+      {requirementReport && (
+        <section className="requirement-completeness-panel">
+          <div className="requirement-score-heading">
+            <div>
+              <span>Metadata completeness</span>
+              <strong>{formatPercentScore(requirementReport.metadata_completeness_score)}</strong>
             </div>
-          ))}
-        </div>
+            <small>
+              {requirementReport.earned_weight.toFixed(2)} / {requirementReport.applicable_weight.toFixed(2)} weighted points
+            </small>
+          </div>
+          <div className="requirement-score-track" aria-hidden="true">
+            <div style={{ width: `${requirementPercent ?? 0}%` }} />
+          </div>
+          <div className="requirement-status-strip">
+            <span>{requirementSummary.fulfilled ?? 0} fulfilled</span>
+            <span>{requirementSummary.partial ?? 0} partial</span>
+            <span>{requirementSummary.missing ?? 0} missing</span>
+            <span>{requirementSummary.not_applicable ?? 0} not applicable</span>
+          </div>
+          <div className="requirement-breakdown">
+            {applicableRequirements.map((requirement) => (
+              <article key={requirement.requirement_id} className={`requirement-row ${requirement.status}`}>
+                <div>
+                  <strong>{requirement.label}</strong>
+                  <span>{formatExtractionStage(requirement.status)}</span>
+                </div>
+                <small>
+                  {(requirement.quality * requirement.weight).toFixed(2)} / {requirement.weight.toFixed(2)}
+                  {requirement.patch?.status && requirement.patch.status !== 'not_attempted' ? ` - patch ${formatExtractionStage(requirement.patch.status)}` : ''}
+                </small>
+              </article>
+            ))}
+          </div>
+        </section>
       )}
       {tokenUsageSummary}
       {attentionRecords.length > 0 && (
@@ -3916,6 +3962,7 @@ export function App() {
         ...current,
         stage: 'profile_projection',
         generated_final_draft: null,
+        requirement_report: null,
         draft_quality_state: null,
         validation: { status: 'not_run', errors: [], warnings: [] },
         curated_validation: null,
@@ -3941,8 +3988,11 @@ export function App() {
       setPatchStatus(response.status);
       setPatchProgress(response.progress ? {
         ...response.progress,
+        requirement_report: response.result?.requirement_report ?? response.progress.requirement_report ?? null,
+        generated_final_draft: response.result?.generated_final_draft ?? response.progress.generated_final_draft ?? null,
         ...(isReplacingGeneratedDraft && response.status === 'running' ? {
           generated_final_draft: null,
+          requirement_report: null,
           draft_quality_state: null,
           validation: { status: 'not_run', errors: [], warnings: [] },
           curated_validation: null,
@@ -4070,7 +4120,26 @@ export function App() {
         : null;
       if (selectedPackageIdRef.current !== packageId) return;
       setPatchStatus(status);
-      setPatchProgress(progress || null);
+      setPatchProgress(completedResult ? {
+        ...(progress ?? {
+          stage: 'completed',
+          processed_chunks: 0,
+          total_chunks: 0,
+          normalized_quantities: 0,
+          normalized_qualitative_attributes: 0,
+          warnings: [],
+        }),
+        generated_final_draft: completedResult.generated_final_draft,
+        curated_document: completedResult.curated_document ?? completedResult.generated_final_draft,
+        generated_initial_draft: completedResult.generated_initial_draft ?? progress?.generated_initial_draft ?? null,
+        requirement_report: completedResult.requirement_report ?? progress?.requirement_report ?? null,
+        draft_quality_state: completedResult.draft_quality_state,
+        validation: completedResult.validation,
+        curated_validation: completedResult.curated_validation ?? null,
+        projection_ledger: completedResult.projection_ledger,
+        field_completion_ledger: completedResult.field_completion_ledger,
+        curation_ledger: completedResult.curation_ledger,
+      } : progress || null);
       if (completedResult) {
         setContext(initialContextFromEvidenceContext(completedResult.machine_evidence_context));
         setGeneratedFinalDraft(completedResult.generated_final_draft);
@@ -4499,6 +4568,8 @@ export function App() {
                         'profile_target_writer',
                         'profile_patch',
                         'profile_projection',
+                        'metadata_completeness_evaluator',
+                        'metadata_requirement_patcher',
                       ]}
                       budget={llmBudget}
                     />
