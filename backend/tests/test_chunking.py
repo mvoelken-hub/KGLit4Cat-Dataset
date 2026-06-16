@@ -142,6 +142,70 @@ class ProtectedLineIndicesTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(5, chunk.filtered_line_indices)
         self.assertNotIn(99, chunk.filtered_line_indices)
 
+    async def test_fixed_tokens_strategy_splits_by_line_budget(self):
+        content = "".join(
+            f"line {index} alpha beta gamma delta epsilon\n"
+            for index in range(10)
+        )
+        file_entry = FakeFileEntry(content)
+
+        chunks = await ContentChunk.create_chunks_for_file_entry(
+            data_package_id="pkg",
+            file_entry=file_entry,
+            embedding_func=AsyncMock(return_value=[]),
+            chunking_strategy="fixed_tokens",
+            fixed_tokens_per_chunk=15,
+            min_lines_for_chunking=1,
+            max_tokens_per_chunk=100,
+            token_budgeter=WordTokenizerBudgeter(),
+        )
+
+        self.assertGreater(len(chunks), 1)
+        for chunk in chunks:
+            self.assertLessEqual(len(chunk.content.split()), 15)
+            self.assertTrue(chunk.content.endswith("\n") or chunk.content == "")
+
+    async def test_fixed_tokens_strategy_never_calls_embedding_func(self):
+        content = "one two three four five\nsix seven eight nine ten\n"
+        file_entry = FakeFileEntry(content)
+        mock_embed = AsyncMock(return_value=[])
+
+        await ContentChunk.create_chunks_for_file_entry(
+            data_package_id="pkg",
+            file_entry=file_entry,
+            embedding_func=mock_embed,
+            chunking_strategy="fixed_tokens",
+            fixed_tokens_per_chunk=10,
+            min_lines_for_chunking=1,
+            max_tokens_per_chunk=100,
+            token_budgeter=WordTokenizerBudgeter(),
+        )
+
+        mock_embed.assert_not_awaited()
+
+    async def test_default_semantic_strategy_ignores_fixed_token_size(self):
+        content = "line 0 alpha beta\nline 1 gamma delta\nline 2 epsilon zeta\n"
+        file_entry = FakeFileEntry(content)
+        call_count = 0
+        async def embed(texts):
+            nonlocal call_count
+            call_count += 1
+            return [[0.1] * 4 for _ in texts]
+
+        chunks = await ContentChunk.create_chunks_for_file_entry(
+            data_package_id="pkg",
+            file_entry=file_entry,
+            embedding_func=embed,
+            chunking_strategy="semantic",
+            fixed_tokens_per_chunk=3,
+            min_lines_for_chunking=1,
+            max_tokens_per_chunk=100,
+            token_budgeter=WordTokenizerBudgeter(),
+        )
+
+        self.assertEqual(len(chunks), 1)
+        self.assertGreater(call_count, 0)
+
     async def test_token_cap_splits_oversized_chunk_after_semantic_chunking(self):
         content = "".join(
             f"line {index} " + ("sample metadata words " * 8) + "\n"

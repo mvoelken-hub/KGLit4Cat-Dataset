@@ -14,6 +14,8 @@ export interface ChunkingDialogProps {
     replace_existing_chunks: boolean;
     buffer_window_size: number;
     semantic_chunking_threshold: number;
+    chunking_strategy: 'semantic' | 'fixed_tokens';
+    fixed_tokens_per_chunk: number;
     protected_line_indices: Record<string, number[]>;
     text_quality_config: TextQualityConfig;
     embedding_num_gpu?: number;
@@ -242,6 +244,8 @@ function QualityTooltip({ decision }: { decision: TextQualityDecision }) {
 export function ChunkingDialog({ isOpen, packageId, dataPackage, chunksByFile, onClose, onSubmit }: ChunkingDialogProps) {
   const [bufferWindowSize, setBufferWindowSize] = useState(1);
   const [semanticThreshold, setSemanticThreshold] = useState(95);
+  const [chunkingStrategy, setChunkingStrategy] = useState<'semantic' | 'fixed_tokens'>('semantic');
+  const [fixedTokensPerChunk, setFixedTokensPerChunk] = useState(1024);
   const [embeddingGpuMode, setEmbeddingGpuMode] = useState<'default' | 'auto' | 'cpu'>('default');
 
   const [draftTextQualityConfig, setDraftTextQualityConfig] = useState<Required<TextQualityConfig>>(defaultTextQualityConfig);
@@ -290,6 +294,8 @@ export function ChunkingDialog({ isOpen, packageId, dataPackage, chunksByFile, o
     if (!isOpen) return;
     setBufferWindowSize(1);
     setSemanticThreshold(95);
+    setChunkingStrategy('semantic');
+    setFixedTokensPerChunk(1024);
     setEmbeddingGpuMode('default');
     setDraftTextQualityConfig(defaultTextQualityConfig);
     setTextQualityConfig(defaultTextQualityConfig);
@@ -374,6 +380,8 @@ export function ChunkingDialog({ isOpen, packageId, dataPackage, chunksByFile, o
       replace_existing_chunks: true,
       buffer_window_size: bufferWindowSize,
       semantic_chunking_threshold: semanticThreshold,
+      chunking_strategy: chunkingStrategy,
+      fixed_tokens_per_chunk: fixedTokensPerChunk,
       protected_line_indices,
       text_quality_config: textQualityConfig,
       embedding_num_gpu: embeddingGpuMode === 'default' ? undefined : embeddingGpuMode === 'auto' ? -1 : 0,
@@ -393,21 +401,38 @@ export function ChunkingDialog({ isOpen, packageId, dataPackage, chunksByFile, o
         <div className="chunking-dialog-body">
           <div className="chunking-form">
             <label className="form-row">
-              <ConfigLabel tooltip={configTooltips.bufferWindowSize}>Buffer window size</ConfigLabel>
-              <input type="number" min={0} max={10} value={bufferWindowSize} onChange={(e) => setBufferWindowSize(Number(e.target.value))} />
-            </label>
-            <label className="form-row">
-              <ConfigLabel tooltip={configTooltips.semanticThreshold}>Semantic threshold (%)</ConfigLabel>
-              <input type="number" min={0} max={100} value={semanticThreshold} onChange={(e) => setSemanticThreshold(Number(e.target.value))} />
-            </label>
-            <label className="form-row wide-control">
-              <ConfigLabel tooltip={configTooltips.embeddingGpu}>Embedding GPU</ConfigLabel>
-              <select value={embeddingGpuMode} onChange={(e) => setEmbeddingGpuMode(e.target.value as 'default' | 'auto' | 'cpu')}>
-                <option value="default">Runtime default</option>
-                <option value="auto">Auto GPU</option>
-                <option value="cpu">CPU only</option>
+              <ConfigLabel tooltip="How chunks are created. Semantic chunking uses embeddings to detect topic shifts. Fixed tokens per chunk splits text into roughly equal token budgets.">Chunking strategy</ConfigLabel>
+              <select value={chunkingStrategy} onChange={(e) => setChunkingStrategy(e.target.value as 'semantic' | 'fixed_tokens')}>
+                <option value="semantic">Semantic (embeddings)</option>
+                <option value="fixed_tokens">Fixed tokens per chunk</option>
               </select>
             </label>
+            {chunkingStrategy === 'semantic' && (
+              <>
+                <label className="form-row">
+                  <ConfigLabel tooltip={configTooltips.bufferWindowSize}>Buffer window size</ConfigLabel>
+                  <input type="number" min={0} max={10} value={bufferWindowSize} onChange={(e) => setBufferWindowSize(Number(e.target.value))} />
+                </label>
+                <label className="form-row">
+                  <ConfigLabel tooltip={configTooltips.semanticThreshold}>Semantic threshold (%)</ConfigLabel>
+                  <input type="number" min={0} max={100} value={semanticThreshold} onChange={(e) => setSemanticThreshold(Number(e.target.value))} />
+                </label>
+                <label className="form-row wide-control">
+                  <ConfigLabel tooltip={configTooltips.embeddingGpu}>Embedding GPU</ConfigLabel>
+                  <select value={embeddingGpuMode} onChange={(e) => setEmbeddingGpuMode(e.target.value as 'default' | 'auto' | 'cpu')}>
+                    <option value="default">Runtime default</option>
+                    <option value="auto">Auto GPU</option>
+                    <option value="cpu">CPU only</option>
+                  </select>
+                </label>
+              </>
+            )}
+            {chunkingStrategy === 'fixed_tokens' && (
+              <label className="form-row">
+                <ConfigLabel tooltip="Target number of tokens per chunk. Each chunk contains only whole lines; the last line that would exceed this budget starts the next chunk.">Fixed tokens per chunk</ConfigLabel>
+                <input type="number" min={1} max={32768} value={fixedTokensPerChunk} onChange={(e) => setFixedTokensPerChunk(Number(e.target.value))} />
+              </label>
+            )}
 
             <button className="ghost small" onClick={() => setShowAdvanced((s) => !s)}>
               {showAdvanced ? 'Hide advanced text-quality settings' : 'Show advanced text-quality settings'}

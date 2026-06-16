@@ -630,6 +630,8 @@ class ExtractionService:
         qualitative_vocab_identifiers: list[str] | None = None,
         buffer_window_size: int = 1,
         semantic_chunking_threshold: float = 95.0,
+        chunking_strategy: str = "semantic",
+        fixed_tokens_per_chunk: int = 1024,
         replace_existing_chunks: bool = False,
         resume: bool = False,
         force_rerun: bool = False,
@@ -674,6 +676,8 @@ class ExtractionService:
                 qualitative_vocab_identifiers=qualitative_vocab_identifiers,
                 buffer_window_size=buffer_window_size,
                 semantic_chunking_threshold=semantic_chunking_threshold,
+                chunking_strategy=chunking_strategy,
+                fixed_tokens_per_chunk=fixed_tokens_per_chunk,
                 replace_existing_chunks=replace_existing_chunks,
                 resume=resume,
             ),
@@ -690,9 +694,22 @@ class ExtractionService:
         qualitative_vocab_identifiers: list[str] | None,
         buffer_window_size: int,
         semantic_chunking_threshold: float,
+        chunking_strategy: str,
+        fixed_tokens_per_chunk: int,
         replace_existing_chunks: bool,
         resume: bool,
     ) -> None:
+        await self._run_complete_workflow(
+            data_package_id=data_package_id,
+            profile_identifier=profile_identifier,
+            qualitative_vocab_identifiers=qualitative_vocab_identifiers,
+            buffer_window_size=buffer_window_size,
+            semantic_chunking_threshold=semantic_chunking_threshold,
+            chunking_strategy=chunking_strategy,
+            fixed_tokens_per_chunk=fixed_tokens_per_chunk,
+            replace_existing_chunks=replace_existing_chunks,
+            resume=resume,
+        )
         assert self.datasource_service is not None
         assert self.task_registry is not None
 
@@ -732,6 +749,8 @@ class ExtractionService:
             buffer_window_size=buffer_window_size,
             semantic_chunking_threshold=semantic_chunking_threshold,
             replace_existing_chunks=replace_existing_chunks,
+            chunking_strategy=chunking_strategy,
+            fixed_tokens_per_chunk=fixed_tokens_per_chunk,
         )
         if chunk_status == TaskStatus.RUNNING:
             self._update_complete_workflow_progress(

@@ -34,6 +34,8 @@ class ChunkingRequest(BaseModel):
     protected_line_indices: dict[str, list[int]] = Field(default_factory=dict, description="Map of file_path -> list of 0-based line indices to always keep regardless of text quality filter")
     text_quality_config: TextQualityConfig | None = Field(None, description="Optional per-request tuning of the text-quality classifier")
     embedding_num_gpu: int | None = Field(None, ge=-1, le=999, description="Optional Ollama num_gpu override for this chunking run's embedding requests. Use -1 for auto/all GPU and 0 for CPU only.")
+    chunking_strategy: str = Field("semantic", description="Chunking strategy: 'semantic' uses embedding-based breakpoints, 'fixed_tokens' splits by configured token count")
+    fixed_tokens_per_chunk: int = Field(1024, ge=1, description="Target tokens per chunk when chunking_strategy is 'fixed_tokens'")
 
     @model_validator(mode='before')
     @classmethod

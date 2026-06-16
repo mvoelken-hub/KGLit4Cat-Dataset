@@ -1,4 +1,5 @@
-from typing import Awaitable, Callable
+from enum import Enum
+from typing import Awaitable, Callable, Literal
 import numpy as np
 from hashlib import sha256
 
@@ -25,6 +26,15 @@ from app.domain.token_budget import PromptTokenBudgeter
 _DEFAULT_MAX_TOKENS_PER_CHUNK = 1024
 _DEFAULT_MIN_TOKENS_PER_CHUNK = 128
 _DEFAULT_MAX_FILTERED_LINE_GAP = 32
+
+
+class ChunkingStrategy(str, Enum):
+    SEMANTIC = "semantic"
+    FIXED_TOKENS = "fixed_tokens"
+
+
+_DEFAULT_CHUNKING_STRATEGY = ChunkingStrategy.SEMANTIC
+_DEFAULT_FIXED_TOKENS_PER_CHUNK = 1024
 
 
 @dataclass
@@ -83,11 +93,14 @@ class ContentChunk(BaseModel):
         min_tokens_per_chunk: int = _DEFAULT_MIN_TOKENS_PER_CHUNK,
         max_filtered_line_gap: int = _DEFAULT_MAX_FILTERED_LINE_GAP,
         token_budgeter: PromptTokenBudgeter | None = None,
+        chunking_strategy: ChunkingStrategy | Literal["semantic", "fixed_tokens"] = _DEFAULT_CHUNKING_STRATEGY,
+        fixed_tokens_per_chunk: int = _DEFAULT_FIXED_TOKENS_PER_CHUNK,
     ) -> list["ContentChunk"]:
+        chunking_strategy = ChunkingStrategy(chunking_strategy) if isinstance(chunking_strategy, str) else chunking_strategy
         token_budgeter = token_budgeter or PromptTokenBudgeter()
-        
+
         chunk_list: list[ContentChunk] = []
-        
+
         lines: list[str] = file_entry.get_extracted_content().splitlines(keepends=True)
 
         filtered_lines: list[FilteredLine] = [
@@ -112,6 +125,26 @@ class ContentChunk(BaseModel):
 
         if not filtered_lines:
             return []
+
+        if chunking_strategy == ChunkingStrategy.FIXED_TOKENS:
+            fixed_chunks = cls._build_fixed_token_chunks(
+                filtered_lines,
+                data_package_id=data_package_id,
+                file_path=file_entry.file_path,
+                fixed_tokens_per_chunk=fixed_tokens_per_chunk,
+                token_budgeter=token_budgeter,
+            )
+            return cls._post_process_chunks(
+                fixed_chunks,
+                filtered_lines=filtered_lines,
+                data_package_id=data_package_id,
+                file_path=file_entry.file_path,
+                max_tokens_per_chunk=fixed_tokens_per_chunk,
+                min_tokens_per_chunk=min_tokens_per_chunk,
+                max_filtered_line_gap=max_filtered_line_gap,
+                token_budgeter=token_budgeter,
+                boundary_distances={},
+            )
 
         if len(filtered_lines) < min_lines_for_chunking:
             single_chunk = cls(
@@ -142,7 +175,7 @@ class ContentChunk(BaseModel):
                 max_filtered_line_gap=max_filtered_line_gap,
                 token_budgeter=token_budgeter,
             )
-        
+
         combined_lines = combine_lines(
             filtered_lines,
             buffer_size=buffer_window_size
@@ -211,6 +244,52 @@ class ContentChunk(BaseModel):
             token_budgeter=token_budgeter,
             boundary_distances=boundary_distances,
         )
+
+    @classmethod
+    def _build_fixed_token_chunks(
+        cls,
+        filtered_lines: list[FilteredLine],
+        *,
+        data_package_id: str,
+        file_path: str,
+        fixed_tokens_per_chunk: int,
+        token_budgeter: PromptTokenBudgeter,
+    ) -> list["ContentChunk"]:
+        if not filtered_lines:
+            return []
+        chunks: list[ContentChunk] = []
+        window: list[FilteredLine] = []
+        window_tokens = 0
+        for line in filtered_lines:
+            line_tokens = token_budgeter.count(line.text)
+            if window and window_tokens + line_tokens > fixed_tokens_per_chunk:
+                chunks.append(cls._chunk_from_filtered_lines(
+                    window,
+                    data_package_id=data_package_id,
+                    file_path=file_path,
+                    operations=["fixed_token_split"],
+                ))
+                window = []
+                window_tokens = 0
+            window.append(line)
+            window_tokens += line_tokens
+            if line_tokens > fixed_tokens_per_chunk:
+                chunks.append(cls._chunk_from_filtered_lines(
+                    window,
+                    data_package_id=data_package_id,
+                    file_path=file_path,
+                    operations=["fixed_token_split"],
+                ))
+                window = []
+                window_tokens = 0
+        if window:
+            chunks.append(cls._chunk_from_filtered_lines(
+                window,
+                data_package_id=data_package_id,
+                file_path=file_path,
+                operations=["fixed_token_split"],
+            ))
+        return chunks
 
     @classmethod
     def _split_chunks_by_token_budget(

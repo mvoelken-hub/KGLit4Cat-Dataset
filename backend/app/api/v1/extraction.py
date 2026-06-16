@@ -271,6 +271,15 @@ async def run_complete_workflow(
         le=100.0,
         description="Threshold for semantic chunking quality (0-100).",
     ),
+    chunking_strategy: str = Form(
+        default="semantic",
+        description="Chunking strategy: 'semantic' uses embedding-based breakpoints, 'fixed_tokens' splits by configured token count.",
+    ),
+    fixed_tokens_per_chunk: int = Form(
+        default=1024,
+        ge=1,
+        description="Target tokens per chunk when chunking_strategy is 'fixed_tokens'.",
+    ),
     replace_existing_chunks: bool = Form(
         default=False,
         description="Replace previously persisted chunks for a package with the same deterministic id.",
@@ -306,6 +315,8 @@ async def run_complete_workflow(
             qualitative_vocab_identifiers=vocab_identifiers,
             buffer_window_size=buffer_window_size,
             semantic_chunking_threshold=semantic_chunking_threshold,
+            chunking_strategy=chunking_strategy,
+            fixed_tokens_per_chunk=fixed_tokens_per_chunk,
             replace_existing_chunks=replace_existing_chunks,
             resume=resume,
             force_rerun=force_rerun,

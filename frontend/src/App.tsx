@@ -3640,7 +3640,7 @@ export function App() {
     }
   }
 
-  async function onChunk(params?: { replace_existing_chunks: boolean; buffer_window_size: number; semantic_chunking_threshold: number; protected_line_indices: Record<string, number[]>; text_quality_config: TextQualityConfig; embedding_num_gpu?: number }) {
+  async function onChunk(params?: { replace_existing_chunks: boolean; buffer_window_size: number; semantic_chunking_threshold: number; chunking_strategy: 'semantic' | 'fixed_tokens'; fixed_tokens_per_chunk: number; protected_line_indices: Record<string, number[]>; text_quality_config: TextQualityConfig; embedding_num_gpu?: number }) {
     if (!selectedPackageId) return;
     const packageId = selectedPackageId;
     setBusy('chunk');
@@ -3650,6 +3650,8 @@ export function App() {
         replace_existing_chunks: params?.replace_existing_chunks ?? false,
         buffer_window_size: params?.buffer_window_size,
         semantic_chunking_threshold: params?.semantic_chunking_threshold,
+        chunking_strategy: params?.chunking_strategy,
+        fixed_tokens_per_chunk: params?.fixed_tokens_per_chunk,
         protected_line_indices: params?.protected_line_indices,
         text_quality_config: params?.text_quality_config,
         embedding_num_gpu: params?.embedding_num_gpu,
