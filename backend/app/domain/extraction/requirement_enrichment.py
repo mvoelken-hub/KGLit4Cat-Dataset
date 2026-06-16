@@ -20,6 +20,7 @@ class DcatRequirement(BaseModel):
     target_paths: list[str] = Field(default_factory=list)
     expected_target_class: str | None = None
     evidence_hints: list[str] = Field(default_factory=list)
+    allow_not_applicable: bool = False
 
 
 class RequirementAssessment(BaseModel):
@@ -180,6 +181,7 @@ DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS: tuple[DcatRequirement, ...] = (
 REQUIREMENT_EVALUATOR_SYSTEM_PROMPT = """
 You evaluate DCAT-AP+ scientific metadata completeness for one Dataset draft.
 Return only JSON matching the supplied schema.
+Return exactly one assessment for every supplied requirement_id. Do not omit requirements.
 Assess applicability and quality, not JSON Schema validity.
 Use statuses: fulfilled, partial, missing, not_applicable.
 quality must be 1 for fulfilled, 0.5 for partial, 0 for missing/not_applicable.
@@ -240,6 +242,7 @@ def build_requirement_patch_prompt(
 
 
 def score_requirement_report(items: list[RequirementReportItem], *, schema_valid: bool = True) -> RequirementReport:
+    _score_source_trace(items)
     applicable = [item for item in items if item.applicable and item.status != "not_applicable"]
     applicable_weight = sum(item.weight for item in applicable)
     earned_weight = sum(max(0.0, min(1.0, item.quality)) * item.weight for item in applicable)
@@ -255,11 +258,63 @@ def score_requirement_report(items: list[RequirementReportItem], *, schema_valid
     )
 
 
+def normalized_requirement_evaluation(
+    *,
+    requirements: list[DcatRequirement],
+    evaluation: RequirementEvaluation,
+) -> RequirementEvaluation:
+    by_id: dict[str, RequirementAssessment] = {}
+    for assessment in evaluation.assessments:
+        if assessment.requirement_id in by_id:
+            continue
+        by_id[assessment.requirement_id] = _normalized_assessment(assessment)
+    normalized: list[RequirementAssessment] = []
+    for requirement in requirements:
+        assessment = by_id.get(requirement.requirement_id)
+        if assessment is None:
+            assessment = RequirementAssessment(
+                requirement_id=requirement.requirement_id,
+                status="missing",
+                quality=0.0,
+                applicable=True,
+                rationale="Requirement evaluator did not return this requirement.",
+                target_paths=requirement.target_paths,
+                evidence_search_hints=requirement.evidence_hints,
+                expected_target_class=requirement.expected_target_class,
+            )
+        elif assessment.status == "not_applicable" and not requirement.allow_not_applicable:
+            assessment = RequirementAssessment(
+                requirement_id=requirement.requirement_id,
+                status="missing",
+                quality=0.0,
+                applicable=True,
+                rationale=(
+                    "Requirement evaluator marked this core DCAT-AP+ scientific requirement "
+                    "not_applicable; treated as missing because v1 requirements are applicable by default."
+                ),
+                target_paths=assessment.target_paths or requirement.target_paths,
+                evidence_search_hints=assessment.evidence_search_hints or requirement.evidence_hints,
+                expected_target_class=assessment.expected_target_class or requirement.expected_target_class,
+            )
+        if not assessment.target_paths:
+            assessment.target_paths = list(requirement.target_paths)
+        if not assessment.evidence_search_hints:
+            assessment.evidence_search_hints = list(requirement.evidence_hints)
+        if not assessment.expected_target_class:
+            assessment.expected_target_class = requirement.expected_target_class
+        normalized.append(assessment)
+    return RequirementEvaluation(assessments=normalized)
+
+
 def report_items_from_evaluation(
     *,
     requirements: list[DcatRequirement],
     evaluation: RequirementEvaluation,
 ) -> list[RequirementReportItem]:
+    evaluation = normalized_requirement_evaluation(
+        requirements=requirements,
+        evaluation=evaluation,
+    )
     by_id = {item.requirement_id: item for item in evaluation.assessments}
     items: list[RequirementReportItem] = []
     for req in requirements:
@@ -344,6 +399,68 @@ def assessment_for_report_item(item: RequirementReportItem) -> RequirementAssess
         target_paths=item.target_paths,
         evidence_search_hints=item.evidence_search_hints,
     )
+
+
+def merge_requirement_assessment(
+    *,
+    item: RequirementReportItem,
+    assessment: RequirementAssessment,
+    requirement: DcatRequirement,
+) -> RequirementReportItem:
+    assessment = _normalized_assessment(assessment)
+    status: RequirementStatus = assessment.status
+    applicable = bool(assessment.applicable) and status != "not_applicable"
+    quality = 0.0 if status == "not_applicable" else max(0.0, min(1.0, assessment.quality))
+    item.status = status
+    item.applicable = applicable
+    item.quality = quality
+    item.weighted_score = requirement.weight * quality if applicable else 0.0
+    item.rationale = assessment.rationale
+    item.target_paths = assessment.target_paths or requirement.target_paths
+    item.evidence_search_hints = assessment.evidence_search_hints or requirement.evidence_hints
+    return item
+
+
+def _normalized_assessment(assessment: RequirementAssessment) -> RequirementAssessment:
+    status = assessment.status
+    if status == "fulfilled":
+        quality = 1.0
+        applicable = True
+    elif status == "partial":
+        quality = 0.5
+        applicable = bool(assessment.applicable)
+    elif status == "not_applicable":
+        quality = 0.0
+        applicable = False
+    else:
+        quality = 0.0
+        applicable = bool(assessment.applicable)
+    assessment.status = status
+    assessment.quality = quality
+    assessment.applicable = applicable
+    return assessment
+
+
+def _score_source_trace(items: list[RequirementReportItem]) -> None:
+    trace = next((item for item in items if item.requirement_id == "source_trace"), None)
+    if trace is None or not trace.applicable:
+        return
+    traceable = [
+        item
+        for item in items
+        if item.requirement_id != "source_trace"
+        and item.applicable
+        and item.status in {"fulfilled", "partial"}
+        and item.selected_evidence
+    ]
+    if traceable:
+        trace.status = "fulfilled"
+        trace.quality = 1.0
+        trace.rationale = "Fulfilled semantic requirements include selected evidence packets in requirement_report.json."
+    else:
+        trace.status = "missing"
+        trace.quality = 0.0
+        trace.rationale = trace.rationale or "No fulfilled semantic requirement has selected evidence yet."
 
 
 def _candidate_search_text(candidate: EvidenceCandidate) -> str:

@@ -150,8 +150,8 @@
     "semantic_hash": "a7523bdcf94736a02af78a36c8de9688"
   },
   "backend/app/domain/extraction/__init__.py": {
-    "mtime": 1781599397.2941048,
-    "ast_hash": "f926b0eb076ea31de3de6ce0562094c1",
+    "mtime": 1781602130.7618568,
+    "ast_hash": "142dfe86ac164917a3154905d0725da5",
     "semantic_hash": ""
   },
   "backend/app/domain/extraction/extraction_context.py": {
@@ -320,8 +320,8 @@
     "semantic_hash": "fb99458348a438519f9cd27df37fab70"
   },
   "backend/app/services/extraction_service.py": {
-    "mtime": 1781600185.6840725,
-    "ast_hash": "9101596746e04139a7cab7215b73efca",
+    "mtime": 1781603117.4177556,
+    "ast_hash": "9a52b8e5b57b511790c5e2c64acefe31",
     "semantic_hash": ""
   },
   "backend/app/services/profile_service.py": {
@@ -820,13 +820,13 @@
     "semantic_hash": ""
   },
   "backend/app/domain/extraction/requirement_enrichment.py": {
-    "mtime": 1781599752.7934866,
-    "ast_hash": "f40f39bb29502d36b8dc0fde872c80a2",
+    "mtime": 1781602433.773337,
+    "ast_hash": "d157998e8a2fe874bed20042135999a0",
     "semantic_hash": ""
   },
   "backend/tests/test_requirement_enrichment.py": {
-    "mtime": 1781599611.8403983,
-    "ast_hash": "f41bee9c7f411c19a9adb6f30845eac7",
+    "mtime": 1781603132.5743399,
+    "ast_hash": "06ef557fc857031f3e0d0276f55fe256",
     "semantic_hash": ""
   }
 }

@@ -53,6 +53,8 @@ from app.domain.extraction import (
     build_requirement_evaluation_prompt,
     build_requirement_patch_prompt,
     builder_output_model_for_target,
+    merge_requirement_assessment,
+    normalized_requirement_evaluation,
     report_items_from_evaluation,
     route_evidence_note_to_target,
     score_requirement_report,
@@ -4313,8 +4315,6 @@ class ExtractionService:
         requirements_by_id = {item.requirement_id: item for item in requirements}
 
         for item in report_items:
-            if item.status not in {"missing", "partial"} or not item.applicable:
-                continue
             requirement = requirements_by_id[item.requirement_id]
             selected_evidence, context_window = select_requirement_evidence_packet(
                 requirement=requirement,
@@ -4323,6 +4323,8 @@ class ExtractionService:
             )
             item.selected_evidence = selected_evidence
             item.context_window = context_window
+            if item.status not in {"missing", "partial"} or not item.applicable:
+                continue
             if not selected_evidence:
                 item.patch = RequirementPatchAttempt(
                     attempted=True,
@@ -4341,6 +4343,26 @@ class ExtractionService:
             item.patch = patch_attempt
             state.generated_final_draft = document
             progress.generated_final_draft = document
+            if patch_attempt.status == "applied":
+                refreshed_evaluation = await self._evaluate_dcat_requirements(
+                    data_package_id=data_package_id,
+                    document=document,
+                    requirements=[requirement],
+                )
+                refreshed_by_id = {
+                    assessment.requirement_id: assessment
+                    for assessment in refreshed_evaluation.assessments
+                }
+                refreshed = refreshed_by_id.get(item.requirement_id)
+                if refreshed is not None:
+                    merge_requirement_assessment(
+                        item=item,
+                        assessment=refreshed,
+                        requirement=requirement,
+                    )
+                    item.patch = patch_attempt
+                    item.selected_evidence = selected_evidence
+                    item.context_window = context_window
             report = score_requirement_report(
                 report_items,
                 schema_valid=state.validation.status == "valid",
@@ -4406,8 +4428,13 @@ class ExtractionService:
                 agent_name="metadata_completeness_evaluator",
             )
             if isinstance(result.output, RequirementEvaluation):
-                return result.output
-            return RequirementEvaluation.model_validate(result.output)
+                evaluation = result.output
+            else:
+                evaluation = RequirementEvaluation.model_validate(result.output)
+            return normalized_requirement_evaluation(
+                requirements=requirements,
+                evaluation=evaluation,
+            )
         except (CompletionError, ValidationError) as exc:
             self._record_llm_call_exception(
                 data_package_id=data_package_id,
@@ -4514,18 +4541,50 @@ class ExtractionService:
                 ),
             )
         target_class = patch.target_class or target_class
+        patch.instance = self._sanitize_requirement_patch_instance(
+            instance=patch.instance,
+            target_class=target_class,
+            target_path=target_path,
+            item=item,
+        )
+        duplicate_reason = self._duplicate_requirement_patch_reason(
+            document=document,
+            target_path=target_path,
+            instance=patch.instance,
+        )
+        if duplicate_reason:
+            return (
+                document,
+                RequirementPatchAttempt(
+                    attempted=True,
+                    status="failed",
+                    target_path=target_path,
+                    target_class=target_class,
+                    reason=duplicate_reason,
+                ),
+            )
         schema_branch = self._compact_schema_branch_for_target(
             validation_schema=validation_schema,
             target_path=target_path,
         )
         original = self._clone_json_object(document)
         try:
+            appended_index = None
+            if target_path.endswith("/-"):
+                existing_array = self._value_at_json_pointer(document, target_path[:-2])
+                appended_index = len(existing_array) if isinstance(existing_array, list) else 0
             updated = apply_evidence_instance(
                 document=document,
                 target_path=target_path,
                 instance=patch.instance,
                 data_package_id=data_package_id,
                 target_schema=schema_branch,
+            )
+            self._strip_requirement_patch_forbidden_fields(
+                document=updated,
+                target_path=target_path,
+                target_class=target_class,
+                appended_index=appended_index,
             )
         except ValueError as exc:
             return (
@@ -4564,6 +4623,226 @@ class ExtractionService:
                 reason="Requirement patch failed profile validation; restored previous draft.",
             ),
         )
+
+    @classmethod
+    def _strip_requirement_patch_forbidden_fields(
+        cls,
+        *,
+        document: dict[str, Any],
+        target_path: str,
+        target_class: str,
+        appended_index: int | None,
+    ) -> None:
+        actual_path = target_path
+        if target_path.endswith("/-") and appended_index is not None:
+            actual_path = f"{target_path[:-2]}/{appended_index}"
+        value = cls._value_at_json_pointer(document, actual_path)
+        if not isinstance(value, dict):
+            return
+        if target_class == "Plan" or actual_path.endswith("/realized_plan"):
+            value.pop("id", None)
+            value.pop("identifier", None)
+            value.pop("was_generated_by", None)
+            return
+        if target_class == "QuantitativeAttribute" or "/has_quantitative_attribute/" in actual_path:
+            value.pop("id", None)
+            value.pop("source", None)
+
+    @classmethod
+    def _sanitize_requirement_patch_instance(
+        cls,
+        *,
+        instance: dict[str, Any],
+        target_class: str,
+        target_path: str,
+        item: Any,
+    ) -> dict[str, Any]:
+        if target_class == "Plan" or target_path.endswith("/realized_plan"):
+            return cls._sanitize_plan_patch_instance(instance)
+        if target_class == "QuantitativeAttribute" or "/has_quantitative_attribute/" in target_path:
+            return cls._sanitize_quantitative_attribute_patch_instance(instance, item)
+        return instance
+
+    @staticmethod
+    def _sanitize_plan_patch_instance(instance: dict[str, Any]) -> dict[str, Any]:
+        sanitized: dict[str, Any] = {}
+        title = instance.get("title")
+        if isinstance(title, list):
+            title = " ".join(str(part) for part in title if str(part).strip())
+        if title:
+            sanitized["title"] = str(title)
+        description = instance.get("description")
+        if isinstance(description, list):
+            description = " ".join(str(part) for part in description if str(part).strip())
+        if description:
+            sanitized["description"] = str(description)
+        for field in ("type", "rdf_type"):
+            value = instance.get(field)
+            if isinstance(value, dict):
+                sanitized[field] = {
+                    key: value[key]
+                    for key in ("id", "title")
+                    if key in value and value[key]
+                }
+            elif isinstance(value, str) and value.strip():
+                sanitized[field] = {"title": value.strip()}
+        return sanitized
+
+    @classmethod
+    def _sanitize_quantitative_attribute_patch_instance(
+        cls,
+        instance: dict[str, Any],
+        item: Any,
+    ) -> dict[str, Any]:
+        evidence_text = " ".join(
+            str(getattr(entry, "claim", "")) + " " + str(getattr(entry, "evidence_text", ""))
+            for entry in list(getattr(item, "selected_evidence", []) or [])
+        )
+        sanitized: dict[str, Any] = {}
+        title = instance.get("title")
+        if isinstance(title, list):
+            title = " ".join(str(part) for part in title if str(part).strip())
+        if title:
+            sanitized["title"] = str(title)
+        description = instance.get("description")
+        if isinstance(description, list):
+            description = " ".join(str(part) for part in description if str(part).strip())
+        if description:
+            sanitized["description"] = str(description)
+        value = cls._first_number(instance.get("value"))
+        if value is None:
+            value = cls._first_number(evidence_text)
+        if value is not None:
+            sanitized["value"] = value
+        quantity_type = instance.get("has_quantity_type")
+        if isinstance(quantity_type, dict):
+            quantity_type = quantity_type.get("title") or quantity_type.get("id")
+        if not isinstance(quantity_type, str) or not quantity_type.strip():
+            quantity_type = cls._infer_quantity_type(" ".join([str(title or ""), str(description or ""), evidence_text]))
+        if quantity_type:
+            sanitized["has_quantity_type"] = str(quantity_type).strip()
+        unit = instance.get("unit")
+        if isinstance(unit, dict):
+            unit = unit.get("title") or unit.get("id")
+        if not isinstance(unit, str) or not unit.strip():
+            unit = cls._infer_quantity_unit(
+                " ".join([str(title or ""), str(description or ""), str(instance.get("value") or ""), evidence_text])
+            )
+        if unit:
+            sanitized["unit"] = str(unit).strip()
+        for field in ("type", "rdf_type"):
+            value_obj = instance.get(field)
+            if isinstance(value_obj, dict):
+                sanitized[field] = {
+                    key: value_obj[key]
+                    for key in ("id", "title")
+                    if key in value_obj and value_obj[key]
+                }
+            elif isinstance(value_obj, str) and value_obj.strip():
+                sanitized[field] = {"title": value_obj.strip()}
+        return sanitized
+
+    @staticmethod
+    def _first_number(value: Any) -> float | None:
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            match = re.search(r"[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?", value)
+            if match:
+                return float(match.group(0))
+        return None
+
+    @staticmethod
+    def _infer_quantity_type(text: str) -> str | None:
+        lowered = text.lower()
+        quantity_hints = [
+            ("temperature", "temperature"),
+            ("frequency", "frequency"),
+            ("spectral width", "spectral width"),
+            ("width", "width"),
+            ("data points", "data points"),
+            ("points", "data points"),
+            ("threshold", "threshold"),
+            ("flip angle", "flip angle"),
+            ("relaxation delay", "relaxation delay"),
+        ]
+        for needle, quantity_type in quantity_hints:
+            if needle in lowered:
+                return quantity_type
+        return "measured quantity"
+
+    @staticmethod
+    def _infer_quantity_unit(text: str) -> str | None:
+        lowered = text.lower()
+        unit_hints = [
+            ("mhz", "MHz"),
+            (" hz", "Hz"),
+            ("kelvin", "K"),
+            (" k", "K"),
+            ("milliseconds", "ms"),
+            (" ms", "ms"),
+            ("ppm", "ppm"),
+            ("degree", "degree"),
+            ("points", "points"),
+        ]
+        for needle, unit in unit_hints:
+            if needle in lowered:
+                return unit
+        return None
+
+    @classmethod
+    def _duplicate_requirement_patch_reason(
+        cls,
+        *,
+        document: dict[str, Any],
+        target_path: str,
+        instance: dict[str, Any],
+    ) -> str | None:
+        if not target_path.endswith("/-"):
+            existing = cls._value_at_json_pointer(document, target_path)
+            if isinstance(existing, dict) and cls._instances_semantically_equal(existing, instance):
+                return f"Requirement patch duplicates existing object at {target_path}."
+            return None
+        parent_path = target_path[:-2]
+        existing_items = cls._value_at_json_pointer(document, parent_path)
+        if not isinstance(existing_items, list):
+            return None
+        for existing in existing_items:
+            if isinstance(existing, dict) and cls._instances_semantically_equal(existing, instance):
+                return f"Requirement patch duplicates existing object at {parent_path}."
+        return None
+
+    @classmethod
+    def _instances_semantically_equal(
+        cls,
+        left: dict[str, Any],
+        right: dict[str, Any],
+    ) -> bool:
+        left_id = left.get("id")
+        right_id = right.get("id")
+        if left_id and right_id and str(left_id).strip() == str(right_id).strip():
+            return True
+        left_sig = cls._instance_semantic_signature(left)
+        right_sig = cls._instance_semantic_signature(right)
+        return bool(left_sig and left_sig == right_sig)
+
+    @staticmethod
+    def _instance_semantic_signature(instance: dict[str, Any]) -> tuple[str, str] | None:
+        title = instance.get("title")
+        if isinstance(title, list):
+            title_value = " ".join(str(part) for part in title)
+        else:
+            title_value = str(title or "")
+        type_value = instance.get("type") or instance.get("rdf_type")
+        if isinstance(type_value, dict):
+            type_text = str(type_value.get("id") or type_value.get("title") or "")
+        else:
+            type_text = str(type_value or "")
+        normalized_title = re.sub(r"\s+", " ", title_value).strip().lower()
+        normalized_type = re.sub(r"\s+", " ", type_text).strip().lower()
+        if not normalized_title:
+            return None
+        return (normalized_title, normalized_type)
 
     @staticmethod
     def _parent_excerpt_path(target_path: str) -> str:
