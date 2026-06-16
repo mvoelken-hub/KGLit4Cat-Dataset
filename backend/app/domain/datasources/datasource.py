@@ -48,7 +48,7 @@ class DataPackage(BaseModel):
     @property
     def id(self) -> str:
         hash_input = self.file_name + "".join(self.get_file_path_list())
-        return sha256(hash_input.encode()).hexdigest()
+        return sha256(hash_input.encode()).hexdigest()[:8]
 
     @classmethod
     def from_bytes(cls, data: BytesIO, file_name: str, root_path: str = "") -> "DataPackage":
