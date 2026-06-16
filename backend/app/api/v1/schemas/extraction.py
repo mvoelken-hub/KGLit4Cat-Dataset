@@ -31,6 +31,13 @@ class ExtractionRunRequest(BaseModel):
         default=False,
         description="Resume from persisted extraction context state instead of clearing previous partial results.",
     )
+    force_profile_rebuild: bool = Field(
+        default=False,
+        description=(
+            "When resuming to a profile stage, clear generated draft/projection artifacts "
+            "and rebuild the machine profile draft from persisted evidence."
+        ),
+    )
     target_stage: Literal["context", "profile", "grounding", "complete"] = Field(
         default="complete",
         description="Workflow stage to run up to.",

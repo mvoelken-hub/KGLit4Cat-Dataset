@@ -2036,10 +2036,20 @@ function ProjectionWorkflowPanel({
   tokenUsageSummary?: ReactNode;
 }) {
   const evidenceNoteTotal = evidenceContextNoteCount(progress?.interim_evidence_context);
-  const processedEvidenceIds = new Set(ledger.flatMap((record) => record.evidence_note_identifiers ?? []));
-  const processedCount = processedEvidenceIds.size || ledger.length;
+  const projectionRunning = (progress?.stage || status) === 'profile_projection';
+  const groupLedger = ledger.filter((record) => record.object_kind === 'InstanceProjectionGroup');
+  const pendingGroupRecords = groupLedger.filter((record) => record.status === 'pending');
+  const runningRecords = ledger.filter((record) => record.status === 'running');
+  const completedLedger = ledger.filter((record) => record.status !== 'running' && record.status !== 'pending');
+  const completedGroupRecords = groupLedger.filter((record) => record.status !== 'running' && record.status !== 'pending');
+  const processedEvidenceIds = new Set(completedLedger.flatMap((record) => record.evidence_note_identifiers ?? []));
+  const processedCount = processedEvidenceIds.size || completedLedger.length;
   const totalCount = Math.max(evidenceNoteTotal, processedCount);
   const pendingCount = Math.max(0, totalCount - processedCount);
+  const groupTotal = groupLedger.length;
+  const groupDone = completedGroupRecords.length;
+  const groupPercent = groupTotal ? Math.min(100, Math.round((groupDone / groupTotal) * 100)) : projectionRunning ? 8 : 0;
+  const activeRecord = runningRecords[0] ?? pendingGroupRecords[0] ?? null;
   const scaffoldEntries = progress?.initial_draft_scaffold?.entries ?? [];
   const projectedRecords = ledger.filter((record) => record.status === 'projected');
   const attentionRecords = ledger.filter((record) => record.status !== 'projected');
@@ -2048,7 +2058,6 @@ function ProjectionWorkflowPanel({
   const descriptionPathCount = projectedRecords.reduce((sum, record) => (
     sum + record.projected_paths.filter((path) => projectionPathBucket(path) === '/description').length
   ), 0);
-  const progressPercent = totalCount ? Math.min(100, Math.round((processedCount / totalCount) * 100)) : 0;
   const pathBuckets = Array.from(projectedRecords.reduce((map, record) => {
     const paths = record.projected_paths.length ? record.projected_paths : ['No profile path'];
     paths.forEach((path) => {
@@ -2069,11 +2078,26 @@ function ProjectionWorkflowPanel({
           <strong>{formatExtractionStage(progress?.stage || status || 'not started')}</strong>
         </div>
         <div>
-          <span>{processedCount}/{totalCount || 0}</span>
-          <strong>{pendingCount} pending</strong>
+          <span>{groupTotal ? `${groupDone}/${groupTotal} groups` : `${processedCount}/${totalCount || 0}`}</span>
+          <strong>{groupTotal ? `${Math.max(0, groupTotal - groupDone)} queued` : `${pendingCount} pending`}</strong>
         </div>
       </div>
-      <div className="patch-progress-track" aria-hidden="true"><div style={{ width: `${progressPercent}%` }} /></div>
+      <div className={`patch-progress-track ${projectionRunning && !groupDone ? 'indeterminate' : ''}`} aria-hidden="true"><div style={{ width: `${groupPercent}%` }} /></div>
+      {projectionRunning && !groupTotal && (
+        <p className="projection-sink-note active">
+          Projection engine running. Preparing group plan; first update arrives after planner publishes queued groups.
+        </p>
+      )}
+      {activeRecord && (
+        <p className="projection-sink-note active">
+          {activeRecord.status === 'running' ? 'Building' : 'Next'} {activeRecord.target_class || 'profile'} at <code>{activeRecord.target_path || '/'}</code>
+        </p>
+      )}
+      {groupTotal > 0 && (
+        <p className="projection-sink-note compact">
+          Evidence coverage: {processedCount}/{totalCount || 0} notes resolved, {pendingCount} pending.
+        </p>
+      )}
       {scaffoldEntries.length > 0 && (
         <p className="projection-sink-note">
           Initial draft: {scaffoldEntries.length} scaffold target{scaffoldEntries.length === 1 ? '' : 's'} prepared for projection.
@@ -2442,6 +2466,9 @@ const tokenUsageLabels: Record<string, string> = {
   quantity_vocab_selection: 'Quantity vocabulary',
   qualitative_vocab_selection: 'Qualitative vocabulary',
   profile_projection: 'Profile projection',
+  dataset_summary: 'Dataset summary',
+  dataset_level_projection: 'Dataset-level projection',
+  dataset_level_projection_repair: 'Dataset-level repair',
   profile_target_planner: 'Projection target planner',
   profile_target_writer: 'Projection target writer',
   profile_patch: 'Profile projection',
@@ -2521,6 +2548,9 @@ function TokenUsageSummary({
         'quantity_vocab_selection',
         'qualitative_vocab_selection',
         'profile_projection',
+        'dataset_summary',
+        'dataset_level_projection',
+        'dataset_level_projection_repair',
         'profile_target_planner',
         'profile_target_writer',
         'profile_patch',
@@ -3880,19 +3910,48 @@ export function App() {
       clearTimeout(saveCuratedDocumentTimeoutRef.current);
       saveCuratedDocumentTimeoutRef.current = null;
     }
+    if (isReplacingGeneratedDraft) {
+      setGeneratedFinalDraft(null);
+      setPatchProgress((current) => current ? {
+        ...current,
+        stage: 'profile_projection',
+        generated_final_draft: null,
+        draft_quality_state: null,
+        validation: { status: 'not_run', errors: [], warnings: [] },
+        curated_validation: null,
+        projection_ledger: [],
+        initial_draft_scaffold: {},
+        field_completion_ledger: [],
+        vocab_queries: [],
+        warnings: [],
+      } : current);
+    }
     setBusy('draft');
     try {
       const response = await runExtraction({
         data_package_id: selectedPackageId,
         profile_identifier: selectedProfile,
         resume: true,
+        force_profile_rebuild: isReplacingGeneratedDraft,
         target_stage: 'profile',
       });
       const nextGenerated = response.result?.generated_final_draft ?? response.progress?.generated_final_draft ?? null;
       setGeneratedFinalDraft(nextGenerated);
       setCuratedDocument(response.result?.curated_document ?? response.progress?.curated_document ?? curatedDocument ?? nextGenerated);
       setPatchStatus(response.status);
-      setPatchProgress(response.progress ? { ...response.progress } : null);
+      setPatchProgress(response.progress ? {
+        ...response.progress,
+        ...(isReplacingGeneratedDraft && response.status === 'running' ? {
+          generated_final_draft: null,
+          draft_quality_state: null,
+          validation: { status: 'not_run', errors: [], warnings: [] },
+          curated_validation: null,
+          projection_ledger: [],
+          initial_draft_scaffold: {},
+          field_completion_ledger: [],
+          vocab_queries: [],
+        } : {}),
+      } : null);
       setTokenUsage(await getTokenUsage(selectedPackageId));
       setMessage(
         mode === 'continue'
@@ -4432,7 +4491,15 @@ export function App() {
                       tokenUsage={tokenUsage}
                       averageUnit="operation"
                       heading="Projection token usage"
-                      agentKeys={['profile_target_planner', 'profile_target_writer', 'profile_patch', 'profile_projection']}
+                      agentKeys={[
+                        'dataset_summary',
+                        'dataset_level_projection',
+                        'dataset_level_projection_repair',
+                        'profile_target_planner',
+                        'profile_target_writer',
+                        'profile_patch',
+                        'profile_projection',
+                      ]}
                       budget={llmBudget}
                     />
                   )}

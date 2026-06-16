@@ -159,12 +159,18 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
             )
 
             repo.save_extraction_result(workflow_id=workflow_id, result=result)
+            repo.save_dataset_summary(
+                workflow_id=workflow_id,
+                summary="evaluated: dataset. generated_by: measurement.",
+                chat_model=chat_model,
+            )
             workflow_dir = repo._workflow_dir(workflow_id, chat_model)
 
             for name in [
                 "initial_extraction_overview.json",
                 "initial_file_summaries.json",
                 "generated_final_draft.json",
+                "dataset_summary.txt",
                 "curated_document.json",
                 "projection_ledger.json",
                 "field_completion_ledger.json",
@@ -201,6 +207,7 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
                 repo.load_extraction_result(workflow_id, chat_model)
             with self.assertRaises(FileNotFoundError):
                 repo.load_generated_final_draft(workflow_id, chat_model)
+            self.assertFalse((workflow_dir / "dataset_summary.txt").exists())
 
             repo.clear_extraction_run(workflow_id)
 

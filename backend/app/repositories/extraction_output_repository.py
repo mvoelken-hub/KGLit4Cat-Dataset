@@ -118,6 +118,15 @@ class ExtractionOutputRepository(Protocol):
     ) -> None:
         ...
 
+    def save_dataset_summary(
+        self,
+        *,
+        workflow_id: str,
+        summary: str,
+        chat_model: str | None = None,
+    ) -> None:
+        ...
+
     def load_generated_final_draft(
         self,
         workflow_id: str,

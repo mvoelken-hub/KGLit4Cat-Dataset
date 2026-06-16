@@ -98,6 +98,8 @@ DraftQualityState = Literal[
 ]
 DraftValidationStatus = Literal["valid", "invalid", "not_run"]
 ProjectionLedgerStatus = Literal[
+    "pending",
+    "running",
     "projected",
     "not_projected",
     "ambiguous",

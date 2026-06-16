@@ -480,6 +480,7 @@ textarea.json-editor-input { resize: vertical; min-height: 80px; }
 .patch-progress span { font-size: 0.86rem; color: var(--muted); }
 .patch-progress-track { height: 8px; margin-top: 10px; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; background: rgba(255, 255, 255, 0.72); }
 .patch-progress-track div { height: 100%; background: var(--accent); transition: width 160ms ease; }
+.patch-progress-track.indeterminate div { min-width: 72px; animation: progress-slide 1.2s ease-in-out infinite; }
 .patch-progress-summary { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .patch-progress-summary span { border: 1px solid var(--line); border-radius: 999px; padding: 0.35rem 0.6rem; background: rgba(255, 255, 255, 0.66); }
 .projection-workflow-panel { margin-top: 14px; padding: 14px; border: 1px solid rgba(99, 154, 0, 0.24); border-radius: 10px; background: rgba(248, 251, 244, 0.78); display: grid; gap: 10px; }
@@ -488,8 +489,16 @@ textarea.json-editor-input { resize: vertical; min-height: 80px; }
 .projection-workflow-heading span { color: var(--muted); font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; }
 .projection-workflow-heading strong { color: var(--ink); font-size: 0.94rem; }
 .projection-sink-note { margin: 0; padding: 8px 10px; border: 1px solid rgba(99, 154, 0, 0.24); border-radius: 8px; background: rgba(255, 255, 255, 0.68); color: var(--ink); font-size: 0.78rem; line-height: 1.4; }
+.projection-sink-note.active { border-color: rgba(31, 96, 142, 0.34); background: rgba(239, 247, 252, 0.9); }
+.projection-sink-note.compact { font-size: 0.72rem; color: var(--muted); }
 .projection-sink-note.warning { border-color: rgba(202, 116, 6, 0.48); background: rgba(255, 248, 234, 0.88); }
 .projection-sink-note code { font-size: 0.76rem; }
+
+@keyframes progress-slide {
+  0% { transform: translateX(-120%); }
+  50% { transform: translateX(220%); }
+  100% { transform: translateX(520%); }
+}
 .projection-path-distribution { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 8px; }
 .projection-path-distribution div { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, 0.66); }
 .projection-path-distribution span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 0.78rem; }

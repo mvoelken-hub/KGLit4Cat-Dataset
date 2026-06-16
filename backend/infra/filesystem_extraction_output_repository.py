@@ -43,6 +43,7 @@ INITIAL_FILE_SUMMARY_DIAGNOSTICS_FILE = "initial_file_summary_diagnostics.json"
 INITIAL_EXTRACTION_OVERVIEW_FILE = "initial_extraction_overview.json"
 INITIAL_EXTRACTION_OVERVIEW_DIAGNOSTIC_FILE = "initial_extraction_overview_diagnostic.json"
 GENERATED_FINAL_DRAFT_FILE = "generated_final_draft.json"
+DATASET_SUMMARY_FILE = "dataset_summary.txt"
 CURATED_DOCUMENT_FILE = "curated_document.json"
 PROJECTION_LEDGER_FILE = "projection_ledger.json"
 FIELD_COMPLETION_LEDGER_FILE = "field_completion_ledger.json"
@@ -291,6 +292,17 @@ class FileSystemExtractionOutputRepository:
         if not isinstance(payload, dict):
             raise ValueError("Generated final draft artifact is not a JSON object.")
         return payload
+
+    def save_dataset_summary(
+        self,
+        *,
+        workflow_id: str,
+        summary: str,
+        chat_model: str | None = None,
+    ) -> None:
+        path = self._workflow_dir(workflow_id, chat_model) / DATASET_SUMMARY_FILE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(summary, encoding="utf-8")
 
     def save_curated_document(
         self,
@@ -551,6 +563,7 @@ class FileSystemExtractionOutputRepository:
             FILTERED_EVIDENCE_NOTES_FILE,
             EXTRACTION_RESULT_FILE,
             GENERATED_FINAL_DRAFT_FILE,
+            DATASET_SUMMARY_FILE,
             CURATED_DOCUMENT_FILE,
             PROJECTION_LEDGER_FILE,
             FIELD_COMPLETION_LEDGER_FILE,

@@ -398,6 +398,7 @@ export async function runExtraction(input: {
   profile_identifier?: string | null;
   qualitative_vocab_identifiers?: string[] | null;
   resume?: boolean;
+  force_profile_rebuild?: boolean;
   target_stage?: ExtractionTargetStage;
   chunk_repair_mode?: ChunkRepairMode;
   evidence_critic_granularity?: EvidenceCriticGranularity;

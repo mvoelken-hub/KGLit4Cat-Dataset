@@ -126,6 +126,7 @@ async def run_extraction(
             profile_identifier=request.profile_identifier,
             qualitative_vocab_identifiers=request.qualitative_vocab_identifiers,
             resume=request.resume,
+            force_profile_rebuild=request.force_profile_rebuild,
             target_stage=request.target_stage,
             chunk_repair_mode=request.chunk_repair_mode,
             evidence_critic_granularity=request.evidence_critic_granularity,

@@ -73,7 +73,7 @@ _ESTIMATED_CHARS_PER_TOKEN = 4
 # example additions, the per-request `format` parameter, and Ollama's own
 # tokenization overhead. The ratio used to be 0.75 which left no headroom
 # for the 73 KB dcat-ap-plus schema on a 32K-token context.
-_OUTPUT_CONTEXT_RESERVATION_RATIO = 0.25
+_OUTPUT_CONTEXT_RESERVATION_RATIO = 0.40
 _MIN_OUTPUT_CONTEXT_RESERVATION_TOKENS = 768
 _MAX_SCHEMA_EXAMPLE_DEPTH = 50
 _MAX_FAILED_RESPONSE_CHARS_FOR_REPAIR = 6000

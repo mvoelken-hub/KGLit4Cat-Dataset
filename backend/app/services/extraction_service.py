@@ -78,12 +78,10 @@ from app.domain.extraction import (
     ProfileObjectPatchResult,
     PromptTokenBudgeter,
     SchemaBranch,
-    HYBRID_CLASS_DECIDER_SYSTEM_PROMPT,
-    HYBRID_INSTANCE_BUILDER_SYSTEM_PROMPT,
-    InstanceProjectionGroup,
-    ProjectedInstance,
-    ProjectionClassDecision,
-    ProjectionInstanceWriteDocument,
+    DATASET_LEVEL_PROJECTION_SYSTEM_PROMPT,
+    DATASET_SUMMARY_SYSTEM_PROMPT,
+    DatasetSummaryProjection,
+    ShallowDatasetLevelProjection,
     ProjectionLedgerRecord,
     QualitativeAttribute,
     QualitativeAttributeNormalization,
@@ -94,6 +92,8 @@ from app.domain.extraction import (
     VocabularyCandidateSelection,
     VocabularyFallbackQuery,
     VocabularyTermMapping,
+    build_dataset_level_projection_prompt_components,
+    build_dataset_summary_prompt_components,
     build_evidence_critic_prompt_components,
     build_evidence_context_prompt,
     build_evidence_context_prompt_components,
@@ -113,12 +113,14 @@ from app.domain.extraction import (
     build_fallback_query_prompt_components,
     build_object_grounding_selection_prompt,
     build_object_grounding_selection_prompt_components,
-    ambiguous_candidates,
-    assemble_hybrid_dataset_projection,
-    build_class_decision_prompt_components,
-    build_instance_builder_prompt_components,
-    instance_builder_output_schema,
-    prepare_hybrid_projection,
+    ShallowDatasetProjection,
+    dataset_level_to_shallow_projection,
+    deterministic_grouped_distributions,
+    overview_projection_record,
+    overview_projection_repair_record,
+    projection_stage_record,
+    shallow_projection_to_dcat_document,
+    shallow_required_skeleton,
     build_schema_branch_index,
     build_schema_search_query,
     build_qualitative_vocab_query,
@@ -392,6 +394,7 @@ class ExtractionService:
         profile_identifier: str | None = None,
         qualitative_vocab_identifiers: list[str] | None = None,
         resume: bool = False,
+        force_profile_rebuild: bool = False,
         target_stage: ExtractionTargetStage = "complete",
         chunk_repair_mode: ChunkRepairMode = "deferred",
         evidence_critic_granularity: EvidenceCriticGranularity = "per_chunk",
@@ -424,7 +427,7 @@ class ExtractionService:
             return self._load_result_or_none(data_package_id), TaskStatus.RUNNING
         if task_info is not None and task_info.status == TaskStatus.COMPLETED:
             result = self._load_result_or_none(data_package_id)
-            if result is not None and resume:
+            if result is not None and resume and not force_profile_rebuild:
                 return result, TaskStatus.COMPLETED
 
         if not resume:
@@ -436,6 +439,7 @@ class ExtractionService:
                 profile_identifier=profile_identifier_for_stage,
                 qualitative_vocab_identifiers=qualitative_vocab_identifiers,
                 resume=resume,
+                force_profile_rebuild=force_profile_rebuild,
                 target_stage=target_stage,
                 chunk_repair_mode=chunk_repair_mode,
                 evidence_critic_granularity=evidence_critic_granularity,
@@ -1346,6 +1350,7 @@ class ExtractionService:
         profile_identifier: str | None,
         qualitative_vocab_identifiers: list[str] | None,
         resume: bool = False,
+        force_profile_rebuild: bool = False,
         target_stage: ExtractionTargetStage = "complete",
         chunk_repair_mode: ChunkRepairMode = "deferred",
         evidence_critic_granularity: EvidenceCriticGranularity = "per_chunk",
@@ -1436,6 +1441,8 @@ class ExtractionService:
                 else self._default_vocab_query_config(qualitative_vocab_identifiers)
             ),
         )
+        if force_profile_rebuild and target_stage in {"profile", "grounding", "complete"}:
+            self._clear_profile_projection_progress(progress)
         self._update_progress(data_package_id, progress)
 
         if persisted_state and persisted_state.ranked_files:
@@ -1457,6 +1464,8 @@ class ExtractionService:
             chunk_repair_mode=chunk_repair_mode,
             evidence_critic_granularity=evidence_critic_granularity,
         )
+        if force_profile_rebuild and target_stage in {"profile", "grounding", "complete"}:
+            self._clear_profile_projection_state(state)
         self._save_run_state(data_package_id, state)
 
         progress.chunk_repair_mode = state.chunk_repair_mode
@@ -4071,7 +4080,7 @@ class ExtractionService:
             progress.projection_ledger = state.projection_ledger
             return state.generated_final_draft
 
-        base_document, scaffold = self._initial_profile_document(
+        _base_document, scaffold = self._initial_profile_document(
             data_package_id=data_package_id,
             evidence_context=evidence_context,
             validation_schema=validation_schema,
@@ -4079,39 +4088,34 @@ class ExtractionService:
         state.initial_draft_scaffold = scaffold
         progress.initial_draft_scaffold = scaffold
 
-        initial_preparation = prepare_hybrid_projection(
-            data_package_id=data_package_id,
-            evidence_context=evidence_context,
+        live_projection_ledger = [
+            overview_projection_record(
+                status="pending",
+                reason="Overview-level shallow projection queued.",
+            )
+        ]
+        state.projection_ledger = list(live_projection_ledger)
+        progress.projection_ledger = state.projection_ledger
+        progress.warnings = list(warnings)
+        self._update_progress(data_package_id, progress)
+
+        live_projection_ledger[0] = overview_projection_record(
+            status="running",
+            reason="Building overview-level shallow projection.",
         )
-        resolved_class_choices = await self._resolve_ambiguous_projection_classes(
+        state.projection_ledger = list(live_projection_ledger)
+        progress.projection_ledger = state.projection_ledger
+        progress.warnings = list(warnings)
+        self._update_progress(data_package_id, progress)
+
+        projection, projection_records = await self._build_overview_shallow_projection(
             data_package_id=data_package_id,
-            preparation=initial_preparation,
             validation_schema=validation_schema,
+            state=state,
             warnings=warnings,
         )
-        preparation = prepare_hybrid_projection(
-            data_package_id=data_package_id,
-            evidence_context=evidence_context,
-            resolved_class_choices=resolved_class_choices,
-        )
-        projected_instances = [
-            await self._build_hybrid_projection_instance(
-                data_package_id=data_package_id,
-                group=group,
-                validation_schema=validation_schema,
-                warnings=warnings,
-            )
-            for group in preparation.groups
-        ]
-        projection = assemble_hybrid_dataset_projection(
-            data_package_id=data_package_id,
-            base_document=base_document,
-            evidence_context=evidence_context,
-            projected_instances=projected_instances,
-            preparation_ledger=preparation.ledger,
-        )
-        document = remove_null_values(projection.document)
-        state.projection_ledger = projection.ledger
+        document = remove_null_values(projection)
+        state.projection_ledger = projection_records
         state.generated_final_draft = document
         progress.generated_final_draft = document
         progress.projection_ledger = state.projection_ledger
@@ -4130,210 +4134,286 @@ class ExtractionService:
         self._update_progress(data_package_id, progress)
         return document
 
-    async def _resolve_ambiguous_projection_classes(
+    async def _build_overview_shallow_projection(
         self,
         *,
         data_package_id: str,
-        preparation,
         validation_schema: dict[str, Any],
+        state: ExtractionRunState,
         warnings: list[str],
-    ) -> dict[str, str | None]:
-        resolved: dict[str, str | None] = {}
-        class_summaries = {
-            name: str(definition.get("description") or definition.get("title") or "")
-            for name, definition in validation_schema.get("$defs", {}).items()
-            if isinstance(definition, dict)
-        }
-        for candidate in ambiguous_candidates(preparation):
-            assert self.ollama_client is not None
-            prompt_components = build_class_decision_prompt_components(
-                note=candidate.portable_note,
-                candidate_classes=candidate.candidate_classes,
-                class_summaries={
-                    name: class_summaries.get(name, "")
-                    for name in candidate.candidate_classes
-                },
-            )
-            try:
-                result = await generate_structured(
-                    self.ollama_client,
-                    model=self.ollama_client.chat_model,
-                    system=HYBRID_CLASS_DECIDER_SYSTEM_PROMPT,
-                    prompt="".join(text for _, text in prompt_components),
-                    system_components=[
-                        ("hybrid_class_decider_system_prompt", HYBRID_CLASS_DECIDER_SYSTEM_PROMPT),
-                    ],
-                    prompt_components=prompt_components,
-                    token_budgeter=self._prompt_token_budgeter(),
-                    operation_id=self._prompt_operation_id(
-                        "hybrid_projection_class_decider",
-                        candidate.candidate_id,
-                    ),
-                    agent_name="hybrid_projection_class_decider",
-                    diagnostic_metadata={
-                        "candidate_id": candidate.candidate_id,
-                        "candidate_classes": candidate.candidate_classes,
-                    },
-                    output_type=ProjectionClassDecision,
-                    num_ctx=self.ollama_client.max_context_length,
-                )
-                self._record_llm_call_result(
-                    data_package_id=data_package_id,
-                    result=result,
-                    agent_name="hybrid_projection_class_decider",
-                )
-                decision = (
-                    result.output
-                    if isinstance(result.output, ProjectionClassDecision)
-                    else ProjectionClassDecision.model_validate(result.output)
-                )
-            except CompletionError as exc:
-                self._record_llm_call_exception(
-                    data_package_id=data_package_id,
-                    exc=exc,
-                    agent_name="hybrid_projection_class_decider",
-                )
-                warnings.append(f"Projection class decision skipped for '{candidate.candidate_id}': {exc}")
-                resolved[candidate.candidate_id] = None
-                continue
-            if (
-                decision.status == "targeted"
-                and decision.target_class in candidate.candidate_classes
-            ):
-                resolved[candidate.candidate_id] = decision.target_class
-            else:
-                resolved[candidate.candidate_id] = None
-        return resolved
-
-    async def _build_hybrid_projection_instance(
-        self,
-        *,
-        data_package_id: str,
-        group: InstanceProjectionGroup,
-        validation_schema: dict[str, Any],
-        warnings: list[str],
-    ) -> ProjectedInstance:
+    ) -> tuple[dict[str, Any], list[ProjectionLedgerRecord]]:
         assert self.ollama_client is not None
-        target_schema = validation_schema_for_target_class(
-            json_schema=validation_schema,
-            target_class=group.target_class,
-        )
-        output_schema = instance_builder_output_schema(
-            json_schema=validation_schema,
-            target_class=group.target_class,
-        )
-        prompt_components = build_instance_builder_prompt_components(
+        skeleton = shallow_required_skeleton(
             data_package_id=data_package_id,
-            group=group,
-            target_schema=target_schema,
+            fallback_title=self._fallback_title(data_package_id, self._merged_completed_evidence_context(state)),
+        )
+        distributions = deterministic_grouped_distributions(
+            initial_file_summaries=state.initial_file_summaries,
+            ranked_files=state.ranked_files,
+        )
+        fallback_document, fallback_records = shallow_projection_to_dcat_document(
+            dataset_level_to_shallow_projection(
+                ShallowDatasetLevelProjection.model_validate(skeleton),
+                distributions=distributions,
+            ),
+            data_package_id=data_package_id,
+            fallback_title=(skeleton.get("title") or [data_package_id])[0],
+        )
+        try:
+            summary_result = await generate_structured(
+                self.ollama_client,
+                model=self.ollama_client.chat_model,
+                system=DATASET_SUMMARY_SYSTEM_PROMPT,
+                prompt="".join(
+                    text
+                    for _, text in build_dataset_summary_prompt_components(
+                        data_package_id=data_package_id,
+                        initial_file_summaries=state.initial_file_summaries,
+                        ranked_files=state.ranked_files,
+                    )
+                ),
+                system_components=[
+                    ("dataset_summary_system_prompt", DATASET_SUMMARY_SYSTEM_PROMPT),
+                ],
+                prompt_components=build_dataset_summary_prompt_components(
+                    data_package_id=data_package_id,
+                    initial_file_summaries=state.initial_file_summaries,
+                    ranked_files=state.ranked_files,
+                ),
+                token_budgeter=self._prompt_token_budgeter(),
+                operation_id=self._prompt_operation_id("dataset_summary"),
+                agent_name="dataset_summary",
+                output_type=DatasetSummaryProjection,
+                num_ctx=self.ollama_client.max_context_length,
+                num_predict=700,
+            )
+            self._record_llm_call_result(
+                data_package_id=data_package_id,
+                result=summary_result,
+                agent_name="dataset_summary",
+            )
+            summary_output = (
+                summary_result.output
+                if isinstance(summary_result.output, DatasetSummaryProjection)
+                else DatasetSummaryProjection.model_validate(summary_result.output)
+            )
+            dataset_summary = summary_output.summary.strip()
+            if not dataset_summary:
+                raise ValueError("Dataset summary output was empty.")
+            if self.output_repository is not None:
+                self.output_repository.save_dataset_summary(
+                    workflow_id=data_package_id,
+                    summary=dataset_summary,
+                    chat_model=self.ollama_client.chat_model,
+                )
+        except (CompletionError, ValidationError, ValueError) as exc:
+            self._record_llm_call_exception(
+                data_package_id=data_package_id,
+                exc=exc,
+                agent_name="dataset_summary",
+            )
+            warnings.append(f"Dataset summary projection failed: {exc}")
+            return (
+                fallback_document,
+                [
+                    projection_stage_record(
+                        stage="dataset_summary",
+                        object_kind="DatasetSummaryProjection",
+                        status="user_edit_required",
+                        reason="Dataset summary projection failed; persisted required fallback skeleton with deterministic distributions.",
+                        error=str(exc),
+                    ),
+                    projection_stage_record(
+                        stage="deterministic_distributions",
+                        object_kind="DeterministicDistributions",
+                        status="projected",
+                        reason="Backend created deterministic grouped distributions.",
+                        projected_paths=["/dataset_distribution"] if distributions else [],
+                    ),
+                    *fallback_records,
+                ],
+            )
+
+        prompt_components = build_dataset_level_projection_prompt_components(
+            data_package_id=data_package_id,
+            dataset_summary=dataset_summary,
+            skeleton=skeleton,
         )
         try:
             result = await generate_structured(
                 self.ollama_client,
                 model=self.ollama_client.chat_model,
-                system=HYBRID_INSTANCE_BUILDER_SYSTEM_PROMPT,
+                system=DATASET_LEVEL_PROJECTION_SYSTEM_PROMPT,
                 prompt="".join(text for _, text in prompt_components),
                 system_components=[
-                    ("hybrid_instance_builder_system_prompt", HYBRID_INSTANCE_BUILDER_SYSTEM_PROMPT),
+                    ("dataset_level_projection_system_prompt", DATASET_LEVEL_PROJECTION_SYSTEM_PROMPT),
                 ],
                 prompt_components=prompt_components,
                 token_budgeter=self._prompt_token_budgeter(),
-                operation_id=self._prompt_operation_id(
-                    "hybrid_projection_instance_builder",
-                    group.group_id,
-                ),
-                agent_name="hybrid_projection_instance_builder",
-                diagnostic_metadata={
-                    "group_id": group.group_id,
-                    "target_class": group.target_class,
-                    "target_path": group.target_path,
-                },
-                output_type=output_schema,
+                operation_id=self._prompt_operation_id("dataset_level_projection"),
+                agent_name="dataset_level_projection",
+                output_type=ShallowDatasetLevelProjection,
                 num_ctx=self.ollama_client.max_context_length,
             )
             self._record_llm_call_result(
                 data_package_id=data_package_id,
                 result=result,
-                agent_name="hybrid_projection_instance_builder",
+                agent_name="dataset_level_projection",
             )
-            write = ProjectionInstanceWriteDocument.model_validate(result.output)
+            level_projection = (
+                result.output
+                if isinstance(result.output, ShallowDatasetLevelProjection)
+                else ShallowDatasetLevelProjection.model_validate(result.output)
+            )
         except (CompletionError, ValidationError) as exc:
             self._record_llm_call_exception(
                 data_package_id=data_package_id,
                 exc=exc,
-                agent_name="hybrid_projection_instance_builder",
+                agent_name="dataset_level_projection",
             )
-            warnings.append(f"Projection instance builder failed for '{group.group_id}': {exc}")
-            return ProjectedInstance(
-                group=group,
-                value=None,
-                status="user_edit_required",
-                reason="LLM instance builder failed.",
-                error=str(exc),
+            warnings.append(f"Dataset-level projection failed: {exc}")
+            fallback_document_with_summary, fallback_records_with_summary = shallow_projection_to_dcat_document(
+                dataset_level_to_shallow_projection(
+                    ShallowDatasetLevelProjection.model_validate(skeleton),
+                    distributions=distributions,
+                ),
+                data_package_id=data_package_id,
+                fallback_title=(skeleton.get("title") or [data_package_id])[0],
+                fallback_description=dataset_summary,
+            )
+            return (
+                fallback_document_with_summary,
+                [
+                    projection_stage_record(
+                        stage="dataset_summary",
+                        object_kind="DatasetSummaryProjection",
+                        status="projected",
+                        reason="Dataset summary projection completed.",
+                    ),
+                    projection_stage_record(
+                        stage="dataset_level_projection",
+                        object_kind="DatasetLevelProjection",
+                        status="user_edit_required",
+                        reason="Dataset-level projection failed; persisted required fallback skeleton with deterministic distributions.",
+                        error=str(exc),
+                    ),
+                    projection_stage_record(
+                        stage="deterministic_distributions",
+                        object_kind="DeterministicDistributions",
+                        status="projected",
+                        reason="Backend created deterministic grouped distributions.",
+                        projected_paths=["/dataset_distribution"] if distributions else [],
+                    ),
+                    *fallback_records_with_summary,
+                ],
             )
 
-        if write.status == "skip":
-            return ProjectedInstance(
-                group=group,
-                value=None,
-                status="not_projected",
-                reason=write.reason or "LLM skipped projection instance.",
-                used_portable_note_ids=write.used_portable_note_ids,
-                used_contextual_note_ids=write.used_contextual_note_ids,
-                skipped_note_ids=write.skipped_note_ids,
-            )
+        projection = dataset_level_to_shallow_projection(
+            level_projection,
+            distributions=distributions,
+        )
 
-        value = remove_null_values(write.value)
-        validation = validate_document_against_profile(
-            document=value if isinstance(value, dict) else {},
-            json_schema=validation_schema,
-            target_class=group.target_class,
+        document, scaffold_records = shallow_projection_to_dcat_document(
+            projection,
+            data_package_id=data_package_id,
+            fallback_title=self._fallback_title(data_package_id, self._merged_completed_evidence_context(state)),
+            fallback_description=dataset_summary,
+        )
+        validation = self.profile_service.validate_document(
+            identifier=state.profile_identifier or "dcat-ap-plus",
+            document=document,
         )
         if not validation.valid:
             error = "; ".join(f"{issue.path}: {issue.message}" for issue in validation.errors)
-            repaired = await self._repair_hybrid_projection_instance(
+            repaired = await self._repair_overview_shallow_projection(
                 data_package_id=data_package_id,
-                group=group,
-                failed_value=write.model_dump(mode="json"),
+                failed_value=projection.model_dump(mode="json"),
                 error=ValueError(error),
-                output_schema=output_schema,
                 validation_schema=validation_schema,
                 warnings=warnings,
+                state=state,
+                distributions=distributions,
+                fallback_description=dataset_summary,
             )
             if repaired is not None:
                 return repaired
-            return ProjectedInstance(
-                group=group,
-                value=value,
-                status="user_edit_required",
-                reason=write.reason or "LLM instance failed schema validation.",
-                used_portable_note_ids=write.used_portable_note_ids,
-                used_contextual_note_ids=write.used_contextual_note_ids,
-                skipped_note_ids=write.skipped_note_ids,
-                error=error,
+            warnings.append(f"Dataset-level projection failed full profile validation: {error}")
+            fallback_document_with_summary, fallback_records_with_summary = shallow_projection_to_dcat_document(
+                dataset_level_to_shallow_projection(
+                    ShallowDatasetLevelProjection.model_validate(skeleton),
+                    distributions=distributions,
+                ),
+                data_package_id=data_package_id,
+                fallback_title=(skeleton.get("title") or [data_package_id])[0],
+                fallback_description=dataset_summary,
+            )
+            return (
+                fallback_document_with_summary,
+                [
+                    projection_stage_record(
+                        stage="dataset_summary",
+                        object_kind="DatasetSummaryProjection",
+                        status="projected",
+                        reason="Dataset summary projection completed.",
+                    ),
+                    projection_stage_record(
+                        stage="dataset_level_projection",
+                        object_kind="DatasetLevelProjection",
+                        status="user_edit_required",
+                        reason="Dataset-level projection failed full profile validation; persisted required fallback skeleton with deterministic distributions.",
+                        error=error,
+                    ),
+                    projection_stage_record(
+                        stage="deterministic_distributions",
+                        object_kind="DeterministicDistributions",
+                        status="projected",
+                        reason="Backend created deterministic grouped distributions.",
+                        projected_paths=["/dataset_distribution"] if distributions else [],
+                    ),
+                    *fallback_records_with_summary,
+                ],
             )
 
-        return ProjectedInstance(
-            group=group,
-            value=value,
-            status="projected",
-            reason=write.reason or "LLM built schema-valid projection instance.",
-            used_portable_note_ids=write.used_portable_note_ids,
-            used_contextual_note_ids=write.used_contextual_note_ids,
-            skipped_note_ids=write.skipped_note_ids,
+        projected_paths = sorted(f"/{key}" for key in document)
+        return (
+            document,
+            [
+                projection_stage_record(
+                    stage="dataset_summary",
+                    object_kind="DatasetSummaryProjection",
+                    status="projected",
+                    reason="Dataset summary projection completed.",
+                ),
+                projection_stage_record(
+                    stage="dataset_level_projection",
+                    object_kind="DatasetLevelProjection",
+                    status="projected",
+                    reason="Dataset-level projection produced full-profile-valid Dataset draft.",
+                    projected_paths=projected_paths,
+                ),
+                projection_stage_record(
+                    stage="deterministic_distributions",
+                    object_kind="DeterministicDistributions",
+                    status="projected",
+                    reason="Backend created deterministic grouped distributions.",
+                    projected_paths=["/dataset_distribution"] if distributions else [],
+                ),
+                *scaffold_records,
+            ],
         )
 
-    async def _repair_hybrid_projection_instance(
+    async def _repair_overview_shallow_projection(
         self,
         *,
         data_package_id: str,
-        group: InstanceProjectionGroup,
         failed_value: dict[str, Any],
         error: Exception,
-        output_schema: dict[str, Any],
         validation_schema: dict[str, Any],
         warnings: list[str],
-    ) -> ProjectedInstance | None:
+        state: ExtractionRunState,
+        distributions: list[Any],
+        fallback_description: str | None = None,
+    ) -> tuple[dict[str, Any], list[ProjectionLedgerRecord]] | None:
         assert self.ollama_client is not None
         try:
             result = await repair_structured_output(
@@ -4341,61 +4421,76 @@ class ExtractionService:
                 model=self.ollama_client.chat_model,
                 failed_response=json.dumps(failed_value, ensure_ascii=False),
                 error=error,
-                output_type=output_schema,
+                output_type=ShallowDatasetLevelProjection,
                 token_budgeter=self._prompt_token_budgeter(),
-                operation_id=self._prompt_operation_id(
-                    "hybrid_projection_instance_repair",
-                    group.group_id,
-                ),
-                agent_name="hybrid_projection_instance_repair",
-                diagnostic_metadata={
-                    "group_id": group.group_id,
-                    "target_class": group.target_class,
-                    "target_path": group.target_path,
-                },
+                operation_id=self._prompt_operation_id("dataset_level_projection_repair"),
+                agent_name="dataset_level_projection_repair",
                 retries=0,
                 num_ctx=self.ollama_client.max_context_length,
             )
             self._record_llm_call_result(
                 data_package_id=data_package_id,
                 result=result,
-                agent_name="hybrid_projection_instance_repair",
+                agent_name="dataset_level_projection_repair",
             )
-            write = ProjectionInstanceWriteDocument.model_validate(result.output)
+            level_projection = (
+                result.output
+                if isinstance(result.output, ShallowDatasetLevelProjection)
+                else ShallowDatasetLevelProjection.model_validate(result.output)
+            )
         except (CompletionError, ValidationError) as exc:
             self._record_llm_call_exception(
                 data_package_id=data_package_id,
                 exc=exc,
-                agent_name="hybrid_projection_instance_repair",
+                agent_name="dataset_level_projection_repair",
             )
-            warnings.append(f"Projection instance repair failed for '{group.group_id}': {exc}")
+            warnings.append(f"Dataset-level projection repair failed: {exc}")
             return None
-        if write.status == "skip":
-            return ProjectedInstance(
-                group=group,
-                value=None,
-                status="not_projected",
-                reason=write.reason or "Repair skipped projection instance.",
-                used_portable_note_ids=write.used_portable_note_ids,
-                used_contextual_note_ids=write.used_contextual_note_ids,
-                skipped_note_ids=write.skipped_note_ids,
-            )
-        value = remove_null_values(write.value)
-        validation = validate_document_against_profile(
-            document=value if isinstance(value, dict) else {},
-            json_schema=validation_schema,
-            target_class=group.target_class,
+
+        projection = dataset_level_to_shallow_projection(
+            level_projection,
+            distributions=distributions,
+        )
+
+        document, scaffold_records = shallow_projection_to_dcat_document(
+            projection,
+            data_package_id=data_package_id,
+            fallback_title=self._fallback_title(data_package_id, self._merged_completed_evidence_context(state)),
+            fallback_description=fallback_description,
+        )
+        validation = self.profile_service.validate_document(
+            identifier=state.profile_identifier or "dcat-ap-plus",
+            document=document,
         )
         if not validation.valid:
+            warnings.append(
+                "Dataset-level projection repair failed full profile validation: "
+                + "; ".join(f"{issue.path}: {issue.message}" for issue in validation.errors)
+            )
             return None
-        return ProjectedInstance(
-            group=group,
-            value=value,
-            status="projected",
-            reason=write.reason or "Repair produced schema-valid projection instance.",
-            used_portable_note_ids=write.used_portable_note_ids,
-            used_contextual_note_ids=write.used_contextual_note_ids,
-            skipped_note_ids=write.skipped_note_ids,
+        projected_paths = sorted(f"/{key}" for key in document)
+        return (
+            document,
+            [
+                overview_projection_record(
+                    status="projected",
+                    reason="Overview shallow projection produced full-profile-invalid draft; repair succeeded.",
+                    projected_paths=projected_paths,
+                ),
+                overview_projection_repair_record(
+                    status="projected",
+                    reason="Dataset-level projection repair produced full-profile-valid Dataset draft.",
+                    projected_paths=projected_paths,
+                ),
+                projection_stage_record(
+                    stage="deterministic_distributions",
+                    object_kind="DeterministicDistributions",
+                    status="projected",
+                    reason="Backend created deterministic grouped distributions.",
+                    projected_paths=["/dataset_distribution"] if distributions else [],
+                ),
+                *scaffold_records,
+            ],
         )
 
     def _schema_branches_for_profile(
@@ -7045,6 +7140,28 @@ class ExtractionService:
                 else []
             ),
         )
+
+    @staticmethod
+    def _clear_profile_projection_state(state: ExtractionRunState) -> None:
+        state.generated_final_draft = None
+        state.draft_quality_state = None
+        state.validation = DraftValidationResult()
+        state.curated_validation = None
+        state.projection_ledger = []
+        state.initial_draft_scaffold = {}
+        state.field_completion_ledger = []
+        state.vocab_queries = []
+
+    @staticmethod
+    def _clear_profile_projection_progress(progress: ExtractionRunProgress) -> None:
+        progress.generated_final_draft = None
+        progress.draft_quality_state = None
+        progress.validation = DraftValidationResult()
+        progress.curated_validation = None
+        progress.projection_ledger = []
+        progress.initial_draft_scaffold = {}
+        progress.field_completion_ledger = []
+        progress.vocab_queries = []
 
     @staticmethod
     def _chunk_key(chunk: ContentChunk) -> tuple[str, int, int]:
