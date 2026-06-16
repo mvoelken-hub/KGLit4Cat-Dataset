@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -60,6 +61,15 @@ def _check_command(name: str) -> bool:
     """Check if a command is available on PATH."""
     result = subprocess.run(["where", name] if sys.platform == "win32" else ["which", name], capture_output=True)
     return result.returncode == 0
+
+
+def _npm_cmd() -> str:
+    return "npm.cmd" if sys.platform == "win32" else "npm"
+
+
+def _frontend_dependencies_installed() -> bool:
+    bin_dir = FRONTEND_DIR / "node_modules" / ".bin"
+    return all((bin_dir / name).exists() for name in ("tsc", "vite"))
 
 
 def _pid_is_running(pid: int) -> bool:
@@ -778,7 +788,13 @@ def _compose_up_or_continue_if_running(
     raise typer.Exit(result.returncode or 1)
 
 
-def _find_pids_by_cmdline(pattern: str) -> list[int]:
+def _command_line_matches(command_line: str, pattern: str, *, regex: bool = False) -> bool:
+    if regex:
+        return re.search(pattern, command_line, flags=re.IGNORECASE) is not None
+    return pattern in command_line
+
+
+def _find_pids_by_cmdline(pattern: str, *, regex: bool = False) -> list[int]:
     """Find Windows process IDs whose command line contains the given pattern."""
     if sys.platform != "win32":
         return []
@@ -805,11 +821,19 @@ def _find_pids_by_cmdline(pattern: str) -> list[int]:
         for process in processes:
             command_line = process.get("CommandLine") or ""
             pid = process.get("ProcessId")
-            if pid != current_pid and pattern in command_line:
+            if pid != current_pid and _command_line_matches(command_line, pattern, regex=regex):
                 pids.append(int(pid))
         return pids
     except Exception:
         return []
+
+
+def _find_api_pids() -> list[int]:
+    return _find_pids_by_cmdline(r"\bapp\.main:fastapi_app\b", regex=True)
+
+
+def _find_frontend_pids() -> list[int]:
+    return _find_pids_by_cmdline(r"\bnpm(?:\.cmd)?\s+run\s+dev\b|\bvite(?:\.js)?\b", regex=True)
 
 
 def _kill_pids(pids: list[int]) -> None:
@@ -953,9 +977,9 @@ def dev(
             typer.echo("Install Node.js from https://nodejs.org/ if you want to work on the frontend locally.")
             typer.echo("Falling back to Docker frontend mode, same as 'simone dev --no-npm'.")
             use_docker_frontend = True
-        elif not (FRONTEND_DIR / "node_modules").exists():
+        elif not _frontend_dependencies_installed():
             typer.echo("Running npm install in frontend/ ...")
-            _run(["npm", "install"], cwd=FRONTEND_DIR)
+            _run([_npm_cmd(), "install"], cwd=FRONTEND_DIR)
         else:
             pass
 
@@ -989,13 +1013,12 @@ def dev(
         raise typer.Exit(1)
 
     typer.echo("")
-    existing_api = _find_pids_by_cmdline("uvicorn app.main:fastapi_app") or _find_pids_by_window_title("SIMONE API")
-    existing_frontend = _find_pids_by_cmdline("npm run dev") or _find_pids_by_cmdline("vite") or _find_pids_by_window_title("SIMONE Frontend")
+    existing_api = _find_api_pids() or _find_pids_by_window_title("SIMONE API")
+    existing_frontend = _find_frontend_pids() or _find_pids_by_window_title("SIMONE Frontend")
 
     if fg:
         if existing_api:
             typer.echo("Local API is already running (PID " + str(existing_api) + "). API logs are not attached.")
-            return
 
         frontend_process: subprocess.Popen | None = None
         frontend_log_process: subprocess.Popen | None = None
@@ -1009,10 +1032,9 @@ def dev(
             elif existing_frontend:
                 typer.echo("Local frontend is already running (PID " + str(existing_frontend) + "). Frontend logs are not attached.")
             else:
-                npm_cmd = "npm.cmd" if sys.platform == "win32" else "npm"
                 typer.echo("Starting local frontend dev server in this terminal ...")
                 frontend_process = subprocess.Popen(
-                    [npm_cmd, "run", "dev", "--", "--host", "127.0.0.1"],
+                    [_npm_cmd(), "run", "dev", "--", "--host", "127.0.0.1"],
                     cwd=str(FRONTEND_DIR),
                 )
 
@@ -1026,6 +1048,13 @@ def dev(
                 log_services=["frontend"] if use_docker_frontend else None,
             )
             _print_links()
+
+            if existing_api:
+                attached_process = frontend_process or frontend_log_process
+                if attached_process is not None:
+                    typer.echo("Press Ctrl+C to stop foreground frontend logs.")
+                    attached_process.wait()
+                return
 
             typer.echo("Starting local API with hot reload in this terminal. Press Ctrl+C to stop foreground services.")
             process_env = os.environ.copy()
@@ -2316,7 +2345,7 @@ def down() -> None:
 
     # Kill local dev processes
     typer.echo("Stopping local API process ...")
-    api_pids = sorted(set(_find_pids_by_cmdline("uvicorn app.main:fastapi_app") + _find_pids_by_window_title("SIMONE API")))
+    api_pids = sorted(set(_find_api_pids() + _find_pids_by_window_title("SIMONE API")))
     if api_pids:
         _kill_pids(api_pids)
         typer.echo(f"Stopped API processes: {api_pids}")
@@ -2325,9 +2354,7 @@ def down() -> None:
         typer.echo("No local API process found.")
 
     typer.echo("Stopping local frontend process ...")
-    frontend_pids = _find_pids_by_cmdline("npm run dev")
-    if not frontend_pids:
-        frontend_pids = _find_pids_by_cmdline("vite")
+    frontend_pids = _find_frontend_pids()
     frontend_pids = sorted(set(frontend_pids + _find_pids_by_window_title("SIMONE Frontend")))
     if frontend_pids:
         _kill_pids(frontend_pids)
@@ -2470,8 +2497,8 @@ def status() -> None:
 
     typer.echo("")
     typer.echo("Local dev processes (used by 'simone dev', not by production 'simone up'):")
-    api_pids = _find_pids_by_cmdline("uvicorn app.main:fastapi_app")
-    frontend_pids = _find_pids_by_cmdline("npm run dev") or _find_pids_by_cmdline("vite")
+    api_pids = _find_api_pids()
+    frontend_pids = _find_frontend_pids()
 
     typer.echo(f"  API (uvicorn):     {'running (PID ' + str(api_pids) + ')' if api_pids else 'not running'}")
     typer.echo(f"  Frontend (vite):   {'running (PID ' + str(frontend_pids) + ')' if frontend_pids else 'not running'}")
