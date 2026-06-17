@@ -1,0 +1,246 @@
+\begin{figure}[H]
+    \centering
+    \resizebox{\textwidth}{!}{%
+    \begin{tikzpicture}[
+        font=\normalfont\rmfamily,
+        >=Stealth,
+        node distance=0.58cm and 1.15cm,
+        stage/.style={
+            rounded corners=4pt,
+            line width=0.9pt,
+            minimum width=4.15cm,
+            minimum height=1.02cm,
+            text width=3.75cm,
+            align=center,
+            inner xsep=6pt,
+            inner ysep=5pt,
+            font=\normalfont\rmfamily\small\bfseries
+        },
+        materialstage/.style={
+            stage,
+            draw=blue!65!black,
+            fill=blue!9
+        },
+        experimentstage/.style={
+            stage,
+            draw=orange!75!black,
+            fill=orange!12
+        },
+        measurementstage/.style={
+            stage,
+            draw=green!50!black,
+            fill=green!10
+        },
+        resultstage/.style={
+            stage,
+            draw=purple!65!black,
+            fill=purple!9
+        },
+        databox/.style={
+            rounded corners=4pt,
+            draw=black!48,
+            fill=black!2,
+            line width=0.7pt,
+            minimum width=8.25cm,
+            minimum height=1.02cm,
+            text width=7.85cm,
+            align=left,
+            inner xsep=7pt,
+            inner ysep=5pt,
+            font=\normalfont\rmfamily\scriptsize,
+            text=black!86
+        },
+        flow/.style={
+            ->,
+            line width=1.0pt,
+            draw=black!70
+        },
+        association/.style={
+            -,
+            dashed,
+            line width=0.75pt,
+            draw=black!48
+        },
+        flowlabel/.style={
+            font=\normalfont\rmfamily\tiny\itshape,
+            text=black!68,
+            fill=white,
+            inner sep=1.5pt
+        }
+    ]
+
+        % -------------------------------------------------
+        % Main stages
+        % -------------------------------------------------
+
+        \node[materialstage] (inputs)
+            {Catalyst inputs};
+
+        \node[materialstage, below=of inputs] (synthesis)
+            {Catalyst synthesis};
+
+        \node[materialstage, below=of synthesis] (activation)
+            {Pretreatment and activation};
+
+        \node[materialstage, below=of activation] (characterization)
+            {Catalyst characterization};
+
+        \node[experimentstage, below=of characterization] (testing)
+            {Catalytic testing};
+
+        \node[measurementstage, below=of testing] (measurement)
+            {Analytical measurement};
+
+        \node[measurementstage, below=of measurement] (processing)
+            {Data processing and evaluation};
+
+        \node[resultstage, below=of processing] (performance)
+            {Catalyst performance record};
+
+
+        % -------------------------------------------------
+        % Associated data and metadata
+        % -------------------------------------------------
+
+        \node[databox, right=of inputs] (inputsdata) {
+            \textbf{Entities and metadata:}
+            precursor and reagent identity; chemical composition; purity;
+            supplier; batch or sample identifier; quantities; associated
+            publications and source records
+        };
+
+        \node[databox, right=of synthesis] (synthesisdata) {
+            \textbf{Process parameters:}
+            synthesis method; reagent quantities; solvent; concentration;
+            pH; mixing procedure; temperature; pressure; duration; washing;
+            drying and calcination conditions
+        };
+
+        \node[databox, right=of activation] (activationdata) {
+            \textbf{Process parameters:}
+            treatment atmosphere; gas composition; flow rate; heating rate;
+            target temperature; pressure; treatment duration; cooling
+            procedure
+        };
+
+        \node[databox, right=of characterization] (characterizationdata) {
+            \textbf{Measurements and metadata:}
+            characterization method; instrument; sample state; acquisition
+            settings; calibration; raw files; phase composition; surface area;
+            particle size; oxidation state and other derived properties
+        };
+
+        \node[databox, right=of testing] (testingdata) {
+            \textbf{Experimental parameters:}
+            chemical reaction; reactor type and geometry; catalyst mass;
+            particle size; feed composition; temperature; pressure; flow rate
+            or space velocity; residence time; time on stream
+        };
+
+        \node[databox, right=of measurement] (measurementdata) {
+            \textbf{Raw observations and metadata:}
+            sampling procedure; analytical method; instrument and detector;
+            calibration standard; acquisition interval; detector settings;
+            chromatograms; spectra; concentration and process signals
+        };
+
+        \node[databox, right=of processing] (processingdata) {
+            \textbf{Processing provenance:}
+            baseline correction; peak identification and integration;
+            calibration model; normalization; filtering; calculation
+            equations; software and version; scripts; manual corrections and
+            excluded measurements
+        };
+
+        \node[databox, right=of performance] (performancedata) {
+            \textbf{Derived results:}
+            conversion; selectivity; yield; reaction rate; productivity;
+            turnover frequency; uncertainty; stability; deactivation rate;
+            comparison with reference catalysts or previous experiments
+        };
+
+
+        % -------------------------------------------------
+        % Material and data flow
+        % -------------------------------------------------
+
+        \draw[flow]
+            (inputs) -- (synthesis)
+            node[midway, left=5pt, flowlabel]
+            {defined inputs};
+
+        \draw[flow]
+            (synthesis) -- (activation)
+            node[midway, left=5pt, flowlabel]
+            {prepared catalyst};
+
+        \draw[flow]
+            (activation) -- (characterization)
+            node[midway, left=5pt, flowlabel]
+            {activated state};
+
+        \draw[flow]
+            (characterization) -- (testing)
+            node[midway, left=5pt, flowlabel]
+            {characterized sample};
+
+        \draw[flow]
+            (testing) -- (measurement)
+            node[midway, left=5pt, flowlabel]
+            {reactor output};
+
+        \draw[flow]
+            (measurement) -- (processing)
+            node[midway, left=5pt, flowlabel]
+            {raw signals};
+
+        \draw[flow]
+            (processing) -- (performance)
+            node[midway, left=5pt, flowlabel]
+            {processed data};
+
+
+        % -------------------------------------------------
+        % Associations between stages and metadata
+        % -------------------------------------------------
+
+        \draw[association] (inputs.east) -- (inputsdata.west);
+        \draw[association] (synthesis.east) -- (synthesisdata.west);
+        \draw[association] (activation.east) -- (activationdata.west);
+        \draw[association] (characterization.east) -- (characterizationdata.west);
+        \draw[association] (testing.east) -- (testingdata.west);
+        \draw[association] (measurement.east) -- (measurementdata.west);
+        \draw[association] (processing.east) -- (processingdata.west);
+        \draw[association] (performance.east) -- (performancedata.west);
+
+
+        % -------------------------------------------------
+        % Legend
+        % -------------------------------------------------
+
+        \coordinate (legendstart)
+            at ($(performance.south west)+(0,-0.65)$);
+
+        \draw[flow]
+            (legendstart) -- ++(1.05,0)
+            node[right=4pt, font=\normalfont\rmfamily\scriptsize]
+            {material or data flow};
+
+        \coordinate (legendassoc)
+            at ($(legendstart)+(4.55,0)$);
+
+        \draw[association]
+            (legendassoc) -- ++(1.05,0)
+            node[right=4pt, font=\normalfont\rmfamily\scriptsize]
+            {association with parameters, measurements, and metadata};
+
+    \end{tikzpicture}%
+    }
+    \caption{Simplified data flow of a catalytic experiment. The main
+    workflow follows the transformation of catalyst materials and experimental
+    data from the initial inputs to derived performance indicators. Solid
+    arrows represent material or data transfers, whereas dashed connections
+    associate each stage with the parameters, measurements, metadata, and
+    provenance information required for interpretation and reuse.}
+    \label{fig:catalysis-data-flow}
+\end{figure}

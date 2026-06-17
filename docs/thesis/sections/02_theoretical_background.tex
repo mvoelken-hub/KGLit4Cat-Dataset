@@ -1,13 +1,22 @@
 \label{chap:background}
 
-This chapter provides the scientific and technical foundations required for the thesis.
+This chapter provides the scientific and technical foundations required for building a system that extracts metadata from unstructured datasets in catalysis. The first section introduces the concept of catalysis and the data landscape of catalytic experiments, which motivates the need for an application-specific schema. The second section introduces semantic web technologies as a technical foundation for representing the data in a machine-actionable form. The third section introduces large language models as a technical foundation for extracting and structuring metadata from unstructured sources.
 
 \section{Catalysis}
 \label{sec:catalysis}
 
 Catalysis refers to the acceleration of a chemical reaction by a substance that participates in the reaction but is not consumed by it. A catalyst therefore changes the kinetic route of a reaction rather than the thermodynamic equilibrium: it can lower the effective activation barrier and allow a reaction to proceed under milder or more technically useful conditions, as schematically shown in Figure~\ref{fig:catalysis-activation-energy}. Catalysts may operate in the same phase as the reactants, referred to as homogeneous catalysis, or in a different phase, referred to as heterogeneous catalysis. In technical chemistry, their value lies not only in increasing reaction rates, but also in directing complex reaction networks toward desired products and maintaining performance over time. Activity, selectivity, and stability are therefore central descriptors of catalyst performance and already show why catalytic systems have to be studied under well-defined reaction and material conditions \cite{fechete2012past,job2021physikalische}.
-
 \input{figures/catalysis_activation_energy}
+
+For the purpose of this thesis, catalysis is additionally considered as a
+data-generating experimental process. It is associated
+with a particular catalyst sample and material state and depends on its
+preparation history, pretreatment, physicochemical characterization, reactor
+configuration, operating conditions, analytical measurements, and data
+evaluation procedures. A catalytic experiment can therefore be described as a
+sequence of interconnected material states, experimental activities,
+observations, and data-processing steps. Figure~\ref{fig:catalysis-data-flow} illustrates this process-oriented view.
+\input{figures/catalysis_data_flow}
 
 \subsection{Catalytic Experiments}
 \label{sec:catalytic-experiments}
@@ -29,7 +38,7 @@ The previous section showed that catalytic data only become scientifically inter
 In contrast to the free-text documentation of metadata attached to files, semantic approaches explicitly describe entities, relations, and constraints. This transforms data from mere stored information into interconnected statements that can be searched, queried, validated, combined, and reused across repositories and workflows.
 
 \subsection{Semantic Modelling of Domain Knowledge}
-\label{sec:ontologies-controlled-vocabularies}
+\label{sec:semantic-modelling-domain-knowledge}
 
 An ontology is a formal specification of the concepts and relations that are relevant in a domain. In contrast to an informal glossary, an ontology not only lists terms, but also defines how these terms may be related, for example through class hierarchies, properties, restrictions, and equivalence relations. Ontologies therefore provide a shared conceptual model that can be used by both humans and machines to interpret data consistently \cite{stuckenschmidt2011ontologien}. Controlled vocabularies are more limited resources: they provide predefined terms and descriptions, but usually do not formalize the meaning of these terms with the same axiomatic detail as an ontology \cite{marquardt2010ontocape}. For this thesis, both resource types are relevant because metadata extraction needs stable labels for terms as well as structured relations between extracted entities.
 
@@ -42,7 +51,7 @@ The Resource Description Framework (RDF) provides the graph data model for repre
 \input{figures/ontology_grounding_layers}
 
 \subsection{Standards and Resources for Semantic Metadata}
-\label{subsec:semantic-web-standards-resources}
+\label{subsec:semantic-standards-resources}
 
 Several standards and description languages recur throughout Semantic Web workflows. RDFS and OWL provide schema and ontology semantics above RDF: RDFS supports basic class and property descriptions, while OWL supports richer class expressions and logical modelling \cite{w3c2014rdfschema,w3c2012owl2primer}. SKOS is relevant for controlled vocabularies because it represents concept schemes with preferred labels, alternative labels, definitions, and broader or narrower concept relations \cite{w3c2009skos}. SHACL complements these representation languages by validating RDF graphs against declared shapes and constraints, which makes it important for checking whether generated or projected metadata conforms to an expected structure \cite{w3c2017shacl}.
 
