@@ -155,6 +155,7 @@ class ProtectedLineIndicesTests(unittest.IsolatedAsyncioTestCase):
             embedding_func=AsyncMock(return_value=[]),
             chunking_strategy="fixed_tokens",
             fixed_tokens_per_chunk=15,
+            min_tokens_per_chunk=1,
             min_lines_for_chunking=1,
             max_tokens_per_chunk=100,
             token_budgeter=WordTokenizerBudgeter(),
@@ -182,6 +183,28 @@ class ProtectedLineIndicesTests(unittest.IsolatedAsyncioTestCase):
         )
 
         mock_embed.assert_not_awaited()
+
+    async def test_fixed_tokens_strategy_respects_max_token_cap(self):
+        content = "".join(
+            f"line {index} alpha beta gamma\n"
+            for index in range(6)
+        )
+        file_entry = FakeFileEntry(content)
+
+        chunks = await ContentChunk.create_chunks_for_file_entry(
+            data_package_id="pkg",
+            file_entry=file_entry,
+            embedding_func=AsyncMock(return_value=[]),
+            chunking_strategy="fixed_tokens",
+            fixed_tokens_per_chunk=50,
+            min_tokens_per_chunk=1,
+            max_tokens_per_chunk=10,
+            token_budgeter=WordTokenizerBudgeter(),
+        )
+
+        self.assertGreater(len(chunks), 1)
+        for chunk in chunks:
+            self.assertLessEqual(len(chunk.content.split()), 10)
 
     async def test_default_semantic_strategy_ignores_fixed_token_size(self):
         content = "line 0 alpha beta\nline 1 gamma delta\nline 2 epsilon zeta\n"

@@ -134,12 +134,22 @@ class ContentChunk(BaseModel):
                 fixed_tokens_per_chunk=fixed_tokens_per_chunk,
                 token_budgeter=token_budgeter,
             )
+            bounded_chunks = fixed_chunks
+            if max_tokens_per_chunk and max_tokens_per_chunk > 0:
+                bounded_chunks = cls._split_chunks_by_token_budget(
+                    fixed_chunks,
+                    filtered_lines=filtered_lines,
+                    data_package_id=data_package_id,
+                    file_path=file_entry.file_path,
+                    max_tokens_per_chunk=max_tokens_per_chunk,
+                    token_budgeter=token_budgeter,
+                )
             return cls._post_process_chunks(
-                fixed_chunks,
+                bounded_chunks,
                 filtered_lines=filtered_lines,
                 data_package_id=data_package_id,
                 file_path=file_entry.file_path,
-                max_tokens_per_chunk=fixed_tokens_per_chunk,
+                max_tokens_per_chunk=max_tokens_per_chunk,
                 min_tokens_per_chunk=min_tokens_per_chunk,
                 max_filtered_line_gap=max_filtered_line_gap,
                 token_budgeter=token_budgeter,

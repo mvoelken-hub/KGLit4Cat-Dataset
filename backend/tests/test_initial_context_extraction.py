@@ -32,6 +32,8 @@ from app.domain.extraction import (
     ProfileTargetDecision,
     ProfileTargetWriteDocument,
     RankedFile,
+    RequirementEvaluation,
+    RequirementPatchResult,
     Resource,
     DatasetSummaryProjection,
     ShallowDatasetProjection,
@@ -157,10 +159,13 @@ class FakeOutputRepository:
         self.initial_extraction_overview_status = None
         self.initial_extraction_overview_diagnostic = None
         self.generated_final_draft: dict | None = None
+        self.generated_initial_draft: dict | None = None
+        self.requirement_report = None
         self.dataset_summary: str | None = None
         self.curated_document: dict | None = None
         self.projection_ledger: list = []
         self.field_completion_ledger: list = []
+        self.evidence_query_ledger: list = []
         self.curation_ledger: list = []
         self.validation: dict | None = None
         self.warnings: list[str] = []
@@ -189,9 +194,12 @@ class FakeOutputRepository:
         self.initial_extraction_overview = result.initial_extraction_overview
         self.initial_extraction_overview_status = result.initial_extraction_overview_status
         self.generated_final_draft = result.generated_final_draft
+        self.generated_initial_draft = result.generated_initial_draft
+        self.requirement_report = result.requirement_report
         self.curated_document = result.curated_document
         self.projection_ledger = result.projection_ledger
         self.field_completion_ledger = result.field_completion_ledger
+        self.evidence_query_ledger = result.evidence_query_ledger
         self.curation_ledger = result.curation_ledger
         self.validation = {
             "generated": result.validation,
@@ -264,6 +272,22 @@ class FakeOutputRepository:
     def save_generated_final_draft(self, *, workflow_id: str, document: dict, chat_model: str | None = None):
         self.generated_final_draft = document
 
+    def save_generated_initial_draft(self, *, workflow_id: str, document: dict, chat_model: str | None = None):
+        self.generated_initial_draft = document
+
+    def load_generated_initial_draft(self, workflow_id: str, chat_model: str | None = None) -> dict:
+        if self.generated_initial_draft is None:
+            raise FileNotFoundError
+        return self.generated_initial_draft
+
+    def save_requirement_report(self, *, workflow_id: str, report, chat_model: str | None = None):
+        self.requirement_report = report
+
+    def load_requirement_report(self, workflow_id: str, chat_model: str | None = None):
+        if self.requirement_report is None:
+            raise FileNotFoundError
+        return self.requirement_report
+
     def save_dataset_summary(self, *, workflow_id: str, summary: str, chat_model: str | None = None):
         self.dataset_summary = summary
 
@@ -291,6 +315,12 @@ class FakeOutputRepository:
 
     def load_field_completion_ledger(self, workflow_id: str, chat_model: str | None = None) -> list:
         return self.field_completion_ledger
+
+    def save_evidence_query_ledger(self, *, workflow_id: str, ledger: list, chat_model: str | None = None):
+        self.evidence_query_ledger = ledger
+
+    def load_evidence_query_ledger(self, workflow_id: str, chat_model: str | None = None) -> list:
+        return self.evidence_query_ledger
 
     def save_curation_ledger(self, *, workflow_id: str, ledger: list, chat_model: str | None = None):
         self.curation_ledger = ledger
@@ -1866,6 +1896,10 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             qualitative_vocab_identifiers=["voc4cat"],
             buffer_window_size=2,
             semantic_chunking_threshold=80.0,
+            chunking_strategy="fixed_tokens",
+            fixed_tokens_per_chunk=256,
+            min_tokens_per_chunk=32,
+            max_tokens_per_chunk=512,
             replace_existing_chunks=True,
             resume=True,
             force_rerun=False,
@@ -1881,6 +1915,10 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     "data_package_id": "package-id",
                     "buffer_window_size": 2,
                     "semantic_chunking_threshold": 80.0,
+                    "chunking_strategy": "fixed_tokens",
+                    "fixed_tokens_per_chunk": 256,
+                    "min_tokens_per_chunk": 32,
+                    "max_tokens_per_chunk": 512,
                     "replace_existing_chunks": True,
                 }
             ],
@@ -2378,6 +2416,13 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 return dataset_summary_result()
             if kwargs["output_type"] is ShallowDatasetLevelProjection:
                 return dataset_level_projection_result()
+            if kwargs["output_type"] is RequirementEvaluation:
+                return CompletionResult(output=RequirementEvaluation(), usage=RunUsage(requests=1))
+            if kwargs["output_type"] is RequirementPatchResult:
+                return CompletionResult(
+                    output=RequirementPatchResult(should_patch=False, rationale="No patch in this test."),
+                    usage=RunUsage(requests=1),
+                )
             raise AssertionError("Only dataset summary/profile generation is expected")
 
         with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):

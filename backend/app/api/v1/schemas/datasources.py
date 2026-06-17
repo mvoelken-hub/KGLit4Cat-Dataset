@@ -36,6 +36,8 @@ class ChunkingRequest(BaseModel):
     embedding_num_gpu: int | None = Field(None, ge=-1, le=999, description="Optional Ollama num_gpu override for this chunking run's embedding requests. Use -1 for auto/all GPU and 0 for CPU only.")
     chunking_strategy: str = Field("semantic", description="Chunking strategy: 'semantic' uses embedding-based breakpoints, 'fixed_tokens' splits by configured token count")
     fixed_tokens_per_chunk: int = Field(1024, ge=1, description="Target tokens per chunk when chunking_strategy is 'fixed_tokens'")
+    min_tokens_per_chunk: int = Field(128, ge=1, description="Minimum token count for a chunk after post-processing; smaller chunks are merged with neighbors")
+    max_tokens_per_chunk: int = Field(1024, ge=1, description="Maximum token count for a chunk after post-processing; larger chunks are split")
 
     @model_validator(mode='before')
     @classmethod
@@ -50,6 +52,12 @@ class ChunkingRequest(BaseModel):
                 except json.JSONDecodeError:
                     data[key] = {} if key == 'protected_line_indices' else None
         return data
+
+    @model_validator(mode='after')
+    def _validate_token_bounds(self):
+        if self.min_tokens_per_chunk > self.max_tokens_per_chunk:
+            raise ValueError("min_tokens_per_chunk must be less than or equal to max_tokens_per_chunk.")
+        return self
 
 class ChunkResponse(BaseModel):
     content: str

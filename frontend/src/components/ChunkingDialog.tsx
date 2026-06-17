@@ -16,6 +16,8 @@ export interface ChunkingDialogProps {
     semantic_chunking_threshold: number;
     chunking_strategy: 'semantic' | 'fixed_tokens';
     fixed_tokens_per_chunk: number;
+    min_tokens_per_chunk: number;
+    max_tokens_per_chunk: number;
     protected_line_indices: Record<string, number[]>;
     text_quality_config: TextQualityConfig;
     embedding_num_gpu?: number;
@@ -246,6 +248,8 @@ export function ChunkingDialog({ isOpen, packageId, dataPackage, chunksByFile, o
   const [semanticThreshold, setSemanticThreshold] = useState(95);
   const [chunkingStrategy, setChunkingStrategy] = useState<'semantic' | 'fixed_tokens'>('semantic');
   const [fixedTokensPerChunk, setFixedTokensPerChunk] = useState(1024);
+  const [minTokensPerChunk, setMinTokensPerChunk] = useState(128);
+  const [maxTokensPerChunk, setMaxTokensPerChunk] = useState(1024);
   const [embeddingGpuMode, setEmbeddingGpuMode] = useState<'default' | 'auto' | 'cpu'>('default');
 
   const [draftTextQualityConfig, setDraftTextQualityConfig] = useState<Required<TextQualityConfig>>(defaultTextQualityConfig);
@@ -289,6 +293,7 @@ export function ChunkingDialog({ isOpen, packageId, dataPackage, chunksByFile, o
     ),
     [draftTextQualityConfig, textQualityConfig]
   );
+  const tokenBoundsInvalid = minTokensPerChunk > maxTokensPerChunk;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -296,6 +301,8 @@ export function ChunkingDialog({ isOpen, packageId, dataPackage, chunksByFile, o
     setSemanticThreshold(95);
     setChunkingStrategy('semantic');
     setFixedTokensPerChunk(1024);
+    setMinTokensPerChunk(128);
+    setMaxTokensPerChunk(1024);
     setEmbeddingGpuMode('default');
     setDraftTextQualityConfig(defaultTextQualityConfig);
     setTextQualityConfig(defaultTextQualityConfig);
@@ -382,6 +389,8 @@ export function ChunkingDialog({ isOpen, packageId, dataPackage, chunksByFile, o
       semantic_chunking_threshold: semanticThreshold,
       chunking_strategy: chunkingStrategy,
       fixed_tokens_per_chunk: fixedTokensPerChunk,
+      min_tokens_per_chunk: minTokensPerChunk,
+      max_tokens_per_chunk: maxTokensPerChunk,
       protected_line_indices,
       text_quality_config: textQualityConfig,
       embedding_num_gpu: embeddingGpuMode === 'default' ? undefined : embeddingGpuMode === 'auto' ? -1 : 0,
@@ -432,6 +441,17 @@ export function ChunkingDialog({ isOpen, packageId, dataPackage, chunksByFile, o
                 <ConfigLabel tooltip="Target number of tokens per chunk. Each chunk contains only whole lines; the last line that would exceed this budget starts the next chunk.">Fixed tokens per chunk</ConfigLabel>
                 <input type="number" min={1} max={32768} value={fixedTokensPerChunk} onChange={(e) => setFixedTokensPerChunk(Number(e.target.value))} />
               </label>
+            )}
+            <label className="form-row">
+              <ConfigLabel tooltip="Minimum token count for a chunk after post-processing. Chunks smaller than this are merged with neighboring chunks when possible.">Min tokens per chunk</ConfigLabel>
+              <input type="number" min={1} max={32768} value={minTokensPerChunk} onChange={(e) => setMinTokensPerChunk(Number(e.target.value))} />
+            </label>
+            <label className="form-row">
+              <ConfigLabel tooltip="Maximum token count for a chunk after post-processing. Chunks larger than this are split at the nearest line boundary that respects the budget.">Max tokens per chunk</ConfigLabel>
+              <input type="number" min={1} max={32768} value={maxTokensPerChunk} onChange={(e) => setMaxTokensPerChunk(Number(e.target.value))} />
+            </label>
+            {tokenBoundsInvalid && (
+              <p className="muted">Min tokens must be less than or equal to max tokens.</p>
             )}
 
             <button className="ghost small" onClick={() => setShowAdvanced((s) => !s)}>
@@ -518,7 +538,7 @@ export function ChunkingDialog({ isOpen, packageId, dataPackage, chunksByFile, o
         </div>
 
         <div className="chunking-dialog-footer">
-          <button onClick={handleSubmit}>Start chunking</button>
+          <button onClick={handleSubmit} disabled={tokenBoundsInvalid}>Start chunking</button>
         </div>
       </div>
     </div>

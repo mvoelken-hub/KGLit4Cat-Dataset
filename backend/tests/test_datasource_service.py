@@ -205,14 +205,13 @@ class DataSourceServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(blob_repository.saved_chunks)
         self.assertEqual(set(ollama_client.embedding_num_gpu_values), {0})
 
-    async def test_chunking_task_caps_chunks_to_half_context_window(self):
+    async def test_chunking_task_uses_explicit_token_bounds(self):
         ollama_client = FakeOllamaClient()
         service, blob_repository, _ = self.make_service(
             chunks_by_file_path={},
             task_status=None,
             ollama_client=ollama_client,
         )
-        service.settings.max_context_length = 3000
         captured: dict[str, object] = {}
 
         async def fake_create_chunks(**kwargs):
@@ -228,8 +227,11 @@ class DataSourceServiceTests(unittest.IsolatedAsyncioTestCase):
                 data_package_id="package-id",
                 buffer_window_size=1,
                 semantic_chunking_threshold=95.0,
+                min_tokens_per_chunk=64,
+                max_tokens_per_chunk=1500,
             )
 
+        self.assertEqual(captured["min_tokens_per_chunk"], 64)
         self.assertEqual(captured["max_tokens_per_chunk"], 1500)
         self.assertIn("token_budgeter", captured)
 

@@ -98,7 +98,11 @@ class DataSourceService:
         embedding_num_gpu: int | None = None,
         chunking_strategy: str = "semantic",
         fixed_tokens_per_chunk: int = 1024,
+        min_tokens_per_chunk: int = 128,
+        max_tokens_per_chunk: int = 1024,
     ) -> tuple[list[list[ContentChunk]], TaskStatus]:
+        if min_tokens_per_chunk > max_tokens_per_chunk:
+            raise ValueError("min_tokens_per_chunk must be less than or equal to max_tokens_per_chunk.")
         
         TASK_NAME = self.chunk_task_name(data_package_id)
 
@@ -121,6 +125,8 @@ class DataSourceService:
                 embedding_num_gpu=embedding_num_gpu,
                 chunking_strategy=chunking_strategy,
                 fixed_tokens_per_chunk=fixed_tokens_per_chunk,
+                min_tokens_per_chunk=min_tokens_per_chunk,
+                max_tokens_per_chunk=max_tokens_per_chunk,
             )
             return [], TaskStatus.RUNNING
 
@@ -136,6 +142,8 @@ class DataSourceService:
                 embedding_num_gpu=embedding_num_gpu,
                 chunking_strategy=chunking_strategy,
                 fixed_tokens_per_chunk=fixed_tokens_per_chunk,
+                min_tokens_per_chunk=min_tokens_per_chunk,
+                max_tokens_per_chunk=max_tokens_per_chunk,
             )
             return [], TaskStatus.RUNNING
 
@@ -151,6 +159,8 @@ class DataSourceService:
                 embedding_num_gpu=embedding_num_gpu,
                 chunking_strategy=chunking_strategy,
                 fixed_tokens_per_chunk=fixed_tokens_per_chunk,
+                min_tokens_per_chunk=min_tokens_per_chunk,
+                max_tokens_per_chunk=max_tokens_per_chunk,
             )
             return [], TaskStatus.RUNNING        
         
@@ -192,6 +202,8 @@ class DataSourceService:
         embedding_num_gpu: int | None = None,
         chunking_strategy: str = "semantic",
         fixed_tokens_per_chunk: int = 1024,
+        min_tokens_per_chunk: int = 128,
+        max_tokens_per_chunk: int = 1024,
     ) -> None:
         if delete_existing_chunks:
             self.blob_repository.delete_content_chunks(data_package_id)
@@ -206,6 +218,8 @@ class DataSourceService:
                 embedding_num_gpu=embedding_num_gpu,
                 chunking_strategy=chunking_strategy,
                 fixed_tokens_per_chunk=fixed_tokens_per_chunk,
+                min_tokens_per_chunk=min_tokens_per_chunk,
+                max_tokens_per_chunk=max_tokens_per_chunk,
             ),
             type=TaskType.CHUNKING,
             name=task_name
@@ -223,6 +237,8 @@ class DataSourceService:
         embedding_num_gpu: int | None = None,
         chunking_strategy: str = "semantic",
         fixed_tokens_per_chunk: int = 1024,
+        min_tokens_per_chunk: int = 128,
+        max_tokens_per_chunk: int = 1024,
     ):
         data_package = self.get_data_package(data_package_id)
         files = data_package.files
@@ -245,10 +261,6 @@ class DataSourceService:
             getattr(self.settings, "ollama_chat_tokenizer", ""),
             hf_token=getattr(self.settings, "hf_token", ""),
         )
-        max_tokens_per_chunk = max(
-            1,
-            int(getattr(self.settings, "max_context_length", 8192) * 0.5),
-        )
         
         for file_entry in files:
             file_protected = protected_line_indices.get(file_entry.file_path) if protected_line_indices else None
@@ -261,6 +273,7 @@ class DataSourceService:
                 embedding_batch_size=self.settings.embedding_batch_size,
                 semantic_chunking_threshold=semantic_chunking_threshold,
                 protected_line_indices=file_protected,
+                min_tokens_per_chunk=min_tokens_per_chunk,
                 max_tokens_per_chunk=max_tokens_per_chunk,
                 token_budgeter=token_budgeter,
                 chunking_strategy=chunking_strategy,

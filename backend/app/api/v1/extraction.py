@@ -280,6 +280,16 @@ async def run_complete_workflow(
         ge=1,
         description="Target tokens per chunk when chunking_strategy is 'fixed_tokens'.",
     ),
+    min_tokens_per_chunk: int = Form(
+        default=128,
+        ge=1,
+        description="Minimum token count for a chunk after post-processing; smaller chunks are merged with neighbors.",
+    ),
+    max_tokens_per_chunk: int = Form(
+        default=1024,
+        ge=1,
+        description="Maximum token count for a chunk after post-processing; larger chunks are split.",
+    ),
     replace_existing_chunks: bool = Form(
         default=False,
         description="Replace previously persisted chunks for a package with the same deterministic id.",
@@ -300,6 +310,11 @@ async def run_complete_workflow(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Uploaded file must have a filename.",
         )
+    if min_tokens_per_chunk > max_tokens_per_chunk:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="min_tokens_per_chunk must be less than or equal to max_tokens_per_chunk.",
+        )
 
     try:
         vocab_identifiers = _parse_qualitative_vocab_identifiers(
@@ -317,6 +332,8 @@ async def run_complete_workflow(
             semantic_chunking_threshold=semantic_chunking_threshold,
             chunking_strategy=chunking_strategy,
             fixed_tokens_per_chunk=fixed_tokens_per_chunk,
+            min_tokens_per_chunk=min_tokens_per_chunk,
+            max_tokens_per_chunk=max_tokens_per_chunk,
             replace_existing_chunks=replace_existing_chunks,
             resume=resume,
             force_rerun=force_rerun,
