@@ -1,4 +1,0 @@
-interface:
-  display_name: "SIMONE"
-  short_description: "Work on the SIMONE stack and thesis"
-  default_prompt: "Use the SIMONE skill to assess prototype/thesis alignment and identify the next thesis evaluation steps."
