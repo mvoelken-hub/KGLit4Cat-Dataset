@@ -215,6 +215,7 @@ latexmkrc
 .backups/
 
 # Graphify local cache and transient files
+graphify-out/
 graphify-out/cache/
 graphify-out/cost.json
 graphify-out/.graphify_python
