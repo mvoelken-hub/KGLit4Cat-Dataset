@@ -230,3 +230,15 @@ Restore a backup:
 ```bash
 simone restore-neo4j .backups/neo4j/<backup-file>.cypher
 ```
+
+### Graphify Workflows
+
+This repo already has a built graph in `graphify-out/graph.json`. Use the helper script from the repo root:
+
+```powershell
+.\scripts\graphify-workflow.ps1 query "How does extraction validation work?"
+.\scripts\graphify-workflow.ps1 path "ExtractionService" "Neo4jDriver"
+.\scripts\graphify-workflow.ps1 explain "DataSourceService"
+```
+
+The script checks for an existing graph and delegates to the installed `graphify` CLI. After code changes, refresh the graph with `graphify update .` so these workflows stay current.

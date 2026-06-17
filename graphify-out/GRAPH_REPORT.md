@@ -1,16 +1,16 @@
-# Graph Report - Semantic-Inference-Module-for-Ontology-driven-Node-Extraction-SIMONE-  (2026-06-16)
+# Graph Report - Semantic-Inference-Module-for-Ontology-driven-Node-Extraction-SIMONE-  (2026-06-17)
 
 ## Corpus Check
-- 150 files · ~545,399 words
+- 151 files · ~546,749 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 3233 nodes · 10396 edges · 164 communities (120 shown, 44 thin omitted)
-- Extraction: 65% EXTRACTED · 35% INFERRED · 0% AMBIGUOUS · INFERRED: 3676 edges (avg confidence: 0.54)
+- 3250 nodes · 10434 edges · 152 communities (127 shown, 25 thin omitted)
+- Extraction: 65% EXTRACTED · 35% INFERRED · 0% AMBIGUOUS · INFERRED: 3683 edges (avg confidence: 0.54)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `eb23826e`
+- Built from commit: `2b61b627`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -32,6 +32,7 @@
 - [[_COMMUNITY_Community 14|Community 14]]
 - [[_COMMUNITY_Community 15|Community 15]]
 - [[_COMMUNITY_Community 16|Community 16]]
+- [[_COMMUNITY_Community 17|Community 17]]
 - [[_COMMUNITY_Community 18|Community 18]]
 - [[_COMMUNITY_Community 19|Community 19]]
 - [[_COMMUNITY_Community 20|Community 20]]
@@ -47,6 +48,7 @@
 - [[_COMMUNITY_Community 30|Community 30]]
 - [[_COMMUNITY_Community 31|Community 31]]
 - [[_COMMUNITY_Community 32|Community 32]]
+- [[_COMMUNITY_Community 33|Community 33]]
 - [[_COMMUNITY_Community 34|Community 34]]
 - [[_COMMUNITY_Community 35|Community 35]]
 - [[_COMMUNITY_Community 36|Community 36]]
@@ -140,6 +142,7 @@
 - [[_COMMUNITY_Community 137|Community 137]]
 - [[_COMMUNITY_Community 138|Community 138]]
 - [[_COMMUNITY_Community 139|Community 139]]
+- [[_COMMUNITY_Community 140|Community 140]]
 - [[_COMMUNITY_Community 141|Community 141]]
 - [[_COMMUNITY_Community 142|Community 142]]
 - [[_COMMUNITY_Community 143|Community 143]]
@@ -148,20 +151,7 @@
 - [[_COMMUNITY_Community 146|Community 146]]
 - [[_COMMUNITY_Community 148|Community 148]]
 - [[_COMMUNITY_Community 149|Community 149]]
-- [[_COMMUNITY_Community 150|Community 150]]
-- [[_COMMUNITY_Community 151|Community 151]]
-- [[_COMMUNITY_Community 152|Community 152]]
-- [[_COMMUNITY_Community 153|Community 153]]
-- [[_COMMUNITY_Community 154|Community 154]]
-- [[_COMMUNITY_Community 155|Community 155]]
-- [[_COMMUNITY_Community 156|Community 156]]
-- [[_COMMUNITY_Community 157|Community 157]]
 - [[_COMMUNITY_Community 158|Community 158]]
-- [[_COMMUNITY_Community 159|Community 159]]
-- [[_COMMUNITY_Community 160|Community 160]]
-- [[_COMMUNITY_Community 161|Community 161]]
-- [[_COMMUNITY_Community 162|Community 162]]
-- [[_COMMUNITY_Community 163|Community 163]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `ExtractionService` - 375 edges
@@ -191,11 +181,15 @@
 - 1-file cycle: `backend/app/main.py -> backend/app/main.py`
 - 1-file cycle: `backend/app/domain/datasources/datasource.py -> backend/app/domain/datasources/datasource.py`
 
-## Communities (164 total, 44 thin omitted)
+## Communities (152 total, 25 thin omitted)
 
 ### Community 0 - "Community 0"
 Cohesion: 0.05
 Nodes (113): _api_get_ollama_config(), _api_is_reachable(), _api_patch_runtime(), _api_run_performance_test(), _backup_neo4j(), _bootstrap_vocabs(), _build_compose_cmd(), _check_command() (+105 more)
+
+### Community 1 - "Community 1"
+Cohesion: 0.15
+Nodes (29): Any, JsonSchema, _count_prompt_tokens(), _cut_repeated_line_run(), _estimated_tokens(), _failed_response_for_repair(), _fits_context_budget(), _format_json_path() (+21 more)
 
 ### Community 2 - "Community 2"
 Cohesion: 0.03
@@ -203,42 +197,46 @@ Nodes (59): App(), asRecord(), asRecordArray(), buildTraceSegments(), BusyKey, C
 
 ### Community 3 - "Community 3"
 Cohesion: 0.06
-Nodes (33): Any, BaseException, CurationLedgerRecord, DraftValidationResult, EvidenceQueryLedgerEntry, ExtractionFileSummary, ExtractionOverview, ExtractionOverviewStatus (+25 more)
+Nodes (32): Any, BaseException, CurationLedgerRecord, DraftValidationResult, EvidenceQueryLedgerEntry, ExtractionFileSummary, ExtractionOverview, ExtractionOverviewStatus (+24 more)
 
 ### Community 4 - "Community 4"
-Cohesion: 0.09
-Nodes (83): DataSourceService, ExtractionService, Neo4jDriver, OllamaClientWrapper, ProfileService, SemanticService, Settings, TaskRegistry (+75 more)
+Cohesion: 0.10
+Nodes (89): ExtractionRunProgress, TaskStatus, Exception, GenerateResponse, MaxRetriesExceeded, OllamaClientWrapper, PromptCompletionDiagnostics, RunUsage (+81 more)
 
 ### Community 5 - "Community 5"
 Cohesion: 0.10
 Nodes (72): AttributeMatch, Path, Any, EvaluationRunManifest, Path, Any, EvaluationRunManifest, EvidenceContext (+64 more)
 
 ### Community 6 - "Community 6"
-Cohesion: 0.05
-Nodes (26): FullTextIndexInfo, Graph, Neo4jDriver, OllamaClientWrapper, TraversalDirection, VectorIndexInfo, VocabGraphStatement, VocabResource (+18 more)
+Cohesion: 0.27
+Nodes (5): Graph, Neo4jSemanticGraphRepository, FakeOllamaClient, Neo4jSemanticGraphRepositoryTests, QueryReturningNeo4jDriver
 
 ### Community 7 - "Community 7"
 Cohesion: 0.20
 Nodes (23): FullTextIndexInfo, Graph, Logger, Settings, VectorIndexInfo, Any, CreateIndexRequest, BaseIndex (+15 more)
 
 ### Community 8 - "Community 8"
-Cohesion: 0.12
-Nodes (5): ExtractionRunProgress, TaskStatus, ExtractionRunResult, remove_null_values(), validation_schema_for_target_class()
+Cohesion: 0.09
+Nodes (8): Any, ExtractionRunProgress, TaskStatus, ExtractionRunResult, export_document_to_jsonld(), remove_null_values(), validation_schema_for_target_class(), ValueError
 
 ### Community 9 - "Community 9"
 Cohesion: 0.11
 Nodes (13): BytesIO, ContentChunk, DataPackage, Path, BytesIO, DataPackageIdNotFoundError, DataPackageZipNotFoundError, InvalidDataPackageFileNameError (+5 more)
 
 ### Community 10 - "Community 10"
-Cohesion: 0.27
-Nodes (13): ExtractionRunProgress, TaskStatus, CompleteWorkflowProgressResponse, CompleteWorkflowRunResponse, CuratedDocumentUpdateRequest, CurationFieldActionRequest, _extraction_run_response(), ExtractionProgressResponse (+5 more)
+Cohesion: 0.09
+Nodes (23): DataSourceService, ExtractionService, Neo4jDriver, OllamaClientWrapper, ProfileService, Settings, TaskRegistry, ContentChunk (+15 more)
 
 ### Community 11 - "Community 11"
 Cohesion: 0.03
 Nodes (65): arrayOfRecords(), ChunkRepairMode, CurationLedgerRecord, DocumentQualityState, DraftQualityState, DraftValidationIssue, DraftValidationResult, emptyInitialContext() (+57 more)
 
+### Community 12 - "Community 12"
+Cohesion: 0.05
+Nodes (16): Any, CurationLedgerRecord, DraftValidationResult, EvidenceQueryLedgerEntry, ExtractionRunResult, ExtractionRunState, FieldCompletionLedgerRecord, FilteredEvidenceLedger (+8 more)
+
 ### Community 13 - "Community 13"
-Cohesion: 0.08
+Cohesion: 0.09
 Nodes (38): Any, QualitativeAttribute, QuantitativeAttribute, VocabQuery, AgenticEntity, BaseExtractionModel, DataGeneratingActivity, DefinedTerm (+30 more)
 
 ### Community 14 - "Community 14"
@@ -246,36 +244,36 @@ Cohesion: 0.22
 Nodes (26): Any, OllamaClientWrapper, Settings, apply_runtime_config(), available_model_summary(), clean_model_name(), diagnose_ollama_runtime(), duration_ms() (+18 more)
 
 ### Community 15 - "Community 15"
-Cohesion: 0.13
-Nodes (47): Any, ExtractionFileSummary, ExtractionOverview, ProjectionLedgerRecord, RankedFile, _activity_to_document(), _agent_to_document(), _agentic_entity_to_document() (+39 more)
+Cohesion: 0.16
+Nodes (40): Any, ExtractionFileSummary, ProjectionLedgerRecord, RankedFile, _activity_to_document(), _agent_to_document(), _agentic_entity_to_document(), build_dataset_level_projection_prompt_components() (+32 more)
 
 ### Community 16 - "Community 16"
 Cohesion: 0.08
-Nodes (37): Any, apply_evidence_instance(), _build_evidence_id(), build_instance_builder_prompt(), build_instance_repair_prompt(), build_novelty_evaluator_prompt(), _builder_field_for_schema(), builder_output_model_for_target() (+29 more)
+Nodes (38): Any, apply_evidence_instance(), _build_evidence_id(), build_instance_builder_prompt(), build_instance_repair_prompt(), build_novelty_evaluator_prompt(), _builder_field_for_schema(), builder_output_model_for_target() (+30 more)
 
 ### Community 18 - "Community 18"
-Cohesion: 0.10
-Nodes (34): ExtractionFileSummary, ExtractionOverview, ExtractionOverviewStatus, PromptTokenBudgeter, build_evidence_context_prompt(), build_evidence_context_prompt_components(), build_evidence_critic_prompt(), build_evidence_critic_prompt_components() (+26 more)
+Cohesion: 0.12
+Nodes (31): ExtractionFileSummary, ExtractionOverview, ExtractionOverviewStatus, PromptTokenBudgeter, build_evidence_context_prompt(), build_evidence_context_prompt_components(), build_evidence_critic_prompt(), build_evidence_critic_prompt_components() (+23 more)
 
 ### Community 19 - "Community 19"
 Cohesion: 0.12
-Nodes (10): TaskInfo, VocabResource, FakeOllamaClient, FakeSemanticGraphRepository, FakeSettings, FakeTaskRegistry, make_service(), make_vocab() (+2 more)
+Nodes (9): TaskInfo, FakeOllamaClient, FakeSemanticGraphRepository, FakeSettings, FakeTaskRegistry, make_service(), make_vocab(), SemanticServiceEmbeddingTests (+1 more)
 
 ### Community 20 - "Community 20"
-Cohesion: 0.26
-Nodes (46): Exception, Exception, Any, ExtractionOverviewStatus, EvidenceRoute, EvidenceAssessmentContext, EvidenceContext, FilteredEvidenceNote (+38 more)
+Cohesion: 0.28
+Nodes (40): Exception, Exception, Any, ExtractionOverviewStatus, ExtractionOverview, ProfileValidationResult, EvidenceRoute, EvidenceAssessmentContext (+32 more)
 
 ### Community 21 - "Community 21"
-Cohesion: 0.07
-Nodes (36): Graph, HttpUrl, VocabResource, Any, RunUsage, Exception, LoadedRdfGraph, Node (+28 more)
+Cohesion: 0.19
+Nodes (20): Graph, HttpUrl, Exception, LoadedRdfGraph, Node, Domain-level representation of a vocabulary scheme., VocabAlreadyExistsError, VocabNotFoundError (+12 more)
 
 ### Community 22 - "Community 22"
 Cohesion: 0.07
 Nodes (36): ApiError, formatApiDetail(), parseJsonResponse(), readJson(), applyCurationFieldAction(), getInitialContextProgress(), getPatchProgress(), getTokenUsage() (+28 more)
 
 ### Community 23 - "Community 23"
-Cohesion: 0.06
-Nodes (3): A dataset resource or generated output, such as a file, dataset, spectrum, peak, Resource, ExtractionDomainTests
+Cohesion: 0.05
+Nodes (6): evidence_text_match_score(), validate_evidence_candidates(), validate_evidence_context_for_chunk(), A dataset resource or generated output, such as a file, dataset, spectrum, peak, Resource, ExtractionDomainTests
 
 ### Community 24 - "Community 24"
 Cohesion: 0.09
@@ -283,27 +281,31 @@ Nodes (26): buildQuery(), chunkDataPackage(), deleteDataPackage(), getChunkStatu
 
 ### Community 25 - "Community 25"
 Cohesion: 0.15
-Nodes (30): EvidenceNote, Any, EvidenceContext, EvidenceNote, ExtractionNormalization, BaseModel, InitialVocab, FileInventoryItem (+22 more)
+Nodes (19): Any, EvidenceContext, EvidenceNote, ExtractionNormalization, FileInventoryItem, ExtractionContext, A traced extraction object pairs an extracted class instance with the specific t, Context for metadata extraction, including activities, entities, datasets, and q (+11 more)
 
 ### Community 27 - "Community 27"
-Cohesion: 0.09
-Nodes (33): EvidenceCandidate, EvidenceNote, RoutedEvidenceContext, Any, EvidenceCandidate, RoutedEvidenceContext, EvidenceCandidate, build_context_window_for_note() (+25 more)
+Cohesion: 0.10
+Nodes (27): Any, EvidenceCandidate, assessment_for_report_item(), build_requirement_evaluation_prompt(), build_requirement_patch_prompt(), _candidate_search_text(), _class_hint_score(), DcatRequirement (+19 more)
 
 ### Community 28 - "Community 28"
-Cohesion: 0.06
-Nodes (39): Any, RunUsage, IsolatedAsyncioTestCase, _count_prompt_tokens(), _cut_repeated_line_run(), _estimated_tokens(), _failed_response_for_repair(), _fits_context_budget() (+31 more)
+Cohesion: 0.17
+Nodes (9): IsolatedAsyncioTestCase, generate_structured(), Single /api/generate call with format=json_schema, parse + validate + retry., FakeGenerateResponse, FakeOllamaClient, GenerateStructuredHappyPathTests, GenerateStructuredRetryTests, Fake ollama GenerateResponse for testing. (+1 more)
 
-### Community 29 - "Community 29"
-Cohesion: 0.05
-Nodes (17): DataPackage, EvidenceContext, ExtractionContext, ExtractionRunState, FilteredEvidenceLedger, ExtractionChunkResult, FileEntry, CompactVocabResource (+9 more)
+### Community 30 - "Community 30"
+Cohesion: 0.14
+Nodes (8): DataPackage, ExtractionRunState, FileEntry, CompactVocabResource, ExtractionServiceWorkflowTests, make_chunk(), make_service(), WhitespaceTokenizer
 
 ### Community 31 - "Community 31"
-Cohesion: 0.17
-Nodes (7): EvidenceCandidate, ExtractionService, ProfileValidationResult, EvidenceEnrichmentContextWindowTests, EvidenceEnrichmentIntegrationTests, EvidenceNoveltyDecisionTests, FakeProfileService
+Cohesion: 0.23
+Nodes (6): EvidenceCandidate, ExtractionService, ProfileValidationResult, EvidenceEnrichmentIntegrationTests, EvidenceNoveltyDecisionTests, FakeProfileService
 
 ### Community 32 - "Community 32"
 Cohesion: 0.22
 Nodes (20): Any, Neo4jDriver, OllamaClientWrapper, Settings, Neo4jDriver, _check_neo4j(), _check_ollama_chat(), _check_ollama_embedding() (+12 more)
+
+### Community 33 - "Community 33"
+Cohesion: 0.22
+Nodes (4): ExtractionContext, ExtractionRunResult, qualitative_context(), quantitative_context()
 
 ### Community 34 - "Community 34"
 Cohesion: 0.10
@@ -326,24 +328,32 @@ Cohesion: 0.12
 Nodes (29): Exception, Form, HttpUrl, ProfileService, UploadFile, JsonLdExportResult, ProfileManifest, ProfileValidationIssue (+21 more)
 
 ### Community 39 - "Community 39"
-Cohesion: 0.14
-Nodes (6): TestClient, FakeOllamaClient, FakeRemoteSettings, FakeRunningModel, FakeSettings, TestSystemApi
+Cohesion: 0.12
+Nodes (7): TestClient, FakeAvailableModel, FakeOllamaClient, FakeRemoteSettings, FakeRunningModel, FakeSettings, TestSystemApi
+
+### Community 40 - "Community 40"
+Cohesion: 0.16
+Nodes (14): VocabResource, A vocabulary resource projection used for embedding generation., VocabResource, compact_vocab_query_result(), compact_vocab_resource(), fuse_vocab_candidates(), Domain-level request for querying one vocabulary resource type., Fuse vector and full-text rankings with weighted reciprocal rank fusion. (+6 more)
 
 ### Community 41 - "Community 41"
-Cohesion: 0.08
-Nodes (57): Exception, GenerateResponse, MaxRetriesExceeded, OllamaClientWrapper, PromptCompletionDiagnostics, RunUsage, ContentChunk, ExtractionRunResult (+49 more)
+Cohesion: 0.12
+Nodes (16): Any, Exception, CompletionResult, Result of a successful structured completion., EmptyResponseError, OutputParsingError, Custom structured completion errors., JSON decode or schema validation failure. (+8 more)
+
+### Community 42 - "Community 42"
+Cohesion: 0.13
+Nodes (3): EvidenceContext, ExtractionRunState, RoutedEvidenceContext
 
 ### Community 43 - "Community 43"
-Cohesion: 0.21
-Nodes (14): FileEntry, PromptTokenBudgeter, attach_cosine_distances(), BufferWindow, ChunkSegment, combine_lines(), ContentChunk, FilteredLine (+6 more)
+Cohesion: 0.20
+Nodes (14): PromptTokenBudgeter, attach_cosine_distances(), BufferWindow, ChunkingStrategy, ChunkSegment, combine_lines(), ContentChunk, FilteredLine (+6 more)
 
 ### Community 44 - "Community 44"
-Cohesion: 0.12
-Nodes (9): FakeFileEntry, ProtectedLineIndicesTests, Unit tests for the chunking domain logic, especially protected_line_indices., Line indices outside the file bounds are silently ignored., Minimal stand-in for FileEntry that only provides extracted content., When protected_line_indices contains [0], a dropped header is retained., With protected_line_indices=None the header is treated as usual., If a protected line is already KEEP, it appears only once. (+1 more)
+Cohesion: 0.11
+Nodes (10): FileEntry, FakeFileEntry, ProtectedLineIndicesTests, Unit tests for the chunking domain logic, especially protected_line_indices., Line indices outside the file bounds are silently ignored., Minimal stand-in for FileEntry that only provides extracted content., When protected_line_indices contains [0], a dropped header is retained., With protected_line_indices=None the header is treated as usual. (+2 more)
 
 ### Community 45 - "Community 45"
-Cohesion: 0.18
-Nodes (24): Any, ExtractionService, CuratedDocumentUpdateRequest, CurationFieldActionRequest, ExtractionProgressResponse, ExtractionRunRequest, ExtractionRunResponse, InitialContextRunRequest (+16 more)
+Cohesion: 0.14
+Nodes (31): Any, DataSourceService, ExtractionService, UploadFile, CompleteWorkflowProgressResponse, CompleteWorkflowRunResponse, CuratedDocumentUpdateRequest, CurationFieldActionRequest (+23 more)
 
 ### Community 46 - "Community 46"
 Cohesion: 0.12
@@ -351,39 +361,39 @@ Nodes (22): VocabQuery, VocabQueryResult, Form, HttpUrl, SemanticService, Upload
 
 ### Community 47 - "Community 47"
 Cohesion: 0.12
-Nodes (15): classify_text_line(), _entropy(), _features(), _has_many_control_chars(), _looks_like_structured_text(), Text quality gate for filtering semantically meaningful lines.  This module is, Contains patterns like:     - key: value     - key = value     - Markdown hea, Unit tests for the tunable text-quality classifier. (+7 more)
+Nodes (16): classify_text_line(), _entropy(), _features(), _has_many_control_chars(), _looks_like_structured_text(), Text quality gate for filtering semantically meaningful lines.  This module is, Contains patterns like:     - key: value     - key = value     - Markdown hea, TextQualityDecision (+8 more)
 
 ### Community 48 - "Community 48"
-Cohesion: 0.18
-Nodes (19): Any, EvidenceNote, _branch_category_affinities(), build_schema_branch_index(), build_schema_search_query(), _class_description(), _dedupe_branches(), _is_class_range() (+11 more)
+Cohesion: 0.17
+Nodes (24): EvidenceNote, Any, EvidenceNote, _branch_category_affinities(), build_schema_branch_index(), build_schema_search_query(), _class_description(), _dedupe_branches() (+16 more)
 
 ### Community 49 - "Community 49"
-Cohesion: 0.16
-Nodes (20): Any, detect_enrichable_fields(), export_document_to_jsonld(), _format_json_path(), generate_profile_artifacts(), GeneratedProfileArtifacts, InvalidProfileIdentifierError, JsonLdExportResult (+12 more)
+Cohesion: 0.10
+Nodes (21): UploadFile, detect_enrichable_fields(), _format_json_path(), generate_profile_artifacts(), GeneratedProfileArtifacts, InvalidProfileIdentifierError, JsonLdExportResult, _normalized_schema_suffix() (+13 more)
 
 ### Community 50 - "Community 50"
-Cohesion: 0.13
-Nodes (10): get_datasource_service(), get_extraction_service(), get_neo4j_driver(), get_ollama_client(), get_profile_service(), get_settings(), get_task_registry(), ExtractionProfileDomainTests (+2 more)
+Cohesion: 0.16
+Nodes (9): get_datasource_service(), get_extraction_service(), get_neo4j_driver(), get_ollama_client(), get_profile_service(), get_settings(), get_task_registry(), FileSystemProfileRepositoryTests (+1 more)
 
 ### Community 51 - "Community 51"
 Cohesion: 0.04
 Nodes (46): 10. Architectural interpretation for the thesis, 11. Current implementation boundaries, 12. Concise thesis-ready summary, 14.1 Quantitative normalization, 14.2 Qualitative normalization, 1. Purpose and role of the prototype, 2. High-level architecture, 3.1 CLI and application lifecycle (+38 more)
 
 ### Community 52 - "Community 52"
-Cohesion: 0.16
-Nodes (17): RankedFile, build_extraction_file_summary_prompt(), build_extraction_overview_fallback_prompt(), build_extraction_overview_prompt(), build_extraction_overview_prompt_components(), _compact_path_tree_lines(), compact_seeded_overview_for_prompt(), ExtractionFileContentWindow (+9 more)
+Cohesion: 0.17
+Nodes (16): RankedFile, build_extraction_file_summary_prompt(), build_extraction_overview_fallback_prompt(), build_extraction_overview_prompt(), build_extraction_overview_prompt_components(), _compact_path_tree_lines(), compact_seeded_overview_for_prompt(), ExtractionFileContentWindow (+8 more)
 
 ### Community 53 - "Community 53"
-Cohesion: 0.18
-Nodes (8): ExtractionFileSummary, ExtractionOverview, PromptTokenBudgeter, RankedFile, ExtractionOverview, ExtractionOverviewFilePreview, PromptTokenBudgeter, WhitespaceTokenizer
+Cohesion: 0.21
+Nodes (7): ExtractionFileSummary, ExtractionOverview, PromptTokenBudgeter, RankedFile, ExtractionOverview, ExtractionOverviewFilePreview, PromptTokenBudgeter
 
 ### Community 54 - "Community 54"
 Cohesion: 0.10
 Nodes (23): checkVocabularyEmbeddings(), deleteVocabulary(), getVocabulary(), importVocabulary(), listVocabularies(), queryVocabulary(), ContextActivity, ContextAgent (+15 more)
 
 ### Community 55 - "Community 55"
-Cohesion: 0.22
-Nodes (6): Any, GeneratedProfileArtifacts, Path, ProfileManifest, FileSystemProfileRepository, ProfileNotFoundError
+Cohesion: 0.16
+Nodes (8): Any, GeneratedProfileArtifacts, Path, ProfileManifest, TestClient, FileSystemProfileRepository, ProfileNotFoundError, ExtractionProfileApiTests
 
 ### Community 56 - "Community 56"
 Cohesion: 0.11
@@ -394,52 +404,56 @@ Cohesion: 0.11
 Nodes (17): dependencies, react, react-dom, devDependencies, @types/react, @types/react-dom, typescript, vite (+9 more)
 
 ### Community 58 - "Community 58"
-Cohesion: 0.13
-Nodes (6): Graph, VocabResource, VocabSchemeInfo, VocabSearchCandidate, Protocol, SemanticGraphRepository
+Cohesion: 0.11
+Nodes (28): EvidenceCandidate, EvidenceNote, RoutedEvidenceContext, RoutedEvidenceContext, BaseModel, InitialVocab, EvidenceCandidate, build_context_window_for_note() (+20 more)
 
 ### Community 59 - "Community 59"
-Cohesion: 0.16
+Cohesion: 0.15
 Nodes (26): DataSourceService, UploadFile, DataPackage, ChunkingRequest, ChunkPostProcessingMetadata, Tunable thresholds for the text-quality classifier.      All defaults mirror t, TextQualityConfig, description (+18 more)
 
 ### Community 60 - "Community 60"
-Cohesion: 0.27
-Nodes (4): TestClient, FakeSemanticService, make_test_client(), SemanticApiRoutingTests
+Cohesion: 0.21
+Nodes (5): TestClient, FastAPI, FakeSemanticService, make_test_client(), SemanticApiRoutingTests
 
 ### Community 61 - "Community 61"
 Cohesion: 0.34
 Nodes (12): Any, build_file_ranking_prompt(), _contains_any(), fallback_file_ranking(), _fallback_reasons(), _fallback_score(), _file_extension(), FileContext (+4 more)
 
 ### Community 62 - "Community 62"
-Cohesion: 0.18
-Nodes (5): Any, GeneratedProfileArtifacts, ProfileManifest, ProfileRepository, ProfileRepository
+Cohesion: 0.10
+Nodes (8): Any, GeneratedProfileArtifacts, ProfileManifest, JsonLdExportResult, ProfileManifest, ProfileValidationResult, ProfileRepository, ProfileRepository
 
 ### Community 63 - "Community 63"
-Cohesion: 0.06
-Nodes (55): InitialTasks, pull_ollama_models(), start_setup(), TaskInfo, Exception, TaskRegistry, Logger, Neo4jDriver (+47 more)
+Cohesion: 0.05
+Nodes (43): TaskInfo, Any, Task, ContentChunk, DataPackage, BytesIO, DataPackage, FileEntry (+35 more)
 
 ### Community 65 - "Community 65"
 Cohesion: 0.16
 Nodes (10): EntityTypeNotSupportedError, IndexDuplicateError, IndexError, IndexNotFoundError, IndexTypeError, Base exception for index operations., Raised when an index cannot be found by name., Raised when multiple indexes share the same name. (+2 more)
 
+### Community 66 - "Community 66"
+Cohesion: 0.24
+Nodes (3): escape_lucene_query(), Escape Lucene special characters in a fulltext query string.      Neo4j's ``db, EscapeLuceneQueryTests
+
 ### Community 67 - "Community 67"
-Cohesion: 0.23
-Nodes (8): BytesIO, DataPackage, FileEntry, FileEntryNotFoundError, InvalidDataPackageZipFileError, FileType, FileType, ZipFile
+Cohesion: 0.12
+Nodes (17): BytesIO, DataPackage, FileEntry, FileEntryNotFoundError, InvalidDataPackageZipFileError, determine_file_type(), extract_text_from_file(), extract_text_from_pdf() (+9 more)
 
 ### Community 68 - "Community 68"
 Cohesion: 0.25
 Nodes (7): compilerOptions, allowSyntheticDefaultImports, composite, module, moduleResolution, skipLibCheck, include
 
 ### Community 70 - "Community 70"
-Cohesion: 0.15
-Nodes (4): ExtractionRunState, Semaphore, Build a `GroundedExtractionObject` for a single voc4cat-grounded object., _resource_title()
+Cohesion: 0.19
+Nodes (12): ExtractionNormalization, Task, VocabQuery, Semaphore, _ObjectGroundingCandidateDiscovery, _ProfileFieldCandidateDiscovery, _QualitativeCandidateDiscovery, _QuantityCandidateDiscovery (+4 more)
 
 ### Community 71 - "Community 71"
 Cohesion: 0.33
 Nodes (4): GenerateResponse, _nanoseconds_to_milliseconds(), Token usage tracking for structured completions., Create RunUsage from an ollama GenerateResponse object.
 
 ### Community 72 - "Community 72"
-Cohesion: 0.20
-Nodes (8): import_initial_vocab(), main(), run_initial_vocab_bootstrap(), get_semantic_service(), lifespan(), Path, setup_logging(), FastAPI
+Cohesion: 0.04
+Nodes (42): import_initial_vocab(), InitialTasks, main(), pull_ollama_models(), run_initial_vocab_bootstrap(), start_setup(), get_semantic_service(), lifespan() (+34 more)
 
 ### Community 73 - "Community 73"
 Cohesion: 0.29
@@ -454,28 +468,28 @@ Cohesion: 0.08
 Nodes (23): For /graphify add and --watch, For /graphify query, For the commit hook and native CLAUDE.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+15 more)
 
 ### Community 78 - "Community 78"
-Cohesion: 0.26
-Nodes (3): ProfileValidationResult, FakeProfileService, RequirementEnrichmentServiceTests
+Cohesion: 0.24
+Nodes (4): evidence_context(), model_output_for_file(), overview_for_file(), resource_context()
 
 ### Community 79 - "Community 79"
 Cohesion: 0.22
 Nodes (4): Any, normalize_neo4j_value(), Convert Neo4j driver values into JSON-serializable Python values., Self
 
 ### Community 80 - "Community 80"
-Cohesion: 0.26
-Nodes (8): determine_file_type(), extract_text_from_file(), extract_text_from_pdf(), extract_text_from_sheets(), normalize_file_extension(), Extract text content from a file based on its type.      Dispatches to the app, Extract text content from a PDF file., Extract text content from a spreadsheet file (Excel, CSV).
+Cohesion: 0.16
+Nodes (4): dict, FakeNeo4jDriver, FakeNode, ImportNeo4jDriver
 
 ### Community 98 - "Community 98"
-Cohesion: 0.29
-Nodes (7): DataSourceService, UploadFile, CompleteWorkflowProgressResponse, CompleteWorkflowRunResponse, get_complete_workflow_progress(), _parse_qualitative_vocab_identifiers(), run_complete_workflow()
+Cohesion: 0.21
+Nodes (8): Graph, Neo4jDriver, OllamaClientWrapper, TraversalDirection, VocabGraphStatement, VocabSchemeInfo, Domain model for a vocabulary term type and its graph shape., VocabTermScheme
 
 ### Community 100 - "Community 100"
 Cohesion: 0.10
 Nodes (19): 1. Goal of this structure, 1. Introduction, 2. Background and Foundations, 2. Recommended high-level chapter structure, 3. Recommended appendices, 3. State of the Art, 4. Requirements and Research Design, 4. Suggested LaTeX file structure (+11 more)
 
 ### Community 101 - "Community 101"
-Cohesion: 0.12
-Nodes (16): CLI Wrappers, Clone and Prepare, Complete Workflow Endpoint, Development Mode, Environment Variables, Infrastructure Mode, Neo4j Data Maintenance, Ollama Cloud Sign-In (+8 more)
+Cohesion: 0.11
+Nodes (17): CLI Wrappers, Clone and Prepare, Complete Workflow Endpoint, Development Mode, Environment Variables, Graphify Workflows, Infrastructure Mode, Neo4j Data Maintenance (+9 more)
 
 ### Community 102 - "Community 102"
 Cohesion: 0.50
@@ -490,8 +504,8 @@ Cohesion: 0.17
 Nodes (11): Architecture, Common Lookup Paths, Complete Workflow And Evaluation, Important Environment Fields, Layer Boundaries, Repository Root, Runtime Artifacts, Runtime Modes (+3 more)
 
 ### Community 107 - "Community 107"
-Cohesion: 0.13
-Nodes (14): CompletionResult, EvidenceAssessment, EvidenceAssessmentContext, dataset_level_projection_result(), dataset_summary_result(), empty_profile_patch(), FakeLogger, FakeSemanticService (+6 more)
+Cohesion: 0.22
+Nodes (9): EvidenceContext, CompletionResult, dataset_level_projection_result(), dataset_summary_result(), empty_profile_patch(), portable_assessments_for(), shallow_projection_result(), target_decision() (+1 more)
 
 ### Community 108 - "Community 108"
 Cohesion: 0.18
@@ -516,6 +530,10 @@ Nodes (9): Completion Inventory, Current Breakages Addressed, Current Extraction
 ### Community 113 - "Community 113"
 Cohesion: 0.20
 Nodes (9): Baseline Options, Current Evaluation Status, Error Categories, Evaluation Material, Manual Reference Annotation, Metrics, Reproducibility Checklist, SIMONE Evaluation Plan (+1 more)
+
+### Community 114 - "Community 114"
+Cohesion: 0.28
+Nodes (3): VocabSearchCandidate, normalize_index_token(), SemanticIndexType
 
 ### Community 115 - "Community 115"
 Cohesion: 0.22
@@ -550,8 +568,8 @@ Cohesion: 0.29
 Nodes (6): Claim Support Assessment, Current Real-Run Evidence, Implemented Evaluation Support, Manual-Reference Baseline, Next Evaluation Work, SIMONE Preliminary Prototype Evaluation
 
 ### Community 123 - "Community 123"
-Cohesion: 0.22
-Nodes (3): JsonLdExportResult, ProfileManifest, ProfileValidationResult
+Cohesion: 0.36
+Nodes (3): Remove markdown code fences and surrounding whitespace., _strip_markdown_fences(), StripMarkdownFencesTests
 
 ### Community 124 - "Community 124"
 Cohesion: 0.33
@@ -565,13 +583,17 @@ Nodes (6): 8.1 Evaluation material, 8.2 Reference annotation, 8.3 Metrics, 8.4 Q
 Cohesion: 0.33
 Nodes (5): Evaluation workflow, Future work, How it works, Loading behavior, Purpose
 
-### Community 129 - "Community 129"
-Cohesion: 0.33
-Nodes (4): AsyncClient, Logger, Settings, The underlying ollama.AsyncClient for direct /api/generate calls.          Use
+### Community 127 - "Community 127"
+Cohesion: 0.32
+Nodes (3): FullTextIndexInfo, VectorIndexInfo, VocabResource
 
 ### Community 130 - "Community 130"
 Cohesion: 0.40
 Nodes (4): Current scope, Quick Start, Run locally without Docker, SIMONE Frontend
+
+### Community 131 - "Community 131"
+Cohesion: 0.47
+Nodes (3): _extract_json_schema(), Extract a JSON Schema dict from a Pydantic model class or return a dict as-is., ExtractJsonSchemaTests
 
 ### Community 132 - "Community 132"
 Cohesion: 0.50
@@ -605,20 +627,24 @@ Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphif
 Cohesion: 0.67
 Nodes (3): 4. Scope, Excluded or limited, Included
 
+### Community 158 - "Community 158"
+Cohesion: 0.11
+Nodes (7): Graph, TraversalDirection, VocabGraphStatement, VocabResource, VocabSchemeInfo, VocabSearchCandidate, SemanticGraphRepository
+
 ## Knowledge Gaps
-- **395 isolated node(s):** `ProfileManifest`, `ProfileValidationResult`, `ProfileValidationIssue`, `JsonLdExportResult`, `Path` (+390 more)
+- **396 isolated node(s):** `ProfileManifest`, `ProfileValidationResult`, `ProfileValidationIssue`, `JsonLdExportResult`, `Path` (+391 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **44 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **25 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `BaseModel` connect `Community 25` to `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 10`, `Community 13`, `Community 15`, `Community 16`, `Community 18`, `Community 20`, `Community 21`, `Community 27`, `Community 28`, `Community 29`, `Community 32`, `Community 38`, `Community 41`, `Community 43`, `Community 46`, `Community 48`, `Community 49`, `Community 52`, `Community 59`, `Community 61`, `Community 63`, `Community 67`, `Community 102`?**
-  _High betweenness centrality (0.160) - this node is a cross-community bridge._
-- **Why does `ExtractionService` connect `Community 145` to `Community 4`, `Community 5`, `Community 8`, `Community 10`, `Community 140`, `Community 16`, `Community 17`, `Community 20`, `Community 23`, `Community 26`, `Community 27`, `Community 29`, `Community 31`, `Community 33`, `Community 40`, `Community 41`, `Community 42`, `Community 45`, `Community 53`, `Community 63`, `Community 70`, `Community 78`, `Community 98`, `Community 107`, `Community 127`?**
-  _High betweenness centrality (0.118) - this node is a cross-community bridge._
-- **Why does `OllamaClientWrapper` connect `Community 4` to `Community 0`, `Community 1`, `Community 129`, `Community 8`, `Community 14`, `Community 145`, `Community 25`, `Community 26`, `Community 28`, `Community 29`, `Community 30`, `Community 32`, `Community 162`, `Community 163`, `Community 34`, `Community 40`, `Community 41`, `Community 42`, `Community 53`, `Community 63`, `Community 70`, `Community 107`, `Community 127`?**
-  _High betweenness centrality (0.076) - this node is a cross-community bridge._
+- **Why does `BaseModel` connect `Community 58` to `Community 1`, `Community 131`, `Community 4`, `Community 5`, `Community 7`, `Community 13`, `Community 16`, `Community 17`, `Community 18`, `Community 20`, `Community 21`, `Community 25`, `Community 27`, `Community 28`, `Community 30`, `Community 32`, `Community 38`, `Community 40`, `Community 41`, `Community 43`, `Community 46`, `Community 48`, `Community 49`, `Community 52`, `Community 59`, `Community 61`, `Community 67`, `Community 72`, `Community 98`, `Community 102`?**
+  _High betweenness centrality (0.170) - this node is a cross-community bridge._
+- **Why does `ExtractionService` connect `Community 145` to `Community 128`, `Community 4`, `Community 5`, `Community 8`, `Community 10`, `Community 12`, `Community 140`, `Community 16`, `Community 17`, `Community 20`, `Community 23`, `Community 26`, `Community 27`, `Community 29`, `Community 30`, `Community 31`, `Community 33`, `Community 42`, `Community 45`, `Community 48`, `Community 53`, `Community 63`, `Community 70`, `Community 72`, `Community 107`?**
+  _High betweenness centrality (0.119) - this node is a cross-community bridge._
+- **Why does `OllamaClientWrapper` connect `Community 72` to `Community 0`, `Community 1`, `Community 4`, `Community 8`, `Community 10`, `Community 12`, `Community 14`, `Community 17`, `Community 145`, `Community 26`, `Community 30`, `Community 32`, `Community 34`, `Community 41`, `Community 42`, `Community 53`, `Community 58`, `Community 63`, `Community 70`?**
+  _High betweenness centrality (0.084) - this node is a cross-community bridge._
 - **Are the 83 inferred relationships involving `ExtractionService` (e.g. with `Any` and `DataSourceService`) actually correct?**
   _`ExtractionService` has 83 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 222 inferred relationships involving `TaskStatus` (e.g. with `InitialTasks` and `Any`) actually correct?**
