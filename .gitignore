@@ -227,3 +227,4 @@ graphify-out/.graphify_cached.json
 graphify-out/.graphify_uncached.txt
 graphify-out/.graphify_chunk_*.json
 graphify-out/.needs_update
+.codex/hooks.json
