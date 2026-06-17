@@ -21,7 +21,7 @@ class FileEntryResponse(BaseModel):
 class DataPackageResponse(BaseModel):
     file_name: str
     id: str
-    files: list[FileEntryResponse] = Field(..., min_length=1) # TODO: remove this field for listing all data packages, only include it for retrieving a single data package
+    files: list[FileEntryResponse] = Field(..., min_length=1)
 
 def _data_package_response(data_package: DataPackage) -> DataPackageResponse:
     return DataPackageResponse(**data_package.dump_without_raw_content())
