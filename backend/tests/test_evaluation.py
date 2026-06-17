@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 from app.domain.datasources import DataPackage, FileEntry
 from app.domain.extraction import (
     EvidenceContext,
-    EvidenceNote,
+    EvidenceCandidate,
     ExtractionNormalization,
     ExtractionRunResult,
     ExtractionRunState,
@@ -30,19 +30,19 @@ from app.services.extraction_service import ExtractionService
 
 def evidence_context() -> EvidenceContext:
     return EvidenceContext(
-        notes=[
-            EvidenceNote(
-                note_id="method-ir",
+        candidates=[
+            EvidenceCandidate(
+                candidate_id="method-ir",
                 category="method_signal",
-                observation="IR method: infrared spectroscopy using a Bruker ALPHA instrument.",
+                claim="IR method: infrared spectroscopy using a Bruker ALPHA instrument.",
                 evidence_text="instrument: Bruker ALPHA",
                 file_path="dataset_description.txt",
                 evidence_match_score=1.0,
             ),
-            EvidenceNote(
-                note_id="agent-bruker",
+            EvidenceCandidate(
+                candidate_id="agent-bruker",
                 category="agent_signal",
-                observation="Bruker ALPHA spectrometer.",
+                claim="Bruker ALPHA spectrometer.",
                 evidence_text="instrument: Bruker ALPHA",
                 file_path="dataset_description.txt",
                 evidence_match_score=1.0,
@@ -172,7 +172,7 @@ class EvaluationTests(unittest.TestCase):
 
         self.assertTrue(report.schema_valid)
         self.assertTrue(report.file_ranking_top1_hit)
-        self.assertEqual(report.object_metrics["EvidenceNote"].recall, 1.0)
+        self.assertEqual(report.object_metrics["EvidenceCandidate"].recall, 1.0)
         self.assertEqual(report.attribute_metrics.recall, 1.0)
         self.assertEqual(report.vocab_mapping_metrics.recall, 1.0)
         self.assertEqual(report.required_profile_field_coverage, 1.0)

@@ -11,7 +11,7 @@ from app.domain.extraction import (
     EvidenceAssessment,
     EvidenceAssessmentContext,
     EvidenceContext,
-    EvidenceNote,
+    EvidenceCandidate,
     ExtractionChunkResult,
     ExtractionContext,
     ExtractionFileSummary,
@@ -429,11 +429,11 @@ def evidence_context(
     file_path: str = "README.md",
 ) -> EvidenceContext:
     return EvidenceContext(
-        notes=[
-            EvidenceNote(
-                note_id=identifier,
+        candidates=[
+            EvidenceCandidate(
+                candidate_id=identifier,
                 category=category,
-                observation=observation,
+                claim=observation,
                 evidence_text=evidence_text or observation,
                 signal_level="high",
                 file_path=file_path,
@@ -1794,11 +1794,11 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         chunk = make_chunk(content="new content")
         ranking = FileRankingResult(files=[RankedFile(rank=1, file_path=chunk.file_path)])
         old_context = EvidenceContext(
-            notes=[
-                EvidenceNote(
-                    note_id="old",
+            candidates=[
+                EvidenceCandidate(
+                    candidate_id="old",
                     category="resource_signal",
-                    observation="Old context",
+                    claim="Old context",
                     evidence_text="old evidence",
                     signal_level="high",
                 )
@@ -1854,7 +1854,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(resumed.chunk_results[0].status, "completed")
         self.assertEqual(
-            resumed.chunk_results[0].evidence_context.notes[0].note_id,
+            resumed.chunk_results[0].evidence_context.notes[0].candidate_id,
             "old",
         )
 
@@ -2289,8 +2289,8 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNotNone(output_repository.evidence_context)
         self.assertGreaterEqual(len(output_repository.evidence_contexts), 2)
-        self.assertEqual(output_repository.evidence_contexts[0].notes[0].note_id, "alpha-resource")
-        self.assertEqual(len(output_repository.evidence_contexts[1].notes), 2)
+        self.assertEqual(output_repository.evidence_contexts[0].portable_evidence[0].candidate_id, "alpha-resource")
+        self.assertEqual(len(output_repository.evidence_contexts[1].portable_evidence), 2)
         self.assertIsNotNone(output_repository.result)
         self.assertEqual(output_repository.result.generated_final_draft["id"], "package-id")
         self.assertGreaterEqual(len(output_repository.run_state.projection_ledger), 1)
@@ -2323,11 +2323,11 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             seen_components["prompt"] = [name for name, _ in kwargs["prompt_components"]]
             return CompletionResult(
                 output=EvidenceContext(
-                    notes=[
-                        EvidenceNote(
-                            note_id="context-only",
+                    candidates=[
+                        EvidenceCandidate(
+                            candidate_id="context-only",
                             category="resource_signal",
-                            observation="Context only resource.",
+                            claim="Context only resource.",
                             evidence_text="metadata",
                             signal_level="high",
                         )
@@ -2600,7 +2600,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(progress.stage, "interim_evidence_context")
         self.assertIsNotNone(progress.interim_evidence_context)
         self.assertEqual(
-            progress.interim_evidence_context.notes[0].note_id,
+            progress.interim_evidence_context.notes[0].candidate_id,
             "interim-dataset",
         )
 
@@ -2612,11 +2612,11 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         chunk_outputs = [
             CompletionResult(
                 output=EvidenceContext(
-                    notes=[
-                        EvidenceNote(
-                            note_id="resource-one",
+                    candidates=[
+                        EvidenceCandidate(
+                            candidate_id="resource-one",
                             category="resource_signal",
-                            observation="First partial resource.",
+                            claim="First partial resource.",
                             evidence_text="sample one",
                             signal_level="high",
                         )
@@ -2663,11 +2663,11 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             call_order.append("repair")
             return CompletionResult(
                 output=EvidenceContext(
-                    notes=[
-                        EvidenceNote(
-                            note_id="resource-two",
+                    candidates=[
+                        EvidenceCandidate(
+                            candidate_id="resource-two",
                             category="resource_signal",
-                            observation="Repaired resource.",
+                            claim="Repaired resource.",
                             evidence_text="sample two",
                             signal_level="high",
                         )
@@ -2696,7 +2696,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIsNotNone(output_repository.evidence_context)
         self.assertEqual(
-            [note.note_id for note in output_repository.evidence_context.notes],
+            [note.candidate_id for note in output_repository.evidence_context.portable_evidence],
             ["resource-one", "resource-two"],
         )
         self.assertIn("chunk_extraction_repair", output_repository.token_usage)
@@ -2708,11 +2708,11 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         chunk_outputs = [
             CompletionResult(
                 output=EvidenceContext(
-                    notes=[
-                        EvidenceNote(
-                            note_id="resource-one",
+                    candidates=[
+                        EvidenceCandidate(
+                            candidate_id="resource-one",
                             category="resource_signal",
-                            observation="First partial resource.",
+                            claim="First partial resource.",
                             evidence_text="sample one",
                             signal_level="high",
                         )
@@ -2789,11 +2789,11 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             ),
             CompletionResult(
                 output=EvidenceContext(
-                    notes=[
-                        EvidenceNote(
-                            note_id="resource-two",
+                    candidates=[
+                        EvidenceCandidate(
+                            candidate_id="resource-two",
                             category="resource_signal",
-                            observation="Second chunk evidence.",
+                            claim="Second chunk evidence.",
                             evidence_text="sample two",
                             signal_level="high",
                         )
@@ -2821,11 +2821,11 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             call_order.append("repair")
             return CompletionResult(
                 output=EvidenceContext(
-                    notes=[
-                        EvidenceNote(
-                            note_id="resource-one",
+                    candidates=[
+                        EvidenceCandidate(
+                            candidate_id="resource-one",
                             category="resource_signal",
-                            observation="Repaired first chunk evidence.",
+                            claim="Repaired first chunk evidence.",
                             evidence_text="sample one",
                             signal_level="high",
                         )
@@ -2891,11 +2891,11 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 captured_system_prompts.append(kwargs["system"])
                 return CompletionResult(
                     output=EvidenceContext(
-                        notes=[
-                            EvidenceNote(
-                                note_id="resource-one",
+                        candidates=[
+                            EvidenceCandidate(
+                                candidate_id="resource-one",
                                 category="resource_signal",
-                                observation="First chunk evidence.",
+                                claim="First chunk evidence.",
                                 evidence_text="sample one",
                                 signal_level="high",
                             )
@@ -2950,11 +2950,11 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             ),
             CompletionResult(
                 output=EvidenceContext(
-                    notes=[
-                        EvidenceNote(
-                            note_id="resource-two",
+                    candidates=[
+                        EvidenceCandidate(
+                            candidate_id="resource-two",
                             category="resource_signal",
-                            observation="Second chunk evidence.",
+                            claim="Second chunk evidence.",
                             evidence_text="sample two",
                             signal_level="high",
                         )
@@ -3082,7 +3082,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             ["completed", "completed"],
         )
         self.assertEqual(
-            [note.note_id for note in output_repository.evidence_context.notes],
+            [note.candidate_id for note in output_repository.evidence_context.portable_evidence],
             ["already-extracted", "resumed-chunk"],
         )
 
@@ -3319,7 +3319,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNotNone(context)
         self.assertEqual(
-            [note.note_id for note in context.notes],
+            [note.candidate_id for note in context.notes],
             ["data-context"],
         )
 
@@ -3349,7 +3349,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNotNone(context)
         self.assertEqual(
-            [note.note_id for note in context.notes],
+            [note.candidate_id for note in context.notes],
             ["resource-0", "resource-1"],
         )
 

@@ -12,7 +12,7 @@ from app.domain.extraction import (
     EvidenceAssessment,
     EvidenceChunkContext,
     EvidenceChunkMetadata,
-    EvidenceNote,
+    EvidenceCandidate,
     EVIDENCE_CONTEXT_SYSTEM_PROMPT,
     ExtractionContext,
     ExtractionFileSummary,
@@ -274,17 +274,17 @@ classes:
     def test_evidence_validation_accepts_exact_and_whitespace_normalized_matches(self):
         chunk = "##TITLE= Sample A\n##OWNER= Lab Team\n##XUNITS= 1/CM"
         context = EvidenceContext(
-            notes=[
-                EvidenceNote(
-                    note_id="n1",
+            candidates=[
+                EvidenceCandidate(
+                    candidate_id="n1",
                     category="resource_signal",
-                    observation="The chunk names Sample A.",
+                    claim="The chunk names Sample A.",
                     evidence_text="##TITLE= Sample A",
                 ),
-                EvidenceNote(
-                    note_id="n2",
+                EvidenceCandidate(
+                    candidate_id="n2",
                     category="agent_signal",
-                    observation="The owner is Lab Team.",
+                    claim="The owner is Lab Team.",
                     evidence_text="##OWNER=    Lab Team",
                 ),
             ]
@@ -298,15 +298,15 @@ classes:
             end_idx=3,
         )
 
-        self.assertEqual(len(validated.notes), 2)
+        self.assertEqual(len(validated.candidates), 2)
         self.assertEqual(dropped, [])
-        self.assertTrue(all(note.evidence_match_score >= 0.9 for note in validated.notes))
+        self.assertTrue(all(note.evidence_match_score >= 0.9 for note in validated.candidates))
 
     def test_evidence_candidate_tracks_grounding_separately_from_quality(self):
         chunk = "title: Sample A\nmethod: calibration experiment"
         context = EvidenceContext(
             candidates=[
-                EvidenceNote(
+                EvidenceCandidate(
                     candidate_id="method_group",
                     category="method_signal",
                     claim="The resource states a calibration experiment method.",
@@ -324,10 +324,10 @@ classes:
         )
 
         self.assertEqual(dropped, [])
-        self.assertEqual(validated.notes[0].evidence_match_score, 1.0)
-        self.assertFalse(hasattr(validated.notes[0], "signal_level"))
-        self.assertFalse(hasattr(validated.notes[0], "interpretation_confidence"))
-        self.assertFalse(hasattr(validated.notes[0], "profile_worthiness"))
+        self.assertEqual(validated.candidates[0].evidence_match_score, 1.0)
+        self.assertFalse(hasattr(validated.candidates[0], "signal_level"))
+        self.assertFalse(hasattr(validated.candidates[0], "interpretation_confidence"))
+        self.assertFalse(hasattr(validated.candidates[0], "profile_worthiness"))
 
     def test_evidence_prompt_discourages_boilerplate_and_requires_quality(self):
         self.assertIn("high-recall", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
@@ -508,8 +508,8 @@ classes:
     def test_route_evidence_candidates_uses_generic_assessment(self):
         context = EvidenceContext(
             candidates=[
-                EvidenceNote(candidate_id="portable", category="resource_signal", claim="Dataset title is Sample A.", evidence_text="Dataset title: Sample A"),
-                EvidenceNote(candidate_id="contextual", category="method_signal", claim="A local runtime path is present.", evidence_text="Path: C:/tmp/run"),
+                EvidenceCandidate(candidate_id="portable", category="resource_signal", claim="Dataset title is Sample A.", evidence_text="Dataset title: Sample A"),
+                EvidenceCandidate(candidate_id="contextual", category="method_signal", claim="A local runtime path is present.", evidence_text="Path: C:/tmp/run"),
             ]
         )
 
@@ -550,19 +550,19 @@ classes:
 
     def test_repeated_evidence_dedupe_keeps_best_representative(self):
         context = EvidenceContext(
-            notes=[
-                EvidenceNote(
-                    note_id="secondary",
+            candidates=[
+                EvidenceCandidate(
+                    candidate_id="secondary",
                     category="resource_signal",
-                    observation="Format.",
+                    claim="Format.",
                     evidence_text="##JCAMP-DX=5.00",
                     file_path="rank2.jdx",
                     signal_level="high",
                 ),
-                EvidenceNote(
-                    note_id="primary",
+                EvidenceCandidate(
+                    candidate_id="primary",
                     category="resource_signal",
-                    observation="JCAMP-DX file syntax format version 5.00 is declared.",
+                    claim="JCAMP-DX file syntax format version 5.00 is declared.",
                     evidence_text="##JCAMP-DX=5.00",
                     file_path="rank1.jdx",
                     signal_level="high",
@@ -575,7 +575,7 @@ classes:
             file_rank_by_path={"rank1.jdx": 1, "rank2.jdx": 2},
         )
 
-        self.assertEqual([note.note_id for note in deduped.notes], ["primary"])
+        self.assertEqual([note.candidate_id for note in deduped.notes], ["primary"])
         self.assertEqual(len(dropped), 1)
         self.assertEqual(dropped[0].reason, "duplicate_evidence")
         self.assertEqual(dropped[0].duplicate_representative_id, "primary")
@@ -583,11 +583,11 @@ classes:
     def test_evidence_validation_rejects_synthetic_paraphrase(self):
         chunk = "##TITLE= Real JCAMP record\n##XUNITS= 1/CM"
         context = EvidenceContext(
-            notes=[
-                EvidenceNote(
-                    note_id="synthetic",
+            candidates=[
+                EvidenceCandidate(
+                    candidate_id="synthetic",
                     category="measurement_signal",
-                    observation="Synthetic experiment for testing.",
+                    claim="Synthetic experiment for testing.",
                     evidence_text="experiment-1 synthetic data for testing",
                 )
             ]
@@ -601,8 +601,8 @@ classes:
             end_idx=2,
         )
 
-        self.assertEqual(validated.notes, [])
-        self.assertEqual([note.note_id for note in dropped], ["synthetic"])
+        self.assertEqual(validated.candidates, [])
+        self.assertEqual([note.candidate_id for note in dropped], ["synthetic"])
         self.assertLess(evidence_text_match_score(dropped[0].evidence_text, chunk), 0.9)
 
     def test_noisy_jcamp_payload_detection_skips_xydata_payload_but_not_headers(self):
@@ -787,21 +787,21 @@ classes:
             ExtractionChunkResult(
                 chunk_index=0, file_path="a.txt", start_idx=0, end_idx=1,
                 status="completed",
-                evidence_context=EvidenceContext(notes=[
-                    EvidenceNote(note_id="a", category="resource_signal", observation="A", evidence_text="a"),
+                evidence_context=EvidenceContext(candidates=[
+                    EvidenceCandidate(candidate_id="a", category="resource_signal", claim="A", evidence_text="a"),
                 ]),
             ),
             ExtractionChunkResult(
                 chunk_index=1, file_path="b.txt", start_idx=0, end_idx=1,
                 status="completed",
-                evidence_context=EvidenceContext(notes=[
-                    EvidenceNote(note_id="b", category="resource_signal", observation="B", evidence_text="b"),
+                evidence_context=EvidenceContext(candidates=[
+                    EvidenceCandidate(candidate_id="b", category="resource_signal", claim="B", evidence_text="b"),
                 ]),
             ),
         ])
         ctx = ExtractionService._global_evidence_context_for_prompt(state, current_chunk_index=2)
         self.assertIsNotNone(ctx)
-        ids = [note.note_id for note in ctx.notes]
+        ids = [note.candidate_id for note in ctx.portable_evidence]
         self.assertIn("a", ids)
         self.assertIn("b", ids)
 
@@ -812,40 +812,40 @@ classes:
             ExtractionChunkResult(
                 chunk_index=0, file_path="a.txt", start_idx=0, end_idx=1,
                 status="completed",
-                evidence_context=EvidenceContext(notes=[]),
+                evidence_context=EvidenceContext(candidates=[]),
             ),
             ExtractionChunkResult(
                 chunk_index=5, file_path="a.txt", start_idx=0, end_idx=1,
                 status="completed",
-                evidence_context=EvidenceContext(notes=[
-                    EvidenceNote(note_id="later", category="resource_signal", observation="Later", evidence_text="later"),
+                evidence_context=EvidenceContext(candidates=[
+                    EvidenceCandidate(candidate_id="later", category="resource_signal", claim="Later", evidence_text="later"),
                 ]),
             ),
         ])
         ctx = ExtractionService._global_evidence_context_for_prompt(state, current_chunk_index=6)
         self.assertIsNotNone(ctx)
-        ids = [note.note_id for note in ctx.notes]
+        ids = [note.candidate_id for note in ctx.portable_evidence]
         self.assertIn("later", ids)
 
         # For chunk 5, only chunks with index < 5 should be included
         ctx_5 = ExtractionService._global_evidence_context_for_prompt(state, current_chunk_index=5)
         self.assertIsNotNone(ctx_5)
-        self.assertEqual(ctx_5.notes, [])
+        self.assertEqual(ctx_5.portable_evidence, [])
 
     def test_projection_identifier_disambiguates_chunk_local_note_ids(self):
-        first = EvidenceNote(
-            note_id="software_version",
+        first = EvidenceCandidate(
+            candidate_id="software_version",
             category="resource_signal",
-            observation="TOPSPIN version",
+            claim="TOPSPIN version",
             evidence_text="##TITLE= Audit trail, TOPSPIN Version 3.2",
             file_path="10.zip/10/audita.txt",
             start_idx=0,
             end_idx=25,
         )
-        second = EvidenceNote(
-            note_id="software_version",
+        second = EvidenceCandidate(
+            candidate_id="software_version",
             category="resource_signal",
-            observation="TOPSPIN processing version",
+            claim="TOPSPIN processing version",
             evidence_text="##TITLE= Parameter file, TOPSPIN Version 3.2",
             file_path="10.zip/10/pdata/1/outd",
             start_idx=0,
@@ -859,23 +859,23 @@ classes:
 
     def test_initial_draft_includes_core_and_evidence_guided_scaffold(self):
         evidence = EvidenceContext(
-            notes=[
-                EvidenceNote(
-                    note_id="instrument",
+            candidates=[
+                EvidenceCandidate(
+                    candidate_id="instrument",
                     category="agent_signal",
-                    observation="Instrument owner is Bruker.",
+                    claim="Instrument owner is Bruker.",
                     evidence_text="##ORIGIN= Bruker BioSpin GmbH",
                 ),
-                EvidenceNote(
-                    note_id="solvent",
+                EvidenceCandidate(
+                    candidate_id="solvent",
                     category="entity_signal",
-                    observation="Solvent is CDCl3.",
+                    claim="Solvent is CDCl3.",
                     evidence_text="SOLVENT= <CDCl3>",
                 ),
-                EvidenceNote(
-                    note_id="pulse",
+                EvidenceCandidate(
+                    candidate_id="pulse",
                     category="method_signal",
-                    observation="Pulse sequence is zg30.",
+                    claim="Pulse sequence is zg30.",
                     evidence_text="PULPROG= <zg30>",
                 ),
             ]
@@ -907,7 +907,7 @@ classes:
     def test_initial_draft_prunes_only_untouched_optional_scaffold(self):
         document, scaffold = ExtractionService._initial_profile_document(
             data_package_id="package-id",
-            evidence_context=EvidenceContext(notes=[]),
+            evidence_context=EvidenceContext(candidates=[]),
             validation_schema=self.INITIAL_DRAFT_SCHEMA,
         )
         document["creator"][0]["name"] = ["Bruker BioSpin GmbH"]
@@ -924,7 +924,7 @@ classes:
     def test_target_catalog_marks_description_as_last_resort_and_scaffold_status(self):
         document, scaffold = ExtractionService._initial_profile_document(
             data_package_id="package-id",
-            evidence_context=EvidenceContext(notes=[]),
+            evidence_context=EvidenceContext(candidates=[]),
             validation_schema=self.INITIAL_DRAFT_SCHEMA,
         )
 
@@ -963,10 +963,10 @@ classes:
         self.assertIn("OBI:0000968", device.exact_mappings)
 
     def test_schema_search_prefers_device_participant_branch(self):
-        note = EvidenceNote(
-            note_id="instrument",
+        note = EvidenceCandidate(
+            candidate_id="instrument",
             category="resource_signal",
-            observation="Instrument used is Bruker Avance 500 MHz.",
+            claim="Instrument used is Bruker Avance 500 MHz.",
             evidence_text="instrument: Bruker Avance 500 MHz",
         )
         branches = build_schema_branch_index(
@@ -985,7 +985,7 @@ classes:
     def test_target_object_rewrite_replaces_only_selected_target(self):
         document, _scaffold = ExtractionService._initial_profile_document(
             data_package_id="package-id",
-            evidence_context=EvidenceContext(notes=[]),
+            evidence_context=EvidenceContext(candidates=[]),
             validation_schema=self.INITIAL_DRAFT_SCHEMA,
         )
         replacement = {
@@ -1041,22 +1041,22 @@ classes:
         self.assertIsNone(value["format"])
 
     def test_instrument_note_uses_free_text_observation_without_facets(self):
-        note = EvidenceNote(
-            note_id="instrument",
+        note = EvidenceCandidate(
+            candidate_id="instrument",
             category="agent_signal",
-            observation="Instrument/device used is Bruker Avance 500 MHz.",
+            claim="Instrument/device used is Bruker Avance 500 MHz.",
             evidence_text="instrument: Bruker Avance 500 MHz",
         )
 
         self.assertEqual(note.category, "agent_signal")
-        self.assertIn("Instrument/device", note.observation)
+        self.assertIn("Instrument/device", note.claim)
         self.assertFalse(hasattr(note, "facets"))
 
     def test_low_level_parameters_only_get_parameter_schema_hint(self):
-        note = EvidenceNote(
-            note_id="td_setting",
+        note = EvidenceCandidate(
+            candidate_id="td_setting",
             category="method_signal",
-            observation="Low-level parameter TD is set to 65536.",
+            claim="Low-level parameter TD is set to 65536.",
             evidence_text="##$TD= 65536",
         )
         query = build_schema_search_query([note], max_depth=3)
@@ -1065,10 +1065,10 @@ classes:
 
     def test_deterministic_keyword_fallback_skips_raw_parameter_settings(self):
         notes = [
-            EvidenceNote(
-                note_id="td_setting",
+            EvidenceCandidate(
+                candidate_id="td_setting",
                 category="method_signal",
-                observation="NMR acquisition parameter TD is 65536.",
+                claim="NMR acquisition parameter TD is 65536.",
                 evidence_text="##$TD= 65536",
             )
         ]
@@ -1083,17 +1083,17 @@ classes:
 
     def test_low_level_bruker_hardware_parameters_are_not_profile_targets(self):
         notes = [
-            EvidenceNote(
-                note_id="note_15",
+            EvidenceCandidate(
+                candidate_id="note_15",
                 category="method_signal",
-                observation="Bla01Eth parameter is set to '<149.236.99.254>'.",
+                claim="Bla01Eth parameter is set to '<149.236.99.254>'.",
                 evidence_text="##$Bla01Eth= <149.236.99.254>",
                 file_path="10.zip/10/uxnmr.par",
             ),
-            EvidenceNote(
-                note_id="note_16",
+            EvidenceCandidate(
+                candidate_id="note_16",
                 category="method_signal",
-                observation="Bla01Nam parameter is set to '<BLAXH300/100 E 200-600MHZ INR>'.",
+                claim="Bla01Nam parameter is set to '<BLAXH300/100 E 200-600MHZ INR>'.",
                 evidence_text="##$Bla01Nam= <BLAXH300/100 E 200-600MHZ INR>",
                 file_path="10.zip/10/uxnmr.par",
             ),
@@ -1127,10 +1127,10 @@ classes:
                 "evaluated_entity": [],
             },
             notes=[
-                EvidenceNote(
-                    note_id="method_setting",
+                EvidenceCandidate(
+                    candidate_id="method_setting",
                     category="method_signal",
-                    observation="The workflow uses a calibration method.",
+                    claim="The workflow uses a calibration method.",
                     evidence_text="method = calibration",
                 )
             ],
@@ -1145,10 +1145,10 @@ classes:
                 "media_type": None,
             },
             notes=[
-                EvidenceNote(
-                    note_id="format_file",
+                EvidenceCandidate(
+                    candidate_id="format_file",
                     category="resource_signal",
-                    observation="The file declares a structured data format.",
+                    claim="The file declares a structured data format.",
                     evidence_text="format = structured text",
                     file_path="data.txt",
                 )
@@ -1161,10 +1161,10 @@ classes:
         self.assertIn("Primary dataset distribution", distribution_value["title"])
 
     def test_device_fallback_writes_agentic_entity_not_qualitative_attribute(self):
-        note = EvidenceNote(
-            note_id="instrument",
+        note = EvidenceCandidate(
+            candidate_id="instrument",
             category="resource_signal",
-            observation="Instrument used is Bruker Avance 500 MHz.",
+            claim="Instrument used is Bruker Avance 500 MHz.",
             evidence_text="instrument: Bruker Avance 500 MHz",
             signal_level="high",
         )
@@ -1181,7 +1181,7 @@ classes:
     def test_schema_branch_merge_appends_and_dedupes_device_participants(self):
         document, _scaffold = ExtractionService._initial_profile_document(
             data_package_id="package-id",
-            evidence_context=EvidenceContext(notes=[]),
+            evidence_context=EvidenceContext(candidates=[]),
             validation_schema=self.INITIAL_DRAFT_SCHEMA,
         )
         device = {
@@ -1275,17 +1275,17 @@ classes:
 
     def test_fallback_title_prefers_explicit_dataset_name_over_audit_noise(self):
         evidence = EvidenceContext(
-            notes=[
-                EvidenceNote(
-                    note_id="audit_trail",
+            candidates=[
+                EvidenceCandidate(
+                    candidate_id="audit_trail",
                     category="resource_signal",
-                    observation="Audit trail records software version and user actions",
+                    claim="Audit trail records software version and user actions",
                     evidence_text="##AUDIT TRAIL= ... TOPSPIN 3.2",
                 ),
-                EvidenceNote(
-                    note_id="dataset_name",
+                EvidenceCandidate(
+                    candidate_id="dataset_name",
                     category="resource_signal",
-                    observation="Dataset name is 1H NMR",
+                    claim="Dataset name is 1H NMR",
                     evidence_text="dataset name: 1H NMR",
                 ),
             ]
@@ -1297,25 +1297,25 @@ classes:
 
     def test_projection_groups_skip_non_curatable_parameter_notes(self):
         evidence = EvidenceContext(
-            notes=[
-                EvidenceNote(
-                    note_id="dataset_name",
+            candidates=[
+                EvidenceCandidate(
+                    candidate_id="dataset_name",
                     category="resource_signal",
-                    observation="Dataset name is 1H NMR",
+                    claim="Dataset name is 1H NMR",
                     evidence_text="dataset name: 1H NMR",
                     signal_level="high",
                 ),
-                EvidenceNote(
-                    note_id="bfreq_setting",
+                EvidenceCandidate(
+                    candidate_id="bfreq_setting",
                     category="method_signal",
-                    observation="BFREQ parameter is set to 500.13.",
+                    claim="BFREQ parameter is set to 500.13.",
                     evidence_text="##$BFREQ= 500.13",
                     signal_level="high",
                 ),
-                EvidenceNote(
-                    note_id="blocks",
+                EvidenceCandidate(
+                    candidate_id="blocks",
                     category="resource_signal",
-                    observation="single block structure",
+                    claim="single block structure",
                     evidence_text="##BLOCKS=1",
                     signal_level="high",
                 ),
@@ -1337,21 +1337,21 @@ classes:
 
     def test_projection_grouping_collapses_repeated_note_families(self):
         evidence = EvidenceContext(
-            notes=[
-                EvidenceNote(
-                    note_id="format_version_1",
+            candidates=[
+                EvidenceCandidate(
+                    candidate_id="format_version_1",
                     category="resource_signal",
-                    observation="Structured data format version 5.00",
+                    claim="Structured data format version 5.00",
                     evidence_text="FORMAT=5.00",
                     file_path="data.txt",
                     start_idx=10,
                     end_idx=20,
                     signal_level="high",
                 ),
-                EvidenceNote(
-                    note_id="format_version_2",
+                EvidenceCandidate(
+                    candidate_id="format_version_2",
                     category="resource_signal",
-                    observation="Structured data format version 5.00",
+                    claim="Structured data format version 5.00",
                     evidence_text="FORMAT=5.00",
                     file_path="data.txt",
                     start_idx=10,
@@ -1383,11 +1383,11 @@ classes:
 
     def test_group_projection_ledger_preserves_target_and_note_ids(self):
         evidence = EvidenceContext(
-            notes=[
-                EvidenceNote(
-                    note_id="sample",
+            candidates=[
+                EvidenceCandidate(
+                    candidate_id="sample",
                     category="entity_signal",
-                    observation="Primary sample is catalyst batch A.",
+                    claim="Primary sample is catalyst batch A.",
                     evidence_text="sample = catalyst batch A",
                     file_path="metadata.txt",
                     start_idx=1,

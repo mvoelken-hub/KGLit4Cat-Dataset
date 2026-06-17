@@ -7,7 +7,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
-from app.domain.extraction import EvidenceContext, ExtractionContext, ExtractionRunResult, ExtractionRunState
+from app.domain.extraction import ExtractionContext, ExtractionRunResult, ExtractionRunState, RoutedEvidenceContext
 from app.evaluation.models import (
     AttributeMatch,
     EvaluationReference,
@@ -50,7 +50,7 @@ def evaluate_extraction_result(
         state,
     )
 
-    traced = evidence_context.notes
+    traced = evidence_context.portable_evidence
     source_trace_coverage = (
         sum(1 for item in traced if item.evidence_text.strip()) / len(traced)
         if traced
@@ -137,13 +137,13 @@ def _status_counts(values: Any) -> dict[str, int]:
 
 def _score_evidence_objects(
     expected_objects: list[ReferenceObject],
-    context: EvidenceContext,
+    context: RoutedEvidenceContext,
 ) -> tuple[dict[str, MetricSummary], list[str]]:
     if not expected_objects:
         return {}, []
     note_texts = [
-        f"{note.category} {note.observation} {note.evidence_text}"
-        for note in context.notes
+        f"{note.category} {note.claim} {note.evidence_text}"
+        for note in context.portable_evidence
     ]
     matched_notes: set[int] = set()
     true_positives = 0
@@ -158,7 +158,7 @@ def _score_evidence_objects(
         true_positives += 1
     false_negatives = max(0, len([item for item in expected_objects if item.required]) - true_positives)
     return {
-        "EvidenceNote": _metric_summary(
+        "EvidenceCandidate": _metric_summary(
             true_positives,
             max(0, len(note_texts) - len(matched_notes)),
             false_negatives,
@@ -168,11 +168,11 @@ def _score_evidence_objects(
 
 def _score_evidence_attributes(
     expected_attributes: list[ReferenceAttribute],
-    context: EvidenceContext,
+    context: RoutedEvidenceContext,
 ) -> tuple[MetricSummary, list[AttributeMatch]]:
     note_texts = [
-        f"{note.category} {note.observation} {note.evidence_text}"
-        for note in context.notes
+        f"{note.category} {note.claim} {note.evidence_text}"
+        for note in context.portable_evidence
     ]
     matched_notes: set[int] = set()
     matches: list[AttributeMatch] = []

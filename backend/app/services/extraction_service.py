@@ -68,7 +68,6 @@ from app.domain.extraction import (
     EvidenceChunkContext,
     EvidenceChunkMetadata,
     EvidenceContext,
-    EvidenceNote,
     EvidenceQueryLedgerEntry,
     FilteredEvidenceNote,
     FileInventoryItem,
@@ -393,7 +392,7 @@ class _ProfileFieldCandidateDiscovery:
 class _EvidenceProjectionGroup:
     group_id: str
     object_kind: str
-    notes: list[EvidenceNote]
+    notes: list[EvidenceCandidate]
     target_hint: str
     target_class_hint: str | None
 
@@ -5330,8 +5329,8 @@ class ExtractionService:
         self,
         *,
         data_package_id: str,
-        note: EvidenceNote,
-        contextual_notes: list[EvidenceNote],
+        note: EvidenceCandidate,
+        contextual_notes: list[EvidenceCandidate],
         draft_excerpt: Any,
         schema_branch: dict[str, Any],
         target_path: str,
@@ -5385,8 +5384,8 @@ class ExtractionService:
         self,
         *,
         data_package_id: str,
-        note: EvidenceNote,
-        contextual_notes: list[EvidenceNote],
+        note: EvidenceCandidate,
+        contextual_notes: list[EvidenceCandidate],
         draft_excerpt: Any,
         schema_branch: dict[str, Any],
         target_path: str,
@@ -5494,7 +5493,7 @@ class ExtractionService:
         data_package_id: str,
         profile_identifier: str,
         document: dict[str, Any],
-        note: EvidenceNote,
+        note: EvidenceCandidate,
         instance: dict[str, Any],
         target_path: str,
         target_class: str,
@@ -5603,7 +5602,7 @@ class ExtractionService:
 
     @staticmethod
     def _enrichment_ledger_record(
-        note: EvidenceNote,
+        note: EvidenceCandidate,
         status: ProjectionLedgerStatus,
         reason: str,
         target_path: str | None,
@@ -5611,10 +5610,10 @@ class ExtractionService:
         projected_paths: list[str] | None = None,
     ) -> ProjectionLedgerRecord:
         return ProjectionLedgerRecord(
-            object_identifier=note.candidate_id or note.note_id or "unknown-note",
+            object_identifier=note.candidate_id or "unknown-note",
             object_kind=note.category,
             source_evidence=note.evidence_text,
-            evidence_note_identifiers=[note.candidate_id or note.note_id],
+            evidence_note_identifiers=[note.candidate_id],
             status=status,
             projected_paths=projected_paths or [],
             target_path=target_path,
@@ -6036,16 +6035,16 @@ class ExtractionService:
         return next((branch for branch in branches if branch.path == target_path), None)
 
     @staticmethod
-    def _projection_identifier_for_evidence_note(note: EvidenceNote) -> str:
+    def _projection_identifier_for_evidence_note(note: EvidenceCandidate) -> str:
         file_path = note.file_path or "unknown-file"
         line_span = f"{note.start_idx}-{note.end_idx}"
-        note_id = note.note_id or "unnamed-note"
+        note_id = note.candidate_id or "unnamed-note"
         return f"{file_path}#{line_span}#{note_id}"
 
     @staticmethod
     def _projection_record_from_patch_result(
         *,
-        note: EvidenceNote,
+        note: EvidenceCandidate,
         patch_result: ProfileObjectPatchResult,
     ) -> ProjectionLedgerRecord:
         status = "not_projected"
@@ -6110,7 +6109,7 @@ class ExtractionService:
         )
 
     @staticmethod
-    def _evidence_quality_summary(notes: list[EvidenceNote]) -> dict[str, Any]:
+    def _evidence_quality_summary(notes: list[EvidenceCandidate]) -> dict[str, Any]:
         return {
             "note_count": len(notes),
             "routes": {"portable_evidence": len(notes)},
@@ -6123,12 +6122,12 @@ class ExtractionService:
         *,
         max_group_size: int = 6,
     ) -> list[_EvidenceProjectionGroup]:
-        buckets: dict[tuple[str, str, str, str], list[EvidenceNote]] = {}
-        for note in evidence_context.portable_evidence:
+        buckets: dict[tuple[str, str, str, str], list[EvidenceCandidate]] = {}
+        for note in evidence_context.candidates:
             if not cls._note_has_curatable_profile_signal(note):
                 continue
             target_hint, target_class_hint = cls._target_hint_for_evidence_note(note)
-            family = cls._evidence_note_family(note.note_id)
+            family = cls._evidence_note_family(note.candidate_id)
             key = (target_hint, target_class_hint or "", note.category, f"{note.file_path}:{family}")
             buckets.setdefault(key, []).append(note)
 
@@ -6157,8 +6156,8 @@ class ExtractionService:
         return family or note_id or "unnamed"
 
     @classmethod
-    def _target_hint_for_evidence_note(cls, note: EvidenceNote) -> tuple[str, str | None]:
-        text = f"{note.note_id} {note.category} {note.observation} {note.evidence_text}".lower()
+    def _target_hint_for_evidence_note(cls, note: EvidenceCandidate) -> tuple[str, str | None]:
+        text = f"{note.candidate_id} {note.category} {note.claim} {note.evidence_text}".lower()
         if cls._note_has_device_signal(note):
             return "/was_generated_by/0/carried_out_by/-", "AgenticEntity"
         if note.category == "agent_signal" or any(term in text for term in ("origin", "owner", "creator", "author")):
@@ -6180,7 +6179,7 @@ class ExtractionService:
         return "/description", None
 
     @classmethod
-    def _note_has_device_signal(cls, note: EvidenceNote) -> bool:
+    def _note_has_device_signal(cls, note: EvidenceCandidate) -> bool:
         text = cls._note_search_text(note)
         return any(
             term in text
@@ -6340,7 +6339,7 @@ class ExtractionService:
         *,
         target_path: str,
         current_value: Any,
-        notes: list[EvidenceNote],
+        notes: list[EvidenceCandidate],
     ) -> Any | None:
         if not cls._evidence_group_has_profile_signal(notes):
             return None
@@ -6406,7 +6405,7 @@ class ExtractionService:
         return None
 
     @classmethod
-    def _fallback_agentic_entity_value(cls, notes: list[EvidenceNote]) -> dict[str, Any] | None:
+    def _fallback_agentic_entity_value(cls, notes: list[EvidenceCandidate]) -> dict[str, Any] | None:
         device_notes = [note for note in notes if cls._note_has_device_signal(note)]
         if not device_notes:
             return None
@@ -6434,9 +6433,9 @@ class ExtractionService:
         }
 
     @staticmethod
-    def _device_title_for_notes(notes: list[EvidenceNote]) -> str | None:
+    def _device_title_for_notes(notes: list[EvidenceCandidate]) -> str | None:
         for note in notes:
-            text = f"{note.evidence_text}\n{note.observation}"
+            text = f"{note.evidence_text}\n{note.claim}"
             match = re.search(
                 r"(?:instrument|device|equipment|sensor|apparatus)\s*(?:used\s*)?(?:is|:|=)\s*<?([^>\r\n;]+)>?",
                 text,
@@ -6451,7 +6450,7 @@ class ExtractionService:
         cls,
         *,
         target_path: str,
-        notes: list[EvidenceNote],
+        notes: list[EvidenceCandidate],
     ) -> str | None:
         if not notes:
             return "No evidence notes were available for profile projection."
@@ -6471,7 +6470,7 @@ class ExtractionService:
     def _fallback_creator_value(
         cls,
         current_value: Any,
-        notes: list[EvidenceNote],
+        notes: list[EvidenceCandidate],
     ) -> Any | None:
         if not isinstance(current_value, dict):
             return None
@@ -6490,7 +6489,7 @@ class ExtractionService:
     def _fallback_distribution_value(
         cls,
         current_value: Any,
-        notes: list[EvidenceNote],
+        notes: list[EvidenceCandidate],
     ) -> Any | None:
         if not isinstance(current_value, dict):
             return None
@@ -6521,7 +6520,7 @@ class ExtractionService:
     def _fallback_activity_value(
         cls,
         current_value: Any,
-        notes: list[EvidenceNote],
+        notes: list[EvidenceCandidate],
         *,
         default_title: str,
     ) -> Any | None:
@@ -6546,7 +6545,7 @@ class ExtractionService:
     def _fallback_entity_value(
         cls,
         current_value: Any,
-        notes: list[EvidenceNote],
+        notes: list[EvidenceCandidate],
     ) -> Any | None:
         if not isinstance(current_value, dict):
             return None
@@ -6571,7 +6570,7 @@ class ExtractionService:
     def _fallback_concept_value(
         cls,
         current_value: Any,
-        notes: list[EvidenceNote],
+        notes: list[EvidenceCandidate],
     ) -> Any | None:
         if not isinstance(current_value, dict):
             return None
@@ -6584,7 +6583,7 @@ class ExtractionService:
         return value
 
     @classmethod
-    def _description_target_worthy(cls, notes: list[EvidenceNote]) -> bool:
+    def _description_target_worthy(cls, notes: list[EvidenceCandidate]) -> bool:
         if not notes:
             return False
         category_set = {note.category for note in notes}
@@ -6597,21 +6596,21 @@ class ExtractionService:
         )
 
     @classmethod
-    def _evidence_group_has_profile_signal(cls, notes: list[EvidenceNote]) -> bool:
+    def _evidence_group_has_profile_signal(cls, notes: list[EvidenceCandidate]) -> bool:
         if not notes:
             return False
         return any(bool(note.claim.strip()) for note in notes)
 
     @classmethod
-    def _is_low_level_parameter_note(cls, note: EvidenceNote) -> bool:
+    def _is_low_level_parameter_note(cls, note: EvidenceCandidate) -> bool:
         text = cls._note_search_text(note)
         key, _value = cls._assignment_from_note(note)
         normalized_key = key.lower().strip("$") if key else ""
         if normalized_key and re.fullmatch(r"[a-z]{1,4}\d{1,4}[a-z0-9_]*", normalized_key):
             return True
-        if re.search(r"\b[A-Z][A-Z0-9_]{1,16}\s+(?:parameter|setting)\b", note.observation):
+        if re.search(r"\b[A-Z][A-Z0-9_]{1,16}\s+(?:parameter|setting)\b", note.claim):
             return True
-        if re.search(r"\bparameter\s+[A-Z][A-Z0-9_]{1,16}\b", note.observation):
+        if re.search(r"\bparameter\s+[A-Z][A-Z0-9_]{1,16}\b", note.claim):
             return True
         low_level_observation_terms = (
             "parameter is set",
@@ -6807,11 +6806,11 @@ class ExtractionService:
         return normalized
 
     @classmethod
-    def _title_value_from_note(cls, note: EvidenceNote) -> str | None:
+    def _title_value_from_note(cls, note: EvidenceCandidate) -> str | None:
         key, value = cls._assignment_from_note(note)
         if key and key.lower().strip("$") == "title":
             return cls._clean_profile_title_text(value or "")
-        text = f"{note.observation or ''}\n{note.evidence_text or ''}"
+        text = f"{note.claim or ''}\n{note.evidence_text or ''}"
         match = re.search(r"\bdataset name\s*(?:is|:)\s*([^\r\n.;]+)", text, re.IGNORECASE)
         if match:
             return cls._clean_profile_title_text(match.group(1))
@@ -6824,7 +6823,7 @@ class ExtractionService:
         return target_value in (None, "", {}, []) or target_value == current_value
 
     @classmethod
-    def _profile_keywords_for_notes(cls, notes: list[EvidenceNote]) -> list[str]:
+    def _profile_keywords_for_notes(cls, notes: list[EvidenceCandidate]) -> list[str]:
         keywords: list[str] = []
         for note in notes:
             if cls._is_low_level_parameter_note(note):
@@ -6837,7 +6836,7 @@ class ExtractionService:
     @classmethod
     def _profile_observation_sentences(
         cls,
-        notes: list[EvidenceNote],
+        notes: list[EvidenceCandidate],
         *,
         max_count: int,
     ) -> list[str]:
@@ -6845,7 +6844,7 @@ class ExtractionService:
         for note in notes:
             if cls._is_low_level_parameter_note(note):
                 continue
-            text = (note.observation or "").strip()
+            text = (note.claim or "").strip()
             if not text:
                 continue
             text = re.sub(r"\s+", " ", text)
@@ -6857,7 +6856,7 @@ class ExtractionService:
         return cls._dedupe_strings(sentences)
 
     @classmethod
-    def _qualitative_attributes_for_notes(cls, notes: list[EvidenceNote]) -> list[dict[str, str]]:
+    def _qualitative_attributes_for_notes(cls, notes: list[EvidenceCandidate]) -> list[dict[str, str]]:
         attributes: list[dict[str, str]] = []
         allowed_keys = {"origin", "owner", "author", "creator", "instrument", "device", "sample", "method"}
         for note in notes:
@@ -6871,8 +6870,8 @@ class ExtractionService:
         return cls._merge_unique_dicts([], attributes)
 
     @classmethod
-    def _assignment_from_note(cls, note: EvidenceNote) -> tuple[str | None, str | None]:
-        text = f"{note.evidence_text or ''}\n{note.observation or ''}"
+    def _assignment_from_note(cls, note: EvidenceCandidate) -> tuple[str | None, str | None]:
+        text = f"{note.evidence_text or ''}\n{note.claim or ''}"
         match = re.search(
             r"(?:##\$?|^|\s)([A-Za-z][A-Za-z0-9_]{1,32})\s*=\s*<?([^>\r\n;]{1,120})>?",
             text,
@@ -6886,7 +6885,7 @@ class ExtractionService:
         return key, value
 
     @classmethod
-    def _identifier_values_for_notes(cls, notes: list[EvidenceNote]) -> list[str]:
+    def _identifier_values_for_notes(cls, notes: list[EvidenceCandidate]) -> list[str]:
         values: list[str] = []
         for note in notes:
             key, value = cls._assignment_from_note(note)
@@ -6895,16 +6894,16 @@ class ExtractionService:
         return cls._dedupe_strings(values)
 
     @classmethod
-    def _date_value_for_notes(cls, notes: list[EvidenceNote]) -> str | None:
+    def _date_value_for_notes(cls, notes: list[EvidenceCandidate]) -> str | None:
         for note in notes:
-            text = f"{note.evidence_text or ''} {note.observation or ''}"
+            text = f"{note.evidence_text or ''} {note.claim or ''}"
             match = re.search(r"\b(20\d{2}-\d{2}-\d{2})(?:[T ][0-2]\d:[0-5]\d(?::[0-5]\d)?)?\b", text)
             if match:
                 return match.group(1)
         return None
 
     @classmethod
-    def _fallback_target_title(cls, notes: list[EvidenceNote]) -> str | None:
+    def _fallback_target_title(cls, notes: list[EvidenceCandidate]) -> str | None:
         for note in notes:
             title = cls._title_value_from_note(note)
             if title:
@@ -6914,7 +6913,7 @@ class ExtractionService:
         return observations[0] if observations else None
 
     @classmethod
-    def _note_has_curatable_profile_signal(cls, note: EvidenceNote) -> bool:
+    def _note_has_curatable_profile_signal(cls, note: EvidenceCandidate) -> bool:
         if cls._is_low_level_parameter_note(note):
             return False
         key, value = cls._assignment_from_note(note)
@@ -6944,21 +6943,21 @@ class ExtractionService:
             if "spectrum title" in text and cls._title_value_from_note(note) is None:
                 return False
             return True
-        return note.category in {"agent_signal", "entity_signal"} and bool(note.observation.strip())
+        return note.category in {"agent_signal", "entity_signal"} and bool(note.claim.strip())
 
     @classmethod
-    def _entity_title_for_notes(cls, notes: list[EvidenceNote]) -> str | None:
+    def _entity_title_for_notes(cls, notes: list[EvidenceCandidate]) -> str | None:
         observations = cls._profile_observation_sentences(notes, max_count=1)
         return observations[0] if observations else None
 
     @staticmethod
-    def _note_search_text(note: EvidenceNote) -> str:
+    def _note_search_text(note: EvidenceCandidate) -> str:
         return " ".join(
             part
             for part in (
-                note.note_id,
+                note.candidate_id,
                 note.category,
-                note.observation,
+                note.claim,
                 note.evidence_text,
                 note.file_path,
             )
@@ -7864,7 +7863,7 @@ class ExtractionService:
         cls,
         *,
         data_package_id: str,
-        evidence_context: EvidenceContext,
+        evidence_context: RoutedEvidenceContext | EvidenceContext,
         validation_schema: dict[str, Any],
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         target_schema = cls._resolve_schema_node(validation_schema, validation_schema)
@@ -7936,7 +7935,14 @@ class ExtractionService:
                     )
                 )
 
-        evidence_categories = {note.category for note in evidence_context.portable_evidence}
+        evidence_categories = {
+            note.category
+            for note in (
+                evidence_context.portable_evidence
+                if isinstance(evidence_context, RoutedEvidenceContext)
+                else evidence_context.candidates
+            )
+        }
         core_slots = {
             "creator",
             "dataset_distribution",
@@ -8453,20 +8459,25 @@ class ExtractionService:
     @staticmethod
     def _fallback_title(
         data_package_id: str,
-        evidence_context: RoutedEvidenceContext,
+        evidence_context: RoutedEvidenceContext | EvidenceContext,
     ) -> str:
-        for note in evidence_context.portable_evidence:
+        candidates = (
+            evidence_context.portable_evidence
+            if isinstance(evidence_context, RoutedEvidenceContext)
+            else evidence_context.candidates
+        )
+        for note in candidates:
             title = ExtractionService._title_value_from_note(note)
             if title:
                 return title
         for category in ("entity_signal", "measurement_signal", "method_signal", "resource_signal"):
-            for note in evidence_context.portable_evidence:
+            for note in candidates:
                 if (
                     note.category == category
-                    and note.observation.strip()
+                    and note.claim.strip()
                     and not ExtractionService._is_low_level_parameter_note(note)
                 ):
-                    return note.observation.strip()
+                    return note.claim.strip()
         return f"SIMONE extraction result for {data_package_id}"
 
     @classmethod

@@ -82,46 +82,9 @@ class EvidenceCandidate(BaseModel):
     end_idx: int = Field(0, ge=0)
     evidence_match_score: float = Field(0.0, ge=0.0, le=1.0)
 
-    @model_validator(mode="before")
-    @classmethod
-    def _accept_legacy_names(cls, data):
-        if isinstance(data, dict):
-            if "candidate_id" not in data and "note_id" in data:
-                data = {**data, "candidate_id": data["note_id"]}
-            if "claim" not in data and "observation" in data:
-                data = {**data, "claim": data["observation"]}
-        return data
-
-    @property
-    def note_id(self) -> str:
-        return self.candidate_id
-
-    @property
-    def observation(self) -> str:
-        return self.claim
-
-
-EvidenceNote = EvidenceCandidate
-
-
 class EvidenceContext(BaseModel):
     candidates: list[EvidenceCandidate] = Field(default_factory=list)
     file_inventory: list["FileInventoryItem"] = Field(default_factory=list)
-
-    @model_validator(mode="before")
-    @classmethod
-    def _accept_legacy_notes(cls, data):
-        if isinstance(data, dict) and "candidates" not in data and "notes" in data:
-            return {**data, "candidates": data["notes"]}
-        return data
-
-    @property
-    def notes(self) -> list[EvidenceCandidate]:
-        return self.candidates
-
-    @property
-    def portable_evidence(self) -> list[EvidenceCandidate]:
-        return self.candidates
 
 
 class EvidenceAssessment(BaseModel):
@@ -165,11 +128,8 @@ class RoutedEvidenceContext(BaseModel):
                 "portable_evidence": data.candidates,
                 "file_inventory": data.file_inventory,
             }
-        if isinstance(data, dict) and "portable_evidence" not in data:
-            if "candidates" in data:
-                return {**data, "portable_evidence": data["candidates"]}
-            if "notes" in data:
-                return {**data, "portable_evidence": data["notes"]}
+        if isinstance(data, dict) and "portable_evidence" not in data and "candidates" in data:
+            return {**data, "portable_evidence": data["candidates"]}
         return data
 
     @property
@@ -551,7 +511,7 @@ def dedupe_repeated_evidence_notes(
                 _filtered_record(
                     note,
                     reason="duplicate_evidence",
-                    duplicate_representative_id=representative.note_id,
+                    duplicate_representative_id=representative.candidate_id,
                 )
             )
     kept = [note for _, note in sorted(kept_with_order, key=lambda item: item[0])]
@@ -806,7 +766,7 @@ def _cap_prompt_text(
 
 
 def _filtered_record(
-    note: EvidenceNote,
+    note: EvidenceCandidate,
     *,
     reason: FilteredEvidenceReason,
     chunk_index: int | None = None,

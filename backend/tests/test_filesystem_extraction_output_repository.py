@@ -6,7 +6,7 @@ from unittest.mock import patch, call
 
 from app.domain.extraction import (
     EvidenceContext,
-    EvidenceNote,
+    EvidenceCandidate,
     ExtractionFileSummary,
     ExtractionOverview,
     ExtractionRunResult,
@@ -263,10 +263,10 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
                 filtered_notes=[
                     FilteredEvidenceNote(
                         reason="candidate_rejected",
-                        note=EvidenceNote(
-                            note_id="low",
+                        note=EvidenceCandidate(
+                            candidate_id="low",
                             category="method_signal",
-                            observation="Low-level parameter.",
+                            claim="Low-level parameter.",
                             evidence_text="parameter",
                         ),
                         file_path="acqu",

@@ -9,7 +9,6 @@ from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from app.domain.extraction.evidence_context import (
     EvidenceCandidate,
-    EvidenceNote,
     RoutedEvidenceContext,
 )
 from app.domain.extraction.workflow import ProjectionLedgerRecord
@@ -157,11 +156,11 @@ def _builder_field_for_schema(schema: dict[str, Any]) -> tuple[Any, Any]:
     return (str | None, None)
 
 
-def _note_search_text(note: EvidenceNote) -> str:
-    return f"{note.note_id} {note.category} {note.claim} {note.evidence_text}".lower()
+def _note_search_text(note: EvidenceCandidate) -> str:
+    return f"{note.candidate_id} {note.category} {note.claim} {note.evidence_text}".lower()
 
 
-def _note_has_device_signal(note: EvidenceNote) -> bool:
+def _note_has_device_signal(note: EvidenceCandidate) -> bool:
     text = _note_search_text(note)
     return any(
         term in text
@@ -176,7 +175,7 @@ def _note_has_device_signal(note: EvidenceNote) -> bool:
 
 
 def route_evidence_note_to_target(
-    note: EvidenceNote,
+    note: EvidenceCandidate,
 ) -> tuple[str | None, str | None]:
     text = _note_search_text(note)
     target_path: str | None = None
@@ -215,7 +214,7 @@ def route_evidence_note_to_target(
 
 
 def build_context_window_for_note(
-    note: EvidenceNote,
+    note: EvidenceCandidate,
     evidence_context: RoutedEvidenceContext,
     window_chars: int = EVIDENCE_ENRICHMENT_CONTEXT_CHARS,
 ) -> list[EvidenceCandidate]:
@@ -449,8 +448,8 @@ EVIDENCE_INSTANCE_REPAIR_SYSTEM_PROMPT = (
 
 
 def build_novelty_evaluator_prompt(
-    note: EvidenceNote,
-    contextual_notes: list[EvidenceNote],
+    note: EvidenceCandidate,
+    contextual_notes: list[EvidenceCandidate],
     draft_excerpt: Any,
     schema_branch: dict[str, Any],
     target_path: str,
@@ -491,8 +490,8 @@ def build_instance_builder_prompt(
     target_class: str,
     schema_branch: dict[str, Any],
     draft_excerpt: Any,
-    note: EvidenceNote,
-    contextual_notes: list[EvidenceNote],
+    note: EvidenceCandidate,
+    contextual_notes: list[EvidenceCandidate],
 ) -> str:
     lines = [
         "You are building a single DCAT-AP+ instance for a metadata profile draft.",

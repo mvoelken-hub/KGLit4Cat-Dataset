@@ -8,7 +8,7 @@ from linkml_runtime.loaders import yaml_loader
 from linkml_runtime.utils.schemaview import SchemaView
 from pydantic import BaseModel, Field
 
-from app.domain.extraction.evidence_context import EvidenceNote
+from app.domain.extraction.evidence_context import EvidenceCandidate
 
 
 class SchemaSubclassCandidate(BaseModel):
@@ -124,7 +124,7 @@ def build_schema_branch_index(
 
 
 def build_schema_search_query(
-    notes: list[EvidenceNote],
+    notes: list[EvidenceCandidate],
     *,
     max_depth: int = 3,
 ) -> SchemaSearchQuery:
@@ -132,9 +132,9 @@ def build_schema_search_query(
         part
         for note in notes
         for part in (
-            note.note_id,
+            note.candidate_id,
             note.category,
-            note.observation,
+            note.claim,
             note.evidence_text,
             note.file_path,
         )
