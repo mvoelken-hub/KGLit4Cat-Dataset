@@ -220,6 +220,7 @@ class ExtractionRunState(BaseModel):
     initial_extraction_overview_diagnostic: (
         InitialOverviewPromptDiagnostic | InitialOverviewFailureDiagnostic | None
     ) = None
+    dataset_summary: str = ""
     chunk_results: list[ExtractionChunkResult] = Field(default_factory=list)
     vocab_queries: list[ExtractionVocabQueryRecord] = Field(default_factory=list)
     generated_final_draft: dict[str, Any] | None = None
@@ -257,6 +258,7 @@ class ExtractionRunProgress(BaseModel):
     initial_extraction_overview_diagnostic: (
         InitialOverviewPromptDiagnostic | InitialOverviewFailureDiagnostic | None
     ) = None
+    dataset_summary: str = ""
     chunk_results: list[ExtractionChunkResult] = Field(default_factory=list)
     vocab_queries: list[ExtractionVocabQueryRecord] = Field(default_factory=list)
     generated_final_draft: dict[str, Any] | None = None
@@ -302,6 +304,7 @@ class ExtractionRunResult(BaseModel):
     initial_file_summary_status: InitialFileSummaryStatus | None = None
     initial_extraction_overview: ExtractionOverview | None = None
     initial_extraction_overview_status: ExtractionOverviewStatus | None = None
+    dataset_summary: str = ""
     curated_document: dict[str, Any] | None = None
     document_quality_state: DocumentQualityState | None = None
     draft_quality_state: DraftQualityState

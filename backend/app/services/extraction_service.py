@@ -616,6 +616,19 @@ class ExtractionService:
             state=state,
             warnings=warnings,
         )
+        progress = self._initial_context_progress_from_state(
+            state,
+            warnings=warnings,
+            stage="dataset_summary",
+        )
+        self._update_initial_context_progress(data_package_id, progress)
+
+        await self._generate_initial_dataset_summary(
+            data_package_id=data_package_id,
+            state=state,
+            warnings=warnings,
+            skip_without_runtime=True,
+        )
         self.output_repository.save_extraction_warnings(
             workflow_id=data_package_id,
             warnings=warnings,
@@ -1498,6 +1511,12 @@ class ExtractionService:
             chunking_strategy=chunking_strategy,
             chat_model=chat_model,
         )
+        persisted_state = self._with_initial_context_fallback(
+            data_package_id=data_package_id,
+            state=persisted_state,
+            chunking_strategy=chunking_strategy,
+            chat_model=chat_model,
+        )
         progress = ExtractionRunProgress(
             stage="file_ranking",
             chunk_repair_mode=chunk_repair_mode,
@@ -1524,6 +1543,7 @@ class ExtractionService:
                 if persisted_state
                 else None
             ),
+            dataset_summary=persisted_state.dataset_summary if persisted_state else "",
             chunk_results=persisted_state.chunk_results if persisted_state else [],
             vocab_queries=persisted_state.vocab_queries if persisted_state else [],
             generated_final_draft=(
@@ -1598,6 +1618,7 @@ class ExtractionService:
         progress.initial_file_summary_status = state.initial_file_summary_status
         progress.initial_extraction_overview = state.initial_extraction_overview
         progress.initial_extraction_overview_status = state.initial_extraction_overview_status
+        progress.dataset_summary = state.dataset_summary
         progress.chunk_results = state.chunk_results
         progress.vocab_query_config = state.vocab_query_config
         progress.vocab_queries = state.vocab_queries
@@ -5689,6 +5710,74 @@ class ExtractionService:
         )
 
 
+    async def _generate_initial_dataset_summary(
+        self,
+        *,
+        data_package_id: str,
+        state: ExtractionRunState,
+        warnings: list[str],
+        skip_without_runtime: bool = False,
+    ) -> str:
+        if state.dataset_summary:
+            return state.dataset_summary
+        if skip_without_runtime and not hasattr(self.ollama_client, "ollama_client"):
+            return ""
+        assert self.ollama_client is not None
+        assert self.output_repository is not None
+        try:
+            prompt_components = build_dataset_summary_prompt_components(
+                data_package_id=data_package_id,
+                initial_file_summaries=state.initial_file_summaries,
+                ranked_files=state.ranked_files,
+            )
+            summary_result = await generate_structured(
+                self.ollama_client,
+                model=self.ollama_client.chat_model,
+                system=DATASET_SUMMARY_SYSTEM_PROMPT,
+                prompt="".join(text for _, text in prompt_components),
+                system_components=[
+                    ("dataset_summary_system_prompt", DATASET_SUMMARY_SYSTEM_PROMPT),
+                ],
+                prompt_components=prompt_components,
+                token_budgeter=self._prompt_token_budgeter(),
+                operation_id=self._prompt_operation_id("dataset_summary"),
+                agent_name="dataset_summary",
+                output_type=DatasetSummaryProjection,
+                num_ctx=self.ollama_client.max_context_length,
+                num_predict=700,
+            )
+            self._record_llm_call_result(
+                data_package_id=data_package_id,
+                result=summary_result,
+                agent_name="dataset_summary",
+            )
+            summary_output = (
+                summary_result.output
+                if isinstance(summary_result.output, DatasetSummaryProjection)
+                else DatasetSummaryProjection.model_validate(summary_result.output)
+            )
+            dataset_summary = summary_output.summary.strip()
+            if not dataset_summary:
+                raise ValueError("Dataset summary output was empty.")
+            state.dataset_summary = dataset_summary
+            self.output_repository.save_dataset_summary(
+                workflow_id=data_package_id,
+                summary=dataset_summary,
+                chat_model=self.ollama_client.chat_model,
+                chunking_strategy=state.chunking_strategy,
+            )
+            self._save_run_state(data_package_id, state)
+            return dataset_summary
+        except (CompletionError, ValidationError, ValueError) as exc:
+            self._record_llm_call_exception(
+                data_package_id=data_package_id,
+                exc=exc,
+                agent_name="dataset_summary",
+            )
+            warnings.append(f"Dataset summary projection failed: {exc}")
+            self._save_run_state(data_package_id, state)
+            return ""
+
     async def _build_overview_shallow_projection(
         self,
         *,
@@ -5714,71 +5803,15 @@ class ExtractionService:
             data_package_id=data_package_id,
             fallback_title=(skeleton.get("title") or [data_package_id])[0],
         )
-        try:
-            summary_result = await generate_structured(
-                self.ollama_client,
-                model=self.ollama_client.chat_model,
-                system=DATASET_SUMMARY_SYSTEM_PROMPT,
-                prompt="".join(
-                    text
-                    for _, text in build_dataset_summary_prompt_components(
-                        data_package_id=data_package_id,
-                        initial_file_summaries=state.initial_file_summaries,
-                        ranked_files=state.ranked_files,
-                    )
-                ),
-                system_components=[
-                    ("dataset_summary_system_prompt", DATASET_SUMMARY_SYSTEM_PROMPT),
-                ],
-                prompt_components=build_dataset_summary_prompt_components(
-                    data_package_id=data_package_id,
-                    initial_file_summaries=state.initial_file_summaries,
-                    ranked_files=state.ranked_files,
-                ),
-                token_budgeter=self._prompt_token_budgeter(),
-                operation_id=self._prompt_operation_id("dataset_summary"),
-                agent_name="dataset_summary",
-                output_type=DatasetSummaryProjection,
-                num_ctx=self.ollama_client.max_context_length,
-                num_predict=700,
-            )
-            self._record_llm_call_result(
-                data_package_id=data_package_id,
-                result=summary_result,
-                agent_name="dataset_summary",
-            )
-            summary_output = (
-                summary_result.output
-                if isinstance(summary_result.output, DatasetSummaryProjection)
-                else DatasetSummaryProjection.model_validate(summary_result.output)
-            )
-            dataset_summary = summary_output.summary.strip()
-            if not dataset_summary:
-                raise ValueError("Dataset summary output was empty.")
-            if self.output_repository is not None:
-                self.output_repository.save_dataset_summary(
-                    workflow_id=data_package_id,
-                    summary=dataset_summary,
-                    chat_model=self.ollama_client.chat_model,
-                    chunking_strategy=state.chunking_strategy,
-                )
-        except (CompletionError, ValidationError, ValueError) as exc:
-            self._record_llm_call_exception(
-                data_package_id=data_package_id,
-                exc=exc,
-                agent_name="dataset_summary",
-            )
-            warnings.append(f"Dataset summary projection failed: {exc}")
+        dataset_summary = await self._generate_initial_dataset_summary(
+            data_package_id=data_package_id,
+            state=state,
+            warnings=warnings,
+        )
+        if not dataset_summary:
             return (
                 fallback_document,
                 [
-                    projection_stage_record(
-                        stage="dataset_summary",
-                        object_kind="DatasetSummaryProjection",
-                        status="user_edit_required",
-                        reason="Dataset summary projection failed; persisted required fallback skeleton with deterministic distributions.",
-                        error=str(exc),
-                    ),
                     projection_stage_record(
                         stage="deterministic_distributions",
                         object_kind="DeterministicDistributions",
@@ -5841,12 +5874,6 @@ class ExtractionService:
                 fallback_document_with_summary,
                 [
                     projection_stage_record(
-                        stage="dataset_summary",
-                        object_kind="DatasetSummaryProjection",
-                        status="projected",
-                        reason="Dataset summary projection completed.",
-                    ),
-                    projection_stage_record(
                         stage="dataset_level_projection",
                         object_kind="DatasetLevelProjection",
                         status="user_edit_required",
@@ -5907,12 +5934,6 @@ class ExtractionService:
                 fallback_document_with_summary,
                 [
                     projection_stage_record(
-                        stage="dataset_summary",
-                        object_kind="DatasetSummaryProjection",
-                        status="projected",
-                        reason="Dataset summary projection completed.",
-                    ),
-                    projection_stage_record(
                         stage="dataset_level_projection",
                         object_kind="DatasetLevelProjection",
                         status="user_edit_required",
@@ -5934,12 +5955,6 @@ class ExtractionService:
         return (
             document,
             [
-                projection_stage_record(
-                    stage="dataset_summary",
-                    object_kind="DatasetSummaryProjection",
-                    status="projected",
-                    reason="Dataset summary projection completed.",
-                ),
                 projection_stage_record(
                     stage="dataset_level_projection",
                     object_kind="DatasetLevelProjection",
@@ -7176,6 +7191,7 @@ class ExtractionService:
             initial_file_summary_status=state.initial_file_summary_status,
             initial_extraction_overview=state.initial_extraction_overview,
             initial_extraction_overview_status=state.initial_extraction_overview_status,
+            dataset_summary=state.dataset_summary,
             curated_document=state.curated_document,
             document_quality_state=state.document_quality_state,
             draft_quality_state=state.draft_quality_state,
@@ -8754,6 +8770,11 @@ class ExtractionService:
                 persisted_state.initial_extraction_overview_diagnostic
                 if preserve_initial_context and persisted_state
                 else None
+            ),
+            dataset_summary=(
+                persisted_state.dataset_summary
+                if preserve_initial_context and persisted_state
+                else ""
             ),
             chunk_results=chunk_results,
             vocab_queries=persisted_state.vocab_queries if persisted_state else [],
@@ -10778,6 +10799,50 @@ class ExtractionService:
         except (FileNotFoundError, json.JSONDecodeError, ValidationError):
             return None
 
+    def _with_initial_context_fallback(
+        self,
+        *,
+        data_package_id: str,
+        state: ExtractionRunState | None,
+        chunking_strategy: str,
+        chat_model: str | None,
+    ) -> ExtractionRunState | None:
+        if state is not None and self._has_initial_context(state):
+            return state
+        if chunking_strategy == "semantic":
+            return state
+        source = self._load_run_state_or_none(
+            data_package_id,
+            chunking_strategy="semantic",
+            chat_model=chat_model,
+        )
+        if source is None or not self._has_initial_context(source):
+            return state
+        target = (
+            state.model_copy(deep=True)
+            if state is not None
+            else ExtractionRunState(
+                chat_model=chat_model,
+                chunking_strategy=chunking_strategy,
+            )
+        )
+        target.ranked_files = source.ranked_files
+        target.initial_file_summaries = source.initial_file_summaries
+        target.initial_file_summary_progress = source.initial_file_summary_progress
+        target.initial_file_summary_status = source.initial_file_summary_status
+        target.initial_extraction_overview = source.initial_extraction_overview
+        target.initial_extraction_overview_status = source.initial_extraction_overview_status
+        target.initial_extraction_overview_diagnostic = source.initial_extraction_overview_diagnostic
+        target.dataset_summary = source.dataset_summary
+        return target
+
+    @staticmethod
+    def _has_initial_context(state: ExtractionRunState) -> bool:
+        return (
+            state.initial_file_summary_status is not None
+            and state.initial_extraction_overview_status is not None
+        )
+
     def _save_run_state(
         self,
         data_package_id: str,
@@ -10860,6 +10925,7 @@ class ExtractionService:
             initial_extraction_overview=state.initial_extraction_overview,
             initial_extraction_overview_status=state.initial_extraction_overview_status,
             initial_extraction_overview_diagnostic=state.initial_extraction_overview_diagnostic,
+            dataset_summary=state.dataset_summary,
             warnings=list(warnings),
         )
 
@@ -10904,6 +10970,7 @@ class ExtractionService:
                 initial_file_summary_status=result.initial_file_summary_status,
                 initial_extraction_overview=result.initial_extraction_overview,
                 initial_extraction_overview_status=result.initial_extraction_overview_status,
+                dataset_summary=result.dataset_summary,
                 initial_extraction_overview_diagnostic=(
                     state.initial_extraction_overview_diagnostic if state else None
                 ),
@@ -10993,6 +11060,7 @@ class ExtractionService:
                 initial_file_summary_status=result.initial_file_summary_status,
                 initial_extraction_overview=result.initial_extraction_overview,
                 initial_extraction_overview_status=result.initial_extraction_overview_status,
+                dataset_summary=result.dataset_summary,
                 initial_extraction_overview_diagnostic=(
                     state.initial_extraction_overview_diagnostic if state else None
                 ),
@@ -11036,6 +11104,7 @@ class ExtractionService:
                 initial_file_summary_status=state.initial_file_summary_status,
                 initial_extraction_overview=state.initial_extraction_overview,
                 initial_extraction_overview_status=state.initial_extraction_overview_status,
+                dataset_summary=state.dataset_summary,
                 initial_extraction_overview_diagnostic=state.initial_extraction_overview_diagnostic,
                 chunk_results=state.chunk_results,
                 vocab_queries=state.vocab_queries,

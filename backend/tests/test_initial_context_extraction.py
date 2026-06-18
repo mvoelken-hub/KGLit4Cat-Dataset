@@ -1010,6 +1010,82 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(output_repository.initial_file_summaries, state.initial_file_summaries)
         self.assertTrue(any("spectrum.png" in warning and "skipped" in warning for warning in warnings))
 
+    async def test_initial_dataset_summary_persists_in_run_state(self):
+        service, _, output_repository = make_service([[make_chunk()]])
+        service.ollama_client.ollama_client = SimpleNamespace()  # type: ignore[attr-defined]
+        state = ExtractionRunState(
+            ranked_files=[RankedFile(rank=1, file_path="README.md")],
+            initial_file_summaries=[
+                ExtractionFileSummary(file_path="README.md", data_format="markdown")
+            ],
+            initial_file_summary_status="completed",
+        )
+
+        async def fake_generate(*_args, **kwargs):
+            self.assertIs(kwargs["output_type"], DatasetSummaryProjection)
+            return dataset_summary_result()
+
+        with patch("app.services.extraction_service.generate_structured", side_effect=fake_generate):
+            summary = await service._generate_initial_dataset_summary(
+                data_package_id="package-id",
+                state=state,
+                warnings=[],
+            )
+
+        self.assertEqual(summary, dataset_summary_result().output.summary)
+        self.assertEqual(state.dataset_summary, summary)
+        self.assertEqual(output_repository.dataset_summary, summary)
+        self.assertEqual(output_repository.run_state.dataset_summary, summary)
+
+    def test_initial_context_fallback_reuses_semantic_overview_for_other_chunking_branch(self):
+        service, _, _ = make_service([[make_chunk()]])
+        branch_state = ExtractionRunState(
+            chunking_strategy="fixed_tokens",
+            chat_model="chat",
+            ranked_files=[
+                RankedFile(rank=1, file_path="opaque.png"),
+                RankedFile(rank=2, file_path="README.md"),
+            ],
+            chunk_results=[
+                ExtractionChunkResult(
+                    chunk_index=0,
+                    file_path="README.md",
+                    start_idx=0,
+                    end_idx=1,
+                    status="pending",
+                )
+            ],
+        )
+        source_state = ExtractionRunState(
+            chunking_strategy="semantic",
+            chat_model="chat",
+            ranked_files=[RankedFile(rank=1, file_path="README.md")],
+            initial_file_summaries=[ExtractionFileSummary(file_path="README.md")],
+            initial_file_summary_status="completed",
+            initial_extraction_overview=overview_for_file("README.md"),
+            initial_extraction_overview_status="structured",
+            dataset_summary="evaluated: README dataset.",
+            generated_final_draft={"must_not": "copy"},
+        )
+
+        with patch.object(service, "_load_run_state_or_none", return_value=source_state):
+            merged = service._with_initial_context_fallback(
+                data_package_id="package-id",
+                state=branch_state,
+                chunking_strategy="fixed_tokens",
+                chat_model="chat",
+            )
+
+        self.assertIsNotNone(merged)
+        assert merged is not None
+        self.assertEqual(merged.chunking_strategy, "fixed_tokens")
+        self.assertEqual(merged.chunk_results, branch_state.chunk_results)
+        self.assertEqual([file.file_path for file in merged.ranked_files], ["README.md"])
+        self.assertEqual(merged.initial_file_summary_status, "completed")
+        self.assertEqual(merged.initial_extraction_overview_status, "structured")
+        self.assertEqual(merged.dataset_summary, "evaluated: README dataset.")
+        self.assertIsNone(merged.generated_final_draft)
+
     async def test_initial_file_summary_failure_persists_exact_model_output(self):
         service, _, output_repository = make_service([[make_chunk()]])
         service.ollama_client.ollama_client = SimpleNamespace()  # type: ignore[attr-defined]

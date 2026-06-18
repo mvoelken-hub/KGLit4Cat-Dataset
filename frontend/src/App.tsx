@@ -61,12 +61,18 @@ type WorkflowBranchSnapshot = {
   initialProgress: PatchProgress | null;
   result: ExtractionRunResult | null;
   tokenUsage: PatchTokenUsage;
+  initialStatus: PatchTaskStatus;
 };
 type WorkflowBranch = {
   strategy: ChunkingStrategy;
   chatModel: string | null;
 };
 const selectedPackageStorageKey = 'simone_selected_package_id';
+const chunkingStrategyCookieKey = 'simone_chunking_strategy';
+
+function isChunkingStrategy(value: string): value is ChunkingStrategy {
+  return value === 'semantic' || value === 'fixed_tokens';
+}
 
 function readStoredSelectedPackageId(): string {
   try {
@@ -85,6 +91,26 @@ function persistSelectedPackageId(packageId: string) {
     }
   } catch {
     // ignore storage errors
+  }
+}
+
+function readStoredChunkingStrategy(): ChunkingStrategy {
+  try {
+    const cookie = document.cookie
+      .split('; ')
+      .find((part) => part.startsWith(`${chunkingStrategyCookieKey}=`));
+    const value = cookie ? decodeURIComponent(cookie.split('=').slice(1).join('=')) : '';
+    return isChunkingStrategy(value) ? value : 'semantic';
+  } catch {
+    return 'semantic';
+  }
+}
+
+function persistChunkingStrategy(strategy: ChunkingStrategy) {
+  try {
+    document.cookie = `${chunkingStrategyCookieKey}=${encodeURIComponent(strategy)}; path=/; SameSite=Lax`;
+  } catch {
+    // ignore cookie errors
   }
 }
 
@@ -290,6 +316,7 @@ function withInitialProgress(branch: PatchProgress | null, initial: PatchProgres
     initial_extraction_overview: branch.initial_extraction_overview ?? initial.initial_extraction_overview,
     initial_extraction_overview_status: branch.initial_extraction_overview_status ?? initial.initial_extraction_overview_status,
     initial_extraction_overview_diagnostic: branch.initial_extraction_overview_diagnostic ?? initial.initial_extraction_overview_diagnostic,
+    dataset_summary: branch.dataset_summary || initial.dataset_summary,
   };
 }
 
@@ -309,6 +336,7 @@ function progressWithResult(progress: PatchProgress | null, result: ExtractionRu
     curated_document: result.curated_document ?? result.generated_final_draft,
     generated_initial_draft: result.generated_initial_draft ?? progress?.generated_initial_draft ?? null,
     requirement_report: result.requirement_report ?? progress?.requirement_report ?? null,
+    dataset_summary: result.dataset_summary ?? progress?.dataset_summary ?? '',
     draft_quality_state: result.draft_quality_state,
     validation: result.validation,
     curated_validation: result.curated_validation ?? null,
@@ -1259,7 +1287,8 @@ function InitialFileUnderstandingPanel({
     || progress?.initial_file_summary_status
     || progress?.initial_extraction_overview_status
     || progress?.initial_extraction_overview
-    || progress?.initial_extraction_overview_diagnostic,
+    || progress?.initial_extraction_overview_diagnostic
+    || progress?.dataset_summary,
   );
 
   if (!hasArtifacts) {
@@ -1312,6 +1341,18 @@ function InitialFileUnderstandingPanel({
             <p className="muted">Current file: <code>{summaryProgress.current_file_path}</code></p>
           ) : null}
         </div>
+      ) : null}
+
+      {progress?.dataset_summary ? (
+        <details className="initial-overview-panel" open>
+          <summary>
+            <div>
+              <span>Dataset summary</span>
+              <strong>Initial overview artifact</strong>
+            </div>
+          </summary>
+          <div className="summary-box">{progress.dataset_summary}</div>
+        </details>
       ) : null}
 
       {progress?.ranked_files?.length ? (
@@ -3355,7 +3396,7 @@ export function App() {
   const [selectedPackageId, setSelectedPackageId] = useState('');
   const [selectedProfile, setSelectedProfile] = useState('');
   const [chunkResult, setChunkResult] = useState<ChunkRequestResponse | null>(null);
-  const [chunkViewStrategy, setChunkViewStrategy] = useState<ChunkingStrategy>('semantic');
+  const [chunkViewStrategy, setChunkViewStrategy] = useState<ChunkingStrategy>(readStoredChunkingStrategy);
   const [hasChunks, setHasChunks] = useState(false);
   const [chunksByFile, setChunksByFile] = useState<ChunkResponse[][]>([]);
   const [viewingFile, setViewingFile] = useState<FileEntryResponse | null>(null);
@@ -3364,6 +3405,7 @@ export function App() {
   const [generatedFinalDraft, setGeneratedFinalDraft] = useState<Record<string, unknown> | null>(null);
   const [curatedDocument, setCuratedDocument] = useState<Record<string, unknown> | null>(null);
   const [patchStatus, setPatchStatus] = useState<PatchTaskStatus | null>(null);
+  const [initialContextStatus, setInitialContextStatus] = useState<PatchTaskStatus | null>(null);
   const [patchProgress, setPatchProgress] = useState<PatchProgress | null>(null);
   const [tokenUsage, setTokenUsage] = useState<PatchTokenUsage | null>(null);
   const [llmBudget, setLlmBudget] = useState<LlmBudget | null>(null);
@@ -3399,8 +3441,8 @@ export function App() {
     patchProgress?.stage?.startsWith('initial_')
     || patchProgress?.stage === 'file_ranking',
   );
-  const isInitialContextRunning = patchStatus === 'running' && isInitialContextStage;
-  const isPatching = patchStatus === 'running' && !isInitialContextStage;
+  const isInitialContextRunning = initialContextStatus === 'running';
+  const isPatching = patchStatus === 'running' && initialContextStatus !== 'running' && !isInitialContextStage;
   const extractionLimitReachedChunkCount = useMemo(() => {
     const maxContextLength = llmBudget?.max_context_length ?? 0;
     if (maxContextLength <= 0) return 0;
@@ -3563,6 +3605,10 @@ export function App() {
   }, [selectedPackageId]);
 
   useEffect(() => {
+    persistChunkingStrategy(chunkViewStrategy);
+  }, [chunkViewStrategy]);
+
+  useEffect(() => {
     if (!selectedProfile) {
       setActiveProfileSchema(null);
       return;
@@ -3606,6 +3652,7 @@ export function App() {
     setGeneratedFinalDraft(null);
     setCuratedDocument(null);
     setPatchStatus(null);
+    setInitialContextStatus(null);
     setPatchProgress(null);
     setTokenUsage(null);
     setChunkingDialogOpen(false);
@@ -3847,6 +3894,7 @@ export function App() {
       strategy,
       chunks,
       chunkStatus,
+      initialStatus: initialRun.status,
       status: result ? 'completed' : extractionRun.status,
       progress: extractionRun.progress ?? null,
       initialProgress: initialRun.progress ?? null,
@@ -3860,6 +3908,7 @@ export function App() {
     setChunksByFile(snapshot.chunks);
     setChunkResult({ status: snapshot.chunkStatus.status, chunks: snapshot.chunks });
     setTokenUsage(snapshot.tokenUsage);
+    setInitialContextStatus(snapshot.initialStatus);
 
     const mergedProgress = withInitialProgress(snapshot.progress, snapshot.initialProgress);
     if (snapshot.result) {
@@ -3895,6 +3944,7 @@ export function App() {
       });
       if (selectedPackageIdRef.current !== packageId) return;
       setPatchStatus(response.status);
+      setInitialContextStatus(response.status);
       setPatchProgress(response.progress ? { ...response.progress } : null);
       setTokenUsage(await getTokenUsage(packageId, chunkViewStrategy, workflowChatModel));
       setMessage(
@@ -4277,7 +4327,7 @@ export function App() {
       const snapshot = await loadWorkflowBranch(packageId, chunkViewStrategy, workflowChatModel);
       if (selectedPackageIdRef.current !== packageId) return;
       applyWorkflowBranchSnapshot(snapshot);
-      if (snapshot.status === 'running') {
+      if (snapshot.status === 'running' || snapshot.initialStatus === 'running') {
         setMessage('Workflow stage is running.');
       } else {
         setMessage('Workflow progress refreshed.');
@@ -4449,13 +4499,13 @@ export function App() {
               </div>
               <InitialFileUnderstandingPanel
                 progress={patchProgress}
-                status={patchStatus}
+                status={initialContextStatus}
                 tokenUsageSummary={(
                   <TokenUsageSummary
                     tokenUsage={tokenUsage}
                     averageUnit="request"
                     heading="Initial file understanding token usage"
-                    agentKeys={['file_ranking', 'initial_file_summary', 'initial_extraction_overview', 'initial_extraction_overview_fallback']}
+                    agentKeys={['file_ranking', 'initial_file_summary', 'initial_extraction_overview', 'initial_extraction_overview_fallback', 'dataset_summary']}
                     budget={llmBudget}
                   />
                 )}
@@ -4641,7 +4691,6 @@ export function App() {
                       averageUnit="operation"
                       heading="Projection token usage"
                       agentKeys={[
-                        'dataset_summary',
                         'dataset_level_projection',
                         'dataset_level_projection_repair',
                         'profile_target_planner',

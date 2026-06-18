@@ -64,6 +64,7 @@ export type ExtractionRunProgress = {
   initial_extraction_overview?: ExtractionOverview | null;
   initial_extraction_overview_status?: ExtractionOverviewStatus | null;
   initial_extraction_overview_diagnostic?: InitialOverviewDiagnostic | null;
+  dataset_summary?: string;
   vocab_query_config?: ExtractionVocabQueryConfig;
   vocab_queries?: ExtractionVocabQueryRecord[];
   ranked_files?: RankedExtractionFile[];
@@ -406,6 +407,7 @@ export type ExtractionRunResult = {
   initial_file_summary_status?: InitialFileSummaryStatus | null;
   initial_extraction_overview?: ExtractionOverview | null;
   initial_extraction_overview_status?: ExtractionOverviewStatus | null;
+  dataset_summary?: string;
   curated_document?: Record<string, unknown> | null;
   document_quality_state?: DocumentQualityState | null;
   draft_quality_state: DraftQualityState;
