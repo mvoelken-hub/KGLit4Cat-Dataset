@@ -1,44 +1,86 @@
-# SIMONE Prototype Status Compared With Teaser Claims
+# SIMONE Prototype Implementation Status
 
-This note compares the public-facing prototype claims in the README, workflow notes, and thesis working material with the current implementation.
+> Snapshot note: This working document compares the current code implementation against the workflow mental model. Update it whenever implementation, workflow behavior, endpoints, artifacts, evaluation status, or thesis-facing claims change.
 
-| Claim or teaser wording | Actual prototype status |
+This document is the implementation-facing counterpart to `WORKFLOW.md`. It records what the current prototype actually implements, where it matches the mental model, and where gaps remain. The quick thesis claim ledger lives in `CLAIMS.md`.
+
+## Current Implementation Compared With Mental Model
+
+| Mental-model step | Current code implementation | Status / gap |
+| --- | --- | --- |
+| Ingest heterogeneous dataset archive | ZIP upload, deterministic package IDs, recursive nested ZIP expansion, file entries persisted through filesystem repositories. | Implemented for ZIP-based packages. |
+| Convert accessible source files into text | Text extraction covers plain text/default decoded files, CSV/spreadsheets, PDFs, and placeholder text for images. | Implemented for text-accessible sources. Images are not OCR-processed; binary instrument files are not semantically interpreted unless text extraction succeeds. |
+| Build dataset-level orientation context | Initial file summaries and an extraction overview are generated and stored in workflow state. | Implemented. Used as orientation context, not source evidence. |
+| Split source text into manageable chunks | Chunking supports semantic embedding-distance breakpoints and fixed-token grouping, with min/max token post-processing. | Implemented. Stepwise extraction still requires completed chunks. |
+| Extract grounded evidence from chunks | Chunk extraction uses structured LLM output for evidence candidates, validates copied evidence against chunk text, critiques evidence, and routes it into portable/contextual/rejected groups. | Implemented. Quality depends on configured chat model and source text quality. |
+| Accumulate and route extracted evidence | Routed evidence is merged into interim extraction context and persisted with progress, warnings, and token usage. | Implemented. Context size still needs caps and careful prompt management. |
+| Ground selected terms against vocabularies | Semantic service imports RDF vocabularies, creates vector/full-text indexes, retrieves candidates, expands graph context, and supports candidate selection for quantitative and qualitative attributes. | Implemented. Quality depends on vocabulary coverage, embeddings, Neo4j state, and LLM candidate selection. |
+| Project accumulated context into metadata profile | Final profile projection uses selected profile schema and normalized context to produce a profile-shaped document. | Implemented. Projection can fail if schema requirements are not satisfied. |
+| Validate final document | Result is validated against selected profile before final persistence. | Implemented. Validation checks schema conformance, not scientific correctness. |
+| Retrieve result and inspect artifacts | Result, progress, warnings, token usage, vocabulary query records, and evidence/projection state are persisted and exposed through API/frontend paths. | Implemented at prototype level. UI/terminology still has some legacy draft/patch naming. |
+
+## Current Workflow Entrypoints
+
+Stepwise workflow:
+
+1. Upload package.
+2. Optionally run initial context generation.
+3. Run chunking.
+4. Run extraction with a registered profile.
+5. Poll progress and fetch final result.
+
+Complete workflow:
+
+1. Upload ZIP package.
+2. Run initial context generation.
+3. Run chunking.
+4. Run extraction.
+5. Poll progress and fetch final result.
+
+Important current API surfaces:
+
+- `POST /api/v1/datasources`
+- `POST /api/v1/datasources/chunk`
+- `POST /api/v1/extraction/run/{data_package_id}/initial-context`
+- `GET /api/v1/extraction/run/{data_package_id}/initial-context/progress`
+- `POST /api/v1/extraction/run`
+- `POST /api/v1/extraction/workflows/complete`
+- `GET /api/v1/extraction/workflows/complete/{data_package_id}/progress`
+- `GET /api/v1/extraction/result/{data_package_id}`
+- `GET /api/v1/extraction/{data_package_id}/token-usage`
+
+## Complete Workflow Options
+
+The complete workflow endpoint currently accepts:
+
+- `file`
+- `profile_identifier`
+- `qualitative_vocab_identifiers`
+- `buffer_window_size`
+- `semantic_chunking_threshold`
+- `chunking_strategy`
+- `fixed_tokens_per_chunk`
+- `min_tokens_per_chunk`
+- `max_tokens_per_chunk`
+- `replace_existing_chunks`
+- `resume`
+- `force_rerun`
+
+Use `force_rerun=true` for repeatable evaluation runs with deterministic package IDs so older artifacts do not mask current behavior.
+
+## Current Prototype Boundaries
+
+| Boundary | Current implementation status |
 | --- | --- |
-| SIMONE turns heterogeneous catalysis data packages into structured, reusable, FAIR-oriented metadata. | Implemented as a prototype pipeline: ZIP upload, file extraction, semantic chunking, chunk-wise LLM extraction, vocabulary normalization, profile projection, schema validation, and filesystem persistence. Scientific correctness still requires expert evaluation. |
-| The workflow extracts document content and derives context from source material. | Implemented for text-accessible files including plain text, CSV/spreadsheets, PDFs, and nested ZIP contents. Images and binary instrument files are retained as resources but are not semantically interpreted unless text extraction succeeds. |
-| The system creates an initial metadata draft and refines it iteratively. | Partly legacy wording. The active backend no longer uses the old manual patch-review chain. It runs direct extraction into `ExtractionContext`, vocabulary normalization, and profile projection into the final document. Some frontend function names still reflect the older draft/patch vocabulary. |
-| Vocabulary-backed enrichment grounds selected fields semantically. | Implemented through Neo4j-backed vocabulary import/search, vector and full-text retrieval, graph expansion, candidate selection, and normalization records for quantitative and qualitative attributes. Quality depends on imported vocabularies, generated embeddings, and the configured LLM. |
-| The workflow is traceable and reviewable. | Implemented at prototype level through chunk results, ranked files, extraction state, warnings, token usage, source-text evidence on extracted objects, and persisted artifacts under the runtime output directory. |
-| A user can run the workflow from start to finish. | Stepwise UI/API execution already existed, but `POST /api/v1/extraction/run` required completed chunks. A new automatic endpoint, `POST /api/v1/extraction/workflows/complete`, now uploads a ZIP package, starts chunking, waits for chunking, starts extraction, and lets the backend carry the workflow to a final result. |
-| The prototype is fully autonomous. | Not claimed as production autonomy. It still depends on registered profiles, reachable Neo4j/Ollama services, imported vocabularies, model authorization for the configured chat model, and successful schema validation. |
-| The thesis can claim extraction quality and semantic grounding quality. | Not yet substantiated. A post-fix `IR-IR.zip` run completed and validated, but the preliminary scorer reported object macro F1 `0.2667`, attribute F1 `0.0`, and vocabulary mapping F1 `0.0`; `1H_NMR-1H_NMR.zip` exceeded a one-hour timeout at `78/107` chunks. |
+| Image understanding | Images return placeholder text; no OCR or visual interpretation is implemented. |
+| Binary/instrument files | Retained as package resources, but not semantically interpreted unless text extraction succeeds. |
+| Manual patch review | Old frontend patch-review concepts remain as compatibility stubs; active backend workflow is evidence extraction, normalization, projection, and validation. |
+| Evaluation completeness | Early evaluation runs exist, but thesis-level quality claims are not fully substantiated yet. |
+| Vocabulary coverage | Initial vocabularies can be imported, but grounding quality depends on imported vocabularies, term schemes, embeddings, and candidate selection. |
+| Model dependency | Extraction, overview generation, candidate selection, fallback query generation, and profile projection depend on the configured Ollama chat model. |
+| Profile dependency | Final output requires a registered compatible profile and successful schema validation. |
+| Scientific correctness | A schema-valid final result is not automatically scientifically correct. Expert or benchmark evaluation is still required. |
 
-## Automatic Workflow Endpoint
+## Evaluation Status Snapshot
 
-Use this endpoint after the API is running and at least one compatible profile is registered:
-
-```bash
-curl -X POST "http://127.0.0.1:8000/api/v1/extraction/workflows/complete" \
-  -F "file=@./my-dataset.zip" \
-  -F "profile_identifier=dcat-ap-plus"
-```
-
-Optional multipart fields:
-
-- `qualitative_vocab_identifiers`: JSON string array or comma-separated identifiers.
-- `buffer_window_size`: chunk buffer size, default `1`.
-- `semantic_chunking_threshold`: chunking threshold from `0` to `100`, default `95`.
-- `replace_existing_chunks`: replace chunks for a package with the same deterministic id, default `false`.
-- `resume`: resume persisted extraction state, default `false`.
-- `force_rerun`: clear persisted extraction artifacts before scheduling the workflow, default `false`.
-
-For repeatable evaluation of deterministic package IDs, use `force_rerun=true` so older completed extraction artifacts do not mask current behavior.
-
-The response includes:
-
-- `data_package.id`
-- `status`
-- `progress_url`
-- `result_url`
-
-The workflow continues in background tasks. Poll the returned `progress_url` until the status is `completed`, then fetch `result_url`.
+Current evidence is not enough to claim extraction or grounding quality broadly. A previous `IR-IR.zip` run completed and validated, but preliminary scoring reported low object/attribute/vocabulary F1. A `1H_NMR-1H_NMR.zip` run exceeded a one-hour timeout before completion. Keep quality claims conservative until the benchmark and evaluation tables are complete.
