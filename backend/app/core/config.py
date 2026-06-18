@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     hf_token: str = Field(default="", validation_alias="HF_TOKEN", exclude=True)
     ollama_embed_dimensions: int = 768
     embedding_batch_size: int = 32
-    max_context_length: int = 8192
+    max_context_length: int = 4096
     ollama_timeout_seconds: int | None = Field(default=None, validation_alias="OLLAMA_TIMEOUT_SECONDS")
     extraction_vocab_query_concurrency: int = 4
     vocab_selection_llm_concurrency: int = 1

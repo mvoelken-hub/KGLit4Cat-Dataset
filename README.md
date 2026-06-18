@@ -49,13 +49,34 @@ The CLI creates one `.env` file from `.env.example` and sets `APP_ENV` automatic
 | `OLLAMA_CHAT_MODEL` | `gemma4:31b-cloud` | `gemma4:31b-cloud` | Chat model used by extraction agents. The default is an Ollama Cloud model and may require sign-in. |
 | `OLLAMA_EMBED_DIMENSIONS` | `768` | `768` | Expected embedding vector size for the configured embedding model. |
 | `EMBEDDING_BATCH_SIZE` | `32` | `32` | Number of texts embedded per Ollama request batch. |
-| `MAX_CONTEXT_LENGTH` | `64000` | `64000` | Maximum model context length used when preparing Ollama requests. |
+| `MAX_CONTEXT_LENGTH` | `4096` | `4096` | Maximum model context length used when preparing Ollama requests. |
 | `RUNTIME_DIR` | `./.runtime` | `./.runtime` | Base runtime directory for uploads, vocabularies, profiles, output files, and API logs. |
 | `FRONTEND_PORT` | `3000` | `3000` | Frontend browser port. |
 | `SKIP_MODEL_PULL` | `false` | `true` | Override: skip pulling configured Ollama models on startup. |
 | `SKIP_INITIAL_VOCAB_IMPORT` | `false` | `true` | Override: skip importing initial vocabularies on startup. |
 
 \*Neo4j applies `NEO4J_USER` and `NEO4J_PASSWORD` only when `data/docker/neo4j/data` is initialized for the first time. If you change either value later, either update the `.env` file to match the persisted database credentials or run `simone reset-neo4j`.
+
+Advanced variables usually do not need editing:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `OLLAMA_CHAT_TOKENIZER` | empty | Optional tokenizer override for chat-token counting. |
+| `OLLAMA_FLASH_ATTENTION` | `1` | Local Ollama container Flash Attention setting. |
+| `OLLAMA_KV_CACHE_TYPE` | `q8_0` | Local Ollama container KV cache type. |
+| `OLLAMA_EMBED_NUM_GPU` | `-1` | Embedding request GPU override: `-1` auto, `0` CPU, positive values set GPU layers. |
+| `API_PROXY_TARGET` | `http://api:8000` | Backend target used by the Docker frontend nginx proxy. |
+| `VITE_API_BASE_URL` | `/api/v1` | Frontend API base path baked into the frontend build. |
+| `VITE_PROXY_TARGET` | `http://127.0.0.1:8000` | Vite dev-server API proxy target. |
+| `HF_TOKEN` | empty | Optional Hugging Face token for tokenizer/model integrations. |
+| `OLLAMA_TIMEOUT_SECONDS` | unset | Optional request timeout override for Ollama calls. |
+| `EXTRACTION_VOCAB_QUERY_CONCURRENCY` | `4` | Parallel vocabulary-query limit during extraction. |
+| `VOCAB_SELECTION_LLM_CONCURRENCY` | `1` | Parallel LLM candidate-selection limit. |
+| `VOCAB_SELECTION_PARALLEL_MODE` | `conservative` | Vocabulary candidate-selection scheduling mode. |
+| `RDF_SKOLEM_PREFIX` | `bnode` | Prefix used when skolemizing RDF blank nodes. |
+| `RDF_SKOLEM_BASE` | `http://example.org/.well-known/bnodes/` | Base URI used when skolemizing RDF blank nodes. |
+| `OLLAMA_NO_MMAP` | `0` | Local Ollama container memory-mapping setting. |
+| `SIMONE_ENV_FILE` | `.env` | Compose env-file override for the API service. |
 
 Startup behavior is mode-specific by default. Production **pulls configured models**, **imports initial vocabularies**, and **generates missing embeddings**.
 
