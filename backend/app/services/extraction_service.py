@@ -7181,7 +7181,11 @@ class ExtractionService:
             chat_model=state.chat_model,
             chunking_strategy=state.chunking_strategy,
         )
-        token_usage = await self.get_token_usage(data_package_id)
+        token_usage = await self.get_token_usage(
+            data_package_id,
+            chunking_strategy=state.chunking_strategy,
+            chat_model=state.chat_model,
+        )
         result = ExtractionRunResult(
             generated_final_draft=clean_document,
             machine_evidence_context=evidence_context,
@@ -11293,9 +11297,14 @@ class ExtractionService:
     ) -> None:
         if self.output_repository is None:
             return
-        state = self._load_run_state_or_none(data_package_id)
-        chat_model = state.chat_model if state else (self.ollama_client.chat_model if self.ollama_client else None)
-        chunking_strategy = state.chunking_strategy if state else "semantic"
+        task_branch = self._current_extraction_task_branch(data_package_id)
+        state = self._load_run_state_or_none(
+            data_package_id,
+            chunking_strategy=task_branch[0] if task_branch else "semantic",
+            chat_model=task_branch[1] if task_branch else None,
+        )
+        chat_model = state.chat_model if state else (task_branch[1] if task_branch else (self.ollama_client.chat_model if self.ollama_client else None))
+        chunking_strategy = state.chunking_strategy if state else (task_branch[0] if task_branch else "semantic")
         totals = self.output_repository.load_token_usage(
             data_package_id,
             chat_model=chat_model,
@@ -11371,6 +11380,21 @@ class ExtractionService:
             data_package_id=data_package_id,
             result=result,
         )
+
+    @staticmethod
+    def _current_extraction_task_branch(data_package_id: str) -> tuple[str, str | None] | None:
+        task = asyncio.current_task()
+        if task is None:
+            return None
+        prefix = f"extraction:run:{data_package_id}:"
+        name = task.get_name()
+        if not name.startswith(prefix):
+            return None
+        remainder = name[len(prefix):]
+        strategy, separator, chat_model = remainder.partition(":")
+        if strategy not in {"semantic", "fixed_tokens"}:
+            return None
+        return strategy, chat_model if separator and chat_model != "default-model" else None
 
     def _record_llm_call_exception(
         self,

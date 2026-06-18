@@ -172,6 +172,7 @@ class FakeOutputRepository:
         self.validation: dict | None = None
         self.warnings: list[str] = []
         self.token_usage: dict[str, dict[str, int]] = {}
+        self.last_token_usage_kwargs: dict = {}
         self.prompt_diagnostics: list[dict] = []
 
     def save_evidence_context(self, *, workflow_id: str, evidence_context: EvidenceContext, **_kwargs):
@@ -362,8 +363,10 @@ class FakeOutputRepository:
 
     def save_token_usage(self, *, workflow_id: str, token_usage: dict[str, dict[str, int]], **_kwargs):
         self.token_usage = token_usage
+        self.last_token_usage_kwargs = _kwargs
 
     def load_token_usage(self, workflow_id: str, **_kwargs) -> dict[str, dict[str, int]]:
+        self.last_token_usage_kwargs = _kwargs
         return self.token_usage
 
     def append_prompt_diagnostic(self, *, workflow_id: str, diagnostic: dict, chat_model: str | None = None, **_kwargs):
@@ -757,6 +760,31 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
     class WhitespaceTokenizer:
         def encode(self, text: str, add_special_tokens: bool = False):
             return ExtractionServiceWorkflowTests.WhitespaceEncoding(text)
+
+    async def test_token_usage_recorder_uses_current_extraction_task_branch(self):
+        service, _task_registry, output_repository = make_service([[make_chunk()]])
+        output_repository.run_state = ExtractionRunState(
+            chat_model="rnj-1:8b-cloud",
+            chunking_strategy="fixed_tokens",
+        )
+        task = asyncio.current_task()
+        self.assertIsNotNone(task)
+        old_name = task.get_name()
+        task.set_name("extraction:run:package-id:fixed_tokens:rnj-1:8b-cloud")
+        try:
+            service._record_workflow_token_usage(
+                data_package_id="package-id",
+                agent_name="chunk_extraction",
+                usage=RunUsage(requests=1, input_tokens=10, output_tokens=2),
+            )
+        finally:
+            task.set_name(old_name)
+
+        self.assertEqual(
+            output_repository.last_token_usage_kwargs,
+            {"chat_model": "rnj-1:8b-cloud", "chunking_strategy": "fixed_tokens"},
+        )
+        self.assertIn("chunk_extraction", output_repository.token_usage)
 
     def test_extraction_overview_prompt_is_joined_from_named_components(self):
         ranked_files = [RankedFile(rank=1, file_path="metadata.txt")]
