@@ -497,11 +497,29 @@ class FileSystemExtractionOutputRepository:
         *,
         workflow_id: str,
         state: ExtractionRunState,
+        chunking_strategy: str = "semantic",
+        chat_model: str | None = None,
     ) -> None:
-        self._write_json_artifact(self._workflow_dir(workflow_id) / EXTRACTION_RUN_STATE_FILE, state.model_dump(mode="json"))
+        self._write_json_artifact(
+            self._branch_dir(
+                workflow_id,
+                "run_state",
+                chunking_strategy or state.chunking_strategy,
+                chat_model or state.chat_model,
+            )
+            / EXTRACTION_RUN_STATE_FILE,
+            state.model_dump(mode="json"),
+        )
 
-    def load_extraction_run_state(self, workflow_id: str, chat_model: str | None = None) -> ExtractionRunState:
-        path = self._workflow_dir(workflow_id) / EXTRACTION_RUN_STATE_FILE
+    def load_extraction_run_state(
+        self,
+        workflow_id: str,
+        chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
+    ) -> ExtractionRunState:
+        path = self._branch_dir(workflow_id, "run_state", chunking_strategy, chat_model) / EXTRACTION_RUN_STATE_FILE
+        if not path.exists():
+            path = self._workflow_dir(workflow_id) / EXTRACTION_RUN_STATE_FILE
         if not path.exists():
             raise FileNotFoundError(f"Extraction run state not found for workflow '{workflow_id}'.")
         return ExtractionRunState.model_validate(self._read_json_file(path))
@@ -711,12 +729,12 @@ class FileSystemExtractionOutputRepository:
     @staticmethod
     def _stage_from_relative_path(path: str) -> str:
         first = path.split("/", 1)[0]
-        return first if first in {"chunks", "overview", "evidence_notes", "profile_draft", "grounding", "result"} else "run_state"
+        return first if first in {"chunks", "overview", "evidence_notes", "profile_draft", "grounding", "result", "run_state"} else "run_state"
 
     @staticmethod
     def _strategy_from_relative_path(path: str) -> str | None:
         parts = path.split("/")
-        if len(parts) >= 3 and parts[0] in {"chunks", "evidence_notes", "profile_draft", "grounding", "result"}:
+        if len(parts) >= 3 and parts[0] in {"chunks", "evidence_notes", "profile_draft", "grounding", "result", "run_state"}:
             return parts[1]
         return None
 
@@ -725,7 +743,7 @@ class FileSystemExtractionOutputRepository:
         parts = path.split("/")
         if len(parts) >= 3 and parts[0] == "overview":
             return parts[1]
-        if len(parts) >= 4 and parts[0] in {"evidence_notes", "profile_draft", "grounding", "result"}:
+        if len(parts) >= 4 and parts[0] in {"evidence_notes", "profile_draft", "grounding", "result", "run_state"}:
             return parts[2]
         return None
 

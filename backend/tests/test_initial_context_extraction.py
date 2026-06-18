@@ -271,10 +271,10 @@ class FakeOutputRepository:
     ):
         self.initial_extraction_overview_diagnostic = diagnostic
 
-    def save_extraction_run_state(self, *, workflow_id: str, state: ExtractionRunState):
+    def save_extraction_run_state(self, *, workflow_id: str, state: ExtractionRunState, **_kwargs):
         self.run_state = state
 
-    def load_extraction_run_state(self, workflow_id: str, chat_model: str | None = None) -> ExtractionRunState:
+    def load_extraction_run_state(self, workflow_id: str, chat_model: str | None = None, **_kwargs) -> ExtractionRunState:
         if self.run_state is None:
             raise FileNotFoundError
         return self.run_state
@@ -838,7 +838,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(status, TaskStatus.RUNNING)
         with self.assertRaises(ValueError):
-            await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
+            await task_registry.wait_for_task("extraction:run:package-id:semantic:chat", timeout=2)
 
     async def test_initial_overview_previews_use_ranked_top_files_and_raw_first_lines(self):
         service, _, _ = make_service([[make_chunk()]])
@@ -2300,7 +2300,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIsNone(result)
             self.assertEqual(status, TaskStatus.RUNNING)
-            await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
+            await task_registry.wait_for_task("extraction:run:package-id:semantic:chat", timeout=2)
 
         self.assertIsNotNone(output_repository.evidence_context)
         self.assertGreaterEqual(len(output_repository.evidence_contexts), 2)
@@ -2358,7 +2358,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIsNone(result)
             self.assertEqual(status, TaskStatus.RUNNING)
-            await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
+            await task_registry.wait_for_task("extraction:run:package-id:semantic:chat", timeout=2)
 
         self.assertIsNotNone(output_repository.evidence_context)
         self.assertIsNone(output_repository.result)
@@ -2449,7 +2449,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIsNone(result)
             self.assertEqual(status, TaskStatus.RUNNING)
-            await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
+            await task_registry.wait_for_task("extraction:run:package-id:semantic:chat", timeout=2)
 
         self.assertIsNone(output_repository.result)
         self.assertIsNotNone(output_repository.run_state.generated_final_draft)
@@ -2551,7 +2551,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIsNone(result)
             self.assertEqual(status, TaskStatus.RUNNING)
-            await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
+            await task_registry.wait_for_task("extraction:run:package-id:semantic:chat", timeout=2)
 
         self.assertIsNotNone(output_repository.result)
         self.assertEqual(output_repository.result.generated_final_draft["id"], "manual-id")
@@ -2663,8 +2663,8 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             workflow_id="package-id",
             state=output_repository.run_state.model_copy(update={"chunking_strategy": "semantic"}),
         )
-        task = asyncio.create_task(asyncio.sleep(0), name="extraction:run:package-id")
-        task_registry.tasks["extraction:run:package-id"] = TaskInfo(
+        task = asyncio.create_task(asyncio.sleep(0), name="extraction:run:package-id:semantic:chat")
+        task_registry.tasks["extraction:run:package-id:semantic:chat"] = TaskInfo(
             task=task,
             status=TaskStatus.CANCELLED,
             type=TaskType.WORKFLOW,
@@ -2765,7 +2765,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIsNone(result)
             self.assertEqual(status, TaskStatus.RUNNING)
-            await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
+            await task_registry.wait_for_task("extraction:run:package-id:semantic:chat", timeout=2)
 
         self.assertEqual(call_order[:3], ["extract:0", "extract:1", "repair"])
         self.assertIsNotNone(output_repository.run_state)
@@ -2846,7 +2846,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIsNone(result)
             self.assertEqual(status, TaskStatus.RUNNING)
-            await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
+            await task_registry.wait_for_task("extraction:run:package-id:semantic:chat", timeout=2)
 
         self.assertIsNotNone(output_repository.result)
         self.assertEqual(output_repository.result.generated_final_draft["id"], "package-id")
@@ -2925,7 +2925,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIsNone(result)
             self.assertEqual(status, TaskStatus.RUNNING)
-            await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
+            await task_registry.wait_for_task("extraction:run:package-id:semantic:chat", timeout=2)
 
         self.assertEqual(call_order, ["extract:0", "repair", "extract:1"])
         self.assertEqual(output_repository.run_state.chunk_repair_mode, "immediate")
@@ -3003,7 +3003,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIsNone(result)
             self.assertEqual(status, TaskStatus.RUNNING)
-            await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
+            await task_registry.wait_for_task("extraction:run:package-id:semantic:chat", timeout=2)
 
         self.assertEqual(tokenizer_loader.call_count, 2)
         tokenizer_loader.assert_any_call("example/tokenizer", hf_token="")
@@ -3073,7 +3073,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIsNone(result)
             self.assertEqual(status, TaskStatus.RUNNING)
-            await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
+            await task_registry.wait_for_task("extraction:run:package-id:semantic:chat", timeout=2)
 
         self.assertFalse(repair_called)
         self.assertEqual(output_repository.run_state.chunk_repair_mode, "disabled")
@@ -3151,7 +3151,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIsNone(result)
             self.assertEqual(status, TaskStatus.RUNNING)
-            await task_registry.wait_for_task("extraction:run:package-id", timeout=2)
+            await task_registry.wait_for_task("extraction:run:package-id:semantic:chat", timeout=2)
 
         self.assertEqual(len(outputs), 0)
         self.assertIsNotNone(output_repository.result)
@@ -3466,7 +3466,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             ["pending"],
         )
         self.assertEqual(
-            task_registry.get_task_info("extraction:run:package-id").status,
+            task_registry.get_task_info("extraction:run:package-id:semantic:chat").status,
             TaskStatus.CANCELLED,
         )
 

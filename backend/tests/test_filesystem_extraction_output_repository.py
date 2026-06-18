@@ -63,7 +63,15 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
 
             loaded = repo.load_extraction_run_state(workflow_id, chat_model)
             self.assertEqual(loaded.chat_model, chat_model)
-            self.assertTrue((repo._workflow_dir(workflow_id) / "extraction_run_state.json").exists())
+            self.assertTrue(
+                (
+                    repo._workflow_dir(workflow_id)
+                    / "run_state"
+                    / "semantic"
+                    / "lfm2.5-thinking_1.2b-bf16"
+                    / "extraction_run_state.json"
+                ).exists()
+            )
 
     def test_prompt_diagnostics_append_and_clear(self):
         with tempfile.TemporaryDirectory() as directory:

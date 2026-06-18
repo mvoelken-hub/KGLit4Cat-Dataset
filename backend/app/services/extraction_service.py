@@ -425,6 +425,7 @@ class ExtractionService:
         force_profile_rebuild: bool = False,
         target_stage: ExtractionTargetStage = "complete",
         chunking_strategy: str = "semantic",
+        chat_model: str | None = None,
         chunk_repair_mode: ChunkRepairMode = "deferred",
         evidence_critic_granularity: EvidenceCriticGranularity = "per_chunk",
     ) -> tuple[ExtractionRunResult | None, TaskStatus]:
@@ -451,12 +452,13 @@ class ExtractionService:
                 "Extraction requires completed datasource chunking. Run chunking first."
             )
 
-        task_name = self._extraction_task_name(data_package_id)
+        chat_model = chat_model or self._current_chat_model()
+        task_name = self._extraction_task_name(data_package_id, chunking_strategy, chat_model)
         task_info = self.task_registry.get_task_info(task_name)
         if task_info is not None and task_info.status == TaskStatus.RUNNING:
-            return self._load_result_or_none(data_package_id), TaskStatus.RUNNING
+            return self._load_result_or_none(data_package_id, chunking_strategy=chunking_strategy, chat_model=chat_model), TaskStatus.RUNNING
         if task_info is not None and task_info.status == TaskStatus.COMPLETED:
-            result = self._load_result_or_none(data_package_id)
+            result = self._load_result_or_none(data_package_id, chunking_strategy=chunking_strategy, chat_model=chat_model)
             if result is not None and resume and not force_profile_rebuild:
                 return result, TaskStatus.COMPLETED
 
@@ -472,6 +474,7 @@ class ExtractionService:
                 force_profile_rebuild=force_profile_rebuild,
                 target_stage=target_stage,
                 chunking_strategy=chunking_strategy,
+                chat_model=chat_model,
                 chunk_repair_mode=chunk_repair_mode,
                 evidence_critic_granularity=evidence_critic_granularity,
             ),
@@ -798,7 +801,7 @@ class ExtractionService:
         )
         if extraction_status == TaskStatus.RUNNING:
             await self.task_registry.wait_for_task(
-                self._extraction_task_name(data_package_id)
+                self._extraction_task_name(data_package_id, chunking_strategy, self._current_chat_model())
             )
         workflow_progress = self._derive_complete_workflow_progress(
             data_package_id=data_package_id,
@@ -888,20 +891,23 @@ class ExtractionService:
         *,
         data_package_id: str,
         chunking_strategy: str | None = None,
+        chat_model: str | None = None,
     ) -> tuple[TaskStatus, ExtractionRunProgress | None]:
         if self.task_registry is None:
             return TaskStatus.UNKNOWN, None
+        branch_strategy = chunking_strategy or "semantic"
+        branch_model = chat_model or self._current_chat_model()
         task_info = self.task_registry.get_task_info(
-            self._extraction_task_name(data_package_id)
+            self._extraction_task_name(data_package_id, branch_strategy, branch_model)
         )
         if task_info is not None and chunking_strategy:
-            state = self._load_run_state_or_none(data_package_id)
+            state = self._load_run_state_or_none(data_package_id, chunking_strategy=branch_strategy, chat_model=branch_model)
             if state is not None and state.chunking_strategy != chunking_strategy:
                 task_info = None
         if task_info is None:
-            state = self._load_run_state_or_none(data_package_id)
+            state = self._load_run_state_or_none(data_package_id, chunking_strategy=branch_strategy, chat_model=branch_model)
             state_for_branch = state if not chunking_strategy or state is None or state.chunking_strategy == chunking_strategy else None
-            result = self._load_result_or_none(data_package_id, chunking_strategy=chunking_strategy)
+            result = self._load_result_or_none(data_package_id, chunking_strategy=branch_strategy, chat_model=branch_model)
             if result is not None:
                 return TaskStatus.COMPLETED, ExtractionRunProgress(
                     stage="completed",
@@ -934,7 +940,7 @@ class ExtractionService:
                     curation_ledger=result.curation_ledger,
                     warnings=list(result.warnings),
                 )
-            interim_evidence_context = self._load_evidence_context_or_none(data_package_id, chunking_strategy=chunking_strategy)
+            interim_evidence_context = self._load_evidence_context_or_none(data_package_id, chunking_strategy=branch_strategy, chat_model=branch_model)
             mismatched_state = None
             if chunking_strategy and state is not None and state.chunking_strategy != chunking_strategy:
                 mismatched_state = state
@@ -999,7 +1005,7 @@ class ExtractionService:
         except ValidationError:
             progress = None
         if progress is None:
-            state = self._load_run_state_or_none(data_package_id)
+            state = self._load_run_state_or_none(data_package_id, chunking_strategy=branch_strategy, chat_model=branch_model)
             if state is not None:
                 stage = "interim_evidence_context"
                 if not state.chunk_results and (
@@ -1035,9 +1041,9 @@ class ExtractionService:
                     curation_ledger=state.curation_ledger,
                 )
         if progress is not None and progress.interim_evidence_context is None:
-            progress.interim_evidence_context = self._load_evidence_context_or_none(data_package_id, chunking_strategy=chunking_strategy)
+            progress.interim_evidence_context = self._load_evidence_context_or_none(data_package_id, chunking_strategy=branch_strategy, chat_model=branch_model)
         if progress is not None:
-            state = self._load_run_state_or_none(data_package_id)
+            state = self._load_run_state_or_none(data_package_id, chunking_strategy=branch_strategy, chat_model=branch_model)
             if state is not None and (chunking_strategy is None or state.chunking_strategy == chunking_strategy):
                 progress.vocab_query_config = state.vocab_query_config
                 if not progress.chunk_results:
@@ -1069,14 +1075,18 @@ class ExtractionService:
         if self.task_registry is None:
             return TaskStatus.UNKNOWN, None
 
-        task_name = self._extraction_task_name(data_package_id)
+        state = self._load_run_state_or_none(data_package_id)
+        task_name = self._extraction_task_name(
+            data_package_id,
+            state.chunking_strategy if state else "semantic",
+            state.chat_model if state else self._current_chat_model(),
+        )
         task_info = self.task_registry.get_task_info(task_name)
         if task_info is None or task_info.status != TaskStatus.RUNNING:
             return await self.get_extraction_progress(data_package_id=data_package_id)
 
         await self.task_registry.cancel_task(task_name)
 
-        state = self._load_run_state_or_none(data_package_id)
         if state is None:
             return await self.get_extraction_progress(data_package_id=data_package_id)
 
@@ -1128,14 +1138,20 @@ class ExtractionService:
         *,
         data_package_id: str,
         chunking_strategy: str | None = None,
+        chat_model: str | None = None,
     ) -> ExtractionRunResult:
         if self.output_repository is None:
             raise ExtractionResultNotFoundError("Extraction output repository is unavailable.")
         try:
-            state = self._load_run_state_or_none(data_package_id)
+            branch_model = chat_model or self._current_chat_model()
+            state = self._load_run_state_or_none(
+                data_package_id,
+                chunking_strategy=chunking_strategy or "semantic",
+                chat_model=branch_model,
+            )
             return self.output_repository.load_extraction_result(
                 data_package_id,
-                chat_model=state.chat_model if state else (self.ollama_client.chat_model if self.ollama_client else None),
+                chat_model=state.chat_model if state else branch_model,
                 chunking_strategy=chunking_strategy or (state.chunking_strategy if state else "semantic"),
             )
         except FileNotFoundError as exc:
@@ -1143,14 +1159,24 @@ class ExtractionService:
                 f"Extraction result not found for workflow '{data_package_id}'."
             ) from exc
 
-    async def get_token_usage(self, data_package_id: str, chunking_strategy: str | None = None) -> dict[str, Any]:
+    async def get_token_usage(
+        self,
+        data_package_id: str,
+        chunking_strategy: str | None = None,
+        chat_model: str | None = None,
+    ) -> dict[str, Any]:
         if self.output_repository is None:
             return {"agents": {}}
-        state = self._load_run_state_or_none(data_package_id)
+        branch_model = chat_model or self._current_chat_model()
+        state = self._load_run_state_or_none(
+            data_package_id,
+            chunking_strategy=chunking_strategy or "semantic",
+            chat_model=branch_model,
+        )
         return self._token_usage_summary(
             self.output_repository.load_token_usage(
                 data_package_id,
-                chat_model=state.chat_model if state else (self.ollama_client.chat_model if self.ollama_client else None),
+                chat_model=state.chat_model if state else branch_model,
                 chunking_strategy=chunking_strategy or (state.chunking_strategy if state else "semantic"),
             )
         )
@@ -1437,6 +1463,7 @@ class ExtractionService:
         force_profile_rebuild: bool = False,
         target_stage: ExtractionTargetStage = "complete",
         chunking_strategy: str = "semantic",
+        chat_model: str | None = None,
         chunk_repair_mode: ChunkRepairMode = "deferred",
         evidence_critic_granularity: EvidenceCriticGranularity = "per_chunk",
     ) -> ExtractionRunResult | None:
@@ -1465,7 +1492,12 @@ class ExtractionService:
             )
 
         warnings: list[str] = []
-        persisted_state = self._load_run_state_or_none(data_package_id)
+        chat_model = chat_model or self._current_chat_model()
+        persisted_state = self._load_run_state_or_none(
+            data_package_id,
+            chunking_strategy=chunking_strategy,
+            chat_model=chat_model,
+        )
         progress = ExtractionRunProgress(
             stage="file_ranking",
             chunk_repair_mode=chunk_repair_mode,
@@ -4135,7 +4167,7 @@ class ExtractionService:
         )
         if self.task_registry is not None:
             self.task_registry.update_progress(
-                self._extraction_task_name(data_package_id),
+                self._extraction_task_name(data_package_id, state.chunking_strategy, state.chat_model),
                 ExtractionRunProgress(
                     stage="completed",
                     processed_chunks=self._completed_chunk_count(state),
@@ -10680,39 +10712,68 @@ class ExtractionService:
             attributes.extend(trace.extracted_object.has_qualitative_attributes)
         return attributes
 
-    def _load_result_or_none(self, data_package_id: str, *, chunking_strategy: str | None = None) -> ExtractionRunResult | None:
+    def _load_result_or_none(
+        self,
+        data_package_id: str,
+        *,
+        chunking_strategy: str | None = None,
+        chat_model: str | None = None,
+    ) -> ExtractionRunResult | None:
         if self.output_repository is None:
             return None
         try:
-            state = self._load_run_state_or_none(data_package_id)
+            branch_model = chat_model or self._current_chat_model()
+            state = self._load_run_state_or_none(
+                data_package_id,
+                chunking_strategy=chunking_strategy or "semantic",
+                chat_model=branch_model,
+            )
             return self.output_repository.load_extraction_result(
                 data_package_id,
-                chat_model=state.chat_model if state else (self.ollama_client.chat_model if self.ollama_client else None),
+                chat_model=state.chat_model if state else branch_model,
                 chunking_strategy=chunking_strategy or (state.chunking_strategy if state else "semantic"),
             )
         except (FileNotFoundError, ValidationError):
             return None
 
-    def _load_evidence_context_or_none(self, data_package_id: str, *, chunking_strategy: str | None = None) -> EvidenceContext | None:
+    def _load_evidence_context_or_none(
+        self,
+        data_package_id: str,
+        *,
+        chunking_strategy: str | None = None,
+        chat_model: str | None = None,
+    ) -> EvidenceContext | None:
         if self.output_repository is None:
             return None
         try:
-            state = self._load_run_state_or_none(data_package_id)
+            branch_model = chat_model or self._current_chat_model()
+            state = self._load_run_state_or_none(
+                data_package_id,
+                chunking_strategy=chunking_strategy or "semantic",
+                chat_model=branch_model,
+            )
             return self.output_repository.load_evidence_context(
                 data_package_id,
                 chunking_strategy=chunking_strategy or (state.chunking_strategy if state else "semantic"),
-                chat_model=state.chat_model if state else (self.ollama_client.chat_model if self.ollama_client else None),
+                chat_model=state.chat_model if state else branch_model,
             )
         except (FileNotFoundError, ValidationError):
             return None
 
-    def _load_run_state_or_none(self, data_package_id: str) -> ExtractionRunState | None:
+    def _load_run_state_or_none(
+        self,
+        data_package_id: str,
+        *,
+        chunking_strategy: str = "semantic",
+        chat_model: str | None = None,
+    ) -> ExtractionRunState | None:
         if self.output_repository is None:
             return None
         try:
             return self.output_repository.load_extraction_run_state(
                 data_package_id,
-                chat_model=self.ollama_client.chat_model if self.ollama_client else None,
+                chat_model=chat_model or self._current_chat_model(),
+                chunking_strategy=chunking_strategy,
             )
         except (FileNotFoundError, json.JSONDecodeError, ValidationError):
             return None
@@ -10727,7 +10788,12 @@ class ExtractionService:
         self.output_repository.save_extraction_run_state(
             workflow_id=data_package_id,
             state=state,
+            chat_model=state.chat_model,
+            chunking_strategy=state.chunking_strategy,
         )
+
+    def _current_chat_model(self) -> str | None:
+        return self.ollama_client.chat_model if self.ollama_client else None
 
     def _load_warnings_or_empty(self, data_package_id: str) -> list[str]:
         if self.output_repository is None:
@@ -10756,8 +10822,13 @@ class ExtractionService:
     ) -> None:
         if self.task_registry is None:
             return
+        state = self._load_run_state_or_none(data_package_id)
         self.task_registry.update_progress(
-            self._extraction_task_name(data_package_id),
+            self._extraction_task_name(
+                data_package_id,
+                state.chunking_strategy if state else "semantic",
+                state.chat_model if state else self._current_chat_model(),
+            ),
             progress.model_dump(mode="json"),
         )
 
@@ -10892,8 +10963,13 @@ class ExtractionService:
     ) -> tuple[TaskStatus, ExtractionRunProgress | None]:
         if self.task_registry is None:
             return TaskStatus.UNKNOWN, None
+        state = self._load_run_state_or_none(data_package_id)
         task_info = self.task_registry.get_task_info(
-            self._extraction_task_name(data_package_id)
+            self._extraction_task_name(
+                data_package_id,
+                state.chunking_strategy if state else "semantic",
+                state.chat_model if state else self._current_chat_model(),
+            )
         )
         if task_info is not None:
             progress = (
@@ -11470,8 +11546,12 @@ class ExtractionService:
             await asyncio.gather(*pending, return_exceptions=True)
 
     @staticmethod
-    def _extraction_task_name(data_package_id: str) -> str:
-        return f"extraction:run:{data_package_id}"
+    def _extraction_task_name(
+        data_package_id: str,
+        chunking_strategy: str = "semantic",
+        chat_model: str | None = None,
+    ) -> str:
+        return f"extraction:run:{data_package_id}:{chunking_strategy}:{chat_model or 'default-model'}"
 
     @staticmethod
     def _complete_workflow_task_name(data_package_id: str) -> str:

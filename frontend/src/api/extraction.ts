@@ -487,6 +487,7 @@ export async function runExtraction(input: {
   force_profile_rebuild?: boolean;
   target_stage?: ExtractionTargetStage;
   chunking_strategy?: ChunkingStrategy;
+  chat_model?: string | null;
   chunk_repair_mode?: ChunkRepairMode;
   evidence_critic_granularity?: EvidenceCriticGranularity;
 }): Promise<ExtractionRunResponse> {
@@ -522,8 +523,8 @@ export async function pauseExtraction(data_package_id: string): Promise<{ status
   return { status: payload.status, progress: payload.progress ?? null };
 }
 
-export async function getExtractionResult(data_package_id: string, chunking_strategy?: ChunkingStrategy): Promise<ExtractionRunResult | null> {
-  const response = await fetch(apiBaseUrl + '/extraction/result/' + encodeURIComponent(data_package_id) + buildQuery({ chunking_strategy }));
+export async function getExtractionResult(data_package_id: string, chunking_strategy?: ChunkingStrategy, chat_model?: string | null): Promise<ExtractionRunResult | null> {
+  const response = await fetch(apiBaseUrl + '/extraction/result/' + encodeURIComponent(data_package_id) + buildQuery({ chunking_strategy, chat_model }));
   if (response.status === 404) return null;
   return readJson(await response);
 }
@@ -582,6 +583,7 @@ export async function runVocabularyGrounding(input: {
   data_package_id: string;
   profile_identifier: string;
   chunking_strategy?: ChunkingStrategy;
+  chat_model?: string | null;
 }): Promise<VocabularyGroundingResponse> {
   const response = await runExtraction({
     data_package_id: input.data_package_id,
@@ -589,6 +591,7 @@ export async function runVocabularyGrounding(input: {
     resume: true,
     target_stage: 'grounding',
     chunking_strategy: input.chunking_strategy,
+    chat_model: input.chat_model,
   });
   return {
     curated_document: response.result?.curated_document ?? response.result?.generated_final_draft ?? response.progress?.curated_document ?? response.progress?.generated_final_draft ?? {},
@@ -596,14 +599,14 @@ export async function runVocabularyGrounding(input: {
   };
 }
 
-export async function getPatchProgress(data_package_id: string, chunking_strategy?: ChunkingStrategy): Promise<{ status: PatchTaskStatus; progress?: PatchProgress | null }> {
-  const response = await fetch(apiBaseUrl + '/extraction/run/' + encodeURIComponent(data_package_id) + '/progress' + buildQuery({ chunking_strategy }));
+export async function getPatchProgress(data_package_id: string, chunking_strategy?: ChunkingStrategy, chat_model?: string | null): Promise<{ status: PatchTaskStatus; progress?: PatchProgress | null }> {
+  const response = await fetch(apiBaseUrl + '/extraction/run/' + encodeURIComponent(data_package_id) + '/progress' + buildQuery({ chunking_strategy, chat_model }));
   const payload = await readJson(await response) as { status: PatchTaskStatus; progress?: ExtractionRunProgress | null };
   return { status: payload.status, progress: payload.progress ? { ...payload.progress } : null };
 }
 
-export async function getTokenUsage(data_package_id: string, chunking_strategy?: ChunkingStrategy): Promise<PatchTokenUsage> {
-  const response = await fetch(apiBaseUrl + '/extraction/' + encodeURIComponent(data_package_id) + '/token-usage' + buildQuery({ chunking_strategy }));
+export async function getTokenUsage(data_package_id: string, chunking_strategy?: ChunkingStrategy, chat_model?: string | null): Promise<PatchTokenUsage> {
+  const response = await fetch(apiBaseUrl + '/extraction/' + encodeURIComponent(data_package_id) + '/token-usage' + buildQuery({ chunking_strategy, chat_model }));
   return readJson(await response);
 }
 

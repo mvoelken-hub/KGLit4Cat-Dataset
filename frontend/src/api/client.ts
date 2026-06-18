@@ -52,10 +52,10 @@ function formatApiDetail(detail: unknown): string {
   return JSON.stringify(detail);
 }
 
-export function buildQuery(params: Record<string, string | number | boolean | undefined>): string {
+export function buildQuery(params: Record<string, string | number | boolean | null | undefined>): string {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined) query.set(key, String(value));
+    if (value !== undefined && value !== null) query.set(key, String(value));
   }
   const text = query.toString();
   return text ? '?' + text : '';

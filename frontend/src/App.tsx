@@ -62,6 +62,10 @@ type WorkflowBranchSnapshot = {
   result: ExtractionRunResult | null;
   tokenUsage: PatchTokenUsage;
 };
+type WorkflowBranch = {
+  strategy: ChunkingStrategy;
+  chatModel: string | null;
+};
 const selectedPackageStorageKey = 'simone_selected_package_id';
 
 function readStoredSelectedPackageId(): string {
@@ -94,6 +98,22 @@ function formatExtractionStage(stage: string): string {
   return stage
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatChunkingStrategy(strategy: ChunkingStrategy): string {
+  return strategy === 'fixed_tokens' ? 'Fixed tokens' : 'Semantic';
+}
+
+function WorkflowBranchBar({ branch }: { branch: WorkflowBranch }) {
+  return (
+    <div className="workflow-branch-bar">
+      <div>
+        <span>Current branch</span>
+        <strong>{formatChunkingStrategy(branch.strategy)} / {branch.chatModel ?? 'Runtime default'}</strong>
+      </div>
+      <small>Artifacts, progress, and token usage</small>
+    </div>
+  );
 }
 
 function jsonPointerToEditorPath(path: string): string {
@@ -3367,17 +3387,14 @@ export function App() {
   const saveContextTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveCuratedDocumentTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedPackageIdRef = useRef('');
+  const workflowChatModel = ollamaConfig?.runtime.chat_model ?? null;
+  const currentWorkflowBranch = useMemo(
+    () => ({ strategy: chunkViewStrategy, chatModel: workflowChatModel }),
+    [chunkViewStrategy, workflowChatModel],
+  );
 
   const selectedPackage = useMemo(() => packages.find((item) => item.id === selectedPackageId) || null, [packages, selectedPackageId]);
   const selectedProfileManifest = useMemo(() => profiles.find((item) => item.identifier === selectedProfile) || null, [profiles, selectedProfile]);
-  const chunkCountByFile = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const group of chunksByFile) {
-      const filePath = group[0]?.file_path;
-      if (filePath) counts.set(filePath, group.length);
-    }
-    return counts;
-  }, [chunksByFile]);
   const isInitialContextStage = Boolean(
     patchProgress?.stage?.startsWith('initial_')
     || patchProgress?.stage === 'file_ranking',
@@ -3817,14 +3834,14 @@ export function App() {
     setFileContent(null);
   }
 
-  async function loadWorkflowBranch(packageId: string, strategy: ChunkingStrategy): Promise<WorkflowBranchSnapshot> {
+  async function loadWorkflowBranch(packageId: string, strategy: ChunkingStrategy, chatModel: string | null): Promise<WorkflowBranchSnapshot> {
     const [initialRun, extractionRun, chunkStatus, chunks, result, tokenUsage] = await Promise.all([
       getInitialContextProgress(packageId),
-      getPatchProgress(packageId, strategy),
+      getPatchProgress(packageId, strategy, chatModel),
       getChunkStatus(packageId, strategy),
       getDataPackageChunks(packageId, strategy),
-      getExtractionResult(packageId, strategy),
-      getTokenUsage(packageId, strategy),
+      getExtractionResult(packageId, strategy, chatModel),
+      getTokenUsage(packageId, strategy, chatModel),
     ]);
     return {
       strategy,
@@ -3879,7 +3896,7 @@ export function App() {
       if (selectedPackageIdRef.current !== packageId) return;
       setPatchStatus(response.status);
       setPatchProgress(response.progress ? { ...response.progress } : null);
-      setTokenUsage(await getTokenUsage(packageId, chunkViewStrategy));
+      setTokenUsage(await getTokenUsage(packageId, chunkViewStrategy, workflowChatModel));
       setMessage(
         response.status === 'running'
           ? 'Initial file understanding is running.'
@@ -3911,6 +3928,7 @@ export function App() {
         resume: options.resume,
         target_stage: 'context',
         chunking_strategy: chunkViewStrategy,
+        chat_model: workflowChatModel,
         chunk_repair_mode: chunkRepairMode,
       });
       if (selectedPackageIdRef.current !== packageId) return;
@@ -3927,7 +3945,7 @@ export function App() {
       }
       setPatchStatus(response.status);
       setPatchProgress(response.progress ? { ...response.progress } : null);
-      setTokenUsage(await getTokenUsage(packageId, chunkViewStrategy));
+      setTokenUsage(await getTokenUsage(packageId, chunkViewStrategy, workflowChatModel));
       setMessage(response.status === 'running' ? (options.resume ? 'Extraction resumed.' : 'Extraction is running.') : 'Extraction completed.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Context extraction failed.');
@@ -3948,7 +3966,7 @@ export function App() {
       if (progress?.interim_evidence_context) {
         setContext(initialContextFromEvidenceContext(progress.interim_evidence_context));
       }
-      setTokenUsage(await getTokenUsage(packageId, chunkViewStrategy));
+      setTokenUsage(await getTokenUsage(packageId, chunkViewStrategy, workflowChatModel));
       setMessage(status === 'cancelled' ? 'Extraction paused. Resume extraction to continue from saved chunks.' : 'Extraction is not running.');
     } catch (error) {
       if (selectedPackageIdRef.current !== packageId) return;
@@ -3989,7 +4007,7 @@ export function App() {
       setCuratedDocument(result.curated_document ?? result.generated_final_draft);
       setContext(initialContextFromEvidenceContext(result.machine_evidence_context));
       setTokenUsage(result.token_usage);
-      const { status, progress } = await getPatchProgress(packageId, chunkViewStrategy);
+      const { status, progress } = await getPatchProgress(packageId, chunkViewStrategy, workflowChatModel);
       if (selectedPackageIdRef.current !== packageId) return;
       setPatchStatus(status);
       setPatchProgress(progress ? { ...progress } : patchProgress);
@@ -4128,6 +4146,7 @@ export function App() {
         force_profile_rebuild: isReplacingGeneratedDraft,
         target_stage: 'profile',
         chunking_strategy: chunkViewStrategy,
+        chat_model: workflowChatModel,
       });
       const nextGenerated = response.result?.generated_final_draft ?? response.progress?.generated_final_draft ?? null;
       setGeneratedFinalDraft(nextGenerated);
@@ -4149,7 +4168,7 @@ export function App() {
           vocab_queries: [],
         } : {}),
       } : null);
-      setTokenUsage(await getTokenUsage(selectedPackageId, chunkViewStrategy));
+      setTokenUsage(await getTokenUsage(selectedPackageId, chunkViewStrategy, workflowChatModel));
       setMessage(
         mode === 'continue'
           ? (response.status === 'running' ? 'Projection resumed.' : 'Projection is up to date.')
@@ -4185,12 +4204,12 @@ export function App() {
     if (!selectedPackageId || !selectedProfile) return;
     setBusy('patch');
     try {
-      const result = await runVocabularyGrounding({ data_package_id: selectedPackageId, profile_identifier: selectedProfile, chunking_strategy: chunkViewStrategy });
+      const result = await runVocabularyGrounding({ data_package_id: selectedPackageId, profile_identifier: selectedProfile, chunking_strategy: chunkViewStrategy, chat_model: workflowChatModel });
       setCuratedDocument(result.curated_document);
       setPatchStatus(result.status);
-      const { progress } = await getPatchProgress(selectedPackageId, chunkViewStrategy);
+      const { progress } = await getPatchProgress(selectedPackageId, chunkViewStrategy, workflowChatModel);
       setPatchProgress(progress ? { ...progress } : patchProgress);
-      setTokenUsage(await getTokenUsage(selectedPackageId, chunkViewStrategy));
+      setTokenUsage(await getTokenUsage(selectedPackageId, chunkViewStrategy, workflowChatModel));
       setMessage(
         result.status === 'completed'
           ? 'Vocabulary grounding completed and final profile document was saved.'
@@ -4255,7 +4274,7 @@ export function App() {
     if (!selectedPackageId) return;
     const packageId = selectedPackageId;
     try {
-      const snapshot = await loadWorkflowBranch(packageId, chunkViewStrategy);
+      const snapshot = await loadWorkflowBranch(packageId, chunkViewStrategy, workflowChatModel);
       if (selectedPackageIdRef.current !== packageId) return;
       applyWorkflowBranchSnapshot(snapshot);
       if (snapshot.status === 'running') {
@@ -4278,7 +4297,7 @@ export function App() {
     setBusy('load');
     void (async () => {
       try {
-        const snapshot = await loadWorkflowBranch(packageId, chunkViewStrategy);
+        const snapshot = await loadWorkflowBranch(packageId, chunkViewStrategy, workflowChatModel);
         if (selectedPackageIdRef.current !== packageId) return;
         applyWorkflowBranchSnapshot(snapshot);
         setMessage('Workflow state loaded.');
@@ -4289,7 +4308,7 @@ export function App() {
         if (selectedPackageIdRef.current === packageId) setBusy(null);
       }
     })();
-  }, [selectedPackageId, chunkViewStrategy]);
+  }, [selectedPackageId, chunkViewStrategy, workflowChatModel]);
 
   useEffect(() => {
     if (!chunkResult || chunkResult.status === 'completed' || chunkResult.status === 'cancelled' || chunkResult.status === 'crashed') return;
@@ -4301,7 +4320,7 @@ export function App() {
     if (!selectedPackageId || patchStatus !== 'running') return;
     const interval = setInterval(() => void refreshExtractionProgress(), 5000);
     return () => clearInterval(interval);
-  }, [patchStatus, selectedPackageId, chunkViewStrategy]);
+  }, [patchStatus, selectedPackageId, chunkViewStrategy, workflowChatModel]);
 
   return (
     <main className="shell">
@@ -4341,11 +4360,15 @@ export function App() {
           )}
         </aside>
 
+        <aside className="branch-rail">
+          <WorkflowBranchBar branch={currentWorkflowBranch} />
+        </aside>
+
         <section className="workflow">
           <StepPanel
             number="01"
-            title="Upload dataset"
-            description="The archive is stored as a data package. File contents can be inspected before running any extraction stage."
+            title="Upload dataset and create chunks"
+            description="Store the archive, inspect files, and prepare chunk branches before initial file understanding."
             active
           >
               <div className="dataset-upload-panel">
@@ -4376,22 +4399,34 @@ export function App() {
                   </button>
                 </div>
               </div>
-              {selectedPackage && (
-                <div className="file-list">
-                  {selectedPackage.files.map((file) => {
-                    const chunkCount = chunkCountByFile.get(file.file_path) ?? 0;
-                    return (
-                      <div key={file.file_path} className="file-row" onClick={() => void onViewFile(file)} title="Click to view file content">
-                        <span>{file.file_path}</span>
-                        <div className="file-meta">
-                          {chunkCount > 0 && <span className="chunk-badge">{chunkCount} chunk{chunkCount === 1 ? '' : 's'}</span>}
-                          <small>{formatBytes(file.byte_size)}</small>
-                        </div>
-                      </div>
-                  );
-                })}
-                </div>
-              )}
+              <div className="actions">
+                <button onClick={() => setChunkingDialogOpen(true)} disabled={!selectedPackageId || !!busy}>{busy === 'chunk' ? 'Checking...' : 'Configure chunking'}</button>
+              </div>
+              <ChunkingStatusPanel
+                dataPackage={selectedPackage}
+                chunkResult={chunkResult}
+                chunksByFile={chunksByFile}
+                chunkViewStrategy={chunkViewStrategy}
+                onChunkViewStrategyChange={setChunkViewStrategy}
+                busy={busy}
+              />
+              <ChunkInspectionPanel
+                dataPackage={selectedPackage}
+                chunksByFile={chunksByFile}
+                onViewFile={(file) => void onViewFile(file)}
+              />
+              <ChunkingDialog
+                isOpen={chunkingDialogOpen}
+                packageId={selectedPackageId}
+                dataPackage={selectedPackage}
+                chunksByFile={chunksByFile}
+                chunkingStrategy={chunkViewStrategy}
+                onClose={() => setChunkingDialogOpen(false)}
+                onSubmit={(params) => {
+                  setChunkingDialogOpen(false);
+                  void onChunk(params);
+                }}
+              />
               {viewingFile && fileContent !== null && (
                 <FileViewer
                   file={viewingFile}
@@ -4429,41 +4464,6 @@ export function App() {
 
           <StepPanel
             number="03"
-            title="Create chunks"
-            description="Chunking prepares file text for later one-shot extraction calls."
-          >
-              <div className="actions">
-                <button onClick={() => setChunkingDialogOpen(true)} disabled={!selectedPackageId || !!busy}>{busy === 'chunk' ? 'Checking...' : 'Configure chunking'}</button>
-              </div>
-              <ChunkingStatusPanel
-                dataPackage={selectedPackage}
-                chunkResult={chunkResult}
-                chunksByFile={chunksByFile}
-                chunkViewStrategy={chunkViewStrategy}
-                onChunkViewStrategyChange={setChunkViewStrategy}
-                busy={busy}
-              />
-              <ChunkInspectionPanel
-                dataPackage={selectedPackage}
-                chunksByFile={chunksByFile}
-                onViewFile={(file) => void onViewFile(file)}
-              />
-              <ChunkingDialog
-                isOpen={chunkingDialogOpen}
-                packageId={selectedPackageId}
-                dataPackage={selectedPackage}
-                chunksByFile={chunksByFile}
-                chunkingStrategy={chunkViewStrategy}
-                onClose={() => setChunkingDialogOpen(false)}
-                onSubmit={(params) => {
-                  setChunkingDialogOpen(false);
-                  void onChunk(params);
-                }}
-              />
-          </StepPanel>
-
-          <StepPanel
-            number="04"
             title="Chunk evidence extraction"
             description="Collect validated evidence notes from chunks using the initial overview and each file summary as orientation."
           >
@@ -4534,7 +4534,7 @@ export function App() {
           </StepPanel>
 
           <StepPanel
-            number="05"
+            number="04"
             title="Generated and curated profile"
             description="Build the machine-generated final draft, inspect projection issues, and curate the separate user document."
             actions={hasProfileArtifacts && (
@@ -4670,7 +4670,7 @@ export function App() {
           </StepPanel>
 
           <StepPanel
-            number="06"
+            number="05"
             title="Grounding and validation"
             description="Review projection validity, run vocabulary grounding, and manage the vocabulary resources used for enrichment."
             actions={hasProfileArtifacts && (

@@ -129,12 +129,14 @@ async def run_extraction(
             force_profile_rebuild=request.force_profile_rebuild,
             target_stage=request.target_stage,
             chunking_strategy=request.chunking_strategy,
+            chat_model=request.chat_model,
             chunk_repair_mode=request.chunk_repair_mode,
             evidence_critic_granularity=request.evidence_critic_granularity,
         )
         _, progress = await extraction_service.get_extraction_progress(
             data_package_id=request.data_package_id,
             chunking_strategy=request.chunking_strategy,
+            chat_model=request.chat_model,
         )
         return _extraction_run_response(
             status=task_status,
@@ -149,11 +151,13 @@ async def run_extraction(
 async def get_extraction_progress(
     data_package_id: str,
     chunking_strategy: Literal["semantic", "fixed_tokens"] | None = None,
+    chat_model: str | None = None,
     extraction_service: ExtractionService = Depends(get_extraction_service),
 ) -> ExtractionProgressResponse:
     status_value, progress = await extraction_service.get_extraction_progress(
         data_package_id=data_package_id,
         chunking_strategy=chunking_strategy,
+        chat_model=chat_model,
     )
     return ExtractionProgressResponse(status=status_value, progress=progress)
 
@@ -404,6 +408,7 @@ async def rerun_vocab_query(
 async def get_extraction_result(
     data_package_id: str,
     chunking_strategy: Literal["semantic", "fixed_tokens"] | None = None,
+    chat_model: str | None = None,
     extraction_service: ExtractionService = Depends(get_extraction_service),
 ):
     try:
@@ -411,6 +416,7 @@ async def get_extraction_result(
             await extraction_service.get_extraction_result(
                 data_package_id=data_package_id,
                 chunking_strategy=chunking_strategy,
+                chat_model=chat_model,
             )
         )
     except Exception as exc:
@@ -421,6 +427,7 @@ async def get_extraction_result(
 async def get_token_usage(
     data_package_id: str,
     chunking_strategy: Literal["semantic", "fixed_tokens"] | None = None,
+    chat_model: str | None = None,
     extraction_service: ExtractionService = Depends(get_extraction_service),
 ) -> dict[str, Any]:
-    return await extraction_service.get_token_usage(data_package_id=data_package_id, chunking_strategy=chunking_strategy)
+    return await extraction_service.get_token_usage(data_package_id=data_package_id, chunking_strategy=chunking_strategy, chat_model=chat_model)

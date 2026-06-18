@@ -46,6 +46,10 @@ class ExtractionRunRequest(BaseModel):
         default="semantic",
         description="Chunking strategy branch to read: 'semantic' or 'fixed_tokens'.",
     )
+    chat_model: str | None = Field(
+        default=None,
+        description="Chat model branch to read or run; defaults to the configured runtime model.",
+    )
     chunk_repair_mode: ChunkRepairMode = Field(
         default="deferred",
         description="How to handle repairable chunk structured-output failures.",

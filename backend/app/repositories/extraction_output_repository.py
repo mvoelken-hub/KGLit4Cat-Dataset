@@ -267,9 +267,21 @@ class ExtractionOutputRepository(Protocol):
         chunking_strategy: str = "semantic",
     ) -> None: ...
 
-    def save_extraction_run_state(self, *, workflow_id: str, state: ExtractionRunState) -> None: ...
+    def save_extraction_run_state(
+        self,
+        *,
+        workflow_id: str,
+        state: ExtractionRunState,
+        chunking_strategy: str = "semantic",
+        chat_model: str | None = None,
+    ) -> None: ...
 
-    def load_extraction_run_state(self, workflow_id: str, chat_model: str | None = None) -> ExtractionRunState: ...
+    def load_extraction_run_state(
+        self,
+        workflow_id: str,
+        chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
+    ) -> ExtractionRunState: ...
 
     def save_extraction_warnings(self, *, workflow_id: str, warnings: list[str]) -> None: ...
 
