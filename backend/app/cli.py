@@ -20,8 +20,6 @@ app = typer.Typer(
     invoke_without_command=True,
     add_completion=False,
 )
-evaluation_app = typer.Typer(help="Run and score SIMONE thesis evaluation workflows.")
-app.add_typer(evaluation_app, name="evaluate")
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 BACKEND_DIR = REPO_ROOT / "backend"
@@ -2508,98 +2506,6 @@ def status() -> None:
     typer.echo(f"  Frontend:    {_frontend_url()}")
     typer.echo(f"  API Docs:    {API_URL}")
     typer.echo(f"  Neo4j:       {_neo4j_browser_url()}")
-
-
-@evaluation_app.command("run")
-def evaluation_run(
-    datasets: Optional[list[Path]] = typer.Argument(
-        None,
-        help="Dataset ZIP files. Defaults to the thesis evaluation sample set.",
-    ),
-    profile: str = typer.Option("dcat-ap-plus", "--profile", help="Registered profile identifier."),
-    reference_dir: Path = typer.Option(Path("data/evaluation/references"), "--reference-dir", help="Reference annotation directory."),
-    results_dir: Path = typer.Option(Path("data/evaluation/results"), "--results-dir", help="Evaluation result directory."),
-    api_base: str = typer.Option(API_BASE, "--api-base", help="SIMONE API base URL."),
-    poll_interval: float = typer.Option(10.0, "--poll-interval", help="Seconds between result polls."),
-    timeout: float = typer.Option(7200.0, "--timeout", help="Maximum seconds to wait per package."),
-    buffer_window_size: int = typer.Option(1, "--buffer-window-size", help="Chunk buffer window size sent to the workflow endpoint."),
-    semantic_chunking_threshold: int = typer.Option(95, "--semantic-chunking-threshold", help="Semantic chunking threshold from 0 to 100."),
-    replace_existing_chunks: bool = typer.Option(False, "--replace-existing-chunks", help="Rebuild chunks for deterministic package ids."),
-    resume: bool = typer.Option(False, "--resume", help="Resume any persisted extraction state for deterministic package ids."),
-    force_rerun: bool = typer.Option(False, "--force-rerun", help="Clear previous extraction artifacts before scheduling the complete workflow."),
-    stop_on_failure: bool = typer.Option(False, "--stop-on-failure", help="Stop the evaluation batch when a dataset times out or crashes."),
-) -> None:
-    """Submit evaluation datasets to the complete workflow endpoint and score completed results."""
-    from app.evaluation.runner import (
-        DEFAULT_EVALUATION_DATASETS,
-        score_reference_directory,
-        submit_complete_workflow,
-    )
-
-    dataset_paths = datasets or [
-        REPO_ROOT / "data" / "datasets" / name
-        for name in DEFAULT_EVALUATION_DATASETS
-    ]
-    env_values = _read_env_file(ENV_FILE)
-    vocab_identifiers = [
-        "https://w3id.org/nfdi4cat/voc4cat",
-        "http://purl.obolibrary.org/obo/chmo.owl",
-        "http://nmrML.org/nmrCV",
-    ]
-    for dataset_path in dataset_paths:
-        resolved = dataset_path if dataset_path.is_absolute() else REPO_ROOT / dataset_path
-        typer.echo(f"Submitting evaluation workflow: {resolved.name}")
-        try:
-            run_dir = submit_complete_workflow(
-                api_base=api_base,
-                dataset_path=resolved,
-                profile_identifier=profile,
-                qualitative_vocab_identifiers=vocab_identifiers,
-                results_dir=REPO_ROOT / results_dir,
-                poll_interval_seconds=poll_interval,
-                timeout_seconds=timeout,
-                chat_model=env_values.get("OLLAMA_CHAT_MODEL"),
-                embedding_model=env_values.get("OLLAMA_EMBED_MODEL"),
-                max_context_length=int(env_values.get("MAX_CONTEXT_LENGTH", "0") or 0) or None,
-                buffer_window_size=buffer_window_size,
-                semantic_chunking_threshold=semantic_chunking_threshold,
-                replace_existing_chunks=replace_existing_chunks,
-                resume=resume,
-                force_rerun=force_rerun,
-            )
-            typer.echo(f"Completed: {run_dir.relative_to(REPO_ROOT)}")
-        except (RuntimeError, TimeoutError) as exc:
-            typer.echo(f"Partial result recorded for {resolved.name}: {exc}", err=True)
-            if stop_on_failure:
-                raise
-
-    typer.echo("Scoring completed evaluation outputs ...")
-    reports = score_reference_directory(
-        reference_dir=REPO_ROOT / reference_dir,
-        dataset_dir=REPO_ROOT / "data" / "datasets",
-        output_dir=BACKEND_DIR / ".runtime" / "output",
-        results_dir=REPO_ROOT / results_dir,
-    )
-    typer.echo(f"Wrote {len(reports)} evaluation reports to {(REPO_ROOT / results_dir).relative_to(REPO_ROOT)}")
-
-
-@evaluation_app.command("score")
-def evaluation_score(
-    reference_dir: Path = typer.Option(Path("data/evaluation/references"), "--reference-dir", help="Reference annotation directory."),
-    dataset_dir: Path = typer.Option(Path("data/datasets"), "--dataset-dir", help="Dataset ZIP directory."),
-    output_dir: Path = typer.Option(Path("backend/.runtime/output"), "--output-dir", help="Runtime extraction output directory."),
-    results_dir: Path = typer.Option(Path("data/evaluation/results"), "--results-dir", help="Evaluation result directory."),
-) -> None:
-    """Score existing extraction outputs against evaluation reference annotations."""
-    from app.evaluation.runner import score_reference_directory
-
-    reports = score_reference_directory(
-        reference_dir=REPO_ROOT / reference_dir,
-        dataset_dir=REPO_ROOT / dataset_dir,
-        output_dir=REPO_ROOT / output_dir,
-        results_dir=REPO_ROOT / results_dir,
-    )
-    typer.echo(f"Wrote {len(reports)} evaluation reports to {(REPO_ROOT / results_dir).relative_to(REPO_ROOT)}")
 
 
 if __name__ == "__main__":

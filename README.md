@@ -88,6 +88,12 @@ The initial vocabulary list is defined in `backend/app/core/initial_vocabs.py`. 
 simone vocabs --info
 ```
 
+You can also bootstrap the configured vocabularies explicitly:
+
+```bash
+simone vocabs --bootstrap
+```
+
 Configured Ollama models come from `OLLAMA_EMBED_MODEL` and `OLLAMA_CHAT_MODEL` in `.env`. Run model management on the machine that hosts Ollama:
 
 ```bash
@@ -125,6 +131,12 @@ By default, `up` reuses existing images and containers. Rebuild images explicitl
 simone up --build
 ```
 
+On machines without an NVIDIA Docker runtime, disable the GPU compose override:
+
+```bash
+simone up --build --no-gpu
+```
+
 For a remote VPS run, `simone up --build` starts the full stack. The frontend is published on `http://<vps-host>:${FRONTEND_PORT}` while the API, Neo4j, and Ollama ports stay bound to the server loopback interface. Browser API requests use the frontend nginx `/api/` proxy, so no separate CORS setup is required.
 
 ### Development Mode
@@ -143,13 +155,13 @@ You can choose Docker frontend mode directly:
 simone dev --no-npm
 ```
 
-To attach both local API and frontend logs to the terminal where you ran the command, use:
+To run the local API in the current terminal instead of opening a separate API window, use:
 
 ```bash
 simone dev -fg
 ```
 
-With local npm frontend mode, Vite and Uvicorn both write to the same terminal. To use the Docker frontend and follow its logs instead, combine it with Docker frontend mode:
+With local npm frontend mode, the frontend still starts in its own window. To use the Docker frontend while keeping the API in the current terminal, combine it with Docker frontend mode:
 
 ```bash
 simone dev -fg --no-npm
@@ -215,7 +227,7 @@ simone status
 simone down
 ```
 
-`status` shows Docker containers, local dev processes, and API health. `down` stops SIMONE containers and closes local development API/frontend processes.
+`status` shows Docker containers, local dev processes, vocabulary-bootstrap jobs, API health, and service URLs. `down` stops SIMONE containers, vocabulary-bootstrap jobs, and local development API/frontend processes.
 
 ### Ollama Cloud Sign-In
 
