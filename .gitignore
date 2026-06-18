@@ -229,3 +229,4 @@ graphify-out/.graphify_chunk_*.json
 graphify-out/.needs_update
 .codex/hooks.json
 .codex/graphify
+.headroom/
