@@ -1,6 +1,8 @@
 import { apiBaseUrl, buildQuery, readJson } from './client';
 import type { ChunkRequestResponse, ChunkResponse, DataPackageResponse, TaskStatus, TextQualityConfig } from './types';
 
+export type ChunkingStrategy = 'semantic' | 'fixed_tokens';
+
 export async function listDataPackages(): Promise<DataPackageResponse[]> {
   return readJson(await fetch(apiBaseUrl + '/datasources'));
 }
@@ -15,7 +17,7 @@ export async function chunkDataPackage(input: {
   id: string;
   buffer_window_size?: number;
   semantic_chunking_threshold?: number;
-  chunking_strategy?: 'semantic' | 'fixed_tokens';
+  chunking_strategy?: ChunkingStrategy;
   fixed_tokens_per_chunk?: number;
   min_tokens_per_chunk?: number;
   max_tokens_per_chunk?: number;
@@ -40,12 +42,12 @@ export async function chunkDataPackage(input: {
   return readJson(await fetch(apiBaseUrl + '/datasources/chunk' + query, { method: 'POST' }));
 }
 
-export async function getChunkStatus(data_package_id: string): Promise<{ has_chunks: boolean; file_count: number; status: TaskStatus }> {
-  return readJson(await fetch(apiBaseUrl + '/datasources/' + encodeURIComponent(data_package_id) + '/chunks/status'));
+export async function getChunkStatus(data_package_id: string, chunking_strategy: ChunkingStrategy = 'semantic'): Promise<{ has_chunks: boolean; file_count: number; status: TaskStatus }> {
+  return readJson(await fetch(apiBaseUrl + '/datasources/' + encodeURIComponent(data_package_id) + '/chunks/status' + buildQuery({ chunking_strategy })));
 }
 
-export async function getDataPackageChunks(data_package_id: string): Promise<ChunkResponse[][]> {
-  return readJson(await fetch(apiBaseUrl + '/datasources/' + encodeURIComponent(data_package_id) + '/chunks'));
+export async function getDataPackageChunks(data_package_id: string, chunking_strategy: ChunkingStrategy = 'semantic'): Promise<ChunkResponse[][]> {
+  return readJson(await fetch(apiBaseUrl + '/datasources/' + encodeURIComponent(data_package_id) + '/chunks' + buildQuery({ chunking_strategy })));
 }
 
 export async function getFileEntryContent(data_package_id: string, file_path: string): Promise<{ file_path: string; file_name: string; file_extension: string; content: string }> {

@@ -63,9 +63,7 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
 
             loaded = repo.load_extraction_run_state(workflow_id, chat_model)
             self.assertEqual(loaded.chat_model, chat_model)
-            self.assertTrue(
-                (repo._workflow_dir(workflow_id, chat_model) / "extraction_run_state.json").exists()
-            )
+            self.assertTrue((repo._workflow_dir(workflow_id) / "extraction_run_state.json").exists())
 
     def test_prompt_diagnostics_append_and_clear(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -92,15 +90,21 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
                 },
             )
 
-            diagnostics_dir = repo._workflow_dir(workflow_id, chat_model) / "prompt_diagnostics"
+            diagnostics_dir = repo._branch_dir(workflow_id, "evidence_notes", "semantic", chat_model) / "prompts"
             files = sorted(diagnostics_dir.glob("*.json"))
             self.assertEqual(len(files), 2)
             self.assertTrue(files[0].name.endswith("__0001.json"))
             self.assertTrue(files[1].name.endswith("__0002.json"))
+            index = json.loads((repo._workflow_dir(workflow_id) / "artifact_index.json").read_text(encoding="utf-8"))
+            prompt_paths = index["by_stage"]["evidence_notes"]
+            self.assertEqual(len(prompt_paths), 2)
+            self.assertTrue(all("evidence_notes/semantic/model_tag/prompts/" in path for path in prompt_paths))
 
             repo.clear_prompt_diagnostics(workflow_id, chat_model)
 
             self.assertFalse(diagnostics_dir.exists())
+            index = json.loads((repo._workflow_dir(workflow_id) / "artifact_index.json").read_text(encoding="utf-8"))
+            self.assertNotIn("evidence_notes", index["by_stage"])
 
     def test_extraction_result_writes_and_clears_new_artifacts(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -176,22 +180,29 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
                 summary="evaluated: dataset. generated_by: measurement.",
                 chat_model=chat_model,
             )
-            workflow_dir = repo._workflow_dir(workflow_id, chat_model)
+            overview_dir = repo._overview_dir(workflow_id, chat_model)
+            profile_dir = repo._branch_dir(workflow_id, "profile_draft", "semantic", chat_model)
+            result_dir = repo._result_dir(workflow_id, "semantic", chat_model)
 
-            for name in [
-                "initial_extraction_overview.json",
-                "initial_file_summaries.json",
-                "generated_final_draft.json",
-                "dataset_summary.txt",
-                "curated_document.json",
-                "projection_ledger.json",
-                "field_completion_ledger.json",
-                "evidence_query_ledger.json",
-                "curation_ledger.json",
-                "validation.json",
-                "extraction_result.json",
+            for path in [
+                overview_dir / "initial_extraction_overview.json",
+                overview_dir / "initial_file_summaries.json",
+                profile_dir / "generated_final_draft.json",
+                profile_dir / "dataset_summary.txt",
+                result_dir / "curated_document.json",
+                profile_dir / "projection_ledger.json",
+                profile_dir / "field_completion_ledger.json",
+                profile_dir / "evidence_query_ledger.json",
+                result_dir / "curation_ledger.json",
+                profile_dir / "validation.json",
+                result_dir / "extraction_result.json",
             ]:
-                self.assertTrue((workflow_dir / name).exists(), name)
+                self.assertTrue(path.exists(), str(path))
+            safe_model = repo._sanitize_path_component(chat_model)
+            index = json.loads((repo._workflow_dir(workflow_id) / "artifact_index.json").read_text(encoding="utf-8"))
+            self.assertIn(f"overview/{safe_model}/initial_file_summaries.json", index["by_stage"]["overview"])
+            self.assertIn(f"profile_draft/semantic/{safe_model}/generated_final_draft.json", index["by_stage"]["profile_draft"])
+            self.assertIn(f"result/semantic/{safe_model}/extraction_result.json", index["by_stage"]["result"])
 
             overview, overview_status = repo.load_initial_extraction_overview(workflow_id, chat_model)
             summaries, summary_status = repo.load_initial_file_summaries(workflow_id, chat_model)
@@ -224,7 +235,7 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
                 repo.load_extraction_result(workflow_id, chat_model)
             with self.assertRaises(FileNotFoundError):
                 repo.load_generated_final_draft(workflow_id, chat_model)
-            self.assertFalse((workflow_dir / "dataset_summary.txt").exists())
+            self.assertFalse((profile_dir / "dataset_summary.txt").exists())
             self.assertEqual(repo.load_evidence_query_ledger(workflow_id, chat_model), [])
 
             repo.clear_extraction_run(workflow_id)
@@ -308,7 +319,7 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
             )
 
             path = (
-                repo._workflow_dir(workflow_id, chat_model)
+                repo._overview_dir(workflow_id, chat_model)
                 / "initial_extraction_overview_diagnostic.json"
             )
             self.assertTrue(path.exists())
@@ -349,7 +360,7 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
             )
 
             path = (
-                repo._workflow_dir(workflow_id, chat_model)
+                repo._overview_dir(workflow_id, chat_model)
                 / "initial_extraction_overview_diagnostic.json"
             )
             payload = json.loads(path.read_text(encoding="utf-8"))
@@ -381,7 +392,7 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
             )
 
             path = (
-                repo._workflow_dir(workflow_id, chat_model)
+                repo._overview_dir(workflow_id, chat_model)
                 / "initial_file_summary_diagnostics.json"
             )
             self.assertTrue(path.exists())

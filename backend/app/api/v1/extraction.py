@@ -1,6 +1,6 @@
 import json
 from io import BytesIO
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 
@@ -128,11 +128,13 @@ async def run_extraction(
             resume=request.resume,
             force_profile_rebuild=request.force_profile_rebuild,
             target_stage=request.target_stage,
+            chunking_strategy=request.chunking_strategy,
             chunk_repair_mode=request.chunk_repair_mode,
             evidence_critic_granularity=request.evidence_critic_granularity,
         )
         _, progress = await extraction_service.get_extraction_progress(
             data_package_id=request.data_package_id,
+            chunking_strategy=request.chunking_strategy,
         )
         return _extraction_run_response(
             status=task_status,
@@ -146,10 +148,12 @@ async def run_extraction(
 @router.get("/run/{data_package_id}/progress", response_model=ExtractionProgressResponse)
 async def get_extraction_progress(
     data_package_id: str,
+    chunking_strategy: Literal["semantic", "fixed_tokens"] | None = None,
     extraction_service: ExtractionService = Depends(get_extraction_service),
 ) -> ExtractionProgressResponse:
     status_value, progress = await extraction_service.get_extraction_progress(
         data_package_id=data_package_id,
+        chunking_strategy=chunking_strategy,
     )
     return ExtractionProgressResponse(status=status_value, progress=progress)
 
@@ -399,12 +403,14 @@ async def rerun_vocab_query(
 @router.get("/result/{data_package_id}")
 async def get_extraction_result(
     data_package_id: str,
+    chunking_strategy: Literal["semantic", "fixed_tokens"] | None = None,
     extraction_service: ExtractionService = Depends(get_extraction_service),
 ):
     try:
         return _extraction_result_response(
             await extraction_service.get_extraction_result(
                 data_package_id=data_package_id,
+                chunking_strategy=chunking_strategy,
             )
         )
     except Exception as exc:
@@ -414,6 +420,7 @@ async def get_extraction_result(
 @router.get("/{data_package_id}/token-usage")
 async def get_token_usage(
     data_package_id: str,
+    chunking_strategy: Literal["semantic", "fixed_tokens"] | None = None,
     extraction_service: ExtractionService = Depends(get_extraction_service),
 ) -> dict[str, Any]:
-    return await extraction_service.get_token_usage(data_package_id=data_package_id)
+    return await extraction_service.get_token_usage(data_package_id=data_package_id, chunking_strategy=chunking_strategy)

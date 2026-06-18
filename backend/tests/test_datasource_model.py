@@ -106,7 +106,43 @@ class DataPackageTests(unittest.TestCase):
                 "metadata.txt",
             )
 
-        self.assertEqual(loaded_chunks, [chunk])
+            self.assertEqual(loaded_chunks, [chunk])
+
+    def test_filesystem_repository_separates_chunks_by_strategy(self):
+        with TemporaryDirectory() as temporary_directory:
+            base_path = Path(temporary_directory)
+            repository = FileSystemDataSourceBlobRepository(
+                base_path / "uploads",
+                base_path / "output",
+            )
+            semantic_chunk = ContentChunk(
+                content="semantic\n",
+                data_package_id="package-id",
+                file_path="metadata.txt",
+                start_idx=0,
+                end_idx=0,
+            )
+            fixed_chunk = semantic_chunk.model_copy(update={"content": "fixed\n"})
+
+            repository.save_content_chunks([semantic_chunk], "semantic")
+            repository.save_content_chunks([fixed_chunk], "fixed_tokens")
+
+            self.assertEqual(
+                repository.load_content_chunks_by_file_path("package-id", "metadata.txt", "semantic"),
+                [semantic_chunk],
+            )
+            self.assertEqual(
+                repository.load_content_chunks_by_file_path("package-id", "metadata.txt", "fixed_tokens"),
+                [fixed_chunk],
+            )
+
+            repository.delete_content_chunks("package-id", "semantic")
+
+            self.assertEqual(repository.load_content_chunks_by_file_path("package-id", "metadata.txt", "semantic"), [])
+            self.assertEqual(
+                repository.load_content_chunks_by_file_path("package-id", "metadata.txt", "fixed_tokens"),
+                [fixed_chunk],
+            )
 
     def test_filesystem_repository_ignores_empty_chunk_save_and_missing_chunks(self):
         with TemporaryDirectory() as temporary_directory:

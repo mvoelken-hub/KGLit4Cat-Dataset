@@ -1,6 +1,6 @@
 import { type FormEvent, type PointerEvent, type ReactNode, type WheelEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { chunkDataPackage, deleteDataPackage, getChunkStatus, getDataPackageChunks, getFileEntryContent, listDataPackages, uploadDataPackage } from './api/datasources';
+import { chunkDataPackage, deleteDataPackage, getChunkStatus, getDataPackageChunks, getFileEntryContent, listDataPackages, uploadDataPackage, type ChunkingStrategy } from './api/datasources';
 import {
   applyCurationFieldAction,
   getExistingInitialContext,
@@ -231,6 +231,23 @@ function evidenceContextHasNotes(context?: Record<string, unknown> | null): bool
 
 function evidenceContextNoteCount(context?: Record<string, unknown> | null): number {
   return evidenceContextNotes(context).length;
+}
+
+function evidenceContextForChunk(context: Record<string, unknown> | null | undefined, chunk: { file_path: string; start_idx: number; end_idx: number }) {
+  if (!context) return null;
+  const inChunk = (item: Record<string, unknown>) => (
+    item.file_path === chunk.file_path
+    && typeof item.start_idx === 'number'
+    && typeof item.end_idx === 'number'
+    && item.start_idx <= chunk.end_idx
+    && item.end_idx >= chunk.start_idx
+  );
+  const portable = asRecordArray(context.portable_evidence).filter(inChunk);
+  const contextual = asRecordArray(context.contextual_evidence).filter(inChunk);
+  const rejected = asRecordArray(context.rejected_evidence).filter(inChunk);
+  return portable.length || contextual.length || rejected.length
+    ? { ...context, portable_evidence: portable, contextual_evidence: contextual, rejected_evidence: rejected, assessments: [] }
+    : null;
 }
 
 function projectionEvidencePreview(record: ProjectionLedgerRecord): string {
@@ -685,7 +702,24 @@ function EvidenceContextOverview({
   tokenUsageSummary?: ReactNode;
 }) {
   const [traceChunk, setTraceChunk] = useState<{ chunk: ExtractionChunkResult; content: string } | null>(null);
-  const resultByKey = new Map(chunkResults.map((chunk) => [chunkResultKey(chunk), chunk]));
+  type ChunkCard = ExtractionChunkResult & { content?: string };
+  const displayedChunkResults = useMemo<ChunkCard[]>(() => {
+    if (chunkResults.some((chunk) => chunk.evidence_context)) return chunkResults;
+    const mergedContext = progress?.interim_evidence_context;
+    if (!mergedContext) return chunkResults;
+    return chunksByFile.flatMap((group) => group.flatMap((chunk, index) => {
+      const evidenceContext = evidenceContextForChunk(mergedContext, chunk);
+      return evidenceContext ? [{
+        chunk_index: index,
+        file_path: chunk.file_path,
+        start_idx: chunk.start_idx,
+        end_idx: chunk.end_idx,
+        status: 'completed' as const,
+        evidence_context: evidenceContext,
+      }] : [];
+    }));
+  }, [chunkResults, chunksByFile, progress?.interim_evidence_context]);
+  const resultByKey = new Map(displayedChunkResults.map((chunk) => [chunkResultKey(chunk), chunk]));
   const packageFileByPath = new Map(packageFiles.map((file) => [file.file_path, file]));
   const chunkGroupsByPath = new Map(
     chunksByFile
@@ -694,7 +728,7 @@ function EvidenceContextOverview({
   );
   const fallbackFilePaths = [
     ...chunksByFile.map((group) => group[0]?.file_path).filter((filePath): filePath is string => Boolean(filePath)),
-    ...chunkResults.map((chunk) => chunk.file_path),
+    ...displayedChunkResults.map((chunk) => chunk.file_path),
   ];
   const fallbackFileOrder = new Map(fallbackFilePaths.map((filePath, index) => [filePath, index]));
   const rankByFilePath = new Map((progress?.ranked_files ?? []).map((file) => [file.file_path, file.rank]));
@@ -706,13 +740,13 @@ function EvidenceContextOverview({
     }
     return (fallbackFileOrder.get(left) ?? 0) - (fallbackFileOrder.get(right) ?? 0);
   });
-  const totalChunks = progress?.total_chunks || chunkResults.length || chunksByFile.flat().length;
-  const completedChunks = chunkResults.filter((chunk) => chunk.status === 'completed').length;
-  const skippedChunks = chunkResults.filter((chunk) => chunk.status === 'skipped').length;
+  const totalChunks = progress?.total_chunks || displayedChunkResults.length || chunksByFile.flat().length;
+  const completedChunks = displayedChunkResults.filter((chunk) => chunk.status === 'completed').length;
+  const skippedChunks = displayedChunkResults.filter((chunk) => chunk.status === 'skipped').length;
   const processedChunks = completedChunks + skippedChunks;
-  const runningChunks = chunkResults.filter((chunk) => chunk.status === 'running').length;
-  const repairPendingChunks = chunkResults.filter((chunk) => chunk.status === 'repair_pending').length;
-  const failedChunks = chunkResults.filter((chunk) => chunk.status === 'failed').length;
+  const runningChunks = displayedChunkResults.filter((chunk) => chunk.status === 'running').length;
+  const repairPendingChunks = displayedChunkResults.filter((chunk) => chunk.status === 'repair_pending').length;
+  const failedChunks = displayedChunkResults.filter((chunk) => chunk.status === 'failed').length;
   const queueLabel = runningChunks
     ? `${runningChunks} running`
     : repairPendingChunks
@@ -758,17 +792,18 @@ function EvidenceContextOverview({
           const rank = rankByFilePath.get(filePath) ?? fileIndex + 1;
           const file = packageFileByPath.get(filePath);
           const chunks = chunkGroupsByPath.get(filePath) ?? [];
-          const persistedChunks = chunkResults.filter((chunk) => chunk.file_path === filePath);
+          const persistedChunks = displayedChunkResults.filter((chunk) => chunk.file_path === filePath);
           const chunkCards = chunks.length
             ? chunks.map((chunk, index) => {
-              const result = resultByKey.get(chunkResultKey(chunk));
-              const fallbackChunk: ExtractionChunkResult = {
+              const result = resultByKey.get(chunkResultKey(chunk)) as ChunkCard | undefined;
+              const fallbackChunk: ChunkCard = {
                 chunk_index: index,
                 file_path: chunk.file_path,
                 start_idx: chunk.start_idx,
                 end_idx: chunk.end_idx,
                 status: 'pending',
                 evidence_context: null,
+                content: chunk.content,
               };
               return result ?? fallbackChunk;
             })
@@ -802,7 +837,7 @@ function EvidenceContextOverview({
                     && chunk.context_tokens >= maxContextLength * 0.9
                     && !reachedTokenLimit;
                   const sourceChunk = (chunkGroupsByPath.get(chunk.file_path) ?? []).find((item) => chunkResultKey(item) === chunkResultKey(chunk));
-                  const chunkText = sourceChunk?.content ?? '';
+                  const chunkText = ('content' in chunk && typeof chunk.content === 'string' ? chunk.content : sourceChunk?.content) ?? '';
                   return (
                     <details className={`extraction-chunk-card ${statusClass} ${emptyExtractionResult ? 'empty' : ''} ${nearTokenLimit ? 'token-warning' : ''} ${reachedTokenLimit ? 'token-danger' : ''}`} key={chunkResultKey(chunk)} open={running ? true : undefined}>
                       <summary>
@@ -3165,11 +3200,15 @@ function ChunkingStatusPanel({
   dataPackage,
   chunkResult,
   chunksByFile,
+  chunkViewStrategy,
+  onChunkViewStrategyChange,
   busy,
 }: {
   dataPackage?: DataPackageResponse | null;
   chunkResult?: ChunkRequestResponse | null;
   chunksByFile: ChunkResponse[][];
+  chunkViewStrategy: ChunkingStrategy;
+  onChunkViewStrategyChange: (strategy: ChunkingStrategy) => void;
   busy: BusyKey | null;
 }) {
   const chunkGroups = chunksByFile.filter((group) => group.length > 0);
@@ -3202,6 +3241,13 @@ function ChunkingStatusPanel({
 
   return (
     <div className={`chunking-status-panel ${isRunning ? 'running' : status}`}>
+      <label className="form-row chunk-view-strategy">
+        <span>Chunking strategy</span>
+        <select value={chunkViewStrategy} onChange={(event) => onChunkViewStrategyChange(event.target.value as ChunkingStrategy)}>
+          <option value="semantic">Semantic</option>
+          <option value="fixed_tokens">Fixed tokens</option>
+        </select>
+      </label>
       <div className="chunking-status-grid">
         <div>
           <span>Status</span>
@@ -3240,6 +3286,7 @@ export function App() {
   const [selectedPackageId, setSelectedPackageId] = useState('');
   const [selectedProfile, setSelectedProfile] = useState('');
   const [chunkResult, setChunkResult] = useState<ChunkRequestResponse | null>(null);
+  const [chunkViewStrategy, setChunkViewStrategy] = useState<ChunkingStrategy>('semantic');
   const [hasChunks, setHasChunks] = useState(false);
   const [chunksByFile, setChunksByFile] = useState<ChunkResponse[][]>([]);
   const [viewingFile, setViewingFile] = useState<FileEntryResponse | null>(null);
@@ -3659,6 +3706,7 @@ export function App() {
         embedding_num_gpu: params?.embedding_num_gpu,
       });
       if (selectedPackageIdRef.current !== packageId) return;
+      setChunkViewStrategy(params?.chunking_strategy ?? 'semantic');
       setChunkResult(result);
       setChunksByFile(result.chunks);
       setHasChunks(result.status === 'completed');
@@ -3676,8 +3724,8 @@ export function App() {
     const packageId = selectedPackageId;
     try {
       const [status, chunks] = await Promise.all([
-        getChunkStatus(packageId),
-        getDataPackageChunks(packageId),
+        getChunkStatus(packageId, chunkViewStrategy),
+        getDataPackageChunks(packageId, chunkViewStrategy),
       ]);
       if (selectedPackageIdRef.current !== packageId) return;
       setHasChunks(status.has_chunks);
@@ -3703,7 +3751,7 @@ export function App() {
     try {
       const [content, chunks] = await Promise.all([
         getFileEntryContent(selectedPackageId, file.file_path),
-        hasChunks ? getDataPackageChunks(selectedPackageId) : Promise.resolve([]),
+        hasChunks ? getDataPackageChunks(selectedPackageId, chunkViewStrategy) : Promise.resolve([]),
       ]);
       setViewingFile(file);
       setFileContent(content.content);
@@ -3719,6 +3767,81 @@ export function App() {
   function closeFileViewer() {
     setViewingFile(null);
     setFileContent(null);
+  }
+
+  async function loadChunksForStrategy(strategy: ChunkingStrategy) {
+    if (!selectedPackageId) return;
+    const packageId = selectedPackageId;
+    try {
+      const [status, chunks] = await Promise.all([
+        getChunkStatus(packageId, strategy),
+        getDataPackageChunks(packageId, strategy),
+      ]);
+      if (selectedPackageIdRef.current !== packageId) return;
+      setHasChunks(status.has_chunks);
+      setChunksByFile(chunks);
+      setChunkResult({ status: status.status, chunks });
+      const result = await getExtractionResult(packageId, strategy);
+      if (selectedPackageIdRef.current !== packageId) return;
+      if (result) {
+        setContext(initialContextFromEvidenceContext(result.machine_evidence_context));
+        setGeneratedFinalDraft(result.generated_final_draft);
+        setCuratedDocument(result.curated_document ?? result.generated_final_draft);
+        setPatchProgress((current) => ({
+          ...(current ?? {
+            stage: 'completed',
+            processed_chunks: 0,
+            total_chunks: 0,
+            normalized_quantities: 0,
+            normalized_qualitative_attributes: 0,
+            warnings: [],
+          }),
+          stage: 'completed',
+          generated_final_draft: result.generated_final_draft,
+          curated_document: result.curated_document ?? result.generated_final_draft,
+          generated_initial_draft: result.generated_initial_draft ?? null,
+          requirement_report: result.requirement_report ?? null,
+          draft_quality_state: result.draft_quality_state,
+          validation: result.validation,
+          curated_validation: result.curated_validation ?? null,
+          projection_ledger: result.projection_ledger,
+          field_completion_ledger: result.field_completion_ledger,
+          curation_ledger: result.curation_ledger,
+          chunk_results: [],
+          warnings: result.warnings,
+        }));
+        setPatchStatus('completed');
+        setTokenUsage(result.token_usage);
+      } else {
+        setContext(null);
+        setGeneratedFinalDraft(null);
+        setCuratedDocument(null);
+        setPatchProgress((current) => current ? {
+          ...current,
+          stage: current.initial_extraction_overview_status ? 'initial_context_completed' : current.stage,
+          processed_chunks: 0,
+          total_chunks: 0,
+          interim_evidence_context: null,
+          generated_final_draft: null,
+          curated_document: null,
+          generated_initial_draft: null,
+          requirement_report: null,
+          draft_quality_state: null,
+          validation: { status: 'not_run', errors: [], warnings: [] },
+          curated_validation: null,
+          projection_ledger: [],
+          field_completion_ledger: [],
+          evidence_query_ledger: [],
+          curation_ledger: [],
+          vocab_queries: [],
+          chunk_results: [],
+        } : null);
+        setTokenUsage(await getTokenUsage(packageId, strategy));
+      }
+    } catch (error) {
+      if (selectedPackageIdRef.current !== packageId) return;
+      setMessage(error instanceof Error ? error.message : 'Failed to load chunks.');
+    }
   }
 
   async function onInitialContext(forceRerun = false) {
@@ -3738,7 +3861,7 @@ export function App() {
       if (selectedPackageIdRef.current !== packageId) return;
       setPatchStatus(response.status);
       setPatchProgress(response.progress ? { ...response.progress } : null);
-      setTokenUsage(await getTokenUsage(packageId));
+      setTokenUsage(await getTokenUsage(packageId, chunkViewStrategy));
       setMessage(
         response.status === 'running'
           ? 'Initial file understanding is running.'
@@ -3769,6 +3892,7 @@ export function App() {
         data_package_id: packageId,
         resume: options.resume,
         target_stage: 'context',
+        chunking_strategy: chunkViewStrategy,
         chunk_repair_mode: chunkRepairMode,
       });
       if (selectedPackageIdRef.current !== packageId) return;
@@ -3785,7 +3909,7 @@ export function App() {
       }
       setPatchStatus(response.status);
       setPatchProgress(response.progress ? { ...response.progress } : null);
-      setTokenUsage(await getTokenUsage(packageId));
+      setTokenUsage(await getTokenUsage(packageId, chunkViewStrategy));
       setMessage(response.status === 'running' ? (options.resume ? 'Extraction resumed.' : 'Extraction is running.') : 'Extraction completed.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Context extraction failed.');
@@ -3806,7 +3930,7 @@ export function App() {
       if (progress?.interim_evidence_context) {
         setContext(initialContextFromEvidenceContext(progress.interim_evidence_context));
       }
-      setTokenUsage(await getTokenUsage(packageId));
+      setTokenUsage(await getTokenUsage(packageId, chunkViewStrategy));
       setMessage(status === 'cancelled' ? 'Extraction paused. Resume extraction to continue from saved chunks.' : 'Extraction is not running.');
     } catch (error) {
       if (selectedPackageIdRef.current !== packageId) return;
@@ -3847,7 +3971,7 @@ export function App() {
       setCuratedDocument(result.curated_document ?? result.generated_final_draft);
       setContext(initialContextFromEvidenceContext(result.machine_evidence_context));
       setTokenUsage(result.token_usage);
-      const { status, progress } = await getPatchProgress(packageId);
+      const { status, progress } = await getPatchProgress(packageId, chunkViewStrategy);
       if (selectedPackageIdRef.current !== packageId) return;
       setPatchStatus(status);
       setPatchProgress(progress ? { ...progress } : patchProgress);
@@ -3985,6 +4109,7 @@ export function App() {
         resume: true,
         force_profile_rebuild: isReplacingGeneratedDraft,
         target_stage: 'profile',
+        chunking_strategy: chunkViewStrategy,
       });
       const nextGenerated = response.result?.generated_final_draft ?? response.progress?.generated_final_draft ?? null;
       setGeneratedFinalDraft(nextGenerated);
@@ -4006,7 +4131,7 @@ export function App() {
           vocab_queries: [],
         } : {}),
       } : null);
-      setTokenUsage(await getTokenUsage(selectedPackageId));
+      setTokenUsage(await getTokenUsage(selectedPackageId, chunkViewStrategy));
       setMessage(
         mode === 'continue'
           ? (response.status === 'running' ? 'Projection resumed.' : 'Projection is up to date.')
@@ -4042,12 +4167,12 @@ export function App() {
     if (!selectedPackageId || !selectedProfile) return;
     setBusy('patch');
     try {
-      const result = await runVocabularyGrounding({ data_package_id: selectedPackageId, profile_identifier: selectedProfile });
+      const result = await runVocabularyGrounding({ data_package_id: selectedPackageId, profile_identifier: selectedProfile, chunking_strategy: chunkViewStrategy });
       setCuratedDocument(result.curated_document);
       setPatchStatus(result.status);
-      const { progress } = await getPatchProgress(selectedPackageId);
+      const { progress } = await getPatchProgress(selectedPackageId, chunkViewStrategy);
       setPatchProgress(progress ? { ...progress } : patchProgress);
-      setTokenUsage(await getTokenUsage(selectedPackageId));
+      setTokenUsage(await getTokenUsage(selectedPackageId, chunkViewStrategy));
       setMessage(
         result.status === 'completed'
           ? 'Vocabulary grounding completed and final profile document was saved.'
@@ -4113,17 +4238,17 @@ export function App() {
     const packageId = selectedPackageId;
     try {
       const initialProgress = await getInitialContextProgress(packageId);
-      const extractionProgress = await getPatchProgress(packageId);
+      const extractionProgress = await getPatchProgress(packageId, chunkViewStrategy);
       const status = extractionProgress.status === 'unknown'
         ? initialProgress.status
         : extractionProgress.status;
       const progress = extractionProgress.progress ?? initialProgress.progress;
       if (selectedPackageIdRef.current !== packageId) return;
       const completedResult = status === 'completed'
-        ? await getExtractionResult(packageId)
+        ? await getExtractionResult(packageId, chunkViewStrategy)
         : null;
       if (selectedPackageIdRef.current !== packageId) return;
-      setPatchStatus(status);
+      setPatchStatus(status === 'completed' && !completedResult ? 'unknown' : status);
       setPatchProgress(completedResult ? {
         ...(progress ?? {
           stage: 'completed',
@@ -4143,7 +4268,7 @@ export function App() {
         projection_ledger: completedResult.projection_ledger,
         field_completion_ledger: completedResult.field_completion_ledger,
         curation_ledger: completedResult.curation_ledger,
-      } : progress || null);
+      } : status === 'completed' ? null : progress || null);
       if (completedResult) {
         setContext(initialContextFromEvidenceContext(completedResult.machine_evidence_context));
         setGeneratedFinalDraft(completedResult.generated_final_draft);
@@ -4151,11 +4276,14 @@ export function App() {
       } else if (progress?.interim_evidence_context) {
         setContext(initialContextFromEvidenceContext(progress.interim_evidence_context));
       }
-      if (!completedResult) {
+      if (!completedResult && status !== 'completed') {
         setGeneratedFinalDraft(progress?.generated_final_draft ?? null);
         setCuratedDocument(progress?.curated_document ?? progress?.generated_final_draft ?? null);
+      } else if (!completedResult) {
+        setGeneratedFinalDraft(null);
+        setCuratedDocument(null);
       }
-      const nextTokenUsage = completedResult?.token_usage ?? await getTokenUsage(packageId);
+      const nextTokenUsage = completedResult?.token_usage ?? await getTokenUsage(packageId, chunkViewStrategy);
       setTokenUsage(nextTokenUsage);
       if (status === 'running') {
         setMessage('Workflow stage is running.');
@@ -4178,18 +4306,22 @@ export function App() {
     void (async () => {
       try {
         const [ctx, generatedResult, curatedResult, initialRun, extractionRun, chunkStatus, usage] = await Promise.all([
-          getExistingInitialContext(packageId),
-          getExistingGeneratedFinalDraft(packageId),
-          getExistingCuratedDocument(packageId),
+          getExistingInitialContext(packageId, chunkViewStrategy),
+          getExistingGeneratedFinalDraft(packageId, chunkViewStrategy),
+          getExistingCuratedDocument(packageId, chunkViewStrategy),
           getInitialContextProgress(packageId),
-          getPatchProgress(packageId),
-          getChunkStatus(packageId),
-          getTokenUsage(packageId),
+          getPatchProgress(packageId, chunkViewStrategy),
+          getChunkStatus(packageId, chunkViewStrategy),
+          getTokenUsage(packageId, chunkViewStrategy),
         ]);
         const status = extractionRun.status === 'unknown' ? initialRun.status : extractionRun.status;
-        const progress = extractionRun.progress ?? initialRun.progress;
+        const branchHasCompletedResult = Boolean(generatedResult || curatedResult || ctx);
+        const progress = status === 'completed' && !branchHasCompletedResult
+          ? initialRun.progress ?? null
+          : extractionRun.progress ?? initialRun.progress;
+        const effectiveStatus = status === 'completed' && !branchHasCompletedResult ? initialRun.status : status;
         const chunks = chunkStatus.status !== 'unknown' || chunkStatus.has_chunks
-          ? await getDataPackageChunks(packageId)
+          ? await getDataPackageChunks(packageId, chunkViewStrategy)
           : [];
         if (selectedPackageIdRef.current !== packageId) return;
         const progressContext = progress?.interim_evidence_context
@@ -4200,7 +4332,7 @@ export function App() {
         }
         setGeneratedFinalDraft(generatedResult ?? progress?.generated_final_draft ?? null);
         setCuratedDocument(curatedResult ?? progress?.curated_document ?? progress?.generated_final_draft ?? null);
-        setPatchStatus(status);
+        setPatchStatus(effectiveStatus);
         setPatchProgress(progress || null);
         setTokenUsage(usage);
         setHasChunks(chunkStatus.has_chunks);
@@ -4366,6 +4498,11 @@ export function App() {
                 dataPackage={selectedPackage}
                 chunkResult={chunkResult}
                 chunksByFile={chunksByFile}
+                chunkViewStrategy={chunkViewStrategy}
+                onChunkViewStrategyChange={(strategy) => {
+                  setChunkViewStrategy(strategy);
+                  void loadChunksForStrategy(strategy);
+                }}
                 busy={busy}
               />
               <ChunkInspectionPanel
@@ -4378,6 +4515,7 @@ export function App() {
                 packageId={selectedPackageId}
                 dataPackage={selectedPackage}
                 chunksByFile={chunksByFile}
+                chunkingStrategy={chunkViewStrategy}
                 onClose={() => setChunkingDialogOpen(false)}
                 onSubmit={(params) => {
                   setChunkingDialogOpen(false);

@@ -5,14 +5,16 @@ from app.domain.extraction import (
     DraftValidationResult,
     EvidenceQueryLedgerEntry,
     ExtractionFileSummary,
-    InitialFileSummaryDiagnostics,
-    InitialFileSummaryStatus,
+    ExtractionNormalization,
     ExtractionOverview,
     ExtractionOverviewStatus,
-    FilteredEvidenceLedger,
     ExtractionRunResult,
     ExtractionRunState,
+    ExtractionVocabQueryRecord,
     FieldCompletionLedgerRecord,
+    FilteredEvidenceLedger,
+    InitialFileSummaryDiagnostics,
+    InitialFileSummaryStatus,
     InitialOverviewFailureDiagnostic,
     InitialOverviewPromptDiagnostic,
     ProjectionLedgerRecord,
@@ -27,37 +29,47 @@ class ExtractionOutputRepository(Protocol):
         *,
         workflow_id: str,
         evidence_context: RoutedEvidenceContext,
-    ) -> None:
-        ...
+        chunking_strategy: str = "semantic",
+        chat_model: str | None = None,
+    ) -> None: ...
 
-    def load_evidence_context(self, workflow_id: str) -> RoutedEvidenceContext:
-        ...
+    def load_evidence_context(
+        self,
+        workflow_id: str,
+        chunking_strategy: str = "semantic",
+        chat_model: str | None = None,
+    ) -> RoutedEvidenceContext: ...
 
     def save_filtered_evidence_notes(
         self,
         *,
         workflow_id: str,
         ledger: FilteredEvidenceLedger,
-    ) -> None:
-        ...
+        chunking_strategy: str = "semantic",
+        chat_model: str | None = None,
+    ) -> None: ...
 
-    def load_filtered_evidence_notes(self, workflow_id: str) -> FilteredEvidenceLedger:
-        ...
+    def load_filtered_evidence_notes(
+        self,
+        workflow_id: str,
+        chunking_strategy: str = "semantic",
+        chat_model: str | None = None,
+    ) -> FilteredEvidenceLedger: ...
 
     def save_extraction_result(
         self,
         *,
         workflow_id: str,
         result: ExtractionRunResult,
-    ) -> None:
-        ...
+        chunking_strategy: str = "semantic",
+    ) -> None: ...
 
     def load_extraction_result(
         self,
         workflow_id: str,
         chat_model: str | None = None,
-    ) -> ExtractionRunResult:
-        ...
+        chunking_strategy: str = "semantic",
+    ) -> ExtractionRunResult: ...
 
     def save_initial_file_summaries(
         self,
@@ -66,15 +78,13 @@ class ExtractionOutputRepository(Protocol):
         summaries: list[ExtractionFileSummary],
         status: InitialFileSummaryStatus | None,
         chat_model: str | None = None,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     def load_initial_file_summaries(
         self,
         workflow_id: str,
         chat_model: str | None = None,
-    ) -> tuple[list[ExtractionFileSummary], InitialFileSummaryStatus | None]:
-        ...
+    ) -> tuple[list[ExtractionFileSummary], InitialFileSummaryStatus | None]: ...
 
     def save_initial_file_summary_diagnostics(
         self,
@@ -82,8 +92,7 @@ class ExtractionOutputRepository(Protocol):
         workflow_id: str,
         diagnostics: InitialFileSummaryDiagnostics | None,
         chat_model: str | None = None,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     def save_initial_extraction_overview(
         self,
@@ -92,15 +101,13 @@ class ExtractionOutputRepository(Protocol):
         overview: ExtractionOverview | None,
         status: ExtractionOverviewStatus | None,
         chat_model: str | None = None,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     def load_initial_extraction_overview(
         self,
         workflow_id: str,
         chat_model: str | None = None,
-    ) -> tuple[ExtractionOverview | None, ExtractionOverviewStatus | None]:
-        ...
+    ) -> tuple[ExtractionOverview | None, ExtractionOverviewStatus | None]: ...
 
     def save_initial_extraction_overview_diagnostic(
         self,
@@ -108,8 +115,7 @@ class ExtractionOutputRepository(Protocol):
         workflow_id: str,
         diagnostic: InitialOverviewPromptDiagnostic | InitialOverviewFailureDiagnostic | None,
         chat_model: str | None = None,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     def save_generated_initial_draft(
         self,
@@ -117,8 +123,8 @@ class ExtractionOutputRepository(Protocol):
         workflow_id: str,
         document: dict[str, Any],
         chat_model: str | None = None,
-    ) -> None:
-        ...
+        chunking_strategy: str = "semantic",
+    ) -> None: ...
 
     def save_generated_final_draft(
         self,
@@ -126,8 +132,8 @@ class ExtractionOutputRepository(Protocol):
         workflow_id: str,
         document: dict[str, Any],
         chat_model: str | None = None,
-    ) -> None:
-        ...
+        chunking_strategy: str = "semantic",
+    ) -> None: ...
 
     def save_requirement_report(
         self,
@@ -135,8 +141,15 @@ class ExtractionOutputRepository(Protocol):
         workflow_id: str,
         report: RequirementReport,
         chat_model: str | None = None,
-    ) -> None:
-        ...
+        chunking_strategy: str = "semantic",
+    ) -> None: ...
+
+    def load_generated_final_draft(
+        self,
+        workflow_id: str,
+        chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
+    ) -> dict[str, Any]: ...
 
     def save_dataset_summary(
         self,
@@ -144,15 +157,8 @@ class ExtractionOutputRepository(Protocol):
         workflow_id: str,
         summary: str,
         chat_model: str | None = None,
-    ) -> None:
-        ...
-
-    def load_generated_final_draft(
-        self,
-        workflow_id: str,
-        chat_model: str | None = None,
-    ) -> dict[str, Any]:
-        ...
+        chunking_strategy: str = "semantic",
+    ) -> None: ...
 
     def save_curated_document(
         self,
@@ -160,15 +166,15 @@ class ExtractionOutputRepository(Protocol):
         workflow_id: str,
         document: dict[str, Any],
         chat_model: str | None = None,
-    ) -> None:
-        ...
+        chunking_strategy: str = "semantic",
+    ) -> None: ...
 
     def load_curated_document(
         self,
         workflow_id: str,
         chat_model: str | None = None,
-    ) -> dict[str, Any]:
-        ...
+        chunking_strategy: str = "semantic",
+    ) -> dict[str, Any]: ...
 
     def save_projection_ledger(
         self,
@@ -176,15 +182,15 @@ class ExtractionOutputRepository(Protocol):
         workflow_id: str,
         ledger: list[ProjectionLedgerRecord],
         chat_model: str | None = None,
-    ) -> None:
-        ...
+        chunking_strategy: str = "semantic",
+    ) -> None: ...
 
     def load_projection_ledger(
         self,
         workflow_id: str,
         chat_model: str | None = None,
-    ) -> list[ProjectionLedgerRecord]:
-        ...
+        chunking_strategy: str = "semantic",
+    ) -> list[ProjectionLedgerRecord]: ...
 
     def save_field_completion_ledger(
         self,
@@ -192,15 +198,15 @@ class ExtractionOutputRepository(Protocol):
         workflow_id: str,
         ledger: list[FieldCompletionLedgerRecord],
         chat_model: str | None = None,
-    ) -> None:
-        ...
+        chunking_strategy: str = "semantic",
+    ) -> None: ...
 
     def load_field_completion_ledger(
         self,
         workflow_id: str,
         chat_model: str | None = None,
-    ) -> list[FieldCompletionLedgerRecord]:
-        ...
+        chunking_strategy: str = "semantic",
+    ) -> list[FieldCompletionLedgerRecord]: ...
 
     def save_evidence_query_ledger(
         self,
@@ -208,15 +214,15 @@ class ExtractionOutputRepository(Protocol):
         workflow_id: str,
         ledger: list[EvidenceQueryLedgerEntry],
         chat_model: str | None = None,
-    ) -> None:
-        ...
+        chunking_strategy: str = "semantic",
+    ) -> None: ...
 
     def load_evidence_query_ledger(
         self,
         workflow_id: str,
         chat_model: str | None = None,
-    ) -> list[EvidenceQueryLedgerEntry]:
-        ...
+        chunking_strategy: str = "semantic",
+    ) -> list[EvidenceQueryLedgerEntry]: ...
 
     def save_curation_ledger(
         self,
@@ -224,15 +230,15 @@ class ExtractionOutputRepository(Protocol):
         workflow_id: str,
         ledger: list[CurationLedgerRecord],
         chat_model: str | None = None,
-    ) -> None:
-        ...
+        chunking_strategy: str = "semantic",
+    ) -> None: ...
 
     def load_curation_ledger(
         self,
         workflow_id: str,
         chat_model: str | None = None,
-    ) -> list[CurationLedgerRecord]:
-        ...
+        chunking_strategy: str = "semantic",
+    ) -> list[CurationLedgerRecord]: ...
 
     def save_validation(
         self,
@@ -241,52 +247,49 @@ class ExtractionOutputRepository(Protocol):
         validation: DraftValidationResult,
         curated_validation: DraftValidationResult | None = None,
         chat_model: str | None = None,
-    ) -> None:
-        ...
+        chunking_strategy: str = "semantic",
+    ) -> None: ...
 
     def load_validation(
         self,
         workflow_id: str,
         chat_model: str | None = None,
-    ) -> tuple[DraftValidationResult, DraftValidationResult | None]:
-        ...
+        chunking_strategy: str = "semantic",
+    ) -> tuple[DraftValidationResult, DraftValidationResult | None]: ...
 
-    def save_extraction_run_state(
+    def save_grounding_artifacts(
         self,
         *,
         workflow_id: str,
-        state: ExtractionRunState,
-    ) -> None:
-        ...
-
-    def load_extraction_run_state(
-        self,
-        workflow_id: str,
+        vocab_queries: list[ExtractionVocabQueryRecord],
+        normalization: ExtractionNormalization,
         chat_model: str | None = None,
-    ) -> ExtractionRunState:
-        ...
+        chunking_strategy: str = "semantic",
+    ) -> None: ...
 
-    def save_extraction_warnings(
-        self,
-        *,
-        workflow_id: str,
-        warnings: list[str],
-    ) -> None:
-        ...
+    def save_extraction_run_state(self, *, workflow_id: str, state: ExtractionRunState) -> None: ...
 
-    def load_extraction_warnings(self, workflow_id: str) -> list[str]:
-        ...
+    def load_extraction_run_state(self, workflow_id: str, chat_model: str | None = None) -> ExtractionRunState: ...
+
+    def save_extraction_warnings(self, *, workflow_id: str, warnings: list[str]) -> None: ...
+
+    def load_extraction_warnings(self, workflow_id: str) -> list[str]: ...
 
     def save_token_usage(
         self,
         *,
         workflow_id: str,
         token_usage: dict[str, dict[str, int]],
-    ) -> None:
-        ...
+        chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
+    ) -> None: ...
 
-    def load_token_usage(self, workflow_id: str) -> dict[str, dict[str, int]]:
-        ...
+    def load_token_usage(
+        self,
+        workflow_id: str,
+        chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
+    ) -> dict[str, dict[str, int]]: ...
 
     def append_prompt_diagnostic(
         self,
@@ -294,18 +297,11 @@ class ExtractionOutputRepository(Protocol):
         workflow_id: str,
         diagnostic: dict[str, Any],
         chat_model: str | None = None,
-    ) -> None:
-        ...
+        chunking_strategy: str = "semantic",
+    ) -> None: ...
 
-    def clear_prompt_diagnostics(
-        self,
-        workflow_id: str,
-        chat_model: str | None = None,
-    ) -> None:
-        ...
+    def clear_prompt_diagnostics(self, workflow_id: str, chat_model: str | None = None) -> None: ...
 
-    def clear_extraction_run(self, workflow_id: str) -> None:
-        ...
+    def clear_extraction_run(self, workflow_id: str) -> None: ...
 
-    def clear_extraction_downstream(self, workflow_id: str) -> None:
-        ...
+    def clear_extraction_downstream(self, workflow_id: str) -> None: ...

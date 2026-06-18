@@ -46,19 +46,21 @@ class DataSourceService:
     def get_content_chunks_by_file(
         self,
         data_package_id: str,
+        chunking_strategy: str = "semantic",
     ) -> list[list[ContentChunk]]:
-        return self._load_content_chunks_by_file(data_package_id)
+        return self._load_content_chunks_by_file(data_package_id, chunking_strategy)
 
     def get_completed_content_chunks_by_file(
         self,
         data_package_id: str,
+        chunking_strategy: str = "semantic",
     ) -> list[list[ContentChunk]]:
         task_name = self.chunk_task_name(data_package_id)
         task_info = self.task_registry.get_task_info(task_name)
         if task_info is not None and task_info.status != TaskStatus.COMPLETED:
             return []
 
-        return self._load_content_chunks_by_file(data_package_id)
+        return self._load_content_chunks_by_file(data_package_id, chunking_strategy)
 
     def get_chunk_task_status(self, data_package_id: str) -> TaskStatus:
         task_name = self.chunk_task_name(data_package_id)
@@ -66,7 +68,7 @@ class DataSourceService:
         if task_info is not None:
             return task_info.status
 
-        if self._load_content_chunks_by_file(data_package_id):
+        if self._load_content_chunks_by_file(data_package_id, "semantic"):
             return TaskStatus.COMPLETED
 
         return TaskStatus.UNKNOWN
@@ -74,6 +76,7 @@ class DataSourceService:
     def _load_content_chunks_by_file(
         self,
         data_package_id: str,
+        chunking_strategy: str = "semantic",
     ) -> list[list[ContentChunk]]:
         data_package = self.get_data_package(data_package_id)
         content_chunks_by_file: list[list[ContentChunk]] = []
@@ -81,6 +84,7 @@ class DataSourceService:
             content_chunks = self.blob_repository.load_content_chunks_by_file_path(
                 data_package_id,
                 file_entry.file_path,
+                chunking_strategy,
             )
             if content_chunks:
                 content_chunks_by_file.append(content_chunks)
@@ -110,7 +114,10 @@ class DataSourceService:
 
         if task_info is None:
             if not replace_existing_chunks:
-                content_chunks_by_file = self._load_content_chunks_by_file(data_package_id)
+                content_chunks_by_file = self._load_content_chunks_by_file(
+                    data_package_id,
+                    chunking_strategy,
+                )
                 if content_chunks_by_file:
                     return content_chunks_by_file, TaskStatus.COMPLETED
 
@@ -182,7 +189,11 @@ class DataSourceService:
         content_chunks_by_file: list[list[ContentChunk]] = []        
 
         for file_entry in files:
-            content_chunks = self.blob_repository.load_content_chunks_by_file_path(data_package_id, file_entry.file_path)
+            content_chunks = self.blob_repository.load_content_chunks_by_file_path(
+                data_package_id,
+                file_entry.file_path,
+                chunking_strategy,
+            )
             if not content_chunks:
                 continue
             content_chunks_by_file.append(content_chunks)
@@ -206,7 +217,7 @@ class DataSourceService:
         max_tokens_per_chunk: int = 1024,
     ) -> None:
         if delete_existing_chunks:
-            self.blob_repository.delete_content_chunks(data_package_id)
+            self.blob_repository.delete_content_chunks(data_package_id, chunking_strategy)
 
         await self.task_registry.create_task(
             coro=self._run_chunking_task(
@@ -279,6 +290,6 @@ class DataSourceService:
                 chunking_strategy=chunking_strategy,
                 fixed_tokens_per_chunk=fixed_tokens_per_chunk,
             )
-            self.blob_repository.save_content_chunks(content_chunks)
+            self.blob_repository.save_content_chunks(content_chunks, chunking_strategy)
 
 

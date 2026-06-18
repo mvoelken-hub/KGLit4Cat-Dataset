@@ -206,6 +206,7 @@ class CurationLedgerRecord(BaseModel):
 
 class ExtractionRunState(BaseModel):
     profile_identifier: str | None = None
+    chunking_strategy: str = "semantic"
     chunk_repair_mode: ChunkRepairMode = "deferred"
     evidence_critic_granularity: EvidenceCriticGranularity = "per_chunk"
     vocab_query_config: ExtractionVocabQueryConfig = Field(default_factory=ExtractionVocabQueryConfig)

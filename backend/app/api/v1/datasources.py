@@ -1,5 +1,5 @@
 from io import BytesIO
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status, Query
 
@@ -117,10 +117,11 @@ async def get_file_entry_content(
 @router.get("/{id}/chunks/status")
 async def get_chunk_status(
     id: str,
+    chunking_strategy: Literal["semantic", "fixed_tokens"] = "semantic",
     datasource_service: DataSourceService = Depends(get_datasource_service),
 ):
     try:
-        chunks = datasource_service.get_completed_content_chunks_by_file(id)
+        chunks = datasource_service.get_completed_content_chunks_by_file(id, chunking_strategy)
         return {
             "has_chunks": bool(chunks),
             "file_count": len(chunks),
@@ -133,10 +134,11 @@ async def get_chunk_status(
 @router.get("/{id}/chunks", response_model=list[list[ChunkResponse]])
 async def get_data_package_chunks(
     id: str,
+    chunking_strategy: Literal["semantic", "fixed_tokens"] = "semantic",
     datasource_service: DataSourceService = Depends(get_datasource_service),
 ):
     try:
-        chunks_by_file = datasource_service.get_content_chunks_by_file(id)
+        chunks_by_file = datasource_service.get_content_chunks_by_file(id, chunking_strategy)
         return [[ChunkResponse(**chunk.model_dump()) for chunk in chunks] for chunks in chunks_by_file]
     except Exception as exc:
         _raise_datasource_error(exc)

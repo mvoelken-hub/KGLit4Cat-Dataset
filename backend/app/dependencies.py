@@ -22,7 +22,10 @@ from infra.filesystem_datasource_blob_repository import FileSystemDataSourceBlob
 from app.services.datasource_service import DataSourceService
 
 
-datasource_blob_repository = FileSystemDataSourceBlobRepository(settings.uploads_dir)
+datasource_blob_repository = FileSystemDataSourceBlobRepository(
+    settings.uploads_dir,
+    settings.output_dir,
+)
 datasource_service = DataSourceService(
     datasource_blob_repository,
     settings,

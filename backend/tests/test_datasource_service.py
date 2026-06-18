@@ -37,7 +37,9 @@ class FakeBlobRepository:
         self.chunks_by_file_path = chunks_by_file_path
         self.loaded_chunk_paths: list[str] = []
         self.deleted_chunk_package_ids: list[str] = []
+        self.deleted_chunk_strategies: list[str | None] = []
         self.saved_chunks: list[ContentChunk] = []
+        self.saved_chunk_strategies: list[str] = []
 
     def load_data_package(self, id: str) -> DataPackage:
         return self.data_package
@@ -46,16 +48,19 @@ class FakeBlobRepository:
         self,
         data_package_id: str,
         file_path: str,
+        chunking_strategy: str = "semantic",
     ) -> list[ContentChunk]:
         self.loaded_chunk_paths.append(file_path)
         return self.chunks_by_file_path.get(file_path, [])
 
-    def delete_content_chunks(self, data_package_id: str) -> None:
+    def delete_content_chunks(self, data_package_id: str, chunking_strategy: str | None = None) -> None:
         self.deleted_chunk_package_ids.append(data_package_id)
+        self.deleted_chunk_strategies.append(chunking_strategy)
         self.chunks_by_file_path.clear()
 
-    def save_content_chunks(self, content_chunks: list[ContentChunk]) -> None:
+    def save_content_chunks(self, content_chunks: list[ContentChunk], chunking_strategy: str = "semantic") -> None:
         self.saved_chunks.extend(content_chunks)
+        self.saved_chunk_strategies.append(chunking_strategy)
 
 
 class FakeOllamaClient:

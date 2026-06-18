@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { getFileEntryContent } from '../api/datasources';
+import { getFileEntryContent, type ChunkingStrategy } from '../api/datasources';
 import type { ChunkResponse, DataPackageResponse, TextQualityConfig } from '../api/types';
 
 export interface ChunkingDialogProps {
@@ -9,12 +9,13 @@ export interface ChunkingDialogProps {
   packageId: string;
   dataPackage: DataPackageResponse | null;
   chunksByFile: ChunkResponse[][];
+  chunkingStrategy: ChunkingStrategy;
   onClose: () => void;
   onSubmit: (params: {
     replace_existing_chunks: boolean;
     buffer_window_size: number;
     semantic_chunking_threshold: number;
-    chunking_strategy: 'semantic' | 'fixed_tokens';
+    chunking_strategy: ChunkingStrategy;
     fixed_tokens_per_chunk: number;
     min_tokens_per_chunk: number;
     max_tokens_per_chunk: number;
@@ -243,10 +244,9 @@ function QualityTooltip({ decision }: { decision: TextQualityDecision }) {
   );
 }
 
-export function ChunkingDialog({ isOpen, packageId, dataPackage, chunksByFile, onClose, onSubmit }: ChunkingDialogProps) {
+export function ChunkingDialog({ isOpen, packageId, dataPackage, chunksByFile, chunkingStrategy, onClose, onSubmit }: ChunkingDialogProps) {
   const [bufferWindowSize, setBufferWindowSize] = useState(1);
   const [semanticThreshold, setSemanticThreshold] = useState(95);
-  const [chunkingStrategy, setChunkingStrategy] = useState<'semantic' | 'fixed_tokens'>('semantic');
   const [fixedTokensPerChunk, setFixedTokensPerChunk] = useState(1024);
   const [minTokensPerChunk, setMinTokensPerChunk] = useState(128);
   const [maxTokensPerChunk, setMaxTokensPerChunk] = useState(1024);
@@ -299,7 +299,6 @@ export function ChunkingDialog({ isOpen, packageId, dataPackage, chunksByFile, o
     if (!isOpen) return;
     setBufferWindowSize(1);
     setSemanticThreshold(95);
-    setChunkingStrategy('semantic');
     setFixedTokensPerChunk(1024);
     setMinTokensPerChunk(128);
     setMaxTokensPerChunk(1024);
@@ -409,13 +408,6 @@ export function ChunkingDialog({ isOpen, packageId, dataPackage, chunksByFile, o
 
         <div className="chunking-dialog-body">
           <div className="chunking-form">
-            <label className="form-row">
-              <ConfigLabel tooltip="How chunks are created. Semantic chunking uses embeddings to detect topic shifts. Fixed tokens per chunk splits text into roughly equal token budgets.">Chunking strategy</ConfigLabel>
-              <select value={chunkingStrategy} onChange={(e) => setChunkingStrategy(e.target.value as 'semantic' | 'fixed_tokens')}>
-                <option value="semantic">Semantic (embeddings)</option>
-                <option value="fixed_tokens">Fixed tokens per chunk</option>
-              </select>
-            </label>
             {chunkingStrategy === 'semantic' && (
               <>
                 <label className="form-row">

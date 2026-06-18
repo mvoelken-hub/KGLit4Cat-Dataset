@@ -42,6 +42,10 @@ class ExtractionRunRequest(BaseModel):
         default="complete",
         description="Workflow stage to run up to.",
     )
+    chunking_strategy: str = Field(
+        default="semantic",
+        description="Chunking strategy branch to read: 'semantic' or 'fixed_tokens'.",
+    )
     chunk_repair_mode: ChunkRepairMode = Field(
         default="deferred",
         description="How to handle repairable chunk structured-output failures.",

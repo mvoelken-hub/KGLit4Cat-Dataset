@@ -424,6 +424,7 @@ class ExtractionService:
         resume: bool = False,
         force_profile_rebuild: bool = False,
         target_stage: ExtractionTargetStage = "complete",
+        chunking_strategy: str = "semantic",
         chunk_repair_mode: ChunkRepairMode = "deferred",
         evidence_critic_granularity: EvidenceCriticGranularity = "per_chunk",
     ) -> tuple[ExtractionRunResult | None, TaskStatus]:
@@ -442,7 +443,8 @@ class ExtractionService:
             self.profile_service.load_json_schema(profile_identifier_for_stage)
 
         chunks_by_file = self.datasource_service.get_completed_content_chunks_by_file(
-            data_package_id
+            data_package_id,
+            chunking_strategy,
         )
         if not chunks_by_file:
             raise ChunkingRequiredError(
@@ -469,6 +471,7 @@ class ExtractionService:
                 resume=resume,
                 force_profile_rebuild=force_profile_rebuild,
                 target_stage=target_stage,
+                chunking_strategy=chunking_strategy,
                 chunk_repair_mode=chunk_repair_mode,
                 evidence_critic_granularity=evidence_critic_granularity,
             ),
@@ -767,7 +770,8 @@ class ExtractionService:
             )
 
         chunks_by_file = self.datasource_service.get_completed_content_chunks_by_file(
-            data_package_id
+            data_package_id,
+            chunking_strategy,
         )
         if not chunks_by_file:
             raise ChunkingRequiredError(
@@ -790,6 +794,7 @@ class ExtractionService:
             profile_identifier=profile_identifier,
             qualitative_vocab_identifiers=qualitative_vocab_identifiers,
             resume=True,
+            chunking_strategy=chunking_strategy,
         )
         if extraction_status == TaskStatus.RUNNING:
             await self.task_registry.wait_for_task(
@@ -882,35 +887,45 @@ class ExtractionService:
         self,
         *,
         data_package_id: str,
+        chunking_strategy: str | None = None,
     ) -> tuple[TaskStatus, ExtractionRunProgress | None]:
         if self.task_registry is None:
             return TaskStatus.UNKNOWN, None
         task_info = self.task_registry.get_task_info(
             self._extraction_task_name(data_package_id)
         )
+        if task_info is not None and chunking_strategy:
+            state = self._load_run_state_or_none(data_package_id)
+            if state is not None and state.chunking_strategy != chunking_strategy:
+                return TaskStatus.UNKNOWN, self._initial_context_progress_from_state(
+                    state,
+                    warnings=self._load_warnings_or_empty(data_package_id),
+                    stage="initial_context_completed",
+                )
         if task_info is None:
             state = self._load_run_state_or_none(data_package_id)
-            result = self._load_result_or_none(data_package_id)
+            state_for_branch = state if not chunking_strategy or state is None or state.chunking_strategy == chunking_strategy else None
+            result = self._load_result_or_none(data_package_id, chunking_strategy=chunking_strategy)
             if result is not None:
                 return TaskStatus.COMPLETED, ExtractionRunProgress(
                     stage="completed",
-                    processed_chunks=self._completed_chunk_count(state) if state else 0,
-                    total_chunks=len(state.chunk_results) if state else 0,
+                    processed_chunks=self._completed_chunk_count(state_for_branch) if state_for_branch else 0,
+                    total_chunks=len(state_for_branch.chunk_results) if state_for_branch else 0,
                     interim_evidence_context=result.machine_evidence_context,
-                    vocab_query_config=state.vocab_query_config if state else self._default_vocab_query_config(None),
-                    ranked_files=state.ranked_files if state else [],
+                    vocab_query_config=state_for_branch.vocab_query_config if state_for_branch else self._default_vocab_query_config(None),
+                    ranked_files=state_for_branch.ranked_files if state_for_branch else [],
                     initial_file_summaries=result.initial_file_summaries,
                     initial_file_summary_progress=(
-                        state.initial_file_summary_progress if state else None
+                        state_for_branch.initial_file_summary_progress if state_for_branch else None
                     ),
                     initial_file_summary_status=result.initial_file_summary_status,
                     initial_extraction_overview=result.initial_extraction_overview,
                     initial_extraction_overview_status=result.initial_extraction_overview_status,
                     initial_extraction_overview_diagnostic=(
-                        state.initial_extraction_overview_diagnostic if state else None
+                        state_for_branch.initial_extraction_overview_diagnostic if state_for_branch else None
                     ),
-                    chunk_results=state.chunk_results if state else [],
-                    vocab_queries=state.vocab_queries if state else [],
+                    chunk_results=state_for_branch.chunk_results if state_for_branch else [],
+                    vocab_queries=state_for_branch.vocab_queries if state_for_branch else [],
                     generated_final_draft=result.generated_final_draft,
                     curated_document=result.curated_document,
                     document_quality_state=result.document_quality_state,
@@ -923,7 +938,9 @@ class ExtractionService:
                     curation_ledger=result.curation_ledger,
                     warnings=list(result.warnings),
                 )
-            interim_evidence_context = self._load_evidence_context_or_none(data_package_id)
+            interim_evidence_context = self._load_evidence_context_or_none(data_package_id, chunking_strategy=chunking_strategy)
+            if chunking_strategy and state is not None and state.chunking_strategy != chunking_strategy and interim_evidence_context is None:
+                state = state if not state.chunk_results else None
             if interim_evidence_context is not None or state is not None:
                 stage = "interim_evidence_context"
                 if interim_evidence_context is None and state and not state.chunk_results and (
@@ -1106,24 +1123,32 @@ class ExtractionService:
         self,
         *,
         data_package_id: str,
+        chunking_strategy: str | None = None,
     ) -> ExtractionRunResult:
         if self.output_repository is None:
             raise ExtractionResultNotFoundError("Extraction output repository is unavailable.")
         try:
+            state = self._load_run_state_or_none(data_package_id)
             return self.output_repository.load_extraction_result(
                 data_package_id,
-                chat_model=self.ollama_client.chat_model if self.ollama_client else None,
+                chat_model=state.chat_model if state else (self.ollama_client.chat_model if self.ollama_client else None),
+                chunking_strategy=chunking_strategy or (state.chunking_strategy if state else "semantic"),
             )
         except FileNotFoundError as exc:
             raise ExtractionResultNotFoundError(
                 f"Extraction result not found for workflow '{data_package_id}'."
             ) from exc
 
-    async def get_token_usage(self, data_package_id: str) -> dict[str, Any]:
+    async def get_token_usage(self, data_package_id: str, chunking_strategy: str | None = None) -> dict[str, Any]:
         if self.output_repository is None:
             return {"agents": {}}
+        state = self._load_run_state_or_none(data_package_id)
         return self._token_usage_summary(
-            self.output_repository.load_token_usage(data_package_id)
+            self.output_repository.load_token_usage(
+                data_package_id,
+                chat_model=state.chat_model if state else (self.ollama_client.chat_model if self.ollama_client else None),
+                chunking_strategy=chunking_strategy or (state.chunking_strategy if state else "semantic"),
+            )
         )
 
     async def update_vocab_query_config(
@@ -1407,6 +1432,7 @@ class ExtractionService:
         resume: bool = False,
         force_profile_rebuild: bool = False,
         target_stage: ExtractionTargetStage = "complete",
+        chunking_strategy: str = "semantic",
         chunk_repair_mode: ChunkRepairMode = "deferred",
         evidence_critic_granularity: EvidenceCriticGranularity = "per_chunk",
     ) -> ExtractionRunResult | None:
@@ -1426,7 +1452,8 @@ class ExtractionService:
                 target_class=profile_manifest.target_class,
             )
         chunks_by_file = self.datasource_service.get_completed_content_chunks_by_file(
-            data_package_id
+            data_package_id,
+            chunking_strategy,
         )
         if not chunks_by_file:
             raise ChunkingRequiredError(
@@ -1520,6 +1547,7 @@ class ExtractionService:
             persisted_state=persisted_state,
             profile_identifier=profile_identifier,
             vocab_query_config=progress.vocab_query_config,
+            chunking_strategy=chunking_strategy,
             chunk_repair_mode=chunk_repair_mode,
             evidence_critic_granularity=evidence_critic_granularity,
         )
@@ -1834,6 +1862,8 @@ class ExtractionService:
         self.output_repository.save_evidence_context(
             workflow_id=data_package_id,
             evidence_context=evidence_context,
+            chunking_strategy=state.chunking_strategy,
+            chat_model=state.chat_model,
         )
         self._save_filtered_evidence_notes(
             data_package_id=data_package_id,
@@ -5694,6 +5724,7 @@ class ExtractionService:
                     workflow_id=data_package_id,
                     summary=dataset_summary,
                     chat_model=self.ollama_client.chat_model,
+                    chunking_strategy=state.chunking_strategy,
                 )
         except (CompletionError, ValidationError, ValueError) as exc:
             self._record_llm_call_exception(
@@ -7092,6 +7123,13 @@ class ExtractionService:
             requirement_report=state.requirement_report,
             field_completion_ledger=state.field_completion_ledger,
         )
+        self.output_repository.save_grounding_artifacts(
+            workflow_id=data_package_id,
+            vocab_queries=state.vocab_queries,
+            normalization=normalization,
+            chat_model=state.chat_model,
+            chunking_strategy=state.chunking_strategy,
+        )
         token_usage = await self.get_token_usage(data_package_id)
         result = ExtractionRunResult(
             generated_final_draft=clean_document,
@@ -7123,6 +7161,7 @@ class ExtractionService:
         self.output_repository.save_extraction_result(
             workflow_id=data_package_id,
             result=result,
+            chunking_strategy=state.chunking_strategy,
         )
         self._save_run_state(data_package_id, state)
         return result
@@ -7338,6 +7377,7 @@ class ExtractionService:
         if self.output_repository is None:
             return
         chat_model = state.chat_model
+        chunking_strategy = state.chunking_strategy
         self._persist_initial_file_summaries(data_package_id, state)
         self._persist_initial_extraction_overview(data_package_id, state)
         if state.generated_final_draft is not None:
@@ -7345,50 +7385,59 @@ class ExtractionService:
                 workflow_id=data_package_id,
                 document=state.generated_final_draft,
                 chat_model=chat_model,
+                chunking_strategy=chunking_strategy,
             )
         if state.generated_initial_draft is not None:
             self.output_repository.save_generated_initial_draft(
                 workflow_id=data_package_id,
                 document=state.generated_initial_draft,
                 chat_model=chat_model,
+                chunking_strategy=chunking_strategy,
             )
         if state.requirement_report is not None:
             self.output_repository.save_requirement_report(
                 workflow_id=data_package_id,
                 report=state.requirement_report,
                 chat_model=chat_model,
+                chunking_strategy=chunking_strategy,
             )
         if state.curated_document is not None:
             self.output_repository.save_curated_document(
                 workflow_id=data_package_id,
                 document=state.curated_document,
                 chat_model=chat_model,
+                chunking_strategy=chunking_strategy,
             )
         self.output_repository.save_projection_ledger(
             workflow_id=data_package_id,
             ledger=state.projection_ledger,
             chat_model=chat_model,
+            chunking_strategy=chunking_strategy,
         )
         self.output_repository.save_field_completion_ledger(
             workflow_id=data_package_id,
             ledger=state.field_completion_ledger,
             chat_model=chat_model,
+            chunking_strategy=chunking_strategy,
         )
         self.output_repository.save_evidence_query_ledger(
             workflow_id=data_package_id,
             ledger=state.evidence_query_ledger,
             chat_model=chat_model,
+            chunking_strategy=chunking_strategy,
         )
         self.output_repository.save_curation_ledger(
             workflow_id=data_package_id,
             ledger=state.curation_ledger,
             chat_model=chat_model,
+            chunking_strategy=chunking_strategy,
         )
         self.output_repository.save_validation(
             workflow_id=data_package_id,
             validation=state.validation,
             curated_validation=state.curated_validation,
             chat_model=chat_model,
+            chunking_strategy=chunking_strategy,
         )
 
     def _clear_downstream_extraction_outputs(self, data_package_id: str) -> None:
@@ -7418,7 +7467,14 @@ class ExtractionService:
     def _clear_profile_projection_token_usage(self, data_package_id: str) -> None:
         if self.output_repository is None:
             return
-        totals = self.output_repository.load_token_usage(data_package_id)
+        state = self._load_run_state_or_none(data_package_id)
+        chat_model = state.chat_model if state else (self.ollama_client.chat_model if self.ollama_client else None)
+        chunking_strategy = state.chunking_strategy if state else "semantic"
+        totals = self.output_repository.load_token_usage(
+            data_package_id,
+            chat_model=chat_model,
+            chunking_strategy=chunking_strategy,
+        )
         projection_agents = {
             "dataset_summary",
             "dataset_level_projection",
@@ -7441,6 +7497,8 @@ class ExtractionService:
         self.output_repository.save_token_usage(
             workflow_id=data_package_id,
             token_usage=pruned,
+            chat_model=chat_model,
+            chunking_strategy=chunking_strategy,
         )
 
     def _persist_initial_extraction_overview(
@@ -8564,6 +8622,7 @@ class ExtractionService:
         persisted_state: ExtractionRunState | None,
         profile_identifier: str | None,
         vocab_query_config: ExtractionVocabQueryConfig,
+        chunking_strategy: str = "semantic",
         chunk_repair_mode: ChunkRepairMode = "deferred",
         evidence_critic_granularity: EvidenceCriticGranularity = "per_chunk",
     ) -> ExtractionRunState:
@@ -8620,6 +8679,7 @@ class ExtractionService:
 
         return ExtractionRunState(
             profile_identifier=profile_identifier,
+            chunking_strategy=chunking_strategy,
             chunk_repair_mode=chunk_repair_mode,
             evidence_critic_granularity=evidence_critic_granularity,
             chat_model=self.ollama_client.chat_model if self.ollama_client else None,
@@ -8791,6 +8851,8 @@ class ExtractionService:
         self.output_repository.save_filtered_evidence_notes(
             workflow_id=data_package_id,
             ledger=filtered_evidence_ledger(records),
+            chunking_strategy=state.chunking_strategy,
+            chat_model=state.chat_model,
         )
 
     async def _validate_assess_and_route_evidence_context_for_chunk(
@@ -9073,6 +9135,8 @@ class ExtractionService:
         self.output_repository.save_evidence_context(
             workflow_id=data_package_id,
             evidence_context=evidence_context,
+            chunking_strategy=state.chunking_strategy,
+            chat_model=state.chat_model,
         )
         self._save_filtered_evidence_notes(
             data_package_id=data_package_id,
@@ -10612,22 +10676,29 @@ class ExtractionService:
             attributes.extend(trace.extracted_object.has_qualitative_attributes)
         return attributes
 
-    def _load_result_or_none(self, data_package_id: str) -> ExtractionRunResult | None:
+    def _load_result_or_none(self, data_package_id: str, *, chunking_strategy: str | None = None) -> ExtractionRunResult | None:
         if self.output_repository is None:
             return None
         try:
+            state = self._load_run_state_or_none(data_package_id)
             return self.output_repository.load_extraction_result(
                 data_package_id,
-                chat_model=self.ollama_client.chat_model if self.ollama_client else None,
+                chat_model=state.chat_model if state else (self.ollama_client.chat_model if self.ollama_client else None),
+                chunking_strategy=chunking_strategy or (state.chunking_strategy if state else "semantic"),
             )
         except (FileNotFoundError, ValidationError):
             return None
 
-    def _load_evidence_context_or_none(self, data_package_id: str) -> EvidenceContext | None:
+    def _load_evidence_context_or_none(self, data_package_id: str, *, chunking_strategy: str | None = None) -> EvidenceContext | None:
         if self.output_repository is None:
             return None
         try:
-            return self.output_repository.load_evidence_context(data_package_id)
+            state = self._load_run_state_or_none(data_package_id)
+            return self.output_repository.load_evidence_context(
+                data_package_id,
+                chunking_strategy=chunking_strategy or (state.chunking_strategy if state else "semantic"),
+                chat_model=state.chat_model if state else (self.ollama_client.chat_model if self.ollama_client else None),
+            )
         except (FileNotFoundError, ValidationError):
             return None
 
@@ -11073,7 +11144,14 @@ class ExtractionService:
     ) -> None:
         if self.output_repository is None:
             return
-        totals = self.output_repository.load_token_usage(data_package_id)
+        state = self._load_run_state_or_none(data_package_id)
+        chat_model = state.chat_model if state else (self.ollama_client.chat_model if self.ollama_client else None)
+        chunking_strategy = state.chunking_strategy if state else "semantic"
+        totals = self.output_repository.load_token_usage(
+            data_package_id,
+            chat_model=chat_model,
+            chunking_strategy=chunking_strategy,
+        )
         entry = totals.setdefault(
             agent_name,
             {
@@ -11122,6 +11200,8 @@ class ExtractionService:
         self.output_repository.save_token_usage(
             workflow_id=data_package_id,
             token_usage=totals,
+            chat_model=chat_model,
+            chunking_strategy=chunking_strategy,
         )
 
     def _record_llm_call_result(
@@ -11196,9 +11276,11 @@ class ExtractionService:
             return
         if status is not None:
             diagnostics.status = status
+        state = self._load_run_state_or_none(data_package_id)
         self.output_repository.append_prompt_diagnostic(
             workflow_id=data_package_id,
             chat_model=self.ollama_client.chat_model if self.ollama_client else None,
+            chunking_strategy=state.chunking_strategy if state else "semantic",
             diagnostic=diagnostics.model_dump(mode="json"),
         )
 

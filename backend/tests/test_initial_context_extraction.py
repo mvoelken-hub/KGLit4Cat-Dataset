@@ -87,7 +87,7 @@ class FakeDataSourceService:
     def get_data_package(self, _data_package_id: str) -> DataPackage:
         return self.data_package
 
-    def get_completed_content_chunks_by_file(self, _data_package_id: str):
+    def get_completed_content_chunks_by_file(self, _data_package_id: str, _chunking_strategy: str = "semantic"):
         return self.chunks_by_file
 
     def get_chunk_task_status(self, _data_package_id: str) -> TaskStatus:
@@ -172,22 +172,22 @@ class FakeOutputRepository:
         self.token_usage: dict[str, dict[str, int]] = {}
         self.prompt_diagnostics: list[dict] = []
 
-    def save_evidence_context(self, *, workflow_id: str, evidence_context: EvidenceContext):
+    def save_evidence_context(self, *, workflow_id: str, evidence_context: EvidenceContext, **_kwargs):
         self.evidence_context = evidence_context
         self.evidence_contexts.append(evidence_context)
 
-    def load_evidence_context(self, workflow_id: str) -> EvidenceContext:
+    def load_evidence_context(self, workflow_id: str, **_kwargs) -> EvidenceContext:
         if self.evidence_context is None:
             raise FileNotFoundError
         return self.evidence_context
 
-    def save_filtered_evidence_notes(self, *, workflow_id: str, ledger: FilteredEvidenceLedger):
+    def save_filtered_evidence_notes(self, *, workflow_id: str, ledger: FilteredEvidenceLedger, **_kwargs):
         self.filtered_evidence_notes = ledger
 
-    def load_filtered_evidence_notes(self, workflow_id: str) -> FilteredEvidenceLedger:
+    def load_filtered_evidence_notes(self, workflow_id: str, **_kwargs) -> FilteredEvidenceLedger:
         return self.filtered_evidence_notes
 
-    def save_extraction_result(self, *, workflow_id: str, result: ExtractionRunResult):
+    def save_extraction_result(self, *, workflow_id: str, result: ExtractionRunResult, **_kwargs):
         self.result = result
         self.initial_file_summaries = result.initial_file_summaries
         self.initial_file_summary_status = result.initial_file_summary_status
@@ -206,7 +206,7 @@ class FakeOutputRepository:
             "curated": result.curated_validation,
         }
 
-    def load_extraction_result(self, workflow_id: str, chat_model: str | None = None) -> ExtractionRunResult:
+    def load_extraction_result(self, workflow_id: str, chat_model: str | None = None, **_kwargs) -> ExtractionRunResult:
         if self.result is None:
             raise FileNotFoundError
         return self.result
@@ -269,10 +269,10 @@ class FakeOutputRepository:
             raise FileNotFoundError
         return self.run_state
 
-    def save_generated_final_draft(self, *, workflow_id: str, document: dict, chat_model: str | None = None):
+    def save_generated_final_draft(self, *, workflow_id: str, document: dict, chat_model: str | None = None, **_kwargs):
         self.generated_final_draft = document
 
-    def save_generated_initial_draft(self, *, workflow_id: str, document: dict, chat_model: str | None = None):
+    def save_generated_initial_draft(self, *, workflow_id: str, document: dict, chat_model: str | None = None, **_kwargs):
         self.generated_initial_draft = document
 
     def load_generated_initial_draft(self, workflow_id: str, chat_model: str | None = None) -> dict:
@@ -280,7 +280,7 @@ class FakeOutputRepository:
             raise FileNotFoundError
         return self.generated_initial_draft
 
-    def save_requirement_report(self, *, workflow_id: str, report, chat_model: str | None = None):
+    def save_requirement_report(self, *, workflow_id: str, report, chat_model: str | None = None, **_kwargs):
         self.requirement_report = report
 
     def load_requirement_report(self, workflow_id: str, chat_model: str | None = None):
@@ -288,44 +288,44 @@ class FakeOutputRepository:
             raise FileNotFoundError
         return self.requirement_report
 
-    def save_dataset_summary(self, *, workflow_id: str, summary: str, chat_model: str | None = None):
+    def save_dataset_summary(self, *, workflow_id: str, summary: str, chat_model: str | None = None, **_kwargs):
         self.dataset_summary = summary
 
-    def load_generated_final_draft(self, workflow_id: str, chat_model: str | None = None) -> dict:
+    def load_generated_final_draft(self, workflow_id: str, chat_model: str | None = None, **_kwargs) -> dict:
         if self.generated_final_draft is None:
             raise FileNotFoundError
         return self.generated_final_draft
 
-    def save_curated_document(self, *, workflow_id: str, document: dict, chat_model: str | None = None):
+    def save_curated_document(self, *, workflow_id: str, document: dict, chat_model: str | None = None, **_kwargs):
         self.curated_document = document
 
-    def load_curated_document(self, workflow_id: str, chat_model: str | None = None) -> dict:
+    def load_curated_document(self, workflow_id: str, chat_model: str | None = None, **_kwargs) -> dict:
         if self.curated_document is None:
             raise FileNotFoundError
         return self.curated_document
 
-    def save_projection_ledger(self, *, workflow_id: str, ledger: list, chat_model: str | None = None):
+    def save_projection_ledger(self, *, workflow_id: str, ledger: list, chat_model: str | None = None, **_kwargs):
         self.projection_ledger = ledger
 
-    def load_projection_ledger(self, workflow_id: str, chat_model: str | None = None) -> list:
+    def load_projection_ledger(self, workflow_id: str, chat_model: str | None = None, **_kwargs) -> list:
         return self.projection_ledger
 
-    def save_field_completion_ledger(self, *, workflow_id: str, ledger: list, chat_model: str | None = None):
+    def save_field_completion_ledger(self, *, workflow_id: str, ledger: list, chat_model: str | None = None, **_kwargs):
         self.field_completion_ledger = ledger
 
-    def load_field_completion_ledger(self, workflow_id: str, chat_model: str | None = None) -> list:
+    def load_field_completion_ledger(self, workflow_id: str, chat_model: str | None = None, **_kwargs) -> list:
         return self.field_completion_ledger
 
-    def save_evidence_query_ledger(self, *, workflow_id: str, ledger: list, chat_model: str | None = None):
+    def save_evidence_query_ledger(self, *, workflow_id: str, ledger: list, chat_model: str | None = None, **_kwargs):
         self.evidence_query_ledger = ledger
 
-    def load_evidence_query_ledger(self, workflow_id: str, chat_model: str | None = None) -> list:
+    def load_evidence_query_ledger(self, workflow_id: str, chat_model: str | None = None, **_kwargs) -> list:
         return self.evidence_query_ledger
 
-    def save_curation_ledger(self, *, workflow_id: str, ledger: list, chat_model: str | None = None):
+    def save_curation_ledger(self, *, workflow_id: str, ledger: list, chat_model: str | None = None, **_kwargs):
         self.curation_ledger = ledger
 
-    def load_curation_ledger(self, workflow_id: str, chat_model: str | None = None) -> list:
+    def load_curation_ledger(self, workflow_id: str, chat_model: str | None = None, **_kwargs) -> list:
         return self.curation_ledger
 
     def save_validation(
@@ -335,10 +335,11 @@ class FakeOutputRepository:
         validation,
         curated_validation=None,
         chat_model: str | None = None,
+        **_kwargs,
     ):
         self.validation = {"generated": validation, "curated": curated_validation}
 
-    def load_validation(self, workflow_id: str, chat_model: str | None = None) -> dict:
+    def load_validation(self, workflow_id: str, chat_model: str | None = None, **_kwargs) -> dict:
         if self.validation is None:
             raise FileNotFoundError
         return self.validation
@@ -349,14 +350,17 @@ class FakeOutputRepository:
     def load_extraction_warnings(self, workflow_id: str) -> list[str]:
         return self.warnings
 
-    def save_token_usage(self, *, workflow_id: str, token_usage: dict[str, dict[str, int]]):
+    def save_token_usage(self, *, workflow_id: str, token_usage: dict[str, dict[str, int]], **_kwargs):
         self.token_usage = token_usage
 
-    def load_token_usage(self, workflow_id: str) -> dict[str, dict[str, int]]:
+    def load_token_usage(self, workflow_id: str, **_kwargs) -> dict[str, dict[str, int]]:
         return self.token_usage
 
-    def append_prompt_diagnostic(self, *, workflow_id: str, diagnostic: dict, chat_model: str | None = None):
+    def append_prompt_diagnostic(self, *, workflow_id: str, diagnostic: dict, chat_model: str | None = None, **_kwargs):
         self.prompt_diagnostics.append(diagnostic)
+
+    def save_grounding_artifacts(self, **_kwargs):
+        pass
 
     def clear_prompt_diagnostics(self, workflow_id: str, chat_model: str | None = None):
         self.prompt_diagnostics = []
@@ -1931,6 +1935,7 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     "profile_identifier": "profile",
                     "qualitative_vocab_identifiers": ["voc4cat"],
                     "resume": True,
+                    "chunking_strategy": "fixed_tokens",
                 }
             ],
         )

@@ -1,7 +1,6 @@
 import json
-import hashlib
-import re
 import os
+import re
 import shutil
 import tempfile
 import time
@@ -12,15 +11,17 @@ from app.domain.extraction import (
     CurationLedgerRecord,
     DraftValidationResult,
     EvidenceQueryLedgerEntry,
-    FilteredEvidenceLedger,
     ExtractionFileSummary,
-    InitialFileSummaryDiagnostics,
-    InitialFileSummaryStatus,
+    ExtractionNormalization,
     ExtractionOverview,
     ExtractionOverviewStatus,
     ExtractionRunResult,
     ExtractionRunState,
+    ExtractionVocabQueryRecord,
     FieldCompletionLedgerRecord,
+    FilteredEvidenceLedger,
+    InitialFileSummaryDiagnostics,
+    InitialFileSummaryStatus,
     InitialOverviewFailureDiagnostic,
     InitialOverviewPromptDiagnostic,
     ProjectionLedgerRecord,
@@ -39,7 +40,7 @@ EXTRACTION_RESULT_FILE = "extraction_result.json"
 EXTRACTION_RUN_STATE_FILE = "extraction_run_state.json"
 EXTRACTION_WARNINGS_FILE = "extraction_warnings.json"
 TOKEN_USAGE_FILE = "token_usage.json"
-PROMPT_DIAGNOSTICS_DIR = "prompt_diagnostics"
+PROMPTS_DIR = "prompts"
 INITIAL_FILE_SUMMARIES_FILE = "initial_file_summaries.json"
 INITIAL_FILE_SUMMARY_DIAGNOSTICS_FILE = "initial_file_summary_diagnostics.json"
 INITIAL_EXTRACTION_OVERVIEW_FILE = "initial_extraction_overview.json"
@@ -54,6 +55,9 @@ FIELD_COMPLETION_LEDGER_FILE = "field_completion_ledger.json"
 EVIDENCE_QUERY_LEDGER_FILE = "evidence_query_ledger.json"
 CURATION_LEDGER_FILE = "curation_ledger.json"
 VALIDATION_FILE = "validation.json"
+VOCAB_QUERIES_FILE = "vocab_queries.json"
+NORMALIZATION_FILE = "normalization.json"
+ARTIFACT_INDEX_FILE = "artifact_index.json"
 
 
 class FileSystemExtractionOutputRepository:
@@ -65,20 +69,25 @@ class FileSystemExtractionOutputRepository:
         *,
         workflow_id: str,
         evidence_context: RoutedEvidenceContext,
+        chunking_strategy: str = "semantic",
+        chat_model: str | None = None,
     ) -> None:
-        workflow_dir = self._workflow_dir(workflow_id)
-        self._write_json_file(workflow_dir / EVIDENCE_CONTEXT_FILE, evidence_context.model_dump(mode="json"))
-        self._write_json_file(workflow_dir / PORTABLE_EVIDENCE_FILE, [item.model_dump(mode="json") for item in evidence_context.portable_evidence])
-        self._write_json_file(workflow_dir / CONTEXTUAL_EVIDENCE_FILE, [item.model_dump(mode="json") for item in evidence_context.contextual_evidence])
-        self._write_json_file(workflow_dir / REJECTED_EVIDENCE_FILE, [item.model_dump(mode="json") for item in evidence_context.rejected_evidence])
-        self._write_json_file(workflow_dir / EVIDENCE_ASSESSMENTS_FILE, [item.model_dump(mode="json") for item in evidence_context.assessments])
+        output_dir = self._branch_dir(workflow_id, "evidence_notes", chunking_strategy, chat_model)
+        self._write_json_artifact(output_dir / EVIDENCE_CONTEXT_FILE, evidence_context.model_dump(mode="json"))
+        self._write_json_artifact(output_dir / PORTABLE_EVIDENCE_FILE, [item.model_dump(mode="json") for item in evidence_context.portable_evidence])
+        self._write_json_artifact(output_dir / CONTEXTUAL_EVIDENCE_FILE, [item.model_dump(mode="json") for item in evidence_context.contextual_evidence])
+        self._write_json_artifact(output_dir / REJECTED_EVIDENCE_FILE, [item.model_dump(mode="json") for item in evidence_context.rejected_evidence])
+        self._write_json_artifact(output_dir / EVIDENCE_ASSESSMENTS_FILE, [item.model_dump(mode="json") for item in evidence_context.assessments])
 
-    def load_evidence_context(self, workflow_id: str) -> RoutedEvidenceContext:
-        path = self._workflow_dir(workflow_id) / EVIDENCE_CONTEXT_FILE
+    def load_evidence_context(
+        self,
+        workflow_id: str,
+        chunking_strategy: str = "semantic",
+        chat_model: str | None = None,
+    ) -> RoutedEvidenceContext:
+        path = self._branch_dir(workflow_id, "evidence_notes", chunking_strategy, chat_model) / EVIDENCE_CONTEXT_FILE
         if not path.exists():
-            raise FileNotFoundError(
-                f"Evidence context output not found for workflow '{workflow_id}'."
-            )
+            raise FileNotFoundError(f"Evidence context output not found for workflow '{workflow_id}'.")
         return RoutedEvidenceContext.model_validate(self._read_json_file(path))
 
     def save_filtered_evidence_notes(
@@ -86,14 +95,25 @@ class FileSystemExtractionOutputRepository:
         *,
         workflow_id: str,
         ledger: FilteredEvidenceLedger,
+        chunking_strategy: str = "semantic",
+        chat_model: str | None = None,
     ) -> None:
-        self._write_json_file(
-            self._workflow_dir(workflow_id) / FILTERED_EVIDENCE_NOTES_FILE,
+        self._write_json_artifact(
+            self._branch_dir(workflow_id, "evidence_notes", chunking_strategy, chat_model)
+            / FILTERED_EVIDENCE_NOTES_FILE,
             ledger.model_dump(mode="json"),
         )
 
-    def load_filtered_evidence_notes(self, workflow_id: str) -> FilteredEvidenceLedger:
-        path = self._workflow_dir(workflow_id) / FILTERED_EVIDENCE_NOTES_FILE
+    def load_filtered_evidence_notes(
+        self,
+        workflow_id: str,
+        chunking_strategy: str = "semantic",
+        chat_model: str | None = None,
+    ) -> FilteredEvidenceLedger:
+        path = (
+            self._branch_dir(workflow_id, "evidence_notes", chunking_strategy, chat_model)
+            / FILTERED_EVIDENCE_NOTES_FILE
+        )
         if not path.exists():
             return FilteredEvidenceLedger()
         return FilteredEvidenceLedger.model_validate(self._read_json_file(path))
@@ -103,79 +123,37 @@ class FileSystemExtractionOutputRepository:
         *,
         workflow_id: str,
         result: ExtractionRunResult,
+        chunking_strategy: str = "semantic",
     ) -> None:
-        self.save_initial_file_summaries(
-            workflow_id=workflow_id,
-            summaries=result.initial_file_summaries,
-            status=result.initial_file_summary_status,
-            chat_model=result.chat_model,
-        )
-        self.save_initial_extraction_overview(
-            workflow_id=workflow_id,
-            overview=result.initial_extraction_overview,
-            status=result.initial_extraction_overview_status,
-            chat_model=result.chat_model,
-        )
-        self.save_generated_final_draft(
-            workflow_id=workflow_id,
-            document=result.generated_final_draft,
-            chat_model=result.chat_model,
-        )
+        chat_model = result.chat_model
+        self.save_initial_file_summaries(workflow_id=workflow_id, summaries=result.initial_file_summaries, status=result.initial_file_summary_status, chat_model=chat_model)
+        self.save_initial_extraction_overview(workflow_id=workflow_id, overview=result.initial_extraction_overview, status=result.initial_extraction_overview_status, chat_model=chat_model)
         if result.generated_initial_draft is not None:
-            self.save_generated_initial_draft(
-                workflow_id=workflow_id,
-                document=result.generated_initial_draft,
-                chat_model=result.chat_model,
-            )
+            self.save_generated_initial_draft(workflow_id=workflow_id, document=result.generated_initial_draft, chat_model=chat_model, chunking_strategy=chunking_strategy)
+        self.save_generated_final_draft(workflow_id=workflow_id, document=result.generated_final_draft, chat_model=chat_model, chunking_strategy=chunking_strategy)
         if result.requirement_report is not None:
-            self.save_requirement_report(
-                workflow_id=workflow_id,
-                report=result.requirement_report,
-                chat_model=result.chat_model,
-            )
+            self.save_requirement_report(workflow_id=workflow_id, report=result.requirement_report, chat_model=chat_model, chunking_strategy=chunking_strategy)
         if result.curated_document is not None:
-            self.save_curated_document(
-                workflow_id=workflow_id,
-                document=result.curated_document,
-                chat_model=result.chat_model,
-            )
-        self.save_projection_ledger(
-            workflow_id=workflow_id,
-            ledger=result.projection_ledger,
-            chat_model=result.chat_model,
-        )
-        self.save_field_completion_ledger(
-            workflow_id=workflow_id,
-            ledger=result.field_completion_ledger,
-            chat_model=result.chat_model,
-        )
-        self.save_evidence_query_ledger(
-            workflow_id=workflow_id,
-            ledger=result.evidence_query_ledger,
-            chat_model=result.chat_model,
-        )
-        self.save_curation_ledger(
-            workflow_id=workflow_id,
-            ledger=result.curation_ledger,
-            chat_model=result.chat_model,
-        )
-        self.save_validation(
-            workflow_id=workflow_id,
-            validation=result.validation,
-            curated_validation=result.curated_validation,
-            chat_model=result.chat_model,
-        )
-        self._write_json_file(
-            self._workflow_dir(workflow_id, result.chat_model) / EXTRACTION_RESULT_FILE,
+            self.save_curated_document(workflow_id=workflow_id, document=result.curated_document, chat_model=chat_model, chunking_strategy=chunking_strategy)
+        self.save_projection_ledger(workflow_id=workflow_id, ledger=result.projection_ledger, chat_model=chat_model, chunking_strategy=chunking_strategy)
+        self.save_field_completion_ledger(workflow_id=workflow_id, ledger=result.field_completion_ledger, chat_model=chat_model, chunking_strategy=chunking_strategy)
+        self.save_evidence_query_ledger(workflow_id=workflow_id, ledger=result.evidence_query_ledger, chat_model=chat_model, chunking_strategy=chunking_strategy)
+        self.save_curation_ledger(workflow_id=workflow_id, ledger=result.curation_ledger, chat_model=chat_model, chunking_strategy=chunking_strategy)
+        self.save_validation(workflow_id=workflow_id, validation=result.validation, curated_validation=result.curated_validation, chat_model=chat_model, chunking_strategy=chunking_strategy)
+        self._write_json_artifact(
+            self._result_dir(workflow_id, chunking_strategy, chat_model) / EXTRACTION_RESULT_FILE,
             result.model_dump(mode="json"),
         )
 
-    def load_extraction_result(self, workflow_id: str, chat_model: str | None = None) -> ExtractionRunResult:
-        path = self._workflow_dir(workflow_id, chat_model) / EXTRACTION_RESULT_FILE
+    def load_extraction_result(
+        self,
+        workflow_id: str,
+        chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
+    ) -> ExtractionRunResult:
+        path = self._result_dir(workflow_id, chunking_strategy, chat_model) / EXTRACTION_RESULT_FILE
         if not path.exists():
-            raise FileNotFoundError(
-                f"Extraction result output not found for workflow '{workflow_id}'."
-            )
+            raise FileNotFoundError(f"Extraction result output not found for workflow '{workflow_id}'.")
         return ExtractionRunResult.model_validate(self._read_json_file(path))
 
     def save_initial_file_summaries(
@@ -186,12 +164,9 @@ class FileSystemExtractionOutputRepository:
         status: InitialFileSummaryStatus | None,
         chat_model: str | None = None,
     ) -> None:
-        self._write_json_file(
-            self._workflow_dir(workflow_id, chat_model) / INITIAL_FILE_SUMMARIES_FILE,
-            {
-                "status": status,
-                "summaries": [summary.model_dump(mode="json") for summary in summaries],
-            },
+        self._write_json_artifact(
+            self._overview_dir(workflow_id, chat_model) / INITIAL_FILE_SUMMARIES_FILE,
+            {"status": status, "summaries": [summary.model_dump(mode="json") for summary in summaries]},
         )
 
     def load_initial_file_summaries(
@@ -199,24 +174,20 @@ class FileSystemExtractionOutputRepository:
         workflow_id: str,
         chat_model: str | None = None,
     ) -> tuple[list[ExtractionFileSummary], InitialFileSummaryStatus | None]:
-        path = self._workflow_dir(workflow_id, chat_model) / INITIAL_FILE_SUMMARIES_FILE
+        path = self._overview_dir(workflow_id, chat_model) / INITIAL_FILE_SUMMARIES_FILE
         if not path.exists():
-            raise FileNotFoundError(
-                f"Initial file summaries not found for workflow '{workflow_id}'."
-            )
+            raise FileNotFoundError(f"Initial file summaries not found for workflow '{workflow_id}'.")
         payload = self._read_json_file(path)
         if not isinstance(payload, dict):
             raise ValueError("Initial file summaries artifact is not a JSON object.")
-        summaries_payload = payload.get("summaries")
-        summaries = (
-            [ExtractionFileSummary.model_validate(item) for item in summaries_payload]
-            if isinstance(summaries_payload, list)
-            else []
-        )
         status = payload.get("status")
         if status not in {"completed", "partial", "failed", None}:
             status = "failed"
-        return summaries, status
+        summaries = payload.get("summaries")
+        return (
+            [ExtractionFileSummary.model_validate(item) for item in summaries] if isinstance(summaries, list) else [],
+            status,
+        )
 
     def save_initial_file_summary_diagnostics(
         self,
@@ -225,11 +196,12 @@ class FileSystemExtractionOutputRepository:
         diagnostics: InitialFileSummaryDiagnostics | None,
         chat_model: str | None = None,
     ) -> None:
-        path = self._workflow_dir(workflow_id, chat_model) / INITIAL_FILE_SUMMARY_DIAGNOSTICS_FILE
+        path = self._overview_dir(workflow_id, chat_model) / INITIAL_FILE_SUMMARY_DIAGNOSTICS_FILE
         if diagnostics is None:
             path.unlink(missing_ok=True)
+            self._refresh_artifact_index(workflow_id)
             return
-        self._write_json_file(path, diagnostics.model_dump(mode="json"))
+        self._write_json_artifact(path, diagnostics.model_dump(mode="json"))
 
     def save_initial_extraction_overview(
         self,
@@ -239,16 +211,9 @@ class FileSystemExtractionOutputRepository:
         status: ExtractionOverviewStatus | None,
         chat_model: str | None = None,
     ) -> None:
-        self._write_json_file(
-            self._workflow_dir(workflow_id, chat_model) / INITIAL_EXTRACTION_OVERVIEW_FILE,
-            {
-                "status": status,
-                "overview": (
-                    overview.model_dump(mode="json")
-                    if overview is not None
-                    else None
-                ),
-            },
+        self._write_json_artifact(
+            self._overview_dir(workflow_id, chat_model) / INITIAL_EXTRACTION_OVERVIEW_FILE,
+            {"status": status, "overview": overview.model_dump(mode="json") if overview is not None else None},
         )
 
     def load_initial_extraction_overview(
@@ -256,24 +221,20 @@ class FileSystemExtractionOutputRepository:
         workflow_id: str,
         chat_model: str | None = None,
     ) -> tuple[ExtractionOverview | None, ExtractionOverviewStatus | None]:
-        path = self._workflow_dir(workflow_id, chat_model) / INITIAL_EXTRACTION_OVERVIEW_FILE
+        path = self._overview_dir(workflow_id, chat_model) / INITIAL_EXTRACTION_OVERVIEW_FILE
         if not path.exists():
-            raise FileNotFoundError(
-                f"Initial extraction overview not found for workflow '{workflow_id}'."
-            )
+            raise FileNotFoundError(f"Initial extraction overview not found for workflow '{workflow_id}'.")
         payload = self._read_json_file(path)
         if not isinstance(payload, dict):
             raise ValueError("Initial extraction overview artifact is not a JSON object.")
-        overview_payload = payload.get("overview")
-        overview = (
-            ExtractionOverview.model_validate(overview_payload)
-            if isinstance(overview_payload, dict)
-            else None
-        )
         status = payload.get("status")
         if status not in {"structured", "unstructured_fallback", "failed", None}:
             status = "failed"
-        return overview, status
+        overview = payload.get("overview")
+        return (
+            ExtractionOverview.model_validate(overview) if isinstance(overview, dict) else None,
+            status,
+        )
 
     def save_initial_extraction_overview_diagnostic(
         self,
@@ -282,11 +243,12 @@ class FileSystemExtractionOutputRepository:
         diagnostic: InitialOverviewPromptDiagnostic | InitialOverviewFailureDiagnostic | None,
         chat_model: str | None = None,
     ) -> None:
-        path = self._workflow_dir(workflow_id, chat_model) / INITIAL_EXTRACTION_OVERVIEW_DIAGNOSTIC_FILE
+        path = self._overview_dir(workflow_id, chat_model) / INITIAL_EXTRACTION_OVERVIEW_DIAGNOSTIC_FILE
         if diagnostic is None:
             path.unlink(missing_ok=True)
+            self._refresh_artifact_index(workflow_id)
             return
-        self._write_json_file(path, diagnostic.model_dump(mode="json"))
+        self._write_json_artifact(path, diagnostic.model_dump(mode="json"))
 
     def save_generated_initial_draft(
         self,
@@ -294,9 +256,11 @@ class FileSystemExtractionOutputRepository:
         workflow_id: str,
         document: dict[str, Any],
         chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
     ) -> None:
-        self._write_json_file(
-            self._workflow_dir(workflow_id, chat_model) / GENERATED_INITIAL_DRAFT_FILE,
+        self._write_json_artifact(
+            self._branch_dir(workflow_id, "profile_draft", chunking_strategy, chat_model)
+            / GENERATED_INITIAL_DRAFT_FILE,
             document,
         )
 
@@ -306,9 +270,10 @@ class FileSystemExtractionOutputRepository:
         workflow_id: str,
         document: dict[str, Any],
         chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
     ) -> None:
-        self._write_json_file(
-            self._workflow_dir(workflow_id, chat_model) / GENERATED_FINAL_DRAFT_FILE,
+        self._write_json_artifact(
+            self._branch_dir(workflow_id, "profile_draft", chunking_strategy, chat_model) / GENERATED_FINAL_DRAFT_FILE,
             document,
         )
 
@@ -318,9 +283,10 @@ class FileSystemExtractionOutputRepository:
         workflow_id: str,
         report: RequirementReport,
         chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
     ) -> None:
-        self._write_json_file(
-            self._workflow_dir(workflow_id, chat_model) / REQUIREMENT_REPORT_FILE,
+        self._write_json_artifact(
+            self._branch_dir(workflow_id, "profile_draft", chunking_strategy, chat_model) / REQUIREMENT_REPORT_FILE,
             report.model_dump(mode="json"),
         )
 
@@ -328,12 +294,11 @@ class FileSystemExtractionOutputRepository:
         self,
         workflow_id: str,
         chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
     ) -> dict[str, Any]:
-        path = self._workflow_dir(workflow_id, chat_model) / GENERATED_FINAL_DRAFT_FILE
+        path = self._branch_dir(workflow_id, "profile_draft", chunking_strategy, chat_model) / GENERATED_FINAL_DRAFT_FILE
         if not path.exists():
-            raise FileNotFoundError(
-                f"Generated final draft not found for workflow '{workflow_id}'."
-            )
+            raise FileNotFoundError(f"Generated final draft not found for workflow '{workflow_id}'.")
         payload = self._read_json_file(path)
         if not isinstance(payload, dict):
             raise ValueError("Generated final draft artifact is not a JSON object.")
@@ -345,10 +310,12 @@ class FileSystemExtractionOutputRepository:
         workflow_id: str,
         summary: str,
         chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
     ) -> None:
-        path = self._workflow_dir(workflow_id, chat_model) / DATASET_SUMMARY_FILE
+        path = self._branch_dir(workflow_id, "profile_draft", chunking_strategy, chat_model) / DATASET_SUMMARY_FILE
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(summary, encoding="utf-8")
+        self._refresh_artifact_index(workflow_id)
 
     def save_curated_document(
         self,
@@ -356,9 +323,10 @@ class FileSystemExtractionOutputRepository:
         workflow_id: str,
         document: dict[str, Any],
         chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
     ) -> None:
-        self._write_json_file(
-            self._workflow_dir(workflow_id, chat_model) / CURATED_DOCUMENT_FILE,
+        self._write_json_artifact(
+            self._result_dir(workflow_id, chunking_strategy, chat_model) / CURATED_DOCUMENT_FILE,
             document,
         )
 
@@ -366,12 +334,11 @@ class FileSystemExtractionOutputRepository:
         self,
         workflow_id: str,
         chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
     ) -> dict[str, Any]:
-        path = self._workflow_dir(workflow_id, chat_model) / CURATED_DOCUMENT_FILE
+        path = self._result_dir(workflow_id, chunking_strategy, chat_model) / CURATED_DOCUMENT_FILE
         if not path.exists():
-            raise FileNotFoundError(
-                f"Curated document not found for workflow '{workflow_id}'."
-            )
+            raise FileNotFoundError(f"Curated document not found for workflow '{workflow_id}'.")
         payload = self._read_json_file(path)
         if not isinstance(payload, dict):
             raise ValueError("Curated document artifact is not a JSON object.")
@@ -383,9 +350,10 @@ class FileSystemExtractionOutputRepository:
         workflow_id: str,
         ledger: list[ProjectionLedgerRecord],
         chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
     ) -> None:
-        self._write_json_file(
-            self._workflow_dir(workflow_id, chat_model) / PROJECTION_LEDGER_FILE,
+        self._write_json_artifact(
+            self._branch_dir(workflow_id, "profile_draft", chunking_strategy, chat_model) / PROJECTION_LEDGER_FILE,
             [item.model_dump(mode="json") for item in ledger],
         )
 
@@ -393,14 +361,13 @@ class FileSystemExtractionOutputRepository:
         self,
         workflow_id: str,
         chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
     ) -> list[ProjectionLedgerRecord]:
-        path = self._workflow_dir(workflow_id, chat_model) / PROJECTION_LEDGER_FILE
+        path = self._branch_dir(workflow_id, "profile_draft", chunking_strategy, chat_model) / PROJECTION_LEDGER_FILE
         if not path.exists():
             return []
         payload = self._read_json_file(path)
-        if not isinstance(payload, list):
-            return []
-        return [ProjectionLedgerRecord.model_validate(item) for item in payload]
+        return [ProjectionLedgerRecord.model_validate(item) for item in payload] if isinstance(payload, list) else []
 
     def save_field_completion_ledger(
         self,
@@ -408,9 +375,10 @@ class FileSystemExtractionOutputRepository:
         workflow_id: str,
         ledger: list[FieldCompletionLedgerRecord],
         chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
     ) -> None:
-        self._write_json_file(
-            self._workflow_dir(workflow_id, chat_model) / FIELD_COMPLETION_LEDGER_FILE,
+        self._write_json_artifact(
+            self._branch_dir(workflow_id, "profile_draft", chunking_strategy, chat_model) / FIELD_COMPLETION_LEDGER_FILE,
             [item.model_dump(mode="json") for item in ledger],
         )
 
@@ -418,14 +386,13 @@ class FileSystemExtractionOutputRepository:
         self,
         workflow_id: str,
         chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
     ) -> list[FieldCompletionLedgerRecord]:
-        path = self._workflow_dir(workflow_id, chat_model) / FIELD_COMPLETION_LEDGER_FILE
+        path = self._branch_dir(workflow_id, "profile_draft", chunking_strategy, chat_model) / FIELD_COMPLETION_LEDGER_FILE
         if not path.exists():
             return []
         payload = self._read_json_file(path)
-        if not isinstance(payload, list):
-            return []
-        return [FieldCompletionLedgerRecord.model_validate(item) for item in payload]
+        return [FieldCompletionLedgerRecord.model_validate(item) for item in payload] if isinstance(payload, list) else []
 
     def save_evidence_query_ledger(
         self,
@@ -433,9 +400,10 @@ class FileSystemExtractionOutputRepository:
         workflow_id: str,
         ledger: list[EvidenceQueryLedgerEntry],
         chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
     ) -> None:
-        self._write_json_file(
-            self._workflow_dir(workflow_id, chat_model) / EVIDENCE_QUERY_LEDGER_FILE,
+        self._write_json_artifact(
+            self._branch_dir(workflow_id, "profile_draft", chunking_strategy, chat_model) / EVIDENCE_QUERY_LEDGER_FILE,
             [item.model_dump(mode="json") for item in ledger],
         )
 
@@ -443,14 +411,13 @@ class FileSystemExtractionOutputRepository:
         self,
         workflow_id: str,
         chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
     ) -> list[EvidenceQueryLedgerEntry]:
-        path = self._workflow_dir(workflow_id, chat_model) / EVIDENCE_QUERY_LEDGER_FILE
+        path = self._branch_dir(workflow_id, "profile_draft", chunking_strategy, chat_model) / EVIDENCE_QUERY_LEDGER_FILE
         if not path.exists():
             return []
         payload = self._read_json_file(path)
-        if not isinstance(payload, list):
-            return []
-        return [EvidenceQueryLedgerEntry.model_validate(item) for item in payload]
+        return [EvidenceQueryLedgerEntry.model_validate(item) for item in payload] if isinstance(payload, list) else []
 
     def save_curation_ledger(
         self,
@@ -458,9 +425,10 @@ class FileSystemExtractionOutputRepository:
         workflow_id: str,
         ledger: list[CurationLedgerRecord],
         chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
     ) -> None:
-        self._write_json_file(
-            self._workflow_dir(workflow_id, chat_model) / CURATION_LEDGER_FILE,
+        self._write_json_artifact(
+            self._result_dir(workflow_id, chunking_strategy, chat_model) / CURATION_LEDGER_FILE,
             [item.model_dump(mode="json") for item in ledger],
         )
 
@@ -468,14 +436,13 @@ class FileSystemExtractionOutputRepository:
         self,
         workflow_id: str,
         chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
     ) -> list[CurationLedgerRecord]:
-        path = self._workflow_dir(workflow_id, chat_model) / CURATION_LEDGER_FILE
+        path = self._result_dir(workflow_id, chunking_strategy, chat_model) / CURATION_LEDGER_FILE
         if not path.exists():
             return []
         payload = self._read_json_file(path)
-        if not isinstance(payload, list):
-            return []
-        return [CurationLedgerRecord.model_validate(item) for item in payload]
+        return [CurationLedgerRecord.model_validate(item) for item in payload] if isinstance(payload, list) else []
 
     def save_validation(
         self,
@@ -484,16 +451,13 @@ class FileSystemExtractionOutputRepository:
         validation: DraftValidationResult,
         curated_validation: DraftValidationResult | None = None,
         chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
     ) -> None:
-        self._write_json_file(
-            self._workflow_dir(workflow_id, chat_model) / VALIDATION_FILE,
+        self._write_json_artifact(
+            self._branch_dir(workflow_id, "profile_draft", chunking_strategy, chat_model) / VALIDATION_FILE,
             {
                 "generated": validation.model_dump(mode="json"),
-                "curated": (
-                    curated_validation.model_dump(mode="json")
-                    if curated_validation is not None
-                    else None
-                ),
+                "curated": curated_validation.model_dump(mode="json") if curated_validation is not None else None,
             },
         )
 
@@ -501,23 +465,32 @@ class FileSystemExtractionOutputRepository:
         self,
         workflow_id: str,
         chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
     ) -> tuple[DraftValidationResult, DraftValidationResult | None]:
-        path = self._workflow_dir(workflow_id, chat_model) / VALIDATION_FILE
+        path = self._branch_dir(workflow_id, "profile_draft", chunking_strategy, chat_model) / VALIDATION_FILE
         if not path.exists():
-            raise FileNotFoundError(
-                f"Validation artifact not found for workflow '{workflow_id}'."
-            )
+            raise FileNotFoundError(f"Validation artifact not found for workflow '{workflow_id}'.")
         payload = self._read_json_file(path)
         if not isinstance(payload, dict):
             raise ValueError("Validation artifact is not a JSON object.")
-        validation = DraftValidationResult.model_validate(payload.get("generated", {}))
-        curated_payload = payload.get("curated")
-        curated_validation = (
-            DraftValidationResult.model_validate(curated_payload)
-            if isinstance(curated_payload, dict)
-            else None
+        curated = payload.get("curated")
+        return (
+            DraftValidationResult.model_validate(payload.get("generated", {})),
+            DraftValidationResult.model_validate(curated) if isinstance(curated, dict) else None,
         )
-        return validation, curated_validation
+
+    def save_grounding_artifacts(
+        self,
+        *,
+        workflow_id: str,
+        vocab_queries: list[ExtractionVocabQueryRecord],
+        normalization: ExtractionNormalization,
+        chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
+    ) -> None:
+        output_dir = self._branch_dir(workflow_id, "grounding", chunking_strategy, chat_model)
+        self._write_json_artifact(output_dir / VOCAB_QUERIES_FILE, [item.model_dump(mode="json") for item in vocab_queries])
+        self._write_json_artifact(output_dir / NORMALIZATION_FILE, normalization.model_dump(mode="json"))
 
     def save_extraction_run_state(
         self,
@@ -525,76 +498,64 @@ class FileSystemExtractionOutputRepository:
         workflow_id: str,
         state: ExtractionRunState,
     ) -> None:
-        self._write_json_file(
-            self._workflow_dir(workflow_id, state.chat_model) / EXTRACTION_RUN_STATE_FILE,
-            state.model_dump(mode="json"),
-        )
+        self._write_json_artifact(self._workflow_dir(workflow_id) / EXTRACTION_RUN_STATE_FILE, state.model_dump(mode="json"))
 
     def load_extraction_run_state(self, workflow_id: str, chat_model: str | None = None) -> ExtractionRunState:
-        path = self._workflow_dir(workflow_id, chat_model) / EXTRACTION_RUN_STATE_FILE
+        path = self._workflow_dir(workflow_id) / EXTRACTION_RUN_STATE_FILE
         if not path.exists():
-            raise FileNotFoundError(
-                f"Extraction run state not found for workflow '{workflow_id}'."
-            )
+            raise FileNotFoundError(f"Extraction run state not found for workflow '{workflow_id}'.")
         return ExtractionRunState.model_validate(self._read_json_file(path))
 
-    def save_extraction_warnings(
-        self,
-        *,
-        workflow_id: str,
-        warnings: list[str],
-    ) -> None:
-        self._write_json_file(
-            self._workflow_dir(workflow_id) / EXTRACTION_WARNINGS_FILE,
-            warnings,
-        )
+    def save_extraction_warnings(self, *, workflow_id: str, warnings: list[str]) -> None:
+        self._write_json_artifact(self._workflow_dir(workflow_id) / EXTRACTION_WARNINGS_FILE, warnings)
 
     def load_extraction_warnings(self, workflow_id: str) -> list[str]:
         path = self._workflow_dir(workflow_id) / EXTRACTION_WARNINGS_FILE
         if not path.exists():
             return []
         payload = self._read_json_file(path)
-        if not isinstance(payload, list):
-            return []
-        return [str(item) for item in payload]
+        return [str(item) for item in payload] if isinstance(payload, list) else []
 
     def save_token_usage(
         self,
         *,
         workflow_id: str,
         token_usage: dict[str, dict[str, int]],
+        chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
     ) -> None:
-        self._write_json_file(
-            self._workflow_dir(workflow_id) / TOKEN_USAGE_FILE,
+        self._write_json_artifact(
+            self._result_dir(workflow_id, chunking_strategy, chat_model) / TOKEN_USAGE_FILE,
             token_usage,
         )
 
-    def load_token_usage(self, workflow_id: str) -> dict[str, dict[str, int]]:
-        path = self._workflow_dir(workflow_id) / TOKEN_USAGE_FILE
+    def load_token_usage(
+        self,
+        workflow_id: str,
+        chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
+    ) -> dict[str, dict[str, int]]:
+        path = self._result_dir(workflow_id, chunking_strategy, chat_model) / TOKEN_USAGE_FILE
         if not path.exists():
             return {}
         payload = self._read_json_file(path)
         if not isinstance(payload, dict):
             return {}
-        result: dict[str, dict[str, int]] = {}
-        for agent_name, values in payload.items():
-            if not isinstance(agent_name, str) or not isinstance(values, dict):
-                continue
-            result[agent_name] = {
-                key: self._safe_int(values.get(key))
-                for key in (
-                    "input_tokens",
-                    "output_tokens",
-                    "total_tokens",
-                    "requests",
-                    "operation_count",
-                    "prompt_eval_duration_ms",
-                    "load_duration_ms",
-                    "response_duration_ms",
-                    "total_duration_ms",
-                )
-            }
-        return result
+        return {
+            str(agent_name): {key: self._safe_int(values.get(key)) for key in (
+                "input_tokens",
+                "output_tokens",
+                "total_tokens",
+                "requests",
+                "operation_count",
+                "prompt_eval_duration_ms",
+                "load_duration_ms",
+                "response_duration_ms",
+                "total_duration_ms",
+            )}
+            for agent_name, values in payload.items()
+            if isinstance(values, dict)
+        }
 
     def append_prompt_diagnostic(
         self,
@@ -602,23 +563,27 @@ class FileSystemExtractionOutputRepository:
         workflow_id: str,
         diagnostic: dict[str, Any],
         chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
     ) -> None:
-        diagnostics_dir = self._workflow_dir(workflow_id, chat_model) / PROMPT_DIAGNOSTICS_DIR
-        diagnostics_dir.mkdir(parents=True, exist_ok=True)
         operation_id = str(diagnostic.get("operation_id") or "structured_completion")
-        safe_id = hashlib.sha256(operation_id.encode("utf-8")).hexdigest()[:16]
+        diagnostics_dir = self._prompt_dir(workflow_id, operation_id, chunking_strategy, chat_model)
+        diagnostics_dir.mkdir(parents=True, exist_ok=True)
+        safe_id = self._sanitize_path_component(operation_id)[:96]
         existing = sorted(diagnostics_dir.glob(f"{safe_id}__*.json"))
-        path = diagnostics_dir / f"{safe_id}__{len(existing) + 1:04d}.json"
-        self._write_json_file(path, diagnostic)
+        self._write_json_artifact(diagnostics_dir / f"{safe_id}__{len(existing) + 1:04d}.json", diagnostic)
 
     def clear_prompt_diagnostics(
         self,
         workflow_id: str,
         chat_model: str | None = None,
     ) -> None:
-        diagnostics_dir = self._workflow_dir(workflow_id, chat_model) / PROMPT_DIAGNOSTICS_DIR
-        if diagnostics_dir.exists():
-            _remove_tree(diagnostics_dir)
+        workflow_dir = self._workflow_dir(workflow_id)
+        if not workflow_dir.exists():
+            return
+        for prompts_dir in workflow_dir.rglob(PROMPTS_DIR):
+            if prompts_dir.is_dir():
+                _remove_tree(prompts_dir)
+        self._write_artifact_index(workflow_dir)
 
     def clear_extraction_run(self, workflow_id: str) -> None:
         workflow_dir = self._workflow_dir(workflow_id)
@@ -629,43 +594,152 @@ class FileSystemExtractionOutputRepository:
         workflow_dir = self._workflow_dir(workflow_id)
         if not workflow_dir.exists():
             return
-        downstream_files = {
-            EVIDENCE_CONTEXT_FILE,
-            FILTERED_EVIDENCE_NOTES_FILE,
-            EXTRACTION_RESULT_FILE,
-            GENERATED_FINAL_DRAFT_FILE,
-            REQUIREMENT_REPORT_FILE,
-            DATASET_SUMMARY_FILE,
-            CURATED_DOCUMENT_FILE,
-            PROJECTION_LEDGER_FILE,
-            FIELD_COMPLETION_LEDGER_FILE,
-            EVIDENCE_QUERY_LEDGER_FILE,
-            CURATION_LEDGER_FILE,
-            VALIDATION_FILE,
-            PROMPT_DIAGNOSTICS_DIR,
-        }
-        for path in workflow_dir.rglob("*"):
-            if path.is_file() and path.name in downstream_files:
-                path.unlink()
-            elif path.is_dir() and path.name in downstream_files:
+        for name in ("evidence_notes", "profile_draft", "grounding", "result"):
+            path = workflow_dir / name
+            if path.exists():
                 _remove_tree(path)
+        for path in (workflow_dir / EXTRACTION_WARNINGS_FILE, workflow_dir / ARTIFACT_INDEX_FILE):
+            path.unlink(missing_ok=True)
+        self._write_artifact_index(workflow_dir)
 
-    def _workflow_dir(self, workflow_id: str, chat_model: str | None = None) -> Path:
+    def _overview_dir(self, workflow_id: str, chat_model: str | None = None) -> Path:
+        return self._checked_dir(workflow_id, "overview", self._safe_model(chat_model))
+
+    def _branch_dir(
+        self,
+        workflow_id: str,
+        stage: str,
+        chunking_strategy: str = "semantic",
+        chat_model: str | None = None,
+    ) -> Path:
+        return self._checked_dir(workflow_id, stage, self._safe_strategy(chunking_strategy), self._safe_model(chat_model))
+
+    def _result_dir(
+        self,
+        workflow_id: str,
+        chunking_strategy: str = "semantic",
+        chat_model: str | None = None,
+    ) -> Path:
+        return self._branch_dir(workflow_id, "result", chunking_strategy, chat_model)
+
+    def _prompt_dir(
+        self,
+        workflow_id: str,
+        operation_id: str,
+        chunking_strategy: str,
+        chat_model: str | None,
+    ) -> Path:
+        stage = self._prompt_stage(operation_id)
+        if stage == "overview":
+            return self._overview_dir(workflow_id, chat_model) / PROMPTS_DIR
+        return self._branch_dir(workflow_id, stage, chunking_strategy, chat_model) / PROMPTS_DIR
+
+    def _workflow_dir(self, workflow_id: str) -> Path:
+        return self._checked_dir(workflow_id)
+
+    def _checked_dir(self, workflow_id: str, *parts: str | None) -> Path:
         base_path = self.base_path.resolve()
-        # Branch output by model so the same dataset can be compared across models.
-        # When chat_model is provided, results live under workflow_id/<model>/
-        safe_model = self._sanitize_path_component(chat_model) if chat_model else None
-        relative = workflow_id if safe_model is None else f"{workflow_id}/{safe_model}"
-        workflow_dir = (base_path / relative).resolve()
-        if not workflow_dir.is_relative_to(base_path):
+        path = (base_path / self._sanitize_path_component(workflow_id)).resolve()
+        for part in parts:
+            if part:
+                path = (path / part).resolve()
+        if not path.is_relative_to(base_path):
             raise ValueError(f"Workflow output path escapes output directory: {workflow_id}")
-        return workflow_dir
+        return path
+
+    def _write_json_artifact(self, path: Path, content: Any) -> None:
+        self._write_json_file(path, content)
+        self._refresh_artifact_index_for_path(path)
+
+    def _refresh_artifact_index_for_path(self, path: Path) -> None:
+        base_path = self.base_path.resolve()
+        path = path.resolve()
+        if not path.is_relative_to(base_path) or path.name == ARTIFACT_INDEX_FILE:
+            return
+        parts = path.relative_to(base_path).parts
+        if parts:
+            workflow_dir = base_path / parts[0]
+            if workflow_dir.exists():
+                self._write_artifact_index(workflow_dir)
+
+    def _refresh_artifact_index(self, workflow_id: str) -> None:
+        workflow_dir = self._workflow_dir(workflow_id)
+        if workflow_dir.exists():
+            self._write_artifact_index(workflow_dir)
+
+    def _write_artifact_index(self, workflow_dir: Path) -> None:
+        artifacts = []
+        for path in sorted(workflow_dir.rglob("*")):
+            if not path.is_file() or path.name == ARTIFACT_INDEX_FILE:
+                continue
+            relative_path = path.relative_to(workflow_dir).as_posix()
+            entry = {
+                "path": relative_path,
+                "stage": self._stage_from_relative_path(relative_path),
+                "strategy": self._strategy_from_relative_path(relative_path),
+                "model": self._model_from_relative_path(relative_path),
+                "size_bytes": path.stat().st_size,
+            }
+            if f"/{PROMPTS_DIR}/" in f"/{relative_path}":
+                try:
+                    payload = self._read_json_file(path)
+                    if isinstance(payload, dict):
+                        entry["operation_id"] = payload.get("operation_id")
+                        entry["agent_name"] = payload.get("agent_name")
+                except (OSError, json.JSONDecodeError):
+                    pass
+            artifacts.append(entry)
+        by_stage: dict[str, list[str]] = {}
+        for entry in artifacts:
+            by_stage.setdefault(str(entry["stage"]), []).append(str(entry["path"]))
+        self._write_json_file(
+            workflow_dir / ARTIFACT_INDEX_FILE,
+            {"workflow_id": workflow_dir.name, "artifacts": artifacts, "by_stage": by_stage},
+        )
+
+    @staticmethod
+    def _prompt_stage(operation_id: str) -> str:
+        operation = operation_id.lower()
+        if operation.startswith(("initial_", "file_ranking")):
+            return "overview"
+        if any(key in operation for key in ("chunk", "evidence_critic", "evidence_extraction")):
+            return "evidence_notes"
+        if any(key in operation for key in ("vocab", "ground", "normalization")):
+            return "grounding"
+        return "profile_draft"
+
+    @staticmethod
+    def _stage_from_relative_path(path: str) -> str:
+        first = path.split("/", 1)[0]
+        return first if first in {"chunks", "overview", "evidence_notes", "profile_draft", "grounding", "result"} else "run_state"
+
+    @staticmethod
+    def _strategy_from_relative_path(path: str) -> str | None:
+        parts = path.split("/")
+        if len(parts) >= 3 and parts[0] in {"chunks", "evidence_notes", "profile_draft", "grounding", "result"}:
+            return parts[1]
+        return None
+
+    @staticmethod
+    def _model_from_relative_path(path: str) -> str | None:
+        parts = path.split("/")
+        if len(parts) >= 3 and parts[0] == "overview":
+            return parts[1]
+        if len(parts) >= 4 and parts[0] in {"evidence_notes", "profile_draft", "grounding", "result"}:
+            return parts[2]
+        return None
+
+    @classmethod
+    def _safe_model(cls, chat_model: str | None) -> str:
+        return cls._sanitize_path_component(chat_model or "default-model")
+
+    @classmethod
+    def _safe_strategy(cls, chunking_strategy: str | None) -> str:
+        return cls._sanitize_path_component(chunking_strategy or "semantic")
 
     @staticmethod
     def _sanitize_path_component(name: str) -> str:
-        # Windows forbids < > : " / \ | ? * in file/directory names.
-        # Other platforms may also reject colons and slashes, so sanitize universally.
-        return re.sub(r'[<>:"/\\|?*]', '_', name)
+        return re.sub(r'[<>:"/\\|?*]', "_", name)
 
     @staticmethod
     def _read_json_file(path: Path) -> Any:
@@ -704,13 +778,6 @@ class FileSystemExtractionOutputRepository:
 
 
 def _atomic_replace(src: Path, dst: Path, *, retries: int = 5, delay: float = 0.15) -> None:
-    """Replace *dst* with *src* atomically, retrying on Windows PermissionError.
-
-    On Windows, ``os.replace`` can fail with ``PermissionError`` when another
-    process (antivirus scanner, search indexer, concurrent reader, etc.) still
-    holds an open handle on the destination file.  Retrying with a short back-
-    off gives the other process time to release the handle.
-    """
     replace_src = _long_path_for_windows(src)
     replace_dst = _long_path_for_windows(dst)
     for attempt in range(retries):
@@ -724,21 +791,12 @@ def _atomic_replace(src: Path, dst: Path, *, retries: int = 5, delay: float = 0.
 
 
 def _remove_tree(path: Path) -> None:
-    """Remove a directory tree while tolerating Windows cleanup races."""
-    try:
-        shutil.rmtree(_long_path_for_windows(path), onexc=_ignore_missing_rmtree_error)
-    except FileNotFoundError:
-        return
+    def ignore_missing(_function: Any, _path: str, exc: BaseException) -> None:
+        if isinstance(exc, FileNotFoundError):
+            return
+        raise exc
 
-
-def _ignore_missing_rmtree_error(
-    function: Any,
-    path: str,
-    exc: BaseException,
-) -> None:
-    if isinstance(exc, FileNotFoundError):
-        return
-    raise exc
+    shutil.rmtree(_long_path_for_windows(path), onexc=ignore_missing)
 
 
 def _long_path_for_windows(path: Path) -> str:

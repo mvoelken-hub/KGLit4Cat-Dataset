@@ -112,6 +112,7 @@ h2 { margin: 0; font-size: clamp(1.6rem, 3vw, 2.6rem); letter-spacing: -0.04em; 
 .chunking-status-panel.running { border-color: rgba(202, 116, 6, 0.48); background: rgba(255,248,234,0.72); }
 .chunking-status-panel.completed { border-color: rgba(99, 154, 0, 0.34); background: rgba(248,251,242,0.72); }
 .chunking-status-panel.crashed, .chunking-status-panel.cancelled { border-color: rgba(188, 57, 43, 0.58); background: rgba(255,239,236,0.78); }
+.chunk-view-strategy { grid-template-columns: 1fr minmax(180px, 220px); }
 .chunking-status-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .chunking-status-grid > div { min-width: 0; padding: 9px 10px; border: 1px solid var(--line); border-radius: 7px; background: rgba(255,255,255,0.58); }
 .chunking-status-grid span { display: block; color: var(--muted); font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 4px; }
