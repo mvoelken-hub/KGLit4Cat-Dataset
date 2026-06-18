@@ -3,7 +3,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from app.core.task_registry import TaskRegistry, TaskStatus, TaskType
+from app.core.task_registry import TaskInfo, TaskRegistry, TaskStatus, TaskType
 from app.domain.datasources import ContentChunk, DataPackage, FileEntry
 from app.domain.extraction import (
     ChunkingRequiredError,
@@ -148,9 +148,11 @@ class TitleProfileService(FakeProfileService):
 class FakeOutputRepository:
     def __init__(self):
         self.evidence_context: EvidenceContext | None = None
+        self.evidence_context_by_strategy: dict[str, EvidenceContext] = {}
         self.evidence_contexts: list[EvidenceContext] = []
         self.filtered_evidence_notes = FilteredEvidenceLedger()
         self.result: ExtractionRunResult | None = None
+        self.result_by_strategy: dict[str, ExtractionRunResult] = {}
         self.run_state: ExtractionRunState | None = None
         self.initial_file_summaries: list[ExtractionFileSummary] = []
         self.initial_file_summary_status = None
@@ -173,11 +175,15 @@ class FakeOutputRepository:
         self.prompt_diagnostics: list[dict] = []
 
     def save_evidence_context(self, *, workflow_id: str, evidence_context: EvidenceContext, **_kwargs):
+        self.evidence_context_by_strategy[_kwargs.get("chunking_strategy", "semantic")] = evidence_context
         self.evidence_context = evidence_context
         self.evidence_contexts.append(evidence_context)
 
     def load_evidence_context(self, workflow_id: str, **_kwargs) -> EvidenceContext:
-        if self.evidence_context is None:
+        strategy = _kwargs.get("chunking_strategy", "semantic")
+        if strategy in self.evidence_context_by_strategy:
+            return self.evidence_context_by_strategy[strategy]
+        if self.evidence_context is None or "chunking_strategy" in _kwargs:
             raise FileNotFoundError
         return self.evidence_context
 
@@ -188,6 +194,7 @@ class FakeOutputRepository:
         return self.filtered_evidence_notes
 
     def save_extraction_result(self, *, workflow_id: str, result: ExtractionRunResult, **_kwargs):
+        self.result_by_strategy[_kwargs.get("chunking_strategy", "semantic")] = result
         self.result = result
         self.initial_file_summaries = result.initial_file_summaries
         self.initial_file_summary_status = result.initial_file_summary_status
@@ -207,7 +214,10 @@ class FakeOutputRepository:
         }
 
     def load_extraction_result(self, workflow_id: str, chat_model: str | None = None, **_kwargs) -> ExtractionRunResult:
-        if self.result is None:
+        strategy = _kwargs.get("chunking_strategy", "semantic")
+        if strategy in self.result_by_strategy:
+            return self.result_by_strategy[strategy]
+        if self.result is None or ("chunking_strategy" in _kwargs and strategy != "semantic"):
             raise FileNotFoundError
         return self.result
 
@@ -2608,6 +2618,70 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             progress.interim_evidence_context.notes[0].candidate_id,
             "interim-dataset",
         )
+
+    async def test_progress_for_strategy_uses_matching_evidence_context_only(self):
+        service, _, output_repository = make_service([[make_chunk()]])
+        output_repository.save_extraction_run_state(
+            workflow_id="package-id",
+            state=output_repository.run_state.model_copy(
+                update={
+                    "chunking_strategy": "fixed_tokens",
+                    "chunk_results": [
+                        ExtractionChunkResult(
+                            chunk_index=0,
+                            file_path="README.md",
+                            start_idx=0,
+                            end_idx=10,
+                            status="completed",
+                            evidence_context=evidence_context("fixed-resource", "Fixed token result."),
+                        ),
+                    ],
+                }
+            ),
+        )
+        output_repository.save_evidence_context(
+            workflow_id="package-id",
+            evidence_context=evidence_context("semantic-resource", "Semantic partial context."),
+            chunking_strategy="semantic",
+        )
+
+        status, progress = await service.get_extraction_progress(
+            data_package_id="package-id",
+            chunking_strategy="semantic",
+        )
+
+        self.assertEqual(status, TaskStatus.UNKNOWN)
+        self.assertIsNotNone(progress)
+        self.assertEqual(progress.stage, "interim_evidence_context")
+        self.assertEqual(progress.chunk_results, [])
+        self.assertEqual(progress.total_chunks, 0)
+        self.assertEqual(progress.interim_evidence_context.notes[0].candidate_id, "semantic-resource")
+
+    async def test_progress_for_other_strategy_does_not_leak_cancelled_task_state(self):
+        service, task_registry, output_repository = make_service([[make_chunk()]])
+        output_repository.save_extraction_run_state(
+            workflow_id="package-id",
+            state=output_repository.run_state.model_copy(update={"chunking_strategy": "semantic"}),
+        )
+        task = asyncio.create_task(asyncio.sleep(0), name="extraction:run:package-id")
+        task_registry.tasks["extraction:run:package-id"] = TaskInfo(
+            task=task,
+            status=TaskStatus.CANCELLED,
+            type=TaskType.WORKFLOW,
+            progress=ExtractionRunProgress(stage="interim_evidence_context").model_dump(mode="json"),
+        )
+        try:
+            status, progress = await service.get_extraction_progress(
+                data_package_id="package-id",
+                chunking_strategy="fixed_tokens",
+            )
+        finally:
+            await task
+
+        self.assertEqual(status, TaskStatus.UNKNOWN)
+        self.assertIsNotNone(progress)
+        self.assertEqual(progress.stage, "initial_context_completed")
+        self.assertIsNone(progress.interim_evidence_context)
 
     async def test_chunk_repairs_run_after_first_pass_extraction_calls(self):
         service, task_registry, output_repository = make_service(

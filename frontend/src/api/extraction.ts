@@ -528,21 +528,6 @@ export async function getExtractionResult(data_package_id: string, chunking_stra
   return readJson(await response);
 }
 
-export async function getExistingInitialContext(data_package_id: string, chunking_strategy?: ChunkingStrategy): Promise<InitialContext | null> {
-  const result = await getExtractionResult(data_package_id, chunking_strategy);
-  return result ? initialContextFromEvidenceContext(result.machine_evidence_context) : null;
-}
-
-export async function getExistingGeneratedFinalDraft(data_package_id: string, chunking_strategy?: ChunkingStrategy): Promise<Record<string, unknown> | null> {
-  const result = await getExtractionResult(data_package_id, chunking_strategy);
-  return result?.generated_final_draft ?? null;
-}
-
-export async function getExistingCuratedDocument(data_package_id: string, chunking_strategy?: ChunkingStrategy): Promise<Record<string, unknown> | null> {
-  const result = await getExtractionResult(data_package_id, chunking_strategy);
-  return result?.curated_document ?? result?.generated_final_draft ?? null;
-}
-
 export async function extractInitialContext(input: {
   data_package_id: string;
 }): Promise<InitialContext> {

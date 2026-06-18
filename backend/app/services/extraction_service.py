@@ -897,11 +897,7 @@ class ExtractionService:
         if task_info is not None and chunking_strategy:
             state = self._load_run_state_or_none(data_package_id)
             if state is not None and state.chunking_strategy != chunking_strategy:
-                return TaskStatus.UNKNOWN, self._initial_context_progress_from_state(
-                    state,
-                    warnings=self._load_warnings_or_empty(data_package_id),
-                    stage="initial_context_completed",
-                )
+                task_info = None
         if task_info is None:
             state = self._load_run_state_or_none(data_package_id)
             state_for_branch = state if not chunking_strategy or state is None or state.chunking_strategy == chunking_strategy else None
@@ -939,8 +935,10 @@ class ExtractionService:
                     warnings=list(result.warnings),
                 )
             interim_evidence_context = self._load_evidence_context_or_none(data_package_id, chunking_strategy=chunking_strategy)
-            if chunking_strategy and state is not None and state.chunking_strategy != chunking_strategy and interim_evidence_context is None:
-                state = state if not state.chunk_results else None
+            mismatched_state = None
+            if chunking_strategy and state is not None and state.chunking_strategy != chunking_strategy:
+                mismatched_state = state
+                state = None
             if interim_evidence_context is not None or state is not None:
                 stage = "interim_evidence_context"
                 if interim_evidence_context is None and state and not state.chunk_results and (
@@ -984,6 +982,12 @@ class ExtractionService:
                     field_completion_ledger=state.field_completion_ledger if state else [],
                     curation_ledger=state.curation_ledger if state else [],
                     warnings=self._load_warnings_or_empty(data_package_id),
+                )
+            if mismatched_state is not None:
+                return TaskStatus.UNKNOWN, self._initial_context_progress_from_state(
+                    mismatched_state,
+                    warnings=self._load_warnings_or_empty(data_package_id),
+                    stage="initial_context_completed",
                 )
             return TaskStatus.UNKNOWN, None
         try:
@@ -1031,10 +1035,10 @@ class ExtractionService:
                     curation_ledger=state.curation_ledger,
                 )
         if progress is not None and progress.interim_evidence_context is None:
-            progress.interim_evidence_context = self._load_evidence_context_or_none(data_package_id)
+            progress.interim_evidence_context = self._load_evidence_context_or_none(data_package_id, chunking_strategy=chunking_strategy)
         if progress is not None:
             state = self._load_run_state_or_none(data_package_id)
-            if state is not None:
+            if state is not None and (chunking_strategy is None or state.chunking_strategy == chunking_strategy):
                 progress.vocab_query_config = state.vocab_query_config
                 if not progress.chunk_results:
                     progress.ranked_files = state.ranked_files

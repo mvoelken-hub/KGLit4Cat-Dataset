@@ -3,9 +3,6 @@ import { createPortal } from 'react-dom';
 import { chunkDataPackage, deleteDataPackage, getChunkStatus, getDataPackageChunks, getFileEntryContent, listDataPackages, uploadDataPackage, type ChunkingStrategy } from './api/datasources';
 import {
   applyCurationFieldAction,
-  getExistingInitialContext,
-  getExistingCuratedDocument,
-  getExistingGeneratedFinalDraft,
   getExtractionResult,
   getInitialContextProgress,
   getPatchProgress,
@@ -40,6 +37,7 @@ import type { ChunkRequestResponse, ChunkResponse, DataPackageResponse, FileEntr
 import type {
   ExtractionChunkRef,
   ExtractionChunkResult,
+  ExtractionRunResult,
   ExtractionVocabQueryConfig,
   ExtractionVocabQueryRecord,
   ChunkRepairMode,
@@ -54,6 +52,16 @@ import type {
 } from './api/extraction';
 
 type BusyKey = 'upload' | 'initial-context' | 'chunk' | 'context' | 'pause' | 'draft' | 'patch' | 'load' | 'profile' | 'profile-delete' | 'dataset-delete' | 'ollama';
+type WorkflowBranchSnapshot = {
+  strategy: ChunkingStrategy;
+  chunks: ChunkResponse[][];
+  chunkStatus: { has_chunks: boolean; file_count: number; status: ChunkRequestResponse['status'] };
+  status: PatchTaskStatus;
+  progress: PatchProgress | null;
+  initialProgress: PatchProgress | null;
+  result: ExtractionRunResult | null;
+  tokenUsage: PatchTokenUsage;
+};
 const selectedPackageStorageKey = 'simone_selected_package_id';
 
 function readStoredSelectedPackageId(): string {
@@ -248,6 +256,47 @@ function evidenceContextForChunk(context: Record<string, unknown> | null | undef
   return portable.length || contextual.length || rejected.length
     ? { ...context, portable_evidence: portable, contextual_evidence: contextual, rejected_evidence: rejected, assessments: [] }
     : null;
+}
+
+function withInitialProgress(branch: PatchProgress | null, initial: PatchProgress | null): PatchProgress | null {
+  if (!branch) return initial;
+  if (!initial) return branch;
+  return {
+    ...branch,
+    ranked_files: branch.ranked_files?.length ? branch.ranked_files : initial.ranked_files,
+    initial_file_summaries: branch.initial_file_summaries?.length ? branch.initial_file_summaries : initial.initial_file_summaries,
+    initial_file_summary_progress: branch.initial_file_summary_progress ?? initial.initial_file_summary_progress,
+    initial_file_summary_status: branch.initial_file_summary_status ?? initial.initial_file_summary_status,
+    initial_extraction_overview: branch.initial_extraction_overview ?? initial.initial_extraction_overview,
+    initial_extraction_overview_status: branch.initial_extraction_overview_status ?? initial.initial_extraction_overview_status,
+    initial_extraction_overview_diagnostic: branch.initial_extraction_overview_diagnostic ?? initial.initial_extraction_overview_diagnostic,
+  };
+}
+
+function progressWithResult(progress: PatchProgress | null, result: ExtractionRunResult): PatchProgress {
+  return {
+    ...(progress ?? {
+      stage: 'completed',
+      processed_chunks: 0,
+      total_chunks: 0,
+      normalized_quantities: 0,
+      normalized_qualitative_attributes: 0,
+      warnings: [],
+    }),
+    stage: 'completed',
+    interim_evidence_context: result.machine_evidence_context,
+    generated_final_draft: result.generated_final_draft,
+    curated_document: result.curated_document ?? result.generated_final_draft,
+    generated_initial_draft: result.generated_initial_draft ?? progress?.generated_initial_draft ?? null,
+    requirement_report: result.requirement_report ?? progress?.requirement_report ?? null,
+    draft_quality_state: result.draft_quality_state,
+    validation: result.validation,
+    curated_validation: result.curated_validation ?? null,
+    projection_ledger: result.projection_ledger,
+    field_completion_ledger: result.field_completion_ledger,
+    curation_ledger: result.curation_ledger,
+    warnings: result.warnings,
+  };
 }
 
 function projectionEvidencePreview(record: ProjectionLedgerRecord): string {
@@ -3370,7 +3419,6 @@ export function App() {
   );
   const extractionCanResume = Boolean(
     selectedPackageId
-    && selectedProfile
     && hasInitialContextArtifacts
     && !busy
     && !isPatching
@@ -3769,79 +3817,49 @@ export function App() {
     setFileContent(null);
   }
 
-  async function loadChunksForStrategy(strategy: ChunkingStrategy) {
-    if (!selectedPackageId) return;
-    const packageId = selectedPackageId;
-    try {
-      const [status, chunks] = await Promise.all([
-        getChunkStatus(packageId, strategy),
-        getDataPackageChunks(packageId, strategy),
-      ]);
-      if (selectedPackageIdRef.current !== packageId) return;
-      setHasChunks(status.has_chunks);
-      setChunksByFile(chunks);
-      setChunkResult({ status: status.status, chunks });
-      const result = await getExtractionResult(packageId, strategy);
-      if (selectedPackageIdRef.current !== packageId) return;
-      if (result) {
-        setContext(initialContextFromEvidenceContext(result.machine_evidence_context));
-        setGeneratedFinalDraft(result.generated_final_draft);
-        setCuratedDocument(result.curated_document ?? result.generated_final_draft);
-        setPatchProgress((current) => ({
-          ...(current ?? {
-            stage: 'completed',
-            processed_chunks: 0,
-            total_chunks: 0,
-            normalized_quantities: 0,
-            normalized_qualitative_attributes: 0,
-            warnings: [],
-          }),
-          stage: 'completed',
-          generated_final_draft: result.generated_final_draft,
-          curated_document: result.curated_document ?? result.generated_final_draft,
-          generated_initial_draft: result.generated_initial_draft ?? null,
-          requirement_report: result.requirement_report ?? null,
-          draft_quality_state: result.draft_quality_state,
-          validation: result.validation,
-          curated_validation: result.curated_validation ?? null,
-          projection_ledger: result.projection_ledger,
-          field_completion_ledger: result.field_completion_ledger,
-          curation_ledger: result.curation_ledger,
-          chunk_results: [],
-          warnings: result.warnings,
-        }));
-        setPatchStatus('completed');
-        setTokenUsage(result.token_usage);
-      } else {
-        setContext(null);
-        setGeneratedFinalDraft(null);
-        setCuratedDocument(null);
-        setPatchProgress((current) => current ? {
-          ...current,
-          stage: current.initial_extraction_overview_status ? 'initial_context_completed' : current.stage,
-          processed_chunks: 0,
-          total_chunks: 0,
-          interim_evidence_context: null,
-          generated_final_draft: null,
-          curated_document: null,
-          generated_initial_draft: null,
-          requirement_report: null,
-          draft_quality_state: null,
-          validation: { status: 'not_run', errors: [], warnings: [] },
-          curated_validation: null,
-          projection_ledger: [],
-          field_completion_ledger: [],
-          evidence_query_ledger: [],
-          curation_ledger: [],
-          vocab_queries: [],
-          chunk_results: [],
-        } : null);
-        setTokenUsage(await getTokenUsage(packageId, strategy));
-      }
-    } catch (error) {
-      if (selectedPackageIdRef.current !== packageId) return;
-      setMessage(error instanceof Error ? error.message : 'Failed to load chunks.');
+  async function loadWorkflowBranch(packageId: string, strategy: ChunkingStrategy): Promise<WorkflowBranchSnapshot> {
+    const [initialRun, extractionRun, chunkStatus, chunks, result, tokenUsage] = await Promise.all([
+      getInitialContextProgress(packageId),
+      getPatchProgress(packageId, strategy),
+      getChunkStatus(packageId, strategy),
+      getDataPackageChunks(packageId, strategy),
+      getExtractionResult(packageId, strategy),
+      getTokenUsage(packageId, strategy),
+    ]);
+    return {
+      strategy,
+      chunks,
+      chunkStatus,
+      status: result ? 'completed' : extractionRun.status,
+      progress: extractionRun.progress ?? null,
+      initialProgress: initialRun.progress ?? null,
+      result,
+      tokenUsage: result?.token_usage ?? tokenUsage,
+    };
+  }
+
+  function applyWorkflowBranchSnapshot(snapshot: WorkflowBranchSnapshot) {
+    setHasChunks(snapshot.chunkStatus.has_chunks);
+    setChunksByFile(snapshot.chunks);
+    setChunkResult({ status: snapshot.chunkStatus.status, chunks: snapshot.chunks });
+    setTokenUsage(snapshot.tokenUsage);
+
+    const mergedProgress = withInitialProgress(snapshot.progress, snapshot.initialProgress);
+    if (snapshot.result) {
+      const resultProgress = progressWithResult(mergedProgress, snapshot.result);
+      setContext(initialContextFromEvidenceContext(snapshot.result.machine_evidence_context));
+      setGeneratedFinalDraft(snapshot.result.generated_final_draft);
+      setCuratedDocument(snapshot.result.curated_document ?? snapshot.result.generated_final_draft);
+      setPatchStatus('completed');
+      setPatchProgress(resultProgress);
+      return;
     }
+
+    setContext(snapshot.progress?.interim_evidence_context ? initialContextFromEvidenceContext(snapshot.progress.interim_evidence_context) : null);
+    setGeneratedFinalDraft(snapshot.progress?.generated_final_draft ?? null);
+    setCuratedDocument(snapshot.progress?.curated_document ?? snapshot.progress?.generated_final_draft ?? null);
+    setPatchStatus(snapshot.status);
+    setPatchProgress(mergedProgress);
   }
 
   async function onInitialContext(forceRerun = false) {
@@ -4237,55 +4255,10 @@ export function App() {
     if (!selectedPackageId) return;
     const packageId = selectedPackageId;
     try {
-      const initialProgress = await getInitialContextProgress(packageId);
-      const extractionProgress = await getPatchProgress(packageId, chunkViewStrategy);
-      const status = extractionProgress.status === 'unknown'
-        ? initialProgress.status
-        : extractionProgress.status;
-      const progress = extractionProgress.progress ?? initialProgress.progress;
+      const snapshot = await loadWorkflowBranch(packageId, chunkViewStrategy);
       if (selectedPackageIdRef.current !== packageId) return;
-      const completedResult = status === 'completed'
-        ? await getExtractionResult(packageId, chunkViewStrategy)
-        : null;
-      if (selectedPackageIdRef.current !== packageId) return;
-      setPatchStatus(status === 'completed' && !completedResult ? 'unknown' : status);
-      setPatchProgress(completedResult ? {
-        ...(progress ?? {
-          stage: 'completed',
-          processed_chunks: 0,
-          total_chunks: 0,
-          normalized_quantities: 0,
-          normalized_qualitative_attributes: 0,
-          warnings: [],
-        }),
-        generated_final_draft: completedResult.generated_final_draft,
-        curated_document: completedResult.curated_document ?? completedResult.generated_final_draft,
-        generated_initial_draft: completedResult.generated_initial_draft ?? progress?.generated_initial_draft ?? null,
-        requirement_report: completedResult.requirement_report ?? progress?.requirement_report ?? null,
-        draft_quality_state: completedResult.draft_quality_state,
-        validation: completedResult.validation,
-        curated_validation: completedResult.curated_validation ?? null,
-        projection_ledger: completedResult.projection_ledger,
-        field_completion_ledger: completedResult.field_completion_ledger,
-        curation_ledger: completedResult.curation_ledger,
-      } : status === 'completed' ? null : progress || null);
-      if (completedResult) {
-        setContext(initialContextFromEvidenceContext(completedResult.machine_evidence_context));
-        setGeneratedFinalDraft(completedResult.generated_final_draft);
-        setCuratedDocument(completedResult.curated_document ?? completedResult.generated_final_draft);
-      } else if (progress?.interim_evidence_context) {
-        setContext(initialContextFromEvidenceContext(progress.interim_evidence_context));
-      }
-      if (!completedResult && status !== 'completed') {
-        setGeneratedFinalDraft(progress?.generated_final_draft ?? null);
-        setCuratedDocument(progress?.curated_document ?? progress?.generated_final_draft ?? null);
-      } else if (!completedResult) {
-        setGeneratedFinalDraft(null);
-        setCuratedDocument(null);
-      }
-      const nextTokenUsage = completedResult?.token_usage ?? await getTokenUsage(packageId, chunkViewStrategy);
-      setTokenUsage(nextTokenUsage);
-      if (status === 'running') {
+      applyWorkflowBranchSnapshot(snapshot);
+      if (snapshot.status === 'running') {
         setMessage('Workflow stage is running.');
       } else {
         setMessage('Workflow progress refreshed.');
@@ -4305,41 +4278,9 @@ export function App() {
     setBusy('load');
     void (async () => {
       try {
-        const [ctx, generatedResult, curatedResult, initialRun, extractionRun, chunkStatus, usage] = await Promise.all([
-          getExistingInitialContext(packageId, chunkViewStrategy),
-          getExistingGeneratedFinalDraft(packageId, chunkViewStrategy),
-          getExistingCuratedDocument(packageId, chunkViewStrategy),
-          getInitialContextProgress(packageId),
-          getPatchProgress(packageId, chunkViewStrategy),
-          getChunkStatus(packageId, chunkViewStrategy),
-          getTokenUsage(packageId, chunkViewStrategy),
-        ]);
-        const status = extractionRun.status === 'unknown' ? initialRun.status : extractionRun.status;
-        const branchHasCompletedResult = Boolean(generatedResult || curatedResult || ctx);
-        const progress = status === 'completed' && !branchHasCompletedResult
-          ? initialRun.progress ?? null
-          : extractionRun.progress ?? initialRun.progress;
-        const effectiveStatus = status === 'completed' && !branchHasCompletedResult ? initialRun.status : status;
-        const chunks = chunkStatus.status !== 'unknown' || chunkStatus.has_chunks
-          ? await getDataPackageChunks(packageId, chunkViewStrategy)
-          : [];
+        const snapshot = await loadWorkflowBranch(packageId, chunkViewStrategy);
         if (selectedPackageIdRef.current !== packageId) return;
-        const progressContext = progress?.interim_evidence_context
-          ? initialContextFromEvidenceContext(progress.interim_evidence_context)
-          : null;
-        if (ctx || progressContext) {
-          setContext(ctx ?? progressContext);
-        }
-        setGeneratedFinalDraft(generatedResult ?? progress?.generated_final_draft ?? null);
-        setCuratedDocument(curatedResult ?? progress?.curated_document ?? progress?.generated_final_draft ?? null);
-        setPatchStatus(effectiveStatus);
-        setPatchProgress(progress || null);
-        setTokenUsage(usage);
-        setHasChunks(chunkStatus.has_chunks);
-        setChunksByFile(chunks);
-        if (chunkStatus.status !== 'unknown' || chunks.flat().length > 0) {
-          setChunkResult({ status: chunkStatus.status, chunks });
-        }
+        applyWorkflowBranchSnapshot(snapshot);
         setMessage('Workflow state loaded.');
       } catch (error) {
         if (selectedPackageIdRef.current !== packageId) return;
@@ -4348,7 +4289,7 @@ export function App() {
         if (selectedPackageIdRef.current === packageId) setBusy(null);
       }
     })();
-  }, [selectedPackageId]);
+  }, [selectedPackageId, chunkViewStrategy]);
 
   useEffect(() => {
     if (!chunkResult || chunkResult.status === 'completed' || chunkResult.status === 'cancelled' || chunkResult.status === 'crashed') return;
@@ -4360,7 +4301,7 @@ export function App() {
     if (!selectedPackageId || patchStatus !== 'running') return;
     const interval = setInterval(() => void refreshExtractionProgress(), 5000);
     return () => clearInterval(interval);
-  }, [patchStatus, selectedPackageId]);
+  }, [patchStatus, selectedPackageId, chunkViewStrategy]);
 
   return (
     <main className="shell">
@@ -4499,10 +4440,7 @@ export function App() {
                 chunkResult={chunkResult}
                 chunksByFile={chunksByFile}
                 chunkViewStrategy={chunkViewStrategy}
-                onChunkViewStrategyChange={(strategy) => {
-                  setChunkViewStrategy(strategy);
-                  void loadChunksForStrategy(strategy);
-                }}
+                onChunkViewStrategyChange={setChunkViewStrategy}
                 busy={busy}
               />
               <ChunkInspectionPanel
