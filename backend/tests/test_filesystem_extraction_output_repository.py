@@ -274,6 +274,43 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
 
             rmtree.assert_called_once()
 
+    def test_clear_initial_context_keeps_downstream_artifacts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = FileSystemExtractionOutputRepository(Path(directory))
+            workflow_id = "test_workflow"
+            chat_model = "model:tag"
+
+            repo.save_initial_file_summaries(
+                workflow_id=workflow_id,
+                summaries=[ExtractionFileSummary(file_path="README.md")],
+                status="completed",
+                chat_model=chat_model,
+            )
+            repo.save_initial_extraction_overview(
+                workflow_id=workflow_id,
+                overview=overview_for_file("README.md", "README present.", ""),
+                status="structured",
+                chat_model=chat_model,
+            )
+            repo.save_dataset_summary(workflow_id=workflow_id, summary="summary", chat_model=chat_model)
+            repo.save_generated_final_draft(workflow_id=workflow_id, document={"id": "draft"}, chat_model=chat_model)
+            repo.save_curated_document(workflow_id=workflow_id, document={"id": "curated"}, chat_model=chat_model)
+
+            repo.clear_initial_context(workflow_id)
+
+            with self.assertRaises(FileNotFoundError):
+                repo.load_initial_file_summaries(workflow_id, chat_model)
+            with self.assertRaises(FileNotFoundError):
+                repo.load_initial_extraction_overview(workflow_id, chat_model)
+            self.assertEqual(repo.load_generated_final_draft(workflow_id, chat_model)["id"], "draft")
+            self.assertEqual(repo.load_curated_document(workflow_id, chat_model)["id"], "curated")
+            self.assertFalse(
+                (
+                    repo._branch_dir(workflow_id, "profile_draft", "semantic", chat_model)
+                    / "dataset_summary.txt"
+                ).exists()
+            )
+
     def test_filtered_evidence_notes_artifact_round_trips_and_clears(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = FileSystemExtractionOutputRepository(Path(directory))

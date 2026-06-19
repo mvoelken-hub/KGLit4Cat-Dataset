@@ -532,7 +532,7 @@ class ExtractionService:
             return TaskStatus.COMPLETED
 
         if force_rerun:
-            self.output_repository.clear_extraction_run(data_package_id)
+            self.output_repository.clear_initial_context(data_package_id)
         else:
             self._clear_prompt_diagnostics(data_package_id)
 
@@ -587,8 +587,18 @@ class ExtractionService:
 
         data_package = self.datasource_service.get_data_package(data_package_id)
         warnings: list[str] = []
-        state = ExtractionRunState(
-            chat_model=self.ollama_client.chat_model if self.ollama_client else None,
+        state = (self._load_run_state_or_none(data_package_id) or ExtractionRunState()).model_copy(
+            update={
+                "ranked_files": [],
+                "initial_file_summaries": [],
+                "initial_file_summary_progress": None,
+                "initial_file_summary_status": None,
+                "initial_extraction_overview": None,
+                "initial_extraction_overview_status": None,
+                "initial_extraction_overview_diagnostic": None,
+                "dataset_summary": "",
+                "chat_model": self.ollama_client.chat_model if self.ollama_client else None,
+            }
         )
         self._save_run_state(data_package_id, state)
         progress = self._initial_context_progress_from_state(

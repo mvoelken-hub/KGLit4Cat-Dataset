@@ -1296,10 +1296,10 @@ export function App() {
   }, [chunkResult, selectedPackageId]);
 
   useEffect(() => {
-    if (!selectedPackageId || patchStatus !== 'running') return;
+    if (!selectedPackageId || (patchStatus !== 'running' && initialContextStatus !== 'running')) return;
     const interval = setInterval(() => void refreshExtractionProgress(), 5000);
     return () => clearInterval(interval);
-  }, [patchStatus, selectedPackageId, chunkViewStrategy, workflowChatModel]);
+  }, [patchStatus, initialContextStatus, selectedPackageId, chunkViewStrategy, workflowChatModel]);
 
   return (
     <main className="shell">

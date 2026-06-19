@@ -379,6 +379,14 @@ class FakeOutputRepository:
     def clear_prompt_diagnostics(self, workflow_id: str, chat_model: str | None = None):
         self.prompt_diagnostics = []
 
+    def clear_initial_context(self, workflow_id: str):
+        self.initial_file_summaries = []
+        self.initial_file_summary_status = None
+        self.initial_extraction_overview = None
+        self.initial_extraction_overview_status = None
+        self.dataset_summary = None
+        self.prompt_diagnostics = []
+
     def clear_extraction_run(self, workflow_id: str):
         self.evidence_context = None
         self.evidence_contexts = []

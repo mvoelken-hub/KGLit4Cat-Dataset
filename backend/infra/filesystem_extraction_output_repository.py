@@ -608,6 +608,17 @@ class FileSystemExtractionOutputRepository:
         if workflow_dir.exists():
             _remove_tree(workflow_dir)
 
+    def clear_initial_context(self, workflow_id: str) -> None:
+        workflow_dir = self._workflow_dir(workflow_id)
+        if not workflow_dir.exists():
+            return
+        overview_dir = workflow_dir / "overview"
+        if overview_dir.exists():
+            _remove_tree(overview_dir)
+        for path in workflow_dir.glob(f"profile_draft/*/*/{DATASET_SUMMARY_FILE}"):
+            path.unlink(missing_ok=True)
+        self._write_artifact_index(workflow_dir)
+
     def clear_extraction_downstream(self, workflow_id: str) -> None:
         workflow_dir = self._workflow_dir(workflow_id)
         if not workflow_dir.exists():
