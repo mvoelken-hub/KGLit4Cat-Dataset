@@ -896,6 +896,46 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual([(group.label, group.value) for group in groups], [("threshold for peak detection", 0.93)])
 
+    def test_quantitative_grouping_rejects_qualitative_placeholder_values(self):
+        notes = [
+            EvidenceCandidate(
+                candidate_id="name",
+                category="instrument_signal",
+                claim="The solvent name is unspecified.",
+                evidence_text="MATERIAL_NAME=- - -",
+            ),
+            EvidenceCandidate(
+                candidate_id="value",
+                category="instrument_signal",
+                claim="The material value is set to 0.",
+                evidence_text="MATERIAL_VALUE=0",
+            ),
+            EvidenceCandidate(
+                candidate_id="position",
+                category="instrument_signal",
+                claim="The material x-position is set to 0.",
+                evidence_text="MATERIAL_X=0",
+            ),
+        ]
+
+        groups = WorkflowService._quantitative_evidence_groups(notes)
+
+        self.assertEqual(groups, [])
+
+    def test_quantitative_attribute_description_is_plain(self):
+        note = EvidenceCandidate(
+            candidate_id="threshold",
+            category="instrument_signal",
+            claim="The threshold is set to 0.93.",
+            evidence_text="THRESHOLD=0.93",
+        )
+        group = WorkflowService._quantitative_evidence_groups([note])[0]
+
+        instance = WorkflowService._quantitative_attribute_instance_from_group(group)
+
+        self.assertEqual(instance["description"], "Threshold: 0.93")
+        self.assertNotIn("Evidence-grounded quantitative attribute", instance["description"])
+
     def test_quantitative_groups_project_to_existing_owner_before_creating_owner(self):
         service = WorkflowService(
             profile_service=FakeProfileService(),

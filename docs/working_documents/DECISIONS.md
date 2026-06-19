@@ -30,7 +30,7 @@ Revisit trigger: Revisit if a model repeatedly fails structured JSON at temperat
 
 Decision: The quantitative evidence projection should prefer denoising when uncertain, even if this means some valid numeric facts remain only in evidence/context artifacts instead of becoming final profile attributes.
 
-Reason: Noisy quantitative metadata is harder to remove after projection than missing-but-grounded evidence is to curate or add later. This also keeps the final generated profile more reviewable and reduces low-level parameter clutter.
+Reason: Noisy quantitative metadata is harder to remove after projection than missing-but-grounded evidence is to curate or add later. This also keeps the final generated profile more reviewable and reduces low-level parameter clutter. Qualitative labels, placeholder/default values, and encoded enum-like values should not become quantitative attributes merely because they contain numbers.
 
 Tradeoff: Some real extraction targets, such as point counts, resolution values, acquisition dates, or scale factors, may be filtered out of the final draft until the selection rules improve.
 

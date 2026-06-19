@@ -888,7 +888,7 @@ class ProjectionService:
         label = cls._quantity_label_from_text(claim or evidence_text, match.group(0), unit)
         if not label:
             return None
-        if cls._quantitative_label_is_noise(label, claim, evidence_text):
+        if cls._quantitative_label_is_noise(label, claim, evidence_text, unit):
             return None
         normalized_label = re.sub(r"[^a-z0-9]+", " ", label.lower()).strip()
         value_key = ("%f" % value).rstrip("0").rstrip(".")
@@ -906,17 +906,28 @@ class ProjectionService:
         return False
 
     @staticmethod
-    def _quantitative_label_is_noise(label: str, claim: str, evidence_text: str) -> bool:
+    def _quantitative_label_is_noise(label: str, claim: str, evidence_text: str, unit: str | None = None) -> bool:
         lowered = f"{label} {claim} {evidence_text}".lower()
-        setting_like = re.search(
-            r"\b(set|setting|configured|configuration|parameter|threshold|calibration|unit|scale|sampling|acquisition|processing|scan|average|frequency|temperature|duration|delay|gain|power|resolution|voltage|current|pressure|speed|rate|limit|offset|phase|width)\b",
+        quantity_like = re.search(
+            r"\b(threshold|calibration|unit|scale|scan|average|frequency|temperature|duration|delay|gain|power|resolution|voltage|current|pressure|speed|rate|limit|offset|phase|width|height|depth|length|distance|angle|time|count|number|size|mass|weight|volume|concentration|dose|flow)\b",
             lowered,
         )
+        configurable_like = re.search(
+            r"\b(threshold|calibration|unit|scale|scan|average|frequency|temperature|duration|delay|gain|power|resolution|voltage|current|pressure|speed|rate|limit|offset|phase|width|height|depth|length|distance|angle|time|size|mass|weight|volume|concentration|dose|flow|setting|configured|configuration|parameter)\b",
+            lowered,
+        )
+        setting_like = quantity_like or configurable_like
         primary_data_like = re.search(
             r"\b(observed|measured|recorded|row|table|minimum|maximum|range|bound|extremum|extrema|axis|data points?)\b",
             lowered,
         )
-        if primary_data_like and not setting_like:
+        if primary_data_like and not configurable_like:
+            return True
+        qualitative_like = re.search(r"\b(name|category|class|type|status|mode|flag|label|title|code|identifier|id)\b", lowered)
+        placeholder_like = re.search(r"\b(unspecified|unknown|none|null|not set|unset|default|placeholder|n/?a)\b", lowered)
+        if qualitative_like or placeholder_like:
+            return True
+        if not quantity_like and not unit:
             return True
         if re.search(r"\b(identifier|id|file|dataset|data package|data path|software version|parameter file|classified|recommended)\b", lowered):
             return True
@@ -1136,9 +1147,12 @@ class ProjectionService:
         group: _QuantitativeEvidenceGroup,
     ) -> dict[str, Any]:
         title = group.label[:1].upper() + group.label[1:]
+        description = f"{title}: {group.value:g}"
+        if group.unit:
+            description = f"{description} {group.unit}"
         instance: dict[str, Any] = {
             "title": title,
-            "description": f"Evidence-grounded quantitative attribute: {group.label}.",
+            "description": description,
             "value": group.value,
             "has_quantity_type": group.label,
         }
