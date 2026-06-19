@@ -57,7 +57,7 @@ class EvidenceCandidate(BaseModel):
     candidate_id: str = Field(..., description="Stable candidate identifier within the chunk.")
     category: EvidenceCategory = Field(
         "other",
-        description="Broad evidence category. Do not use ontology class labels here.",
+        description="Broad evidence category.",
     )
     claim: str = Field(
         ...,

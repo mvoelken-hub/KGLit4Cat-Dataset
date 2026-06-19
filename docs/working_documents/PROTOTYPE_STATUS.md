@@ -80,6 +80,7 @@ Use `force_rerun=true` for repeatable evaluation runs with deterministic package
 | Model dependency | Extraction, overview generation, candidate selection, fallback query generation, and profile projection depend on the configured Ollama chat model. |
 | Profile dependency | Final output requires a registered compatible profile and successful schema validation. |
 | Scientific correctness | A schema-valid final result is not automatically scientifically correct. Expert or benchmark evaluation is still required. |
+| Quantitative attribute coverage | Requirement enrichment groups portable quantitative evidence by numeric value, quantity label, optional unit, and source neighborhood, then projects each group to a schema-valid owner or records a skip reason. Generic gates reject identifier/path/version noise and cap repeated row-like measurements while avoiding hard-coded instrument parameter whitelists. |
 
 ## Evaluation Status Snapshot
 

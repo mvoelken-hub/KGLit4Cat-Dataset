@@ -43,6 +43,7 @@ from app.domain.extraction import (
     REQUIREMENT_PATCH_SYSTEM_PROMPT,
     DcatRequirement,
     RequirementEvaluation,
+    RequirementEvidenceItem,
     RequirementPatchAttempt,
     RequirementPatchResult,
     apply_evidence_instance,
@@ -60,6 +61,7 @@ from app.domain.extraction import (
     route_evidence_note_to_target,
     score_requirement_report,
     select_requirement_evidence_packet,
+    stable_evidence_id,
     ChunkRepairMode,
     EvidenceAssessment,
     EvidenceAssessmentContext,
@@ -395,6 +397,16 @@ class _EvidenceProjectionGroup:
     notes: list[EvidenceCandidate]
     target_hint: str
     target_class_hint: str | None
+
+
+@dataclass
+class _QuantitativeEvidenceGroup:
+    group_id: str
+    label: str
+    value: float
+    unit: str | None
+    notes: list[Any]
+
 
 class ExtractionService:
     def __init__(
@@ -4454,6 +4466,28 @@ class ExtractionService:
                 selected_evidence=selected_evidence,
                 context_window=context_window,
             )
+            if item.requirement_id == "semantic_attributes" and item.applicable:
+                document = self._apply_quantitative_evidence_groups(
+                    data_package_id=data_package_id,
+                    profile_identifier=profile_identifier,
+                    document=document,
+                    evidence_context=evidence_context,
+                    validation_schema=validation_schema,
+                    state=state,
+                    progress=progress,
+                    requirement=requirement,
+                    item=item,
+                )
+            if item.status == "fulfilled" and not self._requirement_target_path_exists(
+                document=document,
+                target_paths=item.target_paths or requirement.target_paths,
+            ):
+                item.status = "missing"
+                item.quality = 0.0
+                item.weighted_score = 0.0
+                item.rationale = (
+                    f"{item.rationale} Missing required target path despite fulfilled evaluator status."
+                ).strip()
             if item.status not in {"missing", "partial"} or not item.applicable:
                 continue
             if not selected_evidence:
@@ -4708,7 +4742,7 @@ class ExtractionService:
         ]
         if requirement.expected_target_class == "QuantitativeAttribute":
             ranking_explanation.append(
-                "Observation-frequency measurement evidence is preferred over ranges and formula text."
+                "Portable evidence with a numeric value and quantity label is grouped for quantitative projection."
             )
         state.evidence_query_ledger = [
             record
@@ -4796,6 +4830,597 @@ class ExtractionService:
         progress.field_completion_ledger = state.field_completion_ledger
         progress.projection_ledger = state.projection_ledger
 
+    def _apply_quantitative_evidence_groups(
+        self,
+        *,
+        data_package_id: str,
+        profile_identifier: str,
+        document: dict[str, Any],
+        evidence_context: RoutedEvidenceContext,
+        validation_schema: dict[str, Any],
+        state: ExtractionRunState,
+        progress: ExtractionRunProgress,
+        requirement: DcatRequirement,
+        item: Any,
+    ) -> dict[str, Any]:
+        groups = self._quantitative_evidence_groups(evidence_context.portable_evidence)
+        if not groups:
+            return document
+        projected = 0
+        skipped = 0
+        selected_notes: list[RequirementEvidenceItem] = []
+        for group in groups:
+            selected_notes.extend(self._requirement_evidence_items_for_group(group))
+            target_path, target_class, document = self._quantitative_target_path_for_group(
+                data_package_id=data_package_id,
+                profile_identifier=profile_identifier,
+                document=document,
+                group=group,
+                validation_schema=validation_schema,
+            )
+            instance = self._quantitative_attribute_instance_from_group(group)
+            if target_path is None:
+                skipped += 1
+                self._record_quantitative_group_skip(
+                    state=state,
+                    progress=progress,
+                    group=group,
+                    reason="target_unresolved: no schema-valid owner path supports has_quantitative_attribute.",
+                )
+                continue
+            duplicate_reason = self._duplicate_requirement_patch_reason(
+                document=document,
+                target_path=target_path,
+                instance=instance,
+            )
+            if duplicate_reason:
+                skipped += 1
+                self._record_quantitative_group_skip(
+                    state=state,
+                    progress=progress,
+                    group=group,
+                    target_path=target_path,
+                    reason=duplicate_reason,
+                )
+                continue
+            original = self._clone_json_object(document)
+            schema_branch = self._compact_schema_branch_for_target(
+                validation_schema=validation_schema,
+                target_path=target_path,
+            )
+            try:
+                document = apply_evidence_instance(
+                    document=document,
+                    target_path=target_path,
+                    instance=instance,
+                    data_package_id=data_package_id,
+                    target_schema=schema_branch,
+                )
+                actual_path = self._actual_requirement_patch_path(
+                    document=document,
+                    target_path=target_path,
+                )
+                appended_index = int(actual_path.rsplit("/", 1)[-1]) if actual_path else None
+                self._strip_requirement_patch_forbidden_fields(
+                    document=document,
+                    target_path=target_path,
+                    target_class="QuantitativeAttribute",
+                    appended_index=appended_index,
+                )
+            except (ValueError, TypeError) as exc:
+                skipped += 1
+                document = original
+                self._record_quantitative_group_skip(
+                    state=state,
+                    progress=progress,
+                    group=group,
+                    target_path=target_path,
+                    reason=f"projection_failed: {exc}",
+                )
+                continue
+            validation = self.profile_service.validate_document(
+                identifier=profile_identifier,
+                document=document,
+            )
+            if not validation.valid:
+                skipped += 1
+                document = original
+                self._record_quantitative_group_skip(
+                    state=state,
+                    progress=progress,
+                    group=group,
+                    target_path=target_path,
+                    reason="validation_failed: "
+                    + "; ".join(issue.message for issue in validation.errors),
+                )
+                continue
+            projected += 1
+            self._record_quantitative_group_projection(
+                state=state,
+                progress=progress,
+                group=group,
+                document=document,
+                target_path=target_path,
+                target_class=target_class,
+            )
+        if selected_notes:
+            item.selected_evidence = selected_notes
+        item.status = "fulfilled"
+        item.quality = 1.0
+        item.weighted_score = item.weight
+        item.rationale = (
+            f"Checked {len(groups)} portable numeric evidence group(s): "
+            f"{projected} projected, {skipped} skipped with ledger reasons."
+        )
+        item.patch = RequirementPatchAttempt(
+            attempted=True,
+            status="applied" if projected else "not_attempted",
+            target_class="QuantitativeAttribute",
+            reason=item.rationale,
+        )
+        state.generated_final_draft = document
+        progress.generated_final_draft = document
+        return document
+
+    @classmethod
+    def _quantitative_evidence_groups(
+        cls,
+        evidence_items: list[Any],
+    ) -> list[_QuantitativeEvidenceGroup]:
+        groups: dict[str, _QuantitativeEvidenceGroup] = {}
+        for note in evidence_items:
+            candidate = cls._quantitative_group_candidate(note)
+            if candidate is None:
+                continue
+            group_id, label, value, unit = candidate
+            existing = groups.get(group_id)
+            if existing is None:
+                groups[group_id] = _QuantitativeEvidenceGroup(
+                    group_id=group_id,
+                    label=label,
+                    value=value,
+                    unit=unit,
+                    notes=[note],
+                )
+            else:
+                existing.notes.append(note)
+        return cls._cap_repeated_quantitative_groups(list(groups.values()))
+
+    @classmethod
+    def _cap_repeated_quantitative_groups(
+        cls,
+        groups: list[_QuantitativeEvidenceGroup],
+        *,
+        per_skeleton_limit: int = 5,
+    ) -> list[_QuantitativeEvidenceGroup]:
+        kept: list[_QuantitativeEvidenceGroup] = []
+        counts: dict[str, int] = {}
+        for group in groups:
+            key = cls._quantitative_group_skeleton(group)
+            count = counts.get(key, 0)
+            if count >= per_skeleton_limit:
+                continue
+            counts[key] = count + 1
+            kept.append(group)
+        return kept
+
+    @staticmethod
+    def _quantitative_group_skeleton(group: _QuantitativeEvidenceGroup) -> str:
+        file_path = str(getattr(group.notes[0], "file_path", "") or "") if group.notes else ""
+        label = re.sub(r"[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?", " ", group.label.lower())
+        label = re.sub(r"\b(intensity|value|observed|detected|contains)\b", " ", label)
+        label = re.sub(r"[^a-z]+", " ", label).strip()
+        return "|".join([file_path, label, (group.unit or "").lower()])
+
+    @classmethod
+    def _quantitative_group_candidate(
+        cls,
+        note: Any,
+    ) -> tuple[str, str, float, str | None] | None:
+        claim = str(getattr(note, "claim", "") or "")
+        evidence_text = str(getattr(note, "evidence_text", "") or "")
+        text = f"{claim} {evidence_text}".strip()
+        if not cls._quantitative_note_category_allowed(note, claim):
+            return None
+        match = re.search(r"(?<![A-Za-z_])[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?(?![A-Za-z_])", text)
+        if not match:
+            return None
+        value = float(match.group(0))
+        unit = cls._unit_after_number(text, match.end())
+        label = cls._quantity_label_from_text(claim or evidence_text, match.group(0), unit)
+        if not label:
+            return None
+        if cls._quantitative_label_is_noise(label, claim, evidence_text):
+            return None
+        normalized_label = re.sub(r"[^a-z0-9]+", " ", label.lower()).strip()
+        value_key = ("%f" % value).rstrip("0").rstrip(".")
+        file_path = str(getattr(note, "file_path", "") or "")
+        start_idx = int(getattr(note, "start_idx", 0) or 0)
+        neighborhood = start_idx // 500
+        key = "|".join([normalized_label, value_key, (unit or "").lower(), file_path, str(neighborhood)])
+        return sha1(key.encode("utf-8")).hexdigest()[:12], label, value, unit
+
+    @staticmethod
+    def _quantitative_note_category_allowed(note: Any, claim: str) -> bool:
+        category = str(getattr(note, "category", "") or "")
+        if category == "measurement_signal":
+            return True
+        if category != "method_signal":
+            return False
+        # ponytail: generic gate only; add learned classifier if this keeps leaking noise.
+        return bool(
+            re.search(
+                r"\b(frequency|temperature|width|points|averages|scans|delay|gain|power|shift|resolution|angle|time|filter|offset|phase|axis|minimum|maximum)\b",
+                claim,
+                flags=re.I,
+            )
+        )
+
+    @staticmethod
+    def _quantitative_label_is_noise(label: str, claim: str, evidence_text: str) -> bool:
+        lowered = f"{label} {claim}".lower()
+        if re.search(r"\b(file|dataset|data package|data path|software version|parameter file|pulse sequence|program|classified|recommended)\b", lowered):
+            return True
+        if len(re.findall(r"\d", label)) > 2 and not re.search(
+            r"\b(frequency|temperature|width|points|averages|scans|delay|gain|power|shift|resolution|angle|time|filter|offset|phase|minimum|maximum)\b",
+            lowered,
+        ):
+            return True
+        if re.search(r"[\\/]|topspin\d|zg\d|\w_\w", evidence_text, flags=re.I):
+            return True
+        return False
+
+    @staticmethod
+    def _unit_after_number(text: str, number_end: int) -> str | None:
+        match = re.match(r"\s*([A-Za-z%°µμ][A-Za-z0-9%°µμ/_-]{0,10})", text[number_end:])
+        if not match:
+            return None
+        token = match.group(1).strip()
+        if token.lower() in {"is", "and", "used", "data"}:
+            return None
+        if token.isalpha() and len(token) > 4 and token.lower() == token:
+            return None
+        return token
+
+    @staticmethod
+    def _quantity_label_from_text(text: str, number_text: str, unit: str | None) -> str | None:
+        cleaned = re.sub(re.escape(number_text), " ", text, count=1)
+        if unit:
+            cleaned = re.sub(rf"\b{re.escape(unit)}\b", " ", cleaned, count=1)
+        cleaned = re.sub(r"[_=#:/\\|]+", " ", cleaned)
+        cleaned = re.sub(r"\b(the|a|an|is|are|was|were|equals?|value|set|to|of|in|at)\b", " ", cleaned, flags=re.I)
+        cleaned = re.sub(r"[^A-Za-z0-9%°µμ -]+", " ", cleaned)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip(" -")
+        if len(cleaned) < 3:
+            return None
+        return cleaned[:120]
+
+    def _quantitative_target_path_for_group(
+        self,
+        *,
+        data_package_id: str,
+        profile_identifier: str,
+        document: dict[str, Any],
+        group: _QuantitativeEvidenceGroup,
+        validation_schema: dict[str, Any],
+    ) -> tuple[str | None, str | None, dict[str, Any]]:
+        owners = self._quantitative_owner_paths(document, validation_schema)
+        if owners:
+            preferred_owner = self._preferred_quantitative_owner_class(group)
+            if preferred_owner:
+                owners = sorted(owners, key=lambda owner: 0 if owner[1] == preferred_owner else 1)
+            return f"{owners[0][0]}/has_quantitative_attribute/-", owners[0][1], document
+        created = self._create_quantitative_owner_if_reachable(
+            data_package_id=data_package_id,
+            profile_identifier=profile_identifier,
+            document=document,
+            group=group,
+            validation_schema=validation_schema,
+        )
+        if created is None:
+            return None, None, document
+        owner_path, owner_class, document = created
+        return f"{owner_path}/has_quantitative_attribute/-", owner_class, document
+
+    def _quantitative_owner_paths(
+        self,
+        document: dict[str, Any],
+        validation_schema: dict[str, Any],
+    ) -> list[tuple[str, str]]:
+        candidates: list[tuple[str, str]] = []
+        for key, owner_class in (
+            ("was_generated_by", "DataGeneratingActivity"),
+            ("is_about_activity", "EvaluatedActivity"),
+            ("is_about_entity", "EvaluatedEntity"),
+        ):
+            for index, value in enumerate(document.get(key) or []):
+                if isinstance(value, dict) and self._class_supports_quantitative_attribute(validation_schema, owner_class):
+                    candidates.append((f"/{key}/{index}", owner_class))
+        for activity_index, activity in enumerate(document.get("was_generated_by") or []):
+            if not isinstance(activity, dict):
+                continue
+            for agent_index, agent in enumerate(activity.get("carried_out_by") or []):
+                owner_class = self._quantitative_owner_class_from_object(agent)
+                if self._class_supports_quantitative_attribute(validation_schema, owner_class):
+                    candidates.append((f"/was_generated_by/{activity_index}/carried_out_by/{agent_index}", owner_class))
+        return candidates
+
+    def _create_quantitative_owner_if_reachable(
+        self,
+        *,
+        data_package_id: str,
+        profile_identifier: str,
+        document: dict[str, Any],
+        group: _QuantitativeEvidenceGroup,
+        validation_schema: dict[str, Any],
+    ) -> tuple[str, str, dict[str, Any]] | None:
+        preferred_owner = self._preferred_quantitative_owner_class(group)
+        if preferred_owner in {"Device", "Software"} and self._class_supports_quantitative_attribute(validation_schema, preferred_owner):
+            document = self._ensure_generation_activity_owner(
+                data_package_id=data_package_id,
+                profile_identifier=profile_identifier,
+                document=document,
+                validation_schema=validation_schema,
+            )
+            if document.get("was_generated_by"):
+                target_path = "/was_generated_by/0/carried_out_by/-"
+                if self._schema_for_json_pointer(validation_schema, target_path[:-2]):
+                    owner = {
+                        "title": preferred_owner,
+                        "description": f"{preferred_owner} inferred from quantitative evidence: {group.label}.",
+                        "rdf_type": {"title": preferred_owner},
+                    }
+                    original = self._clone_json_object(document)
+                    try:
+                        updated = apply_evidence_instance(
+                            document=document,
+                            target_path=target_path,
+                            instance=owner,
+                            data_package_id=data_package_id,
+                            target_schema=self._compact_schema_branch_for_target(
+                                validation_schema=validation_schema,
+                                target_path=target_path,
+                            ),
+                        )
+                    except ValueError:
+                        updated = None
+                    if updated is not None:
+                        validation = self.profile_service.validate_document(
+                            identifier=profile_identifier,
+                            document=updated,
+                        )
+                        if validation.valid:
+                            index = len(updated["was_generated_by"][0].get("carried_out_by") or []) - 1
+                            return f"/was_generated_by/0/carried_out_by/{index}", preferred_owner, updated
+                    document.clear()
+                    document.update(original)
+        if self._class_supports_quantitative_attribute(validation_schema, "DataGeneratingActivity"):
+            updated = self._ensure_generation_activity_owner(
+                data_package_id=data_package_id,
+                profile_identifier=profile_identifier,
+                document=document,
+                validation_schema=validation_schema,
+            )
+            if updated.get("was_generated_by"):
+                return f"/was_generated_by/{len(updated.get('was_generated_by') or []) - 1}", "DataGeneratingActivity", updated
+        return None
+
+    def _ensure_generation_activity_owner(
+        self,
+        *,
+        data_package_id: str,
+        profile_identifier: str,
+        document: dict[str, Any],
+        validation_schema: dict[str, Any],
+    ) -> dict[str, Any]:
+        if document.get("was_generated_by"):
+            return document
+        if not self._class_supports_quantitative_attribute(validation_schema, "DataGeneratingActivity"):
+            return document
+        original = self._clone_json_object(document)
+        try:
+            updated = apply_evidence_instance(
+                document=document,
+                target_path="/was_generated_by/-",
+                instance={
+                    "title": "Data generating activity",
+                    "description": "Activity inferred from quantitative evidence.",
+                },
+                data_package_id=data_package_id,
+                target_schema=self._compact_schema_branch_for_target(
+                    validation_schema=validation_schema,
+                    target_path="/was_generated_by/-",
+                ),
+            )
+        except ValueError:
+            return original
+        validation = self.profile_service.validate_document(
+            identifier=profile_identifier,
+            document=updated,
+        )
+        return updated if validation.valid else original
+
+    @staticmethod
+    def _preferred_quantitative_owner_class(group: _QuantitativeEvidenceGroup) -> str | None:
+        text = " ".join(
+            [group.label]
+            + [str(getattr(note, "claim", "") or "") for note in group.notes]
+            + [str(getattr(note, "evidence_text", "") or "") for note in group.notes]
+        ).lower()
+        if "software" in text:
+            return "Software"
+        if "device" in text:
+            return "Device"
+        return None
+
+    @staticmethod
+    def _quantitative_owner_class_from_object(value: Any) -> str:
+        text = json.dumps(value, ensure_ascii=False).lower() if isinstance(value, dict) else ""
+        if "software" in text:
+            return "Software"
+        if "device" in text:
+            return "Device"
+        return "AgenticEntity"
+
+    @classmethod
+    def _class_supports_quantitative_attribute(
+        cls,
+        validation_schema: dict[str, Any],
+        class_name: str,
+    ) -> bool:
+        defs = validation_schema.get("$defs") if isinstance(validation_schema, dict) else None
+        if not isinstance(defs, dict):
+            return False
+        schema = cls._resolve_schema_node(defs.get(class_name, {}), validation_schema)
+        properties = schema.get("properties") if isinstance(schema, dict) else None
+        return isinstance(properties, dict) and "has_quantitative_attribute" in properties
+
+    @staticmethod
+    def _quantitative_attribute_instance_from_group(
+        group: _QuantitativeEvidenceGroup,
+    ) -> dict[str, Any]:
+        title = group.label[:1].upper() + group.label[1:]
+        instance: dict[str, Any] = {
+            "title": title,
+            "description": f"Evidence-grounded quantitative attribute: {group.label}.",
+            "value": group.value,
+            "has_quantity_type": group.label,
+        }
+        if group.unit:
+            instance["unit"] = group.unit
+        return instance
+
+    def _record_quantitative_group_projection(
+        self,
+        *,
+        state: ExtractionRunState,
+        progress: ExtractionRunProgress,
+        group: _QuantitativeEvidenceGroup,
+        document: dict[str, Any],
+        target_path: str,
+        target_class: str | None,
+    ) -> None:
+        actual_path = self._actual_requirement_patch_path(document=document, target_path=target_path)
+        evidence_ids = self._evidence_ids_for_group(group)
+        generated_value = self._value_at_json_pointer(document, actual_path) if actual_path else None
+        state.field_completion_ledger = [
+            record
+            for record in state.field_completion_ledger
+            if record.json_path != actual_path
+        ]
+        state.field_completion_ledger.append(
+            FieldCompletionLedgerRecord(
+                json_path=actual_path,
+                field_name="has_quantitative_attribute",
+                generated_value=generated_value,
+                source_evidence=evidence_ids,
+                validation_status="valid",
+                enrichment_status="grounded",
+                issue_categories=[],
+                edit_needed_reason="semantic_attributes: quantitative evidence group projected.",
+            )
+        )
+        object_identifier = f"quantitative_group:{group.group_id}:{actual_path}"
+        state.projection_ledger = [
+            record
+            for record in state.projection_ledger
+            if record.object_identifier != object_identifier
+        ]
+        state.projection_ledger.append(
+            ProjectionLedgerRecord(
+                object_identifier=object_identifier,
+                object_kind="QuantitativeAttribute",
+                source_evidence=evidence_ids[0] if evidence_ids else None,
+                evidence_note_identifiers=evidence_ids,
+                status="projected",
+                projected_paths=[actual_path] if actual_path else [],
+                target_path=actual_path or None,
+                target_class=target_class or "QuantitativeAttribute",
+                planner_status="semantic_attributes",
+                planner_reason="Portable numeric evidence group projected.",
+                evidence_quality={
+                    "quantity_label": group.label,
+                    "value": group.value,
+                    "unit": group.unit,
+                    "evidence_ids": evidence_ids,
+                },
+                merge_status="applied",
+                reason="Projected schema-valid quantitative attribute.",
+            )
+        )
+        progress.field_completion_ledger = state.field_completion_ledger
+        progress.projection_ledger = state.projection_ledger
+
+    def _record_quantitative_group_skip(
+        self,
+        *,
+        state: ExtractionRunState,
+        progress: ExtractionRunProgress,
+        group: _QuantitativeEvidenceGroup,
+        reason: str,
+        target_path: str | None = None,
+    ) -> None:
+        evidence_ids = self._evidence_ids_for_group(group)
+        object_identifier = f"quantitative_group:{group.group_id}:skip"
+        state.projection_ledger = [
+            record
+            for record in state.projection_ledger
+            if record.object_identifier != object_identifier
+        ]
+        state.projection_ledger.append(
+            ProjectionLedgerRecord(
+                object_identifier=object_identifier,
+                object_kind="QuantitativeAttribute",
+                source_evidence=evidence_ids[0] if evidence_ids else None,
+                evidence_note_identifiers=evidence_ids,
+                status="not_projected",
+                projected_paths=[],
+                target_path=target_path,
+                target_class="QuantitativeAttribute",
+                planner_status="semantic_attributes",
+                planner_reason=reason,
+                evidence_quality={
+                    "quantity_label": group.label,
+                    "value": group.value,
+                    "unit": group.unit,
+                    "evidence_ids": evidence_ids,
+                },
+                merge_status="skipped",
+                reason=reason,
+            )
+        )
+        progress.projection_ledger = state.projection_ledger
+
+    @staticmethod
+    def _evidence_ids_for_group(group: _QuantitativeEvidenceGroup) -> list[str]:
+        ids: list[str] = []
+        for note in group.notes:
+            evidence_id = getattr(note, "evidence_id", "") or stable_evidence_id(note)
+            if evidence_id and evidence_id not in ids:
+                ids.append(evidence_id)
+        return ids
+
+    @classmethod
+    def _requirement_evidence_items_for_group(
+        cls,
+        group: _QuantitativeEvidenceGroup,
+    ) -> list[RequirementEvidenceItem]:
+        items: list[RequirementEvidenceItem] = []
+        for note in group.notes:
+            items.append(
+                RequirementEvidenceItem(
+                    evidence_id=getattr(note, "evidence_id", "") or stable_evidence_id(note),
+                    candidate_id=str(getattr(note, "candidate_id", "") or ""),
+                    category=str(getattr(note, "category", "") or ""),
+                    claim=str(getattr(note, "claim", "") or ""),
+                    evidence_text=str(getattr(note, "evidence_text", "") or ""),
+                    file_path=str(getattr(note, "file_path", "") or ""),
+                    start_idx=int(getattr(note, "start_idx", 0) or 0),
+                    end_idx=int(getattr(note, "end_idx", 0) or 0),
+                )
+            )
+        return items
+
     @classmethod
     def _actual_requirement_patch_path(cls, *, document: dict[str, Any], target_path: str) -> str:
         if not target_path.endswith("/-"):
@@ -4805,6 +5430,22 @@ class ExtractionService:
         if isinstance(value, list) and value:
             return f"{parent_path}/{len(value) - 1}"
         return parent_path
+
+    @classmethod
+    def _requirement_target_path_exists(cls, *, document: dict[str, Any], target_paths: list[str]) -> bool:
+        concrete_paths = [path for path in target_paths if path and path != "/"]
+        if not concrete_paths:
+            return True
+        for path in concrete_paths:
+            if path.endswith("/-"):
+                value = cls._value_at_json_pointer(document, path[:-2])
+                if isinstance(value, list) and value:
+                    return True
+                continue
+            value = cls._value_at_json_pointer(document, path)
+            if not cls._is_missing_value(value):
+                return True
+        return False
 
     @staticmethod
     def _field_name_from_json_pointer(path: str) -> str:
@@ -5259,29 +5900,17 @@ class ExtractionService:
     @staticmethod
     def _quantitative_evidence_rank(entry: Any) -> tuple[int, int, int]:
         text = f"{getattr(entry, 'claim', '')} {getattr(entry, 'evidence_text', '')}".lower()
-        explicit_observation = int("observe frequency" in text or "observation frequency" in text)
-        observed_value = int("=" in text and not any(marker in text for marker in ("rel ", "subrange", "range of", "0..")))
+        has_number = int(bool(re.search(r"[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?", text)))
+        observed_value = int("=" in text)
         measurement_signal = int(str(getattr(entry, "category", "")) == "measurement_signal")
-        return (explicit_observation, observed_value, measurement_signal)
+        return (has_number, observed_value, measurement_signal)
 
     @staticmethod
     def _quantitative_attribute_title(text: str, quantity_type: str) -> str:
-        lowered = text.lower()
-        if "observe frequency" in lowered or "observation frequency" in lowered:
-            return "1H observation frequency"
-        if quantity_type == "temperature":
-            return "Acquisition temperature"
-        if quantity_type == "spectral width":
-            return "Spectral width"
-        if quantity_type == "data points":
-            return "Data point count"
         return quantity_type[:1].upper() + quantity_type[1:]
 
     @staticmethod
     def _quantitative_attribute_description(text: str, quantity_type: str, unit: str | None) -> str:
-        lowered = text.lower()
-        if "observe frequency" in lowered or "observation frequency" in lowered:
-            return "Observed proton frequency during NMR acquisition."
         unit_suffix = f" in {unit}" if unit else ""
         return f"Evidence-grounded {quantity_type}{unit_suffix}."
 
@@ -5297,23 +5926,13 @@ class ExtractionService:
 
     @staticmethod
     def _infer_quantity_type(text: str) -> str | None:
-        lowered = text.lower()
-        quantity_hints = [
-            ("observe frequency", "frequency"),
-            ("observation frequency", "frequency"),
-            ("temperature", "temperature"),
-            ("frequency", "frequency"),
-            ("spectral width", "spectral width"),
-            ("width", "width"),
-            ("data points", "data points"),
-            ("points", "data points"),
-            ("threshold", "threshold"),
-            ("flip angle", "flip angle"),
-            ("relaxation delay", "relaxation delay"),
-        ]
-        for needle, quantity_type in quantity_hints:
-            if needle in lowered:
-                return quantity_type
+        match = re.search(r"[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?", text)
+        if match:
+            return ExtractionService._quantity_label_from_text(
+                text,
+                match.group(0),
+                ExtractionService._unit_after_number(text, match.end()),
+            )
         return "measured quantity"
 
     @staticmethod

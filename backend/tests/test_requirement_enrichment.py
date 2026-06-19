@@ -285,6 +285,63 @@ class FakeProfileService:
         return ProfileValidationResult(valid=True, errors=[])
 
 
+def quantitative_schema(*owner_classes: str) -> dict:
+    defs = {
+        "QuantitativeAttribute": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "description": {"type": "string"},
+                "value": {"type": "number"},
+                "has_quantity_type": {"type": "string"},
+                "unit": {"type": "string"},
+            },
+        }
+    }
+    for owner_class in owner_classes:
+        defs[owner_class] = {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "title": {"type": "string"},
+                "description": {"type": "string"},
+                "rdf_type": {"type": "object"},
+                "carried_out_by": {
+                    "type": "array",
+                    "items": {
+                        "anyOf": [
+                            {"$ref": "#/$defs/AgenticEntity"},
+                            {"$ref": "#/$defs/Device"},
+                            {"$ref": "#/$defs/Software"},
+                        ]
+                    },
+                },
+                "has_quantitative_attribute": {
+                    "type": "array",
+                    "items": {"$ref": "#/$defs/QuantitativeAttribute"},
+                },
+            },
+        }
+    return {
+        "type": "object",
+        "properties": {
+            "was_generated_by": {
+                "type": "array",
+                "items": {"$ref": "#/$defs/DataGeneratingActivity"},
+            },
+            "is_about_activity": {
+                "type": "array",
+                "items": {"$ref": "#/$defs/EvaluatedActivity"},
+            },
+            "is_about_entity": {
+                "type": "array",
+                "items": {"$ref": "#/$defs/EvaluatedEntity"},
+            },
+        },
+        "$defs": defs,
+    }
+
+
 class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_requirement_enrichment_persists_report_and_initial_draft(self):
         repo = Mock()
@@ -496,6 +553,99 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(item.status, "fulfilled")
         self.assertEqual(item.patch.status, "applied")
 
+    async def test_fulfilled_requirement_with_missing_target_path_is_patched(self):
+        repo = Mock()
+        service = ExtractionService(
+            profile_service=FakeProfileService(),
+            settings=Settings(),
+            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
+            output_repository=repo,
+        )
+        requirement = next(req for req in DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS if req.requirement_id == "method_plan")
+        service._evaluate_dcat_requirements = AsyncMock(
+            side_effect=[
+                RequirementEvaluation(
+                    assessments=[
+                        RequirementAssessment(
+                            requirement_id=req.requirement_id,
+                            status="fulfilled",
+                            quality=1.0,
+                            applicable=True,
+                            target_paths=req.target_paths,
+                            evidence_search_hints=["pulse sequence"] if req.requirement_id == requirement.requirement_id else [],
+                            expected_target_class=req.expected_target_class,
+                        )
+                        for req in DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS
+                    ]
+                ),
+                RequirementEvaluation(
+                    assessments=[
+                        RequirementAssessment(
+                            requirement_id=requirement.requirement_id,
+                            status="fulfilled",
+                            quality=1.0,
+                            applicable=True,
+                            target_paths=requirement.target_paths,
+                            evidence_search_hints=["pulse sequence"],
+                            expected_target_class="Plan",
+                        )
+                    ]
+                ),
+            ]
+        )
+        service._patch_requirement_gap = AsyncMock(
+            return_value=(
+                {
+                    "id": "pkg",
+                    "title": ["Dataset"],
+                    "description": ["Desc"],
+                    "was_generated_by": [{"id": "act", "realized_plan": {"title": "zg30"}}],
+                    "is_about_activity": [{"title": ["zg30 pulse sequence"]}],
+                },
+                RequirementPatchAttempt(
+                    attempted=True,
+                    status="applied",
+                    target_path="/was_generated_by/0/realized_plan",
+                    target_class="Plan",
+                    reason="Applied.",
+                ),
+            )
+        )
+        state = ExtractionRunState(
+            generated_final_draft={
+                "id": "pkg",
+                "title": ["Dataset"],
+                "description": ["Desc"],
+                "was_generated_by": [{"id": "act"}],
+                "is_about_activity": [{"title": ["zg30 pulse sequence"]}],
+            },
+            chat_model="test-model",
+        )
+        progress = ExtractionRunProgress(warnings=[])
+        evidence_context = RoutedEvidenceContext(
+            portable_evidence=[
+                EvidenceCandidate(
+                    candidate_id="p1",
+                    category="method_signal",
+                    claim="Pulse sequence is zg30.",
+                    evidence_text="PULPROG= zg30",
+                )
+            ]
+        )
+
+        document = await service._enrich_draft_with_requirements(
+            data_package_id="pkg",
+            profile_identifier="dcat-ap-plus",
+            evidence_context=evidence_context,
+            validation_schema={},
+            state=state,
+            progress=progress,
+            warnings=[],
+        )
+
+        service._patch_requirement_gap.assert_awaited()
+        self.assertEqual(document["was_generated_by"][0]["realized_plan"]["title"], "zg30")
+
     def test_duplicate_requirement_patch_is_rejected(self):
         service = ExtractionService(
             profile_service=FakeProfileService(),
@@ -560,7 +710,285 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("type", sanitized)
         self.assertNotIn("rdf_type", sanitized)
 
-    def test_quantitative_patch_prefers_explicit_observation_frequency_evidence(self):
+    def test_quantitative_evidence_groups_multiple_numeric_labels(self):
+        notes = [
+            EvidenceCandidate(
+                candidate_id="frequency",
+                category="measurement_signal",
+                claim="Observation frequency is 400.13 MHz.",
+                evidence_text="OBSERVE FREQUENCY=400.13 MHz",
+                file_path="acqus",
+                start_idx=10,
+                end_idx=40,
+            ),
+            EvidenceCandidate(
+                candidate_id="scans",
+                category="measurement_signal",
+                claim="Number of scans is 16.",
+                evidence_text="NS=16",
+                file_path="acqus",
+                start_idx=120,
+                end_idx=130,
+            ),
+        ]
+
+        groups = ExtractionService._quantitative_evidence_groups(notes)
+
+        self.assertEqual(len(groups), 2)
+        self.assertEqual(groups[1].value, 16.0)
+        self.assertIsNone(groups[1].unit)
+
+    def test_quantitative_duplicate_groups_merge_evidence_ids(self):
+        notes = [
+            EvidenceCandidate(
+                candidate_id="a",
+                category="measurement_signal",
+                claim="Temperature is 298 K.",
+                evidence_text="TEMP=298 K",
+                file_path="acqus",
+                start_idx=10,
+                end_idx=20,
+            ),
+            EvidenceCandidate(
+                candidate_id="b",
+                category="measurement_signal",
+                claim="Temperature is 298 K.",
+                evidence_text="TEMP=298 K",
+                file_path="acqus",
+                start_idx=30,
+                end_idx=40,
+            ),
+        ]
+
+        groups = ExtractionService._quantitative_evidence_groups(notes)
+
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(len(groups[0].notes), 2)
+
+    def test_quantitative_grouping_rejects_identifier_and_path_numbers(self):
+        notes = [
+            EvidenceCandidate(
+                candidate_id="title",
+                category="resource_signal",
+                claim="Dataset name is 1H_NMR_clean.",
+                evidence_text="##TITLE=1H_NMR_clean /opt/topspin3.5pl6/data",
+            ),
+            EvidenceCandidate(
+                candidate_id="program",
+                category="method_signal",
+                claim="Pulse sequence used was zg30.",
+                evidence_text="/opt/topspin3.5pl6/exp/stan/nmr/lists/pp/zg30",
+            ),
+            EvidenceCandidate(
+                candidate_id="software",
+                category="data_quality_signal",
+                claim="TopSpin 3.5 pl 6 software version.",
+                evidence_text="TopSpin 3.5 pl 6",
+            ),
+            EvidenceCandidate(
+                candidate_id="good",
+                category="measurement_signal",
+                claim="Observation frequency is 400.13 MHz.",
+                evidence_text="OBSERVE FREQUENCY=400.13 MHz",
+            ),
+        ]
+
+        groups = ExtractionService._quantitative_evidence_groups(notes)
+
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].value, 400.13)
+
+    def test_quantitative_grouping_caps_repeated_row_like_values(self):
+        notes = [
+            EvidenceCandidate(
+                candidate_id=f"peak-{index}",
+                category="measurement_signal",
+                claim=f"Peak observed spectrum at {7.0 + index / 1000} ppm.",
+                evidence_text=f"{7.0 + index / 1000} ppm",
+                file_path="peaks.txt",
+                start_idx=index * 10,
+                end_idx=index * 10 + 5,
+            )
+            for index in range(12)
+        ]
+
+        groups = ExtractionService._quantitative_evidence_groups(notes)
+
+        self.assertEqual(len(groups), 5)
+
+    def test_quantitative_groups_project_to_existing_owner_before_creating_owner(self):
+        service = ExtractionService(
+            profile_service=FakeProfileService(),
+            settings=Settings(),
+            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
+        )
+        requirement = next(req for req in DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS if req.requirement_id == "semantic_attributes")
+        state = ExtractionRunState(
+            generated_final_draft={
+                "id": "pkg",
+                "title": ["Dataset"],
+                "description": ["Desc"],
+                "was_generated_by": [{"id": "act", "title": "Acquisition"}],
+            },
+            chat_model="test-model",
+        )
+        progress = ExtractionRunProgress(warnings=[])
+        item = RequirementReportItem(
+            requirement_id="semantic_attributes",
+            label=requirement.label,
+            weight=requirement.weight,
+            status="missing",
+            applicable=True,
+            quality=0.0,
+            weighted_score=0.0,
+            target_paths=requirement.target_paths,
+            evidence_search_hints=requirement.evidence_hints,
+        )
+        context = RoutedEvidenceContext(
+            portable_evidence=[
+                EvidenceCandidate(
+                    candidate_id="freq",
+                    category="measurement_signal",
+                    claim="Observation frequency is 400.13 MHz.",
+                    evidence_text="OBSERVE FREQUENCY=400.13 MHz",
+                    file_path="acqus",
+                    start_idx=10,
+                    end_idx=40,
+                ),
+                EvidenceCandidate(
+                    candidate_id="scans",
+                    category="measurement_signal",
+                    claim="Number of scans is 16.",
+                    evidence_text="NS=16",
+                    file_path="acqus",
+                    start_idx=120,
+                    end_idx=130,
+                ),
+            ]
+        )
+
+        document = service._apply_quantitative_evidence_groups(
+            data_package_id="pkg",
+            profile_identifier="dcat-ap-plus",
+            document=state.generated_final_draft,
+            evidence_context=context,
+            validation_schema=quantitative_schema("DataGeneratingActivity"),
+            state=state,
+            progress=progress,
+            requirement=requirement,
+            item=item,
+        )
+
+        self.assertEqual(len(document["was_generated_by"]), 1)
+        self.assertEqual(len(document["was_generated_by"][0]["has_quantitative_attribute"]), 2)
+        self.assertEqual(len(state.field_completion_ledger), 2)
+        self.assertTrue(all(record.source_evidence for record in state.field_completion_ledger))
+        self.assertEqual(item.status, "fulfilled")
+
+    def test_quantitative_group_creates_reachable_device_owner(self):
+        service = ExtractionService(
+            profile_service=FakeProfileService(),
+            settings=Settings(),
+            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
+        )
+        requirement = next(req for req in DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS if req.requirement_id == "semantic_attributes")
+        state = ExtractionRunState(
+            generated_final_draft={"id": "pkg", "title": ["Dataset"], "description": ["Desc"]},
+            chat_model="test-model",
+        )
+        progress = ExtractionRunProgress(warnings=[])
+        item = RequirementReportItem(
+            requirement_id="semantic_attributes",
+            label=requirement.label,
+            weight=requirement.weight,
+            status="missing",
+            applicable=True,
+            quality=0.0,
+            weighted_score=0.0,
+        )
+        context = RoutedEvidenceContext(
+            portable_evidence=[
+                EvidenceCandidate(
+                    candidate_id="device-temp",
+                    category="measurement_signal",
+                    claim="Device temperature is 298 K.",
+                    evidence_text="temperature 298 K",
+                    file_path="run.txt",
+                    start_idx=0,
+                    end_idx=20,
+                )
+            ]
+        )
+
+        document = service._apply_quantitative_evidence_groups(
+            data_package_id="pkg",
+            profile_identifier="dcat-ap-plus",
+            document=state.generated_final_draft,
+            evidence_context=context,
+            validation_schema=quantitative_schema("DataGeneratingActivity", "AgenticEntity", "Device"),
+            state=state,
+            progress=progress,
+            requirement=requirement,
+            item=item,
+        )
+
+        owner = document["was_generated_by"][0]["carried_out_by"][0]
+        self.assertEqual(owner["rdf_type"]["title"], "Device")
+        self.assertEqual(owner["has_quantitative_attribute"][0]["value"], 298.0)
+
+    def test_quantitative_unreachable_owner_group_is_skipped(self):
+        service = ExtractionService(
+            profile_service=FakeProfileService(),
+            settings=Settings(),
+            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
+        )
+        requirement = next(req for req in DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS if req.requirement_id == "semantic_attributes")
+        state = ExtractionRunState(
+            generated_final_draft={"id": "pkg", "title": ["Dataset"], "description": ["Desc"]},
+            chat_model="test-model",
+        )
+        progress = ExtractionRunProgress(warnings=[])
+        item = RequirementReportItem(
+            requirement_id="semantic_attributes",
+            label=requirement.label,
+            weight=requirement.weight,
+            status="missing",
+            applicable=True,
+            quality=0.0,
+            weighted_score=0.0,
+        )
+        context = RoutedEvidenceContext(
+            portable_evidence=[
+                EvidenceCandidate(
+                    candidate_id="value",
+                    category="measurement_signal",
+                    claim="Measured value is 12.",
+                    evidence_text="value 12",
+                    file_path="run.txt",
+                    start_idx=0,
+                    end_idx=20,
+                )
+            ]
+        )
+
+        document = service._apply_quantitative_evidence_groups(
+            data_package_id="pkg",
+            profile_identifier="dcat-ap-plus",
+            document=state.generated_final_draft,
+            evidence_context=context,
+            validation_schema=quantitative_schema(),
+            state=state,
+            progress=progress,
+            requirement=requirement,
+            item=item,
+        )
+
+        self.assertNotIn("was_generated_by", document)
+        self.assertEqual(item.status, "fulfilled")
+        self.assertEqual(state.projection_ledger[0].merge_status, "skipped")
+        self.assertIn("target_unresolved", state.projection_ledger[0].reason)
+
+    def test_quantitative_patch_fallback_keeps_first_generic_numeric_evidence(self):
         service = ExtractionService(
             profile_service=FakeProfileService(),
             settings=Settings(),
@@ -591,10 +1019,32 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             ),
         )
 
-        self.assertEqual(sanitized["title"], "1H observation frequency")
-        self.assertEqual(sanitized["value"], 500.133088507478)
-        self.assertEqual(sanitized["has_quantity_type"], "frequency")
-        self.assertEqual(sanitized["unit"], "MHz")
+        self.assertEqual(sanitized["value"], 125000.0)
+        self.assertIn("Field width", sanitized["has_quantity_type"])
+
+    def test_single_frequency_quantitative_group_still_projects(self):
+        service = ExtractionService(
+            profile_service=FakeProfileService(),
+            settings=Settings(),
+            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
+        )
+        groups = service._quantitative_evidence_groups(
+            [
+                EvidenceCandidate(
+                    candidate_id="frequency",
+                    category="measurement_signal",
+                    claim="Observation frequency is 500.133088507478 MHz.",
+                    evidence_text="##.OBSERVE FREQUENCY=500.133088507478 MHz",
+                    file_path="acqus",
+                    start_idx=10,
+                    end_idx=40,
+                )
+            ]
+        )
+
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].value, 500.133088507478)
+        self.assertEqual(groups[0].unit, "MHz")
 
     def test_requirement_patch_strip_removes_auto_ids_from_schema_forbidden_targets(self):
         service = ExtractionService(

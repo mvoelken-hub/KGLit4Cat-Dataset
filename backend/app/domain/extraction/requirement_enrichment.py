@@ -185,6 +185,7 @@ You evaluate DCAT-AP+ scientific metadata completeness for one Dataset draft.
 Return only JSON matching the supplied schema.
 Return exactly one assessment for every supplied requirement_id. Do not omit requirements.
 Assess applicability and quality, not JSON Schema validity.
+For requirements with target_paths, mark fulfilled only when the draft contains data at one of those paths.
 Use statuses: fulfilled, partial, missing, not_applicable.
 quality must be 1 for fulfilled, 0.5 for partial, 0 for missing/not_applicable.
 For missing/partial requirements, provide evidence_search_hints and target_paths.

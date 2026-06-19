@@ -70,6 +70,7 @@ Reasoning:
 - Source text makes later review and validation possible.
 - Routing evidence into portable, contextual, and rejected groups separates strong claims from weak or local observations.
 - Rejected/contextual evidence can expose uncertainty instead of silently disappearing.
+- Quantitative evidence grouping remains domain-agnostic: candidates are grouped by numeric value, quantity label, optional unit, and source context rather than by hard-coded instrument- or domain-specific parameter names.
 
 Thesis claim supported: SIMONE makes traceability and evidence grounding central to metadata construction.
 
