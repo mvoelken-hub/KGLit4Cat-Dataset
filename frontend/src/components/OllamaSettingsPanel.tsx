@@ -1,6 +1,6 @@
 import { type FormEvent, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { PatchTokenUsage } from '../api/extraction';
+import type { WorkflowTokenUsage } from '../api/extraction';
 import type { LlmBudget, OllamaConfig, OllamaPerformanceTest } from '../api/system';
 import { formatDuration, formatMemory, formatTokenCount } from '../lib/format';
 import { requestAverage } from './TokenUsageSummary';
@@ -8,7 +8,7 @@ export function OllamaSettingsPanel({
   config,
   budget,
   tokenUsage,
-  patchTokenUsage,
+  WorkflowTokenUsage,
   busy,
   onApply,
   onRefresh,
@@ -18,8 +18,8 @@ export function OllamaSettingsPanel({
 }: {
   config: OllamaConfig | null;
   budget: LlmBudget | null;
-  tokenUsage: PatchTokenUsage | null;
-  patchTokenUsage?: PatchTokenUsage | null;
+  tokenUsage: WorkflowTokenUsage | null;
+  WorkflowTokenUsage?: WorkflowTokenUsage | null;
   busy: boolean;
   onApply: (values: {
     chat_model: string;
@@ -39,7 +39,7 @@ export function OllamaSettingsPanel({
   }) => Promise<OllamaPerformanceTest>;
 }) {
   const runtime = config?.runtime;
-  const combinedUsage = patchTokenUsage?.combined ?? tokenUsage?.combined ?? null;
+  const combinedUsage = WorkflowTokenUsage?.combined ?? tokenUsage?.combined ?? null;
   const averageInput = combinedUsage ? requestAverage(combinedUsage, 'input') : 0;
   const [chatModel, setChatModel] = useState('');
   const [embeddingModel, setEmbeddingModel] = useState('');
@@ -370,4 +370,5 @@ export function OllamaSettingsPanel({
     </section>
   );
 }
+
 

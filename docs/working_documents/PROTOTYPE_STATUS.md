@@ -17,7 +17,9 @@ This document is the implementation-facing counterpart to `WORKFLOW.md`. It reco
 | Ground selected terms against vocabularies | Semantic service imports RDF vocabularies, creates vector/full-text indexes, retrieves candidates, expands graph context, and supports candidate selection for quantitative and qualitative attributes. | Implemented. Quality depends on vocabulary coverage, embeddings, Neo4j state, and LLM candidate selection. |
 | Project accumulated context into metadata profile | Final profile projection uses selected profile schema and normalized context to produce a profile-shaped document. | Implemented. Projection can fail if schema requirements are not satisfied. |
 | Validate final document | Result is validated against selected profile before final persistence. | Implemented. Validation checks schema conformance, not scientific correctness. |
-| Retrieve result and inspect artifacts | Result, progress, warnings, token usage, vocabulary query records, and evidence/projection state are persisted and exposed through API/frontend paths. | Implemented at prototype level. UI/terminology still has some legacy draft/patch naming. |
+| Retrieve result and inspect artifacts | Result, progress, warnings, token usage, vocabulary query records, and evidence/projection state are persisted and exposed through stage/workflow API and frontend paths. | Implemented at prototype level. Some internal artifact names still use draft/projection terminology where they describe profile construction. |
+
+The backend extraction implementation is split by workflow responsibility: `WorkflowService` orchestrates task scheduling, progress, state, and result retrieval; stage services handle orientation, evidence extraction, vocabulary grounding, profile projection, and curation. Deterministic extraction helpers remain in `app.domain.extraction` rather than in runtime services.
 
 ## Current Workflow Entrypoints
 
@@ -41,13 +43,18 @@ Important current API surfaces:
 
 - `POST /api/v1/datasources`
 - `POST /api/v1/datasources/chunk`
-- `POST /api/v1/extraction/run/{data_package_id}/initial-context`
-- `GET /api/v1/extraction/run/{data_package_id}/initial-context/progress`
-- `POST /api/v1/extraction/run`
-- `POST /api/v1/extraction/workflows/complete`
-- `GET /api/v1/extraction/workflows/complete/{data_package_id}/progress`
-- `GET /api/v1/extraction/result/{data_package_id}`
-- `GET /api/v1/extraction/{data_package_id}/token-usage`
+- `POST /api/v1/extraction/stages/orientation/{data_package_id}`
+- `GET /api/v1/extraction/stages/orientation/{data_package_id}/progress`
+- `POST /api/v1/extraction/stages/evidence`
+- `GET /api/v1/extraction/stages/evidence/{data_package_id}/progress`
+- `PATCH /api/v1/extraction/stages/grounding/{data_package_id}/config`
+- `POST /api/v1/extraction/stages/grounding/{data_package_id}/rerun`
+- `PUT /api/v1/extraction/stages/curation/{data_package_id}/document`
+- `POST /api/v1/extraction/stages/curation/{data_package_id}/field`
+- `POST /api/v1/extraction/workflows`
+- `GET /api/v1/extraction/workflows/{data_package_id}/progress`
+- `GET /api/v1/extraction/workflows/{data_package_id}/token-usage`
+- `GET /api/v1/extraction/results/{data_package_id}`
 
 ## Complete Workflow Options
 
@@ -74,7 +81,7 @@ Use `force_rerun=true` for repeatable evaluation runs with deterministic package
 | --- | --- |
 | Image understanding | Images return placeholder text; no OCR or visual interpretation is implemented. |
 | Binary/instrument files | Retained as package resources, but not semantically interpreted unless text extraction succeeds. |
-| Manual patch review | Old frontend patch-review concepts remain as compatibility stubs; active backend workflow is evidence extraction, normalization, projection, and validation. |
+| Manual patch review | Removed from the active API/frontend path; active backend workflow is evidence extraction, normalization, projection, curation, and validation. |
 | Evaluation completeness | Early evaluation runs exist, but thesis-level quality claims are not fully substantiated yet. |
 | Vocabulary coverage | Initial vocabularies can be imported, but grounding quality depends on imported vocabularies, term schemes, embeddings, and candidate selection. |
 | Model dependency | Extraction, overview generation, candidate selection, fallback query generation, and profile projection depend on the configured Ollama chat model. |

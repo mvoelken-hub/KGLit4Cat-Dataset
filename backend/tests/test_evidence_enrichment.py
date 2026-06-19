@@ -21,7 +21,7 @@ from app.domain.extraction import (
 from app.core.config import Settings
 from app.domain.extraction.workflow import ExtractionRunProgress, ExtractionRunState
 from app.domain.profiles import ProfileValidationResult
-from app.services.extraction_service import ExtractionService
+from app.services.workflow_service import WorkflowService
 
 
 class EvidenceEnrichmentRouterTests(unittest.TestCase):
@@ -262,8 +262,8 @@ class FakeProfileService:
 
 
 class EvidenceEnrichmentIntegrationTests(unittest.IsolatedAsyncioTestCase):
-    def _service(self) -> ExtractionService:
-        service = ExtractionService(
+    def _service(self) -> WorkflowService:
+        service = WorkflowService(
             profile_service=FakeProfileService(),
             settings=Settings(),
         )
@@ -355,4 +355,5 @@ class EvidenceEnrichmentIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 for record in state.projection_ledger
             )
         )
+
 

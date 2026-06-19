@@ -58,7 +58,7 @@ from app.domain.extraction import (
     search_schema_branches,
     validate_evidence_context_for_chunk,
 )
-from app.services.extraction_service import ExtractionService
+from app.services.workflow_service import WorkflowService
 
 
 class ExtractionDomainTests(unittest.TestCase):
@@ -782,7 +782,7 @@ classes:
 
     def test_global_context_includes_all_prior_completed_chunks(self):
         from app.domain.extraction.workflow import ExtractionRunState, ExtractionChunkResult
-        from app.services.extraction_service import ExtractionService
+        from app.services.workflow_service import WorkflowService
         state = ExtractionRunState(chunk_results=[
             ExtractionChunkResult(
                 chunk_index=0, file_path="a.txt", start_idx=0, end_idx=1,
@@ -799,7 +799,7 @@ classes:
                 ]),
             ),
         ])
-        ctx = ExtractionService._global_evidence_context_for_prompt(state, current_chunk_index=2)
+        ctx = WorkflowService._global_evidence_context_for_prompt(state, current_chunk_index=2)
         self.assertIsNotNone(ctx)
         ids = [note.candidate_id for note in ctx.portable_evidence]
         self.assertIn("a", ids)
@@ -807,7 +807,7 @@ classes:
 
     def test_global_context_respects_chunk_order(self):
         from app.domain.extraction.workflow import ExtractionRunState, ExtractionChunkResult
-        from app.services.extraction_service import ExtractionService
+        from app.services.workflow_service import WorkflowService
         state = ExtractionRunState(chunk_results=[
             ExtractionChunkResult(
                 chunk_index=0, file_path="a.txt", start_idx=0, end_idx=1,
@@ -822,13 +822,13 @@ classes:
                 ]),
             ),
         ])
-        ctx = ExtractionService._global_evidence_context_for_prompt(state, current_chunk_index=6)
+        ctx = WorkflowService._global_evidence_context_for_prompt(state, current_chunk_index=6)
         self.assertIsNotNone(ctx)
         ids = [note.candidate_id for note in ctx.portable_evidence]
         self.assertIn("later", ids)
 
         # For chunk 5, only chunks with index < 5 should be included
-        ctx_5 = ExtractionService._global_evidence_context_for_prompt(state, current_chunk_index=5)
+        ctx_5 = WorkflowService._global_evidence_context_for_prompt(state, current_chunk_index=5)
         self.assertIsNotNone(ctx_5)
         self.assertEqual(ctx_5.portable_evidence, [])
 
@@ -853,8 +853,8 @@ classes:
         )
 
         self.assertNotEqual(
-            ExtractionService._projection_identifier_for_evidence_note(first),
-            ExtractionService._projection_identifier_for_evidence_note(second),
+            WorkflowService._projection_identifier_for_evidence_note(first),
+            WorkflowService._projection_identifier_for_evidence_note(second),
         )
 
     def test_initial_draft_includes_core_and_evidence_guided_scaffold(self):
@@ -881,7 +881,7 @@ classes:
             ]
         )
 
-        document, scaffold = ExtractionService._initial_profile_document(
+        document, scaffold = WorkflowService._initial_profile_document(
             data_package_id="package-id",
             evidence_context=evidence,
             validation_schema=self.INITIAL_DRAFT_SCHEMA,
@@ -905,14 +905,14 @@ classes:
         self.assertIn("/was_generated_by/0/description", paths)
 
     def test_initial_draft_prunes_only_untouched_optional_scaffold(self):
-        document, scaffold = ExtractionService._initial_profile_document(
+        document, scaffold = WorkflowService._initial_profile_document(
             data_package_id="package-id",
             evidence_context=EvidenceContext(candidates=[]),
             validation_schema=self.INITIAL_DRAFT_SCHEMA,
         )
         document["creator"][0]["name"] = ["Bruker BioSpin GmbH"]
 
-        pruned = ExtractionService._prune_initial_draft_scaffold(document, scaffold)
+        pruned = WorkflowService._prune_initial_draft_scaffold(document, scaffold)
 
         self.assertIn("creator", pruned)
         self.assertNotIn("dataset_distribution", pruned)
@@ -922,13 +922,13 @@ classes:
         Draft202012Validator(self.INITIAL_DRAFT_SCHEMA).validate(pruned)
 
     def test_target_catalog_marks_description_as_last_resort_and_scaffold_status(self):
-        document, scaffold = ExtractionService._initial_profile_document(
+        document, scaffold = WorkflowService._initial_profile_document(
             data_package_id="package-id",
             evidence_context=EvidenceContext(candidates=[]),
             validation_schema=self.INITIAL_DRAFT_SCHEMA,
         )
 
-        catalog = ExtractionService._target_catalog_from_document(
+        catalog = WorkflowService._target_catalog_from_document(
             document=document,
             validation_schema=self.INITIAL_DRAFT_SCHEMA,
             scaffold=scaffold,
@@ -983,7 +983,7 @@ classes:
         self.assertEqual(result.candidates[0].path, "/was_generated_by/0/carried_out_by/-")
 
     def test_target_object_rewrite_replaces_only_selected_target(self):
-        document, _scaffold = ExtractionService._initial_profile_document(
+        document, _scaffold = WorkflowService._initial_profile_document(
             data_package_id="package-id",
             evidence_context=EvidenceContext(candidates=[]),
             validation_schema=self.INITIAL_DRAFT_SCHEMA,
@@ -996,7 +996,7 @@ classes:
             "media_type": None,
         }
 
-        updated = ExtractionService._replace_json_pointer(
+        updated = WorkflowService._replace_json_pointer(
             document,
             "/dataset_distribution/0",
             replacement,
@@ -1025,7 +1025,7 @@ classes:
             "media_type": None,
         }
 
-        value = ExtractionService._coerce_profile_target_value(
+        value = WorkflowService._coerce_profile_target_value(
             target_path="/dataset_distribution/0",
             current_value=current,
             proposed_value={
@@ -1073,7 +1073,7 @@ classes:
             )
         ]
 
-        value = ExtractionService._fallback_profile_target_value(
+        value = WorkflowService._fallback_profile_target_value(
             target_path="/keyword",
             current_value=[],
             notes=notes,
@@ -1099,15 +1099,15 @@ classes:
             ),
         ]
 
-        self.assertTrue(all(ExtractionService._is_low_level_parameter_note(note) for note in notes))
-        reason = ExtractionService._profile_target_unsuitable_reason(
+        self.assertTrue(all(WorkflowService._is_low_level_parameter_note(note) for note in notes))
+        reason = WorkflowService._profile_target_unsuitable_reason(
             target_path="/keyword",
             notes=notes,
         )
 
         self.assertIsNotNone(reason)
         self.assertIsNone(
-            ExtractionService._fallback_profile_target_value(
+            WorkflowService._fallback_profile_target_value(
                 target_path="/keyword",
                 current_value=[],
                 notes=notes,
@@ -1115,7 +1115,7 @@ classes:
         )
 
     def test_deterministic_fallback_keeps_useful_method_and_resource_targets(self):
-        method_value = ExtractionService._fallback_profile_target_value(
+        method_value = WorkflowService._fallback_profile_target_value(
             target_path="/was_generated_by/0",
             current_value={
                 "id": "package-id:activity:metadata-extraction",
@@ -1135,7 +1135,7 @@ classes:
                 )
             ],
         )
-        distribution_value = ExtractionService._fallback_profile_target_value(
+        distribution_value = WorkflowService._fallback_profile_target_value(
             target_path="/dataset_distribution/0",
             current_value={
                 "access_URL": [{"id": "package-id:distribution:primary:access"}],
@@ -1168,7 +1168,7 @@ classes:
             evidence_text="instrument: Bruker Avance 500 MHz",
             signal_level="high",
         )
-        value = ExtractionService._fallback_profile_target_value(
+        value = WorkflowService._fallback_profile_target_value(
             target_path="/was_generated_by/0/carried_out_by/-",
             current_value=None,
             notes=[note],
@@ -1179,7 +1179,7 @@ classes:
         self.assertEqual(value["rdf_type"]["id"], "http://purl.obolibrary.org/obo/OBI_0000968")
 
     def test_schema_branch_merge_appends_and_dedupes_device_participants(self):
-        document, _scaffold = ExtractionService._initial_profile_document(
+        document, _scaffold = WorkflowService._initial_profile_document(
             data_package_id="package-id",
             evidence_context=EvidenceContext(candidates=[]),
             validation_schema=self.INITIAL_DRAFT_SCHEMA,
@@ -1197,12 +1197,12 @@ classes:
             "other_identifier": [],
         }
 
-        updated = ExtractionService._apply_profile_target_write(
+        updated = WorkflowService._apply_profile_target_write(
             document,
             "/was_generated_by/0/carried_out_by/-",
             device,
         )
-        updated_again = ExtractionService._apply_profile_target_write(
+        updated_again = WorkflowService._apply_profile_target_write(
             updated,
             "/was_generated_by/0/carried_out_by/-",
             device,
@@ -1260,7 +1260,7 @@ classes:
             ],
         }
 
-        curated = ExtractionService._curate_generated_profile_document(document)
+        curated = WorkflowService._curate_generated_profile_document(document)
 
         self.assertEqual(curated["description"], ["SIMONE metadata draft for catalyst measurements."])
         self.assertEqual(curated["keyword"], ["measurement", "dataset"])
@@ -1291,7 +1291,7 @@ classes:
             ]
         )
 
-        title = ExtractionService._fallback_title("package-id", evidence)
+        title = WorkflowService._fallback_title("package-id", evidence)
 
         self.assertEqual(title, "1H NMR")
 
@@ -1322,13 +1322,13 @@ classes:
             ]
         )
 
-        groups = ExtractionService._projection_groups_for_evidence(evidence)
+        groups = WorkflowService._projection_groups_for_evidence(evidence)
 
         self.assertEqual(len(groups), 1)
         self.assertEqual(groups[0].target_hint, "/title")
 
     def test_title_cleanup_removes_spectrum_local_numeric_title(self):
-        value = ExtractionService._curate_profile_target_value(
+        value = WorkflowService._curate_profile_target_value(
             target_path="/title",
             value=["Dataset name is 1H NMR", "10", "spectrum title"],
         )
@@ -1361,7 +1361,7 @@ classes:
             ]
         )
 
-        groups = ExtractionService._projection_groups_for_evidence(evidence)
+        groups = WorkflowService._projection_groups_for_evidence(evidence)
 
         self.assertEqual(len(groups), 1)
         self.assertEqual(len(groups[0].notes), 2)
@@ -1369,13 +1369,13 @@ classes:
 
     def test_patch_path_constraint_rejects_description_sink_for_specific_target(self):
         self.assertTrue(
-            ExtractionService._patch_path_allowed_for_target(
+            WorkflowService._patch_path_allowed_for_target(
                 "/dataset_distribution/0/title/-",
                 "/dataset_distribution/0",
             )
         )
         self.assertFalse(
-            ExtractionService._patch_path_allowed_for_target(
+            WorkflowService._patch_path_allowed_for_target(
                 "/description/-",
                 "/dataset_distribution/0",
             )
@@ -1396,8 +1396,8 @@ classes:
                 )
             ]
         )
-        group = ExtractionService._projection_groups_for_evidence(evidence)[0]
-        record = ExtractionService._projection_record_from_group_patch_result(
+        group = WorkflowService._projection_groups_for_evidence(evidence)[0]
+        record = WorkflowService._projection_record_from_group_patch_result(
             group=group,
             patch_result=ProfileObjectPatchResult(
                 object_identifier=group.group_id,
@@ -1623,4 +1623,5 @@ classes:
         self.assertIn("carried_out_by", document["was_generated_by"][0])
 if __name__ == "__main__":
     unittest.main()
+
 

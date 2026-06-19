@@ -10,8 +10,8 @@ import {
 import type {
   ExtractionOverview,
   ExtractionOverviewNode,
-  PatchProgress,
-  PatchTaskStatus,
+  WorkflowProgress,
+  WorkflowTaskStatus,
 } from '../api/extraction';
 import { formatExtractionStage, labelDy } from '../lib/format';
 import { JsonDetails } from './JsonDetails';
@@ -291,8 +291,8 @@ export function InitialFileUnderstandingPanel({
   status,
   tokenUsageSummary,
 }: {
-  progress?: PatchProgress | null;
-  status?: PatchTaskStatus | null;
+  progress?: WorkflowProgress | null;
+  status?: WorkflowTaskStatus | null;
   tokenUsageSummary?: ReactNode;
 }) {
   const rankedCount = progress?.ranked_files?.length ?? 0;
@@ -435,3 +435,4 @@ export function InitialFileUnderstandingPanel({
     </div>
   );
 }
+

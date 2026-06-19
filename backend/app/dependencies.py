@@ -39,7 +39,7 @@ def get_datasource_service() -> DataSourceService:
 
 from infra.filesystem_profile_repository import FileSystemProfileRepository
 from infra.filesystem_extraction_output_repository import FileSystemExtractionOutputRepository
-from app.services.extraction_service import ExtractionService
+from app.services.workflow_service import WorkflowService
 from app.services.profile_service import ProfileService
 from infra.neo4j_semantic_graph_repository import Neo4jSemanticGraphRepository
 from app.services.semantic_service import SemanticService
@@ -56,7 +56,7 @@ semantic_service = SemanticService(
     task_registry
 )
 
-extraction_service = ExtractionService(
+workflow_service = WorkflowService(
     profile_service,
     settings,
     datasource_service,
@@ -69,9 +69,11 @@ extraction_service = ExtractionService(
 def get_profile_service() -> ProfileService:
     return profile_service
 
-def get_extraction_service() -> ExtractionService:
-    return extraction_service
+def get_workflow_service() -> WorkflowService:
+    return workflow_service
 
 
 def get_semantic_service() -> SemanticService:
     return semantic_service
+
+

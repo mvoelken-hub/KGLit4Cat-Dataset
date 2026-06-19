@@ -2,12 +2,12 @@ import { apiBaseUrl, buildQuery, readJson } from './client';
 import type { ChunkingStrategy } from './datasources';
 import type { InitialContext } from './types';
 
-export type PatchTaskStatus = 'unknown' | 'running' | 'completed' | 'cancelled' | 'crashed';
+export type WorkflowTaskStatus = 'unknown' | 'running' | 'completed' | 'cancelled' | 'crashed';
 export type ExtractionTargetStage = 'context' | 'profile' | 'grounding' | 'complete';
 export type ChunkRepairMode = 'deferred' | 'immediate' | 'disabled';
 export type EvidenceCriticGranularity = 'per_chunk' | 'per_candidate' | 'disabled';
 
-export type PatchTokenUsageEntry = {
+export type WorkflowTokenUsageEntry = {
   input_tokens: number;
   output_tokens: number;
   total_tokens: number;
@@ -31,9 +31,9 @@ export type PatchTokenUsageEntry = {
   average_total_duration_ms_per_request?: number;
 };
 
-export type PatchTokenUsage = {
-  agents?: Record<string, PatchTokenUsageEntry>;
-  combined?: PatchTokenUsageEntry;
+export type WorkflowTokenUsage = {
+  agents?: Record<string, WorkflowTokenUsageEntry>;
+  combined?: WorkflowTokenUsageEntry;
 };
 
 export type ExtractionRunProgress = {
@@ -384,7 +384,7 @@ export type CurationLedgerRecord = {
   reason: string;
 };
 
-export type PatchProgress = ExtractionRunProgress & {
+export type WorkflowProgress = ExtractionRunProgress & {
   batch_no?: number;
   total_batches?: number;
   file_name?: string;
@@ -395,7 +395,7 @@ export type PatchProgress = ExtractionRunProgress & {
   resolution_log?: string[];
   resolution_resolved_count?: number;
   resolution_unresolved_item_ids?: string[];
-  token_usage?: PatchTokenUsage;
+  token_usage?: WorkflowTokenUsage;
 };
 
 export type ExtractionRunResult = {
@@ -420,65 +420,13 @@ export type ExtractionRunResult = {
   curation_ledger: CurationLedgerRecord[];
   normalization?: Record<string, unknown> | null;
   warnings: string[];
-  token_usage: PatchTokenUsage;
+  token_usage: WorkflowTokenUsage;
 };
 
 export type ExtractionRunResponse = {
-  status: PatchTaskStatus;
+  status: WorkflowTaskStatus;
   result?: ExtractionRunResult | null;
   progress?: ExtractionRunProgress | null;
-};
-
-export type PatchArtifact = {
-  file_name?: string;
-  artifact_type?: string;
-  content?: unknown;
-  [key: string]: unknown;
-};
-
-export type PatchArtifacts = {
-  patches: PatchArtifact[];
-  quality_reports: PatchArtifact[];
-  unmapped_facts: PatchArtifact[];
-};
-
-export type PatchReviewState = {
-  resolved_item_ids: string[];
-  unmapped_assignments: Record<string, string>;
-  resolution_notes: Record<string, string>;
-  resolved_at: Record<string, string>;
-};
-
-export type PatchReviewResolutionItem = {
-  id: string;
-  kind: 'matched' | 'unmapped';
-  path: string;
-  detail?: string;
-  issues?: string[];
-  evidence?: string[];
-  patch?: Record<string, unknown>;
-  fact?: string;
-  reason?: string;
-  confidence?: number;
-  file_name?: string;
-};
-
-export type PatchReviewDecision = {
-  id: string;
-  outcome: 'included' | 'already_present' | 'excluded' | 'unresolved' | string;
-  note: string;
-  target_path?: string | null;
-};
-
-export type PatchReviewResolutionResponse = {
-  curated_document: Record<string, unknown>;
-  review_state: PatchReviewState;
-  resolved_count: number;
-  unresolved_item_ids: string[];
-  validation_errors: string[];
-  resolution_decisions: PatchReviewDecision[];
-  resolution_log: string[];
-  token_usage?: PatchTokenUsage | null;
 };
 
 export async function runExtraction(input: {
@@ -493,7 +441,7 @@ export async function runExtraction(input: {
   chunk_repair_mode?: ChunkRepairMode;
   evidence_critic_granularity?: EvidenceCriticGranularity;
 }): Promise<ExtractionRunResponse> {
-  return readJson(await fetch(apiBaseUrl + '/extraction/run', {
+  return readJson(await fetch(apiBaseUrl + '/extraction/stages/evidence', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
@@ -503,30 +451,30 @@ export async function runExtraction(input: {
 export async function runInitialContext(input: {
   data_package_id: string;
   force_rerun?: boolean;
-}): Promise<{ status: PatchTaskStatus; progress?: ExtractionRunProgress | null }> {
-  return readJson(await fetch(apiBaseUrl + '/extraction/run/' + encodeURIComponent(input.data_package_id) + '/initial-context', {
+}): Promise<{ status: WorkflowTaskStatus; progress?: ExtractionRunProgress | null }> {
+  return readJson(await fetch(apiBaseUrl + '/extraction/stages/orientation/' + encodeURIComponent(input.data_package_id), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ force_rerun: input.force_rerun ?? false }),
   }));
 }
 
-export async function getInitialContextProgress(data_package_id: string): Promise<{ status: PatchTaskStatus; progress?: ExtractionRunProgress | null }> {
-  const response = await fetch(apiBaseUrl + '/extraction/run/' + encodeURIComponent(data_package_id) + '/initial-context/progress');
-  const payload = await readJson(await response) as { status: PatchTaskStatus; progress?: ExtractionRunProgress | null };
+export async function getInitialContextProgress(data_package_id: string): Promise<{ status: WorkflowTaskStatus; progress?: ExtractionRunProgress | null }> {
+  const response = await fetch(apiBaseUrl + '/extraction/stages/orientation/' + encodeURIComponent(data_package_id) + '/progress');
+  const payload = await readJson(await response) as { status: WorkflowTaskStatus; progress?: ExtractionRunProgress | null };
   return { status: payload.status, progress: payload.progress ?? null };
 }
 
-export async function pauseExtraction(data_package_id: string): Promise<{ status: PatchTaskStatus; progress?: ExtractionRunProgress | null }> {
-  const response = await fetch(apiBaseUrl + '/extraction/run/' + encodeURIComponent(data_package_id) + '/pause', {
+export async function pauseExtraction(data_package_id: string): Promise<{ status: WorkflowTaskStatus; progress?: ExtractionRunProgress | null }> {
+  const response = await fetch(apiBaseUrl + '/extraction/workflows/' + encodeURIComponent(data_package_id) + '/pause', {
     method: 'POST',
   });
-  const payload = await readJson(await response) as { status: PatchTaskStatus; progress?: ExtractionRunProgress | null };
+  const payload = await readJson(await response) as { status: WorkflowTaskStatus; progress?: ExtractionRunProgress | null };
   return { status: payload.status, progress: payload.progress ?? null };
 }
 
 export async function getExtractionResult(data_package_id: string, chunking_strategy?: ChunkingStrategy, chat_model?: string | null): Promise<ExtractionRunResult | null> {
-  const response = await fetch(apiBaseUrl + '/extraction/result/' + encodeURIComponent(data_package_id) + buildQuery({ chunking_strategy, chat_model }));
+  const response = await fetch(apiBaseUrl + '/extraction/results/' + encodeURIComponent(data_package_id) + buildQuery({ chunking_strategy, chat_model }));
   if (response.status === 404) return null;
   return readJson(await response);
 }
@@ -546,7 +494,7 @@ export async function extractInitialContext(input: {
 
 export async function saveCuratedDocument(data_package_id: string, document: object, profile_identifier?: string): Promise<Record<string, unknown>> {
   if (!profile_identifier) return document as Record<string, unknown>;
-  const response = await fetch(apiBaseUrl + '/extraction/run/' + encodeURIComponent(data_package_id) + '/curated-document', {
+  const response = await fetch(apiBaseUrl + '/extraction/stages/curation/' + encodeURIComponent(data_package_id) + '/document', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ profile_identifier, document }),
@@ -562,8 +510,8 @@ export async function applyCurationFieldAction(input: {
   selected_uri?: string | null;
   selected_title?: string | null;
   vocabulary_identifier?: string | null;
-}): Promise<{ status: PatchTaskStatus; progress?: ExtractionRunProgress | null }> {
-  return readJson(await fetch(apiBaseUrl + '/extraction/run/' + encodeURIComponent(input.data_package_id) + '/curation/field', {
+}): Promise<{ status: WorkflowTaskStatus; progress?: ExtractionRunProgress | null }> {
+  return readJson(await fetch(apiBaseUrl + '/extraction/stages/curation/' + encodeURIComponent(input.data_package_id) + '/field', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -578,7 +526,7 @@ export async function applyCurationFieldAction(input: {
 
 export type VocabularyGroundingResponse = {
   curated_document: Record<string, unknown>;
-  status: PatchTaskStatus;
+  status: WorkflowTaskStatus;
 };
 
 export async function runVocabularyGrounding(input: {
@@ -601,22 +549,22 @@ export async function runVocabularyGrounding(input: {
   };
 }
 
-export async function getPatchProgress(data_package_id: string, chunking_strategy?: ChunkingStrategy, chat_model?: string | null): Promise<{ status: PatchTaskStatus; progress?: PatchProgress | null }> {
-  const response = await fetch(apiBaseUrl + '/extraction/run/' + encodeURIComponent(data_package_id) + '/progress' + buildQuery({ chunking_strategy, chat_model }));
-  const payload = await readJson(await response) as { status: PatchTaskStatus; progress?: ExtractionRunProgress | null };
+export async function getWorkflowProgress(data_package_id: string, chunking_strategy?: ChunkingStrategy, chat_model?: string | null): Promise<{ status: WorkflowTaskStatus; progress?: WorkflowProgress | null }> {
+  const response = await fetch(apiBaseUrl + '/extraction/stages/evidence/' + encodeURIComponent(data_package_id) + '/progress' + buildQuery({ chunking_strategy, chat_model }));
+  const payload = await readJson(await response) as { status: WorkflowTaskStatus; progress?: ExtractionRunProgress | null };
   return { status: payload.status, progress: payload.progress ? { ...payload.progress } : null };
 }
 
-export async function getTokenUsage(data_package_id: string, chunking_strategy?: ChunkingStrategy, chat_model?: string | null): Promise<PatchTokenUsage> {
-  const response = await fetch(apiBaseUrl + '/extraction/' + encodeURIComponent(data_package_id) + '/token-usage' + buildQuery({ chunking_strategy, chat_model }));
+export async function getTokenUsage(data_package_id: string, chunking_strategy?: ChunkingStrategy, chat_model?: string | null): Promise<WorkflowTokenUsage> {
+  const response = await fetch(apiBaseUrl + '/extraction/workflows/' + encodeURIComponent(data_package_id) + '/token-usage' + buildQuery({ chunking_strategy, chat_model }));
   return readJson(await response);
 }
 
 export async function updateVocabQueryConfig(
   data_package_id: string,
   config: ExtractionVocabQueryConfig,
-): Promise<{ status: PatchTaskStatus; progress?: ExtractionRunProgress | null }> {
-  const response = await fetch(apiBaseUrl + '/extraction/run/' + encodeURIComponent(data_package_id) + '/vocab-query-config', {
+): Promise<{ status: WorkflowTaskStatus; progress?: ExtractionRunProgress | null }> {
+  const response = await fetch(apiBaseUrl + '/extraction/stages/grounding/' + encodeURIComponent(data_package_id) + '/config', {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(config),
@@ -625,55 +573,15 @@ export async function updateVocabQueryConfig(
 }
 
 export async function rerunAllVocabQueries(data_package_id: string): Promise<ExtractionRunResult> {
-  return readJson(await fetch(apiBaseUrl + '/extraction/run/' + encodeURIComponent(data_package_id) + '/vocab-queries/rerun', {
+  return readJson(await fetch(apiBaseUrl + '/extraction/stages/grounding/' + encodeURIComponent(data_package_id) + '/rerun', {
     method: 'POST',
   }));
 }
 
 export async function rerunVocabQuery(data_package_id: string, query_id: string): Promise<ExtractionRunResult> {
-  return readJson(await fetch(apiBaseUrl + '/extraction/run/' + encodeURIComponent(data_package_id) + '/vocab-queries/' + encodeURIComponent(query_id) + '/rerun', {
+  return readJson(await fetch(apiBaseUrl + '/extraction/stages/grounding/' + encodeURIComponent(data_package_id) + '/queries/' + encodeURIComponent(query_id) + '/rerun', {
     method: 'POST',
   }));
-}
-
-export async function getPatchArtifacts(_data_package_id: string): Promise<PatchArtifacts> {
-  return { patches: [], quality_reports: [], unmapped_facts: [] };
-}
-
-export async function getPatchFiles(_data_package_id: string): Promise<PatchArtifact[]> {
-  return [];
-}
-
-export async function getPatchQualityReports(_data_package_id: string): Promise<PatchArtifact[]> {
-  return [];
-}
-
-export async function getUnmappedFacts(_data_package_id: string): Promise<PatchArtifact[]> {
-  return [];
-}
-
-export async function getPatchReviewState(_data_package_id: string): Promise<PatchReviewState> {
-  return emptyReviewState();
-}
-
-export async function savePatchReviewState(_data_package_id: string, reviewState: PatchReviewState): Promise<PatchReviewState> {
-  return reviewState;
-}
-
-export async function resolvePatchReview(input: {
-  data_package_id: string;
-  profile_identifier: string;
-  review_items: PatchReviewResolutionItem[];
-}): Promise<PatchReviewResolutionResponse> {
-  return {
-    curated_document: {},
-    review_state: emptyReviewState(),
-    resolved_count: 0,
-    unresolved_item_ids: input.review_items.map((item) => item.id),
-    validation_errors: [],
-    resolution_decisions: [],
-    resolution_log: ['Manual patch review was removed from the extraction workflow.'],
-  };
 }
 
 export function initialContextFromEvidenceContext(context: Record<string, unknown>): InitialContext {
@@ -744,15 +652,6 @@ function emptyInitialContext(summary: string): InitialContext {
   };
 }
 
-function emptyReviewState(): PatchReviewState {
-  return {
-    resolved_item_ids: [],
-    unmapped_assignments: {},
-    resolution_notes: {},
-    resolved_at: {},
-  };
-}
-
 function arrayOfRecords(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value)
     ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
@@ -768,3 +667,4 @@ function stringArray(value: unknown): string[] {
     ? value.filter((item): item is string => typeof item === 'string' && Boolean(item.trim()))
     : [];
 }
+

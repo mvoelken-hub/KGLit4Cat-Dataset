@@ -5,7 +5,7 @@ import {
   applyCurationFieldAction,
   getExtractionResult,
   getInitialContextProgress,
-  getPatchProgress,
+  getWorkflowProgress,
   getTokenUsage,
   initialContextFromEvidenceContext,
   pauseExtraction,
@@ -50,10 +50,10 @@ import type {
   ExtractionVocabQueryConfig,
   ExtractionVocabQueryRecord,
   ChunkRepairMode,
-  PatchProgress,
-  PatchTaskStatus,
-  PatchTokenUsage,
-  PatchTokenUsageEntry,
+  WorkflowProgress,
+  WorkflowTaskStatus,
+  WorkflowTokenUsage,
+  WorkflowTokenUsageEntry,
   ExtractionOverview,
   ExtractionOverviewNode,
   ProjectionLedgerRecord,
@@ -65,12 +65,12 @@ type WorkflowBranchSnapshot = {
   strategy: ChunkingStrategy;
   chunks: ChunkResponse[][];
   chunkStatus: { has_chunks: boolean; file_count: number; status: ChunkRequestResponse['status'] };
-  status: PatchTaskStatus;
-  progress: PatchProgress | null;
-  initialProgress: PatchProgress | null;
+  status: WorkflowTaskStatus;
+  progress: WorkflowProgress | null;
+  initialProgress: WorkflowProgress | null;
   result: ExtractionRunResult | null;
-  tokenUsage: PatchTokenUsage;
-  initialStatus: PatchTaskStatus;
+  tokenUsage: WorkflowTokenUsage;
+  initialStatus: WorkflowTaskStatus;
 };
 const selectedPackageStorageKey = 'simone_selected_package_id';
 const chunkingStrategyCookieKey = 'simone_chunking_strategy';
@@ -194,7 +194,7 @@ function PersistedContextChips({ label, values }: { label: string; values: strin
   );
 }
 
-function withInitialProgress(branch: PatchProgress | null, initial: PatchProgress | null): PatchProgress | null {
+function withInitialProgress(branch: WorkflowProgress | null, initial: WorkflowProgress | null): WorkflowProgress | null {
   if (!branch) return initial;
   if (!initial) return branch;
   return {
@@ -210,7 +210,7 @@ function withInitialProgress(branch: PatchProgress | null, initial: PatchProgres
   };
 }
 
-function progressWithResult(progress: PatchProgress | null, result: ExtractionRunResult): PatchProgress {
+function progressWithResult(progress: WorkflowProgress | null, result: ExtractionRunResult): WorkflowProgress {
   return {
     ...(progress ?? {
       stage: 'completed',
@@ -333,10 +333,10 @@ export function App() {
   const [context, setContext] = useState<InitialContext | null>(null);
   const [generatedFinalDraft, setGeneratedFinalDraft] = useState<Record<string, unknown> | null>(null);
   const [curatedDocument, setCuratedDocument] = useState<Record<string, unknown> | null>(null);
-  const [patchStatus, setPatchStatus] = useState<PatchTaskStatus | null>(null);
-  const [initialContextStatus, setInitialContextStatus] = useState<PatchTaskStatus | null>(null);
-  const [patchProgress, setPatchProgress] = useState<PatchProgress | null>(null);
-  const [tokenUsage, setTokenUsage] = useState<PatchTokenUsage | null>(null);
+  const [patchStatus, setPatchStatus] = useState<WorkflowTaskStatus | null>(null);
+  const [initialContextStatus, setInitialContextStatus] = useState<WorkflowTaskStatus | null>(null);
+  const [WorkflowProgress, setWorkflowProgress] = useState<WorkflowProgress | null>(null);
+  const [tokenUsage, setTokenUsage] = useState<WorkflowTokenUsage | null>(null);
   const [llmBudget, setLlmBudget] = useState<LlmBudget | null>(null);
   const [ollamaConfig, setOllamaConfig] = useState<OllamaConfig | null>(null);
   const [activeProfileSchema, setActiveProfileSchema] = useState<JsonSchemaDocument | null>(null);
@@ -367,20 +367,20 @@ export function App() {
   const selectedPackage = useMemo(() => packages.find((item) => item.id === selectedPackageId) || null, [packages, selectedPackageId]);
   const selectedProfileManifest = useMemo(() => profiles.find((item) => item.identifier === selectedProfile) || null, [profiles, selectedProfile]);
   const isInitialContextStage = Boolean(
-    patchProgress?.stage?.startsWith('initial_')
-    || patchProgress?.stage === 'file_ranking',
+    WorkflowProgress?.stage?.startsWith('initial_')
+    || WorkflowProgress?.stage === 'file_ranking',
   );
   const isInitialContextRunning = initialContextStatus === 'running';
   const isPatching = patchStatus === 'running' && initialContextStatus !== 'running' && !isInitialContextStage;
   const extractionLimitReachedChunkCount = useMemo(() => {
     const maxContextLength = llmBudget?.max_context_length ?? 0;
     if (maxContextLength <= 0) return 0;
-    return (patchProgress?.chunk_results ?? []).filter((chunk) => (
+    return (WorkflowProgress?.chunk_results ?? []).filter((chunk) => (
       chunk.status === 'completed'
       && typeof chunk.context_tokens === 'number'
       && chunk.context_tokens >= maxContextLength
     )).length;
-  }, [llmBudget?.max_context_length, patchProgress?.chunk_results]);
+  }, [llmBudget?.max_context_length, WorkflowProgress?.chunk_results]);
   const extractionTokenUsageNotes = useMemo(() => (
     extractionLimitReachedChunkCount > 0
       ? {
@@ -391,19 +391,19 @@ export function App() {
       }
       : undefined
   ), [extractionLimitReachedChunkCount]);
-  const extractionProgressPercent = patchProgress?.total_chunks
-    ? Math.min(100, Math.round((patchProgress.processed_chunks / patchProgress.total_chunks) * 100))
+  const extractionProgressPercent = WorkflowProgress?.total_chunks
+    ? Math.min(100, Math.round((WorkflowProgress.processed_chunks / WorkflowProgress.total_chunks) * 100))
     : 0;
-  const extractionProgressLabel = patchProgress
-    ? `${formatExtractionStage(patchProgress.stage)}${patchProgress.total_chunks ? ` - ${patchProgress.processed_chunks}/${patchProgress.total_chunks} chunks` : ''}`
+  const extractionProgressLabel = WorkflowProgress
+    ? `${formatExtractionStage(WorkflowProgress.stage)}${WorkflowProgress.total_chunks ? ` - ${WorkflowProgress.processed_chunks}/${WorkflowProgress.total_chunks} chunks` : ''}`
     : '';
   const hasPersistedExtractionState = Boolean(
-    patchProgress?.interim_evidence_context
-    || patchProgress?.chunk_results?.some((chunk) => chunk.status === 'completed' || chunk.status === 'skipped' || chunk.evidence_context),
+    WorkflowProgress?.interim_evidence_context
+    || WorkflowProgress?.chunk_results?.some((chunk) => chunk.status === 'completed' || chunk.status === 'skipped' || chunk.evidence_context),
   );
   const hasInitialContextArtifacts = Boolean(
-    patchProgress?.initial_file_summary_status
-    && patchProgress?.initial_extraction_overview_status,
+    WorkflowProgress?.initial_file_summary_status
+    && WorkflowProgress?.initial_extraction_overview_status,
   );
   const extractionCanResume = Boolean(
     selectedPackageId
@@ -416,14 +416,14 @@ export function App() {
       || (patchStatus === 'unknown' && hasPersistedExtractionState)
     ),
   );
-  const projectionLedger = patchProgress?.projection_ledger ?? [];
+  const projectionLedger = WorkflowProgress?.projection_ledger ?? [];
   const hasProfileArtifacts = Boolean(generatedFinalDraft || curatedDocument);
   const isProfileBuildRunning = isPatching && (
-    patchProgress?.stage === 'profile_projection'
-    || patchProgress?.stage === 'profile_draft'
-    || Boolean(patchProgress?.generated_final_draft)
+    WorkflowProgress?.stage === 'profile_projection'
+    || WorkflowProgress?.stage === 'profile_draft'
+    || Boolean(WorkflowProgress?.generated_final_draft)
   );
-  const projectionEvidenceNoteTotal = evidenceContextNoteCount(patchProgress?.interim_evidence_context);
+  const projectionEvidenceNoteTotal = evidenceContextNoteCount(WorkflowProgress?.interim_evidence_context);
   const projectionHasPendingNotes = projectionEvidenceNoteTotal > projectionLedger.length;
   const projectionCanContinue = Boolean(
     selectedPackageId
@@ -433,17 +433,17 @@ export function App() {
     && !isPatching
     && (
       projectionHasPendingNotes
-      || patchProgress?.stage === 'profile_draft'
-      || patchProgress?.stage === 'profile_projection'
+      || WorkflowProgress?.stage === 'profile_draft'
+      || WorkflowProgress?.stage === 'profile_projection'
     )
   );
   const projectedObjects = projectionLedger.filter((record) => record.status === 'projected').length;
   const notProjectedObjects = projectionLedger.filter((record) => record.status === 'not_projected' || record.status === 'ambiguous').length;
   const editRequiredObjects = projectionLedger.filter((record) => record.status === 'user_edit_required').length;
-  const validationErrorCount = patchProgress?.validation?.errors?.length ?? 0;
-  const fieldIssueCount = (patchProgress?.field_completion_ledger ?? []).filter((record) => record.issue_categories.length > 0).length;
+  const validationErrorCount = WorkflowProgress?.validation?.errors?.length ?? 0;
+  const fieldIssueCount = (WorkflowProgress?.field_completion_ledger ?? []).filter((record) => record.issue_categories.length > 0).length;
   const curationMarkers = useMemo<JsonPatchMarker[]>(() => {
-    const fieldMarkers = (patchProgress?.field_completion_ledger ?? []).flatMap((record) => {
+    const fieldMarkers = (WorkflowProgress?.field_completion_ledger ?? []).flatMap((record) => {
       const markers: JsonPatchMarker[] = [];
       if (record.validation_status === 'missing') {
         markers.push({
@@ -489,7 +489,7 @@ export function App() {
       }
       return markers;
     });
-    const curationMarkers = (patchProgress?.curation_ledger ?? [])
+    const curationMarkers = (WorkflowProgress?.curation_ledger ?? [])
       .filter((record) => record.status !== 'unchanged')
       .map((record): JsonPatchMarker => ({
         id: `curation:${record.status}:${record.json_path}`,
@@ -500,7 +500,7 @@ export function App() {
         evidence: record.source_evidence,
       }));
     return [...fieldMarkers, ...curationMarkers];
-  }, [patchProgress?.field_completion_ledger, patchProgress?.curation_ledger]);
+  }, [WorkflowProgress?.field_completion_ledger, WorkflowProgress?.curation_ledger]);
 
   async function refresh() {
     setBusy('load');
@@ -582,7 +582,7 @@ export function App() {
     setCuratedDocument(null);
     setPatchStatus(null);
     setInitialContextStatus(null);
-    setPatchProgress(null);
+    setWorkflowProgress(null);
     setTokenUsage(null);
     setChunkingDialogOpen(false);
     setBusy(null);
@@ -813,7 +813,7 @@ export function App() {
   async function loadWorkflowBranch(packageId: string, strategy: ChunkingStrategy, chatModel: string | null): Promise<WorkflowBranchSnapshot> {
     const [initialRun, extractionRun, chunkStatus, chunks, result, tokenUsage] = await Promise.all([
       getInitialContextProgress(packageId),
-      getPatchProgress(packageId, strategy, chatModel),
+      getWorkflowProgress(packageId, strategy, chatModel),
       getChunkStatus(packageId, strategy),
       getDataPackageChunks(packageId, strategy),
       getExtractionResult(packageId, strategy, chatModel),
@@ -846,7 +846,7 @@ export function App() {
       setGeneratedFinalDraft(snapshot.result.generated_final_draft);
       setCuratedDocument(snapshot.result.curated_document ?? snapshot.result.generated_final_draft);
       setPatchStatus('completed');
-      setPatchProgress(resultProgress);
+      setWorkflowProgress(resultProgress);
       return;
     }
 
@@ -854,7 +854,7 @@ export function App() {
     setGeneratedFinalDraft(snapshot.progress?.generated_final_draft ?? null);
     setCuratedDocument(snapshot.progress?.curated_document ?? snapshot.progress?.generated_final_draft ?? null);
     setPatchStatus(snapshot.status);
-    setPatchProgress(mergedProgress);
+    setWorkflowProgress(mergedProgress);
   }
 
   async function onInitialContext(forceRerun = false) {
@@ -874,7 +874,7 @@ export function App() {
       if (selectedPackageIdRef.current !== packageId) return;
       setPatchStatus(response.status);
       setInitialContextStatus(response.status);
-      setPatchProgress(response.progress ? { ...response.progress } : null);
+      setWorkflowProgress(response.progress ? { ...response.progress } : null);
       setTokenUsage(await getTokenUsage(packageId, chunkViewStrategy, workflowChatModel));
       setMessage(
         response.status === 'running'
@@ -901,7 +901,7 @@ export function App() {
       setContext(null);
       setGeneratedFinalDraft(null);
       setCuratedDocument(null);
-      setPatchProgress(null);
+      setWorkflowProgress(null);
       const response = await runExtraction({
         data_package_id: packageId,
         resume: options.resume,
@@ -923,7 +923,7 @@ export function App() {
         setCuratedDocument(response.progress?.curated_document ?? response.progress?.generated_final_draft ?? null);
       }
       setPatchStatus(response.status);
-      setPatchProgress(response.progress ? { ...response.progress } : null);
+      setWorkflowProgress(response.progress ? { ...response.progress } : null);
       setTokenUsage(await getTokenUsage(packageId, chunkViewStrategy, workflowChatModel));
       setMessage(response.status === 'running' ? (options.resume ? 'Extraction resumed.' : 'Extraction is running.') : 'Extraction completed.');
     } catch (error) {
@@ -941,7 +941,7 @@ export function App() {
       const { status, progress } = await pauseExtraction(packageId);
       if (selectedPackageIdRef.current !== packageId) return;
       setPatchStatus(status);
-      setPatchProgress(progress ? { ...progress } : null);
+      setWorkflowProgress(progress ? { ...progress } : null);
       if (progress?.interim_evidence_context) {
         setContext(initialContextFromEvidenceContext(progress.interim_evidence_context));
       }
@@ -962,7 +962,7 @@ export function App() {
     try {
       const { progress } = await updateVocabQueryConfig(packageId, config);
       if (selectedPackageIdRef.current !== packageId) return;
-      setPatchProgress(progress ? { ...progress } : patchProgress);
+      setWorkflowProgress(progress ? { ...progress } : WorkflowProgress);
       setMessage('Vocabulary query configuration updated.');
     } catch (error) {
       if (selectedPackageIdRef.current !== packageId) return;
@@ -986,10 +986,10 @@ export function App() {
       setCuratedDocument(result.curated_document ?? result.generated_final_draft);
       setContext(initialContextFromEvidenceContext(result.machine_evidence_context));
       setTokenUsage(result.token_usage);
-      const { status, progress } = await getPatchProgress(packageId, chunkViewStrategy, workflowChatModel);
+      const { status, progress } = await getWorkflowProgress(packageId, chunkViewStrategy, workflowChatModel);
       if (selectedPackageIdRef.current !== packageId) return;
       setPatchStatus(status);
-      setPatchProgress(progress ? { ...progress } : patchProgress);
+      setWorkflowProgress(progress ? { ...progress } : WorkflowProgress);
       setMessage(queryId ? 'Vocabulary query rerun completed.' : 'Vocabulary queries rerun completed.');
     } catch (error) {
       if (selectedPackageIdRef.current !== packageId) return;
@@ -1101,7 +1101,7 @@ export function App() {
     }
     if (isReplacingGeneratedDraft) {
       setGeneratedFinalDraft(null);
-      setPatchProgress((current) => current ? {
+      setWorkflowProgress((current) => current ? {
         ...current,
         stage: 'profile_projection',
         generated_final_draft: null,
@@ -1131,7 +1131,7 @@ export function App() {
       setGeneratedFinalDraft(nextGenerated);
       setCuratedDocument(response.result?.curated_document ?? response.progress?.curated_document ?? curatedDocument ?? nextGenerated);
       setPatchStatus(response.status);
-      setPatchProgress(response.progress ? {
+      setWorkflowProgress(response.progress ? {
         ...response.progress,
         requirement_report: response.result?.requirement_report ?? response.progress.requirement_report ?? null,
         generated_final_draft: response.result?.generated_final_draft ?? response.progress.generated_final_draft ?? null,
@@ -1171,7 +1171,7 @@ export function App() {
       try {
         const saved = await saveCuratedDocument(selectedPackageId, updated, selectedProfile);
         setCuratedDocument(saved);
-        setPatchProgress((current) => current ? { ...current, curated_document: saved as Record<string, unknown> } : current);
+        setWorkflowProgress((current) => current ? { ...current, curated_document: saved as Record<string, unknown> } : current);
         setMessage('Curated document saved.');
       } catch (error) {
         setMessage(error instanceof Error ? error.message : 'Failed to save curated document.');
@@ -1186,8 +1186,8 @@ export function App() {
       const result = await runVocabularyGrounding({ data_package_id: selectedPackageId, profile_identifier: selectedProfile, chunking_strategy: chunkViewStrategy, chat_model: workflowChatModel });
       setCuratedDocument(result.curated_document);
       setPatchStatus(result.status);
-      const { progress } = await getPatchProgress(selectedPackageId, chunkViewStrategy, workflowChatModel);
-      setPatchProgress(progress ? { ...progress } : patchProgress);
+      const { progress } = await getWorkflowProgress(selectedPackageId, chunkViewStrategy, workflowChatModel);
+      setWorkflowProgress(progress ? { ...progress } : WorkflowProgress);
       setTokenUsage(await getTokenUsage(selectedPackageId, chunkViewStrategy, workflowChatModel));
       setMessage(
         result.status === 'completed'
@@ -1216,7 +1216,7 @@ export function App() {
         vocabulary_identifier: query.vocabulary_identifier,
       });
       setPatchStatus(status);
-      setPatchProgress(progress ? { ...progress } : patchProgress);
+      setWorkflowProgress(progress ? { ...progress } : WorkflowProgress);
       if (progress?.curated_document) setCuratedDocument(progress.curated_document);
       setMessage('Vocabulary term selected for curated document.');
     } catch (error) {
@@ -1239,7 +1239,7 @@ export function App() {
         vocabulary_identifier: query.vocabulary_identifier,
       });
       setPatchStatus(status);
-      setPatchProgress(progress ? { ...progress } : patchProgress);
+      setWorkflowProgress(progress ? { ...progress } : WorkflowProgress);
       if (progress?.curated_document) setCuratedDocument(progress.curated_document);
       setMessage('Field marked intentionally unresolved.');
     } catch (error) {
@@ -1327,7 +1327,7 @@ export function App() {
                 config={ollamaConfig}
                 budget={llmBudget}
                 tokenUsage={tokenUsage}
-                patchTokenUsage={patchProgress?.token_usage}
+                WorkflowTokenUsage={WorkflowProgress?.token_usage}
                 busy={busy === 'ollama'}
                 onApply={(values) => void applyOllamaRuntimeConfig(values)}
                 onRefresh={() => void refreshOllamaConfig()}
@@ -1427,7 +1427,7 @@ export function App() {
                 </button>
               </div>
               <InitialFileUnderstandingPanel
-                progress={patchProgress}
+                progress={WorkflowProgress}
                 status={initialContextStatus}
                 tokenUsageSummary={(
                   <TokenUsageSummary
@@ -1477,23 +1477,23 @@ export function App() {
                   ))}
                 </div>
               </div>
-              {patchStatus === 'running' && patchProgress && (
+              {patchStatus === 'running' && WorkflowProgress && (
                 <div className="patch-progress context-progress">
                   <div className="patch-progress-header">
                     <span>Status: <strong>{formatExtractionStage(patchStatus)}</strong></span>
                     {extractionProgressLabel && <span>{extractionProgressLabel}</span>}
                   </div>
-                  {patchProgress.total_chunks > 0 && (
+                  {WorkflowProgress.total_chunks > 0 && (
                     <div className="patch-progress-track" aria-hidden="true"><div style={{ width: `${extractionProgressPercent}%` }} /></div>
                   )}
                 </div>
               )}
               <EvidenceContextOverview
-                chunkResults={patchProgress?.chunk_results ?? []}
-                currentChunk={patchProgress?.current_chunk ?? null}
+                chunkResults={WorkflowProgress?.chunk_results ?? []}
+                currentChunk={WorkflowProgress?.current_chunk ?? null}
                 chunksByFile={chunksByFile}
                 packageFiles={selectedPackage?.files ?? []}
-                progress={patchProgress}
+                progress={WorkflowProgress}
                 status={patchStatus}
                 budget={llmBudget}
                 tokenUsageSummary={(
@@ -1611,7 +1611,7 @@ export function App() {
               </div>
               {(hasProfileArtifacts || isProfileBuildRunning || projectionLedger.length > 0) && (
                 <ProjectionWorkflowPanel
-                  progress={patchProgress}
+                  progress={WorkflowProgress}
                   status={patchStatus}
                   ledger={projectionLedger}
                   tokenUsageSummary={(
@@ -1637,7 +1637,7 @@ export function App() {
               {(hasProfileArtifacts || isProfileBuildRunning) && patchStatus === 'running' && (
                 <div className="patch-progress">
                   <div className="patch-progress-header">
-                    <span>Status: <strong>{formatExtractionStage(patchProgress?.stage || patchStatus)}</strong></span>
+                    <span>Status: <strong>{formatExtractionStage(WorkflowProgress?.stage || patchStatus)}</strong></span>
                     {!hasProfileArtifacts && <span>Generating draft artifact</span>}
                   </div>
                 </div>
@@ -1664,8 +1664,8 @@ export function App() {
                     </span>
                   </div>
                   <div className="patch-progress-summary">
-                    <span>Draft quality: {formatExtractionStage(patchProgress?.draft_quality_state || 'not run')}</span>
-                    <span>Validation: {formatExtractionStage(patchProgress?.validation?.status || 'not run')}</span>
+                    <span>Draft quality: {formatExtractionStage(WorkflowProgress?.draft_quality_state || 'not run')}</span>
+                    <span>Validation: {formatExtractionStage(WorkflowProgress?.validation?.status || 'not run')}</span>
                     <span>{validationErrorCount} validation issue{validationErrorCount === 1 ? '' : 's'}</span>
                     <span>{fieldIssueCount} field issue{fieldIssueCount === 1 ? '' : 's'}</span>
                   </div>
@@ -1675,7 +1675,7 @@ export function App() {
               )}
               {hasProfileArtifacts && (
                 <DraftGroundingPanel
-                  progress={patchProgress}
+                  progress={WorkflowProgress}
                   disabled={!selectedPackageId || !!busy || isPatching}
                   onUpdateVocabQueryConfig={(config) => void onUpdateVocabConfig(config)}
                   onRunGrounding={() => void onGrounding()}
@@ -1717,3 +1717,4 @@ export function App() {
     </main>
   );
 }
+

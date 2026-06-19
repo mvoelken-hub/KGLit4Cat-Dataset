@@ -65,7 +65,7 @@ _SCHEMA_PROMPT_TEMPLATE = (
 )
 _EXAMPLE_PROMPT_TEMPLATE = (
     "\n\nReturn exactly one JSON object matching this compact example shape. "
-    "Replace placeholder values with extracted values where available, and do "
+    "Replace placeholder values with task-specific values where available, and do "
     "not include Markdown fences, prose, comments, or additional text."
     "\n\nExample JSON shape:\n{example}"
 )
@@ -93,6 +93,30 @@ class CompletionResult(Generic[T]):
     output: T
     usage: RunUsage
     prompt_diagnostics: PromptCompletionDiagnostics | None = None
+
+
+async def generate_text(
+    ollama_client: OllamaClientWrapper,
+    *,
+    model: str,
+    system: str,
+    prompt: str,
+    options: dict[str, Any] | None = None,
+    think: ThinkMode = None,
+    keep_alive: int | str | None = -1,
+) -> CompletionResult[str]:
+    response = await ollama_client.ollama_client.generate(
+        model=model,
+        system=system,
+        prompt=prompt,
+        options=options,
+        think=think,
+        keep_alive=keep_alive,
+    )
+    return CompletionResult(
+        output=response.response or "",
+        usage=RunUsage.from_ollama_response(response),
+    )
 
 
 def _strip_markdown_fences(text: str) -> str:

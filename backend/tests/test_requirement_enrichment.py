@@ -22,7 +22,7 @@ from app.domain.extraction import (
 )
 from app.domain.extraction.workflow import ExtractionRunProgress, ExtractionRunState
 from app.domain.profiles import ProfileValidationResult
-from app.services.extraction_service import ExtractionService
+from app.services.workflow_service import WorkflowService
 
 
 class RequirementScoringTests(unittest.TestCase):
@@ -345,7 +345,7 @@ def quantitative_schema(*owner_classes: str) -> dict:
 class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_requirement_enrichment_persists_report_and_initial_draft(self):
         repo = Mock()
-        service = ExtractionService(
+        service = WorkflowService(
             profile_service=FakeProfileService(),
             settings=Settings(),
             ollama_client=Mock(chat_model="test-model", max_context_length=4096),
@@ -463,7 +463,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_applied_patch_is_re_evaluated_before_scoring(self):
         repo = Mock()
-        service = ExtractionService(
+        service = WorkflowService(
             profile_service=FakeProfileService(),
             settings=Settings(),
             ollama_client=Mock(chat_model="test-model", max_context_length=4096),
@@ -555,7 +555,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_fulfilled_requirement_with_missing_target_path_is_patched(self):
         repo = Mock()
-        service = ExtractionService(
+        service = WorkflowService(
             profile_service=FakeProfileService(),
             settings=Settings(),
             ollama_client=Mock(chat_model="test-model", max_context_length=4096),
@@ -647,7 +647,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(document["was_generated_by"][0]["realized_plan"]["title"], "zg30")
 
     def test_duplicate_requirement_patch_is_rejected(self):
-        service = ExtractionService(
+        service = WorkflowService(
             profile_service=FakeProfileService(),
             settings=Settings(),
             ollama_client=Mock(chat_model="test-model", max_context_length=4096),
@@ -662,7 +662,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("duplicates existing object", reason)
 
     def test_plan_patch_sanitizer_removes_recursive_fields(self):
-        service = ExtractionService(
+        service = WorkflowService(
             profile_service=FakeProfileService(),
             settings=Settings(),
             ollama_client=Mock(chat_model="test-model", max_context_length=4096),
@@ -683,7 +683,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sanitized, {"title": "zg30", "description": "Pulse sequence"})
 
     def test_quantitative_patch_sanitizer_repairs_required_shape(self):
-        service = ExtractionService(
+        service = WorkflowService(
             profile_service=FakeProfileService(),
             settings=Settings(),
             ollama_client=Mock(chat_model="test-model", max_context_length=4096),
@@ -732,7 +732,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             ),
         ]
 
-        groups = ExtractionService._quantitative_evidence_groups(notes)
+        groups = WorkflowService._quantitative_evidence_groups(notes)
 
         self.assertEqual(len(groups), 2)
         self.assertEqual(groups[1].value, 16.0)
@@ -760,7 +760,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             ),
         ]
 
-        groups = ExtractionService._quantitative_evidence_groups(notes)
+        groups = WorkflowService._quantitative_evidence_groups(notes)
 
         self.assertEqual(len(groups), 1)
         self.assertEqual(len(groups[0].notes), 2)
@@ -793,7 +793,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             ),
         ]
 
-        groups = ExtractionService._quantitative_evidence_groups(notes)
+        groups = WorkflowService._quantitative_evidence_groups(notes)
 
         self.assertEqual(len(groups), 1)
         self.assertEqual(groups[0].value, 400.13)
@@ -812,12 +812,12 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             for index in range(12)
         ]
 
-        groups = ExtractionService._quantitative_evidence_groups(notes)
+        groups = WorkflowService._quantitative_evidence_groups(notes)
 
         self.assertEqual(len(groups), 5)
 
     def test_quantitative_groups_project_to_existing_owner_before_creating_owner(self):
-        service = ExtractionService(
+        service = WorkflowService(
             profile_service=FakeProfileService(),
             settings=Settings(),
             ollama_client=Mock(chat_model="test-model", max_context_length=4096),
@@ -886,7 +886,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(item.status, "fulfilled")
 
     def test_quantitative_group_creates_reachable_device_owner(self):
-        service = ExtractionService(
+        service = WorkflowService(
             profile_service=FakeProfileService(),
             settings=Settings(),
             ollama_client=Mock(chat_model="test-model", max_context_length=4096),
@@ -937,7 +937,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(owner["has_quantitative_attribute"][0]["value"], 298.0)
 
     def test_quantitative_unreachable_owner_group_is_skipped(self):
-        service = ExtractionService(
+        service = WorkflowService(
             profile_service=FakeProfileService(),
             settings=Settings(),
             ollama_client=Mock(chat_model="test-model", max_context_length=4096),
@@ -989,7 +989,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("target_unresolved", state.projection_ledger[0].reason)
 
     def test_quantitative_patch_fallback_keeps_first_generic_numeric_evidence(self):
-        service = ExtractionService(
+        service = WorkflowService(
             profile_service=FakeProfileService(),
             settings=Settings(),
             ollama_client=Mock(chat_model="test-model", max_context_length=4096),
@@ -1023,7 +1023,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Field width", sanitized["has_quantity_type"])
 
     def test_single_frequency_quantitative_group_still_projects(self):
-        service = ExtractionService(
+        service = WorkflowService(
             profile_service=FakeProfileService(),
             settings=Settings(),
             ollama_client=Mock(chat_model="test-model", max_context_length=4096),
@@ -1047,7 +1047,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(groups[0].unit, "MHz")
 
     def test_requirement_patch_strip_removes_auto_ids_from_schema_forbidden_targets(self):
-        service = ExtractionService(
+        service = WorkflowService(
             profile_service=FakeProfileService(),
             settings=Settings(),
             ollama_client=Mock(chat_model="test-model", max_context_length=4096),
@@ -1079,7 +1079,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("id", document["was_generated_by"][0]["has_quantitative_attribute"][0])
 
     def test_file_like_about_entities_are_removed(self):
-        service = ExtractionService(
+        service = WorkflowService(
             profile_service=FakeProfileService(),
             settings=Settings(),
             ollama_client=Mock(chat_model="test-model", max_context_length=4096),
@@ -1103,3 +1103,4 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(cleaned["is_about_entity"]), 1)
         self.assertEqual(cleaned["is_about_entity"][0]["title"], "CDCl3 solvent")
+

@@ -13,8 +13,8 @@ import type { VocabQueryResult } from '../api/types';
 import type {
   ExtractionVocabQueryConfig,
   ExtractionVocabQueryRecord,
-  PatchProgress,
-  PatchTaskStatus,
+  WorkflowProgress,
+  WorkflowTaskStatus,
   ProjectionLedgerRecord,
   RequirementReport,
 } from '../api/extraction';
@@ -607,7 +607,7 @@ export function DraftGroundingPanel({
   onSelectCandidate,
   onMarkUnresolved,
 }: {
-  progress?: PatchProgress | null;
+  progress?: WorkflowProgress | null;
   disabled?: boolean;
   onUpdateVocabQueryConfig?: (config: ExtractionVocabQueryConfig) => void;
   onRunGrounding?: () => void;
@@ -885,8 +885,8 @@ export function ProjectionWorkflowPanel({
   ledger,
   tokenUsageSummary,
 }: {
-  progress?: PatchProgress | null;
-  status?: PatchTaskStatus | null;
+  progress?: WorkflowProgress | null;
+  status?: WorkflowTaskStatus | null;
   ledger: ProjectionLedgerRecord[];
   tokenUsageSummary?: ReactNode;
 }) {
@@ -1182,4 +1182,5 @@ function propertyPreview(value: unknown): string {
 function formatScore(value?: number | null): string {
   return typeof value === 'number' ? value.toFixed(4) : '-';
 }
+
 

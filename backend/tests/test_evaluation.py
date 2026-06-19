@@ -25,7 +25,7 @@ from app.evaluation.models import (
 )
 from app.evaluation.scoring import evaluate_extraction_result
 from app.evaluation.runner import score_reference_directory
-from app.services.extraction_service import ExtractionService
+from app.services.workflow_service import WorkflowService
 
 
 def evidence_context() -> EvidenceContext:
@@ -77,7 +77,7 @@ class EvaluationTests(unittest.TestCase):
             ],
         )
 
-        context = ExtractionService._evidence_context_with_file_inventory(
+        context = WorkflowService._evidence_context_with_file_inventory(
             data_package=data_package,
             context=EvidenceContext(),
             state=ExtractionRunState(
@@ -229,3 +229,4 @@ class EvaluationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

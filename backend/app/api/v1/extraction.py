@@ -19,7 +19,7 @@ from app.api.v1.schemas import (
     _extraction_result_response,
     _extraction_run_response,
 )
-from app.dependencies import get_datasource_service, get_extraction_service
+from app.dependencies import get_datasource_service, get_workflow_service
 from app.domain.datasources import (
     DataPackageIdNotFoundError,
     DataPackageZipNotFoundError,
@@ -39,7 +39,7 @@ from app.domain.profiles import (
 )
 from app.ollama.errors import CompletionError
 from app.services.datasource_service import DataSourceService
-from app.services.extraction_service import ExtractionService
+from app.services.workflow_service import WorkflowService
 
 
 router = APIRouter(prefix="/extraction", tags=["Extraction"])
@@ -115,13 +115,13 @@ def _raise_workflow_upload_error(exc: Exception) -> None:
     _raise_extraction_error(exc)
 
 
-@router.post("/run", response_model=ExtractionRunResponse)
-async def run_extraction(
+@router.post("/stages/evidence", response_model=ExtractionRunResponse)
+async def run_evidence_stage(
     request: ExtractionRunRequest,
-    extraction_service: ExtractionService = Depends(get_extraction_service),
+    workflow_service: WorkflowService = Depends(get_workflow_service),
 ) -> ExtractionRunResponse:
     try:
-        result, task_status = await extraction_service.run_extraction(
+        result, task_status = await workflow_service.run_extraction(
             data_package_id=request.data_package_id,
             profile_identifier=request.profile_identifier,
             qualitative_vocab_identifiers=request.qualitative_vocab_identifiers,
@@ -133,7 +133,7 @@ async def run_extraction(
             chunk_repair_mode=request.chunk_repair_mode,
             evidence_critic_granularity=request.evidence_critic_granularity,
         )
-        _, progress = await extraction_service.get_extraction_progress(
+        _, progress = await workflow_service.get_extraction_progress(
             data_package_id=request.data_package_id,
             chunking_strategy=request.chunking_strategy,
             chat_model=request.chat_model,
@@ -147,14 +147,14 @@ async def run_extraction(
         _raise_extraction_error(exc)
 
 
-@router.get("/run/{data_package_id}/progress", response_model=ExtractionProgressResponse)
-async def get_extraction_progress(
+@router.get("/stages/evidence/{data_package_id}/progress", response_model=ExtractionProgressResponse)
+async def get_evidence_stage_progress(
     data_package_id: str,
     chunking_strategy: Literal["semantic", "fixed_tokens"] | None = None,
     chat_model: str | None = None,
-    extraction_service: ExtractionService = Depends(get_extraction_service),
+    workflow_service: WorkflowService = Depends(get_workflow_service),
 ) -> ExtractionProgressResponse:
-    status_value, progress = await extraction_service.get_extraction_progress(
+    status_value, progress = await workflow_service.get_extraction_progress(
         data_package_id=data_package_id,
         chunking_strategy=chunking_strategy,
         chat_model=chat_model,
@@ -162,18 +162,18 @@ async def get_extraction_progress(
     return ExtractionProgressResponse(status=status_value, progress=progress)
 
 
-@router.post("/run/{data_package_id}/initial-context", response_model=ExtractionProgressResponse)
-async def run_initial_context(
+@router.post("/stages/orientation/{data_package_id}", response_model=ExtractionProgressResponse)
+async def run_orientation_stage(
     data_package_id: str,
     request: InitialContextRunRequest | None = None,
-    extraction_service: ExtractionService = Depends(get_extraction_service),
+    workflow_service: WorkflowService = Depends(get_workflow_service),
 ) -> ExtractionProgressResponse:
     try:
-        status_value = await extraction_service.run_initial_context(
+        status_value = await workflow_service.run_initial_context(
             data_package_id=data_package_id,
             force_rerun=request.force_rerun if request else False,
         )
-        _, progress = await extraction_service.get_initial_context_progress(
+        _, progress = await workflow_service.get_initial_context_progress(
             data_package_id=data_package_id,
         )
         return ExtractionProgressResponse(status=status_value, progress=progress)
@@ -181,36 +181,36 @@ async def run_initial_context(
         _raise_extraction_error(exc)
 
 
-@router.get("/run/{data_package_id}/initial-context/progress", response_model=ExtractionProgressResponse)
-async def get_initial_context_progress(
+@router.get("/stages/orientation/{data_package_id}/progress", response_model=ExtractionProgressResponse)
+async def get_orientation_stage_progress(
     data_package_id: str,
-    extraction_service: ExtractionService = Depends(get_extraction_service),
+    workflow_service: WorkflowService = Depends(get_workflow_service),
 ) -> ExtractionProgressResponse:
-    status_value, progress = await extraction_service.get_initial_context_progress(
+    status_value, progress = await workflow_service.get_initial_context_progress(
         data_package_id=data_package_id,
     )
     return ExtractionProgressResponse(status=status_value, progress=progress)
 
 
-@router.post("/run/{data_package_id}/pause", response_model=ExtractionProgressResponse)
+@router.post("/workflows/{data_package_id}/pause", response_model=ExtractionProgressResponse)
 async def pause_extraction(
     data_package_id: str,
-    extraction_service: ExtractionService = Depends(get_extraction_service),
+    workflow_service: WorkflowService = Depends(get_workflow_service),
 ) -> ExtractionProgressResponse:
-    status_value, progress = await extraction_service.pause_extraction(
+    status_value, progress = await workflow_service.pause_extraction(
         data_package_id=data_package_id,
     )
     return ExtractionProgressResponse(status=status_value, progress=progress)
 
 
-@router.patch("/run/{data_package_id}/vocab-query-config", response_model=ExtractionProgressResponse)
+@router.patch("/stages/grounding/{data_package_id}/config", response_model=ExtractionProgressResponse)
 async def update_vocab_query_config(
     data_package_id: str,
     request: VocabQueryConfigUpdateRequest,
-    extraction_service: ExtractionService = Depends(get_extraction_service),
+    workflow_service: WorkflowService = Depends(get_workflow_service),
 ) -> ExtractionProgressResponse:
     try:
-        progress = await extraction_service.update_vocab_query_config(
+        progress = await workflow_service.update_vocab_query_config(
             data_package_id=data_package_id,
             config=request,
         )
@@ -219,14 +219,14 @@ async def update_vocab_query_config(
         _raise_extraction_error(exc)
 
 
-@router.put("/run/{data_package_id}/curated-document", response_model=ExtractionProgressResponse)
+@router.put("/stages/curation/{data_package_id}/document", response_model=ExtractionProgressResponse)
 async def update_curated_document(
     data_package_id: str,
     request: CuratedDocumentUpdateRequest,
-    extraction_service: ExtractionService = Depends(get_extraction_service),
+    workflow_service: WorkflowService = Depends(get_workflow_service),
 ) -> ExtractionProgressResponse:
     try:
-        progress = await extraction_service.update_curated_document(
+        progress = await workflow_service.update_curated_document(
             data_package_id=data_package_id,
             profile_identifier=request.profile_identifier,
             document=request.document,
@@ -236,14 +236,14 @@ async def update_curated_document(
         _raise_extraction_error(exc)
 
 
-@router.post("/run/{data_package_id}/curation/field", response_model=ExtractionProgressResponse)
+@router.post("/stages/curation/{data_package_id}/field", response_model=ExtractionProgressResponse)
 async def apply_curation_field_action(
     data_package_id: str,
     request: CurationFieldActionRequest,
-    extraction_service: ExtractionService = Depends(get_extraction_service),
+    workflow_service: WorkflowService = Depends(get_workflow_service),
 ) -> ExtractionProgressResponse:
     try:
-        progress = await extraction_service.apply_curation_field_action(
+        progress = await workflow_service.apply_curation_field_action(
             data_package_id=data_package_id,
             action=request.action,
             json_path=request.json_path,
@@ -257,7 +257,7 @@ async def apply_curation_field_action(
 
 
 @router.post(
-    "/workflows/complete",
+    "/workflows",
     status_code=status.HTTP_202_ACCEPTED,
     response_model=CompleteWorkflowRunResponse,
 )
@@ -311,7 +311,7 @@ async def run_complete_workflow(
         description="Clear persisted extraction artifacts and schedule a fresh complete workflow for the same deterministic package id.",
     ),
     datasource_service: DataSourceService = Depends(get_datasource_service),
-    extraction_service: ExtractionService = Depends(get_extraction_service),
+    workflow_service: WorkflowService = Depends(get_workflow_service),
 ) -> CompleteWorkflowRunResponse:
     if not file.filename:
         raise HTTPException(
@@ -332,7 +332,7 @@ async def run_complete_workflow(
             BytesIO(await file.read()),
             file.filename,
         )
-        workflow_status = await extraction_service.run_complete_workflow(
+        workflow_status = await workflow_service.run_complete_workflow(
             data_package_id=data_package.id,
             profile_identifier=profile_identifier,
             qualitative_vocab_identifiers=vocab_identifiers,
@@ -346,56 +346,56 @@ async def run_complete_workflow(
             resume=resume,
             force_rerun=force_rerun,
         )
-        _, progress = await extraction_service.get_complete_workflow_progress(
+        _, progress = await workflow_service.get_complete_workflow_progress(
             data_package_id=data_package.id,
         )
         return CompleteWorkflowRunResponse(
             status=workflow_status,
             data_package=_data_package_response(data_package),
             progress=progress,
-            progress_url=f"/api/v1/extraction/workflows/complete/{data_package.id}/progress",
-            result_url=f"/api/v1/extraction/result/{data_package.id}",
+            progress_url=f"/api/v1/extraction/workflows/{data_package.id}/progress",
+            result_url=f"/api/v1/extraction/results/{data_package.id}",
         )
     except Exception as exc:
         _raise_workflow_upload_error(exc)
 
 
 @router.get(
-    "/workflows/complete/{data_package_id}/progress",
+    "/workflows/{data_package_id}/progress",
     response_model=CompleteWorkflowProgressResponse,
 )
 async def get_complete_workflow_progress(
     data_package_id: str,
-    extraction_service: ExtractionService = Depends(get_extraction_service),
+    workflow_service: WorkflowService = Depends(get_workflow_service),
 ) -> CompleteWorkflowProgressResponse:
-    status_value, progress = await extraction_service.get_complete_workflow_progress(
+    status_value, progress = await workflow_service.get_complete_workflow_progress(
         data_package_id=data_package_id,
     )
     return CompleteWorkflowProgressResponse(status=status_value, progress=progress)
 
 
-@router.post("/run/{data_package_id}/vocab-queries/rerun")
+@router.post("/stages/grounding/{data_package_id}/rerun")
 async def rerun_vocab_queries(
     data_package_id: str,
-    extraction_service: ExtractionService = Depends(get_extraction_service),
+    workflow_service: WorkflowService = Depends(get_workflow_service),
 ):
     try:
         return _extraction_result_response(
-            await extraction_service.rerun_vocab_queries(data_package_id=data_package_id)
+            await workflow_service.rerun_vocab_queries(data_package_id=data_package_id)
         )
     except Exception as exc:
         _raise_extraction_error(exc)
 
 
-@router.post("/run/{data_package_id}/vocab-queries/{query_id}/rerun")
+@router.post("/stages/grounding/{data_package_id}/queries/{query_id}/rerun")
 async def rerun_vocab_query(
     data_package_id: str,
     query_id: str,
-    extraction_service: ExtractionService = Depends(get_extraction_service),
+    workflow_service: WorkflowService = Depends(get_workflow_service),
 ):
     try:
         return _extraction_result_response(
-            await extraction_service.rerun_vocab_queries(
+            await workflow_service.rerun_vocab_queries(
                 data_package_id=data_package_id,
                 query_id=query_id,
             )
@@ -404,16 +404,16 @@ async def rerun_vocab_query(
         _raise_extraction_error(exc)
 
 
-@router.get("/result/{data_package_id}")
+@router.get("/results/{data_package_id}")
 async def get_extraction_result(
     data_package_id: str,
     chunking_strategy: Literal["semantic", "fixed_tokens"] | None = None,
     chat_model: str | None = None,
-    extraction_service: ExtractionService = Depends(get_extraction_service),
+    workflow_service: WorkflowService = Depends(get_workflow_service),
 ):
     try:
         return _extraction_result_response(
-            await extraction_service.get_extraction_result(
+            await workflow_service.get_extraction_result(
                 data_package_id=data_package_id,
                 chunking_strategy=chunking_strategy,
                 chat_model=chat_model,
@@ -423,11 +423,12 @@ async def get_extraction_result(
         _raise_extraction_error(exc)
 
 
-@router.get("/{data_package_id}/token-usage")
+@router.get("/workflows/{data_package_id}/token-usage")
 async def get_token_usage(
     data_package_id: str,
     chunking_strategy: Literal["semantic", "fixed_tokens"] | None = None,
     chat_model: str | None = None,
-    extraction_service: ExtractionService = Depends(get_extraction_service),
+    workflow_service: WorkflowService = Depends(get_workflow_service),
 ) -> dict[str, Any]:
-    return await extraction_service.get_token_usage(data_package_id=data_package_id, chunking_strategy=chunking_strategy, chat_model=chat_model)
+    return await workflow_service.get_token_usage(data_package_id=data_package_id, chunking_strategy=chunking_strategy, chat_model=chat_model)
+

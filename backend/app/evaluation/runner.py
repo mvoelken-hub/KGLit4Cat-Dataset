@@ -281,7 +281,7 @@ def submit_complete_workflow(
     pause_on_timeout: bool = True,
 ) -> Path:
     status, payload = _post_multipart(
-        f"{api_base.rstrip('/')}/extraction/workflows/complete",
+        f"{api_base.rstrip('/')}/extraction/workflows",
         fields={
             "profile_identifier": profile_identifier,
             "qualitative_vocab_identifiers": json.dumps(qualitative_vocab_identifiers),
@@ -327,8 +327,8 @@ def submit_complete_workflow(
     )
     (run_dir / "manifest.json").write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
 
-    result_url = f"{api_base.rstrip('/')}/extraction/result/{package_id}"
-    progress_path = payload.get("progress_url") or f"/extraction/run/{package_id}/progress"
+    result_url = f"{api_base.rstrip('/')}/extraction/results/{package_id}"
+    progress_path = payload.get("progress_url") or f"/extraction/workflows/{package_id}/progress"
     progress_url = _api_url(api_base, str(progress_path))
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
@@ -357,7 +357,7 @@ def submit_complete_workflow(
             return run_dir
         time.sleep(poll_interval_seconds)
     if pause_on_timeout:
-        _post_json(f"{api_base.rstrip('/')}/extraction/run/{package_id}/pause")
+        _post_json(f"{api_base.rstrip('/')}/extraction/workflows/{package_id}/pause")
     write_partial_report(
         dataset_filename=dataset_path.name,
         package_id=package_id,

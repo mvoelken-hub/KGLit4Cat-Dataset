@@ -1,7 +1,7 @@
 import { type ReactNode, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { ChunkResponse, FileEntryResponse } from '../api/types';
-import type { ExtractionChunkRef, ExtractionChunkResult, PatchProgress, PatchTaskStatus } from '../api/extraction';
+import type { ExtractionChunkRef, ExtractionChunkResult, WorkflowProgress, WorkflowTaskStatus } from '../api/extraction';
 import type { LlmBudget } from '../api/system';
 import { formatBytes, formatDuration, formatExtractionStage, formatTokenCount } from '../lib/format';
 import { asRecord, asRecordArray } from '../lib/records';
@@ -465,8 +465,8 @@ export function EvidenceContextOverview({
   currentChunk?: ExtractionChunkRef | null;
   chunksByFile: ChunkResponse[][];
   packageFiles: FileEntryResponse[];
-  progress?: PatchProgress | null;
-  status?: PatchTaskStatus | null;
+  progress?: WorkflowProgress | null;
+  status?: WorkflowTaskStatus | null;
   budget?: LlmBudget | null;
   tokenUsageSummary?: ReactNode;
 }) {
@@ -664,4 +664,5 @@ export function EvidenceContextOverview({
     </div>
   );
 }
+
 

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { PatchTokenUsage, PatchTokenUsageEntry } from '../api/extraction';
+import type { WorkflowTokenUsage, WorkflowTokenUsageEntry } from '../api/extraction';
 import type { LlmBudget } from '../api/system';
 import { formatDuration, formatTokenCount } from '../lib/format';
 const tokenUsageLabels: Record<string, string> = {
@@ -29,31 +29,31 @@ function tokenAverageUnitLabel(unit: TokenAverageUnit): string {
   return unit === 'request' ? 'model call' : unit;
 }
 
-function usageAverage(usage: PatchTokenUsageEntry, unit: TokenAverageUnit, kind: 'input' | 'output' | 'total'): number {
+function usageAverage(usage: WorkflowTokenUsageEntry, unit: TokenAverageUnit, kind: 'input' | 'output' | 'total'): number {
   if (unit === 'request') return requestAverage(usage, kind);
   const suffix = unit === 'patch' ? 'patch' : 'operation';
-  const key = `average_${kind}_tokens_per_${suffix}` as keyof PatchTokenUsageEntry;
+  const key = `average_${kind}_tokens_per_${suffix}` as keyof WorkflowTokenUsageEntry;
   const preferred = usage[key];
   if (typeof preferred === 'number') return preferred;
-  const fallbackKey = `average_${kind}_tokens_per_${unit === 'patch' ? 'operation' : 'patch'}` as keyof PatchTokenUsageEntry;
+  const fallbackKey = `average_${kind}_tokens_per_${unit === 'patch' ? 'operation' : 'patch'}` as keyof WorkflowTokenUsageEntry;
   const fallback = usage[fallbackKey];
   if (typeof fallback === 'number') return fallback;
-  const totalKey = `${kind}_tokens` as keyof PatchTokenUsageEntry;
+  const totalKey = `${kind}_tokens` as keyof WorkflowTokenUsageEntry;
   const total = usage[totalKey];
   const count = unit === 'patch' ? usage.patch_count : usage.operation_count;
   return typeof total === 'number' ? total / Math.max(1, Number(count || 1)) : 0;
 }
 
-export function requestAverage(usage: PatchTokenUsageEntry, kind: 'input' | 'output' | 'total'): number {
-  const key = `average_${kind}_tokens_per_request` as keyof PatchTokenUsageEntry;
+export function requestAverage(usage: WorkflowTokenUsageEntry, kind: 'input' | 'output' | 'total'): number {
+  const key = `average_${kind}_tokens_per_request` as keyof WorkflowTokenUsageEntry;
   const preferred = usage[key];
   if (typeof preferred === 'number') return preferred;
-  const totalKey = `${kind}_tokens` as keyof PatchTokenUsageEntry;
+  const totalKey = `${kind}_tokens` as keyof WorkflowTokenUsageEntry;
   const total = usage[totalKey];
   return typeof total === 'number' ? total / Math.max(1, Number(usage.requests || 1)) : 0;
 }
 
-function usageBudgetState(usage: PatchTokenUsageEntry, budget?: LlmBudget | null): 'ok' | 'warning' | 'danger' {
+function usageBudgetState(usage: WorkflowTokenUsageEntry, budget?: LlmBudget | null): 'ok' | 'warning' | 'danger' {
   if (!budget?.max_context_length) return 'ok';
   const avgInput = requestAverage(usage, 'input');
   if (avgInput >= budget.max_context_length * budget.danger_threshold) return 'danger';
@@ -69,7 +69,7 @@ export function TokenUsageSummary({
   budget,
   notesByAgent,
 }: {
-  tokenUsage?: PatchTokenUsage | null;
+  tokenUsage?: WorkflowTokenUsage | null;
   averageUnit?: TokenAverageUnit;
   heading?: string;
   agentKeys?: string[];
@@ -158,4 +158,5 @@ export function TokenUsageSummary({
     </div>
   );
 }
+
 
