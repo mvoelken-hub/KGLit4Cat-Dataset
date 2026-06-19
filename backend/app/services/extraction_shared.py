@@ -293,9 +293,9 @@ INITIAL_OVERVIEW_GROUP_RULES = (
     _InitialOverviewGroupRule(
         node_id="group:instrument_settings",
         label="Instrument settings",
-        summary="Instrument tuning, calibration, probe, or setting resources.",
+        summary="Instrument tuning, calibration, reference, or setting resources.",
         relation="parameterizes",
-        keywords=("instrument settings", "shim", "calibration", "probe"),
+        keywords=("instrument settings", "calibration", "reference", "settings"),
     ),
     _InitialOverviewGroupRule(
         node_id="group:method_program",

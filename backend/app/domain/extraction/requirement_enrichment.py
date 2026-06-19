@@ -337,17 +337,17 @@ DCAT_AP_PLUS_COVERAGE_REQUIREMENTS: tuple[DcatRequirement, ...] = (
         weight=1.25,
         target_paths=["/was_generated_by/0/carried_out_by/-"],
         expected_target_class="AgenticEntity",
-        evidence_hints=["instrument", "spectrometer", "software", "device"],
+        evidence_hints=["instrument", "software", "device"],
         allowed_categories=["agent_signal"],
     ),
     DcatRequirement(
         requirement_id="method_plan",
         label="Method or plan",
-        description="Generation activity links to method, protocol, pulse sequence, plan, or procedure.",
+        description="Generation activity links to method, protocol, plan, or procedure.",
         weight=1.0,
         target_paths=["/was_generated_by/0/realized_plan"],
         expected_target_class="Plan",
-        evidence_hints=["method", "protocol", "plan", "procedure", "pulse sequence", "program"],
+        evidence_hints=["method", "protocol", "plan", "procedure", "program"],
         allowed_categories=["method_signal"],
     ),
     DcatRequirement(
@@ -405,7 +405,7 @@ DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS: tuple[DcatRequirement, ...] = (
         description="realized_plan is grounded in explicit method/procedure/plan evidence; activity-only inference is partial at most.",
         weight=1.0,
         target_paths=["/was_generated_by/0/realized_plan"],
-        evidence_hints=["method", "protocol", "plan", "procedure", "pulse sequence", "program"],
+        evidence_hints=["method", "protocol", "plan", "procedure", "program"],
         allowed_categories=["method_signal"],
     ),
     DcatRequirement(
@@ -757,7 +757,7 @@ def _class_hint_score(target_class: str, candidate: EvidenceCandidate) -> int:
     ):
         return 2
     if target_class == "AgenticEntity" and (
-        category in {"agent_signal", "instrument_signal"} or any(term in text for term in ("instrument", "software", "bruker", "topspin"))
+        category in {"agent_signal", "instrument_signal"} or any(term in text for term in ("instrument", "software", "device", "equipment", "sensor"))
     ):
         return 2
     if target_class == "EvaluatedEntity" and category == "activity_signal":
@@ -770,12 +770,10 @@ def _class_hint_score(target_class: str, candidate: EvidenceCandidate) -> int:
         return 2
     if target_class == "QuantitativeAttribute" and category == "instrument_signal":
         score = 2
-        if "observe frequency" in text or "observation frequency" in text:
-            score += 6
-        if any(term in text for term in ("frequency", "temperature", "spectral width", "data points")):
-            score += 2
+        if any(term in text for term in ("frequency", "temperature", "width", "count", "threshold", "unit", "setting", "parameter")):
+            score += 1
         if any(term in text for term in ("formula", "subrange", "range of", "0..", "rel ")):
-            score -= 2
+            score -= 1
         return score
     return 0
 

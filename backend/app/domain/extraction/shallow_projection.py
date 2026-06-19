@@ -88,7 +88,7 @@ class ShallowAgenticEntityProjection(BaseModel):
     description: str | None = Field(default=None, description="Short actor or instrument description.")
     type: ShallowResourceProjection | None = Field(
         default=None,
-        description="Actor/entity class such as NMR spectrometer, software, organization, or laboratory.",
+        description="Actor/entity class such as instrument, software, organization, or laboratory.",
     )
 
     @field_validator("title", "description", mode="before")
@@ -103,7 +103,7 @@ class ShallowEvaluatedEntityProjection(BaseModel):
     description: str | None = Field(default=None, description="Short evaluated entity description.")
     type: ShallowResourceProjection | None = Field(
         default=None,
-        description="Entity class such as sample, raw data, spectrum, acquisition file, or processed data.",
+        description="Entity class such as sample, raw data, acquisition file, or processed output.",
     )
 
     @field_validator("title", "description", mode="before")
@@ -118,7 +118,7 @@ class ShallowDataGeneratingActivityProjection(BaseModel):
     description: list[str] = Field(default_factory=list, description="Short activity descriptions; avoid parameter dumps.")
     type: ShallowResourceProjection | None = Field(
         default=None,
-        description="Activity type such as NMR acquisition, spectral processing, conversion, or analysis.",
+        description="Activity type such as acquisition, processing, conversion, or analysis.",
     )
     carried_out_by: list[ShallowAgenticEntityProjection] = Field(
         default_factory=list,
@@ -144,7 +144,7 @@ class ShallowDistributionProjection(BaseModel):
         default_factory=list,
         description="Short description of what this distribution/resource contains or represents.",
     )
-    format: ShallowResourceProjection | None = Field(default=None, description="File/data format, for example JCAMP-DX, binary, text, JSON.")
+    format: ShallowResourceProjection | None = Field(default=None, description="File/data format, for example binary, text, JSON, or XML.")
     media_type: ShallowResourceProjection | None = Field(default=None, description="Media type when known.")
     modification_date: str | None = Field(default=None, description="Modification date when explicitly supported.")
 
@@ -159,11 +159,11 @@ class ShallowDatasetProjection(BaseModel):
     identifier: list[str] = Field(default_factory=list, description="Dataset identifiers explicitly supported by package metadata.")
     keyword: list[str] = Field(default_factory=list, description="Broad search keywords: method, instrument, software, data type, domain.")
     creator: list[ShallowAgentProjection] = Field(default_factory=list, description="Creators or responsible agents explicitly supported.")
-    type: list[ShallowConceptProjection] = Field(default_factory=list, description="Dataset type/topic concepts such as NMR spectroscopy dataset.")
+    type: list[ShallowConceptProjection] = Field(default_factory=list, description="Dataset type/topic concepts such as experiment, assay, or measurement dataset.")
     modification_date: str | None = Field(default=None, description="Dataset-level modification date when explicitly supported.")
     dataset_distribution: list[ShallowDistributionProjection] = Field(
         default_factory=list,
-        description="Key dataset resources/distributions from file summaries. Include raw data, processed spectra, documentation, acquisition/processing parameter files, and audit/config resources when supported.",
+        description="Key dataset resources/distributions from file summaries. Include raw data, processed outputs, documentation, configuration files, and audit/config resources when supported.",
     )
     was_generated_by: list[ShallowDataGeneratingActivityProjection] = Field(
         default_factory=list,
@@ -171,11 +171,11 @@ class ShallowDatasetProjection(BaseModel):
     )
     is_about_activity: list[ShallowDataGeneratingActivityProjection] = Field(
         default_factory=list,
-        description="Scientific/data-generating activities the dataset is about, such as NMR acquisition or processing.",
+        description="Scientific/data-generating activities the dataset is about, when explicitly supported.",
     )
     is_about_entity: list[ShallowEvaluatedEntityProjection] = Field(
         default_factory=list,
-        description="Entities the dataset is about, such as sample, raw FID, spectrum, instrument, or file collection.",
+        description="Entities the dataset is about, such as sample, raw data, instrument, or file collection.",
     )
 
 
@@ -812,25 +812,23 @@ def _distribution_group(summary: ExtractionFileSummary) -> str:
     path = summary.file_path.lower()
     if any(term in text for term in ("audit trail", "metadata", "infer.json")) or path.endswith((".json", ".xml")):
         return "audit_or_metadata"
-    if any(term in text for term in ("configuration", "uxnmr", "shim", "spectrometer")):
+    if any(term in text for term in ("configuration", "settings", "calibration", "reference")):
         return "instrument_configuration"
     if any(term in text for term in ("dataset description", "readme", "documentation", "title")):
         return "documentation"
-    if any(term in text for term in ("fid", "raw data", "raw spectral", "free induction")) or path.endswith("/fid"):
+    if any(term in text for term in ("raw data", "raw", "unprocessed", "source data")):
         return "raw_data"
     if (
         "processing parameter" in text
-        or path.endswith("/proc")
-        or path.endswith("/procs")
-        or path.endswith("/outd")
-        or "/proc" in path
+        or "processing settings" in text
+        or "post-processing" in text
     ):
         return "processing_parameters"
-    if any(term in text for term in ("processed", "spectrum", "jcamp", "xydata", "pdata")):
+    if any(term in text for term in ("processed", "derived", "output", "table", "summary")):
         return "processed_data"
-    if any(term in text for term in ("acquisition", "acqus", "acqu", "pulse program", "pulseprogram", "parameter file")):
+    if any(term in text for term in ("acquisition", "measurement settings", "experimental settings", "instrument settings")):
         return "acquisition_parameters"
-    if any(term in text for term in ("instrument", "configuration", "uxnmr", "shim", "topspin", "spectrometer", "bruker")):
+    if any(term in text for term in ("instrument", "configuration", "settings", "calibration", "reference")):
         return "instrument_configuration"
     return "other"
 

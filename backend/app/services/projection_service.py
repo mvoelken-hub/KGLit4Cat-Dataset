@@ -1348,19 +1348,13 @@ class ProjectionService:
             elif value is not None:
                 text_parts.append(str(value))
         text = " ".join(text_parts).lower()
-        scientific_terms = ("sample", "solvent", "nucleus", "material", "compound", "specimen")
-        if any(term in text for term in scientific_terms):
-            return False
         file_terms = (
             " file",
-            "acqus",
-            "acqu",
-            "fid",
-            "pdata",
-            "processed spectra",
             "parameter",
             "resource",
             "distribution",
+            "configuration",
+            "settings",
         )
         return any(term in text for term in file_terms)
 

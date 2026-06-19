@@ -143,7 +143,7 @@ def _summary_score(summary: Any, file: FileContext | None) -> tuple[float, list[
     if _contains_any(text, ("dataset description", "package description", "readme", "metadata", "manifest")):
         score += 0.38
         reasons.append("explicit dataset/package documentation")
-    if _contains_any(text, ("method", "protocol", "pulse program", "pulse sequence", "program logic")):
+    if _contains_any(text, ("method", "protocol", "program", "plan")):
         score += 0.28
         reasons.append("method or protocol orientation")
     if _contains_any(text, ("acquisition", "measurement settings", "experiment parameters")):
@@ -152,7 +152,7 @@ def _summary_score(summary: Any, file: FileContext | None) -> tuple[float, list[
     if _contains_any(text, ("processing", "processed", "post-processing", "process parameters")):
         score += 0.22
         reasons.append("processing settings")
-    if _contains_any(text, ("instrument", "software", "spectrometer", "device", "calibration", "reference")):
+    if _contains_any(text, ("instrument", "software", "device", "calibration", "reference")):
         score += 0.2
         reasons.append("instrument/software/settings terms")
     if _contains_any(text, ("sample", "specimen", "material", "condition", "solvent")):

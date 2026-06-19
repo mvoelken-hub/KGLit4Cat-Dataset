@@ -70,7 +70,7 @@ class DataGeneratingActivity(BaseExtractionModel):
 
 
 class Method(BaseExtractionModel):
-    """A method, plan, protocol, pulse sequence, acquisition procedure, processing routine, or instrument procedure used in the experiment."""
+    """A method, plan, protocol, acquisition procedure, processing routine, or instrument-related procedure used in the experiment."""
 
 
 class EvaluatedEntity(BaseExtractionModel):
