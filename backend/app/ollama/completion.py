@@ -7,6 +7,7 @@ Ollama's `format` parameter.
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 import json
 import math
 import re
@@ -110,6 +111,35 @@ def _extract_json_schema(output_type: type[BaseModel] | JsonSchema) -> JsonSchem
     if isinstance(output_type, dict):
         return output_type
     raise CompletionError(f"Unsupported output_type: {output_type!r}")
+
+
+def _pruned_json_schema(
+    schema: JsonSchema,
+    omitted_fields: dict[str, list[str]] | None,
+) -> JsonSchema:
+    if not omitted_fields:
+        return schema
+    pruned = deepcopy(schema)
+    defs = pruned.get("$defs", {})
+    for definition_name, fields in omitted_fields.items():
+        definition = pruned if pruned.get("title") == definition_name else defs.get(definition_name)
+        if not isinstance(definition, dict):
+            raise CompletionError(f"Unknown schema definition for omitted_fields: {definition_name}")
+        required = set(definition.get("required", []))
+        forbidden = sorted(required.intersection(fields))
+        if forbidden:
+            raise CompletionError(
+                f"Cannot omit required field(s) from {definition_name}: {', '.join(forbidden)}"
+            )
+        properties = definition.get("properties", {})
+        if isinstance(properties, dict):
+            for field in fields:
+                properties.pop(field, None)
+        if isinstance(definition.get("required"), list):
+            definition["required"] = [
+                field for field in definition["required"] if field not in fields
+            ]
+    return pruned
 
 
 def _estimated_tokens(text: str) -> int:
@@ -561,6 +591,7 @@ async def generate_structured(
     repair_model: str | None = None,
     api_retries: int = 2,
     api_retry_backoff_seconds: float = 0.5,
+    omitted_fields: dict[str, list[str]] | None = None,
 ) -> CompletionResult[ModelT]: ...
 
 
@@ -588,6 +619,7 @@ async def generate_structured(
     repair_model: str | None = None,
     api_retries: int = 2,
     api_retry_backoff_seconds: float = 0.5,
+    omitted_fields: dict[str, list[str]] | None = None,
 ) -> CompletionResult[Any]:
     ...
 
@@ -615,6 +647,7 @@ async def generate_structured(
     repair_model: str | None = None,
     api_retries: int = 2,
     api_retry_backoff_seconds: float = 0.5,
+    omitted_fields: dict[str, list[str]] | None = None,
 ) -> CompletionResult[Any]:
     """Single /api/generate call with format=json_schema, parse + validate + retry.
 
@@ -645,7 +678,7 @@ async def generate_structured(
         MaxRetriesExceeded: JSON decode or validation failure after all retries
         CompletionError: For Ollama API errors
     """
-    schema = _extract_json_schema(output_type)
+    schema = _pruned_json_schema(_extract_json_schema(output_type), omitted_fields)
     raw_schema_validator = _json_schema_validator(schema) if isinstance(output_type, dict) else None
 
     options = ollama.Options(

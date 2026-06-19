@@ -54,7 +54,7 @@ EVIDENCE_ORIENTATION_VALUES_PER_SECTION = 4
 class EvidenceCandidate(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
-    candidate_id: str = Field(..., description="Stable candidate identifier within the chunk.")
+    candidate_id: str = Field("", description="Stable candidate identifier within the chunk.")
     category: EvidenceCategory = Field(
         "other",
         description="Broad evidence category.",

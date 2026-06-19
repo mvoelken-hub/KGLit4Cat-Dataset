@@ -81,7 +81,7 @@ class ExtractionFileContentWindow(BaseModel):
 
 
 class ExtractionFileSummary(BaseModel):
-    file_path: str
+    file_path: str = ""
     status: ExtractionFileSummaryStatus = "summarized"
     data_format: str = Field(
         "",

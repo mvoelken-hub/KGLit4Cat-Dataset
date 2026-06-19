@@ -33,6 +33,16 @@ class NestedOutput(BaseModel):
     total: int
 
 
+class PrunableItem(BaseModel):
+    value: str
+    optional_field: str = ""
+
+
+class PrunableOutput(BaseModel):
+    items: list[PrunableItem]
+    optional_root_field: str = ""
+
+
 @dataclass
 class FakeGenerateResponse:
     """Fake ollama GenerateResponse for testing."""
@@ -372,6 +382,45 @@ class GenerateStructuredHappyPathTests(IsolatedAsyncioTestCase):
         self.assertIn('"answer"', client.calls[0]["system"])
         self.assertIn('"score"', client.calls[0]["system"])
         self.assertIsInstance(client.calls[0]["format"], dict)
+
+    async def test_omitted_fields_prune_prompt_and_format_schema(self):
+        client = FakeOllamaClient([
+            FakeGenerateResponse(response='{"items": [{"value": "x"}]}'),
+        ])
+
+        result = await generate_structured(
+            client,
+            model="qwen3.5:4b",
+            system="sys",
+            prompt="prompt",
+            output_type=PrunableOutput,
+            omitted_fields={
+                "PrunableItem": ["optional_field"],
+                "PrunableOutput": ["optional_root_field"],
+            },
+        )
+
+        self.assertEqual(result.output.items[0].optional_field, "")
+        self.assertEqual(result.output.optional_root_field, "")
+        self.assertNotIn("optional_field", client.calls[0]["system"])
+        self.assertNotIn("optional_root_field", client.calls[0]["system"])
+        self.assertNotIn("optional_field", json.dumps(client.calls[0]["format"]))
+        self.assertNotIn("optional_root_field", json.dumps(client.calls[0]["format"]))
+
+    async def test_omitted_fields_reject_required_fields(self):
+        client = FakeOllamaClient()
+
+        with self.assertRaises(CompletionError):
+            await generate_structured(
+                client,
+                model="qwen3.5:4b",
+                system="sys",
+                prompt="prompt",
+                output_type=PrunableOutput,
+                omitted_fields={"PrunableItem": ["value"]},
+            )
+
+        self.assertEqual(client.calls, [])
 
     async def test_uses_example_shape_when_full_schema_exceeds_context_budget(self):
         schema = {

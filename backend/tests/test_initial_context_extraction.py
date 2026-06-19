@@ -45,6 +45,7 @@ from app.domain.extraction import (
     build_extraction_overview_prompt_components,
 )
 from app.domain.semantics import CompactVocabResource, VocabQuery, VocabQueryResult, VocabSchemeInfo, VocabTermScheme
+from app.domain.extraction.evidence_context import validate_evidence_candidates
 from app.ollama.completion import CompletionResult
 from app.ollama.errors import MaxRetriesExceeded, OutputParsingError
 from app.ollama.usage import RunUsage
@@ -499,6 +500,35 @@ def portable_assessment_context(*candidate_ids: str) -> EvidenceAssessmentContex
     )
 
 
+class EvidenceCandidateDefaultsTests(unittest.TestCase):
+    def test_missing_llm_omitted_fields_are_filled_deterministically(self):
+        context = EvidenceContext(
+            candidates=[
+                EvidenceCandidate(
+                    category="resource_signal",
+                    claim="Dataset title is Sample.",
+                    evidence_text="Dataset title is Sample.",
+                )
+            ]
+        )
+
+        validated, dropped = validate_evidence_candidates(
+            context,
+            chunk_content="Dataset title is Sample.",
+            file_path="README.md",
+            start_idx=10,
+            end_idx=20,
+        )
+
+        self.assertEqual(dropped, [])
+        note = validated.candidates[0]
+        self.assertEqual(note.candidate_id, "README.md:10:20:0")
+        self.assertEqual(note.file_path, "README.md")
+        self.assertEqual(note.start_idx, 10)
+        self.assertEqual(note.end_idx, 20)
+        self.assertEqual(note.evidence_match_score, 1.0)
+
+
 def overview_for_file(
     file_path: str = "README.md",
     *,
@@ -941,6 +971,10 @@ class ExtractionServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
         async def fake_generate(*_args, **kwargs):
             self.assertIs(kwargs["output_type"], ExtractionFileSummary)
+            self.assertEqual(
+                kwargs["omitted_fields"],
+                {"ExtractionFileSummary": ["file_path", "status"]},
+            )
             self.assertIn('"label":"beginning"', kwargs["prompt"])
             self.assertIn('"label":"middle"', kwargs["prompt"])
             self.assertIn('"label":"end"', kwargs["prompt"])

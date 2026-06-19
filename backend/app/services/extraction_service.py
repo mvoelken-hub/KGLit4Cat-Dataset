@@ -1745,6 +1745,15 @@ class ExtractionService:
                             "end_idx": chunk.end_idx,
                         },
                         output_type=EvidenceContext,
+                        omitted_fields={
+                            "EvidenceCandidate": [
+                                "candidate_id",
+                                "file_path",
+                                "start_idx",
+                                "end_idx",
+                                "evidence_match_score",
+                            ]
+                        },
                         retries=2,
                         temperature=0.1,
                         think=None,
@@ -2308,7 +2317,7 @@ class ExtractionService:
                             ),
                             (
                                 "return_instruction",
-                                "Return an ExtractionFileSummary for this exact file_path. "
+                                "Return an ExtractionFileSummary for this file. "
                                 "Keep the summary compact: prefer 3-6 high-level, non-repetitive signals per list. "
                                 "Use common metadata categories as orientation only, such as instrument settings, "
                                 "software settings, acquisition settings, processing settings, calibration or reference settings, "
@@ -2329,6 +2338,9 @@ class ExtractionService:
                             "file_path": file_entry.file_path,
                         },
                         output_type=ExtractionFileSummary,
+                        omitted_fields={
+                            "ExtractionFileSummary": ["file_path", "status"],
+                        },
                         retries=1,
                         temperature=0.0,
                         think=None,
@@ -3523,7 +3535,7 @@ class ExtractionService:
             "file_path": file_path,
             "status": "summarized",
         }
-        if summary.file_path != file_path:
+        if summary.file_path and summary.file_path != file_path:
             warnings.append(
                 "Initial file summary returned a mismatched file_path; "
                 f"expected {file_path}, got {summary.file_path}."
