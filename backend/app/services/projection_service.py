@@ -907,15 +907,22 @@ class ProjectionService:
 
     @staticmethod
     def _quantitative_label_is_noise(label: str, claim: str, evidence_text: str) -> bool:
-        lowered = f"{label} {claim}".lower()
-        if re.search(r"\b(file|dataset|data package|data path|software version|parameter file|pulse sequence|program|classified|recommended)\b", lowered):
-            return True
-        if len(re.findall(r"\d", label)) > 2 and not re.search(
-            r"\b(frequency|temperature|width|points|averages|scans|delay|gain|power|shift|resolution|angle|time|filter|offset|phase|minimum|maximum)\b",
+        lowered = f"{label} {claim} {evidence_text}".lower()
+        setting_like = re.search(
+            r"\b(set|setting|configured|configuration|parameter|threshold|calibration|unit|scale|sampling|acquisition|processing|scan|average|frequency|temperature|duration|delay|gain|power|resolution|voltage|current|pressure|speed|rate|limit|offset|phase|width)\b",
             lowered,
-        ):
+        )
+        primary_data_like = re.search(
+            r"\b(observed|measured|recorded|row|table|minimum|maximum|range|bound|extremum|extrema|axis|data points?)\b",
+            lowered,
+        )
+        if primary_data_like and not setting_like:
             return True
-        if re.search(r"[\\/]|topspin\d|zg\d|\w_\w", evidence_text, flags=re.I):
+        if re.search(r"\b(identifier|id|file|dataset|data package|data path|software version|parameter file|classified|recommended)\b", lowered):
+            return True
+        if len(re.findall(r"\d", label)) > 2 and not setting_like:
+            return True
+        if re.search(r"[\\/]|[A-Za-z0-9]+_[A-Za-z0-9]+", evidence_text):
             return True
         return False
 

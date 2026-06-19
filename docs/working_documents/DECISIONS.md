@@ -36,6 +36,16 @@ Tradeoff: Some real extraction targets, such as point counts, resolution values,
 
 Revisit trigger: Revisit when evaluation shows important numeric targets are consistently absent from final drafts, or when curation workload shifts from noise removal to missing-value recovery.
 
+### 2026-06-19: Keep Projection Filters Domain-Agnostic
+
+Decision: Deterministic evidence selection and patching must not use dataset-specific field names, vendor names, instrument names, file names, profile examples, or benchmark sample identifiers as filters.
+
+Reason: Sample-specific filters make evaluation circular and thesis claims indefensible. Projection may use domain-agnostic evidence categories, schema shape, source structure, and broad semantic distinctions such as setting/configuration versus primary data summary.
+
+Tradeoff: Some misclassified evidence may pass through until the category prompt, semantic evaluator, or later reconstruction flow improves.
+
+Revisit trigger: Revisit only to add profile-declared rules or benchmark-independent structural rules, not ad hoc keys from failed examples.
+
 ### 2026-06-19: Keep Raw Units Before Vocabulary Normalization
 
 Decision: Profile projection may keep a raw unit string when the source explicitly provides one, but should not pretend local regex cleanup is semantic unit normalization.
@@ -58,9 +68,9 @@ Revisit trigger: Revisit when evaluation shows useful final metadata is consiste
 
 ### 2026-06-19: Split Requirement Reporting Into Coverage, Semantics, And Trace
 
-Decision: `requirement_report.json` no longer exposes one `metadata_completeness_score`. It reports deterministic `coverage_score`, LLM-assessed `semantic_requirements_score`, and deterministic `source_trace_score`.
+Decision: `requirement_report.json` no longer exposes one `metadata_completeness_score`. It reports deterministic filled-field coverage counts, LLM-assessed `semantic_requirements_score`, and deterministic `source_trace_score`.
 
-Reason: One scalar mixed field presence, semantic adequacy, and source traceability. The split keeps patching focused on coverage while semantic quality and trace quality remain separate audit concerns.
+Reason: One scalar mixed field presence, semantic adequacy, and source traceability. Filled-field counts are informative without pretending coverage is a quality percentage; semantic quality and trace quality remain separate audit concerns.
 
 Tradeoff: Existing runtime requirement reports are not backward-compatible with the new shape.
 

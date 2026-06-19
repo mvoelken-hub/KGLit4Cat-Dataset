@@ -166,6 +166,8 @@ export type CoverageFieldReport = {
 
 export type CoverageReport = {
   score: number;
+  filled_fields: number;
+  total_fields: number;
   fields: CoverageFieldReport[];
 };
 

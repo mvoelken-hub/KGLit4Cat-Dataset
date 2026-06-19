@@ -101,6 +101,8 @@ class CoverageFieldReport(BaseModel):
 
 class CoverageReport(BaseModel):
     score: float = 0.0
+    filled_fields: int = 0
+    total_fields: int = 0
     fields: list[CoverageFieldReport] = Field(default_factory=list)
 
 
@@ -130,7 +132,8 @@ def compute_coverage_report(document: dict[str, Any], schema: dict[str, Any]) ->
         path="",
         seen=set(),
     )
-    return CoverageReport(score=_average([field.score for field in fields]), fields=fields)
+    filled_fields, total_fields = _coverage_field_counts(fields)
+    return CoverageReport(score=float(filled_fields), filled_fields=filled_fields, total_fields=total_fields, fields=fields)
 
 
 def compute_source_trace_report(
@@ -258,6 +261,19 @@ def _resolve_schema_node(schema: Any, root_schema: dict[str, Any]) -> dict[str, 
 
 def _average(values: list[float]) -> float:
     return sum(values) / len(values) if values else 0.0
+
+
+def _coverage_field_counts(fields: list[CoverageFieldReport]) -> tuple[int, int]:
+    filled = 0
+    total = 0
+    for field in fields:
+        total += 1
+        if field.present:
+            filled += 1
+        child_filled, child_total = _coverage_field_counts(field.children)
+        filled += child_filled
+        total += child_total
+    return filled, total
 
 
 def _escape_json_pointer(value: str) -> str:

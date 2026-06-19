@@ -973,7 +973,8 @@ export function ProjectionWorkflowPanel({
   const requirementReport = progress?.requirement_report ?? null;
   const requirementSummary = requirementStatusSummary(requirementReport);
   const applicableRequirements = requirementReport?.semantic_requirements.filter((requirement) => requirement.applicable) ?? [];
-  const requirementPercent = requirementReport ? Math.round(requirementReport.coverage_score * 100) : null;
+  const coverageFilled = requirementReport?.coverage.filled_fields ?? requirementReport?.coverage_score ?? 0;
+  const coverageTotal = requirementReport?.coverage.total_fields ?? 0;
   const showRequirementPopover = (event: SyntheticEvent<HTMLElement>, requirement: RequirementReportItem) => {
     const rect = event.currentTarget.getBoundingClientRect();
     setHoveredRequirement({ requirement, x: rect.left, y: rect.bottom + 8 });
@@ -1025,15 +1026,12 @@ export function ProjectionWorkflowPanel({
         <section className="requirement-completeness-panel">
           <div className="requirement-score-heading">
             <div>
-              <span>Coverage</span>
-              <strong>{formatPercentScore(requirementReport.coverage_score)}</strong>
+              <span>Filled fields</span>
+              <strong>{coverageTotal ? `${coverageFilled}/${coverageTotal}` : coverageFilled}</strong>
             </div>
             <small>
               Semantic {formatPercentScore(requirementReport.semantic_requirements_score)} - Trace {formatPercentScore(requirementReport.source_trace_score)}
             </small>
-          </div>
-          <div className="requirement-score-track" aria-hidden="true">
-            <div style={{ width: `${requirementPercent ?? 0}%` }} />
           </div>
           <div className="requirement-status-strip">
             <span>{requirementReport.coverage_patches.filter((requirement) => requirement.status === 'fulfilled').length} coverage slots</span>

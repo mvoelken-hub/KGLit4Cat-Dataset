@@ -80,7 +80,9 @@ class RequirementScoringTests(unittest.TestCase):
             },
         }
         report = compute_coverage_report({"title": ["Dataset"], "activity": {"title": "Run"}}, schema)
-        self.assertAlmostEqual(report.score, (1.0 + 0.0 + 0.5) / 3.0)
+        self.assertEqual(report.score, 3.0)
+        self.assertEqual(report.filled_fields, 3)
+        self.assertEqual(report.total_fields, 5)
 
     def test_source_trace_averages_used_evidence_match_scores(self):
         used = EvidenceCandidate(
@@ -861,6 +863,38 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         groups = WorkflowService._quantitative_evidence_groups(notes)
 
         self.assertEqual(len(groups), 0)
+
+    def test_quantitative_grouping_rejects_primary_data_summaries_without_domain_keys(self):
+        notes = [
+            EvidenceCandidate(
+                candidate_id="identifier",
+                category="instrument_signal",
+                claim="The run identifier is A-42.",
+                evidence_text="RUN=A-42",
+            ),
+            EvidenceCandidate(
+                candidate_id="maximum",
+                category="instrument_signal",
+                claim="The maximum observed signal value is 3997.453.",
+                evidence_text="UPPER_BOUND=3997.453",
+            ),
+            EvidenceCandidate(
+                candidate_id="rows",
+                category="instrument_signal",
+                claim="The number of data points in the result table is 23.",
+                evidence_text="ROWS=23",
+            ),
+            EvidenceCandidate(
+                candidate_id="threshold",
+                category="instrument_signal",
+                claim="The threshold for peak detection is set to 0.93.",
+                evidence_text="THRESHOLD=0.93",
+            ),
+        ]
+
+        groups = WorkflowService._quantitative_evidence_groups(notes)
+
+        self.assertEqual([(group.label, group.value) for group in groups], [("threshold for peak detection", 0.93)])
 
     def test_quantitative_groups_project_to_existing_owner_before_creating_owner(self):
         service = WorkflowService(
