@@ -87,7 +87,26 @@ export function ChunkInspectionPanel({
   const fileByPath = new Map((dataPackage?.files ?? []).map((file) => [file.file_path, file]));
   const chunkGroups = chunksByFile.filter((group) => group.length > 0);
 
-  if (!chunkGroups.length) return null;
+  if (!chunkGroups.length) {
+    if (!dataPackage?.files.length) return null;
+    return (
+      <div className="file-list chunk-file-list">
+        {dataPackage.files.map((file) => (
+          <div
+            className="file-row"
+            key={file.file_path}
+            onClick={() => onViewFile(file)}
+            title="Click to view file content"
+          >
+            <span>{file.file_path}</span>
+            <div className="file-meta">
+              <small>{formatBytes(file.byte_size)}</small>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div className="file-list chunk-file-list">
@@ -198,4 +217,10 @@ export function ChunkingStatusPanel({
 function chunkLineCount(chunk: ChunkResponse): number {
   if (chunk.filtered_line_indices?.length) return chunk.filtered_line_indices.length;
   return Math.max(0, chunk.end_idx - chunk.start_idx + 1);
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
