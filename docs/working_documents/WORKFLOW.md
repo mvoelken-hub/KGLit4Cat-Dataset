@@ -127,12 +127,14 @@ Thesis claim supported: SIMONE constrains LLM output with explicit profile valid
 
 ### Requirement Reporting Separates Coverage, Semantics, And Trace
 
-After generic DCAT-AP+ draft creation, SIMONE now computes deterministic filled-field coverage, applies coverage-only patches, re-computes coverage, then runs sliced LLM semantic requirement checks and deterministic source trace scoring.
+After generic DCAT-AP+ draft creation, SIMONE now computes deterministic filled-field coverage, applies coverage-only patches, re-computes coverage, runs sliced LLM semantic requirement checks, applies LLM-assisted semantic reconstruction under JSON Patch and schema-validation constraints, re-runs semantic checks, and then computes deterministic source trace scoring.
 
 Reasoning:
 
 - Coverage lists filled profile fields, including nested fields, as an inventory count rather than a quality percentage.
 - Semantic requirements judge whether DCAT-AP+ scientific objects are meaningful and evidence-aligned.
+- Semantic reconstruction reorganizes the current draft using requirement artifacts; it is not another evidence-search patching pass, and deterministic code only enforces allowed paths and validation.
+- The profile draft artifacts expose the stage boundary explicitly: `generated_initial_draft.json`, `generated_patched_draft.json`, and `generated_reconstructed_draft.json`.
 - Source trace scoring summarizes evidence quality for evidence that actually supports projected draft content.
 - Deterministic distributions are workflow-owned and are not a patch/scoring requirement.
 - Requirement and patch filters must stay domain-agnostic: no field names, vendor names, file names, instrument names, or benchmark examples may be hardcoded to improve a sample run.

@@ -34,6 +34,7 @@ from app.domain.extraction import (
     RankedFile,
     RequirementEvaluation,
     RequirementPatchResult,
+    SemanticReconstructionPatchResult,
     Resource,
     DatasetSummaryProjection,
     ShallowDatasetProjection,
@@ -164,6 +165,8 @@ class FakeOutputRepository:
         self.initial_extraction_overview_diagnostic = None
         self.generated_final_draft: dict | None = None
         self.generated_initial_draft: dict | None = None
+        self.generated_patched_draft: dict | None = None
+        self.generated_reconstructed_draft: dict | None = None
         self.requirement_report = None
         self.dataset_summary: str | None = None
         self.curated_document: dict | None = None
@@ -205,6 +208,8 @@ class FakeOutputRepository:
         self.initial_extraction_overview_status = result.initial_extraction_overview_status
         self.generated_final_draft = result.generated_final_draft
         self.generated_initial_draft = result.generated_initial_draft
+        self.generated_patched_draft = result.generated_patched_draft
+        self.generated_reconstructed_draft = result.generated_reconstructed_draft
         self.requirement_report = result.requirement_report
         self.curated_document = result.curated_document
         self.projection_ledger = result.projection_ledger
@@ -287,6 +292,9 @@ class FakeOutputRepository:
 
     def save_generated_initial_draft(self, *, workflow_id: str, document: dict, chat_model: str | None = None, **_kwargs):
         self.generated_initial_draft = document
+
+    def save_generated_patched_draft(self, *, workflow_id: str, document: dict, chat_model: str | None = None, **_kwargs):
+        self.generated_patched_draft = document
 
     def load_generated_initial_draft(self, workflow_id: str, chat_model: str | None = None) -> dict:
         if self.generated_initial_draft is None:
@@ -2624,6 +2632,11 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             if kwargs["output_type"] is RequirementPatchResult:
                 return CompletionResult(
                     output=RequirementPatchResult(should_patch=False, rationale="No patch in this test."),
+                    usage=RunUsage(requests=1),
+                )
+            if kwargs["output_type"] is SemanticReconstructionPatchResult:
+                return CompletionResult(
+                    output=SemanticReconstructionPatchResult(should_apply=False, reason="No reconstruction in this test."),
                     usage=RunUsage(requests=1),
                 )
             raise AssertionError("Only dataset summary/profile generation is expected")

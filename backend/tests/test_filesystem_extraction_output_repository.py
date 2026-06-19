@@ -122,6 +122,8 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
             result = ExtractionRunResult(
                 generated_final_draft={"id": "generated", "title": "Generated"},
                 machine_evidence_context=EvidenceContext(),
+                generated_patched_draft={"id": "patched", "title": "Patched"},
+                generated_reconstructed_draft={"id": "generated", "title": "Generated"},
                 initial_file_summaries=[
                     ExtractionFileSummary(
                         file_path="dataset_description.txt",
@@ -195,7 +197,8 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
             for path in [
                 overview_dir / "initial_extraction_overview.json",
                 overview_dir / "initial_file_summaries.json",
-                profile_dir / "generated_final_draft.json",
+                profile_dir / "generated_patched_draft.json",
+                profile_dir / "generated_reconstructed_draft.json",
                 profile_dir / "dataset_summary.txt",
                 result_dir / "curated_document.json",
                 profile_dir / "projection_ledger.json",
@@ -209,7 +212,8 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
             safe_model = repo._sanitize_path_component(chat_model)
             index = json.loads((repo._workflow_dir(workflow_id) / "artifact_index.json").read_text(encoding="utf-8"))
             self.assertIn(f"overview/{safe_model}/initial_file_summaries.json", index["by_stage"]["overview"])
-            self.assertIn(f"profile_draft/semantic/{safe_model}/generated_final_draft.json", index["by_stage"]["profile_draft"])
+            self.assertIn(f"profile_draft/semantic/{safe_model}/generated_reconstructed_draft.json", index["by_stage"]["profile_draft"])
+            self.assertIn(f"profile_draft/semantic/{safe_model}/generated_patched_draft.json", index["by_stage"]["profile_draft"])
             self.assertIn(f"result/semantic/{safe_model}/extraction_result.json", index["by_stage"]["result"])
 
             overview, overview_status = repo.load_initial_extraction_overview(workflow_id, chat_model)
@@ -293,6 +297,7 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
                 chat_model=chat_model,
             )
             repo.save_dataset_summary(workflow_id=workflow_id, summary="summary", chat_model=chat_model)
+            repo.save_generated_patched_draft(workflow_id=workflow_id, document={"id": "patched"}, chat_model=chat_model)
             repo.save_generated_final_draft(workflow_id=workflow_id, document={"id": "draft"}, chat_model=chat_model)
             repo.save_curated_document(workflow_id=workflow_id, document={"id": "curated"}, chat_model=chat_model)
 

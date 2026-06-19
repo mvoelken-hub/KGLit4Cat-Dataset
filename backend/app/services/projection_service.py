@@ -325,12 +325,44 @@ class ProjectionService:
             warnings=[],
         )
         state.generated_final_draft = document
+        state.generated_patched_draft = self._clone_json_object(document)
+        progress.generated_patched_draft = state.generated_patched_draft
         coverage = compute_coverage_report(document, validation_schema)
         semantic_items = await self._evaluate_semantic_requirements(
             data_package_id=data_package_id,
             document=document,
             evidence_context=evidence_context,
         )
+        progress.stage = "semantic_reconstruction"
+        document, semantic_reconstructions = await self._reconstruct_semantic_defects(
+            data_package_id=data_package_id,
+            profile_identifier=profile_identifier,
+            document=document,
+            semantic_items=semantic_items,
+            validation_schema=validation_schema,
+            state=state,
+            progress=progress,
+        )
+        state.generated_final_draft = document
+        state.generated_reconstructed_draft = self._clone_json_object(document)
+        progress.generated_final_draft = document
+        progress.generated_reconstructed_draft = state.generated_reconstructed_draft
+        validation = self.profile_service.validate_document(
+            identifier=profile_identifier,
+            document=document,
+        )
+        state.validation = DraftValidationResult(
+            status="valid" if validation.valid else "invalid",
+            errors=validation.errors,
+            warnings=[],
+        )
+        progress.stage = "semantic_revalidation"
+        semantic_items = await self._evaluate_semantic_requirements(
+            data_package_id=data_package_id,
+            document=document,
+            evidence_context=evidence_context,
+        )
+        coverage = compute_coverage_report(document, validation_schema)
         source_trace = compute_source_trace_report(
             evidence_context,
             self._used_evidence_ids(state=state),
@@ -341,6 +373,7 @@ class ProjectionService:
             semantic_requirements=semantic_items,
             source_trace=source_trace,
             coverage_patches=coverage_items,
+            semantic_reconstructions=semantic_reconstructions,
         )
         state.document_quality_state = self._build_document_quality_state(
             validation=state.validation,
@@ -358,6 +391,245 @@ class ProjectionService:
         self._persist_state_artifacts(data_package_id, state)
         self._update_progress(data_package_id, progress)
         return document
+
+    async def _reconstruct_semantic_defects(
+        self,
+        *,
+        data_package_id: str,
+        profile_identifier: str,
+        document: dict[str, Any],
+        semantic_items: list[RequirementReportItem],
+        validation_schema: dict[str, Any],
+        state: ExtractionRunState,
+        progress: ExtractionRunProgress,
+    ) -> tuple[dict[str, Any], list[SemanticReconstructionRecord]]:
+        order = [
+            "provenance_context_semantics",
+            "technical_agents_semantics",
+            "method_plan_semantics",
+            "instrument_settings_semantics",
+            "dataset_identity_semantics",
+            "aboutness_semantics",
+        ]
+        by_id = {item.requirement_id: item for item in semantic_items}
+        records: list[SemanticReconstructionRecord] = []
+        current = document
+        for requirement_id in order:
+            item = by_id.get(requirement_id)
+            if item is None:
+                continue
+            if item.status in {"fulfilled", "not_applicable"}:
+                records.append(
+                    SemanticReconstructionRecord(
+                        requirement_id=requirement_id,
+                        status="skipped",
+                        target_paths=item.target_paths,
+                        reason="Semantic requirement has no defect to reconstruct.",
+                    )
+                )
+                continue
+            original = self._clone_json_object(current)
+            updated, changed_paths, reason, validation_errors = await self._semantic_reconstruction_update(
+                data_package_id=data_package_id,
+                document=current,
+                item=item,
+                requirement=next(req for req in DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS if req.requirement_id == requirement_id),
+                validation_schema=validation_schema,
+            )
+            if not changed_paths:
+                records.append(
+                    SemanticReconstructionRecord(
+                        requirement_id=requirement_id,
+                        status="failed" if validation_errors else "skipped",
+                        target_paths=item.target_paths,
+                        reason=reason or "No semantic reconstruction was proposed.",
+                        validation_errors=validation_errors,
+                    )
+                )
+                continue
+            validation = self.profile_service.validate_document(
+                identifier=profile_identifier,
+                document=updated,
+            )
+            if not validation.valid:
+                records.append(
+                    SemanticReconstructionRecord(
+                        requirement_id=requirement_id,
+                        status="rolled_back",
+                        target_paths=item.target_paths,
+                        changed_paths=changed_paths,
+                        reason=reason or "Semantic reconstruction failed validation.",
+                        validation_errors=[issue.message for issue in validation.errors],
+                    )
+                )
+                current = original
+                continue
+            current = updated
+            record = SemanticReconstructionRecord(
+                requirement_id=requirement_id,
+                status="applied",
+                target_paths=item.target_paths,
+                changed_paths=changed_paths,
+                reason=reason,
+            )
+            records.append(record)
+            self._record_semantic_reconstruction_ledgers(
+                data_package_id=data_package_id,
+                state=state,
+                progress=progress,
+                document=current,
+                item=item,
+                record=record,
+            )
+        progress.projection_ledger = state.projection_ledger
+        progress.field_completion_ledger = state.field_completion_ledger
+        return current, records
+
+    async def _semantic_reconstruction_update(
+        self,
+        *,
+        data_package_id: str,
+        document: dict[str, Any],
+        item: RequirementReportItem,
+        requirement: DcatRequirement,
+        validation_schema: dict[str, Any],
+    ) -> tuple[dict[str, Any], list[str], str, list[str]]:
+        assert self.ollama_client is not None
+        allowed_paths = item.target_paths or requirement.target_paths
+        draft_excerpt = {
+            path: self._value_at_json_pointer(document, path)
+            for path in allowed_paths
+        }
+        schema_branches = {
+            path: self._compact_schema_branch_for_target(
+                validation_schema=validation_schema,
+                target_path=path,
+            )
+            for path in allowed_paths
+        }
+        prompt = build_semantic_reconstruction_prompt(
+            requirement=requirement,
+            item=item,
+            document=document,
+            draft_excerpt=draft_excerpt,
+            schema_branches=schema_branches,
+        )
+        try:
+            result = await generate_structured(
+                self.ollama_client,
+                model=self.ollama_client.chat_model,
+                system=SEMANTIC_RECONSTRUCTION_SYSTEM_PROMPT,
+                prompt=prompt,
+                output_type=SemanticReconstructionPatchResult,
+                system_components=[
+                    ("semantic_reconstruction_system_prompt", SEMANTIC_RECONSTRUCTION_SYSTEM_PROMPT),
+                ],
+                prompt_components=[],
+                token_budgeter=self._prompt_token_budgeter(),
+                operation_id=self._prompt_operation_id("semantic_reconstruction"),
+                agent_name="semantic_reconstruction",
+                num_ctx=self.ollama_client.max_context_length,
+            )
+            self._record_llm_call_result(
+                data_package_id=data_package_id,
+                result=result,
+                agent_name="semantic_reconstruction",
+            )
+            patch = (
+                result.output
+                if isinstance(result.output, SemanticReconstructionPatchResult)
+                else SemanticReconstructionPatchResult.model_validate(result.output)
+            )
+        except (CompletionError, ValidationError) as exc:
+            self._record_llm_call_exception(
+                data_package_id=data_package_id,
+                exc=exc,
+                agent_name="semantic_reconstruction",
+            )
+            return document, [], f"Semantic reconstruction generation failed: {exc}", [str(exc)]
+        if not patch.should_apply or not patch.operations:
+            return document, [], patch.reason or "LLM found no safe reconstruction.", []
+        if not self._semantic_patch_paths_allowed(patch.operations, allowed_paths):
+            return document, [], "LLM reconstruction patch touched a disallowed path.", ["disallowed_patch_path"]
+        try:
+            updated = self._apply_profile_patch(document, patch.operations)
+        except Exception as exc:
+            return document, [], f"Semantic reconstruction patch could not be applied: {exc}", [str(exc)]
+        return updated, self._semantic_patch_changed_paths(patch.operations), patch.reason, []
+
+    @classmethod
+    def _semantic_patch_paths_allowed(cls, operations: list[dict[str, Any]], allowed_paths: list[str]) -> bool:
+        return all(
+            isinstance(operation, dict)
+            and cls._semantic_patch_path_allowed(str(operation.get("path", "")), allowed_paths)
+            and (
+                "from" not in operation
+                or cls._semantic_patch_path_allowed(str(operation.get("from", "")), allowed_paths)
+            )
+            for operation in operations
+        )
+
+    @staticmethod
+    def _semantic_patch_path_allowed(path: str, allowed_paths: list[str]) -> bool:
+        return path.startswith("/") and any(
+            ProjectionService._patch_path_allowed_for_target(path, allowed_path)
+            for allowed_path in allowed_paths
+        )
+
+    @staticmethod
+    def _semantic_patch_changed_paths(operations: list[dict[str, Any]]) -> list[str]:
+        return list(dict.fromkeys(str(operation.get("path", "")) for operation in operations if operation.get("path")))
+
+    def _record_semantic_reconstruction_ledgers(
+        self,
+        *,
+        data_package_id: str,
+        state: ExtractionRunState,
+        progress: ExtractionRunProgress,
+        document: dict[str, Any],
+        item: RequirementReportItem,
+        record: SemanticReconstructionRecord,
+    ) -> None:
+        evidence_ids = [
+            evidence.evidence_id
+            for evidence in list(item.selected_evidence) + list(item.context_window)
+            if getattr(evidence, "evidence_id", "")
+        ]
+        for path in record.changed_paths:
+            field_name = self._field_name_from_json_pointer(path)
+            value = self._value_at_json_pointer(document, path)
+            state.field_completion_ledger.append(
+                FieldCompletionLedgerRecord(
+                    json_path=path,
+                    field_name=field_name,
+                    generated_value=value,
+                    source_evidence=list(dict.fromkeys(evidence_ids)),
+                    validation_status="valid",
+                    enrichment_status="grounded" if evidence_ids else "not_grounded",
+                    issue_categories=[],
+                    edit_needed_reason=f"{item.requirement_id}: {record.reason}",
+                )
+            )
+        object_identifier = f"semantic_reconstruction:{item.requirement_id}:{sha1('|'.join(record.changed_paths).encode('utf-8')).hexdigest()[:12]}"
+        state.projection_ledger.append(
+            ProjectionLedgerRecord(
+                object_identifier=object_identifier,
+                object_kind="SemanticReconstruction",
+                source_evidence=evidence_ids[0] if evidence_ids else None,
+                evidence_note_identifiers=list(dict.fromkeys(evidence_ids)),
+                status="projected",
+                projected_paths=record.changed_paths,
+                target_path=record.changed_paths[0] if record.changed_paths else None,
+                target_class=None,
+                planner_status=item.requirement_id,
+                planner_reason=record.reason,
+                evidence_quality={"requirement_id": item.requirement_id},
+                merge_status="applied",
+                reason=record.reason,
+            )
+        )
+        progress.field_completion_ledger = state.field_completion_ledger
+        progress.projection_ledger = state.projection_ledger
 
     @classmethod
     def _coverage_items_from_document(
@@ -3280,6 +3552,7 @@ class ProjectionService:
             document=clean_document,
         )
         state.generated_final_draft = clean_document
+        state.generated_reconstructed_draft = clean_document
         state.validation = validation
         if state.curated_document is None:
             state.curated_document = self._clone_json_object(clean_document)
@@ -3329,6 +3602,8 @@ class ProjectionService:
             generated_final_draft=clean_document,
             machine_evidence_context=evidence_context,
             generated_initial_draft=state.generated_initial_draft,
+            generated_patched_draft=state.generated_patched_draft,
+            generated_reconstructed_draft=state.generated_reconstructed_draft,
             requirement_report=state.requirement_report,
             initial_file_summaries=state.initial_file_summaries,
             initial_file_summary_status=state.initial_file_summary_status,
@@ -3575,10 +3850,10 @@ class ProjectionService:
         chunking_strategy = state.chunking_strategy
         self._persist_initial_file_summaries(data_package_id, state)
         self._persist_initial_extraction_overview(data_package_id, state)
-        if state.generated_final_draft is not None:
+        if state.generated_reconstructed_draft is not None:
             self.output_repository.save_generated_final_draft(
                 workflow_id=data_package_id,
-                document=state.generated_final_draft,
+                document=state.generated_reconstructed_draft,
                 chat_model=chat_model,
                 chunking_strategy=chunking_strategy,
             )
@@ -3586,6 +3861,13 @@ class ProjectionService:
             self.output_repository.save_generated_initial_draft(
                 workflow_id=data_package_id,
                 document=state.generated_initial_draft,
+                chat_model=chat_model,
+                chunking_strategy=chunking_strategy,
+            )
+        if state.generated_patched_draft is not None:
+            self.output_repository.save_generated_patched_draft(
+                workflow_id=data_package_id,
+                document=state.generated_patched_draft,
                 chat_model=chat_model,
                 chunking_strategy=chunking_strategy,
             )

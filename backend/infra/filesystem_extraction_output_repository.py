@@ -46,7 +46,8 @@ INITIAL_FILE_SUMMARY_DIAGNOSTICS_FILE = "initial_file_summary_diagnostics.json"
 INITIAL_EXTRACTION_OVERVIEW_FILE = "initial_extraction_overview.json"
 INITIAL_EXTRACTION_OVERVIEW_DIAGNOSTIC_FILE = "initial_extraction_overview_diagnostic.json"
 GENERATED_INITIAL_DRAFT_FILE = "generated_initial_draft.json"
-GENERATED_FINAL_DRAFT_FILE = "generated_final_draft.json"
+GENERATED_PATCHED_DRAFT_FILE = "generated_patched_draft.json"
+GENERATED_FINAL_DRAFT_FILE = "generated_reconstructed_draft.json"
 REQUIREMENT_REPORT_FILE = "requirement_report.json"
 DATASET_SUMMARY_FILE = "dataset_summary.txt"
 CURATED_DOCUMENT_FILE = "curated_document.json"
@@ -130,6 +131,8 @@ class FileSystemExtractionOutputRepository:
         self.save_initial_extraction_overview(workflow_id=workflow_id, overview=result.initial_extraction_overview, status=result.initial_extraction_overview_status, chat_model=chat_model)
         if result.generated_initial_draft is not None:
             self.save_generated_initial_draft(workflow_id=workflow_id, document=result.generated_initial_draft, chat_model=chat_model, chunking_strategy=chunking_strategy)
+        if result.generated_patched_draft is not None:
+            self.save_generated_patched_draft(workflow_id=workflow_id, document=result.generated_patched_draft, chat_model=chat_model, chunking_strategy=chunking_strategy)
         self.save_generated_final_draft(workflow_id=workflow_id, document=result.generated_final_draft, chat_model=chat_model, chunking_strategy=chunking_strategy)
         if result.requirement_report is not None:
             self.save_requirement_report(workflow_id=workflow_id, report=result.requirement_report, chat_model=chat_model, chunking_strategy=chunking_strategy)
@@ -277,6 +280,20 @@ class FileSystemExtractionOutputRepository:
             document,
         )
 
+    def save_generated_patched_draft(
+        self,
+        *,
+        workflow_id: str,
+        document: dict[str, Any],
+        chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
+    ) -> None:
+        self._write_json_artifact(
+            self._branch_dir(workflow_id, "profile_draft", chunking_strategy, chat_model)
+            / GENERATED_PATCHED_DRAFT_FILE,
+            document,
+        )
+
     def save_requirement_report(
         self,
         *,
@@ -298,10 +315,10 @@ class FileSystemExtractionOutputRepository:
     ) -> dict[str, Any]:
         path = self._branch_dir(workflow_id, "profile_draft", chunking_strategy, chat_model) / GENERATED_FINAL_DRAFT_FILE
         if not path.exists():
-            raise FileNotFoundError(f"Generated final draft not found for workflow '{workflow_id}'.")
+            raise FileNotFoundError(f"Generated reconstructed draft not found for workflow '{workflow_id}'.")
         payload = self._read_json_file(path)
         if not isinstance(payload, dict):
-            raise ValueError("Generated final draft artifact is not a JSON object.")
+            raise ValueError("Generated reconstructed draft artifact is not a JSON object.")
         return payload
 
     def save_dataset_summary(

@@ -228,6 +228,8 @@ class ExtractionRunState(BaseModel):
     generated_final_draft: dict[str, Any] | None = None
     curated_document: dict[str, Any] | None = None
     generated_initial_draft: dict[str, Any] | None = None
+    generated_patched_draft: dict[str, Any] | None = None
+    generated_reconstructed_draft: dict[str, Any] | None = None
     requirement_report: RequirementReport | None = None
     document_quality_state: DocumentQualityState | None = None
     draft_quality_state: DraftQualityState | None = None
@@ -266,6 +268,8 @@ class ExtractionRunProgress(BaseModel):
     generated_final_draft: dict[str, Any] | None = None
     curated_document: dict[str, Any] | None = None
     generated_initial_draft: dict[str, Any] | None = None
+    generated_patched_draft: dict[str, Any] | None = None
+    generated_reconstructed_draft: dict[str, Any] | None = None
     requirement_report: RequirementReport | None = None
     document_quality_state: DocumentQualityState | None = None
     draft_quality_state: DraftQualityState | None = None
@@ -301,6 +305,8 @@ class ExtractionRunResult(BaseModel):
     generated_final_draft: dict[str, Any]
     machine_evidence_context: RoutedEvidenceContext
     generated_initial_draft: dict[str, Any] | None = None
+    generated_patched_draft: dict[str, Any] | None = None
+    generated_reconstructed_draft: dict[str, Any] | None = None
     requirement_report: RequirementReport | None = None
     initial_file_summaries: list[ExtractionFileSummary] = Field(default_factory=list)
     initial_file_summary_status: InitialFileSummaryStatus | None = None

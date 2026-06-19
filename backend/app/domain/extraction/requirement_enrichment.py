@@ -112,6 +112,23 @@ class SourceTraceReport(BaseModel):
     evidence_ids: list[str] = Field(default_factory=list)
 
 
+class SemanticReconstructionRecord(BaseModel):
+    requirement_id: str
+    status: Literal["applied", "skipped", "failed", "rolled_back"] = "skipped"
+    target_paths: list[str] = Field(default_factory=list)
+    changed_paths: list[str] = Field(default_factory=list)
+    reason: str = ""
+    validation_errors: list[str] = Field(default_factory=list)
+
+
+class SemanticReconstructionPatchResult(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    should_apply: bool = False
+    operations: list[dict[str, Any]] = Field(default_factory=list)
+    reason: str = ""
+
+
 class RequirementReport(BaseModel):
     schema_valid: bool = True
     coverage_score: float = 0.0
@@ -121,6 +138,7 @@ class RequirementReport(BaseModel):
     semantic_requirements: list[RequirementReportItem] = Field(default_factory=list)
     source_trace: SourceTraceReport = Field(default_factory=SourceTraceReport)
     coverage_patches: list[RequirementReportItem] = Field(default_factory=list)
+    semantic_reconstructions: list[SemanticReconstructionRecord] = Field(default_factory=list)
 
 
 def compute_coverage_report(document: dict[str, Any], schema: dict[str, Any]) -> CoverageReport:
@@ -453,6 +471,18 @@ Return exactly one target_path from allowed_target_paths and one object/value in
 """
 
 
+SEMANTIC_RECONSTRUCTION_SYSTEM_PROMPT = """
+You reconstruct one DCAT-AP+ Dataset draft slice from one semantic requirement review.
+Return only JSON matching the supplied schema.
+Use only the current draft, selected evidence, and context window. Do not invent facts.
+Return RFC 6902 JSON Patch operations only for allowed_target_paths.
+Keep edits minimal: move, rewrite, remove, or add fields only when the semantic requirement justifies it.
+Preserve valid numeric instrument/configuration settings. Remove only obvious qualitative/default/placeholders from quantitative attributes.
+Do not use new evidence search. Do not patch distributions.
+Set should_apply=false when no safe semantic reconstruction is available.
+"""
+
+
 def build_requirement_evaluation_prompt(
     *,
     document: dict[str, Any],
@@ -508,6 +538,46 @@ def build_requirement_patch_prompt(
     )
 
 
+def build_semantic_reconstruction_prompt(
+    *,
+    requirement: DcatRequirement,
+    item: RequirementReportItem,
+    document: dict[str, Any],
+    draft_excerpt: dict[str, Any],
+    schema_branches: dict[str, Any],
+) -> str:
+    payload = {
+        "requirement": requirement.model_dump(mode="json"),
+        "assessment": {
+            "requirement_id": item.requirement_id,
+            "status": item.status,
+            "quality": item.quality,
+            "rationale": item.rationale,
+            "target_paths": item.target_paths,
+        },
+        "allowed_target_paths": item.target_paths or requirement.target_paths,
+        "current_document": document,
+        "draft_excerpt": draft_excerpt,
+        "schema_branches": schema_branches,
+        "selected_evidence": [evidence.model_dump(mode="json") for evidence in item.selected_evidence],
+        "context_window": [evidence.model_dump(mode="json") for evidence in item.context_window],
+        "category_meanings": {
+            "resource_signal": "files, distributions, formats, access paths, and resource-scoped notes",
+            "method_signal": "explicit realized plans, protocols, methods, procedures",
+            "activity_signal": "data-generating activities and other activities",
+            "agent_signal": "software, devices, instruments, machines, services, executable systems",
+            "instrument_signal": "acquisition, instrument, processing, calibration, unit, threshold, and configuration settings",
+            "surrounding_signal": "dates, labs, teams, people, organizations, ownership, origin, authorship, provenance context",
+            "measurement_signal": "primary/raw data values; downstream inert",
+        },
+    }
+    return "Create a minimal semantic reconstruction JSON Patch for this requirement.\n\n" + json.dumps(
+        payload,
+        ensure_ascii=False,
+        indent=2,
+    )
+
+
 def score_requirement_items(items: list[RequirementReportItem]) -> float:
     applicable = [item for item in items if item.applicable and item.status != "not_applicable"]
     total_weight = sum(item.weight for item in applicable)
@@ -525,6 +595,7 @@ def build_requirement_report(
     semantic_requirements: list[RequirementReportItem],
     source_trace: SourceTraceReport,
     coverage_patches: list[RequirementReportItem],
+    semantic_reconstructions: list[SemanticReconstructionRecord] | None = None,
 ) -> RequirementReport:
     semantic_score = score_requirement_items(semantic_requirements)
     return RequirementReport(
@@ -536,6 +607,7 @@ def build_requirement_report(
         semantic_requirements=semantic_requirements,
         source_trace=source_trace,
         coverage_patches=coverage_patches,
+        semantic_reconstructions=semantic_reconstructions or [],
     )
 
 

@@ -187,6 +187,8 @@ class EvidenceService:
     @staticmethod
     def _clear_profile_projection_state(state: ExtractionRunState) -> None:
         state.generated_final_draft = None
+        state.generated_patched_draft = None
+        state.generated_reconstructed_draft = None
         state.draft_quality_state = None
         state.validation = DraftValidationResult()
         state.curated_validation = None
@@ -198,6 +200,8 @@ class EvidenceService:
     @staticmethod
     def _clear_profile_projection_progress(progress: ExtractionRunProgress) -> None:
         progress.generated_final_draft = None
+        progress.generated_patched_draft = None
+        progress.generated_reconstructed_draft = None
         progress.draft_quality_state = None
         progress.validation = DraftValidationResult()
         progress.curated_validation = None

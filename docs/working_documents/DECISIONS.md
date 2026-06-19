@@ -75,3 +75,13 @@ Reason: One scalar mixed field presence, semantic adequacy, and source traceabil
 Tradeoff: Existing runtime requirement reports are not backward-compatible with the new shape.
 
 Revisit trigger: Revisit when the UI or thesis evaluation needs a deliberately named composite score instead of the three separate metrics.
+
+### 2026-06-19: Separate Coverage Patching From LLM Semantic Reconstruction
+
+Decision: Coverage patching remains evidence-selected and slot-focused; semantic defects are handled afterward by an LLM reconstruction pass that returns constrained JSON Patch operations over the current draft and existing semantic requirement artifacts.
+
+Reason: Semantic issues such as misplaced agents, bloated descriptions, or missing provenance should reorganize the draft rather than trigger another evidence-search patch loop.
+
+Tradeoff: Reconstruction quality depends on the chat model, but deterministic code still enforces allowed paths, schema validation, rollback, and trace records.
+
+Revisit trigger: Revisit when profile-declared reconstruction rules or grounding-stage normalization can replace part of the LLM edit workload.

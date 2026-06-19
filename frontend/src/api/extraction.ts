@@ -93,6 +93,8 @@ export type ExtractionRunProgress = {
   generated_final_draft?: Record<string, unknown> | null;
   curated_document?: Record<string, unknown> | null;
   generated_initial_draft?: Record<string, unknown> | null;
+  generated_patched_draft?: Record<string, unknown> | null;
+  generated_reconstructed_draft?: Record<string, unknown> | null;
   requirement_report?: RequirementReport | null;
   document_quality_state?: DocumentQualityState | null;
   draft_quality_state?: DraftQualityState | null;
@@ -177,6 +179,15 @@ export type SourceTraceReport = {
   evidence_ids: string[];
 };
 
+export type SemanticReconstructionRecord = {
+  requirement_id: string;
+  status: 'applied' | 'skipped' | 'failed' | 'rolled_back';
+  target_paths: string[];
+  changed_paths: string[];
+  reason: string;
+  validation_errors: string[];
+};
+
 export type RequirementReport = {
   schema_valid: boolean;
   coverage_score: number;
@@ -186,6 +197,7 @@ export type RequirementReport = {
   semantic_requirements: RequirementReportItem[];
   source_trace: SourceTraceReport;
   coverage_patches: RequirementReportItem[];
+  semantic_reconstructions: SemanticReconstructionRecord[];
 };
 
 export type EvidenceQueryLedgerEntry = {
@@ -473,6 +485,8 @@ export type ExtractionRunResult = {
   generated_final_draft: Record<string, unknown>;
   machine_evidence_context: RoutedEvidenceContext;
   generated_initial_draft?: Record<string, unknown> | null;
+  generated_patched_draft?: Record<string, unknown> | null;
+  generated_reconstructed_draft?: Record<string, unknown> | null;
   requirement_report?: RequirementReport | null;
   initial_file_summaries?: ExtractionFileSummary[];
   initial_file_summary_status?: InitialFileSummaryStatus | null;

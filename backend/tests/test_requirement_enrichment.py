@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 from app.core.config import Settings
 from app.domain.extraction import (
@@ -13,6 +13,7 @@ from app.domain.extraction import (
     RequirementPatchAttempt,
     RequirementEvidenceItem,
     RequirementReportItem,
+    SemanticReconstructionPatchResult,
     build_requirement_report,
     compute_coverage_report,
     compute_source_trace_report,
@@ -507,6 +508,69 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         repo.save_requirement_report.assert_called()
         repo.save_generated_initial_draft.assert_called()
 
+    async def test_semantic_reconstruction_runs_between_semantic_evaluations(self):
+        service = WorkflowService(
+            profile_service=FakeProfileService(),
+            settings=Settings(),
+            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
+        )
+        first_item = RequirementReportItem(
+            requirement_id="dataset_identity_semantics",
+            label="Identity",
+            weight=1.0,
+            status="partial",
+            applicable=True,
+            quality=0.5,
+            weighted_score=0.5,
+        )
+        second_item = RequirementReportItem(
+            requirement_id="dataset_identity_semantics",
+            label="Identity",
+            weight=1.0,
+            status="fulfilled",
+            applicable=True,
+            quality=1.0,
+            weighted_score=1.0,
+        )
+        service._evaluate_semantic_requirements = AsyncMock(side_effect=[[first_item], [second_item]])
+        service._semantic_reconstruction_update = AsyncMock(
+            return_value=(
+                {
+                    "id": "pkg",
+                    "title": ["Dataset"],
+                    "description": ["Dataset acquired with method."],
+                },
+                ["/description"],
+                "LLM streamlined description.",
+                [],
+            )
+        )
+        state = ExtractionRunState(
+            generated_final_draft={
+                "id": "pkg",
+                "title": ["Dataset"],
+                "description": ["Dataset acquired with method. Raw data points 10."],
+            },
+            chat_model="test-model",
+        )
+        progress = ExtractionRunProgress(warnings=[])
+
+        document = await service._enrich_draft_with_requirements(
+            data_package_id="pkg",
+            profile_identifier="dcat-ap-plus",
+            evidence_context=RoutedEvidenceContext(),
+            validation_schema={},
+            state=state,
+            progress=progress,
+            warnings=[],
+        )
+
+        self.assertEqual(service._evaluate_semantic_requirements.call_count, 2)
+        self.assertEqual(document["description"], ["Dataset acquired with method."])
+        self.assertEqual(state.requirement_report.semantic_requirements[0].status, "fulfilled")
+        self.assertEqual(state.requirement_report.semantic_reconstructions[0].status, "applied")
+        self.assertEqual(state.requirement_report.semantic_reconstructions[0].changed_paths, ["/description"])
+
     async def test_applied_patch_is_re_evaluated_before_scoring(self):
         repo = Mock()
         service = WorkflowService(
@@ -935,6 +999,154 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(instance["description"], "Threshold: 0.93")
         self.assertNotIn("Evidence-grounded quantitative attribute", instance["description"])
+
+    async def test_semantic_reconstruction_applies_llm_json_patch(self):
+        service = WorkflowService(
+            profile_service=FakeProfileService(),
+            settings=Settings(),
+            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
+        )
+        item = RequirementReportItem(
+            requirement_id="dataset_identity_semantics",
+            label="Identity",
+            weight=1.0,
+            status="partial",
+            applicable=True,
+            quality=0.5,
+            weighted_score=0.5,
+            target_paths=["/description"],
+        )
+        llm_result = Mock(
+            output=SemanticReconstructionPatchResult(
+                should_apply=True,
+                operations=[
+                    {
+                        "op": "replace",
+                        "path": "/description",
+                        "value": ["Dataset acquired with a documented method."],
+                    }
+                ],
+                reason="Streamlined dataset identity.",
+            ),
+            usage=None,
+        )
+
+        with patch("app.services.projection_service.generate_structured", AsyncMock(return_value=llm_result)) as mocked:
+            updated, paths, reason, errors = await service._semantic_reconstruction_update(
+                data_package_id="pkg",
+                document={
+                    "id": "pkg",
+                    "title": ["Dataset"],
+                    "description": [
+                        "Dataset acquired with a documented method. Raw measurement values are summarized."
+                    ],
+                },
+                item=item,
+                requirement=DcatRequirement(
+                    requirement_id="dataset_identity_semantics",
+                    label="Identity",
+                    description="Identity semantics",
+                    target_paths=["/description"],
+                ),
+                validation_schema={},
+            )
+
+        self.assertEqual(paths, ["/description"])
+        self.assertEqual(errors, [])
+        self.assertEqual(reason, "Streamlined dataset identity.")
+        self.assertEqual(updated["description"], ["Dataset acquired with a documented method."])
+        call_kwargs = mocked.call_args.kwargs
+        self.assertEqual(call_kwargs["agent_name"], "semantic_reconstruction")
+        self.assertIn("allowed_target_paths", call_kwargs["prompt"])
+
+    async def test_semantic_reconstruction_rejects_disallowed_patch_path(self):
+        service = WorkflowService(
+            profile_service=FakeProfileService(),
+            settings=Settings(),
+            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
+        )
+        item = RequirementReportItem(
+            requirement_id="dataset_identity_semantics",
+            label="Identity",
+            weight=1.0,
+            status="partial",
+            applicable=True,
+            quality=0.5,
+            weighted_score=0.5,
+            target_paths=["/description"],
+        )
+        llm_result = Mock(
+            output=SemanticReconstructionPatchResult(
+                should_apply=True,
+                operations=[{"op": "remove", "path": "/dataset_distribution/0"}],
+                reason="Bad patch.",
+            ),
+            usage=None,
+        )
+
+        with patch("app.services.projection_service.generate_structured", AsyncMock(return_value=llm_result)):
+            updated, paths, reason, errors = await service._semantic_reconstruction_update(
+                data_package_id="pkg",
+                document={"description": ["Original."], "dataset_distribution": [{"title": ["D"]}]},
+                item=item,
+                requirement=DcatRequirement(
+                    requirement_id="dataset_identity_semantics",
+                    label="Identity",
+                    description="Identity semantics",
+                    target_paths=["/description"],
+                ),
+                validation_schema={},
+            )
+
+        self.assertEqual(updated["description"], ["Original."])
+        self.assertEqual(paths, [])
+        self.assertIn("disallowed", reason)
+        self.assertEqual(errors, ["disallowed_patch_path"])
+
+    async def test_semantic_reconstruction_rolls_back_failed_validation(self):
+        class InvalidProfileService(FakeProfileService):
+            def validate_document(self, *, identifier: str, document: dict) -> ProfileValidationResult:
+                from app.domain.profiles import ProfileValidationIssue
+
+                return ProfileValidationResult(
+                    valid=False,
+                    errors=[ProfileValidationIssue(path="/description", message="bad", schema_path="")],
+                )
+
+        service = WorkflowService(
+            profile_service=InvalidProfileService(),
+            settings=Settings(),
+            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
+        )
+        state = ExtractionRunState(generated_final_draft={"description": ["Original."]})
+        progress = ExtractionRunProgress(warnings=[])
+        item = RequirementReportItem(
+            requirement_id="dataset_identity_semantics",
+            label="Identity",
+            weight=1.0,
+            status="partial",
+            applicable=True,
+            quality=0.5,
+            weighted_score=0.5,
+            target_paths=["/description"],
+        )
+        service._semantic_reconstruction_update = AsyncMock(
+            return_value=({"description": ["Updated."]}, ["/description"], "LLM patch.", [])
+        )
+
+        document, records = await service._reconstruct_semantic_defects(
+            data_package_id="pkg",
+            profile_identifier="profile",
+            document={"description": ["Original. Raw data points 10."]},
+            semantic_items=[item],
+            validation_schema={},
+            state=state,
+            progress=progress,
+        )
+
+        self.assertEqual(document["description"], ["Original. Raw data points 10."])
+        self.assertEqual(records[-1].status, "rolled_back")
+        self.assertEqual(records[-1].validation_errors, ["bad"])
 
     def test_quantitative_groups_project_to_existing_owner_before_creating_owner(self):
         service = WorkflowService(
