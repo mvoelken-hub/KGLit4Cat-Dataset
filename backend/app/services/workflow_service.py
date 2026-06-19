@@ -707,6 +707,12 @@ class WorkflowService(
                 progress.projection_ledger = state.projection_ledger
                 progress.field_completion_ledger = state.field_completion_ledger
                 progress.curation_ledger = state.curation_ledger
+        if progress is not None and task_info.status != TaskStatus.RUNNING:
+            progress.interim_evidence_context = self._load_evidence_context_or_none(
+                data_package_id,
+                chunking_strategy=branch_strategy,
+                chat_model=branch_model,
+            )
         return task_info.status, progress
 
     async def pause_extraction(
@@ -1293,6 +1299,7 @@ class WorkflowService(
             state=state,
             duplicate_records=duplicate_records,
         )
+        self._clear_chunk_evidence_contexts(state)
         if (
             evidence_prompt_budget_warning
             and evidence_prompt_budget_warning not in warnings
@@ -1303,6 +1310,7 @@ class WorkflowService(
         if target_stage == "context":
             progress.stage = "interim_evidence_context"
             progress.interim_evidence_context = evidence_context
+            progress.chunk_results = state.chunk_results
             progress.warnings = list(warnings)
             self._save_run_state(data_package_id, state)
             self.output_repository.save_extraction_warnings(
@@ -1314,6 +1322,7 @@ class WorkflowService(
 
         progress.stage = "profile_projection"
         progress.interim_evidence_context = evidence_context
+        progress.chunk_results = state.chunk_results
         self._update_progress(data_package_id, progress)
         if profile_identifier is None or profile_manifest is None or validation_schema is None:
             raise ValueError(

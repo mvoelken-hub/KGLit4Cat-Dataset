@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from jsonschema import Draft202012Validator
+from pydantic import ValidationError
 
 from app.domain.extraction import (
     DefinedTerm,
@@ -62,6 +63,17 @@ from app.services.workflow_service import WorkflowService
 
 
 class ExtractionDomainTests(unittest.TestCase):
+    def test_removed_evidence_categories_are_rejected(self):
+        for category in ("data_quality_signal", "entity_signal", "uncertainty"):
+            with self.subTest(category=category):
+                with self.assertRaises(ValidationError):
+                    EvidenceCandidate(
+                        candidate_id="old",
+                        category=category,
+                        claim="Old category.",
+                        evidence_text="old",
+                    )
+
     SCHEMA_GUIDED_LINKML = """
 id: https://example.org/test-profile
 name: test_profile
@@ -344,6 +356,10 @@ classes:
 
     def test_evidence_prompt_is_domain_agnostic(self):
         self.assertIn("Do not use domain-specific key names", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("Use agent_signal only for software, devices", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("origins are surrounding_signal", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("axis bounds, point counts, extrema", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("threshold, unit, or processing choice", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
         self.assertNotIn("nucleus", EVIDENCE_CONTEXT_SYSTEM_PROMPT.lower())
         self.assertNotIn("solvent", EVIDENCE_CONTEXT_SYSTEM_PROMPT.lower())
         self.assertNotIn("pulse", EVIDENCE_CONTEXT_SYSTEM_PROMPT.lower())
@@ -862,13 +878,13 @@ classes:
             candidates=[
                 EvidenceCandidate(
                     candidate_id="instrument",
-                    category="agent_signal",
+                    category="surrounding_signal",
                     claim="Instrument owner is Bruker.",
                     evidence_text="##ORIGIN= Bruker BioSpin GmbH",
                 ),
                 EvidenceCandidate(
                     candidate_id="solvent",
-                    category="entity_signal",
+                    category="activity_signal",
                     claim="Solvent is CDCl3.",
                     evidence_text="SOLVENT= <CDCl3>",
                 ),
@@ -1129,7 +1145,7 @@ classes:
             notes=[
                 EvidenceCandidate(
                     candidate_id="method_setting",
-                    category="method_signal",
+                    category="activity_signal",
                     claim="The workflow uses a calibration method.",
                     evidence_text="method = calibration",
                 )
@@ -1284,7 +1300,7 @@ classes:
                 ),
                 EvidenceCandidate(
                     candidate_id="dataset_name",
-                    category="resource_signal",
+                    category="surrounding_signal",
                     claim="Dataset name is 1H NMR",
                     evidence_text="dataset name: 1H NMR",
                 ),
@@ -1300,21 +1316,21 @@ classes:
             candidates=[
                 EvidenceCandidate(
                     candidate_id="dataset_name",
-                    category="resource_signal",
+                    category="surrounding_signal",
                     claim="Dataset name is 1H NMR",
                     evidence_text="dataset name: 1H NMR",
                     signal_level="high",
                 ),
                 EvidenceCandidate(
                     candidate_id="bfreq_setting",
-                    category="method_signal",
+                    category="measurement_signal",
                     claim="BFREQ parameter is set to 500.13.",
                     evidence_text="##$BFREQ= 500.13",
                     signal_level="high",
                 ),
                 EvidenceCandidate(
                     candidate_id="blocks",
-                    category="resource_signal",
+                    category="measurement_signal",
                     claim="single block structure",
                     evidence_text="##BLOCKS=1",
                     signal_level="high",
@@ -1386,7 +1402,7 @@ classes:
             candidates=[
                 EvidenceCandidate(
                     candidate_id="sample",
-                    category="entity_signal",
+                    category="activity_signal",
                     claim="Primary sample is catalyst batch A.",
                     evidence_text="sample = catalyst batch A",
                     file_path="metadata.txt",
@@ -1403,8 +1419,8 @@ classes:
                 object_identifier=group.group_id,
                 object_kind=group.object_kind,
                 status="applied",
-                target_path="/is_about_entity/0",
-                target_class="EvaluatedEntity",
+                target_path="/was_generated_by/0",
+                target_class="DataGeneratingActivity",
                 planner_status="targeted",
                 planner_reason="Entity evidence.",
                 target_value={"id": "entity:primary", "title": "catalyst batch A"},
@@ -1412,10 +1428,10 @@ classes:
         )
 
         self.assertEqual(record.status, "projected")
-        self.assertEqual(record.target_path, "/is_about_entity/0")
-        self.assertEqual(record.target_class, "EvaluatedEntity")
+        self.assertEqual(record.target_path, "/was_generated_by/0")
+        self.assertEqual(record.target_class, "DataGeneratingActivity")
         self.assertEqual(record.planner_status, "targeted")
-        self.assertEqual(record.projected_paths, ["/is_about_entity/0"])
+        self.assertEqual(record.projected_paths, ["/was_generated_by/0"])
         self.assertEqual(record.evidence_quality["note_count"], 1)
         self.assertEqual(len(record.evidence_note_identifiers), 1)
         self.assertIn("metadata.txt#1-2#sample", record.evidence_note_identifiers)

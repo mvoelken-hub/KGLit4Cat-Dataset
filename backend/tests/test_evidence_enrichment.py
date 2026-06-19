@@ -39,7 +39,7 @@ class EvidenceEnrichmentRouterTests(unittest.TestCase):
 
     def test_device_signal_routes_to_activity_carried_out_by(self):
         note = self._note(
-            category="measurement_signal",
+            category="agent_signal",
             claim="spectra acquired with Bruker Avance 500 MHz spectrometer",
             evidence_text="Bruker instrument",
         )
@@ -47,9 +47,9 @@ class EvidenceEnrichmentRouterTests(unittest.TestCase):
         self.assertEqual(path, "/was_generated_by/0/carried_out_by/-")
         self.assertEqual(cls, "AgenticEntity")
 
-    def test_agent_signal_routes_to_creator(self):
+    def test_surrounding_signal_routes_to_creator(self):
         note = self._note(
-            category="agent_signal",
+            category="surrounding_signal",
             claim="owner is nmr",
             evidence_text="OWNER= nmr",
         )
@@ -57,35 +57,35 @@ class EvidenceEnrichmentRouterTests(unittest.TestCase):
         self.assertEqual(path, "/creator/-")
         self.assertEqual(cls, "Agent")
 
-    def test_entity_signal_routes_to_is_about_entity(self):
+    def test_activity_signal_routes_to_was_generated_by(self):
         note = self._note(
-            category="entity_signal",
-            claim="file contains acquisition parameters",
-            evidence_text="acqus",
+            category="activity_signal",
+            claim="file contains acquisition activity parameters",
+            evidence_text="acquisition",
         )
         path, cls = route_evidence_note_to_target(note)
-        self.assertEqual(path, "/is_about_entity/-")
-        self.assertEqual(cls, "EvaluatedEntity")
+        self.assertEqual(path, "/was_generated_by/-")
+        self.assertEqual(cls, "DataGeneratingActivity")
 
-    def test_measurement_signal_routes_to_is_about_entity(self):
+    def test_measurement_signal_has_no_downstream_target(self):
         note = self._note(
             category="measurement_signal",
             claim="field width is 125000",
             evidence_text="FW= 125000",
         )
         path, cls = route_evidence_note_to_target(note)
-        self.assertEqual(path, "/is_about_entity/-")
-        self.assertEqual(cls, "EvaluatedEntity")
+        self.assertIsNone(path)
+        self.assertIsNone(cls)
 
-    def test_method_signal_routes_to_was_generated_by(self):
+    def test_method_signal_routes_to_realized_plan(self):
         note = self._note(
             category="method_signal",
             claim="NMR pulse sequence zg30",
             evidence_text="zg30",
         )
         path, cls = route_evidence_note_to_target(note)
-        self.assertEqual(path, "/was_generated_by/-")
-        self.assertEqual(cls, "DataGeneratingActivity")
+        self.assertEqual(path, "/was_generated_by/0/realized_plan")
+        self.assertEqual(cls, "Plan")
 
     def test_resource_signal_routes_to_distribution(self):
         note = self._note(
@@ -97,11 +97,11 @@ class EvidenceEnrichmentRouterTests(unittest.TestCase):
         self.assertEqual(path, "/dataset_distribution/-")
         self.assertEqual(cls, "Distribution")
 
-    def test_title_path_is_blocked(self):
+    def test_measurement_signal_is_excluded_from_context_window(self):
         note = self._note(
-            category="resource_signal",
-            claim="dataset name is Foo",
-            evidence_text="name Foo",
+            category="measurement_signal",
+            claim="raw point count is 2559",
+            evidence_text="NPOINTS=2559",
         )
         path, cls = route_evidence_note_to_target(note)
         self.assertIsNone(path)
@@ -112,7 +112,7 @@ class EvidenceEnrichmentContextWindowTests(unittest.TestCase):
     def _note(self, **kwargs) -> EvidenceCandidate:
         defaults = {
             "candidate_id": "c1",
-            "category": "measurement_signal",
+            "category": "instrument_signal",
             "claim": "claim",
             "evidence_text": "evidence",
             "file_path": "f.txt",
@@ -286,15 +286,15 @@ class EvidenceEnrichmentIntegrationTests(unittest.IsolatedAsyncioTestCase):
             data_package_id="pkg",
             generated_final_draft={
                 "id": "pkg",
-                "is_about_entity": [],
+                "was_generated_by": [],
             },
         )
         progress = ExtractionRunProgress(stage="profile_projection")
         note = EvidenceCandidate(
             candidate_id="n1",
-            category="entity_signal",
-            claim="new entity",
-            evidence_text="ENTITY= x",
+            category="activity_signal",
+            claim="new activity",
+            evidence_text="ACTIVITY= x",
             file_path="f.txt",
             start_idx=0,
             end_idx=10,
@@ -309,7 +309,7 @@ class EvidenceEnrichmentIntegrationTests(unittest.IsolatedAsyncioTestCase):
             progress=progress,
             warnings=[],
         )
-        self.assertEqual(len(result["is_about_entity"]), 1)
+        self.assertEqual(len(result["was_generated_by"]), 1)
         service._persist_state_artifacts.assert_called_once()
         self.assertTrue(
             any(
@@ -317,7 +317,7 @@ class EvidenceEnrichmentIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 for record in state.projection_ledger
             )
         )
-        self.assertEqual(state.generated_initial_draft, {"id": "pkg", "is_about_entity": []})
+        self.assertEqual(state.generated_initial_draft, {"id": "pkg", "was_generated_by": []})
 
     async def test_enrichment_skips_non_novel_notes(self):
         service = self._service()
@@ -326,14 +326,14 @@ class EvidenceEnrichmentIntegrationTests(unittest.IsolatedAsyncioTestCase):
         )
         state = ExtractionRunState(
             data_package_id="pkg",
-            generated_final_draft={"id": "pkg", "is_about_entity": []},
+            generated_final_draft={"id": "pkg", "was_generated_by": []},
         )
         progress = ExtractionRunProgress(stage="profile_projection")
         note = EvidenceCandidate(
             candidate_id="n1",
-            category="entity_signal",
-            claim="same entity",
-            evidence_text="ENTITY= x",
+            category="activity_signal",
+            claim="same activity",
+            evidence_text="ACTIVITY= x",
             file_path="f.txt",
             start_idx=0,
             end_idx=10,
@@ -348,7 +348,7 @@ class EvidenceEnrichmentIntegrationTests(unittest.IsolatedAsyncioTestCase):
             progress=progress,
             warnings=[],
         )
-        self.assertEqual(result["is_about_entity"], [])
+        self.assertEqual(result["was_generated_by"], [])
         self.assertTrue(
             any(
                 record.status == "not_projected" and "Not novel" in (record.reason or "")

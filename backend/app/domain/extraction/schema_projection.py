@@ -279,10 +279,12 @@ def _branch_category_affinities(branch: SchemaBranch) -> list[str]:
         candidate.class_name == "Device" for candidate in branch.subclass_candidates
     ):
         affinities.append("agent_signal")
-    if branch.range_class in {"DataGeneratingActivity", "EvaluatedActivity", "Plan"}:
+    if branch.range_class in {"DataGeneratingActivity", "EvaluatedActivity"}:
+        affinities.append("activity_signal")
+    if branch.range_class == "Plan":
         affinities.append("method_signal")
     if branch.range_class in {"EvaluatedEntity", "Entity"}:
-        affinities.extend(["entity_signal", "measurement_signal"])
+        affinities.append("activity_signal")
     if branch.slot_name in {"dataset_distribution", "format", "media_type"}:
         affinities.append("resource_signal")
     return sorted(set(affinities))

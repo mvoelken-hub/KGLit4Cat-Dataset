@@ -232,7 +232,7 @@ class RequirementEvidencePacketTests(unittest.TestCase):
             evidence_context=context,
         )
         self.assertEqual(selected[0].candidate_id, "m1")
-        self.assertIn("m2", {entry.candidate_id for entry in window})
+        self.assertNotIn("m2", {entry.candidate_id for entry in window})
         self.assertNotIn("x1", {entry.candidate_id for entry in selected})
 
     def test_quantitative_packet_prefers_observe_frequency(self):
@@ -243,7 +243,7 @@ class RequirementEvidencePacketTests(unittest.TestCase):
         )
         observe = EvidenceCandidate(
             candidate_id="observe",
-            category="measurement_signal",
+            category="instrument_signal",
             claim="The NMR spectrum was recorded at an observe frequency of 500.133088507478 MHz.",
             evidence_text="##.OBSERVE FREQUENCY=500.133088507478",
             file_path="10.edit.jdx",
@@ -714,7 +714,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         notes = [
             EvidenceCandidate(
                 candidate_id="frequency",
-                category="measurement_signal",
+                category="instrument_signal",
                 claim="Observation frequency is 400.13 MHz.",
                 evidence_text="OBSERVE FREQUENCY=400.13 MHz",
                 file_path="acqus",
@@ -723,7 +723,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             ),
             EvidenceCandidate(
                 candidate_id="scans",
-                category="measurement_signal",
+                category="instrument_signal",
                 claim="Number of scans is 16.",
                 evidence_text="NS=16",
                 file_path="acqus",
@@ -742,7 +742,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         notes = [
             EvidenceCandidate(
                 candidate_id="a",
-                category="measurement_signal",
+                category="instrument_signal",
                 claim="Temperature is 298 K.",
                 evidence_text="TEMP=298 K",
                 file_path="acqus",
@@ -751,7 +751,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             ),
             EvidenceCandidate(
                 candidate_id="b",
-                category="measurement_signal",
+                category="instrument_signal",
                 claim="Temperature is 298 K.",
                 evidence_text="TEMP=298 K",
                 file_path="acqus",
@@ -781,13 +781,13 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             ),
             EvidenceCandidate(
                 candidate_id="software",
-                category="data_quality_signal",
+                category="agent_signal",
                 claim="TopSpin 3.5 pl 6 software version.",
                 evidence_text="TopSpin 3.5 pl 6",
             ),
             EvidenceCandidate(
                 candidate_id="good",
-                category="measurement_signal",
+                category="instrument_signal",
                 claim="Observation frequency is 400.13 MHz.",
                 evidence_text="OBSERVE FREQUENCY=400.13 MHz",
             ),
@@ -814,7 +814,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
 
         groups = WorkflowService._quantitative_evidence_groups(notes)
 
-        self.assertEqual(len(groups), 5)
+        self.assertEqual(len(groups), 0)
 
     def test_quantitative_groups_project_to_existing_owner_before_creating_owner(self):
         service = WorkflowService(
@@ -848,7 +848,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             portable_evidence=[
                 EvidenceCandidate(
                     candidate_id="freq",
-                    category="measurement_signal",
+                    category="instrument_signal",
                     claim="Observation frequency is 400.13 MHz.",
                     evidence_text="OBSERVE FREQUENCY=400.13 MHz",
                     file_path="acqus",
@@ -857,7 +857,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
                 ),
                 EvidenceCandidate(
                     candidate_id="scans",
-                    category="measurement_signal",
+                    category="instrument_signal",
                     claim="Number of scans is 16.",
                     evidence_text="NS=16",
                     file_path="acqus",
@@ -910,7 +910,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             portable_evidence=[
                 EvidenceCandidate(
                     candidate_id="device-temp",
-                    category="measurement_signal",
+                    category="instrument_signal",
                     claim="Device temperature is 298 K.",
                     evidence_text="temperature 298 K",
                     file_path="run.txt",
@@ -984,9 +984,8 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertNotIn("was_generated_by", document)
-        self.assertEqual(item.status, "fulfilled")
-        self.assertEqual(state.projection_ledger[0].merge_status, "skipped")
-        self.assertIn("target_unresolved", state.projection_ledger[0].reason)
+        self.assertEqual(item.status, "missing")
+        self.assertFalse(state.projection_ledger)
 
     def test_quantitative_patch_fallback_keeps_first_generic_numeric_evidence(self):
         service = WorkflowService(
@@ -1032,7 +1031,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             [
                 EvidenceCandidate(
                     candidate_id="frequency",
-                    category="measurement_signal",
+                    category="instrument_signal",
                     claim="Observation frequency is 500.133088507478 MHz.",
                     evidence_text="##.OBSERVE FREQUENCY=500.133088507478 MHz",
                     file_path="acqus",

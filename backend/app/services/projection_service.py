@@ -820,18 +820,9 @@ class ProjectionService:
     @staticmethod
     def _quantitative_note_category_allowed(note: Any, claim: str) -> bool:
         category = str(getattr(note, "category", "") or "")
-        if category == "measurement_signal":
+        if category == "instrument_signal":
             return True
-        if category != "method_signal":
-            return False
-        # ponytail: generic gate only; add learned classifier if this keeps leaking noise.
-        return bool(
-            re.search(
-                r"\b(frequency|temperature|width|points|averages|scans|delay|gain|power|shift|resolution|angle|time|filter|offset|phase|axis|minimum|maximum)\b",
-                claim,
-                flags=re.I,
-            )
-        )
+        return False
 
     @staticmethod
     def _quantitative_label_is_noise(label: str, claim: str, evidence_text: str) -> bool:
@@ -1679,8 +1670,8 @@ class ProjectionService:
         text = f"{getattr(entry, 'claim', '')} {getattr(entry, 'evidence_text', '')}".lower()
         has_number = int(bool(re.search(r"[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?", text)))
         observed_value = int("=" in text)
-        measurement_signal = int(str(getattr(entry, "category", "")) == "measurement_signal")
-        return (has_number, observed_value, measurement_signal)
+        instrument_signal = int(str(getattr(entry, "category", "")) == "instrument_signal")
+        return (has_number, observed_value, instrument_signal)
 
     @staticmethod
     def _quantitative_attribute_title(text: str, quantity_type: str) -> str:
@@ -2251,6 +2242,8 @@ class ProjectionService:
             if not cls._note_has_curatable_profile_signal(note):
                 continue
             target_hint, target_class_hint = cls._target_hint_for_evidence_note(note)
+            if not target_hint:
+                continue
             family = cls._evidence_note_family(note.candidate_id)
             key = (target_hint, target_class_hint or "", note.category, f"{note.file_path}:{family}")
             buckets.setdefault(key, []).append(note)
@@ -2282,16 +2275,18 @@ class ProjectionService:
     @classmethod
     def _target_hint_for_evidence_note(cls, note: EvidenceCandidate) -> tuple[str, str | None]:
         text = f"{note.candidate_id} {note.category} {note.claim} {note.evidence_text}".lower()
-        if cls._note_has_device_signal(note):
+        if note.category == "measurement_signal":
+            return "", None
+        if note.category in {"agent_signal", "instrument_signal"} or cls._note_has_device_signal(note):
             return "/was_generated_by/0/carried_out_by/-", "AgenticEntity"
-        if note.category == "agent_signal" or any(term in text for term in ("origin", "owner", "creator", "author")):
+        if note.category == "surrounding_signal" and any(term in text for term in ("origin", "owner", "creator", "author", "team", "laboratory")):
             return "/creator/0", "Agent"
-        if note.category in {"entity_signal", "measurement_signal"}:
-            return "/is_about_entity/0", "EvaluatedEntity"
-        if any(term in text for term in ("format", "file", "distribution", "download", "access")):
-            return "/dataset_distribution/0", "Distribution"
-        if note.category == "method_signal" or any(term in text for term in ("method", "experiment", "acquisition", "procedure", "workflow")):
+        if note.category == "activity_signal" or any(term in text for term in ("experiment", "acquisition", "generation", "workflow")):
             return "/was_generated_by/0", "DataGeneratingActivity"
+        if note.category == "method_signal":
+            return "/was_generated_by/0/realized_plan", "Plan"
+        if note.category == "resource_signal" or any(term in text for term in ("format", "file", "distribution", "download", "access")):
+            return "/dataset_distribution/0", "Distribution"
         if any(term in text for term in ("dataset name", "title", "name")):
             return "/title", None
         if any(term in text for term in ("date", "timestamp", "modified", "modification")):
@@ -2581,7 +2576,7 @@ class ProjectionService:
         if target_path in {"/description", "/keyword"}:
             useful_keywords = cls._profile_keywords_for_notes(notes)
             if not useful_keywords and all(
-                note.category in {"method_signal", "measurement_signal", "resource_signal"}
+                note.category in {"method_signal", "measurement_signal", "resource_signal", "instrument_signal"}
                 for note in notes
             ):
                 return (
@@ -2650,7 +2645,7 @@ class ProjectionService:
     ) -> Any | None:
         if not isinstance(current_value, dict):
             return None
-        if not any(note.category in {"method_signal", "measurement_signal"} for note in notes):
+        if not any(note.category in {"activity_signal", "instrument_signal"} for note in notes):
             return None
         value = cls._clone_json_object(current_value)
         value["title"] = cls._merge_unique_strings(value.get("title", []), [default_title])
@@ -2673,7 +2668,7 @@ class ProjectionService:
     ) -> Any | None:
         if not isinstance(current_value, dict):
             return None
-        if not any(note.category in {"entity_signal", "measurement_signal"} for note in notes):
+        if not any(note.category == "activity_signal" for note in notes):
             return None
         value = cls._clone_json_object(current_value)
         title = cls._entity_title_for_notes(notes)
@@ -2711,7 +2706,7 @@ class ProjectionService:
         if not notes:
             return False
         category_set = {note.category for note in notes}
-        if category_set <= {"method_signal", "measurement_signal", "resource_signal"}:
+        if category_set <= {"method_signal", "measurement_signal", "resource_signal", "instrument_signal"}:
             return False
         return any(
             term in cls._note_search_text(note)
@@ -3038,6 +3033,8 @@ class ProjectionService:
 
     @classmethod
     def _note_has_curatable_profile_signal(cls, note: EvidenceCandidate) -> bool:
+        if note.category == "measurement_signal":
+            return False
         if cls._is_low_level_parameter_note(note):
             return False
         key, value = cls._assignment_from_note(note)
@@ -3067,7 +3064,7 @@ class ProjectionService:
             if "spectrum title" in text and cls._title_value_from_note(note) is None:
                 return False
             return True
-        return note.category in {"agent_signal", "entity_signal"} and bool(note.claim.strip())
+        return note.category in {"agent_signal", "activity_signal", "instrument_signal", "surrounding_signal", "resource_signal"} and bool(note.claim.strip())
 
     @classmethod
     def _entity_title_for_notes(cls, notes: list[EvidenceCandidate]) -> str | None:
@@ -4047,11 +4044,10 @@ class ProjectionService:
             "is_about_activity",
         }
         evidence_slots: set[str] = set()
-        if "agent_signal" in evidence_categories:
+        if "surrounding_signal" in evidence_categories:
             evidence_slots.add("creator")
-        if evidence_categories & {"entity_signal", "measurement_signal"}:
-            evidence_slots.add("is_about_entity")
-        if "method_signal" in evidence_categories:
+            evidence_slots.add("modification_date")
+        if "activity_signal" in evidence_categories:
             evidence_slots.add("is_about_activity")
         if "resource_signal" in evidence_categories:
             evidence_slots.add("dataset_distribution")
@@ -4308,25 +4304,27 @@ class ProjectionService:
     @staticmethod
     def _target_category_affinities(path: str, target_class: str | None) -> list[str]:
         if "carried_out_by" in path or target_class == "AgenticEntity":
-            return ["agent_signal"]
+            return ["agent_signal", "instrument_signal"]
         if path.startswith("/creator"):
-            return ["agent_signal"]
+            return ["surrounding_signal"]
         if path.startswith("/dataset_distribution"):
             return ["resource_signal"]
         if path.startswith("/was_generated_by"):
-            return ["method_signal", "measurement_signal"]
+            if "realized_plan" in path or target_class == "Plan":
+                return ["method_signal"]
+            return ["activity_signal", "instrument_signal"]
         if path.startswith("/is_about_activity"):
-            return ["method_signal"]
+            return ["activity_signal"]
         if path.startswith("/is_about_entity"):
-            return ["entity_signal", "measurement_signal"]
+            return ["activity_signal"]
         if path.startswith("/type"):
-            return ["resource_signal", "data_quality_signal"]
+            return ["resource_signal", "surrounding_signal"]
         if path == "/modification_date":
-            return ["resource_signal", "data_quality_signal"]
+            return ["surrounding_signal"]
         if path == "/keyword":
-            return ["resource_signal", "entity_signal", "method_signal"]
+            return ["resource_signal", "activity_signal", "method_signal", "instrument_signal"]
         if path == "/description":
-            return ["data_quality_signal", "uncertainty", "other"]
+            return ["surrounding_signal", "other"]
         if target_class:
             return [target_class]
         return []
@@ -4564,7 +4562,7 @@ class ProjectionService:
             title = ProjectionService._title_value_from_note(note)
             if title:
                 return title
-        for category in ("entity_signal", "measurement_signal", "method_signal", "resource_signal"):
+        for category in ("activity_signal", "instrument_signal", "method_signal", "resource_signal", "surrounding_signal"):
             for note in candidates:
                 if (
                     note.category == category

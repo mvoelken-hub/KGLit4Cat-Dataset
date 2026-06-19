@@ -2293,7 +2293,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             "sample-title",
             "Sample SG-V4050",
             "##TITLE=SG-V4050",
-            category="entity_signal",
+            category="surrounding_signal",
         )
         warnings: list[str] = []
 
@@ -2540,6 +2540,10 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(output_repository.result)
         self.assertIsNone(output_repository.run_state.profile_identifier)
         self.assertIsNone(output_repository.run_state.generated_final_draft)
+        self.assertTrue(output_repository.run_state.chunk_results)
+        self.assertTrue(
+            all(chunk.evidence_context is None for chunk in output_repository.run_state.chunk_results)
+        )
         self.assertIn("initial_overview_orientation", seen_components["system"])
         self.assertIn("current_file_summary_orientation", seen_components["system"])
         self.assertIn("chunk_metadata", seen_components["prompt"])
@@ -2549,6 +2553,14 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(status, TaskStatus.COMPLETED)
         self.assertIsNotNone(progress)
         self.assertEqual(progress.stage, "interim_evidence_context")
+        self.assertIsNotNone(progress.interim_evidence_context)
+        self.assertTrue(all(chunk.evidence_context is None for chunk in progress.chunk_results))
+
+        output_repository.evidence_context = None
+        output_repository.evidence_context_by_strategy.clear()
+        _, progress_after_deleted_artifact = await service.get_extraction_progress(data_package_id="package-id")
+        self.assertIsNotNone(progress_after_deleted_artifact)
+        self.assertIsNone(progress_after_deleted_artifact.interim_evidence_context)
 
     async def test_profile_target_requires_selected_profile(self):
         service, _, _ = make_service([[make_chunk()]])

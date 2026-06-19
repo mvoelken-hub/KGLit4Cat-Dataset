@@ -366,7 +366,11 @@ def select_requirement_evidence_packet(
         for hint in ((assessment.evidence_search_hints or requirement.evidence_hints))
         for token in _tokenize(hint)
     ]
-    candidates = list(evidence_context.portable_evidence) + list(evidence_context.contextual_evidence)
+    candidates = [
+        candidate
+        for candidate in list(evidence_context.portable_evidence) + list(evidence_context.contextual_evidence)
+        if candidate.category != "measurement_signal"
+    ]
     scored: list[tuple[int, EvidenceCandidate]] = []
     for candidate in candidates:
         text = _candidate_search_text(candidate)
@@ -482,20 +486,22 @@ def _class_hint_score(target_class: str, candidate: EvidenceCandidate) -> int:
     category = candidate.category
     text = _candidate_search_text(candidate)
     if target_class == "DataGeneratingActivity" and (
-        category == "method_signal" or any(term in text for term in ("acquisition", "processing", "experiment"))
+        category == "activity_signal" or any(term in text for term in ("acquisition", "processing", "experiment"))
     ):
         return 2
     if target_class == "AgenticEntity" and (
-        category == "agent_signal" or any(term in text for term in ("instrument", "software", "bruker", "topspin"))
+        category in {"agent_signal", "instrument_signal"} or any(term in text for term in ("instrument", "software", "bruker", "topspin"))
     ):
         return 2
-    if target_class == "EvaluatedEntity" and category in {"entity_signal", "measurement_signal"}:
+    if target_class == "EvaluatedEntity" and category == "activity_signal":
         return 2
     if target_class == "Distribution" and (
         category == "resource_signal" or any(term in text for term in ("file", "format", "download"))
     ):
         return 2
-    if target_class == "QuantitativeAttribute" and category == "measurement_signal":
+    if target_class == "Plan" and category == "method_signal":
+        return 2
+    if target_class == "QuantitativeAttribute" and category == "instrument_signal":
         score = 2
         if "observe frequency" in text or "observation frequency" in text:
             score += 6

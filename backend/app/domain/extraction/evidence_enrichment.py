@@ -181,28 +181,30 @@ def route_evidence_note_to_target(
     target_path: str | None = None
     target_class: str | None = None
 
-    if _note_has_device_signal(note):
+    if note.category == "measurement_signal":
+        return None, None
+    if note.category in {"agent_signal", "instrument_signal"} or _note_has_device_signal(note):
         target_path = "/was_generated_by/0/carried_out_by/-"
         target_class = "AgenticEntity"
-    elif note.category == "agent_signal" or any(
-        term in text for term in ("origin", "owner", "creator", "author")
-    ):
+    elif note.category == "surrounding_signal" and any(term in text for term in ("date", "timestamp", "modified", "modification")):
+        target_path = "/modification_date"
+    elif note.category == "surrounding_signal" and any(term in text for term in ("origin", "owner", "creator", "author", "team", "laboratory")):
         target_path = "/creator/-"
         target_class = "Agent"
-    elif note.category in {"entity_signal", "measurement_signal"}:
-        target_path = "/is_about_entity/-"
-        target_class = "EvaluatedEntity"
-    elif any(
+    elif note.category == "activity_signal" or any(
+        term in text
+        for term in ("experiment", "acquisition", "generation", "measurement activity", "workflow")
+    ):
+        target_path = "/was_generated_by/-"
+        target_class = "DataGeneratingActivity"
+    elif note.category == "method_signal":
+        target_path = "/was_generated_by/0/realized_plan"
+        target_class = "Plan"
+    elif note.category == "resource_signal" or any(
         term in text for term in ("format", "file", "distribution", "download", "access")
     ):
         target_path = "/dataset_distribution/-"
         target_class = "Distribution"
-    elif note.category == "method_signal" or any(
-        term in text
-        for term in ("method", "experiment", "acquisition", "procedure", "workflow")
-    ):
-        target_path = "/was_generated_by/-"
-        target_class = "DataGeneratingActivity"
     elif any(term in text for term in ("dataset name", "title", "name")):
         target_path = "/title"
     elif any(term in text for term in ("date", "timestamp", "modified", "modification")):
@@ -220,7 +222,11 @@ def build_context_window_for_note(
 ) -> list[EvidenceCandidate]:
     start = note.start_idx
     end = note.end_idx
-    candidates = list(evidence_context.portable_evidence) + list(evidence_context.contextual_evidence)
+    candidates = [
+        candidate
+        for candidate in list(evidence_context.portable_evidence) + list(evidence_context.contextual_evidence)
+        if candidate.category != "measurement_signal"
+    ]
     matches: list[EvidenceCandidate] = []
     seen: set[tuple[str, str, int, int]] = set()
     key = lambda c: (c.candidate_id, c.file_path, c.start_idx, c.end_idx)

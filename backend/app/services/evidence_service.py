@@ -572,6 +572,11 @@ class EvidenceService:
         return evidence_context
 
     @staticmethod
+    def _clear_chunk_evidence_contexts(state: ExtractionRunState) -> None:
+        for chunk_result in state.chunk_results:
+            chunk_result.evidence_context = None
+
+    @staticmethod
     def _filtered_evidence_summary_warnings(
         state: ExtractionRunState,
         duplicate_records: list[FilteredEvidenceNote],

@@ -640,18 +640,22 @@ export function initialContextFromEvidenceContext(context: RoutedEvidenceContext
       observation: note.claim || 'Evidence note',
       evidence: note.evidence_text || null,
     }));
-  const entitySignals = evidenceByCategory('entity_signal');
-  const agentSignals = evidenceByCategory('agent_signal');
+  const activitySignals = evidenceByCategory('activity_signal');
+  const agentSignals = [
+    ...evidenceByCategory('agent_signal'),
+    ...evidenceByCategory('instrument_signal'),
+  ];
   const methodSignals = evidenceByCategory('method_signal');
   const resourceSignals = evidenceByCategory('resource_signal');
-  const titleSource = entitySignals[0] || resourceSignals[0] || methodSignals[0] || null;
+  const surroundingSignals = evidenceByCategory('surrounding_signal');
+  const titleSource = activitySignals[0] || resourceSignals[0] || methodSignals[0] || surroundingSignals[0] || null;
   const summary = observations.length
     ? observations.slice(0, 5).join(' ')
     : 'Evidence context generated.';
   return {
     dataset_title: titleSource?.observation || null,
     dataset_description: summary,
-    entities: entitySignals.map((entity) => ({
+    entities: activitySignals.map((entity) => ({
       label: entity.observation,
       role: 'unknown',
       identifier: null,
