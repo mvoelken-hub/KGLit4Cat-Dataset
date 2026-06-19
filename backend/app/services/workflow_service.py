@@ -701,6 +701,7 @@ class WorkflowService(
                 progress.curated_document = state.curated_document
                 progress.document_quality_state = state.document_quality_state
                 progress.draft_quality_state = state.draft_quality_state
+                progress.requirement_report = state.requirement_report
                 progress.validation = state.validation
                 progress.curated_validation = state.curated_validation
                 progress.projection_ledger = state.projection_ledger
