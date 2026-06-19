@@ -73,7 +73,7 @@ The complete workflow endpoint currently accepts:
 - `resume`
 - `force_rerun`
 
-Use `force_rerun=true` for repeatable evaluation runs with deterministic package IDs so older artifacts do not mask current behavior.
+Use `force_rerun=true` for repeatable workflow runs with deterministic package IDs so older artifacts do not mask current behavior.
 
 ## Current Prototype Boundaries
 
@@ -82,7 +82,7 @@ Use `force_rerun=true` for repeatable evaluation runs with deterministic package
 | Image understanding | Images return placeholder text; no OCR or visual interpretation is implemented. |
 | Binary/instrument files | Retained as package resources, but not semantically interpreted unless text extraction succeeds. |
 | Manual patch review | Removed from the active API/frontend path; active backend workflow is evidence extraction, normalization, projection, curation, and validation. |
-| Evaluation completeness | Early evaluation runs exist, but thesis-level quality claims are not fully substantiated yet. |
+| Evaluation completeness | In-repo offline scoring harness removed; thesis-level quality evaluation will be done later against completed workflow outputs. |
 | Vocabulary coverage | Initial vocabularies can be imported, but grounding quality depends on imported vocabularies, term schemes, embeddings, and candidate selection. |
 | Model dependency | Extraction, overview generation, candidate selection, fallback query generation, and profile projection depend on the configured Ollama chat model. |
 | Profile dependency | Final output requires a registered compatible profile and successful schema validation. |
@@ -91,4 +91,4 @@ Use `force_rerun=true` for repeatable evaluation runs with deterministic package
 
 ## Evaluation Status Snapshot
 
-Current evidence is not enough to claim extraction or grounding quality broadly. A previous `IR-IR.zip` run completed and validated, but preliminary scoring reported low object/attribute/vocabulary F1. A `1H_NMR-1H_NMR.zip` run exceeded a one-hour timeout before completion. Keep quality claims conservative until the benchmark and evaluation tables are complete.
+Current evidence is not enough to claim extraction or grounding quality broadly. Keep quality claims conservative until a fresh end-to-end evaluation pass is rebuilt outside the removed offline harness.

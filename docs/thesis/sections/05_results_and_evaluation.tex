@@ -1,12 +1,10 @@
 \label{chap:evaluation}
 
-This chapter presents the evaluation setup and the resulting findings.
+This chapter is a placeholder for the later evaluation write-up.
 
 \section{Evaluation Setup}
 \label{sec:evaluation-setup}
-The current evaluation is a preliminary prototype evaluation rather than a final benchmark. It uses the repeatable command-line evaluation harness implemented in the SIMONE backend. The harness submits selected ZIP packages to the complete workflow endpoint, records run manifests, polls for completed extraction results, scores completed outputs against focused reference annotations, and records partial reports for missing, timed-out, or crashed runs.
-
-The main endpoint used for these runs is \texttt{POST /api/v1/extraction/workflows/complete}. This endpoint uploads the package, performs chunking, starts extraction, runs vocabulary normalization, projects the result into the selected profile, validates the projected document, and exposes progress and result URLs. For repeatability with deterministic package identifiers, the evaluation runner can use \texttt{--force-rerun} to clear older extraction artifacts before scheduling a new run.
+The earlier in-repo offline scoring harness has been removed. This chapter will later document the evaluation setup, metrics, and findings once end-to-end result generation is stable enough to score directly from completed workflow runs.
 
 \section{Dataset or Experimental Sample}
 \label{sec:dataset-experimental-sample}
@@ -14,11 +12,11 @@ The current reference set contains five packages from \texttt{data/datasets}: an
 
 \section{Metrics and Assessment Procedure}
 \label{sec:metrics-assessment-procedure}
-Completed runs are assessed by file-ranking quality, object extraction precision/recall/F1 grouped by object type, attribute extraction F1, vocabulary mapping F1, source-trace coverage, required profile-field coverage, warning count, and schema validity. Incomplete runs are recorded separately with outcome, status, workflow stage, processed chunk count, total chunk count, and completion fraction. This separation is important because a schema-valid final document does not imply scientific correctness, and an incomplete run is primarily runtime evidence rather than extraction-quality evidence.
+Completed runs will be assessed by file-ranking quality, object extraction precision/recall/F1 grouped by object type, attribute extraction F1, vocabulary mapping F1, source-trace coverage, required profile-field coverage, warning count, and schema validity. Incomplete runs will be recorded separately with outcome, status, workflow stage, processed chunk count, total chunk count, and completion fraction. This separation matters because a schema-valid final document does not imply scientific correctness, and an incomplete run is primarily runtime evidence rather than extraction-quality evidence.
 
 \section{Quantitative Results}
 \label{sec:quantitative-results}
-Table~\ref{tab:simone-preliminary-completed-results} summarizes the currently completed post-fix run. The values should be interpreted as evidence about prototype behavior, not as final thesis benchmark results.
+Table~\ref{tab:simone-preliminary-completed-results} will summarize the first completed post-fix run. The values should be interpreted as evidence about prototype behavior, not as final thesis benchmark results.
 
 \begin{table}[htbp]
 \centering
@@ -34,7 +32,7 @@ Dataset & Schema & Top-1 & Top-3 & Obj. F1 & Attr. F1 & Vocab F1 & Trace & Profi
 \label{tab:simone-preliminary-completed-results}
 \end{table}
 
-Table~\ref{tab:simone-preliminary-partial-results} records packages from the current reference set without completed outputs. These rows are not quality scores; they indicate coverage and runtime gaps that must be resolved before robust claims can be made.
+Table~\ref{tab:simone-preliminary-partial-results} will record packages from the current reference set without completed outputs. These rows are not quality scores; they indicate coverage and runtime gaps that must be resolved before robust claims can be made.
 
 \begin{table}[htbp]
 \centering
@@ -55,13 +53,13 @@ Dataset & Outcome & Stage & Chunks & Fraction \\
 
 \section{Qualitative Error Analysis}
 \label{sec:qualitative-error-analysis}
-The completed IR run demonstrates that the complete workflow can reach a schema-valid profile document and preserve source-trace evidence. However, the same run also demonstrates that schema validity is an insufficient proxy for semantic quality. The preliminary scorer did not recover the expected method label \texttt{IR}, did not match the selected expected key attributes, and did not produce the expected qualitative vocabulary mapping. The warnings include several raw retained quantities and qualitative values, indicating that vocabulary grounding remains fragile.
+The completed IR run will later be used to demonstrate whether the complete workflow can reach a schema-valid profile document and preserve source-trace evidence. Schema validity alone is still not enough to claim semantic quality. The eventual scorer should check whether the expected method label \texttt{IR}, key attributes, and qualitative vocabulary mapping are recovered.
 
-The NMR run demonstrates a different failure mode. The package had a large number of text-bearing chunks and did not finish within a one-hour evaluation timeout. This suggests that runtime controls, file/chunk selection, or staged early stopping are needed before the workflow can support robust claims for verbose instrument-export packages.
+The NMR package will be useful later for checking a different failure mode: large numbers of text-bearing chunks and long runtime. That kind of package is where runtime controls, file/chunk selection, or staged early stopping may be needed before robust claims can be made.
 
 \section{Comparison with a Baseline or Manual Process}
 \label{sec:comparison-baseline-manual-process}
-The current comparison target is a focused manual-reference baseline. It consists of the selected human-authored facts listed above and is used to score whether SIMONE recovers thesis-relevant files, objects, attributes, vocabulary mappings, and profile fields. This baseline is deliberately narrower than a complete manual metadata extraction. It supports preliminary fact-level comparison, but it does not yet answer whether SIMONE is faster, more complete, or more accurate than expert curation of full metadata documents.
+The comparison target will be a focused manual-reference baseline. It will consist of selected human-authored facts used to score whether SIMONE recovers thesis-relevant files, objects, attributes, vocabulary mappings, and profile fields. This baseline is deliberately narrower than a complete manual metadata extraction. It supports preliminary fact-level comparison, but it does not yet answer whether SIMONE is faster, more complete, or more accurate than expert curation of full metadata documents.
 
 A stronger next comparison would add either complete manually curated profile documents for the same packages or a single-prompt LLM baseline that skips semantic chunking and staged vocabulary grounding.
 
@@ -69,7 +67,7 @@ This chapter interprets the results in relation to the research questions.
 
 \section{Interpretation of Main Findings}
 \label{sec:interpretation-main-findings}
-The current evidence supports claims about workflow architecture and observability more strongly than claims about extraction quality. SIMONE can execute an inspectable staged workflow from upload to validated profile output for at least one real package, compare that output against a focused manual-reference target, and record intermediate evidence for incomplete runs. It cannot yet substantiate broad claims about accurate metadata extraction, reliable vocabulary grounding, robust performance across heterogeneous spectroscopy packages, or superiority over manual curation.
+The current evidence supports claims about workflow architecture and observability more strongly than claims about extraction quality. SIMONE should eventually be able to execute an inspectable staged workflow from upload to validated profile output for at least one real package, compare that output against a focused manual-reference target, and record intermediate evidence for incomplete runs. It cannot yet substantiate broad claims about accurate metadata extraction, reliable vocabulary grounding, robust performance across heterogeneous spectroscopy packages, or superiority over manual curation.
 
 \section{Strengths of the Proposed Workflow}
 \label{sec:strengths-proposed-workflow}
