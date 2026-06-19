@@ -45,3 +45,13 @@ Reason: `data_quality_signal` mixed raw data values, metadata, and quality-like 
 Tradeoff: Some notes that previously influenced profile projection now remain only in evidence artifacts unless they are classified as activity, instrument, resource, method, agent, or surrounding metadata.
 
 Revisit trigger: Revisit when evaluation shows useful final metadata is consistently stranded as inert `measurement_signal` evidence.
+
+### 2026-06-19: Split Requirement Reporting Into Coverage, Semantics, And Trace
+
+Decision: `requirement_report.json` no longer exposes one `metadata_completeness_score`. It reports deterministic `coverage_score`, LLM-assessed `semantic_requirements_score`, and deterministic `source_trace_score`.
+
+Reason: One scalar mixed field presence, semantic adequacy, and source traceability. The split keeps patching focused on coverage while semantic quality and trace quality remain separate audit concerns.
+
+Tradeoff: Existing runtime requirement reports are not backward-compatible with the new shape.
+
+Revisit trigger: Revisit when the UI or thesis evaluation needs a deliberately named composite score instead of the three separate metrics.

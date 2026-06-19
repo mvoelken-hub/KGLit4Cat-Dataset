@@ -144,7 +144,9 @@ class DocumentQualityState(BaseModel):
     profile_conformant: bool | None = None
     evidence_grounded: bool | None = None
     semantic_valid: bool | None = None
-    metadata_completeness_score: float | None = None
+    coverage_score: float | None = None
+    semantic_requirements_score: float | None = None
+    source_trace_score: float | None = None
     operational_access_score: float | None = None
     fair_assessment: dict[str, Any] | None = None
     blocking_issues: list[QualityIssue] = Field(default_factory=list)

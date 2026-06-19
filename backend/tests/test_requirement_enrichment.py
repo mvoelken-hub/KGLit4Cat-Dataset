@@ -13,9 +13,13 @@ from app.domain.extraction import (
     RequirementPatchAttempt,
     RequirementEvidenceItem,
     RequirementReportItem,
+    build_requirement_report,
+    compute_coverage_report,
+    compute_source_trace_report,
     normalized_requirement_evaluation,
     RoutedEvidenceContext,
     report_items_from_evaluation,
+    score_requirement_items,
     score_requirement_report,
     select_requirement_evidence_packet,
     stable_evidence_id,
@@ -26,7 +30,7 @@ from app.services.workflow_service import WorkflowService
 
 
 class RequirementScoringTests(unittest.TestCase):
-    def test_weighted_score_excludes_not_applicable(self):
+    def test_semantic_score_excludes_not_applicable(self):
         items = [
             RequirementReportItem(
                 requirement_id="fulfilled",
@@ -56,11 +60,47 @@ class RequirementScoringTests(unittest.TestCase):
                 weighted_score=0.0,
             ),
         ]
-        report = score_requirement_report(items)
-        self.assertEqual(report.applicable_weight, 3.0)
-        self.assertEqual(report.earned_weight, 2.5)
-        self.assertAlmostEqual(report.metadata_completeness_score, 2.5 / 3.0)
-        self.assertEqual(report.requirements[2].weighted_score, 0.0)
+        score = score_requirement_items(items)
+        self.assertAlmostEqual(score, 2.5 / 3.0)
+        self.assertEqual(items[2].weighted_score, 0.0)
+
+    def test_coverage_report_scores_all_schema_fields(self):
+        schema = {
+            "type": "object",
+            "properties": {
+                "title": {"type": "array", "items": {"type": "string"}},
+                "description": {"type": "array", "items": {"type": "string"}},
+                "activity": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string"},
+                        "type": {"type": "string"},
+                    },
+                },
+            },
+        }
+        report = compute_coverage_report({"title": ["Dataset"], "activity": {"title": "Run"}}, schema)
+        self.assertAlmostEqual(report.score, (1.0 + 0.0 + 0.5) / 3.0)
+
+    def test_source_trace_averages_used_evidence_match_scores(self):
+        used = EvidenceCandidate(
+            candidate_id="m1",
+            category="method_signal",
+            claim="Plan.",
+            evidence_text="PULPROG=zg30",
+            evidence_match_score=0.8,
+        )
+        unused = EvidenceCandidate(
+            candidate_id="m2",
+            category="method_signal",
+            claim="Other.",
+            evidence_text="PULPROG=noesy",
+            evidence_match_score=1.0,
+        )
+        context = RoutedEvidenceContext(portable_evidence=[used, unused])
+        report = compute_source_trace_report(context, [stable_evidence_id(used)])
+        self.assertEqual(report.used_evidence_count, 1)
+        self.assertAlmostEqual(report.score, 0.8)
 
     def test_missing_evaluator_requirement_becomes_missing_report_item(self):
         req = DcatRequirement(
@@ -122,16 +162,7 @@ class RequirementScoringTests(unittest.TestCase):
         self.assertEqual(evaluation.assessments[0].status, "missing")
         self.assertTrue(evaluation.assessments[0].applicable)
 
-    def test_source_trace_scores_from_fulfilled_requirement_evidence(self):
-        trace = RequirementReportItem(
-            requirement_id="source_trace",
-            label="Trace",
-            weight=1.0,
-            status="missing",
-            applicable=True,
-            quality=0.0,
-            weighted_score=0.0,
-        )
+    def test_build_report_exposes_three_scores(self):
         semantic = RequirementReportItem(
             requirement_id="method_plan",
             label="Method",
@@ -150,10 +181,21 @@ class RequirementScoringTests(unittest.TestCase):
             ],
         )
 
-        report = score_requirement_report([semantic, trace])
+        source_trace = compute_source_trace_report(
+            RoutedEvidenceContext(),
+            [],
+        )
+        report = build_requirement_report(
+            schema_valid=True,
+            coverage=compute_coverage_report({"title": ["Dataset"]}, {"type": "object", "properties": {"title": {"type": "array"}}}),
+            semantic_requirements=[semantic],
+            source_trace=source_trace,
+            coverage_patches=[],
+        )
 
-        self.assertEqual(report.requirements[1].status, "fulfilled")
-        self.assertEqual(report.requirements[1].quality, 1.0)
+        self.assertEqual(report.semantic_requirements_score, 1.0)
+        self.assertEqual(report.source_trace_score, 0.0)
+        self.assertEqual(report.coverage_score, 1.0)
 
 
 class RequirementEvidencePacketTests(unittest.TestCase):
@@ -239,7 +281,7 @@ class RequirementEvidencePacketTests(unittest.TestCase):
         requirement = next(
             req
             for req in DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS
-            if req.requirement_id == "semantic_attributes"
+            if req.requirement_id == "instrument_settings_attributes"
         )
         observe = EvidenceCandidate(
             candidate_id="observe",
@@ -384,6 +426,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
                 ),
             )
         )
+        service._evaluate_semantic_requirements = AsyncMock(return_value=[])
         state = ExtractionRunState(
             generated_final_draft={
                 "id": "pkg",
@@ -434,7 +477,8 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
                 for issue in state.document_quality_state.warnings
             )
         )
-        self.assertEqual(state.requirement_report.requirements[6].patch.status, "applied")
+        item = next(req for req in state.requirement_report.coverage_patches if req.requirement_id == "method_plan")
+        self.assertEqual(item.patch.status, "applied")
         self.assertEqual(state.field_completion_ledger[0].json_path, "/was_generated_by/0/realized_plan")
         self.assertEqual(state.field_completion_ledger[0].field_name, "realized_plan")
         self.assertEqual(state.field_completion_ledger[0].enrichment_status, "grounded")
@@ -518,6 +562,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
                 ),
             )
         )
+        service._evaluate_semantic_requirements = AsyncMock(return_value=[])
         state = ExtractionRunState(
             generated_final_draft={
                 "id": "pkg",
@@ -549,7 +594,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             warnings=[],
         )
 
-        item = next(req for req in state.requirement_report.requirements if req.requirement_id == "method_plan")
+        item = next(req for req in state.requirement_report.coverage_patches if req.requirement_id == "method_plan")
         self.assertEqual(item.status, "fulfilled")
         self.assertEqual(item.patch.status, "applied")
 
@@ -611,6 +656,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
                 ),
             )
         )
+        service._evaluate_semantic_requirements = AsyncMock(return_value=[])
         state = ExtractionRunState(
             generated_final_draft={
                 "id": "pkg",
@@ -822,7 +868,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             settings=Settings(),
             ollama_client=Mock(chat_model="test-model", max_context_length=4096),
         )
-        requirement = next(req for req in DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS if req.requirement_id == "semantic_attributes")
+        requirement = next(req for req in DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS if req.requirement_id == "instrument_settings_attributes")
         state = ExtractionRunState(
             generated_final_draft={
                 "id": "pkg",
@@ -834,7 +880,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         progress = ExtractionRunProgress(warnings=[])
         item = RequirementReportItem(
-            requirement_id="semantic_attributes",
+            requirement_id="instrument_settings_attributes",
             label=requirement.label,
             weight=requirement.weight,
             status="missing",
@@ -891,14 +937,14 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             settings=Settings(),
             ollama_client=Mock(chat_model="test-model", max_context_length=4096),
         )
-        requirement = next(req for req in DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS if req.requirement_id == "semantic_attributes")
+        requirement = next(req for req in DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS if req.requirement_id == "instrument_settings_attributes")
         state = ExtractionRunState(
             generated_final_draft={"id": "pkg", "title": ["Dataset"], "description": ["Desc"]},
             chat_model="test-model",
         )
         progress = ExtractionRunProgress(warnings=[])
         item = RequirementReportItem(
-            requirement_id="semantic_attributes",
+            requirement_id="instrument_settings_attributes",
             label=requirement.label,
             weight=requirement.weight,
             status="missing",
@@ -942,14 +988,14 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             settings=Settings(),
             ollama_client=Mock(chat_model="test-model", max_context_length=4096),
         )
-        requirement = next(req for req in DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS if req.requirement_id == "semantic_attributes")
+        requirement = next(req for req in DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS if req.requirement_id == "instrument_settings_attributes")
         state = ExtractionRunState(
             generated_final_draft={"id": "pkg", "title": ["Dataset"], "description": ["Desc"]},
             chat_model="test-model",
         )
         progress = ExtractionRunProgress(warnings=[])
         item = RequirementReportItem(
-            requirement_id="semantic_attributes",
+            requirement_id="instrument_settings_attributes",
             label=requirement.label,
             weight=requirement.weight,
             status="missing",

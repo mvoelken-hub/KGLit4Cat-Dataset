@@ -156,12 +156,34 @@ export type RequirementReportItem = {
   patch?: RequirementPatchAttempt;
 };
 
+export type CoverageFieldReport = {
+  path: string;
+  score: number;
+  present: boolean;
+  kind?: string;
+  children?: CoverageFieldReport[];
+};
+
+export type CoverageReport = {
+  score: number;
+  fields: CoverageFieldReport[];
+};
+
+export type SourceTraceReport = {
+  score: number;
+  used_evidence_count: number;
+  evidence_ids: string[];
+};
+
 export type RequirementReport = {
   schema_valid: boolean;
-  metadata_completeness_score: number;
-  applicable_weight: number;
-  earned_weight: number;
-  requirements: RequirementReportItem[];
+  coverage_score: number;
+  semantic_requirements_score: number;
+  source_trace_score: number;
+  coverage: CoverageReport;
+  semantic_requirements: RequirementReportItem[];
+  source_trace: SourceTraceReport;
+  coverage_patches: RequirementReportItem[];
 };
 
 export type EvidenceQueryLedgerEntry = {
@@ -188,7 +210,9 @@ export type DocumentQualityState = {
   profile_conformant?: boolean | null;
   evidence_grounded?: boolean | null;
   semantic_valid?: boolean | null;
-  metadata_completeness_score?: number | null;
+  coverage_score?: number | null;
+  semantic_requirements_score?: number | null;
+  source_trace_score?: number | null;
   operational_access_score?: number | null;
   fair_assessment?: Record<string, unknown> | null;
   blocking_issues: QualityIssue[];

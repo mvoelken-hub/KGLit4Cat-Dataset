@@ -88,7 +88,7 @@ function metadataObjectLabel(value: Record<string, unknown>): string {
 }
 
 function requirementStatusSummary(report?: RequirementReport | null) {
-  const requirements = report?.requirements ?? [];
+  const requirements = report?.semantic_requirements ?? [];
   return requirements.reduce((acc, requirement) => {
     acc[requirement.status] = (acc[requirement.status] ?? 0) + 1;
     return acc;
@@ -972,8 +972,8 @@ export function ProjectionWorkflowPanel({
   const generatedInstances = draftClassInstances(progress?.generated_final_draft);
   const requirementReport = progress?.requirement_report ?? null;
   const requirementSummary = requirementStatusSummary(requirementReport);
-  const applicableRequirements = requirementReport?.requirements.filter((requirement) => requirement.applicable) ?? [];
-  const requirementPercent = requirementReport ? Math.round(requirementReport.metadata_completeness_score * 100) : null;
+  const applicableRequirements = requirementReport?.semantic_requirements.filter((requirement) => requirement.applicable) ?? [];
+  const requirementPercent = requirementReport ? Math.round(requirementReport.coverage_score * 100) : null;
   const showRequirementPopover = (event: SyntheticEvent<HTMLElement>, requirement: RequirementReportItem) => {
     const rect = event.currentTarget.getBoundingClientRect();
     setHoveredRequirement({ requirement, x: rect.left, y: rect.bottom + 8 });
@@ -1025,21 +1025,22 @@ export function ProjectionWorkflowPanel({
         <section className="requirement-completeness-panel">
           <div className="requirement-score-heading">
             <div>
-              <span>Metadata completeness</span>
-              <strong>{formatPercentScore(requirementReport.metadata_completeness_score)}</strong>
+              <span>Coverage</span>
+              <strong>{formatPercentScore(requirementReport.coverage_score)}</strong>
             </div>
             <small>
-              {requirementReport.earned_weight.toFixed(2)} / {requirementReport.applicable_weight.toFixed(2)} weighted points
+              Semantic {formatPercentScore(requirementReport.semantic_requirements_score)} - Trace {formatPercentScore(requirementReport.source_trace_score)}
             </small>
           </div>
           <div className="requirement-score-track" aria-hidden="true">
             <div style={{ width: `${requirementPercent ?? 0}%` }} />
           </div>
           <div className="requirement-status-strip">
+            <span>{requirementReport.coverage_patches.filter((requirement) => requirement.status === 'fulfilled').length} coverage slots</span>
             <span>{requirementSummary.fulfilled ?? 0} fulfilled</span>
             <span>{requirementSummary.partial ?? 0} partial</span>
             <span>{requirementSummary.missing ?? 0} missing</span>
-            <span>{requirementSummary.not_applicable ?? 0} not applicable</span>
+            <span>{requirementReport.source_trace.used_evidence_count} trace evidence</span>
           </div>
           <div className="requirement-breakdown">
             {applicableRequirements.map((requirement) => (

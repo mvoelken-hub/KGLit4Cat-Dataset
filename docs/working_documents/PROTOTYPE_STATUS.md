@@ -88,6 +88,7 @@ Use `force_rerun=true` for repeatable workflow runs with deterministic package I
 | Profile dependency | Final output requires a registered compatible profile and successful schema validation. |
 | Scientific correctness | A schema-valid final result is not automatically scientifically correct. Expert or benchmark evaluation is still required. |
 | Quantitative attribute coverage | Requirement enrichment groups `instrument_signal` evidence by numeric value, quantity label, optional unit, and source neighborhood, then projects each group to a schema-valid owner or records a skip reason. `measurement_signal` evidence is retained in artifacts but ignored downstream so primary/raw data rows, point counts, and axis/statistical values do not become metadata attributes. |
+| Requirement report scoring | `requirement_report.json` separates deterministic all-schema coverage, sliced LLM semantic requirement assessment, and deterministic used-evidence source trace scoring. Coverage patching is category-gated and no longer uses a single metadata completeness score. |
 
 ## Evaluation Status Snapshot
 

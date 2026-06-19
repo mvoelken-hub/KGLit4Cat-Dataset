@@ -22,6 +22,7 @@ class DcatRequirement(BaseModel):
     expected_target_class: str | None = None
     evidence_hints: list[str] = Field(default_factory=list)
     allow_not_applicable: bool = False
+    allowed_categories: list[str] = Field(default_factory=list)
 
 
 class RequirementAssessment(BaseModel):
@@ -52,6 +53,7 @@ class RequirementEvidenceItem(BaseModel):
     file_path: str = ""
     start_idx: int = 0
     end_idx: int = 0
+    evidence_match_score: float = 0.0
 
 
 class RequirementPatchResult(BaseModel):
@@ -89,15 +91,190 @@ class RequirementReportItem(BaseModel):
     patch: RequirementPatchAttempt = Field(default_factory=RequirementPatchAttempt)
 
 
+class CoverageFieldReport(BaseModel):
+    path: str
+    score: float
+    present: bool
+    kind: str = "field"
+    children: list["CoverageFieldReport"] = Field(default_factory=list)
+
+
+class CoverageReport(BaseModel):
+    score: float = 0.0
+    fields: list[CoverageFieldReport] = Field(default_factory=list)
+
+
+class SourceTraceReport(BaseModel):
+    score: float = 0.0
+    used_evidence_count: int = 0
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
 class RequirementReport(BaseModel):
     schema_valid: bool = True
-    metadata_completeness_score: float = 0.0
-    applicable_weight: float = 0.0
-    earned_weight: float = 0.0
-    requirements: list[RequirementReportItem] = Field(default_factory=list)
+    coverage_score: float = 0.0
+    semantic_requirements_score: float = 0.0
+    source_trace_score: float = 0.0
+    coverage: CoverageReport = Field(default_factory=CoverageReport)
+    semantic_requirements: list[RequirementReportItem] = Field(default_factory=list)
+    source_trace: SourceTraceReport = Field(default_factory=SourceTraceReport)
+    coverage_patches: list[RequirementReportItem] = Field(default_factory=list)
 
 
-DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS: tuple[DcatRequirement, ...] = (
+def compute_coverage_report(document: dict[str, Any], schema: dict[str, Any]) -> CoverageReport:
+    root_schema = _resolve_schema_node(schema, schema)
+    fields = _coverage_fields_for_object(
+        document if isinstance(document, dict) else {},
+        root_schema,
+        schema,
+        path="",
+        seen=set(),
+    )
+    return CoverageReport(score=_average([field.score for field in fields]), fields=fields)
+
+
+def compute_source_trace_report(
+    evidence_context: RoutedEvidenceContext,
+    used_evidence_ids: list[str],
+) -> SourceTraceReport:
+    by_id: dict[str, EvidenceCandidate] = {}
+    for candidate in list(evidence_context.portable_evidence) + list(evidence_context.contextual_evidence):
+        evidence_id = stable_evidence_id(candidate)
+        by_id[evidence_id] = candidate
+        explicit_id = getattr(candidate, "evidence_id", "")
+        if explicit_id:
+            by_id[str(explicit_id)] = candidate
+    unique_ids = list(dict.fromkeys(item for item in used_evidence_ids if item))
+    scores = [
+        float(getattr(by_id[evidence_id], "evidence_match_score", 0.0) or 0.0)
+        for evidence_id in unique_ids
+        if evidence_id in by_id
+    ]
+    score = sum(scores) / len(scores) if scores else 0.0
+    return SourceTraceReport(score=score, used_evidence_count=len(scores), evidence_ids=unique_ids)
+
+
+def _coverage_fields_for_object(
+    value: Any,
+    schema: dict[str, Any],
+    root_schema: dict[str, Any],
+    *,
+    path: str,
+    seen: set[str],
+) -> list[CoverageFieldReport]:
+    schema = _resolve_schema_node(schema, root_schema)
+    properties = schema.get("properties") if isinstance(schema, dict) else None
+    if not isinstance(properties, dict):
+        return []
+    fields: list[CoverageFieldReport] = []
+    for name, child_schema in properties.items():
+        child_path = f"{path}/{_escape_json_pointer(name)}"
+        child_value = value.get(name) if isinstance(value, dict) else None
+        fields.append(
+            _coverage_field(
+                child_value,
+                child_schema if isinstance(child_schema, dict) else {},
+                root_schema,
+                path=child_path,
+                seen=seen,
+            )
+        )
+    return fields
+
+
+def _coverage_field(
+    value: Any,
+    schema: dict[str, Any],
+    root_schema: dict[str, Any],
+    *,
+    path: str,
+    seen: set[str],
+) -> CoverageFieldReport:
+    schema = _resolve_schema_node(schema, root_schema)
+    schema_key = json.dumps(schema, sort_keys=True, default=str)[:500]
+    if schema_key in seen:
+        return CoverageFieldReport(path=path, score=0.0 if _is_missing_value(value) else 1.0, present=not _is_missing_value(value))
+    next_seen = {*seen, schema_key}
+    schema_type = schema.get("type")
+    properties = schema.get("properties") if isinstance(schema, dict) else None
+    if schema_type == "array" or "items" in schema:
+        if not isinstance(value, list) or not value:
+            return CoverageFieldReport(path=path, score=0.0, present=False, kind="array")
+        item_schema = _resolve_schema_node(schema.get("items", {}), root_schema)
+        item_properties = item_schema.get("properties") if isinstance(item_schema, dict) else None
+        if not isinstance(item_properties, dict):
+            return CoverageFieldReport(path=path, score=1.0, present=True, kind="array")
+        children = [
+            CoverageFieldReport(
+                path=f"{path}/{index}",
+                score=_average([child.score for child in item_children]),
+                present=not _is_missing_value(item),
+                kind="object",
+                children=item_children,
+            )
+            for index, item in enumerate(value)
+            for item_children in [
+                _coverage_fields_for_object(item, item_schema, root_schema, path=f"{path}/{index}", seen=next_seen)
+            ]
+        ]
+        return CoverageFieldReport(path=path, score=_average([child.score for child in children]), present=True, kind="array", children=children)
+    if isinstance(properties, dict):
+        if not isinstance(value, dict):
+            children = _coverage_fields_for_object({}, schema, root_schema, path=path, seen=next_seen)
+            return CoverageFieldReport(path=path, score=0.0, present=False, kind="object", children=children)
+        children = _coverage_fields_for_object(value, schema, root_schema, path=path, seen=next_seen)
+        return CoverageFieldReport(path=path, score=_average([child.score for child in children]), present=True, kind="object", children=children)
+    present = not _is_missing_value(value)
+    return CoverageFieldReport(path=path, score=1.0 if present else 0.0, present=present)
+
+
+def _resolve_schema_node(schema: Any, root_schema: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(schema, dict):
+        return {}
+    ref = schema.get("$ref")
+    if isinstance(ref, str) and ref.startswith("#/"):
+        value: Any = root_schema
+        for token in ref[2:].split("/"):
+            token = token.replace("~1", "/").replace("~0", "~")
+            if not isinstance(value, dict):
+                return schema
+            value = value.get(token)
+        return _resolve_schema_node(value, root_schema)
+    if "anyOf" in schema and isinstance(schema["anyOf"], list):
+        choices = [item for item in schema["anyOf"] if isinstance(item, dict) and item.get("type") != "null"]
+        return _resolve_schema_node(choices[0], root_schema) if choices else schema
+    if "oneOf" in schema and isinstance(schema["oneOf"], list):
+        choices = [item for item in schema["oneOf"] if isinstance(item, dict) and item.get("type") != "null"]
+        return _resolve_schema_node(choices[0], root_schema) if choices else schema
+    if "allOf" in schema and isinstance(schema["allOf"], list):
+        merged: dict[str, Any] = {}
+        for item in schema["allOf"]:
+            resolved = _resolve_schema_node(item, root_schema)
+            if isinstance(resolved, dict):
+                merged.update(resolved)
+        return merged or schema
+    return schema
+
+
+def _average(values: list[float]) -> float:
+    return sum(values) / len(values) if values else 0.0
+
+
+def _escape_json_pointer(value: str) -> str:
+    return value.replace("~", "~0").replace("/", "~1")
+
+
+def _is_missing_value(value: Any) -> bool:
+    if value is None:
+        return True
+    if value == "":
+        return True
+    if isinstance(value, (list, dict)) and not value:
+        return True
+    return False
+
+
+DCAT_AP_PLUS_COVERAGE_REQUIREMENTS: tuple[DcatRequirement, ...] = (
     DcatRequirement(
         requirement_id="dataset_identity",
         label="Dataset identity",
@@ -105,15 +282,7 @@ DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS: tuple[DcatRequirement, ...] = (
         weight=1.0,
         target_paths=["/id", "/title", "/description"],
         evidence_hints=["dataset title", "dataset description", "dataset identifier"],
-    ),
-    DcatRequirement(
-        requirement_id="dataset_distributions",
-        label="Dataset distributions",
-        description="Dataset exposes relevant distributions with access resources and descriptions.",
-        weight=1.0,
-        target_paths=["/dataset_distribution/-"],
-        expected_target_class="Distribution",
-        evidence_hints=["file", "format", "distribution", "download", "access", "resource"],
+        allowed_categories=["resource_signal", "surrounding_signal", "other"],
     ),
     DcatRequirement(
         requirement_id="dataset_generation",
@@ -123,6 +292,7 @@ DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS: tuple[DcatRequirement, ...] = (
         target_paths=["/was_generated_by/-"],
         expected_target_class="DataGeneratingActivity",
         evidence_hints=["acquisition", "measurement", "processing", "generated", "experiment"],
+        allowed_categories=["activity_signal"],
     ),
     DcatRequirement(
         requirement_id="about_entity_or_activity",
@@ -132,6 +302,7 @@ DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS: tuple[DcatRequirement, ...] = (
         target_paths=["/is_about_entity/-", "/is_about_activity/-"],
         expected_target_class="EvaluatedEntity",
         evidence_hints=["sample", "entity", "spectrum", "evaluated", "measured", "activity"],
+        allowed_categories=["activity_signal", "resource_signal", "surrounding_signal"],
     ),
     DcatRequirement(
         requirement_id="generation_activity_detail",
@@ -141,15 +312,17 @@ DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS: tuple[DcatRequirement, ...] = (
         target_paths=["/was_generated_by/-"],
         expected_target_class="DataGeneratingActivity",
         evidence_hints=["acquisition", "processing", "experiment type", "method"],
+        allowed_categories=["activity_signal"],
     ),
     DcatRequirement(
-        requirement_id="agents_instruments_software",
-        label="Agents, instruments, and software",
-        description="Generation activity names instruments, software, people, or organizations via carried_out_by.",
+        requirement_id="technical_agents",
+        label="Technical agents",
+        description="Generation activity names instruments, software, or devices via carried_out_by.",
         weight=1.25,
         target_paths=["/was_generated_by/0/carried_out_by/-"],
         expected_target_class="AgenticEntity",
-        evidence_hints=["instrument", "spectrometer", "software", "TopSpin", "Bruker", "owner", "origin"],
+        evidence_hints=["instrument", "spectrometer", "software", "device"],
+        allowed_categories=["agent_signal"],
     ),
     DcatRequirement(
         requirement_id="method_plan",
@@ -159,37 +332,99 @@ DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS: tuple[DcatRequirement, ...] = (
         target_paths=["/was_generated_by/0/realized_plan"],
         expected_target_class="Plan",
         evidence_hints=["method", "protocol", "plan", "procedure", "pulse sequence", "program"],
+        allowed_categories=["method_signal"],
     ),
     DcatRequirement(
-        requirement_id="semantic_attributes",
-        label="Quantitative and qualitative attributes",
-        description="Evaluated entities, evaluated activities, generation activities, or instruments include key quantitative or qualitative attributes.",
+        requirement_id="instrument_settings_attributes",
+        label="Instrument settings attributes",
+        description="Generation activity or instruments include key setting/configuration attributes.",
         weight=1.5,
         target_paths=["/was_generated_by/0/has_quantitative_attribute/-", "/is_about_entity/0/has_quantitative_attribute/-"],
         expected_target_class="QuantitativeAttribute",
-        evidence_hints=["temperature", "frequency", "width", "points", "unit", "parameter", "value"],
-    ),
-    DcatRequirement(
-        requirement_id="source_trace",
-        label="Source evidence trace",
-        description="Fulfilled semantic requirements can be traced to source evidence snippets.",
-        weight=1.0,
-        target_paths=[],
-        evidence_hints=["evidence", "source", "file path"],
+        evidence_hints=["temperature", "frequency", "width", "unit", "parameter", "threshold", "setting"],
+        allowed_categories=["instrument_signal"],
     ),
 )
 
 
+DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS: tuple[DcatRequirement, ...] = (
+    DcatRequirement(
+        requirement_id="dataset_identity_semantics",
+        label="Dataset identity semantics",
+        description="Title and description identify the dataset rather than the extraction/projection process.",
+        weight=1.0,
+        target_paths=["/title", "/description"],
+        evidence_hints=["dataset title", "dataset description", "identifier"],
+    ),
+    DcatRequirement(
+        requirement_id="dataset_generation_semantics",
+        label="Dataset generation semantics",
+        description="was_generated_by describes a real data-generating activity.",
+        weight=1.25,
+        target_paths=["/was_generated_by"],
+        evidence_hints=["activity", "acquisition", "processing", "generated"],
+        allowed_categories=["activity_signal"],
+    ),
+    DcatRequirement(
+        requirement_id="aboutness_semantics",
+        label="Aboutness semantics",
+        description="Aboutness identifies a concrete evaluated entity/activity; generic inferred subject is partial; file names are not entities.",
+        weight=1.25,
+        target_paths=["/is_about_entity", "/is_about_activity"],
+        evidence_hints=["sample", "entity", "spectrum", "evaluated", "activity"],
+        allowed_categories=["activity_signal", "resource_signal", "surrounding_signal"],
+    ),
+    DcatRequirement(
+        requirement_id="technical_agents_semantics",
+        label="Technical agents semantics",
+        description="carried_out_by contains instruments, software, or devices rather than people or provenance metadata.",
+        weight=1.25,
+        target_paths=["/was_generated_by/0/carried_out_by"],
+        evidence_hints=["instrument", "software", "device"],
+        allowed_categories=["agent_signal"],
+    ),
+    DcatRequirement(
+        requirement_id="method_plan_semantics",
+        label="Method plan semantics",
+        description="realized_plan is grounded in explicit method/procedure/plan evidence; activity-only inference is partial at most.",
+        weight=1.0,
+        target_paths=["/was_generated_by/0/realized_plan"],
+        evidence_hints=["method", "protocol", "plan", "procedure", "pulse sequence", "program"],
+        allowed_categories=["method_signal"],
+    ),
+    DcatRequirement(
+        requirement_id="instrument_settings_semantics",
+        label="Instrument settings semantics",
+        description="Instrument/configuration settings are represented as suitable attributes.",
+        weight=1.5,
+        target_paths=["/was_generated_by/0/has_quantitative_attribute", "/is_about_entity/0/has_quantitative_attribute"],
+        evidence_hints=["temperature", "frequency", "width", "unit", "parameter", "threshold", "setting"],
+        allowed_categories=["instrument_signal"],
+    ),
+    DcatRequirement(
+        requirement_id="provenance_context_semantics",
+        label="Provenance context semantics",
+        description="Dates, people, labs, teams, and origins from surrounding evidence are placed in suitable generic provenance/context fields when present.",
+        weight=1.0,
+        target_paths=["/creator", "/modification_date"],
+        evidence_hints=["date", "creator", "owner", "origin", "laboratory", "team"],
+        allowed_categories=["surrounding_signal"],
+    ),
+)
+
+
+DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS = DCAT_AP_PLUS_COVERAGE_REQUIREMENTS
+
+
 REQUIREMENT_EVALUATOR_SYSTEM_PROMPT = """
-You evaluate DCAT-AP+ scientific metadata completeness for one Dataset draft.
+You evaluate one DCAT-AP+ scientific semantic requirement for one Dataset draft slice.
 Return only JSON matching the supplied schema.
 Return exactly one assessment for every supplied requirement_id. Do not omit requirements.
-Assess applicability and quality, not JSON Schema validity.
-For requirements with target_paths, mark fulfilled only when the draft contains data at one of those paths.
+Assess semantic adequacy, not JSON Schema validity or field coverage.
 Use statuses: fulfilled, partial, missing, not_applicable.
 quality must be 1 for fulfilled, 0.5 for partial, 0 for missing/not_applicable.
-For missing/partial requirements, provide evidence_search_hints and target_paths.
-Prefer not_applicable only when source package type makes requirement irrelevant, not when evidence is absent.
+Prefer not_applicable only when the supplied evidence categories make the semantic requirement irrelevant.
+For aboutness, file names are not evaluated entities. For method plans, explicit method_signal evidence is required for fulfilled.
 """
 
 
@@ -206,14 +441,27 @@ def build_requirement_evaluation_prompt(
     *,
     document: dict[str, Any],
     requirements: list[DcatRequirement],
+    selected_evidence: list[RequirementEvidenceItem] | None = None,
+    context_window: list[RequirementEvidenceItem] | None = None,
 ) -> str:
     payload = {
-        "draft_dataset": document,
+        "draft_excerpt": document,
         "requirements": [req.model_dump(mode="json") for req in requirements],
+        "selected_evidence": [item.model_dump(mode="json") for item in selected_evidence or []],
+        "context_window": [item.model_dump(mode="json") for item in context_window or []],
+        "category_meanings": {
+            "resource_signal": "files, distributions, formats, access paths, and resource-scoped notes",
+            "method_signal": "explicit realized plans, protocols, methods, procedures",
+            "activity_signal": "data-generating activities and other activities",
+            "agent_signal": "software, devices, instruments, machines, services, executable systems",
+            "instrument_signal": "acquisition, instrument, processing, calibration, unit, threshold, and configuration settings",
+            "surrounding_signal": "dates, labs, teams, people, organizations, ownership, origin, authorship, provenance context",
+            "measurement_signal": "primary/raw data values; downstream inert",
+        },
     }
     return (
-        "Evaluate draft_dataset against requirements. "
-        "Do not require FAIR/access/legal fields outside supplied requirements.\n\n"
+        "Evaluate the draft excerpt against the supplied semantic requirement. "
+        "Use only supplied evidence and category meanings.\n\n"
         + json.dumps(payload, ensure_ascii=False, indent=2)
     )
 
@@ -244,20 +492,44 @@ def build_requirement_patch_prompt(
     )
 
 
-def score_requirement_report(items: list[RequirementReportItem], *, schema_valid: bool = True) -> RequirementReport:
-    _score_source_trace(items)
+def score_requirement_items(items: list[RequirementReportItem]) -> float:
     applicable = [item for item in items if item.applicable and item.status != "not_applicable"]
-    applicable_weight = sum(item.weight for item in applicable)
-    earned_weight = sum(max(0.0, min(1.0, item.quality)) * item.weight for item in applicable)
-    score = earned_weight / applicable_weight if applicable_weight else 0.0
+    total_weight = sum(item.weight for item in applicable)
+    scored_weight = sum(max(0.0, min(1.0, item.quality)) * item.weight for item in applicable)
+    score = scored_weight / total_weight if total_weight else 0.0
     for item in items:
         item.weighted_score = 0.0 if item.status == "not_applicable" else item.weight * item.quality
+    return score
+
+
+def build_requirement_report(
+    *,
+    schema_valid: bool,
+    coverage: CoverageReport,
+    semantic_requirements: list[RequirementReportItem],
+    source_trace: SourceTraceReport,
+    coverage_patches: list[RequirementReportItem],
+) -> RequirementReport:
+    semantic_score = score_requirement_items(semantic_requirements)
     return RequirementReport(
         schema_valid=schema_valid,
-        metadata_completeness_score=score,
-        applicable_weight=applicable_weight,
-        earned_weight=earned_weight,
-        requirements=items,
+        coverage_score=coverage.score,
+        semantic_requirements_score=semantic_score,
+        source_trace_score=source_trace.score,
+        coverage=coverage,
+        semantic_requirements=semantic_requirements,
+        source_trace=source_trace,
+        coverage_patches=coverage_patches,
+    )
+
+
+def score_requirement_report(items: list[RequirementReportItem], *, schema_valid: bool = True) -> RequirementReport:
+    semantic_score = score_requirement_items(items)
+    return RequirementReport(
+        schema_valid=schema_valid,
+        semantic_requirements_score=semantic_score,
+        semantic_requirements=items,
+        coverage_patches=items,
     )
 
 
@@ -370,6 +642,7 @@ def select_requirement_evidence_packet(
         candidate
         for candidate in list(evidence_context.portable_evidence) + list(evidence_context.contextual_evidence)
         if candidate.category != "measurement_signal"
+        and (not requirement.allowed_categories or str(candidate.category) in requirement.allowed_categories)
     ]
     scored: list[tuple[int, EvidenceCandidate]] = []
     for candidate in candidates:
@@ -448,28 +721,6 @@ def _normalized_assessment(assessment: RequirementAssessment) -> RequirementAsse
     return assessment
 
 
-def _score_source_trace(items: list[RequirementReportItem]) -> None:
-    trace = next((item for item in items if item.requirement_id == "source_trace"), None)
-    if trace is None or not trace.applicable:
-        return
-    traceable = [
-        item
-        for item in items
-        if item.requirement_id != "source_trace"
-        and item.applicable
-        and item.status in {"fulfilled", "partial"}
-        and item.selected_evidence
-    ]
-    if traceable:
-        trace.status = "fulfilled"
-        trace.quality = 1.0
-        trace.rationale = "Fulfilled semantic requirements include selected evidence packets in requirement_report.json."
-    else:
-        trace.status = "missing"
-        trace.quality = 0.0
-        trace.rationale = trace.rationale or "No fulfilled semantic requirement has selected evidence yet."
-
-
 def _candidate_search_text(candidate: EvidenceCandidate) -> str:
     return " ".join(
         [
@@ -539,6 +790,7 @@ def _evidence_item(candidate: EvidenceCandidate) -> RequirementEvidenceItem:
         file_path=candidate.file_path,
         start_idx=candidate.start_idx,
         end_idx=candidate.end_idx,
+        evidence_match_score=float(getattr(candidate, "evidence_match_score", 0.0) or 0.0),
     )
 
 

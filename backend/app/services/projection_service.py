@@ -213,20 +213,16 @@ class ProjectionService:
         state.generated_final_draft = document
         progress.generated_final_draft = document
 
-        progress.stage = "metadata_completeness"
-        requirements = list(DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS)
-        evaluation = await self._evaluate_dcat_requirements(
-            data_package_id=data_package_id,
+        progress.stage = "coverage_scoring"
+        coverage = compute_coverage_report(document, validation_schema)
+        coverage_requirements = list(DCAT_AP_PLUS_COVERAGE_REQUIREMENTS)
+        coverage_items = self._coverage_items_from_document(
+            requirements=coverage_requirements,
             document=document,
-            requirements=requirements,
         )
-        report_items = report_items_from_evaluation(
-            requirements=requirements,
-            evaluation=evaluation,
-        )
-        requirements_by_id = {item.requirement_id: item for item in requirements}
+        requirements_by_id = {item.requirement_id: item for item in coverage_requirements}
 
-        for item in report_items:
+        for item in coverage_items:
             requirement = requirements_by_id[item.requirement_id]
             selected_evidence, context_window = select_requirement_evidence_packet(
                 requirement=requirement,
@@ -243,7 +239,7 @@ class ProjectionService:
                 selected_evidence=selected_evidence,
                 context_window=context_window,
             )
-            if item.requirement_id == "semantic_attributes" and item.applicable:
+            if item.requirement_id == "instrument_settings_attributes" and item.applicable:
                 document = self._apply_quantitative_evidence_groups(
                     data_package_id=data_package_id,
                     profile_identifier=profile_identifier,
@@ -255,17 +251,15 @@ class ProjectionService:
                     requirement=requirement,
                     item=item,
                 )
-            if item.status == "fulfilled" and not self._requirement_target_path_exists(
+            if self._requirement_target_path_exists(
                 document=document,
                 target_paths=item.target_paths or requirement.target_paths,
             ):
-                item.status = "missing"
-                item.quality = 0.0
-                item.weighted_score = 0.0
-                item.rationale = (
-                    f"{item.rationale} Missing required target path despite fulfilled evaluator status."
-                ).strip()
-            if item.status not in {"missing", "partial"} or not item.applicable:
+                item.status = "fulfilled"
+                item.quality = 1.0
+                item.weighted_score = item.weight
+                item.rationale = "Coverage target path exists after deterministic projection."
+            if item.status != "missing" or not item.applicable:
                 continue
             if not selected_evidence:
                 item.patch = RequirementPatchAttempt(
@@ -294,28 +288,24 @@ class ProjectionService:
                     patch_attempt=patch_attempt,
                     document=document,
                 )
-                refreshed_evaluation = await self._evaluate_dcat_requirements(
-                    data_package_id=data_package_id,
+                if self._requirement_target_path_exists(
                     document=document,
-                    requirements=[requirement],
-                )
-                refreshed_by_id = {
-                    assessment.requirement_id: assessment
-                    for assessment in refreshed_evaluation.assessments
-                }
-                refreshed = refreshed_by_id.get(item.requirement_id)
-                if refreshed is not None:
-                    merge_requirement_assessment(
-                        item=item,
-                        assessment=refreshed,
-                        requirement=requirement,
-                    )
-                    item.patch = patch_attempt
-                    item.selected_evidence = selected_evidence
-                    item.context_window = context_window
-            report = score_requirement_report(
-                report_items,
+                    target_paths=item.target_paths or requirement.target_paths,
+                ):
+                    item.status = "fulfilled"
+                    item.quality = 1.0
+                    item.weighted_score = item.weight
+            coverage = compute_coverage_report(document, validation_schema)
+            source_trace = compute_source_trace_report(
+                evidence_context,
+                self._used_evidence_ids(state=state),
+            )
+            report = build_requirement_report(
                 schema_valid=state.validation.status == "valid",
+                coverage=coverage,
+                semantic_requirements=[],
+                source_trace=source_trace,
+                coverage_patches=coverage_items,
             )
             state.requirement_report = report
             progress.requirement_report = report
@@ -335,9 +325,22 @@ class ProjectionService:
             warnings=[],
         )
         state.generated_final_draft = document
-        state.requirement_report = score_requirement_report(
-            report_items,
+        coverage = compute_coverage_report(document, validation_schema)
+        semantic_items = await self._evaluate_semantic_requirements(
+            data_package_id=data_package_id,
+            document=document,
+            evidence_context=evidence_context,
+        )
+        source_trace = compute_source_trace_report(
+            evidence_context,
+            self._used_evidence_ids(state=state),
+        )
+        state.requirement_report = build_requirement_report(
             schema_valid=validation.valid,
+            coverage=coverage,
+            semantic_requirements=semantic_items,
+            source_trace=source_trace,
+            coverage_patches=coverage_items,
         )
         state.document_quality_state = self._build_document_quality_state(
             validation=state.validation,
@@ -355,6 +358,95 @@ class ProjectionService:
         self._persist_state_artifacts(data_package_id, state)
         self._update_progress(data_package_id, progress)
         return document
+
+    @classmethod
+    def _coverage_items_from_document(
+        cls,
+        *,
+        requirements: list[DcatRequirement],
+        document: dict[str, Any],
+    ) -> list[RequirementReportItem]:
+        items: list[RequirementReportItem] = []
+        for requirement in requirements:
+            fulfilled = cls._requirement_target_path_exists(
+                document=document,
+                target_paths=requirement.target_paths,
+            )
+            items.append(
+                RequirementReportItem(
+                    requirement_id=requirement.requirement_id,
+                    label=requirement.label,
+                    weight=requirement.weight,
+                    status="fulfilled" if fulfilled else "missing",
+                    applicable=True,
+                    quality=1.0 if fulfilled else 0.0,
+                    weighted_score=requirement.weight if fulfilled else 0.0,
+                    rationale=(
+                        "Coverage target path exists."
+                        if fulfilled
+                        else "Coverage target path is missing."
+                    ),
+                    target_paths=list(requirement.target_paths),
+                    evidence_search_hints=list(requirement.evidence_hints),
+                )
+            )
+        return items
+
+    async def _evaluate_semantic_requirements(
+        self,
+        *,
+        data_package_id: str,
+        document: dict[str, Any],
+        evidence_context: RoutedEvidenceContext,
+    ) -> list[RequirementReportItem]:
+        items: list[RequirementReportItem] = []
+        for requirement in DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS:
+            seed_item = RequirementReportItem(
+                requirement_id=requirement.requirement_id,
+                label=requirement.label,
+                weight=requirement.weight,
+                status="missing",
+                applicable=True,
+                quality=0.0,
+                weighted_score=0.0,
+                target_paths=list(requirement.target_paths),
+                evidence_search_hints=list(requirement.evidence_hints),
+            )
+            selected_evidence, context_window = select_requirement_evidence_packet(
+                requirement=requirement,
+                assessment=seed_item,
+                evidence_context=evidence_context,
+            )
+            draft_excerpt = {
+                path: self._value_at_json_pointer(document, path)
+                for path in requirement.target_paths
+            }
+            evaluation = await self._evaluate_dcat_requirements(
+                data_package_id=data_package_id,
+                document=draft_excerpt,
+                requirements=[requirement],
+                selected_evidence=selected_evidence,
+                context_window=context_window,
+            )
+            evaluated = report_items_from_evaluation(
+                requirements=[requirement],
+                evaluation=evaluation,
+            )[0]
+            evaluated.selected_evidence = selected_evidence
+            evaluated.context_window = context_window
+            items.append(evaluated)
+        score_requirement_items(items)
+        return items
+
+    @staticmethod
+    def _used_evidence_ids(*, state: ExtractionRunState) -> list[str]:
+        ids: list[str] = []
+        for record in state.field_completion_ledger:
+            ids.extend(record.source_evidence or [])
+        for record in state.projection_ledger:
+            if record.status == "projected":
+                ids.extend(record.evidence_note_identifiers or [])
+        return list(dict.fromkeys(item for item in ids if item))
 
     @staticmethod
     def _build_document_quality_state(
@@ -377,12 +469,17 @@ class ProjectionService:
                 for issue in validation.errors
             )
         profile_conformant = schema_valid
-        metadata_score = None
+        coverage_score = None
+        semantic_requirements_score = None
+        source_trace_score = None
+        evidence_grounded = None
         if requirement_report is not None:
-            metadata_score = requirement_report.metadata_completeness_score
+            coverage_score = requirement_report.coverage_score
+            semantic_requirements_score = requirement_report.semantic_requirements_score
+            source_trace_score = requirement_report.source_trace_score
             unmet = [
                 item
-                for item in requirement_report.requirements
+                for item in requirement_report.coverage_patches
                 if item.applicable and item.status not in {"fulfilled", "not_applicable"}
             ]
             if unmet:
@@ -396,27 +493,9 @@ class ProjectionService:
                     )
                     for item in unmet
                 )
-            evidence_missing = [
-                item
-                for item in requirement_report.requirements
-                if item.applicable
-                and item.status == "fulfilled"
-                and item.requirement_id not in {"dataset_identity", "dataset_distributions"}
-                and not item.selected_evidence
-            ]
-            evidence_grounded = not evidence_missing
-            warnings.extend(
-                QualityIssue(
-                    code="fulfilled_without_selected_evidence",
-                    severity="warning",
-                    message=f"{item.label} is fulfilled without selected evidence trace.",
-                    requirement_id=item.requirement_id,
-                )
-                for item in evidence_missing
-            )
+            evidence_grounded = requirement_report.source_trace.used_evidence_count > 0
         else:
             profile_conformant = None
-            evidence_grounded = None
         warnings.append(
             QualityIssue(
                 code="semantic_vocabulary_validation_not_run",
@@ -456,7 +535,9 @@ class ProjectionService:
             profile_conformant=profile_conformant,
             evidence_grounded=evidence_grounded,
             semantic_valid=None,
-            metadata_completeness_score=metadata_score,
+            coverage_score=coverage_score,
+            semantic_requirements_score=semantic_requirements_score,
+            source_trace_score=source_trace_score,
             operational_access_score=None,
             fair_assessment=None,
             blocking_issues=blocking,
@@ -1085,7 +1166,7 @@ class ProjectionService:
                 validation_status="valid",
                 enrichment_status="grounded",
                 issue_categories=[],
-                edit_needed_reason="semantic_attributes: quantitative evidence group projected.",
+                edit_needed_reason="instrument_settings_attributes: quantitative evidence group projected.",
             )
         )
         object_identifier = f"quantitative_group:{group.group_id}:{actual_path}"
@@ -1104,7 +1185,7 @@ class ProjectionService:
                 projected_paths=[actual_path] if actual_path else [],
                 target_path=actual_path or None,
                 target_class=target_class or "QuantitativeAttribute",
-                planner_status="semantic_attributes",
+                planner_status="instrument_settings_attributes",
                 planner_reason="Portable numeric evidence group projected.",
                 evidence_quality={
                     "quantity_label": group.label,
@@ -1145,7 +1226,7 @@ class ProjectionService:
                 projected_paths=[],
                 target_path=target_path,
                 target_class="QuantitativeAttribute",
-                planner_status="semantic_attributes",
+                planner_status="instrument_settings_attributes",
                 planner_reason=reason,
                 evidence_quality={
                     "quantity_label": group.label,
@@ -1282,11 +1363,15 @@ class ProjectionService:
         data_package_id: str,
         document: dict[str, Any],
         requirements: list[DcatRequirement],
+        selected_evidence: list[RequirementEvidenceItem] | None = None,
+        context_window: list[RequirementEvidenceItem] | None = None,
     ) -> RequirementEvaluation:
         assert self.ollama_client is not None
         prompt = build_requirement_evaluation_prompt(
             document=document,
             requirements=requirements,
+            selected_evidence=selected_evidence,
+            context_window=context_window,
         )
         try:
             result = await generate_structured(
