@@ -1,85 +1,119 @@
-import { type ReactNode, useMemo, useState } from 'react';
+import { type ReactNode, type SyntheticEvent, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { ChunkResponse, FileEntryResponse } from '../api/types';
-import type { ExtractionChunkRef, ExtractionChunkResult, WorkflowProgress, WorkflowTaskStatus } from '../api/extraction';
+import type { EvidenceCandidate, EvidenceRoute, ExtractionChunkRef, ExtractionChunkResult, RoutedEvidenceContext, WorkflowProgress, WorkflowTaskStatus } from '../api/extraction';
 import type { LlmBudget } from '../api/system';
 import { formatBytes, formatDuration, formatExtractionStage, formatTokenCount } from '../lib/format';
-import { asRecord, asRecordArray } from '../lib/records';
+import { asRecord } from '../lib/records';
 import { JsonDetails } from './JsonDetails';
 function chunkResultKey(chunk: Pick<ExtractionChunkResult, 'file_path' | 'start_idx' | 'end_idx'>): string {
   return `${chunk.file_path}:${chunk.start_idx}:${chunk.end_idx}`;
 }
 
-function extractionContextItemTitle(item: Record<string, unknown>, fallback: string): string {
-  return String(item.identifier || item.title || item.label || fallback);
+type ExtractionTrace = {
+  objectKind: string;
+  sourceText: string;
+  object: EvidenceCandidate;
+  route: EvidenceRoute;
+};
+
+function extractionContextItemTitle(item: EvidenceCandidate, fallback: string): string {
+  return item.claim || item.candidate_id || fallback;
 }
 
-function extractionContextItemDescription(item: Record<string, unknown>): string | null {
-  const value = item.description || item.value;
-  return typeof value === 'string' && value.trim() ? value : null;
+function extractionContextItemDescription(item: EvidenceCandidate): string | null {
+  return item.evidence_text || null;
 }
 
-function extractionContextKeywords(item: Record<string, unknown>): string[] {
-  const value = item.keywords;
-  return Array.isArray(value)
-    ? value.filter((entry): entry is string => typeof entry === 'string' && Boolean(entry.trim()))
-    : [];
+function extractionContextTraces(context?: RoutedEvidenceContext | null): ExtractionTrace[] {
+  if (!context) return [];
+  return [
+    ...context.portable_evidence.map((candidate) => evidenceCandidateTrace(candidate, 'portable_evidence')),
+    ...context.contextual_evidence.map((candidate) => evidenceCandidateTrace(candidate, 'contextual_evidence')),
+    ...context.rejected_evidence.map((record) => evidenceCandidateTrace(record.candidate, 'rejected_evidence')),
+  ].filter((trace): trace is ExtractionTrace => Boolean(trace));
 }
 
-function extractionContextTraces(context?: Record<string, unknown> | null) {
-  return asRecordArray(context?.extraction_objects)
-    .map((trace) => ({
-      objectKind: String(trace.object_kind || 'unknown'),
-      sourceText: typeof trace.source_text === 'string' ? trace.source_text : '',
-      object: asRecord(trace.extracted_object),
-    }))
-    .filter((trace) => trace.object);
+function evidenceCandidateTrace(candidate: EvidenceCandidate, route: EvidenceRoute): ExtractionTrace | null {
+  if (!candidate.evidence_text.trim()) return null;
+  return {
+    objectKind: candidate.category,
+    sourceText: candidate.evidence_text,
+    object: candidate,
+    route,
+  };
 }
 
-function extractionContextHasStructuredItems(context?: Record<string, unknown> | null): boolean {
-  return extractionContextTraces(context).some((trace) => trace.object);
+function extractionTraceFields(trace: ExtractionTrace): Record<string, unknown> {
+  return {
+    route: trace.route,
+    candidate_id: trace.object.candidate_id,
+    category: trace.object.category,
+    claim: trace.object.claim,
+    evidence_text: trace.object.evidence_text,
+    uncertainty: trace.object.uncertainty,
+    scope: trace.object.scope,
+    explicitness: trace.object.explicitness,
+    file_path: trace.object.file_path,
+    start_idx: trace.object.start_idx,
+    end_idx: trace.object.end_idx,
+    evidence_match_score: trace.object.evidence_match_score,
+  };
 }
 
-function evidenceContextNotes(context?: Record<string, unknown> | null) {
-  return asRecordArray(context?.portable_evidence);
+function evidenceCandidatePreviewFields(candidate: EvidenceCandidate): Array<[string, string | number]> {
+  return [
+    ['scope', candidate.scope],
+    ['explicitness', candidate.explicitness],
+    ['route_score', candidate.evidence_match_score],
+    ['file_path', candidate.file_path],
+    ['line_span', `${candidate.start_idx}-${candidate.end_idx}`],
+    ['candidate_id', candidate.candidate_id],
+  ];
 }
 
-function evidenceContextRouteCount(context: Record<string, unknown> | null | undefined, key: string): number {
-  return asRecordArray(context?.[key]).length;
+function extractionContextHasStructuredItems(context?: RoutedEvidenceContext | null): boolean {
+  return extractionContextTraces(context).length > 0;
 }
 
-function evidenceContextHasNotes(context?: Record<string, unknown> | null): boolean {
+function evidenceContextNotes(context?: RoutedEvidenceContext | null) {
+  return context?.portable_evidence ?? [];
+}
+
+function evidenceContextRouteCount(context: RoutedEvidenceContext | null | undefined, key: keyof Pick<RoutedEvidenceContext, 'portable_evidence' | 'contextual_evidence' | 'rejected_evidence'>): number {
+  return context?.[key].length ?? 0;
+}
+
+function evidenceContextHasNotes(context?: RoutedEvidenceContext | null): boolean {
   return evidenceContextNotes(context).length > 0;
 }
 
-export function evidenceContextNoteCount(context?: Record<string, unknown> | null): number {
+export function evidenceContextNoteCount(context?: RoutedEvidenceContext | null): number {
   return evidenceContextNotes(context).length;
 }
 
-function evidenceContextForChunk(context: Record<string, unknown> | null | undefined, chunk: { file_path: string; start_idx: number; end_idx: number }) {
+function evidenceContextForChunk(context: RoutedEvidenceContext | null | undefined, chunk: { file_path: string; start_idx: number; end_idx: number }): RoutedEvidenceContext | null {
   if (!context) return null;
-  const inChunk = (item: Record<string, unknown>) => (
+  const inChunk = (item: EvidenceCandidate) => (
     item.file_path === chunk.file_path
-    && typeof item.start_idx === 'number'
-    && typeof item.end_idx === 'number'
     && item.start_idx <= chunk.end_idx
     && item.end_idx >= chunk.start_idx
   );
-  const portable = asRecordArray(context.portable_evidence).filter(inChunk);
-  const contextual = asRecordArray(context.contextual_evidence).filter(inChunk);
-  const rejected = asRecordArray(context.rejected_evidence).filter(inChunk);
+  const portable = context.portable_evidence.filter(inChunk);
+  const contextual = context.contextual_evidence.filter(inChunk);
+  const rejected = context.rejected_evidence.filter((record) => inChunk(record.candidate));
   return portable.length || contextual.length || rejected.length
     ? { ...context, portable_evidence: portable, contextual_evidence: contextual, rejected_evidence: rejected, assessments: [] }
     : null;
 }
 
 
-function extractionContextTraceLabel(trace: { objectKind: string; object: Record<string, unknown> | null }) {
-  const label = trace.object ? extractionContextItemTitle(trace.object, 'Extracted object') : 'Extracted object';
+function extractionContextTraceLabel(trace: ExtractionTrace) {
+  const label = extractionContextItemTitle(trace.object, 'Evidence note');
   return `${trace.objectKind}: ${label}`;
 }
 
-function EvidenceContextResultView({ context }: { context?: Record<string, unknown> | null }) {
+function EvidenceContextResultView({ context }: { context?: RoutedEvidenceContext | null }) {
   if (!context) return <p className="muted">No extraction result is available for this chunk yet.</p>;
   const portableCount = evidenceContextRouteCount(context, 'portable_evidence');
   const contextualCount = evidenceContextRouteCount(context, 'contextual_evidence');
@@ -101,10 +135,10 @@ function ExtractionObjectModal({
   trace,
   onClose,
 }: {
-  trace: ReturnType<typeof extractionContextTraces>[number];
+  trace: ExtractionTrace;
   onClose: () => void;
 }) {
-  const itemTitle = trace.object ? extractionContextItemTitle(trace.object, 'Extracted object') : 'Extracted object';
+  const itemTitle = extractionContextItemTitle(trace.object, 'Evidence note');
   return createPortal(
     <div className="vocab-dialog-overlay" onClick={onClose}>
       <div className="vocab-dialog extraction-object-dialog" onClick={(event) => event.stopPropagation()}>
@@ -117,15 +151,59 @@ function ExtractionObjectModal({
         </div>
         <div className="vocab-dialog-body extraction-object-dialog-body">
           <section>
-            <span>Extracted object</span>
-            <ExtractionFieldList value={trace.object ?? {}} />
-          </section>
-          <section>
-            <span>Trace</span>
-            <ExtractionFieldList value={{ object_kind: trace.objectKind, source_text: trace.sourceText }} />
+            <span>Evidence note</span>
+            <ExtractionFieldList value={extractionTraceFields(trace)} />
           </section>
         </div>
       </div>
+    </div>,
+    document.body,
+  );
+}
+
+function EvidenceTracePopover({
+  traces,
+  x,
+  y,
+}: {
+  traces: ExtractionTrace[];
+  x: number;
+  y: number;
+}) {
+  const left = Math.min(Math.max(12, x), Math.max(12, window.innerWidth - 392));
+  const top = Math.min(Math.max(12, y), Math.max(12, window.innerHeight - 260));
+  return createPortal(
+    <div className="evidence-trace-popover" style={{ left, top }} role="tooltip">
+      {traces.length > 1 ? (
+        <>
+          <strong>{traces.length} extracted objects</strong>
+          <div className="evidence-trace-popover-list">
+            {traces.map((trace, index) => (
+              <span key={`${trace.objectKind}-${index}`}>{extractionContextTraceLabel(trace)}</span>
+            ))}
+          </div>
+        </>
+      ) : traces.map((trace, index) => {
+        const description = extractionContextItemDescription(trace.object);
+        const fields = evidenceCandidatePreviewFields(trace.object).filter(([, value]) => String(value).trim()).slice(0, 4);
+        return (
+          <div className="evidence-trace-popover-object" key={`${trace.objectKind}-${index}`}>
+            <span>{trace.objectKind}</span>
+            <strong>{extractionContextItemTitle(trace.object, 'Evidence note')}</strong>
+            {description ? <p>{description}</p> : null}
+            {fields.length ? (
+              <dl>
+                {fields.map(([key, value]) => (
+                  <div key={key}>
+                    <dt>{formatExtractionFieldLabel(key)}</dt>
+                    <dd>{String(value)}</dd>
+                  </div>
+                ))}
+              </dl>
+            ) : null}
+          </div>
+        );
+      })}
     </div>,
     document.body,
   );
@@ -184,15 +262,20 @@ function ChunkTraceModal({
 }: {
   chunk: ExtractionChunkResult;
   content: string;
-  context?: Record<string, unknown> | null;
+  context?: RoutedEvidenceContext | null;
   onClose: () => void;
 }) {
   const [activePanel, setActivePanel] = useState<'chunk' | 'unmatched'>('chunk');
-  const [selectedTrace, setSelectedTrace] = useState<ReturnType<typeof extractionContextTraces>[number] | null>(null);
+  const [selectedTrace, setSelectedTrace] = useState<ExtractionTrace | null>(null);
+  const [hoveredTraces, setHoveredTraces] = useState<{ traces: ExtractionTrace[]; x: number; y: number } | null>(null);
   const traces = extractionContextTraces(context);
   const segments = buildTraceSegments(content, traces);
   const matchedTraces = new Set(segments.flatMap((segment) => segment.traces));
   const unmatchedTraces = traces.filter((trace) => trace.sourceText && !matchedTraces.has(trace));
+  const showTracePopover = (event: SyntheticEvent<HTMLElement>, traceList: ExtractionTrace[]) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    setHoveredTraces({ traces: traceList, x: rect.left, y: rect.bottom + 8 });
+  };
   return (
     <>
       {createPortal(
@@ -237,6 +320,10 @@ function ChunkTraceModal({
                       role="button"
                       tabIndex={0}
                       onClick={() => setSelectedTrace(segment.traces[0])}
+                      onMouseEnter={(event) => showTracePopover(event, segment.traces)}
+                      onMouseLeave={() => setHoveredTraces(null)}
+                      onFocus={(event) => showTracePopover(event, segment.traces)}
+                      onBlur={() => setHoveredTraces(null)}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter' || event.key === ' ') {
                           event.preventDefault();
@@ -245,14 +332,6 @@ function ChunkTraceModal({
                       }}
                     >
                       {segment.text}
-                      <span className="chunk-trace-tooltip">
-                        {segment.traces.map((trace, traceIndex) => (
-                          <span key={`${trace.objectKind}-${traceIndex}`}>
-                            <strong>{extractionContextTraceLabel(trace)}</strong>
-                            {trace.object && extractionContextItemDescription(trace.object) ? <small>{extractionContextItemDescription(trace.object)}</small> : null}
-                          </span>
-                        ))}
-                      </span>
                     </span>
                   ) : <span key={index}>{segment.text}</span>)}
                 </pre>
@@ -266,6 +345,10 @@ function ChunkTraceModal({
                         key={`${trace.objectKind}-${index}`}
                         type="button"
                         onClick={() => setSelectedTrace(trace)}
+                        onMouseEnter={(event) => showTracePopover(event, [trace])}
+                        onMouseLeave={() => setHoveredTraces(null)}
+                        onFocus={(event) => showTracePopover(event, [trace])}
+                        onBlur={() => setHoveredTraces(null)}
                       >
                         <strong>{extractionContextTraceLabel(trace)}</strong>
                         <small>{trace.sourceText}</small>
@@ -279,6 +362,7 @@ function ChunkTraceModal({
         </div>,
         document.body,
       )}
+      {hoveredTraces && <EvidenceTracePopover {...hoveredTraces} />}
       {selectedTrace && <ExtractionObjectModal trace={selectedTrace} onClose={() => setSelectedTrace(null)} />}
     </>
   );

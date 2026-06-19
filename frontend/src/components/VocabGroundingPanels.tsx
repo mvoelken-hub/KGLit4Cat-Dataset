@@ -1,6 +1,7 @@
 import {
   type PointerEvent,
   type ReactNode,
+  type SyntheticEvent,
   type WheelEvent,
   useEffect,
   useMemo,
@@ -17,6 +18,7 @@ import type {
   WorkflowTaskStatus,
   ProjectionLedgerRecord,
   RequirementReport,
+  RequirementReportItem,
 } from '../api/extraction';
 import { formatDuration, formatExtractionStage, labelDy } from '../lib/format';
 import { asRecord, asRecordArray } from '../lib/records';
@@ -91,6 +93,64 @@ function requirementStatusSummary(report?: RequirementReport | null) {
     acc[requirement.status] = (acc[requirement.status] ?? 0) + 1;
     return acc;
   }, {} as Record<string, number>);
+}
+
+function requirementScoreLabel(requirement: RequirementReportItem) {
+  return `${(requirement.quality * requirement.weight).toFixed(2)} / ${requirement.weight.toFixed(2)}`;
+}
+
+function RequirementReviewPopover({
+  requirement,
+  x,
+  y,
+}: {
+  requirement: RequirementReportItem;
+  x: number;
+  y: number;
+}) {
+  const left = Math.min(Math.max(12, x), Math.max(12, window.innerWidth - 392));
+  const top = Math.min(Math.max(12, y), Math.max(12, window.innerHeight - 260));
+  const evidenceCount = (requirement.selected_evidence?.length ?? 0) + (requirement.context_window?.length ?? 0);
+  return createPortal(
+    <div className="requirement-review-popover" style={{ left, top }} role="tooltip">
+      <span>{formatExtractionStage(requirement.status)} · {requirementScoreLabel(requirement)}</span>
+      <strong>{requirement.label}</strong>
+      {requirement.rationale ? <p>{requirement.rationale}</p> : null}
+      <dl>
+        <div><dt>Evidence</dt><dd>{evidenceCount}</dd></div>
+        <div><dt>Targets</dt><dd>{requirement.target_paths?.length ?? 0}</dd></div>
+        <div><dt>Patch</dt><dd>{formatExtractionStage(requirement.patch?.status ?? 'not_attempted')}</dd></div>
+      </dl>
+    </div>,
+    document.body,
+  );
+}
+
+function RequirementReviewDialog({
+  requirement,
+  onClose,
+}: {
+  requirement: RequirementReportItem;
+  onClose: () => void;
+}) {
+  return createPortal(
+    <div className="vocab-dialog-overlay" onClick={onClose}>
+      <div className="vocab-dialog requirement-review-dialog" onClick={(event) => event.stopPropagation()}>
+        <div className="vocab-dialog-header">
+          <div>
+            <span>{formatExtractionStage(requirement.status)} · {requirementScoreLabel(requirement)}</span>
+            <strong>{requirement.label}</strong>
+          </div>
+          <button className="ghost" type="button" onClick={onClose}>Close</button>
+        </div>
+        <div className="vocab-dialog-body requirement-review-body">
+          {requirement.rationale ? <p>{requirement.rationale}</p> : null}
+          <JsonDetails title="Requirement review artifact" value={requirement} />
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
 }
 
 function formatPercentScore(value: number | undefined | null): string {
@@ -890,6 +950,8 @@ export function ProjectionWorkflowPanel({
   ledger: ProjectionLedgerRecord[];
   tokenUsageSummary?: ReactNode;
 }) {
+  const [hoveredRequirement, setHoveredRequirement] = useState<{ requirement: RequirementReportItem; x: number; y: number } | null>(null);
+  const [selectedRequirement, setSelectedRequirement] = useState<RequirementReportItem | null>(null);
   const evidenceNoteTotal = evidenceContextNoteCount(progress?.interim_evidence_context);
   const projectionRunning = (progress?.stage || status) === 'profile_projection';
   const groupLedger = ledger.filter((record) => record.object_kind === 'InstanceProjectionGroup');
@@ -912,6 +974,10 @@ export function ProjectionWorkflowPanel({
   const requirementSummary = requirementStatusSummary(requirementReport);
   const applicableRequirements = requirementReport?.requirements.filter((requirement) => requirement.applicable) ?? [];
   const requirementPercent = requirementReport ? Math.round(requirementReport.metadata_completeness_score * 100) : null;
+  const showRequirementPopover = (event: SyntheticEvent<HTMLElement>, requirement: RequirementReportItem) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    setHoveredRequirement({ requirement, x: rect.left, y: rect.bottom + 8 });
+  };
 
   return (
     <section className="projection-workflow-panel">
@@ -977,13 +1043,29 @@ export function ProjectionWorkflowPanel({
           </div>
           <div className="requirement-breakdown">
             {applicableRequirements.map((requirement) => (
-              <article key={requirement.requirement_id} className={`requirement-row ${requirement.status}`}>
+              <article
+                key={requirement.requirement_id}
+                className={`requirement-row ${requirement.status}`}
+                role="button"
+                tabIndex={0}
+                onClick={() => setSelectedRequirement(requirement)}
+                onMouseEnter={(event) => showRequirementPopover(event, requirement)}
+                onMouseLeave={() => setHoveredRequirement(null)}
+                onFocus={(event) => showRequirementPopover(event, requirement)}
+                onBlur={() => setHoveredRequirement(null)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    setSelectedRequirement(requirement);
+                  }
+                }}
+              >
                 <div>
                   <strong>{requirement.label}</strong>
                   <span>{formatExtractionStage(requirement.status)}</span>
                 </div>
                 <small>
-                  {(requirement.quality * requirement.weight).toFixed(2)} / {requirement.weight.toFixed(2)}
+                  {requirementScoreLabel(requirement)}
                   {requirement.patch?.status && requirement.patch.status !== 'not_attempted' ? ` - patch ${formatExtractionStage(requirement.patch.status)}` : ''}
                 </small>
               </article>
@@ -1009,6 +1091,8 @@ export function ProjectionWorkflowPanel({
           </div>
         </details>
       )}
+      {hoveredRequirement && <RequirementReviewPopover {...hoveredRequirement} />}
+      {selectedRequirement && <RequirementReviewDialog requirement={selectedRequirement} onClose={() => setSelectedRequirement(null)} />}
     </section>
   );
 }

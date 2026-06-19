@@ -1,4 +1,5 @@
 import { useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
+import { JsonCopyButton } from './JsonCopyButton';
 
 export type JsonValue = string | number | boolean | null | JsonObject | JsonArray;
 export type JsonObject = { [key: string]: JsonValue };
@@ -890,6 +891,7 @@ export function JsonEditor({
   });
   const breadcrumbLabel = typedPathLabel(schema, targetClass, selectedPath);
   const editorStyle = { '--json-editor-sidebar-width': `${sidebarWidth}px` } as CSSProperties;
+  const rawJson = JSON.stringify(value, null, 2);
 
   const handleChange = (path: string, newValue: JsonValue) => {
     if (path === '__select__') {
@@ -1023,7 +1025,10 @@ export function JsonEditor({
           </button>
         </div>
         {showRaw && (
-          <pre className="json-editor-raw">{JSON.stringify(value, null, 2)}</pre>
+          <div className="json-editor-raw-wrap">
+            <JsonCopyButton text={rawJson} />
+            <pre className="json-code-window json-editor-raw">{rawJson}</pre>
+          </div>
         )}
       </div>
     </div>

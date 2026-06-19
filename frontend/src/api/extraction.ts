@@ -6,6 +6,51 @@ export type WorkflowTaskStatus = 'unknown' | 'running' | 'completed' | 'cancelle
 export type ExtractionTargetStage = 'context' | 'profile' | 'grounding' | 'complete';
 export type ChunkRepairMode = 'deferred' | 'immediate' | 'disabled';
 export type EvidenceCriticGranularity = 'per_chunk' | 'per_candidate' | 'disabled';
+export type EvidenceRoute = 'portable_evidence' | 'contextual_evidence' | 'rejected_evidence';
+
+export type EvidenceCandidate = {
+  candidate_id: string;
+  category: string;
+  claim: string;
+  evidence_text: string;
+  uncertainty: string;
+  scope: string;
+  explicitness: string;
+  file_path: string;
+  start_idx: number;
+  end_idx: number;
+  evidence_match_score: number;
+};
+
+export type EvidenceAssessment = {
+  candidate_id: string;
+  groundedness: string;
+  self_containedness: string;
+  scope_clarity: string;
+  portability: string;
+  semantic_interpretability: string;
+  environment_dependence: string;
+  specificity: string;
+  novelty: string;
+  uncertainty: string;
+  rationale: string;
+};
+
+export type RoutedEvidenceRecord = {
+  route: EvidenceRoute;
+  reason: string;
+  candidate: EvidenceCandidate;
+  assessment?: EvidenceAssessment | null;
+  chunk_index?: number | null;
+};
+
+export type RoutedEvidenceContext = {
+  portable_evidence: EvidenceCandidate[];
+  contextual_evidence: EvidenceCandidate[];
+  rejected_evidence: RoutedEvidenceRecord[];
+  assessments: EvidenceAssessment[];
+  file_inventory: Array<Record<string, unknown>>;
+};
 
 export type WorkflowTokenUsageEntry = {
   input_tokens: number;
@@ -44,7 +89,7 @@ export type ExtractionRunProgress = {
   total_chunks: number;
   normalized_quantities: number;
   normalized_qualitative_attributes: number;
-  interim_evidence_context?: Record<string, unknown> | null;
+  interim_evidence_context?: RoutedEvidenceContext | null;
   generated_final_draft?: Record<string, unknown> | null;
   curated_document?: Record<string, unknown> | null;
   generated_initial_draft?: Record<string, unknown> | null;
@@ -215,7 +260,7 @@ export type ExtractionChunkRef = {
 
 export type ExtractionChunkResult = ExtractionChunkRef & {
   status: 'pending' | 'running' | 'repair_pending' | 'completed' | 'failed' | 'skipped' | string;
-  evidence_context?: Record<string, unknown> | null;
+  evidence_context?: RoutedEvidenceContext | null;
   skip_reason?: string | null;
   error?: string | null;
   response_duration_ms?: number | null;
@@ -400,7 +445,7 @@ export type WorkflowProgress = ExtractionRunProgress & {
 
 export type ExtractionRunResult = {
   generated_final_draft: Record<string, unknown>;
-  machine_evidence_context: Record<string, unknown>;
+  machine_evidence_context: RoutedEvidenceContext;
   generated_initial_draft?: Record<string, unknown> | null;
   requirement_report?: RequirementReport | null;
   initial_file_summaries?: ExtractionFileSummary[];
@@ -584,16 +629,16 @@ export async function rerunVocabQuery(data_package_id: string, query_id: string)
   }));
 }
 
-export function initialContextFromEvidenceContext(context: Record<string, unknown>): InitialContext {
-  const notes = arrayOfRecords(context.portable_evidence);
+export function initialContextFromEvidenceContext(context: RoutedEvidenceContext): InitialContext {
+  const notes = context.portable_evidence;
   const observations = notes
-    .map((note) => stringValue(note.observation))
+    .map((note) => note.claim)
     .filter((value): value is string => Boolean(value));
   const evidenceByCategory = (category: string) => notes
-    .filter((note) => stringValue(note.category) === category)
+    .filter((note) => note.category === category)
     .map((note) => ({
-      observation: stringValue(note.observation) || 'Evidence note',
-      evidence: stringValue(note.evidence_text) || null,
+      observation: note.claim || 'Evidence note',
+      evidence: note.evidence_text || null,
     }));
   const entitySignals = evidenceByCategory('entity_signal');
   const agentSignals = evidenceByCategory('agent_signal');

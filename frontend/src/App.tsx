@@ -424,19 +424,6 @@ export function App() {
     || Boolean(WorkflowProgress?.generated_final_draft)
   );
   const projectionEvidenceNoteTotal = evidenceContextNoteCount(WorkflowProgress?.interim_evidence_context);
-  const projectionHasPendingNotes = projectionEvidenceNoteTotal > projectionLedger.length;
-  const projectionCanContinue = Boolean(
-    selectedPackageId
-    && selectedProfile
-    && hasPersistedExtractionState
-    && !busy
-    && !isPatching
-    && (
-      projectionHasPendingNotes
-      || WorkflowProgress?.stage === 'profile_draft'
-      || WorkflowProgress?.stage === 'profile_projection'
-    )
-  );
   const projectedObjects = projectionLedger.filter((record) => record.status === 'projected').length;
   const notProjectedObjects = projectionLedger.filter((record) => record.status === 'not_projected' || record.status === 'ambiguous').length;
   const editRequiredObjects = projectionLedger.filter((record) => record.status === 'user_edit_required').length;
@@ -1599,11 +1586,6 @@ export function App() {
                   <button onClick={() => void onGenerateDraft({ mode: 'build' })} disabled={!selectedPackageId || !selectedProfile || !!busy || isPatching || !context}>{busy === 'draft' ? 'Building generated draft...' : isProfileBuildRunning ? 'Building generated draft...' : 'Build generated final draft'}</button>
                 ) : (
                   <>
-                    {projectionCanContinue && (
-                      <button onClick={() => void onGenerateDraft({ mode: 'continue' })} disabled={!projectionCanContinue}>
-                        {busy === 'draft' ? 'Continuing...' : 'Continue projection'}
-                      </button>
-                    )}
                     <button className="ghost" onClick={() => setCuratedEditorOpen(true)} disabled={!curatedDocument}>Edit</button>
                     <button className="ghost draft-recreate-button" onClick={() => void onGenerateDraft({ mode: 'rebuild' })} disabled={!selectedPackageId || !selectedProfile || !!busy || isPatching}>{busy === 'draft' ? 'Rebuilding...' : isProfileBuildRunning ? 'Rebuilding...' : 'Rebuild generated draft'}</button>
                   </>
@@ -1696,8 +1678,7 @@ export function App() {
           <div className="vocab-dialog curated-editor-dialog" onClick={(event) => event.stopPropagation()}>
             <div className="vocab-dialog-header">
               <div>
-                <span>Curated document</span>
-                <strong>Edit curated JSON</strong>
+                <strong>Curated document</strong>
               </div>
               <button className="ghost" type="button" onClick={() => setCuratedEditorOpen(false)}>Close</button>
             </div>
