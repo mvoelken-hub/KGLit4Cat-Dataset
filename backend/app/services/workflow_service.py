@@ -2174,11 +2174,30 @@ class WorkflowService(
             return
         if status is not None:
             diagnostics.status = status
-        state = self._load_run_state_or_none(data_package_id)
+        task_branch = self._current_extraction_task_branch(data_package_id)
+        state = self._load_run_state_or_none(
+            data_package_id,
+            chunking_strategy=task_branch[0] if task_branch else "semantic",
+            chat_model=task_branch[1] if task_branch else None,
+        )
+        chat_model = (
+            state.chat_model
+            if state
+            else (
+                task_branch[1]
+                if task_branch
+                else (self.ollama_client.chat_model if self.ollama_client else None)
+            )
+        )
+        chunking_strategy = (
+            state.chunking_strategy
+            if state
+            else (task_branch[0] if task_branch else "semantic")
+        )
         self.output_repository.append_prompt_diagnostic(
             workflow_id=data_package_id,
-            chat_model=self.ollama_client.chat_model if self.ollama_client else None,
-            chunking_strategy=state.chunking_strategy if state else "semantic",
+            chat_model=chat_model,
+            chunking_strategy=chunking_strategy,
             diagnostic=diagnostics.model_dump(mode="json"),
         )
 

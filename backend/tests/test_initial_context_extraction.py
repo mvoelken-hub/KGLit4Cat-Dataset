@@ -48,6 +48,7 @@ from app.domain.semantics import CompactVocabResource, VocabQuery, VocabQueryRes
 from app.domain.extraction.evidence_context import validate_evidence_candidates
 from app.ollama.completion import CompletionResult
 from app.ollama.errors import MaxRetriesExceeded, OutputParsingError
+from app.ollama.prompt_diagnostics import PromptCompletionDiagnostics
 from app.ollama.usage import RunUsage
 from app.services.workflow_service import (
     WorkflowService,
@@ -372,6 +373,7 @@ class FakeOutputRepository:
 
     def append_prompt_diagnostic(self, *, workflow_id: str, diagnostic: dict, chat_model: str | None = None, **_kwargs):
         self.prompt_diagnostics.append(diagnostic)
+        self.last_prompt_diagnostic_kwargs = {"chat_model": chat_model, **_kwargs}
 
     def save_grounding_artifacts(self, **_kwargs):
         pass
@@ -823,6 +825,34 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             {"chat_model": "rnj-1:8b-cloud", "chunking_strategy": "fixed_tokens"},
         )
         self.assertIn("chunk_extraction", output_repository.token_usage)
+
+    async def test_prompt_diagnostics_use_current_extraction_task_branch(self):
+        service, _task_registry, output_repository = make_service([[make_chunk()]])
+        output_repository.run_state = ExtractionRunState(
+            chat_model="rnj-1:8b-cloud",
+            chunking_strategy="fixed_tokens",
+        )
+        task = asyncio.current_task()
+        self.assertIsNotNone(task)
+        old_name = task.get_name()
+        task.set_name("extraction:run:package-id:fixed_tokens:rnj-1:8b-cloud")
+        try:
+            service._persist_prompt_diagnostics(
+                data_package_id="package-id",
+                diagnostics=PromptCompletionDiagnostics(
+                    operation_id="dataset_level_projection",
+                    agent_name="dataset_level_projection",
+                    model="rnj-1:8b-cloud",
+                    output_type="dict",
+                ),
+            )
+        finally:
+            task.set_name(old_name)
+
+        self.assertEqual(
+            output_repository.last_prompt_diagnostic_kwargs,
+            {"chat_model": "rnj-1:8b-cloud", "chunking_strategy": "fixed_tokens"},
+        )
 
     def test_extraction_overview_prompt_is_joined_from_named_components(self):
         ranked_files = [RankedFile(rank=1, file_path="metadata.txt")]
