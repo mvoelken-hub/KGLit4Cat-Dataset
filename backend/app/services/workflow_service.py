@@ -1106,7 +1106,6 @@ class WorkflowService(
                             ]
                         },
                         retries=2,
-                        temperature=0.1,
                         think=None,
                         num_ctx=self.ollama_client.max_context_length,
                     )

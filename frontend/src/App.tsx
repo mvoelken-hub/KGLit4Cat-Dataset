@@ -1006,6 +1006,8 @@ export function App() {
     max_context_length: number;
     embedding_batch_size: number;
     embedding_num_gpu: number;
+    generation_temperature: number;
+    enforce_output_token_limit: boolean;
   }) {
     setBusy('ollama');
     try {

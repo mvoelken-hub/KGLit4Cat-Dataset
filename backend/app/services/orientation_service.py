@@ -423,7 +423,6 @@ class OrientationService:
                 },
                 output_type=ExtractionOverviewModelOutput,
                 retries=1,
-                temperature=0.1,
                 think=None,
                 num_ctx=self.ollama_client.max_context_length,
                 num_predict=INITIAL_OVERVIEW_MAX_OUTPUT_TOKENS,

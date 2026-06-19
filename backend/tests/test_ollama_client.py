@@ -11,6 +11,8 @@ class FakeSettings:
     ollama_chat_model = "chat-test"
     ollama_embed_dimensions = 768
     max_context_length = 64000
+    ollama_generation_temperature = 0.0
+    ollama_enforce_output_token_limit = True
 
 
 class FakeCpuEmbeddingSettings(FakeSettings):
@@ -80,6 +82,8 @@ class OllamaClientWrapperTests(unittest.TestCase):
         client = OllamaClientWrapper(FakeSettings(), getLogger(__name__))  # type: ignore[arg-type]
 
         self.assertEqual(client.max_context_length, FakeSettings.max_context_length)
+        self.assertEqual(client.generation_temperature, 0.0)
+        self.assertTrue(client.enforce_output_token_limit)
 
 
 class OllamaClientWrapperAsyncTests(unittest.IsolatedAsyncioTestCase):
@@ -175,11 +179,19 @@ class OllamaClientWrapperAsyncTests(unittest.IsolatedAsyncioTestCase):
     def test_update_runtime_config_updates_models_and_limits(self):
         client = OllamaClientWrapper(FakeSettings(), getLogger(__name__))  # type: ignore[arg-type]
 
-        client.update_runtime_config(chat_model="runtime-chat", max_context_length=2048, embed_num_gpu=0)
+        client.update_runtime_config(
+            chat_model="runtime-chat",
+            max_context_length=2048,
+            embed_num_gpu=0,
+            generation_temperature=0.2,
+            enforce_output_token_limit=False,
+        )
 
         self.assertEqual(client.chat_model, "runtime-chat")
         self.assertEqual(client.max_context_length, 2048)
         self.assertEqual(client.embed_num_gpu, 0)
+        self.assertEqual(client.generation_temperature, 0.2)
+        self.assertFalse(client.enforce_output_token_limit)
 
     async def test_change_embedding_model_returns_new_model_when_verification_succeeds(self):
         client, _, model_client, embedding_client, _ = self.make_client()

@@ -65,6 +65,8 @@ export type OllamaConfig = {
     embedding_batch_size: number;
     embedding_num_gpu: number;
     embedding_gpu_label: string;
+    generation_temperature: number;
+    enforce_output_token_limit: boolean;
     resets_on_api_restart: boolean;
   };
   models: {
@@ -90,6 +92,8 @@ export type OllamaRuntimePatch = {
   max_context_length?: number;
   embedding_batch_size?: number;
   embedding_num_gpu?: number;
+  generation_temperature?: number;
+  enforce_output_token_limit?: boolean;
 };
 
 export type OllamaPerformanceTest = {

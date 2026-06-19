@@ -28,6 +28,8 @@ class OllamaClientWrapper:
         self.logger = logger
         self.embed_dimensions = settings.ollama_embed_dimensions
         self.max_context_length = settings.max_context_length
+        self.generation_temperature = getattr(settings, "ollama_generation_temperature", 0.0)
+        self.enforce_output_token_limit = getattr(settings, "ollama_enforce_output_token_limit", True)
 
         self._base_url = settings.ollama_base_url
 
@@ -38,6 +40,8 @@ class OllamaClientWrapper:
         embed_model: str | None = None,
         max_context_length: int | None = None,
         embed_num_gpu: int | None = None,
+        generation_temperature: float | None = None,
+        enforce_output_token_limit: bool | None = None,
     ) -> None:
         if chat_model is not None:
             self.chat_model = chat_model
@@ -47,6 +51,10 @@ class OllamaClientWrapper:
             self.max_context_length = max_context_length
         if embed_num_gpu is not None:
             self.embed_num_gpu = embed_num_gpu
+        if generation_temperature is not None:
+            self.generation_temperature = generation_temperature
+        if enforce_output_token_limit is not None:
+            self.enforce_output_token_limit = enforce_output_token_limit
 
     async def stop_all_models(self) -> None:
         await self.stop_embedding_model()

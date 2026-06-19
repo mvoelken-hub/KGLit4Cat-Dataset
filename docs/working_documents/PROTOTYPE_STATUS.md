@@ -85,6 +85,7 @@ Use `force_rerun=true` for repeatable workflow runs with deterministic package I
 | Evaluation completeness | In-repo offline scoring harness removed; thesis-level quality evaluation will be done later against completed workflow outputs. |
 | Vocabulary coverage | Initial vocabularies can be imported, but grounding quality depends on imported vocabularies, term schemes, embeddings, and candidate selection. |
 | Model dependency | Extraction, overview generation, candidate selection, fallback query generation, and profile projection depend on the configured Ollama chat model. |
+| Generation determinism | Ollama runtime settings expose generation temperature and context-derived output-token cap enforcement. Default prototype behavior uses temperature 0 and enforced output caps for future LLM calls. |
 | Profile dependency | Final output requires a registered compatible profile and successful schema validation. |
 | Scientific correctness | A schema-valid final result is not automatically scientifically correct. Expert or benchmark evaluation is still required. |
 | Quantitative attribute coverage | Requirement enrichment groups `instrument_signal` evidence by numeric value, quantity label, optional unit, and source neighborhood, then projects each group to a schema-valid owner or records a skip reason. `measurement_signal` evidence is retained in artifacts but ignored downstream so primary/raw data rows, point counts, and axis/statistical values do not become metadata attributes. |

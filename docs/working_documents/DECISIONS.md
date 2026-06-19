@@ -16,6 +16,16 @@ Each decision should include:
 
 ## Decisions
 
+### 2026-06-19: Default Prototype LLM Calls To Deterministic Generation
+
+Decision: Prototype LLM calls use `OLLAMA_GENERATION_TEMPERATURE=0.0` by default and can enforce a context-derived `num_predict` output cap.
+
+Reason: Evaluation runs should not drift because sampling changed the initial draft. Runaway/repetitive output is bounded by output-token limits instead of nonzero temperature.
+
+Tradeoff: Deterministic decoding can reduce variety in borderline extraction cases.
+
+Revisit trigger: Revisit if a model repeatedly fails structured JSON at temperature 0 despite output caps and repair retries.
+
 ### 2026-06-19: Prefer Denoising Over Over-Retention For Numeric Evidence
 
 Decision: The quantitative evidence projection should prefer denoising when uncertain, even if this means some valid numeric facts remain only in evidence/context artifacts instead of becoming final profile attributes.

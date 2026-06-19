@@ -411,7 +411,6 @@ class EvidenceService:
                 },
                 output_type=EvidenceAssessmentContext,
                 retries=1,
-                temperature=0.1,
                 think=None,
                 num_ctx=self.ollama_client.max_context_length,
             )
@@ -476,7 +475,6 @@ class EvidenceService:
                     "start_idx": chunk_result.start_idx,
                     "end_idx": chunk_result.end_idx,
                 },
-                temperature=0.1,
                 think=None,
                 num_ctx=self.ollama_client.max_context_length,
             )

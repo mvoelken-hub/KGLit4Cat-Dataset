@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.v1.system import router
+from app.core.config import Settings
 from app.dependencies import get_ollama_client, get_settings
 
 
@@ -15,6 +16,8 @@ class FakeSettings:
     ollama_embed_num_gpu = -1
     embedding_batch_size = 32
     max_context_length = 8192
+    ollama_generation_temperature = 0.0
+    ollama_enforce_output_token_limit = True
 
 
 class FakeRemoteSettings(FakeSettings):
@@ -47,6 +50,8 @@ class FakeOllamaClient:
     embed_model = "embed-runtime"
     max_context_length = 4096
     embed_num_gpu = 0
+    generation_temperature = 0.0
+    enforce_output_token_limit = True
 
     def __init__(self):
         self.updates = []
@@ -100,6 +105,10 @@ class FakeOllamaClient:
             self.max_context_length = kwargs["max_context_length"]
         if kwargs.get("embed_num_gpu") is not None:
             self.embed_num_gpu = kwargs["embed_num_gpu"]
+        if kwargs.get("generation_temperature") is not None:
+            self.generation_temperature = kwargs["generation_temperature"]
+        if kwargs.get("enforce_output_token_limit") is not None:
+            self.enforce_output_token_limit = kwargs["enforce_output_token_limit"]
 
 
 class TestSystemApi:
@@ -138,6 +147,8 @@ class TestSystemApi:
         assert payload["runtime"]["embedding_model"] == "embed-runtime"
         assert payload["runtime"]["max_context_length"] == 4096
         assert payload["runtime"]["embedding_num_gpu"] == 0
+        assert payload["runtime"]["generation_temperature"] == 0.0
+        assert payload["runtime"]["enforce_output_token_limit"] is True
         assert payload["running"]["chat_model_loaded"] is True
         assert payload["running"]["embedding_model_loaded"] is True
         assert payload["running"]["both_configured_models_loaded"] is True
@@ -222,6 +233,8 @@ class TestSystemApi:
                 "max_context_length": 16384,
                 "embedding_batch_size": 8,
                 "embedding_num_gpu": -1,
+                "generation_temperature": 0.2,
+                "enforce_output_token_limit": False,
             },
         )
 
@@ -232,11 +245,15 @@ class TestSystemApi:
         assert payload["runtime"]["max_context_length"] == 16384
         assert payload["runtime"]["embedding_batch_size"] == 8
         assert payload["runtime"]["embedding_num_gpu"] == -1
+        assert payload["runtime"]["generation_temperature"] == 0.2
+        assert payload["runtime"]["enforce_output_token_limit"] is False
         assert fake_ollama.updates[-1] == {
             "chat_model": "next-chat",
             "embed_model": "next-embed",
             "max_context_length": 16384,
             "embed_num_gpu": -1,
+            "generation_temperature": 0.2,
+            "enforce_output_token_limit": False,
         }
 
     def test_ollama_runtime_patch_validates_bounds(self):
@@ -245,6 +262,15 @@ class TestSystemApi:
         response = client.patch("/api/v1/ollama-config/runtime", json={"max_context_length": 128})
 
         assert response.status_code == 422
+
+    def test_generation_runtime_settings_load_from_env(self, monkeypatch):
+        monkeypatch.setenv("OLLAMA_GENERATION_TEMPERATURE", "0.25")
+        monkeypatch.setenv("OLLAMA_ENFORCE_OUTPUT_TOKEN_LIMIT", "false")
+
+        settings = Settings(_env_file=None)
+
+        assert settings.ollama_generation_temperature == 0.25
+        assert settings.ollama_enforce_output_token_limit is False
 
     def test_ollama_models_can_be_listed_pulled_and_removed_for_remote_host(self):
         fake_ollama = FakeOllamaClient()

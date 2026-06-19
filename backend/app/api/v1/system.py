@@ -37,6 +37,8 @@ class OllamaRuntimeConfigPatch(BaseModel):
     max_context_length: int | None = Field(None, ge=512, le=262144)
     embedding_batch_size: int | None = Field(None, ge=1, le=2048)
     embedding_num_gpu: int | None = Field(None, ge=-1, le=999)
+    generation_temperature: float | None = Field(None, ge=0.0, le=2.0)
+    enforce_output_token_limit: bool | None = None
 
 
 class OllamaModelRequest(BaseModel):

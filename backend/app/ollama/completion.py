@@ -105,11 +105,17 @@ async def generate_text(
     think: ThinkMode = None,
     keep_alive: int | str | None = -1,
 ) -> CompletionResult[str]:
+    request_options = _text_generation_options(
+        ollama_client,
+        options=options,
+        system=system,
+        prompt=prompt,
+    )
     response = await ollama_client.ollama_client.generate(
         model=model,
         system=system,
         prompt=prompt,
-        options=options,
+        options=request_options,
         think=think,
         keep_alive=keep_alive,
     )
@@ -182,6 +188,72 @@ def _input_context_budget(num_ctx: int) -> int:
         int(num_ctx * _OUTPUT_CONTEXT_RESERVATION_RATIO),
     )
     return max(1, num_ctx - output_reservation)
+
+
+def _effective_temperature(client: OllamaClientWrapper, fallback: float) -> float:
+    return float(getattr(client, "generation_temperature", fallback))
+
+
+def _output_token_cap(
+    *,
+    client: OllamaClientWrapper,
+    system: str,
+    prompt: str,
+    num_ctx: int | None,
+    num_predict: int | None,
+    token_budgeter: Any | None = None,
+) -> int | None:
+    if not getattr(client, "enforce_output_token_limit", False) or num_ctx is None:
+        return num_predict
+    available = max(1, num_ctx - _token_count(system + prompt, token_budgeter))
+    return available if num_predict is None else min(num_predict, available)
+
+
+def _structured_generation_options(
+    client: OllamaClientWrapper,
+    *,
+    temperature: float,
+    seed: int,
+    num_ctx: int | None,
+    num_predict: int | None,
+    system: str,
+    prompt: str,
+    token_budgeter: Any | None,
+) -> ollama.Options:
+    return ollama.Options(
+        temperature=_effective_temperature(client, temperature),
+        seed=seed,
+        num_ctx=num_ctx,
+        num_predict=_output_token_cap(
+            client=client,
+            system=system,
+            prompt=prompt,
+            num_ctx=num_ctx,
+            num_predict=num_predict,
+            token_budgeter=token_budgeter,
+        ),
+    )
+
+
+def _text_generation_options(
+    client: OllamaClientWrapper,
+    *,
+    options: dict[str, Any] | None,
+    system: str,
+    prompt: str,
+) -> dict[str, Any]:
+    values = dict(options or {})
+    values["temperature"] = _effective_temperature(client, float(values.get("temperature", 0.0)))
+    values["num_predict"] = _output_token_cap(
+        client=client,
+        system=system,
+        prompt=prompt,
+        num_ctx=values.get("num_ctx"),
+        num_predict=values.get("num_predict"),
+    )
+    if values["num_predict"] is None:
+        values.pop("num_predict")
+    return values
 
 
 def _fits_context_budget(
@@ -705,13 +777,6 @@ async def generate_structured(
     schema = _pruned_json_schema(_extract_json_schema(output_type), omitted_fields)
     raw_schema_validator = _json_schema_validator(schema) if isinstance(output_type, dict) else None
 
-    options = ollama.Options(
-        temperature=temperature,
-        seed=seed,
-        num_ctx=num_ctx,
-        num_predict=num_predict,
-    )
-
     base_system_components = _normalize_prompt_components(
         system_components,
         fallback_text=system,
@@ -761,6 +826,16 @@ async def generate_structured(
             token_budgeter=token_budgeter,
         )
         diagnostics.attempts.append(attempt_diagnostic)
+        options = _structured_generation_options(
+            client,
+            temperature=temperature,
+            seed=seed,
+            num_ctx=num_ctx,
+            num_predict=num_predict,
+            system=current_system,
+            prompt=current_prompt,
+            token_budgeter=token_budgeter,
+        )
         try:
             response = await _generate_with_api_retries(
                 client,

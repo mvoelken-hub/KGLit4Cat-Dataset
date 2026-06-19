@@ -27,6 +27,8 @@ export function OllamaSettingsPanel({
     max_context_length: number;
     embedding_batch_size: number;
     embedding_num_gpu: number;
+    generation_temperature: number;
+    enforce_output_token_limit: boolean;
   }) => void;
   onRefresh: () => void;
   onPullModel: (model: string) => Promise<void>;
@@ -46,6 +48,8 @@ export function OllamaSettingsPanel({
   const [maxContextLength, setMaxContextLength] = useState(8192);
   const [embeddingBatchSize, setEmbeddingBatchSize] = useState(32);
   const [embeddingNumGpu, setEmbeddingNumGpu] = useState(-1);
+  const [generationTemperature, setGenerationTemperature] = useState(0);
+  const [enforceOutputTokenLimit, setEnforceOutputTokenLimit] = useState(true);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [pullModelName, setPullModelName] = useState('');
   const [performanceTest, setPerformanceTest] = useState<OllamaPerformanceTest | null>(null);
@@ -58,6 +62,8 @@ export function OllamaSettingsPanel({
     setMaxContextLength(runtime.max_context_length);
     setEmbeddingBatchSize(runtime.embedding_batch_size);
     setEmbeddingNumGpu(runtime.embedding_num_gpu);
+    setGenerationTemperature(runtime.generation_temperature);
+    setEnforceOutputTokenLimit(runtime.enforce_output_token_limit);
   }, [runtime]);
 
   function submit(event: FormEvent) {
@@ -68,6 +74,8 @@ export function OllamaSettingsPanel({
       max_context_length: Math.max(512, maxContextLength),
       embedding_batch_size: Math.max(1, embeddingBatchSize),
       embedding_num_gpu: embeddingNumGpu,
+      generation_temperature: Math.max(0, generationTemperature),
+      enforce_output_token_limit: enforceOutputTokenLimit,
     });
   }
 
@@ -244,6 +252,14 @@ export function OllamaSettingsPanel({
                     <option value={0}>CPU only</option>
                     <option value={999}>GPU only</option>
                   </select>
+                </label>
+                <label>
+                  <span>Temperature</span>
+                  <input type="number" min={0} max={2} step={0.1} value={generationTemperature} onChange={(event) => setGenerationTemperature(parseFloat(event.target.value) || 0)} disabled={!runtime || busy} />
+                </label>
+                <label>
+                  <span>Output cap</span>
+                  <input type="checkbox" checked={enforceOutputTokenLimit} onChange={(event) => setEnforceOutputTokenLimit(event.target.checked)} disabled={!runtime || busy} />
                 </label>
                 <button type="submit" disabled={!runtime || busy}>Apply runtime settings</button>
               </form>

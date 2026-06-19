@@ -17,6 +17,7 @@ from app.ollama.completion import (
     _schema_example,
     _strip_markdown_fences,
     generate_structured,
+    generate_text,
     repair_structured_output,
 )
 from app.ollama.errors import CompletionError, EmptyResponseError, MaxRetriesExceeded, OutputParsingError
@@ -364,6 +365,95 @@ class GenerateStructuredHappyPathTests(IsolatedAsyncioTestCase):
         )
         self.assertTrue(call["think"])
         self.assertEqual(call["keep_alive"], 300)
+
+    async def test_wrapper_temperature_overrides_call_temperature(self):
+        client = FakeOllamaClient([
+            FakeGenerateResponse(response='{"answer": "x", "score": 1}'),
+        ])
+        client.generation_temperature = 0.0
+
+        await generate_structured(
+            client,
+            model="qwen3.5:4b",
+            system="sys",
+            prompt="prompt",
+            output_type=SimpleOutput,
+            temperature=0.7,
+        )
+
+        self.assertEqual(client.calls[0]["options"].temperature, 0.0)
+
+    async def test_output_token_limit_is_derived_from_context(self):
+        client = FakeOllamaClient([
+            FakeGenerateResponse(response='{"answer": "x", "score": 1}'),
+        ])
+        client.enforce_output_token_limit = True
+
+        await generate_structured(
+            client,
+            model="qwen3.5:4b",
+            system="sys",
+            prompt="prompt",
+            output_type=SimpleOutput,
+            num_ctx=8,
+        )
+
+        self.assertEqual(client.calls[0]["system"], "sys")
+        self.assertEqual(client.calls[0]["options"].num_predict, 5)
+
+    async def test_explicit_output_token_limit_is_only_lowered(self):
+        client = FakeOllamaClient([
+            FakeGenerateResponse(response='{"answer": "x", "score": 1}'),
+        ])
+        client.enforce_output_token_limit = True
+
+        await generate_structured(
+            client,
+            model="qwen3.5:4b",
+            system="sys",
+            prompt="prompt",
+            output_type=SimpleOutput,
+            num_ctx=8,
+            num_predict=1200,
+        )
+
+        self.assertEqual(client.calls[0]["options"].num_predict, 5)
+
+    async def test_output_token_limit_can_be_disabled(self):
+        client = FakeOllamaClient([
+            FakeGenerateResponse(response='{"answer": "x", "score": 1}'),
+        ])
+        client.enforce_output_token_limit = False
+
+        await generate_structured(
+            client,
+            model="qwen3.5:4b",
+            system="sys",
+            prompt="prompt",
+            output_type=SimpleOutput,
+            num_ctx=8,
+            num_predict=1200,
+        )
+
+        self.assertEqual(client.calls[0]["options"].num_predict, 1200)
+
+    async def test_generate_text_uses_runtime_temperature_and_output_cap(self):
+        client = FakeOllamaClient([
+            FakeGenerateResponse(response="ok"),
+        ])
+        client.generation_temperature = 0.0
+        client.enforce_output_token_limit = True
+
+        await generate_text(
+            client,
+            model="qwen3.5:4b",
+            system="sys",
+            prompt="prompt",
+            options={"temperature": 0.7, "num_ctx": 8, "num_predict": 1200},
+        )
+
+        self.assertEqual(client.calls[0]["options"]["temperature"], 0.0)
+        self.assertEqual(client.calls[0]["options"]["num_predict"], 5)
 
     async def test_injects_json_schema_into_system_prompt_by_default(self):
         client = FakeOllamaClient([

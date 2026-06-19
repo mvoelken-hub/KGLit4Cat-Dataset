@@ -246,6 +246,8 @@ async def ollama_config_payload(settings: Settings, ollama_client: OllamaClientW
     max_context_length = int(getattr(ollama_client, "max_context_length", settings.max_context_length))
     input_token_budget = int(max_context_length * 0.75)
     embedding_num_gpu = int(getattr(ollama_client, "embed_num_gpu", getattr(settings, "ollama_embed_num_gpu", -1)))
+    generation_temperature = float(getattr(ollama_client, "generation_temperature", getattr(settings, "ollama_generation_temperature", 0.0)))
+    enforce_output_token_limit = bool(getattr(ollama_client, "enforce_output_token_limit", getattr(settings, "ollama_enforce_output_token_limit", True)))
     chat_model = getattr(ollama_client, "chat_model", settings.ollama_chat_model)
     embedding_model = getattr(ollama_client, "embed_model", settings.ollama_embed_model)
     is_local = is_local_ollama(settings)
@@ -274,6 +276,8 @@ async def ollama_config_payload(settings: Settings, ollama_client: OllamaClientW
             "embedding_batch_size": settings.embedding_batch_size,
             "embedding_num_gpu": embedding_num_gpu,
             "embedding_gpu_label": embedding_gpu_label(embedding_num_gpu),
+            "generation_temperature": generation_temperature,
+            "enforce_output_token_limit": enforce_output_token_limit,
             "resets_on_api_restart": True,
         },
         "models": available_models,
@@ -307,12 +311,18 @@ def apply_runtime_config(
         settings.embedding_batch_size = updates["embedding_batch_size"]
     if "embedding_num_gpu" in updates:
         settings.ollama_embed_num_gpu = updates["embedding_num_gpu"]
+    if "generation_temperature" in updates:
+        settings.ollama_generation_temperature = updates["generation_temperature"]
+    if "enforce_output_token_limit" in updates:
+        settings.ollama_enforce_output_token_limit = updates["enforce_output_token_limit"]
 
     ollama_client.update_runtime_config(
         chat_model=updates.get("chat_model"),
         embed_model=updates.get("embedding_model"),
         max_context_length=updates.get("max_context_length"),
         embed_num_gpu=updates.get("embedding_num_gpu"),
+        generation_temperature=updates.get("generation_temperature"),
+        enforce_output_token_limit=updates.get("enforce_output_token_limit"),
     )
 
 
