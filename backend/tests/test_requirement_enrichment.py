@@ -15,7 +15,9 @@ from app.domain.extraction import (
     RequirementEvidenceItem,
     RequirementReportItem,
     SemanticReconstructionPatchResult,
+    build_requirement_evaluation_prompt,
     build_requirement_report,
+    build_semantic_reconstruction_prompt,
     compute_coverage_report,
     compute_source_trace_report,
     normalized_requirement_evaluation,
@@ -389,6 +391,60 @@ class RequirementEvidencePacketTests(unittest.TestCase):
             {entry.candidate_id for entry in selected},
             {"method", "agent", "setting"},
         )
+
+    def test_instrument_settings_prompt_requires_selected_settings(self):
+        requirement = next(
+            req
+            for req in DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS
+            if req.requirement_id == "instrument_settings_semantics"
+        )
+
+        prompt = build_requirement_evaluation_prompt(
+            document={"/was_generated_by/0/has_quantitative_attribute": []},
+            requirements=[requirement],
+            selected_evidence=[
+                RequirementEvidenceItem(
+                    evidence_id="ev:unit",
+                    candidate_id="unit",
+                    category="instrument_signal",
+                    claim="X-axis units are 1/CM.",
+                    evidence_text="##XUNITS=1/CM",
+                )
+            ],
+            context_window=[],
+        )
+
+        self.assertIn(
+            "selected as concrete evidence are represented as suitable attributes",
+            prompt,
+        )
+
+    def test_instrument_reconstruction_prompt_preserves_specific_quantity(self):
+        requirement = next(
+            req
+            for req in DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS
+            if req.requirement_id == "instrument_settings_semantics"
+        )
+        item = RequirementReportItem(
+            requirement_id=requirement.requirement_id,
+            label=requirement.label,
+            weight=requirement.weight,
+            status="partial",
+            applicable=True,
+            quality=0.5,
+            weighted_score=0.75,
+            target_paths=list(requirement.target_paths),
+        )
+
+        prompt = build_semantic_reconstruction_prompt(
+            requirement=requirement,
+            item=item,
+            document={},
+            draft_excerpt={},
+            schema_branches={},
+        )
+
+        self.assertIn("add separate schema-valid attributes or set should_apply=false", prompt)
 
 
 class FakeProfileService:

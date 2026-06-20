@@ -433,7 +433,7 @@ DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS: tuple[DcatRequirement, ...] = (
     DcatRequirement(
         requirement_id="instrument_settings_semantics",
         label="Instrument settings semantics",
-        description="Instrument/configuration settings are represented as suitable attributes.",
+        description="Instrument/configuration settings selected as concrete evidence are represented as suitable attributes.",
         weight=1.5,
         target_paths=["/was_generated_by/0/has_quantitative_attribute", "/is_about_entity/0/has_quantitative_attribute"],
         evidence_hints=["temperature", "frequency", "width", "unit", "parameter", "threshold", "setting"],
@@ -463,6 +463,7 @@ Use statuses: fulfilled, partial, missing, not_applicable.
 quality must be 1 for fulfilled, 0.5 for partial, 0 for missing/not_applicable.
 Prefer not_applicable only when the supplied evidence categories make the semantic requirement irrelevant.
 For aboutness, file names are not evaluated entities. For method plans, explicit method_signal evidence is required for fulfilled.
+For instrument settings, selected concrete instrument_signal evidence must be represented by suitable attributes; otherwise mark partial.
 """
 
 
@@ -482,6 +483,7 @@ Use only the current draft, selected evidence, and context window. Do not invent
 Return RFC 6902 JSON Patch operations only for allowed_target_paths.
 Keep edits minimal: move, rewrite, remove, or add fields only when the semantic requirement justifies it.
 Preserve valid numeric instrument/configuration settings. Remove only obvious qualitative/default/placeholders from quantitative attributes.
+Do not satisfy missing instrument_signal evidence by generalizing one existing quantitative attribute; add separate schema-valid attributes or set should_apply=false.
 Do not use new evidence search. Do not patch distributions.
 Set should_apply=false when no safe semantic reconstruction is available.
 """
@@ -563,6 +565,9 @@ def build_semantic_reconstruction_prompt(
         "current_document": document,
         "draft_excerpt": draft_excerpt,
         "schema_branches": schema_branches,
+        "reconstruction_rules": [
+            "Do not satisfy missing instrument_signal evidence by generalizing one existing quantitative attribute; add separate schema-valid attributes or set should_apply=false.",
+        ],
         "selected_evidence": [evidence.model_dump(mode="json") for evidence in item.selected_evidence],
         "context_window": [evidence.model_dump(mode="json") for evidence in item.context_window],
         "category_meanings": {
