@@ -105,3 +105,13 @@ Reason: The first mining pass produced compact useful facts, while independent s
 Tradeoff: Description-derived facts can fill profile fields but are generated secondary evidence, not direct source-file evidence. They are marked with `draft-description:` provenance and retained in `description_facts.json`, while source-trace scoring excludes them.
 
 Revisit trigger: Revisit provenance linking if generated descriptions gain reliable links to the original evidence IDs that supported them, or when semantic reconstruction is redesigned.
+
+### 2026-06-20: Constrain Patch LLMs With Sliced Target Schemas
+
+Decision: Evidence enrichment, requirement patching, and semantic reconstruction now ask patch LLMs for schema-constrained write envelopes rather than free-form instances or JSON Patch operations. The backend constructs a small output JSON Schema from the allowed target paths and only the reachable `$defs`.
+
+Reason: Profile validation was catching useful but structurally invalid patches too late, causing one invalid operation to consume or roll back useful writes. Target-specific schema slices make invalid value shapes fail at structured-output generation time without sending the full DCAT-AP+ schema.
+
+Tradeoff: The first route supports upsert writes only. Removals, moves, and arbitrary nested JSON Patch edits are intentionally deferred until the schema-constrained route is reliable.
+
+Revisit trigger: Revisit if semantic reconstruction needs validated remove/move operations or if schema slices become too large for specific profile targets.

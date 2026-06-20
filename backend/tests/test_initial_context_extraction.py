@@ -2653,6 +2653,11 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     ),
                     usage=RunUsage(requests=1),
                 )
+            if isinstance(kwargs["output_type"], dict):
+                return CompletionResult(
+                    output={"should_apply": False, "writes": [], "reason": "No write in this test."},
+                    usage=RunUsage(requests=1),
+                )
             raise AssertionError("Only dataset summary/profile generation is expected")
 
         with patch("app.services.workflow_service.generate_structured", side_effect=fake_generate):
@@ -2737,6 +2742,11 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             if kwargs["output_type"] is SemanticReconstructionPatchResult:
                 return CompletionResult(
                     output=SemanticReconstructionPatchResult(should_apply=False, reason="No reconstruction in this test."),
+                    usage=RunUsage(requests=1),
+                )
+            if isinstance(kwargs["output_type"], dict):
+                return CompletionResult(
+                    output={"should_apply": False, "writes": [], "reason": "No write in this test."},
                     usage=RunUsage(requests=1),
                 )
             raise AssertionError(f"Unexpected output type: {kwargs['output_type']}")

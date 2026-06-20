@@ -127,14 +127,14 @@ Thesis claim supported: SIMONE constrains LLM output with explicit profile valid
 
 ### Requirement Reporting Separates Coverage, Semantics, And Trace
 
-After generic DCAT-AP+ draft creation, SIMONE mines grounded atomic facts from the dataset-level description, adds them to a local evidence context, computes deterministic filled-field coverage, applies coverage-only patches, re-computes coverage, runs sliced LLM semantic requirement checks, applies LLM-assisted semantic reconstruction under JSON Patch and schema-validation constraints, re-runs semantic checks, and then computes deterministic source trace scoring.
+After generic DCAT-AP+ draft creation, SIMONE mines grounded atomic facts from the dataset-level description, adds them to a local evidence context, computes deterministic filled-field coverage, applies coverage-only patches, re-computes coverage, runs sliced LLM semantic requirement checks, applies LLM-assisted semantic reconstruction through target-specific schema-constrained write envelopes, re-runs semantic checks, and then computes deterministic source trace scoring.
 
 Reasoning:
 
 - Coverage lists filled profile fields, including nested fields, as an inventory count rather than a quality percentage.
 - Description mining reads only top-level dataset descriptions, leaves them unchanged, and reuses normal evidence selection and patch validation rather than routing directly to schema paths.
 - Semantic requirements judge whether DCAT-AP+ scientific objects are meaningful and evidence-aligned.
-- Semantic reconstruction reorganizes the current draft using requirement artifacts; it is not another evidence-search patching pass, and deterministic code only enforces allowed paths and validation.
+- Semantic reconstruction reorganizes the current draft using requirement artifacts; it is not another evidence-search patching pass. The LLM output is constrained by a small schema slice for the allowed targets, while deterministic code creates containers, applies writes, validates, and salvages independently valid writes.
 - The profile draft artifacts expose the stage boundary explicitly: `generated_initial_draft.json`, `description_facts.json`, `generated_patched_draft.json`, and `generated_reconstructed_draft.json`.
 - Source trace scoring summarizes source-file evidence quality for evidence that actually supports projected draft content; description-derived facts remain explicitly marked and do not inflate it.
 - Deterministic distributions are workflow-owned and are not a patch/scoring requirement.

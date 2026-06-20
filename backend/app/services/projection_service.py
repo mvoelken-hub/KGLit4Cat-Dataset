@@ -109,8 +109,10 @@ class ProjectionService:
         if state.generated_initial_draft is None:
             state.generated_initial_draft = self._clone_json_object(document)
             progress.generated_initial_draft = state.generated_initial_draft
+        legacy_route = LegacyEvidencePatchRoute()
         for note in evidence_context.portable_evidence:
-            target_path, target_class = route_evidence_note_to_target(note)
+            route = legacy_route.route(note)
+            target_path, target_class = route.target_path, route.target_class
             if target_path is None or target_class is None:
                 state.projection_ledger.append(
                     self._enrichment_ledger_record(
@@ -157,6 +159,7 @@ class ProjectionService:
                 contextual_notes=contextual_notes,
                 draft_excerpt=draft_excerpt,
                 schema_branch=schema_branch,
+                validation_schema=validation_schema,
                 target_path=target_path,
                 target_class=target_class,
             )
@@ -184,6 +187,7 @@ class ProjectionService:
                 target_path=target_path,
                 target_class=target_class,
                 schema_branch=schema_branch,
+                validation_schema=validation_schema,
             )
             state.projection_ledger.append(record)
             state.generated_final_draft = document
@@ -631,13 +635,17 @@ class ProjectionService:
             draft_excerpt=draft_excerpt,
             schema_branches=schema_branches,
         )
+        output_schema = SchemaConstrainedPatchRoute.output_schema(
+            validation_schema=validation_schema,
+            allowed_target_paths=allowed_paths,
+        )
         try:
             result = await generate_structured(
                 self.ollama_client,
                 model=self.ollama_client.chat_model,
                 system=SEMANTIC_RECONSTRUCTION_SYSTEM_PROMPT,
                 prompt=prompt,
-                output_type=SemanticReconstructionPatchResult,
+                output_type=output_schema,
                 system_components=[
                     ("semantic_reconstruction_system_prompt", SEMANTIC_RECONSTRUCTION_SYSTEM_PROMPT),
                 ],
@@ -652,11 +660,7 @@ class ProjectionService:
                 result=result,
                 agent_name="semantic_reconstruction",
             )
-            patch = (
-                result.output
-                if isinstance(result.output, SemanticReconstructionPatchResult)
-                else SemanticReconstructionPatchResult.model_validate(result.output)
-            )
+            patch = parse_schema_constrained_patch_result(result.output)
         except (CompletionError, ValidationError) as exc:
             self._record_llm_call_exception(
                 data_package_id=data_package_id,
@@ -664,14 +668,17 @@ class ProjectionService:
                 agent_name="semantic_reconstruction",
             )
             return document, [], f"Semantic reconstruction generation failed: {exc}", [str(exc)]
-        if not patch.should_apply or not patch.operations:
+        if not patch.should_apply or not patch.writes:
             return document, [], patch.reason or "LLM found no safe reconstruction.", []
-        if not self._semantic_patch_paths_allowed(patch.operations, allowed_paths):
-            return document, [], "LLM reconstruction patch touched a disallowed path.", ["disallowed_patch_path"]
         try:
-            updated = self._apply_profile_patch(document, patch.operations)
+            updated, changed_paths = apply_schema_constrained_writes(
+                document=document,
+                writes=patch.writes,
+                data_package_id=data_package_id,
+                validation_schema=validation_schema,
+            )
         except Exception as exc:
-            return document, [], f"Semantic reconstruction patch could not be applied: {exc}", [str(exc)]
+            return document, [], f"Semantic reconstruction writes could not be applied: {exc}", [str(exc)]
         validation = self.profile_service.validate_document(
             identifier=profile_identifier,
             document=updated,
@@ -680,21 +687,35 @@ class ProjectionService:
             salvaged = document
             salvaged_paths: list[str] = []
             rejected: list[str] = [issue.message for issue in validation.errors]
-            for operation in patch.operations:
-                try:
-                    candidate = self._apply_profile_patch(salvaged, [operation])
-                except Exception as exc:
-                    rejected.append(str(exc))
-                    continue
-                candidate_validation = self.profile_service.validate_document(
-                    identifier=profile_identifier,
-                    document=candidate,
+            for write in patch.writes:
+                candidate_writes = (
+                    [
+                        write.model_copy(update={"items": [item]})
+                        for item in write.items
+                    ]
+                    if write.mode == "append" and len(write.items) > 1
+                    else [write]
                 )
-                if not candidate_validation.valid:
-                    rejected.extend(issue.message for issue in candidate_validation.errors)
-                    continue
-                salvaged = candidate
-                salvaged_paths.extend(self._semantic_patch_changed_paths([operation]))
+                for candidate_write in candidate_writes:
+                    try:
+                        candidate, candidate_paths = apply_schema_constrained_writes(
+                            document=salvaged,
+                            writes=[candidate_write],
+                            data_package_id=data_package_id,
+                            validation_schema=validation_schema,
+                        )
+                    except Exception as exc:
+                        rejected.append(str(exc))
+                        continue
+                    candidate_validation = self.profile_service.validate_document(
+                        identifier=profile_identifier,
+                        document=candidate,
+                    )
+                    if not candidate_validation.valid:
+                        rejected.extend(issue.message for issue in candidate_validation.errors)
+                        continue
+                    salvaged = candidate
+                    salvaged_paths.extend(candidate_paths)
             if salvaged_paths:
                 return (
                     salvaged,
@@ -703,7 +724,7 @@ class ProjectionService:
                     [],
                 )
             return document, [], patch.reason or "Semantic reconstruction failed validation.", list(dict.fromkeys(rejected))
-        return updated, self._semantic_patch_changed_paths(patch.operations), patch.reason, []
+        return updated, changed_paths, patch.reason, []
 
     @classmethod
     def _semantic_patch_paths_allowed(cls, operations: list[Any], allowed_paths: list[str]) -> bool:
@@ -1908,6 +1929,7 @@ class ProjectionService:
                     reason="Requirement has no target path for patching.",
                 ),
             )
+        allowed_target_paths = item.target_paths or requirement.target_paths
         schema_branch = self._compact_schema_branch_for_target(
             validation_schema=validation_schema,
             target_path=target_path,
@@ -1921,13 +1943,17 @@ class ProjectionService:
             draft_excerpt=draft_excerpt,
             schema_branch=schema_branch,
         )
+        output_schema = SchemaConstrainedPatchRoute.output_schema(
+            validation_schema=validation_schema,
+            allowed_target_paths=allowed_target_paths,
+        )
         try:
             result = await generate_structured(
                 self.ollama_client,
                 model=self.ollama_client.chat_model,
                 system=REQUIREMENT_PATCH_SYSTEM_PROMPT,
                 prompt=prompt,
-                output_type=RequirementPatchResult,
+                output_type=output_schema,
                 system_components=[
                     ("requirement_patch_system_prompt", REQUIREMENT_PATCH_SYSTEM_PROMPT),
                 ],
@@ -1942,7 +1968,7 @@ class ProjectionService:
                 result=result,
                 agent_name="metadata_requirement_patcher",
             )
-            patch = result.output if isinstance(result.output, RequirementPatchResult) else RequirementPatchResult.model_validate(result.output)
+            patch = parse_schema_constrained_patch_result(result.output)
         except (CompletionError, ValidationError) as exc:
             self._record_llm_call_exception(
                 data_package_id=data_package_id,
@@ -1959,59 +1985,46 @@ class ProjectionService:
                     reason=f"Requirement patch generation failed: {exc}",
                 ),
             )
-        if (not patch.should_patch or not patch.instance) and (
+        if (not patch.should_apply or not patch.writes) and (
             target_class == "QuantitativeAttribute"
             or any("/has_quantitative_attribute/" in path for path in (item.target_paths or requirement.target_paths))
         ):
             deterministic_instance = self._quantitative_attribute_from_evidence(item)
             if deterministic_instance:
-                patch = RequirementPatchResult(
-                    should_patch=True,
-                    target_path=(item.target_paths or requirement.target_paths)[0],
-                    target_class="QuantitativeAttribute",
-                    instance=deterministic_instance,
-                    rationale=(
+                fallback_target_path = allowed_target_paths[0]
+                fallback_schema_path = (
+                    fallback_target_path[:-2]
+                    if fallback_target_path.endswith("/-")
+                    else fallback_target_path
+                )
+                fallback_is_array = self._schema_is_array(
+                    schema_for_json_pointer(validation_schema, fallback_schema_path),
+                    validation_schema,
+                )
+                fallback_write = (
+                    SchemaConstrainedWrite(
+                        target_path=fallback_target_path,
+                        mode="append",
+                        items=[deterministic_instance],
+                        reason="Deterministic quantitative constructor used selected measurement evidence.",
+                    )
+                    if fallback_is_array
+                    else SchemaConstrainedWrite(
+                        target_path=fallback_target_path,
+                        mode="replace",
+                        value=deterministic_instance,
+                        reason="Deterministic quantitative constructor used selected measurement evidence.",
+                    )
+                )
+                patch = SchemaConstrainedPatchResult(
+                    should_apply=True,
+                    writes=[fallback_write],
+                    reason=(
                         "Deterministic quantitative constructor used selected measurement evidence "
                         "after patch model declined to build an instance."
                     ),
                 )
-        if not patch.should_patch or not patch.instance:
-            return (
-                document,
-                RequirementPatchAttempt(
-                    attempted=True,
-                    status="failed",
-                    target_path=patch.target_path or target_path,
-                    target_class=patch.target_class or target_class,
-                    reason=patch.rationale or "Patch model found insufficient evidence.",
-                ),
-            )
-        allowed_target_paths = set(item.target_paths or requirement.target_paths)
-        target_path = patch.target_path
-        if target_path not in allowed_target_paths:
-            return (
-                document,
-                RequirementPatchAttempt(
-                    attempted=True,
-                    status="failed",
-                    target_path=target_path,
-                    target_class=patch.target_class or target_class,
-                    reason=f"Patch target path is not allowed for requirement: {target_path}",
-                ),
-            )
-        target_class = patch.target_class or target_class
-        patch.instance = self._sanitize_requirement_patch_instance(
-            instance=patch.instance,
-            target_class=target_class,
-            target_path=target_path,
-            item=item,
-        )
-        duplicate_reason = self._duplicate_requirement_patch_reason(
-            document=document,
-            target_path=target_path,
-            instance=patch.instance,
-        )
-        if duplicate_reason:
+        if not patch.should_apply or not patch.writes:
             return (
                 document,
                 RequirementPatchAttempt(
@@ -2019,31 +2032,39 @@ class ProjectionService:
                     status="failed",
                     target_path=target_path,
                     target_class=target_class,
-                    reason=duplicate_reason,
+                    reason=patch.reason or "Patch model found insufficient evidence.",
                 ),
             )
-        schema_branch = self._compact_schema_branch_for_target(
-            validation_schema=validation_schema,
-            target_path=target_path,
-        )
+        for write in patch.writes:
+            duplicate_target = write.target_path
+            if write.mode == "append" and not duplicate_target.endswith("/-"):
+                duplicate_target = f"{duplicate_target}/-"
+            for instance in write.items if write.mode == "append" else [write.value]:
+                if not isinstance(instance, dict):
+                    continue
+                duplicate_reason = self._duplicate_requirement_patch_reason(
+                    document=document,
+                    target_path=duplicate_target,
+                    instance=instance,
+                )
+                if duplicate_reason:
+                    return (
+                        document,
+                        RequirementPatchAttempt(
+                            attempted=True,
+                            status="failed",
+                            target_path=write.target_path,
+                            target_class=target_class,
+                            reason=duplicate_reason,
+                        ),
+                    )
         original = self._clone_json_object(document)
         try:
-            appended_index = None
-            if target_path.endswith("/-"):
-                existing_array = self._value_at_json_pointer(document, target_path[:-2])
-                appended_index = len(existing_array) if isinstance(existing_array, list) else 0
-            updated = apply_evidence_instance(
+            updated, changed_paths = apply_schema_constrained_writes(
                 document=document,
-                target_path=target_path,
-                instance=patch.instance,
+                writes=patch.writes,
                 data_package_id=data_package_id,
-                target_schema=schema_branch,
-            )
-            self._strip_requirement_patch_forbidden_fields(
-                document=updated,
-                target_path=target_path,
-                target_class=target_class,
-                appended_index=appended_index,
+                validation_schema=validation_schema,
             )
         except ValueError as exc:
             return (
@@ -2066,9 +2087,9 @@ class ProjectionService:
                 RequirementPatchAttempt(
                     attempted=True,
                     status="applied",
-                    target_path=target_path,
+                    target_path=changed_paths[0] if changed_paths else target_path,
                     target_class=target_class,
-                    reason=patch.rationale or "Requirement patch applied and validated.",
+                    reason=patch.reason or "Requirement patch applied and validated.",
                 ),
             )
         return (
@@ -2423,11 +2444,15 @@ class ProjectionService:
         contextual_notes: list[EvidenceCandidate],
         draft_excerpt: Any,
         schema_branch: dict[str, Any],
+        validation_schema: dict[str, Any],
         target_path: str,
         target_class: str,
     ) -> dict[str, Any] | None:
         assert self.ollama_client is not None
-        model = builder_output_model_for_target(target_class, schema_branch)
+        output_schema = SchemaConstrainedPatchRoute.output_schema(
+            validation_schema=validation_schema,
+            allowed_target_paths=[target_path],
+        )
         prompt = build_instance_builder_prompt(
             target_path=target_path,
             target_class=target_class,
@@ -2441,8 +2466,12 @@ class ProjectionService:
                 self.ollama_client,
                 model=self.ollama_client.chat_model,
                 system=EVIDENCE_INSTANCE_BUILDER_SYSTEM_PROMPT,
-                prompt=prompt,
-                output_type=model,
+                prompt=(
+                    prompt
+                    + "\nReturn a schema-constrained write envelope. "
+                    "Use mode=append for array targets and mode=replace for scalar/object targets."
+                ),
+                output_type=output_schema,
                 system_components=[
                     ("evidence_instance_builder_system_prompt", EVIDENCE_INSTANCE_BUILDER_SYSTEM_PROMPT),
                 ],
@@ -2457,10 +2486,13 @@ class ProjectionService:
                 result=result,
                 agent_name="evidence_instance_builder",
             )
-            output = result.output
-            if hasattr(output, "model_dump"):
-                return output.model_dump(mode="json", exclude_none=True)
-            return dict(output)
+            patch = parse_schema_constrained_patch_result(result.output)
+            if not patch.should_apply or not patch.writes:
+                return None
+            first = patch.writes[0]
+            if first.mode == "append":
+                return dict(first.items[0]) if isinstance(first.items[0], dict) else None
+            return dict(first.value) if isinstance(first.value, dict) else None
         except (CompletionError, ValidationError) as exc:
             self._record_llm_call_exception(
                 data_package_id=data_package_id,
@@ -2476,11 +2508,15 @@ class ProjectionService:
         instance: dict[str, Any],
         validation_errors: list[ProfileValidationIssue],
         schema_branch: dict[str, Any],
+        validation_schema: dict[str, Any],
         target_path: str,
         target_class: str,
     ) -> dict[str, Any] | None:
         assert self.ollama_client is not None
-        model = builder_output_model_for_target(target_class, schema_branch)
+        output_schema = SchemaConstrainedPatchRoute.output_schema(
+            validation_schema=validation_schema,
+            allowed_target_paths=[target_path],
+        )
         error_messages = [str(e.message) for e in validation_errors]
         prompt = build_instance_repair_prompt(
             target_path=target_path,
@@ -2494,8 +2530,12 @@ class ProjectionService:
                 self.ollama_client,
                 model=self.ollama_client.chat_model,
                 system=EVIDENCE_INSTANCE_REPAIR_SYSTEM_PROMPT,
-                prompt=prompt,
-                output_type=model,
+                prompt=(
+                    prompt
+                    + "\nReturn a schema-constrained write envelope. "
+                    "Use mode=append for array targets and mode=replace for scalar/object targets."
+                ),
+                output_type=output_schema,
                 system_components=[
                     ("evidence_instance_repair_system_prompt", EVIDENCE_INSTANCE_REPAIR_SYSTEM_PROMPT),
                 ],
@@ -2510,10 +2550,13 @@ class ProjectionService:
                 result=result,
                 agent_name="evidence_instance_repair",
             )
-            output = result.output
-            if hasattr(output, "model_dump"):
-                return output.model_dump(mode="json", exclude_none=True)
-            return dict(output)
+            patch = parse_schema_constrained_patch_result(result.output)
+            if not patch.should_apply or not patch.writes:
+                return None
+            first = patch.writes[0]
+            if first.mode == "append":
+                return dict(first.items[0]) if isinstance(first.items[0], dict) else None
+            return dict(first.value) if isinstance(first.value, dict) else None
         except (CompletionError, ValidationError) as exc:
             self._record_llm_call_exception(
                 data_package_id=data_package_id,
@@ -2521,6 +2564,33 @@ class ProjectionService:
                 agent_name="evidence_instance_repair",
             )
             return None
+
+    @classmethod
+    def _schema_write_from_instance(
+        cls,
+        *,
+        validation_schema: dict[str, Any],
+        target_path: str,
+        instance: dict[str, Any],
+    ) -> SchemaConstrainedWrite:
+        schema_path = target_path[:-2] if target_path.endswith("/-") else target_path
+        is_array = target_path.endswith("/-") or cls._schema_is_array(
+            schema_for_json_pointer(validation_schema, schema_path),
+            validation_schema,
+        )
+        if is_array:
+            return SchemaConstrainedWrite(
+                target_path=target_path,
+                mode="append",
+                items=[instance],
+                reason="Schema-constrained evidence instance.",
+            )
+        return SchemaConstrainedWrite(
+            target_path=target_path,
+            mode="replace",
+            value=instance,
+            reason="Schema-constrained evidence instance.",
+        )
 
     async def _apply_and_validate_evidence_instance(
         self,
@@ -2533,15 +2603,20 @@ class ProjectionService:
         target_path: str,
         target_class: str,
         schema_branch: dict[str, Any],
+        validation_schema: dict[str, Any],
     ) -> tuple[dict[str, Any], ProjectionLedgerRecord]:
         original = self._clone_json_object(document)
+        write = self._schema_write_from_instance(
+            validation_schema=validation_schema,
+            target_path=target_path,
+            instance=instance,
+        )
         try:
-            updated = apply_evidence_instance(
+            updated, changed_paths = apply_schema_constrained_writes(
                 document=document,
-                target_path=target_path,
-                instance=instance,
+                writes=[write],
                 data_package_id=data_package_id,
-                target_schema=schema_branch,
+                validation_schema=validation_schema,
             )
         except ValueError as exc:
             return (
@@ -2567,7 +2642,7 @@ class ProjectionService:
                     reason=f"Enrichment instance applied and validated at {target_path}.",
                     target_path=target_path,
                     target_class=target_class,
-                    projected_paths=[target_path],
+                    projected_paths=changed_paths or [target_path],
                 ),
             )
         repaired = await self._repair_evidence_instance(
@@ -2575,6 +2650,7 @@ class ProjectionService:
             instance=instance,
             validation_errors=validation.errors,
             schema_branch=schema_branch,
+            validation_schema=validation_schema,
             target_path=target_path,
             target_class=target_class,
         )
@@ -2589,13 +2665,17 @@ class ProjectionService:
                     target_class=target_class,
                 ),
             )
+        repaired_write = self._schema_write_from_instance(
+            validation_schema=validation_schema,
+            target_path=target_path,
+            instance=repaired,
+        )
         try:
-            updated = apply_evidence_instance(
+            updated, changed_paths = apply_schema_constrained_writes(
                 document=original,
-                target_path=target_path,
-                instance=repaired,
+                writes=[repaired_write],
                 data_package_id=data_package_id,
-                target_schema=schema_branch,
+                validation_schema=validation_schema,
             )
         except ValueError as exc:
             return (
@@ -2621,7 +2701,7 @@ class ProjectionService:
                     reason="Enrichment instance repaired and validated.",
                     target_path=target_path,
                     target_class=target_class,
-                    projected_paths=[target_path],
+                    projected_paths=changed_paths or [target_path],
                 ),
             )
         return (

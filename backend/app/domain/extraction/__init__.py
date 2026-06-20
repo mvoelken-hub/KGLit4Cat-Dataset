@@ -122,6 +122,12 @@ from app.domain.extraction.evidence_enrichment import (
     route_evidence_note_to_target,
 )
 
+from app.domain.extraction.patch_routes import (
+    LegacyEvidencePatchRoute,
+    PatchTargetRoute,
+    SchemaConstrainedPatchRoute,
+)
+
 from app.domain.extraction.requirement_enrichment import (
     DCAT_AP_PLUS_COVERAGE_REQUIREMENTS,
     DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS,
@@ -157,6 +163,15 @@ from app.domain.extraction.requirement_enrichment import (
     score_requirement_report,
     select_requirement_evidence_packet,
     stable_evidence_id,
+)
+
+from app.domain.extraction.schema_constrained_patch import (
+    SchemaConstrainedPatchResult,
+    SchemaConstrainedWrite,
+    apply_schema_constrained_writes,
+    build_schema_constrained_patch_schema,
+    parse_schema_constrained_patch_result,
+    schema_for_json_pointer,
 )
 
 from app.domain.extraction.schema_projection import (
@@ -413,6 +428,9 @@ __all__ = [
     "build_novelty_evaluator_prompt",
     "builder_output_model_for_target",
     "route_evidence_note_to_target",
+    "LegacyEvidencePatchRoute",
+    "PatchTargetRoute",
+    "SchemaConstrainedPatchRoute",
     "DCAT_AP_PLUS_COVERAGE_REQUIREMENTS",
     "DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS",
     "DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS",
@@ -447,6 +465,12 @@ __all__ = [
     "score_requirement_report",
     "select_requirement_evidence_packet",
     "stable_evidence_id",
+    "SchemaConstrainedPatchResult",
+    "SchemaConstrainedWrite",
+    "apply_schema_constrained_writes",
+    "build_schema_constrained_patch_schema",
+    "parse_schema_constrained_patch_result",
+    "schema_for_json_pointer",
     "ChunkingRequiredError",
     "ChunkRepairMode",
     "CompleteWorkflowProgress",

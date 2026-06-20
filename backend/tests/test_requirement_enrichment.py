@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
+from jsonschema import Draft201909Validator
 from pydantic import ValidationError
 
 from app.core.config import Settings
@@ -11,14 +12,13 @@ from app.domain.extraction import (
     DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS,
     DcatRequirement,
     EvidenceCandidate,
-    JsonPatchOperation,
     RequirementEvaluation,
     RequirementAssessment,
     RequirementPatchAttempt,
     RequirementEvidenceItem,
     RequirementReportItem,
     SemanticReconstructionRecord,
-    SemanticReconstructionPatchResult,
+    build_schema_constrained_patch_schema,
     build_requirement_evaluation_prompt,
     build_requirement_report,
     build_semantic_reconstruction_prompt,
@@ -260,23 +260,107 @@ class RequirementScoringTests(unittest.TestCase):
         self.assertEqual(patch.target_path, "/was_generated_by/0/has_quantitative_attribute/0")
         self.assertEqual(patch.validation_errors, ["Additional properties are not allowed ('category' was unexpected)"])
 
-    def test_semantic_reconstruction_patch_schema_requires_valid_json_patch_members(self):
-        with self.assertRaises(ValidationError):
-            SemanticReconstructionPatchResult.model_validate(
+    def test_schema_constrained_patch_schema_slices_quantitative_attribute_defs(self):
+        schema = {
+            "$schema": "https://json-schema.org/draft/2019-09/schema",
+            "$ref": "#/$defs/Dataset",
+            "$defs": {
+                "Dataset": {
+                    "type": "object",
+                    "properties": {
+                        "was_generated_by": {
+                            "type": "array",
+                            "items": {"$ref": "#/$defs/DataGeneratingActivity"},
+                        },
+                        "dataset_distribution": {
+                            "type": "array",
+                            "items": {"$ref": "#/$defs/Distribution"},
+                        },
+                    },
+                },
+                "DataGeneratingActivity": {
+                    "type": "object",
+                    "properties": {
+                        "has_quantitative_attribute": {
+                            "type": "array",
+                            "items": {"$ref": "#/$defs/QuantitativeAttribute"},
+                        }
+                    },
+                },
+                "QuantitativeAttribute": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "value": {"type": "number"},
+                        "has_quantity_type": {"type": "string"},
+                    },
+                    "required": ["value", "has_quantity_type"],
+                },
+                "Distribution": {"type": "object"},
+            },
+        }
+
+        output_schema = build_schema_constrained_patch_schema(
+            validation_schema=schema,
+            allowed_target_paths=["/was_generated_by/0/has_quantitative_attribute"],
+        )
+
+        self.assertIn("QuantitativeAttribute", output_schema["$defs"])
+        self.assertNotIn("Distribution", output_schema["$defs"])
+        write_schema = output_schema["properties"]["writes"]["items"]["oneOf"][0]
+        self.assertEqual(write_schema["properties"]["target_path"]["const"], "/was_generated_by/0/has_quantitative_attribute")
+        self.assertEqual(write_schema["properties"]["mode"]["const"], "append")
+
+    def test_schema_constrained_patch_schema_rejects_invalid_quantitative_items(self):
+        output_schema = build_schema_constrained_patch_schema(
+            validation_schema=quantitative_schema("DataGeneratingActivity"),
+            allowed_target_paths=["/was_generated_by/0/has_quantitative_attribute"],
+        )
+        validator = Draft201909Validator(output_schema)
+        valid = {
+            "should_apply": True,
+            "writes": [
                 {
-                    "should_apply": True,
-                    "operations": [{"op": "add", "path": "/description"}],
+                    "target_path": "/was_generated_by/0/has_quantitative_attribute",
+                    "mode": "append",
+                    "items": [
+                        {"value": 373.96442, "has_quantity_type": "minimum wavenumber", "unit": "1/CM"},
+                        {"value": 3997.453, "has_quantity_type": "maximum wavenumber", "unit": "1/CM"},
+                    ],
+                    "reason": "Represent wavenumber range as min/max attributes.",
                 }
-            )
+            ],
+            "reason": "ok",
+        }
+        extra_field = {
+            **valid,
+            "writes": [
+                {
+                    **valid["writes"][0],
+                    "items": [{**valid["writes"][0]["items"][0], "category": "measurement_condition"}],
+                }
+            ],
+        }
+        range_object = {
+            **valid,
+            "writes": [
+                {
+                    **valid["writes"][0],
+                    "items": [
+                        {
+                            "has_quantity_type": "wavenumber range",
+                            "minimum": 373.96442,
+                            "maximum": 3997.453,
+                            "unit": "1/CM",
+                        }
+                    ],
+                }
+            ],
+        }
 
-        operation = JsonPatchOperation.model_validate(
-            {"op": "move", "from": "/description/0", "path": "/description/1"}
-        )
-
-        self.assertEqual(
-            operation.model_dump(mode="json", by_alias=True, exclude_none=True),
-            {"op": "move", "path": "/description/1", "from": "/description/0"},
-        )
+        self.assertEqual(list(validator.iter_errors(valid)), [])
+        self.assertNotEqual(list(validator.iter_errors(extra_field)), [])
+        self.assertNotEqual(list(validator.iter_errors(range_object)), [])
 
 
 class RequirementEvidencePacketTests(unittest.TestCase):
@@ -552,6 +636,7 @@ def quantitative_schema(*owner_classes: str) -> dict:
     defs = {
         "QuantitativeAttribute": {
             "type": "object",
+            "additionalProperties": False,
             "properties": {
                 "title": {"type": "string"},
                 "description": {"type": "string"},
@@ -559,6 +644,7 @@ def quantitative_schema(*owner_classes: str) -> dict:
                 "has_quantity_type": {"type": "string"},
                 "unit": {"type": "string"},
             },
+            "required": ["value", "has_quantity_type"],
         }
     }
     for owner_class in owner_classes:
@@ -588,6 +674,7 @@ def quantitative_schema(*owner_classes: str) -> dict:
     return {
         "type": "object",
         "properties": {
+            "description": {"type": "array", "items": {"type": "string"}},
             "was_generated_by": {
                 "type": "array",
                 "items": {"$ref": "#/$defs/DataGeneratingActivity"},
@@ -1251,7 +1338,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(instance["description"], "Threshold: 0.93")
         self.assertNotIn("Evidence-grounded quantitative attribute", instance["description"])
 
-    async def test_semantic_reconstruction_applies_llm_json_patch(self):
+    async def test_semantic_reconstruction_applies_schema_constrained_write(self):
         service = WorkflowService(
             profile_service=FakeProfileService(),
             settings=Settings(),
@@ -1268,17 +1355,18 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             target_paths=["/description"],
         )
         llm_result = Mock(
-            output=SemanticReconstructionPatchResult(
-                should_apply=True,
-                operations=[
+            output={
+                "should_apply": True,
+                "writes": [
                     {
-                        "op": "replace",
-                        "path": "/description",
+                        "target_path": "/description",
+                        "mode": "replace",
                         "value": ["Dataset acquired with a documented method."],
+                        "reason": "Streamlined dataset identity.",
                     }
                 ],
-                reason="Streamlined dataset identity.",
-            ),
+                "reason": "Streamlined dataset identity.",
+            },
             usage=None,
         )
 
@@ -1300,7 +1388,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
                     description="Identity semantics",
                     target_paths=["/description"],
                 ),
-                validation_schema={},
+                validation_schema=quantitative_schema("DataGeneratingActivity"),
             )
 
         self.assertEqual(paths, ["/description"])
@@ -1309,9 +1397,62 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(updated["description"], ["Dataset acquired with a documented method."])
         call_kwargs = mocked.call_args.kwargs
         self.assertEqual(call_kwargs["agent_name"], "semantic_reconstruction")
+        self.assertIsInstance(call_kwargs["output_type"], dict)
         self.assertIn("allowed_target_paths", call_kwargs["prompt"])
 
-    async def test_semantic_reconstruction_rejects_disallowed_patch_path(self):
+    async def test_requirement_gap_patcher_uses_schema_constrained_output(self):
+        service = WorkflowService(
+            profile_service=FakeProfileService(),
+            settings=Settings(),
+            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
+        )
+        item = RequirementReportItem(
+            requirement_id="instrument_settings_semantics",
+            label="Instrument settings",
+            weight=1.0,
+            status="partial",
+            applicable=True,
+            quality=0.5,
+            weighted_score=0.5,
+            target_paths=["/was_generated_by/0/has_quantitative_attribute"],
+        )
+        llm_result = Mock(
+            output={
+                "should_apply": True,
+                "writes": [
+                    {
+                        "target_path": "/was_generated_by/0/has_quantitative_attribute",
+                        "mode": "append",
+                        "items": [{"value": 0.93, "has_quantity_type": "threshold"}],
+                        "reason": "Add threshold.",
+                    }
+                ],
+                "reason": "Add threshold.",
+            },
+            usage=None,
+        )
+
+        with patch("app.services.projection_service.generate_structured", AsyncMock(return_value=llm_result)) as mocked:
+            updated, attempt = await service._patch_requirement_gap(
+                data_package_id="pkg",
+                profile_identifier="profile",
+                document={"was_generated_by": [{"has_quantitative_attribute": []}]},
+                requirement=DcatRequirement(
+                    requirement_id="instrument_settings_semantics",
+                    label="Instrument settings",
+                    description="Instrument settings semantics",
+                    target_paths=["/was_generated_by/0/has_quantitative_attribute"],
+                    expected_target_class="QuantitativeAttribute",
+                ),
+                item=item,
+                validation_schema=quantitative_schema("DataGeneratingActivity"),
+            )
+
+        self.assertEqual(attempt.status, "applied")
+        self.assertEqual(updated["was_generated_by"][0]["has_quantitative_attribute"][0]["value"], 0.93)
+        self.assertIsInstance(mocked.call_args.kwargs["output_type"], dict)
+
+    async def test_semantic_reconstruction_schema_only_allows_target_paths(self):
         service = WorkflowService(
             profile_service=FakeProfileService(),
             settings=Settings(),
@@ -1328,15 +1469,11 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             target_paths=["/description"],
         )
         llm_result = Mock(
-            output=SemanticReconstructionPatchResult(
-                should_apply=True,
-                operations=[{"op": "remove", "path": "/dataset_distribution/0"}],
-                reason="Bad patch.",
-            ),
+            output={"should_apply": False, "writes": [], "reason": "No safe write."},
             usage=None,
         )
 
-        with patch("app.services.projection_service.generate_structured", AsyncMock(return_value=llm_result)):
+        with patch("app.services.projection_service.generate_structured", AsyncMock(return_value=llm_result)) as mocked:
             updated, paths, reason, errors = await service._semantic_reconstruction_update(
                 data_package_id="pkg",
                 profile_identifier="profile",
@@ -1348,33 +1485,36 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
                     description="Identity semantics",
                     target_paths=["/description"],
                 ),
-                validation_schema={},
+                validation_schema=quantitative_schema("DataGeneratingActivity"),
             )
 
         self.assertEqual(updated["description"], ["Original."])
         self.assertEqual(paths, [])
-        self.assertIn("disallowed", reason)
-        self.assertEqual(errors, ["disallowed_patch_path"])
+        self.assertEqual(reason, "No safe write.")
+        self.assertEqual(errors, [])
+        output_schema = mocked.call_args.kwargs["output_type"]
+        branch = output_schema["properties"]["writes"]["items"]["oneOf"][0]
+        self.assertEqual(branch["properties"]["target_path"]["const"], "/description")
 
-    async def test_semantic_reconstruction_salvages_valid_operations_when_one_fails_validation(self):
-        class RejectCategoryProfileService(FakeProfileService):
+    async def test_semantic_reconstruction_salvages_valid_writes_when_one_fails_validation(self):
+        class RejectBadAttributeProfileService(FakeProfileService):
             def validate_document(self, *, identifier: str, document: dict) -> ProfileValidationResult:
-                attribute = document["was_generated_by"][0]["has_quantitative_attribute"][0]
-                if "category" in attribute:
-                    return ProfileValidationResult(
-                        valid=False,
-                        errors=[
-                            ProfileValidationIssue(
-                                path="/was_generated_by/0/has_quantitative_attribute/0",
-                                message="Additional properties are not allowed ('category' was unexpected)",
-                                schema_path="",
-                            )
-                        ],
-                    )
+                for index, attribute in enumerate(document["was_generated_by"][0]["has_quantitative_attribute"]):
+                    if attribute.get("has_quantity_type") == "bad setting":
+                        return ProfileValidationResult(
+                            valid=False,
+                            errors=[
+                                ProfileValidationIssue(
+                                    path=f"/was_generated_by/0/has_quantitative_attribute/{index}",
+                                    message="Rejected bad setting",
+                                    schema_path="",
+                                )
+                            ],
+                        )
                 return ProfileValidationResult(valid=True, errors=[])
 
         service = WorkflowService(
-            profile_service=RejectCategoryProfileService(),
+            profile_service=RejectBadAttributeProfileService(),
             settings=Settings(),
             ollama_client=Mock(chat_model="test-model", max_context_length=4096),
         )
@@ -1389,22 +1529,31 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             target_paths=["/was_generated_by/0/has_quantitative_attribute"],
         )
         llm_result = Mock(
-            output=SemanticReconstructionPatchResult(
-                should_apply=True,
-                operations=[
+            output={
+                "should_apply": True,
+                "writes": [
                     {
-                        "op": "replace",
-                        "path": "/was_generated_by/0/has_quantitative_attribute/0/description",
-                        "value": "Threshold for peak detection: 0.93; unit context: transmittance.",
-                    },
-                    {
-                        "op": "add",
-                        "path": "/was_generated_by/0/has_quantitative_attribute/0/category",
-                        "value": "instrument_signal",
-                    },
+                        "target_path": "/was_generated_by/0/has_quantitative_attribute",
+                        "mode": "append",
+                        "items": [
+                            {
+                                "title": "Transmittance",
+                                "description": "Transmittance value range maximum.",
+                                "value": 0.98,
+                                "has_quantity_type": "maximum transmittance",
+                            },
+                            {
+                                "title": "Bad",
+                                "description": "Rejected test setting.",
+                                "value": 1.0,
+                                "has_quantity_type": "bad setting",
+                            },
+                        ],
+                        "reason": "Attach instrument evidence.",
+                    }
                 ],
-                reason="Attach instrument evidence.",
-            ),
+                "reason": "Attach instrument evidence.",
+            },
             usage=None,
         )
 
@@ -1415,13 +1564,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
                 document={
                     "was_generated_by": [
                         {
-                            "has_quantitative_attribute": [
-                                {
-                                    "title": "Threshold for peak detection",
-                                    "description": "Threshold for peak detection: 0.93",
-                                    "value": 0.93,
-                                }
-                            ]
+                            "has_quantitative_attribute": []
                         }
                     ]
                 },
@@ -1432,13 +1575,13 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
                     description="Instrument settings semantics",
                     target_paths=["/was_generated_by/0/has_quantitative_attribute"],
                 ),
-                validation_schema={},
+                validation_schema=quantitative_schema("DataGeneratingActivity"),
             )
 
-        attribute = updated["was_generated_by"][0]["has_quantitative_attribute"][0]
-        self.assertEqual(attribute["description"], "Threshold for peak detection: 0.93; unit context: transmittance.")
-        self.assertNotIn("category", attribute)
-        self.assertEqual(paths, ["/was_generated_by/0/has_quantitative_attribute/0/description"])
+        attributes = updated["was_generated_by"][0]["has_quantitative_attribute"]
+        self.assertEqual(len(attributes), 1)
+        self.assertEqual(attributes[0]["has_quantity_type"], "maximum transmittance")
+        self.assertEqual(paths, ["/was_generated_by/0/has_quantitative_attribute/0"])
         self.assertIn("Applied valid operations", reason)
         self.assertEqual(errors, [])
 

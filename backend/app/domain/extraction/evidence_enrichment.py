@@ -445,11 +445,11 @@ EVIDENCE_NOVELTY_EVALUATOR_SYSTEM_PROMPT = (
 )
 
 EVIDENCE_INSTANCE_BUILDER_SYSTEM_PROMPT = (
-    "You emit a single, schema-valid DCAT-AP+ object derived from the provided evidence notes."
+    "You emit a schema-constrained DCAT-AP+ write envelope derived from the provided evidence notes."
 )
 
 EVIDENCE_INSTANCE_REPAIR_SYSTEM_PROMPT = (
-    "You fix schema validation errors in a single DCAT-AP+ object."
+    "You fix schema validation errors in a schema-constrained DCAT-AP+ write envelope."
 )
 
 
@@ -522,7 +522,7 @@ def build_instance_builder_prompt(
         )
     lines.extend(
         [
-            "Emit one JSON object matching the target class. Omit fields you cannot ground in the evidence.",
+            "Emit one write envelope containing one JSON object matching the target class. Omit fields you cannot ground in the evidence.",
             "Include an `id` field only if a real stable identifier is present in the evidence; otherwise omit it and the backend will assign one.",
         ]
     )
@@ -547,6 +547,6 @@ def build_instance_repair_prompt(
             json.dumps(validation_errors, ensure_ascii=False, indent=2),
             "Instance to repair:",
             json.dumps(instance, ensure_ascii=False, indent=2),
-            "Return the repaired JSON object only, with no extra commentary.",
+            "Return the repaired write envelope only, with no extra commentary.",
         ]
     )

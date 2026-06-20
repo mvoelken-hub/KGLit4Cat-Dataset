@@ -485,11 +485,11 @@ For instrument settings, selected concrete instrument_signal or measurement_cond
 
 
 REQUIREMENT_PATCH_SYSTEM_PROMPT = """
-You create one schema-constrained DCAT-AP+ patch object for one missing requirement.
+You create one schema-constrained DCAT-AP+ write envelope for one missing requirement.
 Return only JSON matching the supplied schema.
 Use only selected evidence. Do not invent facts.
-Set should_patch=false if evidence is insufficient.
-Return exactly one target_path from allowed_target_paths and one object/value instance for that path.
+Set should_apply=false if evidence is insufficient.
+Return writes only for allowed_target_paths. Use mode=append for array targets and mode=replace for scalar/object targets.
 """
 
 
@@ -497,8 +497,8 @@ SEMANTIC_RECONSTRUCTION_SYSTEM_PROMPT = """
 You reconstruct one DCAT-AP+ Dataset draft slice from one semantic requirement review.
 Return only JSON matching the supplied schema.
 Use only the current draft, selected evidence, and context window. Do not invent facts.
-Return RFC 6902 JSON Patch operations only for allowed_target_paths.
-Keep edits minimal: move, rewrite, remove, or add fields only when the semantic requirement justifies it.
+Return schema-constrained write envelopes only for allowed_target_paths.
+Keep edits minimal: replace or append fields only when the semantic requirement justifies it.
 Preserve valid numeric instrument/configuration settings. Remove only obvious qualitative/default/placeholders from quantitative attributes.
 Do not satisfy missing instrument_signal or measurement_condition evidence by generalizing one existing quantitative attribute; add separate schema-valid attributes or set should_apply=false.
 Represent numeric ranges as separate schema-valid minimum and maximum quantitative attributes with numeric values; never put a range string in a quantitative value.
@@ -556,7 +556,7 @@ def build_requirement_patch_prompt(
         "selected_evidence": [item.model_dump(mode="json") for item in selected_evidence],
         "context_window": [item.model_dump(mode="json") for item in context_window],
     }
-    return "Create one grounded patch for this missing/partial requirement.\n\n" + json.dumps(
+    return "Create one grounded schema-constrained write envelope for this missing/partial requirement.\n\n" + json.dumps(
         payload,
         ensure_ascii=False,
         indent=2,
@@ -601,7 +601,7 @@ def build_semantic_reconstruction_prompt(
             "measurement_condition": "axis bounds, axis units, point counts, ranges, scales, and dataset-level measurement descriptors",
         },
     }
-    return "Create a minimal semantic reconstruction JSON Patch for this requirement.\n\n" + json.dumps(
+    return "Create a minimal schema-constrained semantic reconstruction write envelope for this requirement.\n\n" + json.dumps(
         payload,
         ensure_ascii=False,
         indent=2,

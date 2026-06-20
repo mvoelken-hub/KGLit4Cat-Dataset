@@ -4,7 +4,7 @@ import json
 import unittest
 from pathlib import Path
 
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 from app.core.config import Settings
 from app.domain.extraction import (
@@ -261,6 +261,33 @@ class FakeProfileService:
         return ProfileValidationResult(valid=True, errors=[], warnings=[])
 
 
+def evidence_activity_schema() -> dict:
+    return {
+        "$schema": "https://json-schema.org/draft/2019-09/schema",
+        "$ref": "#/$defs/Dataset",
+        "$defs": {
+            "Dataset": {
+                "type": "object",
+                "properties": {
+                    "was_generated_by": {
+                        "type": "array",
+                        "items": {"$ref": "#/$defs/DataGeneratingActivity"},
+                    }
+                },
+            },
+            "DataGeneratingActivity": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "id": {"type": "string"},
+                    "title": {"type": "string"},
+                    "description": {"type": "string"},
+                },
+            },
+        },
+    }
+
+
 class EvidenceEnrichmentIntegrationTests(unittest.IsolatedAsyncioTestCase):
     def _service(self) -> WorkflowService:
         service = WorkflowService(
@@ -318,6 +345,51 @@ class EvidenceEnrichmentIntegrationTests(unittest.IsolatedAsyncioTestCase):
             )
         )
         self.assertEqual(state.generated_initial_draft, {"id": "pkg", "was_generated_by": []})
+
+    async def test_evidence_instance_builder_uses_schema_constrained_output(self):
+        service = WorkflowService(
+            profile_service=FakeProfileService(),
+            settings=Settings(),
+            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
+        )
+        note = EvidenceCandidate(
+            candidate_id="n1",
+            category="activity_signal",
+            claim="new activity",
+            evidence_text="ACTIVITY= x",
+        )
+        llm_result = Mock(
+            output={
+                "should_apply": True,
+                "writes": [
+                    {
+                        "target_path": "/was_generated_by/-",
+                        "mode": "append",
+                        "items": [{"title": "Data generating activity"}],
+                        "reason": "Add activity.",
+                    }
+                ],
+                "reason": "Add activity.",
+            },
+            usage=None,
+        )
+
+        with patch("app.services.projection_service.generate_structured", AsyncMock(return_value=llm_result)) as mocked:
+            instance = await service._build_evidence_instance(
+                data_package_id="pkg",
+                note=note,
+                contextual_notes=[],
+                draft_excerpt=[],
+                schema_branch={},
+                validation_schema=evidence_activity_schema(),
+                target_path="/was_generated_by/-",
+                target_class="DataGeneratingActivity",
+            )
+
+        self.assertEqual(instance, {"title": "Data generating activity"})
+        self.assertIsInstance(mocked.call_args.kwargs["output_type"], dict)
+        branch = mocked.call_args.kwargs["output_type"]["properties"]["writes"]["items"]["oneOf"][0]
+        self.assertEqual(branch["properties"]["target_path"]["const"], "/was_generated_by/-")
 
     async def test_enrichment_skips_non_novel_notes(self):
         service = self._service()
