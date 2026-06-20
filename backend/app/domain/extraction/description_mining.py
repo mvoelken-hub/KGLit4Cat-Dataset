@@ -20,9 +20,12 @@ Split compound statements into separate, complete claims.
 Copy evidence_text verbatim from the supplied description.
 Return each source_description_path exactly as supplied.
 Use only these categories: resource_signal, method_signal, measurement_signal,
-agent_signal, activity_signal, instrument_signal, surrounding_signal, other.
-Use measurement_signal for observed/raw values and instrument_signal only for
-settings, parameters, thresholds, units, calibration, or processing choices.
+measurement_condition, agent_signal, activity_signal, instrument_signal,
+surrounding_signal, other.
+Use measurement_signal for observed/raw values. Use measurement_condition for
+axis bounds, point counts, ranges, axis units, and other dataset-level
+measurement descriptors. Use instrument_signal only for settings, parameters,
+thresholds, units, calibration, or processing choices.
 Use resource_signal for resources/formats, method_signal for realized procedures,
 agent_signal for devices/software that carry out work, activity_signal for activities,
 and surrounding_signal for people, organizations, dates, ownership, or origin.
@@ -34,6 +37,7 @@ _EVIDENCE_CATEGORIES = {
     "resource_signal",
     "method_signal",
     "measurement_signal",
+    "measurement_condition",
     "agent_signal",
     "activity_signal",
     "instrument_signal",

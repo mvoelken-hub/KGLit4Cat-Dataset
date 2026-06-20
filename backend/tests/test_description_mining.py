@@ -47,13 +47,13 @@ class DescriptionMiningTests(unittest.TestCase):
                 "facts": [
                     {
                         "source_description_path": "/description/0",
-                        "category": "instrument_signal",
+                        "category": "measurement_condition",
                         "claim": "Acquisition frequency was 500 MHz.",
                         "evidence_text": "frequency was 500 MHz",
                     },
                     {
                         "source_description_path": "/description/0",
-                        "category": "instrument_signal",
+                        "category": "measurement_condition",
                         "claim": "Acquisition frequency was 500 MHz.",
                         "evidence_text": "frequency was 500 MHz",
                     },

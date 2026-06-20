@@ -3,17 +3,21 @@ from __future__ import annotations
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
+from pydantic import ValidationError
+
 from app.core.config import Settings
 from app.domain.extraction import (
     DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS,
     DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS,
     DcatRequirement,
     EvidenceCandidate,
+    JsonPatchOperation,
     RequirementEvaluation,
     RequirementAssessment,
     RequirementPatchAttempt,
     RequirementEvidenceItem,
     RequirementReportItem,
+    SemanticReconstructionRecord,
     SemanticReconstructionPatchResult,
     build_requirement_evaluation_prompt,
     build_requirement_report,
@@ -30,7 +34,7 @@ from app.domain.extraction import (
 )
 from app.domain.extraction.description_mining import RawDescriptionFacts
 from app.domain.extraction.workflow import ExtractionRunProgress, ExtractionRunState
-from app.domain.profiles import ProfileValidationResult
+from app.domain.profiles import ProfileValidationIssue, ProfileValidationResult
 from app.ollama.errors import CompletionError
 from app.services.workflow_service import WorkflowService
 
@@ -221,6 +225,59 @@ class RequirementScoringTests(unittest.TestCase):
         self.assertEqual(report.source_trace_score, 0.0)
         self.assertEqual(report.coverage_score, 1.0)
 
+    def test_build_report_copies_semantic_reconstruction_status_to_item_patch(self):
+        semantic = RequirementReportItem(
+            requirement_id="instrument_settings_semantics",
+            label="Instrument settings",
+            weight=1.0,
+            status="partial",
+            applicable=True,
+            quality=0.5,
+            weighted_score=0.5,
+        )
+
+        report = build_requirement_report(
+            schema_valid=True,
+            coverage=compute_coverage_report({}, {}),
+            semantic_requirements=[semantic],
+            source_trace=compute_source_trace_report(RoutedEvidenceContext(), []),
+            coverage_patches=[],
+            semantic_reconstructions=[
+                SemanticReconstructionRecord(
+                    requirement_id="instrument_settings_semantics",
+                    status="rolled_back",
+                    target_paths=["/was_generated_by/0/has_quantitative_attribute"],
+                    changed_paths=["/was_generated_by/0/has_quantitative_attribute/0"],
+                    reason="Semantic reconstruction failed validation.",
+                    validation_errors=["Additional properties are not allowed ('category' was unexpected)"],
+                )
+            ],
+        )
+
+        patch = report.semantic_requirements[0].patch
+        self.assertTrue(patch.attempted)
+        self.assertEqual(patch.status, "rolled_back")
+        self.assertEqual(patch.target_path, "/was_generated_by/0/has_quantitative_attribute/0")
+        self.assertEqual(patch.validation_errors, ["Additional properties are not allowed ('category' was unexpected)"])
+
+    def test_semantic_reconstruction_patch_schema_requires_valid_json_patch_members(self):
+        with self.assertRaises(ValidationError):
+            SemanticReconstructionPatchResult.model_validate(
+                {
+                    "should_apply": True,
+                    "operations": [{"op": "add", "path": "/description"}],
+                }
+            )
+
+        operation = JsonPatchOperation.model_validate(
+            {"op": "move", "from": "/description/0", "path": "/description/1"}
+        )
+
+        self.assertEqual(
+            operation.model_dump(mode="json", by_alias=True, exclude_none=True),
+            {"op": "move", "path": "/description/1", "from": "/description/0"},
+        )
+
 
 class RequirementEvidencePacketTests(unittest.TestCase):
     def test_stable_evidence_id_disambiguates_repeated_candidate_ids(self):
@@ -345,6 +402,44 @@ class RequirementEvidencePacketTests(unittest.TestCase):
 
         self.assertEqual(selected[0].candidate_id, "observe")
 
+    def test_quantitative_packet_accepts_measurement_condition_but_not_raw_measurement(self):
+        requirement = next(
+            req
+            for req in DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS
+            if req.requirement_id == "instrument_settings_attributes"
+        )
+        points = EvidenceCandidate(
+            candidate_id="points",
+            category="measurement_condition",
+            claim="The spectrum contains 2559 data points.",
+            evidence_text="NPOINTS=2559",
+        )
+        raw = EvidenceCandidate(
+            candidate_id="raw",
+            category="measurement_signal",
+            claim="A row-like transmittance value is 0.42.",
+            evidence_text="1234.5 0.42",
+        )
+        context = RoutedEvidenceContext(portable_evidence=[raw, points])
+        item = RequirementReportItem(
+            requirement_id=requirement.requirement_id,
+            label=requirement.label,
+            weight=requirement.weight,
+            status="missing",
+            applicable=True,
+            quality=0.0,
+            weighted_score=0.0,
+            evidence_search_hints=["points"],
+        )
+
+        selected, _ = select_requirement_evidence_packet(
+            requirement=requirement,
+            assessment=item,
+            evidence_context=context,
+        )
+
+        self.assertEqual([entry.candidate_id for entry in selected], ["points"])
+
     def test_dataset_generation_semantics_accepts_supporting_activity_evidence(self):
         requirement = next(
             req
@@ -445,6 +540,7 @@ class RequirementEvidencePacketTests(unittest.TestCase):
         )
 
         self.assertIn("add separate schema-valid attributes or set should_apply=false", prompt)
+        self.assertIn("Represent numeric ranges as separate schema-valid minimum and maximum", prompt)
 
 
 class FakeProfileService:
@@ -1094,6 +1190,27 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual([(group.label, group.value) for group in groups], [("threshold for peak detection", 0.93)])
 
+    def test_quantitative_grouping_accepts_measurement_condition_descriptors(self):
+        notes = [
+            EvidenceCandidate(
+                candidate_id="points",
+                category="measurement_condition",
+                claim="The spectrum contains a data point count of 2559.",
+                evidence_text="NPOINTS=2559",
+            ),
+            EvidenceCandidate(
+                candidate_id="raw",
+                category="measurement_signal",
+                claim="A raw observed transmittance value is 0.42.",
+                evidence_text="1234.5 0.42",
+            ),
+        ]
+
+        groups = WorkflowService._quantitative_evidence_groups(notes)
+
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].value, 2559)
+
     def test_quantitative_grouping_rejects_qualitative_placeholder_values(self):
         notes = [
             EvidenceCandidate(
@@ -1168,6 +1285,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         with patch("app.services.projection_service.generate_structured", AsyncMock(return_value=llm_result)) as mocked:
             updated, paths, reason, errors = await service._semantic_reconstruction_update(
                 data_package_id="pkg",
+                profile_identifier="profile",
                 document={
                     "id": "pkg",
                     "title": ["Dataset"],
@@ -1221,6 +1339,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         with patch("app.services.projection_service.generate_structured", AsyncMock(return_value=llm_result)):
             updated, paths, reason, errors = await service._semantic_reconstruction_update(
                 data_package_id="pkg",
+                profile_identifier="profile",
                 document={"description": ["Original."], "dataset_distribution": [{"title": ["D"]}]},
                 item=item,
                 requirement=DcatRequirement(
@@ -1237,11 +1356,95 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("disallowed", reason)
         self.assertEqual(errors, ["disallowed_patch_path"])
 
+    async def test_semantic_reconstruction_salvages_valid_operations_when_one_fails_validation(self):
+        class RejectCategoryProfileService(FakeProfileService):
+            def validate_document(self, *, identifier: str, document: dict) -> ProfileValidationResult:
+                attribute = document["was_generated_by"][0]["has_quantitative_attribute"][0]
+                if "category" in attribute:
+                    return ProfileValidationResult(
+                        valid=False,
+                        errors=[
+                            ProfileValidationIssue(
+                                path="/was_generated_by/0/has_quantitative_attribute/0",
+                                message="Additional properties are not allowed ('category' was unexpected)",
+                                schema_path="",
+                            )
+                        ],
+                    )
+                return ProfileValidationResult(valid=True, errors=[])
+
+        service = WorkflowService(
+            profile_service=RejectCategoryProfileService(),
+            settings=Settings(),
+            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
+        )
+        item = RequirementReportItem(
+            requirement_id="instrument_settings_semantics",
+            label="Instrument settings",
+            weight=1.0,
+            status="partial",
+            applicable=True,
+            quality=0.5,
+            weighted_score=0.5,
+            target_paths=["/was_generated_by/0/has_quantitative_attribute"],
+        )
+        llm_result = Mock(
+            output=SemanticReconstructionPatchResult(
+                should_apply=True,
+                operations=[
+                    {
+                        "op": "replace",
+                        "path": "/was_generated_by/0/has_quantitative_attribute/0/description",
+                        "value": "Threshold for peak detection: 0.93; unit context: transmittance.",
+                    },
+                    {
+                        "op": "add",
+                        "path": "/was_generated_by/0/has_quantitative_attribute/0/category",
+                        "value": "instrument_signal",
+                    },
+                ],
+                reason="Attach instrument evidence.",
+            ),
+            usage=None,
+        )
+
+        with patch("app.services.projection_service.generate_structured", AsyncMock(return_value=llm_result)):
+            updated, paths, reason, errors = await service._semantic_reconstruction_update(
+                data_package_id="pkg",
+                profile_identifier="profile",
+                document={
+                    "was_generated_by": [
+                        {
+                            "has_quantitative_attribute": [
+                                {
+                                    "title": "Threshold for peak detection",
+                                    "description": "Threshold for peak detection: 0.93",
+                                    "value": 0.93,
+                                }
+                            ]
+                        }
+                    ]
+                },
+                item=item,
+                requirement=DcatRequirement(
+                    requirement_id="instrument_settings_semantics",
+                    label="Instrument settings",
+                    description="Instrument settings semantics",
+                    target_paths=["/was_generated_by/0/has_quantitative_attribute"],
+                ),
+                validation_schema={},
+            )
+
+        attribute = updated["was_generated_by"][0]["has_quantitative_attribute"][0]
+        self.assertEqual(attribute["description"], "Threshold for peak detection: 0.93; unit context: transmittance.")
+        self.assertNotIn("category", attribute)
+        self.assertEqual(paths, ["/was_generated_by/0/has_quantitative_attribute/0/description"])
+        self.assertIn("Applied valid operations", reason)
+        self.assertEqual(errors, [])
+
     async def test_semantic_reconstruction_rolls_back_failed_validation(self):
         class InvalidProfileService(FakeProfileService):
             def validate_document(self, *, identifier: str, document: dict) -> ProfileValidationResult:
-                from app.domain.profiles import ProfileValidationIssue
-
                 return ProfileValidationResult(
                     valid=False,
                     errors=[ProfileValidationIssue(path="/description", message="bad", schema_path="")],

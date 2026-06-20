@@ -35,6 +35,7 @@ from app.domain.extraction import (
     RankedFile,
     RequirementEvaluation,
     RequirementPatchResult,
+    RoutedEvidenceContext,
     SemanticReconstructionPatchResult,
     Resource,
     DatasetSummaryProjection,
@@ -2638,12 +2639,18 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 return CompletionResult(output=RequirementEvaluation(), usage=RunUsage(requests=1))
             if kwargs["output_type"] is RequirementPatchResult:
                 return CompletionResult(
-                    output=RequirementPatchResult(should_patch=False, rationale="No patch in this test."),
+                    output=RequirementPatchResult(
+                        should_patch=False,
+                        rationale="No patch in this test.",
+                    ),
                     usage=RunUsage(requests=1),
                 )
             if kwargs["output_type"] is SemanticReconstructionPatchResult:
                 return CompletionResult(
-                    output=SemanticReconstructionPatchResult(should_apply=False, reason="No reconstruction in this test."),
+                    output=SemanticReconstructionPatchResult(
+                        should_apply=False,
+                        reason="No reconstruction in this test.",
+                    ),
                     usage=RunUsage(requests=1),
                 )
             raise AssertionError("Only dataset summary/profile generation is expected")
@@ -2663,6 +2670,94 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(output_repository.run_state.generated_final_draft)
         self.assertEqual(output_repository.run_state.generated_final_draft["id"], "package-id")
         self.assertEqual(output_repository.run_state.vocab_queries, [])
+        status, progress = await service.get_extraction_progress(data_package_id="package-id")
+        self.assertEqual(status, TaskStatus.COMPLETED)
+        self.assertIsNotNone(progress)
+        self.assertEqual(progress.stage, "profile_draft")
+
+    async def test_force_profile_rebuild_uses_saved_evidence_context(self):
+        service, task_registry, output_repository = make_service([[make_chunk()]])
+        output_repository.save_extraction_run_state(
+            workflow_id="package-id",
+            state=ExtractionRunState(
+                profile_identifier="profile",
+                ranked_files=[RankedFile(rank=1, file_path="README.md")],
+                initial_file_summaries=[
+                    ExtractionFileSummary(
+                        file_path="README.md",
+                        data_format="plain text",
+                    )
+                ],
+                initial_file_summary_status="completed",
+                initial_extraction_overview=overview_for_file(
+                    "README.md",
+                    summary="README.md is present.",
+                ),
+                initial_extraction_overview_status="structured",
+                chunk_results=[
+                    ExtractionChunkResult(
+                        chunk_index=0,
+                        file_path="README.md",
+                        start_idx=0,
+                        end_idx=0,
+                        status="completed",
+                        evidence_context=None,
+                    ),
+                ],
+                generated_final_draft={"id": "stale"},
+            ),
+        )
+        output_repository.save_evidence_context(
+            workflow_id="package-id",
+            evidence_context=RoutedEvidenceContext.model_validate(
+                evidence_context("profile-resource", "Dataset type dataset.")
+            ),
+        )
+
+        async def fake_generate(*_args, **kwargs):
+            if kwargs["output_type"] is EvidenceContext:
+                raise AssertionError("Chunk evidence extraction should not run")
+            if kwargs["output_type"] is ProfileTargetDecision:
+                return target_decision("/type")
+            if kwargs["output_type"] is ProfileTargetWriteDocument:
+                return target_write([{"preferred_label": ["dataset"]}])
+            if kwargs["output_type"] is DatasetSummaryProjection:
+                return dataset_summary_result()
+            if kwargs["output_type"] is ShallowDatasetLevelProjection:
+                return dataset_level_projection_result()
+            if kwargs["output_type"] is RawDescriptionFacts:
+                return CompletionResult(output=RawDescriptionFacts(), usage=RunUsage(requests=1))
+            if kwargs["output_type"] is RequirementEvaluation:
+                return CompletionResult(output=RequirementEvaluation(), usage=RunUsage(requests=1))
+            if kwargs["output_type"] is RequirementPatchResult:
+                return CompletionResult(
+                    output=RequirementPatchResult(should_patch=False, rationale="No patch in this test."),
+                    usage=RunUsage(requests=1),
+                )
+            if kwargs["output_type"] is SemanticReconstructionPatchResult:
+                return CompletionResult(
+                    output=SemanticReconstructionPatchResult(should_apply=False, reason="No reconstruction in this test."),
+                    usage=RunUsage(requests=1),
+                )
+            raise AssertionError(f"Unexpected output type: {kwargs['output_type']}")
+
+        with patch("app.services.workflow_service.generate_structured", side_effect=fake_generate):
+            result, status = await service.run_extraction(
+                data_package_id="package-id",
+                profile_identifier="profile",
+                resume=True,
+                force_profile_rebuild=True,
+                target_stage="profile",
+            )
+            self.assertIsNone(result)
+            self.assertEqual(status, TaskStatus.RUNNING)
+            await task_registry.wait_for_task(
+                "extraction:run:package-id:semantic:chat",
+                timeout=2,
+            )
+
+        self.assertIsNotNone(output_repository.run_state.generated_final_draft)
+        self.assertEqual(output_repository.run_state.generated_final_draft["id"], "package-id")
         status, progress = await service.get_extraction_progress(data_package_id="package-id")
         self.assertEqual(status, TaskStatus.COMPLETED)
         self.assertIsNotNone(progress)

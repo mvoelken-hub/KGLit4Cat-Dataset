@@ -1027,6 +1027,71 @@ class WorkflowService(
                 "Run initial file understanding before chunk extraction."
             )
 
+        if force_profile_rebuild and target_stage == "profile":
+            evidence_context = self._load_evidence_context_or_none(
+                data_package_id,
+                chunking_strategy=state.chunking_strategy,
+                chat_model=state.chat_model,
+            )
+            if evidence_context is not None:
+                progress.stage = "profile_projection"
+                progress.interim_evidence_context = evidence_context
+                progress.chunk_results = state.chunk_results
+                self._update_progress(data_package_id, progress)
+                if (
+                    profile_identifier is None
+                    or profile_manifest is None
+                    or validation_schema is None
+                ):
+                    raise ValueError(
+                        "A profile identifier is required before building the generated profile draft."
+                    )
+
+                profile_document = await self._build_profile_document_by_patching(
+                    data_package_id=data_package_id,
+                    profile_identifier=profile_identifier,
+                    profile_target_class=profile_manifest.target_class,
+                    evidence_context=evidence_context,
+                    validation_schema=validation_schema,
+                    state=state,
+                    progress=progress,
+                    warnings=warnings,
+                )
+
+                if state.validation.status == "valid":
+                    profile_document = await self._enrich_draft_with_requirements(
+                        data_package_id=data_package_id,
+                        profile_identifier=profile_identifier,
+                        evidence_context=evidence_context,
+                        validation_schema=validation_schema,
+                        state=state,
+                        progress=progress,
+                        warnings=warnings,
+                    )
+
+                progress.stage = "profile_draft"
+                progress.interim_evidence_context = evidence_context
+                progress.generated_final_draft = profile_document
+                progress.curated_document = state.curated_document
+                progress.draft_quality_state = state.draft_quality_state
+                progress.validation = state.validation
+                progress.curated_validation = state.curated_validation
+                progress.requirement_report = state.requirement_report
+                progress.initial_draft_scaffold = state.initial_draft_scaffold
+                progress.projection_ledger = state.projection_ledger
+                progress.field_completion_ledger = state.field_completion_ledger
+                progress.curation_ledger = state.curation_ledger
+                progress.vocab_queries = state.vocab_queries
+                progress.warnings = list(warnings)
+                self._save_run_state(data_package_id, state)
+                self._persist_state_artifacts(data_package_id, state)
+                self.output_repository.save_extraction_warnings(
+                    workflow_id=data_package_id,
+                    warnings=warnings,
+                )
+                self._update_progress(data_package_id, progress)
+                return None
+
         progress.stage = "chunk_extraction"
         chunk_repairs: list[tuple[ExtractionChunkResult, MaxRetriesExceeded]] = []
         evidence_prompt_budgeter = self._prompt_token_budgeter()

@@ -5,7 +5,7 @@ from hashlib import sha1
 import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.domain.extraction.evidence_context import EvidenceCandidate, RoutedEvidenceContext
 
@@ -121,11 +121,28 @@ class SemanticReconstructionRecord(BaseModel):
     validation_errors: list[str] = Field(default_factory=list)
 
 
+class JsonPatchOperation(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    op: Literal["add", "remove", "replace", "move", "copy", "test"]
+    path: str
+    value: Any = None
+    from_: str | None = Field(default=None, alias="from")
+
+    @model_validator(mode="after")
+    def require_operation_members(self) -> "JsonPatchOperation":
+        if self.op in {"add", "replace", "test"} and "value" not in self.model_fields_set:
+            raise ValueError(f"{self.op} operation requires value")
+        if self.op in {"move", "copy"} and not self.from_:
+            raise ValueError(f"{self.op} operation requires from")
+        return self
+
+
 class SemanticReconstructionPatchResult(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     should_apply: bool = False
-    operations: list[dict[str, Any]] = Field(default_factory=list)
+    operations: list[JsonPatchOperation] = Field(default_factory=list)
     reason: str = ""
 
 
@@ -379,8 +396,8 @@ DCAT_AP_PLUS_COVERAGE_REQUIREMENTS: tuple[DcatRequirement, ...] = (
         weight=1.5,
         target_paths=["/was_generated_by/0/has_quantitative_attribute/-", "/is_about_entity/0/has_quantitative_attribute/-"],
         expected_target_class="QuantitativeAttribute",
-        evidence_hints=["temperature", "frequency", "width", "unit", "parameter", "threshold", "setting"],
-        allowed_categories=["instrument_signal"],
+        evidence_hints=["temperature", "frequency", "width", "unit", "parameter", "threshold", "setting", "range", "points"],
+        allowed_categories=["instrument_signal", "measurement_condition"],
     ),
 )
 
@@ -436,8 +453,8 @@ DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS: tuple[DcatRequirement, ...] = (
         description="Instrument/configuration settings selected as concrete evidence are represented as suitable attributes.",
         weight=1.5,
         target_paths=["/was_generated_by/0/has_quantitative_attribute", "/is_about_entity/0/has_quantitative_attribute"],
-        evidence_hints=["temperature", "frequency", "width", "unit", "parameter", "threshold", "setting"],
-        allowed_categories=["instrument_signal"],
+        evidence_hints=["temperature", "frequency", "width", "unit", "parameter", "threshold", "setting", "range", "points"],
+        allowed_categories=["instrument_signal", "measurement_condition"],
     ),
     DcatRequirement(
         requirement_id="provenance_context_semantics",
@@ -463,7 +480,7 @@ Use statuses: fulfilled, partial, missing, not_applicable.
 quality must be 1 for fulfilled, 0.5 for partial, 0 for missing/not_applicable.
 Prefer not_applicable only when the supplied evidence categories make the semantic requirement irrelevant.
 For aboutness, file names are not evaluated entities. For method plans, explicit method_signal evidence is required for fulfilled.
-For instrument settings, selected concrete instrument_signal evidence must be represented by suitable attributes; otherwise mark partial.
+For instrument settings, selected concrete instrument_signal or measurement_condition evidence must be represented by suitable attributes; otherwise mark partial.
 """
 
 
@@ -483,7 +500,8 @@ Use only the current draft, selected evidence, and context window. Do not invent
 Return RFC 6902 JSON Patch operations only for allowed_target_paths.
 Keep edits minimal: move, rewrite, remove, or add fields only when the semantic requirement justifies it.
 Preserve valid numeric instrument/configuration settings. Remove only obvious qualitative/default/placeholders from quantitative attributes.
-Do not satisfy missing instrument_signal evidence by generalizing one existing quantitative attribute; add separate schema-valid attributes or set should_apply=false.
+Do not satisfy missing instrument_signal or measurement_condition evidence by generalizing one existing quantitative attribute; add separate schema-valid attributes or set should_apply=false.
+Represent numeric ranges as separate schema-valid minimum and maximum quantitative attributes with numeric values; never put a range string in a quantitative value.
 Do not use new evidence search. Do not patch distributions.
 Set should_apply=false when no safe semantic reconstruction is available.
 """
@@ -509,6 +527,7 @@ def build_requirement_evaluation_prompt(
             "instrument_signal": "acquisition, instrument, processing, calibration, unit, threshold, and configuration settings",
             "surrounding_signal": "dates, labs, teams, people, organizations, ownership, origin, authorship, provenance context",
             "measurement_signal": "primary/raw data values; downstream inert",
+            "measurement_condition": "axis bounds, axis units, point counts, ranges, scales, and dataset-level measurement descriptors",
         },
     }
     return (
@@ -566,7 +585,8 @@ def build_semantic_reconstruction_prompt(
         "draft_excerpt": draft_excerpt,
         "schema_branches": schema_branches,
         "reconstruction_rules": [
-            "Do not satisfy missing instrument_signal evidence by generalizing one existing quantitative attribute; add separate schema-valid attributes or set should_apply=false.",
+            "Do not satisfy missing instrument_signal or measurement_condition evidence by generalizing one existing quantitative attribute; add separate schema-valid attributes or set should_apply=false.",
+            "Represent numeric ranges as separate schema-valid minimum and maximum quantitative attributes with numeric values; never put a range string in a quantitative value.",
         ],
         "selected_evidence": [evidence.model_dump(mode="json") for evidence in item.selected_evidence],
         "context_window": [evidence.model_dump(mode="json") for evidence in item.context_window],
@@ -578,6 +598,7 @@ def build_semantic_reconstruction_prompt(
             "instrument_signal": "acquisition, instrument, processing, calibration, unit, threshold, and configuration settings",
             "surrounding_signal": "dates, labs, teams, people, organizations, ownership, origin, authorship, provenance context",
             "measurement_signal": "primary/raw data values; downstream inert",
+            "measurement_condition": "axis bounds, axis units, point counts, ranges, scales, and dataset-level measurement descriptors",
         },
     }
     return "Create a minimal semantic reconstruction JSON Patch for this requirement.\n\n" + json.dumps(
@@ -606,6 +627,20 @@ def build_requirement_report(
     coverage_patches: list[RequirementReportItem],
     semantic_reconstructions: list[SemanticReconstructionRecord] | None = None,
 ) -> RequirementReport:
+    for record in semantic_reconstructions or []:
+        if record.status == "skipped":
+            continue
+        for item in semantic_requirements:
+            if item.requirement_id != record.requirement_id:
+                continue
+            item.patch = RequirementPatchAttempt(
+                attempted=True,
+                status=record.status,
+                target_path=record.changed_paths[0] if record.changed_paths else (record.target_paths[0] if record.target_paths else None),
+                validation_errors=record.validation_errors,
+                reason=record.reason,
+            )
+            break
     semantic_score = score_requirement_items(semantic_requirements)
     return RequirementReport(
         schema_valid=schema_valid,
@@ -849,9 +884,9 @@ def _class_hint_score(target_class: str, candidate: EvidenceCandidate) -> int:
         return 2
     if target_class == "Plan" and category == "method_signal":
         return 2
-    if target_class == "QuantitativeAttribute" and category == "instrument_signal":
+    if target_class == "QuantitativeAttribute" and category in {"instrument_signal", "measurement_condition"}:
         score = 2
-        if any(term in text for term in ("frequency", "temperature", "width", "count", "threshold", "unit", "setting", "parameter")):
+        if any(term in text for term in ("frequency", "temperature", "width", "count", "points", "range", "axis", "threshold", "unit", "setting", "parameter")):
             score += 1
         if any(term in text for term in ("formula", "subrange", "range of", "0..", "rel ")):
             score -= 1

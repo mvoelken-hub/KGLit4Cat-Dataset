@@ -546,6 +546,7 @@ class ProjectionService:
             original = self._clone_json_object(current)
             updated, changed_paths, reason, validation_errors = await self._semantic_reconstruction_update(
                 data_package_id=data_package_id,
+                profile_identifier=profile_identifier,
                 document=current,
                 item=item,
                 requirement=next(req for req in DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS if req.requirement_id == requirement_id),
@@ -604,6 +605,7 @@ class ProjectionService:
         self,
         *,
         data_package_id: str,
+        profile_identifier: str,
         document: dict[str, Any],
         item: RequirementReportItem,
         requirement: DcatRequirement,
@@ -670,19 +672,56 @@ class ProjectionService:
             updated = self._apply_profile_patch(document, patch.operations)
         except Exception as exc:
             return document, [], f"Semantic reconstruction patch could not be applied: {exc}", [str(exc)]
+        validation = self.profile_service.validate_document(
+            identifier=profile_identifier,
+            document=updated,
+        )
+        if not validation.valid:
+            salvaged = document
+            salvaged_paths: list[str] = []
+            rejected: list[str] = [issue.message for issue in validation.errors]
+            for operation in patch.operations:
+                try:
+                    candidate = self._apply_profile_patch(salvaged, [operation])
+                except Exception as exc:
+                    rejected.append(str(exc))
+                    continue
+                candidate_validation = self.profile_service.validate_document(
+                    identifier=profile_identifier,
+                    document=candidate,
+                )
+                if not candidate_validation.valid:
+                    rejected.extend(issue.message for issue in candidate_validation.errors)
+                    continue
+                salvaged = candidate
+                salvaged_paths.extend(self._semantic_patch_changed_paths([operation]))
+            if salvaged_paths:
+                return (
+                    salvaged,
+                    list(dict.fromkeys(salvaged_paths)),
+                    f"{patch.reason} Applied valid operations; rejected invalid operations.",
+                    [],
+                )
+            return document, [], patch.reason or "Semantic reconstruction failed validation.", list(dict.fromkeys(rejected))
         return updated, self._semantic_patch_changed_paths(patch.operations), patch.reason, []
 
     @classmethod
-    def _semantic_patch_paths_allowed(cls, operations: list[dict[str, Any]], allowed_paths: list[str]) -> bool:
+    def _semantic_patch_paths_allowed(cls, operations: list[Any], allowed_paths: list[str]) -> bool:
         return all(
-            isinstance(operation, dict)
-            and cls._semantic_patch_path_allowed(str(operation.get("path", "")), allowed_paths)
+            isinstance(cls._patch_operation_dict(operation), dict)
+            and cls._semantic_patch_path_allowed(str(cls._patch_operation_dict(operation).get("path", "")), allowed_paths)
             and (
-                "from" not in operation
-                or cls._semantic_patch_path_allowed(str(operation.get("from", "")), allowed_paths)
+                "from" not in cls._patch_operation_dict(operation)
+                or cls._semantic_patch_path_allowed(str(cls._patch_operation_dict(operation).get("from", "")), allowed_paths)
             )
             for operation in operations
         )
+
+    @staticmethod
+    def _patch_operation_dict(operation: Any) -> dict[str, Any]:
+        if hasattr(operation, "model_dump"):
+            return operation.model_dump(mode="json", by_alias=True, exclude_none=True)
+        return operation
 
     @staticmethod
     def _semantic_patch_path_allowed(path: str, allowed_paths: list[str]) -> bool:
@@ -692,8 +731,14 @@ class ProjectionService:
         )
 
     @staticmethod
-    def _semantic_patch_changed_paths(operations: list[dict[str, Any]]) -> list[str]:
-        return list(dict.fromkeys(str(operation.get("path", "")) for operation in operations if operation.get("path")))
+    def _semantic_patch_changed_paths(operations: list[Any]) -> list[str]:
+        return list(
+            dict.fromkeys(
+                str(operation.get("path", ""))
+                for operation in (ProjectionService._patch_operation_dict(operation) for operation in operations)
+                if operation.get("path")
+            )
+        )
 
     def _record_semantic_reconstruction_ledgers(
         self,
@@ -1281,7 +1326,7 @@ class ProjectionService:
         label = cls._quantity_label_from_text(claim or evidence_text, match.group(0), unit)
         if not label:
             return None
-        if cls._quantitative_label_is_noise(label, claim, evidence_text, unit):
+        if cls._quantitative_label_is_noise(label, claim, evidence_text, unit, str(getattr(note, "category", "") or "")):
             return None
         normalized_label = re.sub(r"[^a-z0-9]+", " ", label.lower()).strip()
         value_key = ("%f" % value).rstrip("0").rstrip(".")
@@ -1294,12 +1339,18 @@ class ProjectionService:
     @staticmethod
     def _quantitative_note_category_allowed(note: Any, claim: str) -> bool:
         category = str(getattr(note, "category", "") or "")
-        if category == "instrument_signal":
+        if category in {"instrument_signal", "measurement_condition"}:
             return True
         return False
 
     @staticmethod
-    def _quantitative_label_is_noise(label: str, claim: str, evidence_text: str, unit: str | None = None) -> bool:
+    def _quantitative_label_is_noise(
+        label: str,
+        claim: str,
+        evidence_text: str,
+        unit: str | None = None,
+        category: str = "",
+    ) -> bool:
         lowered = f"{label} {claim} {evidence_text}".lower()
         quantity_like = re.search(
             r"\b(threshold|calibration|unit|scale|scan|average|frequency|temperature|duration|delay|gain|power|resolution|voltage|current|pressure|speed|rate|limit|offset|phase|width|height|depth|length|distance|angle|time|count|number|size|mass|weight|volume|concentration|dose|flow)\b",
@@ -1314,7 +1365,7 @@ class ProjectionService:
             r"\b(observed|measured|recorded|row|table|minimum|maximum|range|bound|extremum|extrema|axis|data points?)\b",
             lowered,
         )
-        if primary_data_like and not configurable_like:
+        if primary_data_like and not configurable_like and category != "measurement_condition":
             return True
         qualitative_like = re.search(r"\b(name|category|class|type|status|mode|flag|label|title|code|identifier|id)\b", lowered)
         placeholder_like = re.search(r"\b(unspecified|unknown|none|null|not set|unset|default|placeholder|n/?a)\b", lowered)
@@ -3658,9 +3709,7 @@ class ProjectionService:
         operations: list[Any],
     ) -> dict[str, Any]:
         patch_ops = [
-            operation.model_dump(mode="json", exclude_none=True)
-            if hasattr(operation, "model_dump")
-            else operation
+            ProjectionService._patch_operation_dict(operation)
             for operation in operations
         ]
         return jsonpatch.JsonPatch(patch_ops).apply(document, in_place=False)

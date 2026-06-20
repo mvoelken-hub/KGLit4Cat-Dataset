@@ -58,13 +58,13 @@ Revisit trigger: Revisit when profile schemas support unresolved unit objects or
 
 ### 2026-06-19: Replace Data Quality Evidence Category With Typed Signals
 
-Decision: Evidence categories are limited to `resource_signal`, `method_signal`, `measurement_signal`, `agent_signal`, `activity_signal`, `instrument_signal`, `surrounding_signal`, and `other`; `data_quality_signal`, `entity_signal`, and category-level `uncertainty` are removed.
+Decision: Evidence categories are limited to `resource_signal`, `method_signal`, `measurement_signal`, `measurement_condition`, `agent_signal`, `activity_signal`, `instrument_signal`, `surrounding_signal`, and `other`; `data_quality_signal`, `entity_signal`, and category-level `uncertainty` are removed.
 
-Reason: `data_quality_signal` mixed raw data values, metadata, and quality-like notes. The new split keeps primary/raw data as evidence-only `measurement_signal`, routes activities and methods separately, and lets instrument settings become attributes without using raw measurement rows as metadata.
+Reason: `data_quality_signal` mixed raw data values, metadata, and quality-like notes. The split keeps primary/raw data as evidence-only `measurement_signal`, routes measurement descriptors such as axis bounds, units, ranges, and point counts through `measurement_condition`, routes activities and methods separately, and lets instrument settings become attributes without using raw measurement rows as metadata.
 
 Tradeoff: Some notes that previously influenced profile projection now remain only in evidence artifacts unless they are classified as activity, instrument, resource, method, agent, or surrounding metadata.
 
-Revisit trigger: Revisit when evaluation shows useful final metadata is consistently stranded as inert `measurement_signal` evidence.
+Revisit trigger: Revisit when evaluation shows useful final metadata is consistently stranded as inert `measurement_signal` evidence or when `measurement_condition` admits too many row-like observations.
 
 ### 2026-06-19: Split Requirement Reporting Into Coverage, Semantics, And Trace
 
