@@ -329,8 +329,8 @@ DCAT_AP_PLUS_COVERAGE_REQUIREMENTS: tuple[DcatRequirement, ...] = (
         weight=1.25,
         target_paths=["/was_generated_by/-"],
         expected_target_class="DataGeneratingActivity",
-        evidence_hints=["acquisition", "measurement", "processing", "generated", "experiment"],
-        allowed_categories=["activity_signal"],
+        evidence_hints=["acquisition", "measurement", "processing", "generated", "experiment", "method", "procedure", "instrument", "software", "setting"],
+        allowed_categories=["activity_signal", "method_signal", "agent_signal", "instrument_signal"],
     ),
     DcatRequirement(
         requirement_id="about_entity_or_activity",
@@ -350,7 +350,7 @@ DCAT_AP_PLUS_COVERAGE_REQUIREMENTS: tuple[DcatRequirement, ...] = (
         target_paths=["/was_generated_by/-"],
         expected_target_class="DataGeneratingActivity",
         evidence_hints=["acquisition", "processing", "experiment type", "method"],
-        allowed_categories=["activity_signal"],
+        allowed_categories=["activity_signal", "method_signal", "agent_signal", "instrument_signal"],
     ),
     DcatRequirement(
         requirement_id="technical_agents",
@@ -400,8 +400,8 @@ DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS: tuple[DcatRequirement, ...] = (
         description="was_generated_by describes a real data-generating activity.",
         weight=1.25,
         target_paths=["/was_generated_by"],
-        evidence_hints=["activity", "acquisition", "processing", "generated"],
-        allowed_categories=["activity_signal"],
+        evidence_hints=["activity", "acquisition", "processing", "generated", "method", "procedure", "instrument", "software", "setting"],
+        allowed_categories=["activity_signal", "method_signal", "agent_signal", "instrument_signal"],
     ),
     DcatRequirement(
         requirement_id="aboutness_semantics",

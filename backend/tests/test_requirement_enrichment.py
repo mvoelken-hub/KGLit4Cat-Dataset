@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, Mock, patch
 from app.core.config import Settings
 from app.domain.extraction import (
     DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS,
+    DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS,
     DcatRequirement,
     EvidenceCandidate,
     RequirementEvaluation,
@@ -341,6 +342,53 @@ class RequirementEvidencePacketTests(unittest.TestCase):
         )
 
         self.assertEqual(selected[0].candidate_id, "observe")
+
+    def test_dataset_generation_semantics_accepts_supporting_activity_evidence(self):
+        requirement = next(
+            req
+            for req in DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS
+            if req.requirement_id == "dataset_generation_semantics"
+        )
+        method = EvidenceCandidate(
+            candidate_id="method",
+            category="method_signal",
+            claim="The data was acquired using Diamant ATR sampling procedure.",
+            evidence_text="##SAMPLING PROCEDURE=Diamant ATR",
+        )
+        agent = EvidenceCandidate(
+            candidate_id="agent",
+            category="agent_signal",
+            claim="The instrument used is Bruker ALPHA.",
+            evidence_text="instrument: Bruker ALPHA",
+        )
+        instrument = EvidenceCandidate(
+            candidate_id="setting",
+            category="instrument_signal",
+            claim="The threshold for peak detection is set to 0.93.",
+            evidence_text="##$CSTHRESHOLD=0.93",
+        )
+        context = RoutedEvidenceContext(portable_evidence=[method, agent, instrument])
+        item = RequirementReportItem(
+            requirement_id=requirement.requirement_id,
+            label=requirement.label,
+            weight=requirement.weight,
+            status="missing",
+            applicable=True,
+            quality=0.0,
+            weighted_score=0.0,
+            evidence_search_hints=requirement.evidence_hints,
+        )
+
+        selected, _ = select_requirement_evidence_packet(
+            requirement=requirement,
+            assessment=item,
+            evidence_context=context,
+        )
+
+        self.assertEqual(
+            {entry.candidate_id for entry in selected},
+            {"method", "agent", "setting"},
+        )
 
 
 class FakeProfileService:
