@@ -1,5 +1,15 @@
 from __future__ import annotations
 
+from app.domain.extraction.description_mining import (
+    DESCRIPTION_FACT_MINING_SYSTEM_PROMPT,
+    DescriptionMiningArtifact,
+    RawDescriptionFacts,
+    augment_evidence_context_with_description_facts,
+    build_description_mining_prompt,
+    collect_dataset_description_sources,
+    is_description_derived_path,
+    validate_description_facts,
+)
 from app.services.extraction_shared import *
 
 
@@ -192,6 +202,103 @@ class ProjectionService:
         self._update_progress(data_package_id, progress)
         return document
 
+    async def _mine_dataset_description(
+        self,
+        *,
+        data_package_id: str,
+        document: dict[str, Any],
+        evidence_context: RoutedEvidenceContext,
+        state: ExtractionRunState,
+        progress: ExtractionRunProgress,
+        warnings: list[str],
+    ) -> RoutedEvidenceContext:
+        sources = collect_dataset_description_sources(document)
+        source_paths = [source.path for source in sources]
+        if not sources:
+            self.output_repository.save_description_facts(
+                workflow_id=data_package_id,
+                artifact=DescriptionMiningArtifact(
+                    status="skipped",
+                    source_description_paths=[],
+                    reason="Dataset-level description is absent or empty.",
+                ),
+                chat_model=state.chat_model,
+                chunking_strategy=state.chunking_strategy,
+            )
+            return evidence_context
+
+        progress.stage = "description_mining"
+        progress.warnings = list(warnings)
+        self._update_progress(data_package_id, progress)
+        prompt = build_description_mining_prompt(sources)
+        try:
+            result = await generate_structured(
+                self.ollama_client,
+                model=self.ollama_client.chat_model,
+                system=DESCRIPTION_FACT_MINING_SYSTEM_PROMPT,
+                prompt=prompt,
+                output_type=RawDescriptionFacts,
+                system_components=[
+                    ("description_fact_mining_system_prompt", DESCRIPTION_FACT_MINING_SYSTEM_PROMPT),
+                ],
+                prompt_components=[("dataset_description_sources_json", prompt)],
+                token_budgeter=self._prompt_token_budgeter(),
+                operation_id=self._prompt_operation_id("description_fact_miner"),
+                agent_name="description_fact_miner",
+                num_ctx=self.ollama_client.max_context_length,
+            )
+            self._record_llm_call_result(
+                data_package_id=data_package_id,
+                result=result,
+                agent_name="description_fact_miner",
+            )
+            raw_facts = (
+                result.output
+                if isinstance(result.output, RawDescriptionFacts)
+                else RawDescriptionFacts.model_validate(result.output)
+            )
+            facts, rejections = validate_description_facts(raw_facts, sources)
+            artifact = DescriptionMiningArtifact(
+                status="completed",
+                source_description_paths=source_paths,
+                facts=facts,
+                rejected_count=len(rejections),
+                rejection_reasons=rejections,
+                reason=f"Validated {len(facts)} description fact(s).",
+            )
+            self.output_repository.save_description_facts(
+                workflow_id=data_package_id,
+                artifact=artifact,
+                chat_model=state.chat_model,
+                chunking_strategy=state.chunking_strategy,
+            )
+            if rejections:
+                warnings.append(
+                    f"Description mining dropped {len(rejections)} invalid or duplicate fact(s)."
+                )
+            progress.warnings = list(warnings)
+            return augment_evidence_context_with_description_facts(evidence_context, facts)
+        except (CompletionError, ValidationError) as exc:
+            self._record_llm_call_exception(
+                data_package_id=data_package_id,
+                exc=exc,
+                agent_name="description_fact_miner",
+            )
+            warning = f"Description mining failed; continuing with source evidence only: {exc}"
+            warnings.append(warning)
+            progress.warnings = list(warnings)
+            self.output_repository.save_description_facts(
+                workflow_id=data_package_id,
+                artifact=DescriptionMiningArtifact(
+                    status="failed",
+                    source_description_paths=source_paths,
+                    reason=str(exc),
+                ),
+                chat_model=state.chat_model,
+                chunking_strategy=state.chunking_strategy,
+            )
+            return evidence_context
+
     async def _enrich_draft_with_requirements(
         self,
         *,
@@ -212,6 +319,14 @@ class ProjectionService:
         document = self._remove_file_like_about_entities(document)
         state.generated_final_draft = document
         progress.generated_final_draft = document
+        coverage_evidence_context = await self._mine_dataset_description(
+            data_package_id=data_package_id,
+            document=document,
+            evidence_context=evidence_context,
+            state=state,
+            progress=progress,
+            warnings=warnings,
+        )
 
         progress.stage = "coverage_scoring"
         coverage = compute_coverage_report(document, validation_schema)
@@ -227,7 +342,7 @@ class ProjectionService:
             selected_evidence, context_window = select_requirement_evidence_packet(
                 requirement=requirement,
                 assessment=item,
-                evidence_context=evidence_context,
+                evidence_context=coverage_evidence_context,
             )
             item.selected_evidence = selected_evidence
             item.context_window = context_window
@@ -244,7 +359,7 @@ class ProjectionService:
                     data_package_id=data_package_id,
                     profile_identifier=profile_identifier,
                     document=document,
-                    evidence_context=evidence_context,
+                    evidence_context=coverage_evidence_context,
                     validation_schema=validation_schema,
                     state=state,
                     progress=progress,
@@ -905,11 +1020,13 @@ class ProjectionService:
     ) -> None:
         target_path = patch_attempt.target_path or ""
         actual_path = self._actual_requirement_patch_path(document=document, target_path=target_path)
+        selected_evidence = list(getattr(item, "selected_evidence", []) or [])
         evidence_ids = [
             evidence.evidence_id
-            for evidence in getattr(item, "selected_evidence", []) or []
+            for evidence in selected_evidence
             if getattr(evidence, "evidence_id", "")
         ]
+        origins = self._evidence_origins(selected_evidence)
         generated_value = self._value_at_json_pointer(document, actual_path) if actual_path else None
         field_name = self._field_name_from_json_pointer(actual_path)
         ledger_key = (actual_path, field_name)
@@ -927,7 +1044,10 @@ class ProjectionService:
                 validation_status="valid",
                 enrichment_status="grounded",
                 issue_categories=[],
-                edit_needed_reason=f"{requirement.requirement_id}: {patch_attempt.reason}",
+                edit_needed_reason=(
+                    f"{requirement.requirement_id}: {patch_attempt.reason} "
+                    f"Evidence origin: {', '.join(origins)}."
+                ),
             )
         )
         object_identifier = f"requirement_patch:{requirement.requirement_id}:{actual_path}"
@@ -951,6 +1071,7 @@ class ProjectionService:
                 evidence_quality={
                     "requirement_id": requirement.requirement_id,
                     "selected_evidence_ids": evidence_ids,
+                    "evidence_origins": origins,
                     "construction_strategy": self._requirement_patch_construction_strategy(requirement),
                 },
                 merge_status="applied",
@@ -1444,6 +1565,7 @@ class ProjectionService:
     ) -> None:
         actual_path = self._actual_requirement_patch_path(document=document, target_path=target_path)
         evidence_ids = self._evidence_ids_for_group(group)
+        origins = self._evidence_origins(group.notes)
         generated_value = self._value_at_json_pointer(document, actual_path) if actual_path else None
         state.field_completion_ledger = [
             record
@@ -1459,7 +1581,10 @@ class ProjectionService:
                 validation_status="valid",
                 enrichment_status="grounded",
                 issue_categories=[],
-                edit_needed_reason="instrument_settings_attributes: quantitative evidence group projected.",
+                edit_needed_reason=(
+                    "instrument_settings_attributes: quantitative evidence group projected. "
+                    f"Evidence origin: {', '.join(origins)}."
+                ),
             )
         )
         object_identifier = f"quantitative_group:{group.group_id}:{actual_path}"
@@ -1485,6 +1610,7 @@ class ProjectionService:
                     "value": group.value,
                     "unit": group.unit,
                     "evidence_ids": evidence_ids,
+                    "evidence_origins": origins,
                 },
                 merge_status="applied",
                 reason="Projected schema-valid quantitative attribute.",
@@ -1503,6 +1629,7 @@ class ProjectionService:
         target_path: str | None = None,
     ) -> None:
         evidence_ids = self._evidence_ids_for_group(group)
+        origins = self._evidence_origins(group.notes)
         object_identifier = f"quantitative_group:{group.group_id}:skip"
         state.projection_ledger = [
             record
@@ -1526,12 +1653,23 @@ class ProjectionService:
                     "value": group.value,
                     "unit": group.unit,
                     "evidence_ids": evidence_ids,
+                    "evidence_origins": origins,
                 },
                 merge_status="skipped",
                 reason=reason,
             )
         )
         progress.projection_ledger = state.projection_ledger
+
+    @staticmethod
+    def _evidence_origins(evidence_items: list[Any]) -> list[str]:
+        origins = [
+            "draft_description"
+            if is_description_derived_path(str(getattr(item, "file_path", "") or ""))
+            else "source_file"
+            for item in evidence_items
+        ]
+        return list(dict.fromkeys(origins)) or ["unknown"]
 
     @staticmethod
     def _evidence_ids_for_group(group: _QuantitativeEvidenceGroup) -> list[str]:
@@ -3956,6 +4094,7 @@ class ProjectionService:
             "dataset_summary",
             "dataset_level_projection",
             "dataset_level_projection_repair",
+            "description_fact_miner",
             "profile_target_planner",
             "profile_target_writer",
             "profile_patch",

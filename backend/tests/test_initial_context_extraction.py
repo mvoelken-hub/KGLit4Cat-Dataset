@@ -31,6 +31,7 @@ from app.domain.extraction import (
     ProfilePatchDocument,
     ProfileTargetDecision,
     ProfileTargetWriteDocument,
+    RawDescriptionFacts,
     RankedFile,
     RequirementEvaluation,
     RequirementPatchResult,
@@ -165,6 +166,7 @@ class FakeOutputRepository:
         self.initial_extraction_overview_diagnostic = None
         self.generated_final_draft: dict | None = None
         self.generated_initial_draft: dict | None = None
+        self.description_facts = None
         self.generated_patched_draft: dict | None = None
         self.generated_reconstructed_draft: dict | None = None
         self.requirement_report = None
@@ -292,6 +294,9 @@ class FakeOutputRepository:
 
     def save_generated_initial_draft(self, *, workflow_id: str, document: dict, chat_model: str | None = None, **_kwargs):
         self.generated_initial_draft = document
+
+    def save_description_facts(self, *, workflow_id: str, artifact, chat_model: str | None = None, **_kwargs):
+        self.description_facts = artifact
 
     def save_generated_patched_draft(self, *, workflow_id: str, document: dict, chat_model: str | None = None, **_kwargs):
         self.generated_patched_draft = document
@@ -2627,6 +2632,8 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 return dataset_summary_result()
             if kwargs["output_type"] is ShallowDatasetLevelProjection:
                 return dataset_level_projection_result()
+            if kwargs["output_type"] is RawDescriptionFacts:
+                return CompletionResult(output=RawDescriptionFacts(), usage=RunUsage(requests=1))
             if kwargs["output_type"] is RequirementEvaluation:
                 return CompletionResult(output=RequirementEvaluation(), usage=RunUsage(requests=1))
             if kwargs["output_type"] is RequirementPatchResult:

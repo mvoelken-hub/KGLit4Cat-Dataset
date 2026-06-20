@@ -85,3 +85,23 @@ Reason: Semantic issues such as misplaced agents, bloated descriptions, or missi
 Tradeoff: Reconstruction quality depends on the chat model, but deterministic code still enforces allowed paths, schema validation, rollback, and trace records.
 
 Revisit trigger: Revisit when profile-declared reconstruction rules or grounding-stage normalization can replace part of the LLM edit workload.
+
+### 2026-06-20: Observe Description Mining Before Pipeline Integration
+
+Decision: Keep description mining outside the extraction pipeline as a manual, observation-only two-pass probe. Pass one extracts atomic facts from non-distribution description texts only. Deterministic schema search retrieves candidate branches for each fact, and pass two returns concrete JSON Pointer target/value proposals from those candidates without applying them.
+
+Reason: Description fields may contain structured facts that belong in dedicated schema fields, but real model proposals must be inspected before defining deduplication, acceptance, validation, or mutation rules. Description values remain unchanged.
+
+Tradeoff: The probe produces inspectable artifacts but does not improve generated drafts. Routing quality now depends strongly on schema-branch retrieval, and proposed values may still violate candidate object shapes.
+
+Revisit trigger: Integrate it after evidence patching and before semantic evaluation only after observed proposals support clear per-proposal acceptance and validation rules.
+
+### 2026-06-20: Integrate Dataset-Description Facts Through Evidence Patching
+
+Decision: Supersede the observation-only probe. Mine atomic facts only from top-level dataset descriptions after initial draft creation, validate each fact against its exact source text, and add valid facts to a local portable evidence context used by coverage patching. Remove the independent schema-routing pass. Keep semantic evaluation and deterministic source-trace scoring on original source evidence.
+
+Reason: The first mining pass produced compact useful facts, while independent schema routing produced weak targets and invalid value shapes. Existing evidence selection, quantitative grouping, schema validation, collision handling, and rollback already provide the required controlled write path.
+
+Tradeoff: Description-derived facts can fill profile fields but are generated secondary evidence, not direct source-file evidence. They are marked with `draft-description:` provenance and retained in `description_facts.json`, while source-trace scoring excludes them.
+
+Revisit trigger: Revisit provenance linking if generated descriptions gain reliable links to the original evidence IDs that supported them, or when semantic reconstruction is redesigned.

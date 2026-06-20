@@ -166,13 +166,17 @@ def compute_source_trace_report(
         if explicit_id:
             by_id[str(explicit_id)] = candidate
     unique_ids = list(dict.fromkeys(item for item in used_evidence_ids if item))
+    source_evidence_ids = [evidence_id for evidence_id in unique_ids if evidence_id in by_id]
     scores = [
         float(getattr(by_id[evidence_id], "evidence_match_score", 0.0) or 0.0)
-        for evidence_id in unique_ids
-        if evidence_id in by_id
+        for evidence_id in source_evidence_ids
     ]
     score = sum(scores) / len(scores) if scores else 0.0
-    return SourceTraceReport(score=score, used_evidence_count=len(scores), evidence_ids=unique_ids)
+    return SourceTraceReport(
+        score=score,
+        used_evidence_count=len(scores),
+        evidence_ids=source_evidence_ids,
+    )
 
 
 def _coverage_fields_for_object(

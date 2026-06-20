@@ -2,6 +2,7 @@ from typing import Any, Protocol
 
 from app.domain.extraction import (
     CurationLedgerRecord,
+    DescriptionMiningArtifact,
     DraftValidationResult,
     EvidenceQueryLedgerEntry,
     ExtractionFileSummary,
@@ -31,6 +32,15 @@ class ExtractionOutputRepository(Protocol):
         evidence_context: RoutedEvidenceContext,
         chunking_strategy: str = "semantic",
         chat_model: str | None = None,
+    ) -> None: ...
+
+    def save_description_facts(
+        self,
+        *,
+        workflow_id: str,
+        artifact: DescriptionMiningArtifact,
+        chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
     ) -> None: ...
 
     def load_evidence_context(

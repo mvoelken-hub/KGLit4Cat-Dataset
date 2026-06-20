@@ -25,8 +25,10 @@ from app.domain.extraction import (
     select_requirement_evidence_packet,
     stable_evidence_id,
 )
+from app.domain.extraction.description_mining import RawDescriptionFacts
 from app.domain.extraction.workflow import ExtractionRunProgress, ExtractionRunState
 from app.domain.profiles import ProfileValidationResult
+from app.ollama.errors import CompletionError
 from app.services.workflow_service import WorkflowService
 
 
@@ -104,6 +106,22 @@ class RequirementScoringTests(unittest.TestCase):
         report = compute_source_trace_report(context, [stable_evidence_id(used)])
         self.assertEqual(report.used_evidence_count, 1)
         self.assertAlmostEqual(report.score, 0.8)
+
+    def test_source_trace_excludes_unknown_description_evidence_ids(self):
+        source = EvidenceCandidate(
+            candidate_id="source",
+            claim="Source fact.",
+            evidence_text="Source fact.",
+            evidence_match_score=1.0,
+        )
+        source_id = stable_evidence_id(source)
+        report = compute_source_trace_report(
+            RoutedEvidenceContext(portable_evidence=[source]),
+            [source_id, "ev:description-derived"],
+        )
+
+        self.assertEqual(report.used_evidence_count, 1)
+        self.assertEqual(report.evidence_ids, [source_id])
 
     def test_missing_evaluator_requirement_becomes_missing_report_item(self):
         req = DcatRequirement(
@@ -388,6 +406,18 @@ def quantitative_schema(*owner_classes: str) -> dict:
 
 
 class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        async def passthrough_mining(*args, **kwargs):
+            return kwargs["evidence_context"]
+
+        self.description_mining_patcher = patch.object(
+            WorkflowService,
+            "_mine_dataset_description",
+            side_effect=passthrough_mining,
+        )
+        self.description_mining_patcher.start()
+        self.addAsyncCleanup(self.description_mining_patcher.stop)
+
     async def test_requirement_enrichment_persists_report_and_initial_draft(self):
         repo = Mock()
         service = WorkflowService(
@@ -1434,4 +1464,151 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(cleaned["is_about_entity"]), 1)
         self.assertEqual(cleaned["is_about_entity"][0]["title"], "CDCl3 solvent")
+
+
+class DescriptionMiningIntegrationTests(unittest.IsolatedAsyncioTestCase):
+    def service(self, repo: Mock | None = None) -> WorkflowService:
+        service = WorkflowService(
+            profile_service=FakeProfileService(),
+            settings=Settings(),
+            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
+            output_repository=repo or Mock(),
+        )
+        service._record_llm_call_result = Mock()
+        service._record_llm_call_exception = Mock()
+        service._update_progress = Mock()
+        return service
+
+    async def test_miner_augments_portable_context_and_persists_validated_facts(self):
+        repo = Mock()
+        service = self.service(repo)
+        result = Mock(
+            output=RawDescriptionFacts.model_validate(
+                {
+                    "facts": [
+                        {
+                            "source_description_path": "/description/0",
+                            "category": "instrument_signal",
+                            "claim": "Acquisition frequency was 500 MHz.",
+                            "evidence_text": "frequency was 500 MHz",
+                        }
+                    ]
+                }
+            )
+        )
+        original = RoutedEvidenceContext()
+        state = ExtractionRunState(chat_model="test-model")
+        progress = ExtractionRunProgress()
+
+        with patch(
+            "app.services.projection_service.generate_structured",
+            AsyncMock(return_value=result),
+        ):
+            augmented = await service._mine_dataset_description(
+                data_package_id="pkg",
+                document={"description": ["Acquisition frequency was 500 MHz."]},
+                evidence_context=original,
+                state=state,
+                progress=progress,
+                warnings=[],
+            )
+
+        self.assertEqual(original.portable_evidence, [])
+        self.assertEqual(len(augmented.portable_evidence), 1)
+        self.assertEqual(augmented.portable_evidence[0].category, "instrument_signal")
+        groups = service._quantitative_evidence_groups(augmented.portable_evidence)
+        self.assertEqual(groups[0].value, 500.0)
+        artifact = repo.save_description_facts.call_args.kwargs["artifact"]
+        self.assertEqual(artifact.status, "completed")
+        self.assertEqual(len(artifact.facts), 1)
+
+    async def test_miner_failure_writes_artifact_warns_and_continues(self):
+        repo = Mock()
+        service = self.service(repo)
+        original = RoutedEvidenceContext()
+        warnings: list[str] = []
+
+        with patch(
+            "app.services.projection_service.generate_structured",
+            AsyncMock(side_effect=CompletionError("bad structured output")),
+        ):
+            result = await service._mine_dataset_description(
+                data_package_id="pkg",
+                document={"description": ["Dataset description."]},
+                evidence_context=original,
+                state=ExtractionRunState(chat_model="test-model"),
+                progress=ExtractionRunProgress(),
+                warnings=warnings,
+            )
+
+        self.assertIs(result, original)
+        self.assertIn("continuing with source evidence only", warnings[0])
+        artifact = repo.save_description_facts.call_args.kwargs["artifact"]
+        self.assertEqual(artifact.status, "failed")
+
+    async def test_missing_description_writes_skipped_artifact(self):
+        repo = Mock()
+        service = self.service(repo)
+        original = RoutedEvidenceContext()
+
+        result = await service._mine_dataset_description(
+            data_package_id="pkg",
+            document={"title": ["Dataset"]},
+            evidence_context=original,
+            state=ExtractionRunState(chat_model="test-model"),
+            progress=ExtractionRunProgress(),
+            warnings=[],
+        )
+
+        self.assertIs(result, original)
+        artifact = repo.save_description_facts.call_args.kwargs["artifact"]
+        self.assertEqual(artifact.status, "skipped")
+
+    async def test_mining_precedes_coverage_and_semantics_keep_original_context(self):
+        service = self.service()
+        original = RoutedEvidenceContext()
+        augmented = RoutedEvidenceContext(
+            portable_evidence=[
+                EvidenceCandidate(
+                    candidate_id="description:1",
+                    category="other",
+                    claim="Description fact.",
+                    evidence_text="Description fact.",
+                    file_path="draft-description:/description/0",
+                )
+            ]
+        )
+        events: list[str] = []
+
+        async def mine(**kwargs):
+            events.append("mine")
+            return augmented
+
+        async def evaluate(**kwargs):
+            events.append("semantic")
+            self.assertIs(kwargs["evidence_context"], original)
+            return []
+
+        async def reconstruct(**kwargs):
+            return kwargs["document"], []
+
+        service._mine_dataset_description = AsyncMock(side_effect=mine)
+        service._evaluate_semantic_requirements = AsyncMock(side_effect=evaluate)
+        service._reconstruct_semantic_defects = AsyncMock(side_effect=reconstruct)
+        initial = {"id": "pkg", "title": ["Dataset"], "description": ["Description fact."]}
+        state = ExtractionRunState(generated_final_draft=initial, chat_model="test-model")
+
+        await service._enrich_draft_with_requirements(
+            data_package_id="pkg",
+            profile_identifier="dcat-ap-plus",
+            evidence_context=original,
+            validation_schema={},
+            state=state,
+            progress=ExtractionRunProgress(),
+            warnings=[],
+        )
+
+        self.assertEqual(events, ["mine", "semantic", "semantic"])
+        self.assertEqual(state.generated_initial_draft["description"], ["Description fact."])
+        self.assertEqual(state.generated_patched_draft["description"], ["Description fact."])
 
