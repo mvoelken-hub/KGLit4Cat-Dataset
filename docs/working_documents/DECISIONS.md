@@ -60,11 +60,21 @@ Revisit trigger: Revisit when profile schemas support unresolved unit objects or
 
 Decision: Evidence categories are limited to `resource_signal`, `method_signal`, `measurement_signal`, `measurement_condition`, `software_signal`, `activity_signal`, `instrument_signal`, `surrounding_signal`, and `other`; `data_quality_signal`, `entity_signal`, `agent_signal`, and category-level `uncertainty` are removed. Evidence candidates also carry a required routing `role`: `qualitative_attribute`, `identity`, `descriptor`, `context`, `parameter`, or `other_metadata`.
 
-Reason: `data_quality_signal` mixed raw data values, metadata, and quality-like notes. The split keeps primary/raw data as evidence-only `measurement_signal`, routes measurement descriptors such as axis bounds, units, ranges, and point counts through `measurement_condition`, routes activities and methods separately, separates software from instrument/device signals, and uses role to make evidence easier to place in DCAT-AP+ object/attribute patterns without adding redundant parent hints.
+Reason: `data_quality_signal` mixed raw data values, metadata, and quality-like notes. The split keeps `measurement_signal` available for later semantic routing into activity/entity attributes, routes measurement descriptors such as axis bounds, units, ranges, and point counts through `measurement_condition`, routes activities and methods separately, separates software from instrument/device signals, and uses role to make evidence easier to place in DCAT-AP+ object/attribute patterns without adding redundant parent hints.
 
 Tradeoff: The evidence extraction schema is not backward-compatible with older artifacts or tests: candidates must provide both `category` and `role`.
 
-Revisit trigger: Revisit when evaluation shows useful final metadata is consistently stranded as inert `measurement_signal` evidence, when `measurement_condition` admits too many row-like observations, or when category + role is still insufficient for generic DCAT-AP+ parent routing.
+Revisit trigger: Revisit when evaluation shows semantically routed measurement evidence is too noisy, when `measurement_condition` admits too many row-like observations, or when category + role is still insufficient for generic DCAT-AP+ parent routing.
+
+### 2026-06-21: Route Measurement Evidence Once, Without Rescue
+
+Decision: Each routable measurement note receives one structured LLM call that returns an activity/entity attribute path, stable semantic merge key, confidence, and reason. Confidence below `0.7`, unavailable routing, null decisions, and unsupported paths are recorded and skipped. Accepted notes merge by target path plus merge key; deterministic code only constructs, applies, deduplicates, and validates the selected attribute write.
+
+Reason: Parent ownership and quantitative-versus-qualitative placement are semantic decisions. Re-running routing or rescuing uncertain decisions with path heuristics makes behavior inconsistent and weakens the audit trail.
+
+Tradeoff: Useful attributes can be omitted when the router is unavailable or uncertain. This is preferred over silently attaching evidence to the wrong scientific parent.
+
+Revisit trigger: Revisit the confidence threshold only with evaluation evidence showing a better precision/coverage tradeoff.
 
 ### 2026-06-19: Split Requirement Reporting Into Coverage, Semantics, And Trace
 
@@ -145,3 +155,13 @@ Reason: Vocabulary grounding should normalize the meaning of selected profile va
 Tradeoff: Ungrounded raw labels and units remain in intermediate profile-draft artifacts until the final grounding stage.
 
 Revisit trigger: Revisit only if a future profile explicitly requires grounded identifiers to make an earlier structural placement decision.
+
+### 2026-06-21: Separate Evidence Extraction From Profile Draft Construction
+
+Decision: Evidence extraction and generated profile draft construction use separate stage entrypoints and task names. The profile stage consumes persisted evidence context and fails if evidence has not been extracted.
+
+Reason: Building or rebuilding the generated draft should not rerun chunk evidence extraction or merge token usage from a different workflow stage.
+
+Tradeoff: Users must run evidence extraction before profile projection; missing evidence is reported as an explicit stage-order error instead of being repaired implicitly.
+
+Revisit trigger: Revisit only if a future complete-workflow controller needs a combined orchestration endpoint with clearly separate subtask state.

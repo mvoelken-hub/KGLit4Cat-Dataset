@@ -12,6 +12,7 @@ from app.domain.extraction import (
     DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS,
     DcatRequirement,
     EvidenceCandidate,
+    MeasurementSemanticRouteDecision,
     RequirementEvaluation,
     RequirementAssessment,
     RequirementPatchAttempt,
@@ -452,7 +453,7 @@ class RequirementEvidencePacketTests(unittest.TestCase):
             evidence_context=context,
         )
         self.assertEqual(selected[0].candidate_id, "m1")
-        self.assertNotIn("m2", {entry.candidate_id for entry in window})
+        self.assertIn("m2", {entry.candidate_id for entry in window})
         self.assertNotIn("x1", {entry.candidate_id for entry in selected})
 
     def test_quantitative_packet_prefers_observe_frequency(self):
@@ -499,9 +500,9 @@ class RequirementEvidencePacketTests(unittest.TestCase):
             evidence_context=context,
         )
 
-        self.assertEqual(selected[0].candidate_id, "observe")
+        self.assertEqual({entry.candidate_id for entry in selected}, {"observe", "max_y"})
 
-    def test_quantitative_packet_accepts_measurement_condition_but_not_raw_measurement(self):
+    def test_quantitative_packet_accepts_measurement_condition_and_raw_measurement(self):
         requirement = next(
             req
             for req in DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS
@@ -539,7 +540,7 @@ class RequirementEvidencePacketTests(unittest.TestCase):
             evidence_context=context,
         )
 
-        self.assertEqual([entry.candidate_id for entry in selected], ["points"])
+        self.assertEqual({entry.candidate_id for entry in selected}, {"points", "raw"})
 
     def test_quantitative_packet_accepts_parameter_role_from_resource_signal(self):
         requirement = next(
@@ -1229,273 +1230,196 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("type", sanitized)
         self.assertNotIn("rdf_type", sanitized)
 
-    def test_quantitative_evidence_groups_multiple_numeric_labels(self):
+    async def test_measurement_router_merges_stable_key_and_calls_once_per_note(self):
+        service = WorkflowService(
+            profile_service=FakeProfileService(),
+            settings=Settings(),
+            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
+        )
         notes = [
             EvidenceCandidate(
-                candidate_id="frequency",
-                category="instrument_signal",
-                role="identity",
-                claim="Observation frequency is 400.13 MHz.",
-                evidence_text="OBSERVE FREQUENCY=400.13 MHz",
-                file_path="acqus",
-                start_idx=10,
-                end_idx=40,
-            ),
-            EvidenceCandidate(
-                candidate_id="scans",
-                category="instrument_signal",
-                role="identity",
-                claim="Number of scans is 16.",
-                evidence_text="NS=16",
-                file_path="acqus",
-                start_idx=120,
-                end_idx=130,
-            ),
-        ]
-
-        groups = WorkflowService._quantitative_evidence_groups(notes)
-
-        self.assertEqual(len(groups), 2)
-        self.assertEqual(groups[1].value, 16.0)
-        self.assertIsNone(groups[1].unit)
-
-    def test_quantitative_duplicate_groups_merge_evidence_ids(self):
-        notes = [
-            EvidenceCandidate(
-                candidate_id="a",
-                category="instrument_signal",
-                role="identity",
+                candidate_id=f"temperature-{index}",
+                category="measurement_signal",
+                role="parameter",
                 claim="Temperature is 298 K.",
                 evidence_text="TEMP=298 K",
-                file_path="acqus",
-                start_idx=10,
-                end_idx=20,
-            ),
-            EvidenceCandidate(
-                candidate_id="b",
-                category="instrument_signal",
-                role="identity",
-                claim="Temperature is 298 K.",
-                evidence_text="TEMP=298 K",
-                file_path="acqus",
-                start_idx=30,
-                end_idx=40,
-            ),
+                file_path="run.txt",
+                start_idx=index * 20,
+                end_idx=index * 20 + 10,
+            )
+            for index in range(2)
+        ]
+        decisions = [
+            Mock(
+                output=MeasurementSemanticRouteDecision(
+                    target_path="/was_generated_by/0/has_quantitative_attribute/-",
+                    merge_key="activity.temperature.kelvin",
+                    confidence=0.95,
+                    reason="Activity setting.",
+                ),
+                usage=None,
+            )
+            for _ in notes
         ]
 
-        groups = WorkflowService._quantitative_evidence_groups(notes)
+        with patch(
+            "app.services.projection_service.generate_structured",
+            AsyncMock(side_effect=decisions),
+        ) as generate:
+            groups = await service._quantitative_evidence_groups(
+                data_package_id="pkg",
+                profile_identifier="dcat-ap-plus",
+                document={"was_generated_by": [{"id": "activity"}]},
+                evidence_context=RoutedEvidenceContext(portable_evidence=notes),
+                validation_schema=quantitative_schema("DataGeneratingActivity"),
+            )
 
+        self.assertEqual(generate.await_count, 2)
         self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].merge_key, "activity.temperature.kelvin")
         self.assertEqual(len(groups[0].notes), 2)
 
-    def test_quantitative_grouping_accepts_parameter_role_from_resource_signal(self):
-        notes = [
-            EvidenceCandidate(
-                candidate_id="threshold",
-                category="resource_signal",
-                role="parameter",
-                claim="The threshold value is 0.93.",
-                evidence_text="##$CSTHRESHOLD=0.93",
-                file_path="peaks.jdx",
-                start_idx=10,
-                end_idx=20,
+    async def test_measurement_router_skips_low_confidence_and_records_reason(self):
+        service = WorkflowService(
+            profile_service=FakeProfileService(),
+            settings=Settings(),
+            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
+        )
+        note = EvidenceCandidate(
+            candidate_id="ambiguous",
+            category="measurement_signal",
+            role="parameter",
+            claim="Value is 12.",
+            evidence_text="VALUE=12",
+        )
+        state = ExtractionRunState(chat_model="test-model")
+        progress = ExtractionRunProgress()
+        result = Mock(
+            output=MeasurementSemanticRouteDecision(
+                target_path="/is_about_entity/0/has_quantitative_attribute/-",
+                merge_key="entity.value",
+                confidence=0.4,
+                reason="Owner is ambiguous.",
             ),
-            EvidenceCandidate(
-                candidate_id="raw",
-                category="measurement_signal",
-                role="parameter",
-                claim="The observed value is 0.93.",
-                evidence_text="1000 0.93",
-                file_path="peaks.jdx",
-                start_idx=30,
-                end_idx=40,
-            ),
-        ]
+            usage=None,
+        )
 
-        groups = WorkflowService._quantitative_evidence_groups(notes)
-
-        self.assertEqual(len(groups), 1)
-        self.assertEqual(groups[0].notes[0].candidate_id, "threshold")
-        self.assertEqual(groups[0].value, 0.93)
-
-    def test_quantitative_grouping_accepts_parameter_role_axis_extrema(self):
-        notes = [
-            EvidenceCandidate(
-                candidate_id="max_x",
-                category="resource_signal",
-                role="parameter",
-                claim="The maximum X value is 3997.453.",
-                evidence_text="##MAXX=3997.453",
-                file_path="peaks.jdx",
-                start_idx=10,
-                end_idx=20,
+        with patch(
+            "app.services.projection_service.generate_structured",
+            AsyncMock(return_value=result),
+        ):
+            groups = await service._quantitative_evidence_groups(
+                data_package_id="pkg",
+                profile_identifier="dcat-ap-plus",
+                document={"is_about_entity": [{"id": "entity"}]},
+                evidence_context=RoutedEvidenceContext(portable_evidence=[note]),
+                validation_schema=quantitative_schema("EvaluatedEntity"),
+                state=state,
+                progress=progress,
             )
-        ]
-
-        groups = WorkflowService._quantitative_evidence_groups(notes)
-
-        self.assertEqual(len(groups), 1)
-        self.assertEqual(groups[0].label.lower(), "maximum x")
-        self.assertEqual(groups[0].value, 3997.453)
-
-    def test_quantitative_grouping_rejects_identifier_and_path_numbers(self):
-        notes = [
-            EvidenceCandidate(
-                candidate_id="title",
-                category="resource_signal",
-                role="descriptor",
-                claim="Dataset name is 1H_NMR_clean.",
-                evidence_text="##TITLE=1H_NMR_clean /opt/topspin3.5pl6/data",
-            ),
-            EvidenceCandidate(
-                candidate_id="program",
-                category="method_signal",
-                role="descriptor",
-                claim="Pulse sequence used was zg30.",
-                evidence_text="/opt/topspin3.5pl6/exp/stan/nmr/lists/pp/zg30",
-            ),
-            EvidenceCandidate(
-                candidate_id="software",
-                category="instrument_signal",
-                role="identity",
-                claim="TopSpin 3.5 pl 6 software version.",
-                evidence_text="TopSpin 3.5 pl 6",
-            ),
-            EvidenceCandidate(
-                candidate_id="good",
-                category="instrument_signal",
-                role="identity",
-                claim="Observation frequency is 400.13 MHz.",
-                evidence_text="OBSERVE FREQUENCY=400.13 MHz",
-            ),
-        ]
-
-        groups = WorkflowService._quantitative_evidence_groups(notes)
-
-        self.assertEqual(len(groups), 1)
-        self.assertEqual(groups[0].value, 400.13)
-
-    def test_quantitative_grouping_caps_repeated_row_like_values(self):
-        notes = [
-            EvidenceCandidate(
-                candidate_id=f"peak-{index}",
-                category="measurement_signal",
-                role="parameter",
-                claim=f"Peak observed spectrum at {7.0 + index / 1000} ppm.",
-                evidence_text=f"{7.0 + index / 1000} ppm",
-                file_path="peaks.txt",
-                start_idx=index * 10,
-                end_idx=index * 10 + 5,
-            )
-            for index in range(12)
-        ]
-
-        groups = WorkflowService._quantitative_evidence_groups(notes)
-
-        self.assertEqual(len(groups), 0)
-
-    def test_quantitative_grouping_rejects_primary_data_summaries_without_domain_keys(self):
-        notes = [
-            EvidenceCandidate(
-                candidate_id="identifier",
-                category="instrument_signal",
-                role="identity",
-                claim="The run identifier is A-42.",
-                evidence_text="RUN=A-42",
-            ),
-            EvidenceCandidate(
-                candidate_id="maximum",
-                category="instrument_signal",
-                role="identity",
-                claim="The maximum observed signal value is 3997.453.",
-                evidence_text="UPPER_BOUND=3997.453",
-            ),
-            EvidenceCandidate(
-                candidate_id="rows",
-                category="instrument_signal",
-                role="identity",
-                claim="The number of data points in the result table is 23.",
-                evidence_text="ROWS=23",
-            ),
-            EvidenceCandidate(
-                candidate_id="threshold",
-                category="instrument_signal",
-                role="identity",
-                claim="The threshold for peak detection is set to 0.93.",
-                evidence_text="THRESHOLD=0.93",
-            ),
-        ]
-
-        groups = WorkflowService._quantitative_evidence_groups(notes)
-
-        self.assertEqual([(group.label, group.value) for group in groups], [("threshold for peak detection", 0.93)])
-
-    def test_quantitative_grouping_accepts_measurement_condition_descriptors(self):
-        notes = [
-            EvidenceCandidate(
-                candidate_id="points",
-                category="measurement_condition",
-                role="parameter",
-                claim="The spectrum contains a data point count of 2559.",
-                evidence_text="NPOINTS=2559",
-            ),
-            EvidenceCandidate(
-                candidate_id="raw",
-                category="measurement_signal",
-                role="parameter",
-                claim="A raw observed transmittance value is 0.42.",
-                evidence_text="1234.5 0.42",
-            ),
-        ]
-
-        groups = WorkflowService._quantitative_evidence_groups(notes)
-
-        self.assertEqual(len(groups), 1)
-        self.assertEqual(groups[0].value, 2559)
-
-    def test_quantitative_grouping_rejects_qualitative_placeholder_values(self):
-        notes = [
-            EvidenceCandidate(
-                candidate_id="name",
-                category="instrument_signal",
-                role="identity",
-                claim="The solvent name is unspecified.",
-                evidence_text="MATERIAL_NAME=- - -",
-            ),
-            EvidenceCandidate(
-                candidate_id="value",
-                category="instrument_signal",
-                role="identity",
-                claim="The material value is set to 0.",
-                evidence_text="MATERIAL_VALUE=0",
-            ),
-            EvidenceCandidate(
-                candidate_id="position",
-                category="instrument_signal",
-                role="identity",
-                claim="The material x-position is set to 0.",
-                evidence_text="MATERIAL_X=0",
-            ),
-        ]
-
-        groups = WorkflowService._quantitative_evidence_groups(notes)
 
         self.assertEqual(groups, [])
+        self.assertEqual(len(state.projection_ledger), 1)
+        self.assertEqual(state.projection_ledger[0].merge_status, "skipped")
+        self.assertIn("ambiguous", state.projection_ledger[0].reason.lower())
 
-    def test_quantitative_attribute_description_is_plain(self):
-        note = EvidenceCandidate(
-            candidate_id="threshold",
-            category="instrument_signal",
-            role="identity",
-            claim="The threshold is set to 0.93.",
-            evidence_text="THRESHOLD=0.93",
+    async def test_measurement_router_accepts_activity_and_entity_attribute_paths(self):
+        service = WorkflowService(
+            profile_service=FakeProfileService(),
+            settings=Settings(),
+            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
         )
-        group = WorkflowService._quantitative_evidence_groups([note])[0]
+        notes = [
+            EvidenceCandidate(
+                candidate_id="activity-rate",
+                category="measurement_condition",
+                role="parameter",
+                claim="Sampling rate is 10 Hz.",
+                evidence_text="RATE=10 Hz",
+            ),
+            EvidenceCandidate(
+                candidate_id="entity-state",
+                category="measurement_signal",
+                role="qualitative_attribute",
+                claim="Sample state is solid.",
+                evidence_text="STATE=solid",
+            ),
+        ]
+        results = [
+            Mock(
+                output=MeasurementSemanticRouteDecision(
+                    target_path="/is_about_activity/0/has_quantitative_attribute/-",
+                    merge_key="activity.sampling-rate",
+                    confidence=0.9,
+                    reason="Activity measurement condition.",
+                ),
+                usage=None,
+            ),
+            Mock(
+                output=MeasurementSemanticRouteDecision(
+                    target_path="/is_about_entity/0/has_qualitative_attribute/-",
+                    merge_key="entity.sample-state",
+                    confidence=0.9,
+                    reason="Entity characteristic.",
+                ),
+                usage=None,
+            ),
+        ]
 
-        instance = WorkflowService._quantitative_attribute_instance_from_group(group)
+        with patch(
+            "app.services.projection_service.generate_structured",
+            AsyncMock(side_effect=results),
+        ):
+            groups = await service._quantitative_evidence_groups(
+                data_package_id="pkg",
+                profile_identifier="dcat-ap-plus",
+                document={
+                    "is_about_activity": [{"id": "activity"}],
+                    "is_about_entity": [{"id": "entity"}],
+                },
+                evidence_context=RoutedEvidenceContext(portable_evidence=notes),
+                validation_schema=quantitative_schema("EvaluatedActivity", "EvaluatedEntity"),
+            )
 
-        self.assertEqual(instance["description"], "Threshold: 0.93")
-        self.assertNotIn("Evidence-grounded quantitative attribute", instance["description"])
+        self.assertEqual(
+            {(group.target_path, group.attribute_kind) for group in groups},
+            {
+                ("/is_about_activity/0/has_quantitative_attribute/-", "quantitative"),
+                ("/is_about_entity/0/has_qualitative_attribute/-", "qualitative"),
+            },
+        )
+
+    async def test_measurement_router_unavailable_has_no_heuristic_fallback(self):
+        service = WorkflowService(
+            profile_service=FakeProfileService(),
+            settings=Settings(),
+            ollama_client=None,
+        )
+        state = ExtractionRunState()
+        progress = ExtractionRunProgress()
+        groups = await service._quantitative_evidence_groups(
+            data_package_id="pkg",
+            profile_identifier="dcat-ap-plus",
+            document={"was_generated_by": [{"id": "activity"}]},
+            evidence_context=RoutedEvidenceContext(
+                portable_evidence=[
+                    EvidenceCandidate(
+                        candidate_id="frequency",
+                        category="measurement_signal",
+                        role="parameter",
+                        claim="Frequency is 500 MHz.",
+                        evidence_text="FREQ=500 MHz",
+                    )
+                ]
+            ),
+            validation_schema=quantitative_schema("DataGeneratingActivity"),
+            state=state,
+            progress=progress,
+        )
+
+        self.assertEqual(groups, [])
+        self.assertEqual(state.projection_ledger[0].merge_status, "skipped")
+        self.assertIn("failed or was unavailable", state.projection_ledger[0].reason)
 
     async def test_semantic_reconstruction_applies_schema_constrained_write(self):
         service = WorkflowService(
@@ -1990,242 +1914,6 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(records[-1].status, "rolled_back")
         self.assertEqual(records[-1].validation_errors, ["bad"])
 
-    def test_quantitative_groups_project_to_existing_owner_before_creating_owner(self):
-        service = WorkflowService(
-            profile_service=FakeProfileService(),
-            settings=Settings(),
-            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
-        )
-        requirement = next(req for req in DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS if req.requirement_id == "instrument_settings_attributes")
-        state = ExtractionRunState(
-            generated_final_draft={
-                "id": "pkg",
-                "title": ["Dataset"],
-                "description": ["Desc"],
-                "was_generated_by": [{"id": "act", "title": "Acquisition"}],
-            },
-            chat_model="test-model",
-        )
-        progress = ExtractionRunProgress(warnings=[])
-        item = RequirementReportItem(
-            requirement_id="instrument_settings_attributes",
-            label=requirement.label,
-            weight=requirement.weight,
-            status="missing",
-            applicable=True,
-            quality=0.0,
-            weighted_score=0.0,
-            target_paths=requirement.target_paths,
-            evidence_search_hints=requirement.evidence_hints,
-        )
-        context = RoutedEvidenceContext(
-            portable_evidence=[
-                EvidenceCandidate(
-                    candidate_id="freq",
-                    category="instrument_signal",
-                    role="identity",
-                    claim="Observation frequency is 400.13 MHz.",
-                    evidence_text="OBSERVE FREQUENCY=400.13 MHz",
-                    file_path="acqus",
-                    start_idx=10,
-                    end_idx=40,
-                ),
-                EvidenceCandidate(
-                    candidate_id="scans",
-                    category="instrument_signal",
-                    role="identity",
-                    claim="Number of scans is 16.",
-                    evidence_text="NS=16",
-                    file_path="acqus",
-                    start_idx=120,
-                    end_idx=130,
-                ),
-            ]
-        )
-
-        document = service._apply_quantitative_evidence_groups(
-            data_package_id="pkg",
-            profile_identifier="dcat-ap-plus",
-            document=state.generated_final_draft,
-            evidence_context=context,
-            validation_schema=quantitative_schema("DataGeneratingActivity"),
-            state=state,
-            progress=progress,
-            requirement=requirement,
-            item=item,
-        )
-
-        self.assertEqual(len(document["was_generated_by"]), 1)
-        self.assertEqual(len(document["was_generated_by"][0]["has_quantitative_attribute"]), 2)
-        self.assertEqual(len(state.field_completion_ledger), 2)
-        self.assertTrue(all(record.source_evidence for record in state.field_completion_ledger))
-        self.assertEqual(item.status, "fulfilled")
-
-    def test_quantitative_group_creates_reachable_device_owner(self):
-        service = WorkflowService(
-            profile_service=FakeProfileService(),
-            settings=Settings(),
-            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
-        )
-        requirement = next(req for req in DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS if req.requirement_id == "instrument_settings_attributes")
-        state = ExtractionRunState(
-            generated_final_draft={"id": "pkg", "title": ["Dataset"], "description": ["Desc"]},
-            chat_model="test-model",
-        )
-        progress = ExtractionRunProgress(warnings=[])
-        item = RequirementReportItem(
-            requirement_id="instrument_settings_attributes",
-            label=requirement.label,
-            weight=requirement.weight,
-            status="missing",
-            applicable=True,
-            quality=0.0,
-            weighted_score=0.0,
-        )
-        context = RoutedEvidenceContext(
-            portable_evidence=[
-                EvidenceCandidate(
-                    candidate_id="device-temp",
-                    category="instrument_signal",
-                    role="identity",
-                    claim="Device temperature is 298 K.",
-                    evidence_text="temperature 298 K",
-                    file_path="run.txt",
-                    start_idx=0,
-                    end_idx=20,
-                )
-            ]
-        )
-
-        document = service._apply_quantitative_evidence_groups(
-            data_package_id="pkg",
-            profile_identifier="dcat-ap-plus",
-            document=state.generated_final_draft,
-            evidence_context=context,
-            validation_schema=quantitative_schema("DataGeneratingActivity", "AgenticEntity", "Device"),
-            state=state,
-            progress=progress,
-            requirement=requirement,
-            item=item,
-        )
-
-        owner = document["was_generated_by"][0]["carried_out_by"][0]
-        self.assertEqual(owner["rdf_type"]["title"], "Device")
-        self.assertEqual(owner["has_quantitative_attribute"][0]["value"], 298.0)
-
-    def test_quantitative_unreachable_owner_group_is_skipped(self):
-        service = WorkflowService(
-            profile_service=FakeProfileService(),
-            settings=Settings(),
-            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
-        )
-        requirement = next(req for req in DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS if req.requirement_id == "instrument_settings_attributes")
-        state = ExtractionRunState(
-            generated_final_draft={"id": "pkg", "title": ["Dataset"], "description": ["Desc"]},
-            chat_model="test-model",
-        )
-        progress = ExtractionRunProgress(warnings=[])
-        item = RequirementReportItem(
-            requirement_id="instrument_settings_attributes",
-            label=requirement.label,
-            weight=requirement.weight,
-            status="missing",
-            applicable=True,
-            quality=0.0,
-            weighted_score=0.0,
-        )
-        context = RoutedEvidenceContext(
-            portable_evidence=[
-                EvidenceCandidate(
-                    candidate_id="value",
-                    category="measurement_signal",
-                    role="parameter",
-                    claim="Measured value is 12.",
-                    evidence_text="value 12",
-                    file_path="run.txt",
-                    start_idx=0,
-                    end_idx=20,
-                )
-            ]
-        )
-
-        document = service._apply_quantitative_evidence_groups(
-            data_package_id="pkg",
-            profile_identifier="dcat-ap-plus",
-            document=state.generated_final_draft,
-            evidence_context=context,
-            validation_schema=quantitative_schema(),
-            state=state,
-            progress=progress,
-            requirement=requirement,
-            item=item,
-        )
-
-        self.assertNotIn("was_generated_by", document)
-        self.assertEqual(item.status, "missing")
-        self.assertFalse(state.projection_ledger)
-
-    def test_quantitative_patch_fallback_keeps_first_generic_numeric_evidence(self):
-        service = WorkflowService(
-            profile_service=FakeProfileService(),
-            settings=Settings(),
-            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
-        )
-
-        sanitized = service._sanitize_requirement_patch_instance(
-            instance={"value": "125000", "has_quantity_type": "width"},
-            target_class="QuantitativeAttribute",
-            target_path="/was_generated_by/0/has_quantitative_attribute/-",
-            item=Mock(
-                selected_evidence=[
-                    RequirementEvidenceItem(
-                        evidence_id="ev:width",
-                        candidate_id="candidate-1",
-                        category="measurement_signal",
-                        role="parameter",
-                        claim="Field width is 125000",
-                        evidence_text="FW= 125000",
-                    ),
-                    RequirementEvidenceItem(
-                        evidence_id="ev:frequency",
-                        candidate_id="candidate-0",
-                        category="measurement_signal",
-                        role="parameter",
-                        claim="The NMR spectrum was recorded at an observe frequency of 500.133088507478 MHz.",
-                        evidence_text="##.OBSERVE FREQUENCY=500.133088507478",
-                    ),
-                ]
-            ),
-        )
-
-        self.assertEqual(sanitized["value"], 125000.0)
-        self.assertIn("Field width", sanitized["has_quantity_type"])
-
-    def test_single_frequency_quantitative_group_still_projects(self):
-        service = WorkflowService(
-            profile_service=FakeProfileService(),
-            settings=Settings(),
-            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
-        )
-        groups = service._quantitative_evidence_groups(
-            [
-                EvidenceCandidate(
-                    candidate_id="frequency",
-                    category="instrument_signal",
-                    role="identity",
-                    claim="Observation frequency is 500.133088507478 MHz.",
-                    evidence_text="##.OBSERVE FREQUENCY=500.133088507478 MHz",
-                    file_path="acqus",
-                    start_idx=10,
-                    end_idx=40,
-                )
-            ]
-        )
-
-        self.assertEqual(len(groups), 1)
-        self.assertEqual(groups[0].value, 500.133088507478)
-        self.assertEqual(groups[0].unit, "MHz")
-
     def test_requirement_patch_strip_removes_auto_ids_from_schema_forbidden_targets(self):
         service = WorkflowService(
             profile_service=FakeProfileService(),
@@ -2336,8 +2024,6 @@ class DescriptionMiningIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(original.portable_evidence, [])
         self.assertEqual(len(augmented.portable_evidence), 1)
         self.assertEqual(augmented.portable_evidence[0].category, "instrument_signal")
-        groups = service._quantitative_evidence_groups(augmented.portable_evidence)
-        self.assertEqual(groups[0].value, 500.0)
         artifact = repo.save_description_facts.call_args.kwargs["artifact"]
         self.assertEqual(artifact.status, "completed")
         self.assertEqual(len(artifact.facts), 1)

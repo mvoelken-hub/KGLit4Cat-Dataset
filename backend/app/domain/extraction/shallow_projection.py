@@ -30,7 +30,6 @@ You create dataset-level shallow DCAT-AP-plus Dataset metadata from a compact da
 Return only JSON matching the supplied schema.
 Use concise dataset-level metadata. Populate dataset title, description, keywords,
 types, activities, entities, creators, and instruments only when supported.
-Do not populate distributions; backend creates dataset distributions deterministically.
 Do not model SIMONE metadata extraction, profile projection, or this LLM workflow as a dataset
 activity. was_generated_by is only for the scientific or data production activity that created
 the source dataset content.
@@ -130,25 +129,6 @@ class ShallowDataGeneratingActivityProjection(BaseModel):
     )
 
 
-class ShallowDistributionProjection(BaseModel):
-    access_URL: list[ShallowResourceProjection] = Field(
-        default_factory=list,
-        description="Required access resources. Prefer package-relative file paths from summaries over invented URLs.",
-    )
-    download_URL: list[ShallowResourceProjection] = Field(
-        default_factory=list,
-        description="Download resources when a concrete downloadable file/archive/path is supported.",
-    )
-    title: list[str] = Field(default_factory=list, description="Concise distribution/resource titles.")
-    description: list[str] = Field(
-        default_factory=list,
-        description="Short description of what this distribution/resource contains or represents.",
-    )
-    format: ShallowResourceProjection | None = Field(default=None, description="File/data format, for example binary, text, JSON, or XML.")
-    media_type: ShallowResourceProjection | None = Field(default=None, description="Media type when known.")
-    modification_date: str | None = Field(default=None, description="Modification date when explicitly supported.")
-
-
 class ShallowDatasetProjection(BaseModel):
     id: str | None = Field(default=None, description="Dataset identifier. Use package id if no better identifier is supported.")
     title: list[str] = Field(default_factory=list, description="Concise dataset title inferred from description and summaries.")
@@ -161,10 +141,6 @@ class ShallowDatasetProjection(BaseModel):
     creator: list[ShallowAgentProjection] = Field(default_factory=list, description="Creators or responsible agents explicitly supported.")
     type: list[ShallowConceptProjection] = Field(default_factory=list, description="Dataset type/topic concepts such as experiment, assay, or measurement dataset.")
     modification_date: str | None = Field(default=None, description="Dataset-level modification date when explicitly supported.")
-    dataset_distribution: list[ShallowDistributionProjection] = Field(
-        default_factory=list,
-        description="Key dataset resources/distributions from file summaries. Include raw data, processed outputs, documentation, configuration files, and audit/config resources when supported.",
-    )
     was_generated_by: list[ShallowDataGeneratingActivityProjection] = Field(
         default_factory=list,
         description="Scientific/data-production activities that generated the source dataset content. Do not use for SIMONE metadata extraction or profile projection.",
@@ -248,7 +224,6 @@ def build_dataset_level_projection_prompt_components(
             "task",
             "Infer dataset-level shallow DCAT-AP-plus metadata from dataset_summary. "
             "Use required_skeleton for mandatory fields, but replace placeholder title and description. "
-            "Do not output dataset_distribution; backend owns distributions. "
             "Do not treat SIMONE extraction/projection as a dataset-generating activity. "
             "Nested resource/entity title and description are scalar strings. "
             "Prefer omission over unsupported invention.\n\n",
@@ -369,10 +344,6 @@ def shallow_projection_to_dcat_document(
         "keyword": _clean_string_list(projection.keyword),
         "creator": [_agent_to_document(item) for item in projection.creator],
         "type": [_concept_to_document(item) for item in projection.type],
-        "dataset_distribution": [
-            _distribution_to_document(item, data_package_id=data_package_id, records=records, index=index)
-            for index, item in enumerate(projection.dataset_distribution)
-        ],
         "is_about_activity": [
             _activity_to_document(item, data_package_id=data_package_id, records=records, index=index)
             for index, item in enumerate(projection.is_about_activity)
@@ -390,78 +361,6 @@ def shallow_projection_to_dcat_document(
         if _has_meaningful_value(cleaned):
             document[key] = cleaned
     return _remove_empty_values(document), records
-
-
-def dataset_level_to_shallow_projection(
-    projection: ShallowDatasetLevelProjection,
-    *,
-    distributions: list[ShallowDistributionProjection],
-) -> ShallowDatasetProjection:
-    payload = projection.model_dump(mode="json")
-    payload["dataset_distribution"] = [item.model_dump(mode="json") for item in distributions]
-    return ShallowDatasetProjection.model_validate(payload)
-
-
-def deterministic_grouped_distributions(
-    *,
-    initial_file_summaries: list[ExtractionFileSummary],
-    ranked_files: list[RankedFile],
-) -> list[ShallowDistributionProjection]:
-    rank_by_path = {item.file_path: item.rank for item in ranked_files}
-    grouped: dict[str, list[ExtractionFileSummary]] = {}
-    for summary in sorted(
-        [item for item in initial_file_summaries if item.status == "summarized"],
-        key=lambda item: (rank_by_path.get(item.file_path, 9999), item.file_path),
-    ):
-        group = _distribution_group(summary)
-        grouped.setdefault(group, []).append(summary)
-
-    distributions: list[ShallowDistributionProjection] = []
-    for group in DISTRIBUTION_GROUP_ORDER:
-        summaries = grouped.get(group, [])
-        if not summaries:
-            continue
-        resources = [
-            ShallowResourceProjection(
-                id=summary.file_path,
-                title=_path_label(summary.file_path),
-                description=_summary_resource_description(summary),
-            )
-            for summary in summaries[:12]
-        ]
-        distributions.append(
-            ShallowDistributionProjection(
-                access_URL=resources,
-                download_URL=[],
-                title=[DISTRIBUTION_GROUP_TITLES[group]],
-                description=[_group_distribution_description(group, summaries)],
-                format=ShallowResourceProjection(title=_first_nonempty([s.data_format for s in summaries])),
-            )
-        )
-    return distributions
-
-
-DISTRIBUTION_GROUP_ORDER = [
-    "documentation",
-    "raw_data",
-    "processed_data",
-    "acquisition_parameters",
-    "processing_parameters",
-    "instrument_configuration",
-    "audit_or_metadata",
-    "other",
-]
-
-DISTRIBUTION_GROUP_TITLES = {
-    "documentation": "Documentation resources",
-    "raw_data": "Raw data resources",
-    "processed_data": "Processed data resources",
-    "acquisition_parameters": "Acquisition parameter resources",
-    "processing_parameters": "Processing parameter resources",
-    "instrument_configuration": "Instrument and configuration resources",
-    "audit_or_metadata": "Audit and metadata resources",
-    "other": "Other dataset resources",
-}
 
 
 def overview_projection_record(
@@ -518,45 +417,6 @@ def overview_projection_repair_record(
         error=error,
         projected_paths=projected_paths,
     )
-
-
-def _distribution_to_document(
-    item: ShallowDistributionProjection,
-    *,
-    data_package_id: str,
-    records: list[ProjectionLedgerRecord],
-    index: int,
-) -> dict[str, Any]:
-    access_urls = [
-        _resource_to_document(resource, data_package_id=data_package_id, records=records, path=f"/dataset_distribution/{index}/access_URL/{i}/id", kind="access")
-        for i, resource in enumerate(item.access_URL)
-    ]
-    if not access_urls:
-        label = _first_nonempty(item.title) or f"distribution-{index + 1}"
-        access_urls = [
-            {
-                "id": _scaffold_id(
-                    data_package_id,
-                    "distribution-access",
-                    label,
-                    records,
-                    f"/dataset_distribution/{index}/access_URL/0/id",
-                )
-            }
-        ]
-    doc: dict[str, Any] = {
-        "access_URL": access_urls,
-        "title": _clean_string_list(item.title) or None,
-        "description": _clean_string_list(item.description) or None,
-        "download_URL": [
-            _resource_to_document(resource, data_package_id=data_package_id, records=records, path=f"/dataset_distribution/{index}/download_URL/{i}/id", kind="download")
-            for i, resource in enumerate(item.download_URL)
-        ],
-        "format": _term_resource_to_document(item.format),
-        "media_type": _term_resource_to_document(item.media_type),
-        "modification_date": _clean_string(item.modification_date),
-    }
-    return _remove_empty_values(doc)
 
 
 def _activity_to_document(
@@ -796,70 +656,6 @@ def _compact_summary_line(summary: ExtractionFileSummary, *, rank: int | None) -
 def _compact_signal(value: str, limit: int) -> str:
     cleaned = re.sub(r"\s+", " ", value or "").replace("|", "/").replace(";", ",").strip()
     return _shorten(cleaned, limit)
-
-
-def _distribution_group(summary: ExtractionFileSummary) -> str:
-    text = " ".join(
-        [
-            summary.file_path,
-            summary.data_format,
-            summary.explicit_purpose,
-            *summary.purpose_evidence,
-            *summary.metadata_signals,
-            *summary.instrument_or_software_terms_and_settings,
-        ]
-    ).lower()
-    path = summary.file_path.lower()
-    if any(term in text for term in ("audit trail", "metadata", "infer.json")) or path.endswith((".json", ".xml")):
-        return "audit_or_metadata"
-    if any(term in text for term in ("configuration", "settings", "calibration", "reference")):
-        return "instrument_configuration"
-    if any(term in text for term in ("dataset description", "readme", "documentation", "title")):
-        return "documentation"
-    if any(term in text for term in ("raw data", "raw", "unprocessed", "source data")):
-        return "raw_data"
-    if (
-        "processing parameter" in text
-        or "processing settings" in text
-        or "post-processing" in text
-    ):
-        return "processing_parameters"
-    if any(term in text for term in ("processed", "derived", "output", "table", "summary")):
-        return "processed_data"
-    if any(term in text for term in ("acquisition", "measurement settings", "experimental settings", "instrument settings")):
-        return "acquisition_parameters"
-    if any(term in text for term in ("instrument", "configuration", "settings", "calibration", "reference")):
-        return "instrument_configuration"
-    return "other"
-
-
-def _path_label(path: str) -> str:
-    cleaned = path.rstrip("/").split("/")[-1] or path
-    return cleaned[:80]
-
-
-def _summary_resource_description(summary: ExtractionFileSummary) -> str | None:
-    candidates = [
-        summary.explicit_purpose,
-        *summary.metadata_signals,
-        *summary.instrument_or_software_terms_and_settings,
-    ]
-    return _first_nonempty(candidates)
-
-
-def _group_distribution_description(group: str, summaries: list[ExtractionFileSummary]) -> str:
-    signals: list[str] = []
-    for summary in summaries:
-        for value in [summary.explicit_purpose, *summary.metadata_signals, *summary.instrument_or_software_terms_and_settings]:
-            cleaned = _clean_string(value)
-            if cleaned and cleaned.lower() not in {item.lower() for item in signals}:
-                signals.append(cleaned)
-            if len(signals) >= 4:
-                break
-        if len(signals) >= 4:
-            break
-    suffix = f": {'; '.join(signals)}" if signals else ""
-    return f"{DISTRIBUTION_GROUP_TITLES[group]} from {len(summaries)} file(s){suffix}."
 
 
 def _shorten(value: str, limit: int) -> str:

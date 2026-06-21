@@ -93,7 +93,7 @@ class EvidenceEnrichmentRouterTests(unittest.TestCase):
         self.assertEqual(path, "/was_generated_by/0/realized_plan")
         self.assertEqual(cls, "Plan")
 
-    def test_resource_signal_routes_to_distribution(self):
+    def test_resource_signal_is_not_legacy_routed(self):
         note = self._note(
             category="resource_signal",
             role="descriptor",
@@ -101,8 +101,8 @@ class EvidenceEnrichmentRouterTests(unittest.TestCase):
             evidence_text="download",
         )
         path, cls = route_evidence_note_to_target(note)
-        self.assertEqual(path, "/dataset_distribution/-")
-        self.assertEqual(cls, "Distribution")
+        self.assertIsNone(path)
+        self.assertIsNone(cls)
 
     def test_measurement_signal_is_excluded_from_context_window(self):
         note = self._note(
@@ -171,17 +171,17 @@ class EvidenceEnrichmentApplyTests(unittest.TestCase):
         self.assertEqual(updated["is_about_entity"][1]["title"], "new entity")
         self.assertTrue(updated["is_about_entity"][1]["id"].startswith("pkg:entity:"))
 
-    def test_creates_array_when_missing(self):
+    def test_creates_activity_array_when_missing(self):
         doc = {"id": "pkg"}
-        instance = {"title": "dist"}
+        instance = {"title": "activity"}
         updated = apply_evidence_instance(
             doc,
-            "/dataset_distribution/-",
+            "/was_generated_by/-",
             instance,
             data_package_id="pkg",
         )
-        self.assertEqual(len(updated["dataset_distribution"]), 1)
-        self.assertTrue(updated["dataset_distribution"][0]["id"].startswith("pkg:distribution:"))
+        self.assertEqual(len(updated["was_generated_by"]), 1)
+        self.assertTrue(updated["was_generated_by"][0]["id"].startswith("pkg:activity:"))
 
     def test_fills_nested_id(self):
         doc = {"id": "pkg", "is_about_entity": []}

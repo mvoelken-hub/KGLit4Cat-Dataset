@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -827,7 +827,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         task = asyncio.current_task()
         self.assertIsNotNone(task)
         old_name = task.get_name()
-        task.set_name("extraction:run:package-id:fixed_tokens:rnj-1:8b-cloud")
+        task.set_name("extraction:evidence:package-id:fixed_tokens:rnj-1:8b-cloud")
         try:
             service._record_workflow_token_usage(
                 data_package_id="package-id",
@@ -843,6 +843,159 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn("chunk_extraction", output_repository.token_usage)
 
+    async def test_stage_token_usage_resets_only_requested_agents(self):
+        service, _task_registry, output_repository = make_service([[make_chunk()]])
+        output_repository.run_state = ExtractionRunState(
+            chat_model="chat",
+            chunking_strategy="fixed_tokens",
+        )
+        output_repository.token_usage = {
+            "chunk_extraction": {"total_tokens": 10},
+            "chunk_extraction_repair": {"total_tokens": 11},
+            "profile_projection": {"total_tokens": 20},
+            "metadata_requirement_patcher": {"total_tokens": 21},
+            "initial_file_summary": {"total_tokens": 30},
+        }
+
+        service._clear_evidence_token_usage(
+            "package-id",
+            chunking_strategy="fixed_tokens",
+            chat_model="chat",
+        )
+
+        self.assertNotIn("chunk_extraction", output_repository.token_usage)
+        self.assertNotIn("chunk_extraction_repair", output_repository.token_usage)
+        self.assertIn("profile_projection", output_repository.token_usage)
+        self.assertIn("initial_file_summary", output_repository.token_usage)
+
+        service._clear_profile_projection_token_usage(
+            "package-id",
+            chunking_strategy="fixed_tokens",
+            chat_model="chat",
+        )
+
+        self.assertNotIn("profile_projection", output_repository.token_usage)
+        self.assertNotIn("metadata_requirement_patcher", output_repository.token_usage)
+        self.assertIn("initial_file_summary", output_repository.token_usage)
+
+    async def test_profile_projection_task_uses_persisted_evidence_without_chunk_extraction(self):
+        service, task_registry, output_repository = make_service([[make_chunk()]])
+        persisted_context = RoutedEvidenceContext.model_validate(
+            evidence_context("e-1", "sample measured at 20 C")
+        )
+        output_repository.save_evidence_context(
+            workflow_id="package-id",
+            evidence_context=persisted_context,
+            chunking_strategy="semantic",
+            chat_model="chat",
+        )
+        output_repository.save_extraction_run_state(
+            workflow_id="package-id",
+            state=ExtractionRunState(
+                profile_identifier="profile",
+                chat_model="chat",
+                chunking_strategy="semantic",
+                ranked_files=[RankedFile(rank=1, file_path="README.md")],
+                chunk_results=[
+                    ExtractionChunkResult(
+                        chunk_index=0,
+                        file_path="README.md",
+                        start_idx=0,
+                        end_idx=1,
+                        status="completed",
+                        evidence_context=RoutedEvidenceContext(
+                            portable_evidence=persisted_context.portable_evidence
+                        ),
+                    )
+                ],
+            ),
+            chunking_strategy="semantic",
+            chat_model="chat",
+        )
+
+        async def fake_build(**kwargs):
+            kwargs["state"].generated_final_draft = {"id": "generated"}
+            kwargs["progress"].generated_final_draft = {"id": "generated"}
+            return {"id": "generated"}
+
+        service._build_profile_document_by_patching = fake_build  # type: ignore[method-assign]
+        service._clear_chunk_evidence_contexts = lambda _state: (_ for _ in ()).throw(AssertionError("chunk evidence cleared"))  # type: ignore[method-assign]
+
+        result, status = await service.run_profile_projection(
+            data_package_id="package-id",
+            profile_identifier="profile",
+            resume=True,
+            chunking_strategy="semantic",
+            chat_model="chat",
+        )
+        self.assertIsNone(result)
+        self.assertEqual(status, TaskStatus.RUNNING)
+        await task_registry.wait_for_task("extraction:profile:package-id:semantic:chat", timeout=2)
+
+        state = output_repository.run_state
+        self.assertIsNotNone(state)
+        self.assertEqual(state.generated_final_draft, {"id": "generated"})
+        self.assertEqual(state.chunk_results[0].evidence_context.portable_evidence[0].candidate_id, "e-1")
+
+    async def test_profile_projection_requires_persisted_evidence_context(self):
+        service, task_registry, output_repository = make_service([[make_chunk()]])
+        output_repository.save_extraction_run_state(
+            workflow_id="package-id",
+            state=ExtractionRunState(
+                profile_identifier="profile",
+                chat_model="chat",
+                chunking_strategy="semantic",
+                chunk_results=[
+                    ExtractionChunkResult(
+                        chunk_index=0,
+                        file_path="README.md",
+                        start_idx=0,
+                        end_idx=1,
+                        status="completed",
+                    )
+                ],
+            ),
+            chunking_strategy="semantic",
+            chat_model="chat",
+        )
+
+        _result, status = await service.run_profile_projection(
+            data_package_id="package-id",
+            profile_identifier="profile",
+            resume=True,
+            chunking_strategy="semantic",
+            chat_model="chat",
+        )
+        self.assertEqual(status, TaskStatus.RUNNING)
+        with self.assertRaises(ChunkingRequiredError):
+            await task_registry.wait_for_task("extraction:profile:package-id:semantic:chat", timeout=2)
+        task_info = task_registry.get_task_info("extraction:profile:package-id:semantic:chat")
+        self.assertEqual(task_info.status, TaskStatus.CRASHED)
+        with self.assertRaises(ChunkingRequiredError):
+            task_info.task.result()
+
+    async def test_evidence_and_profile_task_names_are_distinct(self):
+        service, task_registry, _output_repository = make_service([[make_chunk()]])
+        evidence = service._extraction_task_name(
+            "package-id",
+            "semantic",
+            "chat",
+            stage="evidence",
+        )
+        profile = service._extraction_task_name(
+            "package-id",
+            "semantic",
+            "chat",
+            stage="profile",
+        )
+
+        self.assertEqual(evidence, "extraction:evidence:package-id:semantic:chat")
+        self.assertEqual(profile, "extraction:profile:package-id:semantic:chat")
+        await task_registry.create_task(asyncio.sleep(0), TaskType.WORKFLOW, evidence)
+        await task_registry.create_task(asyncio.sleep(0), TaskType.WORKFLOW, profile)
+        self.assertIsNotNone(task_registry.get_task_info(evidence))
+        self.assertIsNotNone(task_registry.get_task_info(profile))
+
     async def test_prompt_diagnostics_use_current_extraction_task_branch(self):
         service, _task_registry, output_repository = make_service([[make_chunk()]])
         output_repository.run_state = ExtractionRunState(
@@ -852,7 +1005,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         task = asyncio.current_task()
         self.assertIsNotNone(task)
         old_name = task.get_name()
-        task.set_name("extraction:run:package-id:fixed_tokens:rnj-1:8b-cloud")
+        task.set_name("extraction:evidence:package-id:fixed_tokens:rnj-1:8b-cloud")
         try:
             service._persist_prompt_diagnostics(
                 data_package_id="package-id",
@@ -951,7 +1104,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(status, TaskStatus.RUNNING)
         with self.assertRaises(ValueError):
-            await task_registry.wait_for_task("extraction:run:package-id:semantic:chat", timeout=2)
+            await task_registry.wait_for_task("extraction:evidence:package-id:semantic:chat", timeout=2)
 
     async def test_initial_overview_previews_use_ranked_top_files_and_raw_first_lines(self):
         service, _, _ = make_service([[make_chunk()]])
@@ -2496,7 +2649,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIsNone(result)
             self.assertEqual(status, TaskStatus.RUNNING)
-            await task_registry.wait_for_task("extraction:run:package-id:semantic:chat", timeout=2)
+            await task_registry.wait_for_task("extraction:evidence:package-id:semantic:chat", timeout=2)
 
         self.assertIsNotNone(output_repository.evidence_context)
         self.assertGreaterEqual(len(output_repository.evidence_contexts), 2)
@@ -2559,7 +2712,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIsNone(result)
             self.assertEqual(status, TaskStatus.RUNNING)
-            await task_registry.wait_for_task("extraction:run:package-id:semantic:chat", timeout=2)
+            await task_registry.wait_for_task("extraction:evidence:package-id:semantic:chat", timeout=2)
 
         self.assertIsNotNone(output_repository.evidence_context)
         self.assertIsNone(output_repository.result)
@@ -2679,11 +2832,18 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIsNone(result)
             self.assertEqual(status, TaskStatus.RUNNING)
-            await task_registry.wait_for_task("extraction:run:package-id:semantic:chat", timeout=2)
+            await task_registry.wait_for_task("extraction:evidence:package-id:semantic:chat", timeout=2)
 
         self.assertIsNone(output_repository.result)
         self.assertIsNotNone(output_repository.run_state.generated_final_draft)
         self.assertEqual(output_repository.run_state.generated_final_draft["id"], "package-id")
+        for artifact in (
+            output_repository.run_state.generated_initial_draft,
+            output_repository.run_state.generated_patched_draft,
+            output_repository.run_state.generated_reconstructed_draft,
+        ):
+            self.assertIsNotNone(artifact)
+            self.assertNotIn("dataset_distribution", artifact)
         self.assertEqual(output_repository.run_state.vocab_queries, [])
         status, progress = await service.get_extraction_progress(data_package_id="package-id")
         self.assertEqual(status, TaskStatus.COMPLETED)
@@ -2772,7 +2932,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(result)
             self.assertEqual(status, TaskStatus.RUNNING)
             await task_registry.wait_for_task(
-                "extraction:run:package-id:semantic:chat",
+                "extraction:evidence:package-id:semantic:chat",
                 timeout=2,
             )
 
@@ -2807,8 +2967,9 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 validation_schema=FakeProfileService.schema,
                 warnings=[],
                 state=state,
-                distributions=[],
             )
+
+        self.assertNotIn("dataset_distribution", document)
 
         self.assertEqual(document["description"], ["Dataset metadata from summary."])
         self.assertTrue(any(record.planner_status == "dataset_level_projection_repair" for record in ledger))
@@ -2874,7 +3035,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIsNone(result)
             self.assertEqual(status, TaskStatus.RUNNING)
-            await task_registry.wait_for_task("extraction:run:package-id:semantic:chat", timeout=2)
+            await task_registry.wait_for_task("extraction:evidence:package-id:semantic:chat", timeout=2)
 
         self.assertIsNotNone(output_repository.result)
         self.assertEqual(output_repository.result.generated_final_draft["id"], "manual-id")
@@ -2986,8 +3147,8 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             workflow_id="package-id",
             state=output_repository.run_state.model_copy(update={"chunking_strategy": "semantic"}),
         )
-        task = asyncio.create_task(asyncio.sleep(0), name="extraction:run:package-id:semantic:chat")
-        task_registry.tasks["extraction:run:package-id:semantic:chat"] = TaskInfo(
+        task = asyncio.create_task(asyncio.sleep(0), name="extraction:evidence:package-id:semantic:chat")
+        task_registry.tasks["extraction:evidence:package-id:semantic:chat"] = TaskInfo(
             task=task,
             status=TaskStatus.CANCELLED,
             type=TaskType.WORKFLOW,
@@ -3090,7 +3251,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIsNone(result)
             self.assertEqual(status, TaskStatus.RUNNING)
-            await task_registry.wait_for_task("extraction:run:package-id:semantic:chat", timeout=2)
+            await task_registry.wait_for_task("extraction:evidence:package-id:semantic:chat", timeout=2)
 
         self.assertEqual(call_order[:3], ["extract:0", "extract:1", "repair"])
         self.assertIsNotNone(output_repository.run_state)
@@ -3172,7 +3333,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIsNone(result)
             self.assertEqual(status, TaskStatus.RUNNING)
-            await task_registry.wait_for_task("extraction:run:package-id:semantic:chat", timeout=2)
+            await task_registry.wait_for_task("extraction:evidence:package-id:semantic:chat", timeout=2)
 
         self.assertIsNotNone(output_repository.result)
         self.assertEqual(output_repository.result.generated_final_draft["id"], "package-id")
@@ -3253,7 +3414,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIsNone(result)
             self.assertEqual(status, TaskStatus.RUNNING)
-            await task_registry.wait_for_task("extraction:run:package-id:semantic:chat", timeout=2)
+            await task_registry.wait_for_task("extraction:evidence:package-id:semantic:chat", timeout=2)
 
         self.assertEqual(call_order, ["extract:0", "repair", "extract:1"])
         self.assertEqual(output_repository.run_state.chunk_repair_mode, "immediate")
@@ -3332,7 +3493,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIsNone(result)
             self.assertEqual(status, TaskStatus.RUNNING)
-            await task_registry.wait_for_task("extraction:run:package-id:semantic:chat", timeout=2)
+            await task_registry.wait_for_task("extraction:evidence:package-id:semantic:chat", timeout=2)
 
         self.assertEqual(tokenizer_loader.call_count, 2)
         tokenizer_loader.assert_any_call("example/tokenizer", hf_token="")
@@ -3403,7 +3564,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIsNone(result)
             self.assertEqual(status, TaskStatus.RUNNING)
-            await task_registry.wait_for_task("extraction:run:package-id:semantic:chat", timeout=2)
+            await task_registry.wait_for_task("extraction:evidence:package-id:semantic:chat", timeout=2)
 
         self.assertFalse(repair_called)
         self.assertEqual(output_repository.run_state.chunk_repair_mode, "disabled")
@@ -3481,7 +3642,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIsNone(result)
             self.assertEqual(status, TaskStatus.RUNNING)
-            await task_registry.wait_for_task("extraction:run:package-id:semantic:chat", timeout=2)
+            await task_registry.wait_for_task("extraction:evidence:package-id:semantic:chat", timeout=2)
 
         self.assertEqual(len(outputs), 0)
         self.assertIsNotNone(output_repository.result)
@@ -3796,7 +3957,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             ["pending"],
         )
         self.assertEqual(
-            task_registry.get_task_info("extraction:run:package-id:semantic:chat").status,
+            task_registry.get_task_info("extraction:evidence:package-id:semantic:chat").status,
             TaskStatus.CANCELLED,
         )
 

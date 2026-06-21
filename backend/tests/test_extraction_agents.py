@@ -47,15 +47,11 @@ from app.domain.extraction import (
     normalize_chunk_text_for_evidence_prompt,
     ShallowDatasetProjection,
     ShallowDatasetLevelProjection,
-    ShallowDistributionProjection,
-    ShallowResourceProjection,
     build_dataset_level_projection_prompt_components,
     build_dataset_summary_prompt_components,
     build_overview_shallow_projection_prompt_components,
     compact_file_summaries_for_shallow_projection,
     compact_overview_for_shallow_projection,
-    dataset_level_to_shallow_projection,
-    deterministic_grouped_distributions,
     shallow_projection_to_dcat_document,
     shallow_required_skeleton,
     search_schema_branches,
@@ -1007,17 +1003,15 @@ classes:
         Draft202012Validator(self.INITIAL_DRAFT_SCHEMA).validate(document)
         self.assertEqual(document["id"], "package-id")
         self.assertIn("creator", document)
-        self.assertIn("dataset_distribution", document)
+        self.assertNotIn("dataset_distribution", document)
         self.assertIn("is_about_entity", document)
         self.assertIn("is_about_activity", document)
         self.assertIn("was_generated_by", document)
         self.assertIn("description", document["was_generated_by"][0])
         self.assertIn("has_qualitative_attribute", document["was_generated_by"][0])
-        self.assertIn("format", document["dataset_distribution"][0])
         self.assertIn("has_quantitative_attribute", document["is_about_activity"][0])
         paths = {entry["path"] for entry in scaffold["entries"]}
         self.assertIn("/creator/0", paths)
-        self.assertIn("/dataset_distribution/0", paths)
         self.assertIn("/is_about_entity/0", paths)
         self.assertIn("/was_generated_by/0/description", paths)
 
@@ -1053,8 +1047,7 @@ classes:
         by_path = {item["path"]: item for item in catalog}
 
         self.assertTrue(by_path["/description"]["description_last_resort"])
-        self.assertEqual(by_path["/dataset_distribution/0"]["scaffold_status"], "unfilled")
-        self.assertIn("resource_signal", by_path["/dataset_distribution/0"]["category_affinities"])
+        self.assertNotIn("/dataset_distribution/0", by_path)
         self.assertIn("current_value", by_path["/was_generated_by/0"])
         self.assertIn("/was_generated_by/0/carried_out_by/-", by_path)
 
@@ -1107,21 +1100,22 @@ classes:
             validation_schema=self.INITIAL_DRAFT_SCHEMA,
         )
         replacement = {
-            "access_URL": [{"id": "package-id:distribution:primary:access"}],
-            "title": ["Primary JCAMP-DX distribution"],
-            "description": ["JCAMP-DX spectral data files."],
-            "format": None,
-            "media_type": None,
+            "id": "package-id:entity:primary",
+            "title": "Primary entity",
+            "description": "Evaluation target entity.",
+            "has_qualitative_attribute": [],
+            "has_quantitative_attribute": [],
+            "was_generated_by": [],
         }
 
         updated = WorkflowService._replace_json_pointer(
             document,
-            "/dataset_distribution/0",
+            "/is_about_entity/0",
             replacement,
         )
 
-        self.assertEqual(updated["dataset_distribution"][0]["title"], ["Primary JCAMP-DX distribution"])
-        self.assertEqual(document["dataset_distribution"][0]["title"], [])
+        self.assertEqual(updated["is_about_entity"][0]["title"], "Primary entity")
+        self.assertEqual(document["is_about_entity"][0]["title"], "")
         Draft202012Validator(self.INITIAL_DRAFT_SCHEMA).validate(updated)
 
     def test_profile_target_write_document_carries_complete_target_value(self):
@@ -1136,27 +1130,26 @@ classes:
 
     def test_target_writer_coerces_scalar_strings_to_existing_array_shape(self):
         current = {
-            "access_URL": [{"id": "package-id:distribution:primary:access"}],
-            "title": [],
-            "description": [],
-            "format": None,
-            "media_type": None,
+            "id": "package-id:entity:primary",
+            "title": "",
+            "description": "",
+            "has_qualitative_attribute": [],
+            "has_quantitative_attribute": [],
+            "was_generated_by": [],
         }
 
         value = WorkflowService._coerce_profile_target_value(
-            target_path="/dataset_distribution/0",
+            target_path="/is_about_entity/0",
             current_value=current,
             proposed_value={
-                "access_URL": [{"id": "package-id:distribution:primary:access"}],
-                "title": "Primary JCAMP-DX distribution",
-                "description": "JCAMP-DX spectral data files.",
-                "format": "JCAMP-DX",
+                "id": "package-id:entity:primary",
+                "title": "Primary entity",
+                "description": "Evaluation target entity.",
             },
         )
 
-        self.assertEqual(value["title"], ["Primary JCAMP-DX distribution"])
-        self.assertEqual(value["description"], ["JCAMP-DX spectral data files."])
-        self.assertIsNone(value["format"])
+        self.assertEqual(value["title"], "Primary entity")
+        self.assertEqual(value["description"], "Evaluation target entity.")
 
     def test_instrument_note_uses_free_text_observation_without_facets(self):
         note = EvidenceCandidate(
@@ -1238,7 +1231,7 @@ classes:
             )
         )
 
-    def test_deterministic_fallback_keeps_useful_method_and_resource_targets(self):
+    def test_deterministic_fallback_keeps_useful_method_targets(self):
         method_value = WorkflowService._fallback_profile_target_value(
             target_path="/was_generated_by/0",
             current_value={
@@ -1260,31 +1253,30 @@ classes:
                 )
             ],
         )
-        distribution_value = WorkflowService._fallback_profile_target_value(
-            target_path="/dataset_distribution/0",
-            current_value={
-                "access_URL": [{"id": "package-id:distribution:primary:access"}],
-                "title": [],
-                "description": [],
-                "format": None,
-                "media_type": None,
-            },
-            notes=[
-                EvidenceCandidate(
-                    candidate_id="format_file",
-                    category="resource_signal",
-                    role="descriptor",
-                    claim="The file declares a structured data format.",
-                    evidence_text="format = structured text",
-                    file_path="data.txt",
-                )
-            ],
-        )
-
         self.assertIsNotNone(method_value)
         self.assertIn("The workflow uses a calibration method.", method_value["description"])
-        self.assertIsNotNone(distribution_value)
-        self.assertIn("Primary dataset distribution", distribution_value["title"])
+        self.assertIsNone(
+            WorkflowService._fallback_profile_target_value(
+                target_path="/dataset_distribution/0",
+                current_value={
+                    "access_URL": [{"id": "package-id:distribution:primary:access"}],
+                    "title": [],
+                    "description": [],
+                    "format": None,
+                    "media_type": None,
+                },
+                notes=[
+                    EvidenceCandidate(
+                        candidate_id="format_file",
+                        category="resource_signal",
+                        role="descriptor",
+                        claim="The file declares a structured data format.",
+                        evidence_text="format = structured text",
+                        file_path="data.txt",
+                    )
+                ],
+            )
+        )
 
     def test_device_fallback_writes_agentic_entity_not_qualitative_attribute(self):
         note = EvidenceCandidate(
@@ -1354,18 +1346,6 @@ classes:
                 "Bla01Eth parameter is set to '<149.236.99.254>'",
                 "dataset",
             ],
-            "dataset_distribution": [
-                {
-                    "access_URL": [{"id": "package-id:distribution:primary:access"}],
-                    "title": ["Primary dataset distribution"],
-                    "description": [
-                        "Structured measurement data files.",
-                        "NPOINTS parameter values from the Bruker file.",
-                        "Nucleus FPNZ is no",
-                        "This is a parameter file from installed software version 3.2",
-                    ],
-                }
-            ],
             "was_generated_by": [
                 {
                     "id": "package-id:activity:metadata-extraction",
@@ -1391,10 +1371,6 @@ classes:
 
         self.assertEqual(curated["description"], ["SIMONE metadata draft for catalyst measurements."])
         self.assertEqual(curated["keyword"], ["measurement", "dataset"])
-        self.assertEqual(
-            curated["dataset_distribution"][0]["description"],
-            ["Structured measurement data files."],
-        )
         self.assertEqual(
             curated["was_generated_by"][0]["has_qualitative_attribute"],
             [{"value": "Calibration method", "description": "Calibration method"}],
@@ -1472,10 +1448,10 @@ classes:
             candidates=[
                 EvidenceCandidate(
                     candidate_id="format_version_1",
-                    category="resource_signal",
+                    category="activity_signal",
                     role="descriptor",
-                    claim="Structured data format version 5.00",
-                    evidence_text="FORMAT=5.00",
+                    claim="Primary activity version 5.00",
+                    evidence_text="VERSION=5.00",
                     file_path="data.txt",
                     start_idx=10,
                     end_idx=20,
@@ -1483,10 +1459,10 @@ classes:
                 ),
                 EvidenceCandidate(
                     candidate_id="format_version_2",
-                    category="resource_signal",
+                    category="activity_signal",
                     role="descriptor",
-                    claim="Structured data format version 5.00",
-                    evidence_text="FORMAT=5.00",
+                    claim="Primary activity version 5.00",
+                    evidence_text="VERSION=5.00",
                     file_path="data.txt",
                     start_idx=10,
                     end_idx=20,
@@ -1499,19 +1475,19 @@ classes:
 
         self.assertEqual(len(groups), 1)
         self.assertEqual(len(groups[0].notes), 2)
-        self.assertTrue(groups[0].group_id.startswith("group:dataset_distribution.0:"))
+        self.assertTrue(groups[0].group_id.startswith("group:was_generated_by.0:"))
 
     def test_patch_path_constraint_rejects_description_sink_for_specific_target(self):
         self.assertTrue(
             WorkflowService._patch_path_allowed_for_target(
-                "/dataset_distribution/0/title/-",
-                "/dataset_distribution/0",
+                "/was_generated_by/0/title/-",
+                "/was_generated_by/0",
             )
         )
         self.assertFalse(
             WorkflowService._patch_path_allowed_for_target(
                 "/description/-",
-                "/dataset_distribution/0",
+                "/was_generated_by/0",
             )
         )
 
@@ -1619,27 +1595,22 @@ classes:
         self.assertIn("required_skeleton", draft_components["dataset_level_projection_input_json"])
         self.assertNotIn("file_summaries", draft_components["dataset_level_projection_input_json"])
 
-    def test_shallow_projection_model_accepts_broad_dataset_projection(self):
+    def test_shallow_projection_model_excludes_dataset_distribution(self):
         projection = ShallowDatasetProjection.model_validate(
             {
                 "title": ["1H NMR"],
                 "description": ["A proton NMR dataset with acquisition and processing files."],
                 "keyword": ["NMR", "spectroscopy"],
-                "dataset_distribution": [
-                    {
-                        "access_URL": [{"id": "10.zip/10/acqu", "title": "acqu"}],
-                        "title": ["Acquisition parameters"],
-                    }
-                ],
                 "was_generated_by": [{"title": ["NMR acquisition"]}],
                 "is_about_entity": [{"title": "sample"}],
             }
         )
 
         self.assertEqual(projection.title, ["1H NMR"])
-        self.assertEqual(projection.dataset_distribution[0].access_URL[0].title, "acqu")
+        self.assertNotIn("dataset_distribution", ShallowDatasetProjection.model_fields)
+        self.assertNotIn("dataset_distribution", projection.model_dump(mode="json"))
 
-    def test_dataset_level_projection_excludes_llm_distributions_and_merges_backend_distributions(self):
+    def test_dataset_level_projection_prompt_and_model_exclude_dataset_distribution(self):
         level_projection = ShallowDatasetLevelProjection.model_validate(
             {
                 "id": "package-id",
@@ -1648,55 +1619,23 @@ classes:
                 "keyword": ["NMR"],
             }
         )
-        projection = dataset_level_to_shallow_projection(
-            level_projection,
-            distributions=[
-                ShallowDistributionProjection(
-                    access_URL=[ShallowResourceProjection(id="10.zip/10/fid", title="fid")],
-                    title=["Raw data resources"],
-                )
-            ],
+        prompt = "".join(
+            text
+            for _, text in build_dataset_level_projection_prompt_components(
+                data_package_id="package-id",
+                dataset_summary="NMR acquisition dataset.",
+                skeleton=shallow_required_skeleton("package-id"),
+            )
         )
 
-        self.assertEqual(len(projection.dataset_distribution), 1)
-        self.assertEqual(projection.dataset_distribution[0].access_URL[0].id, "10.zip/10/fid")
-
-    def test_deterministic_grouped_distributions_map_scientific_file_summaries(self):
-        summaries = [
-            ExtractionFileSummary(file_path="dataset_description.txt", data_format="text", explicit_purpose="dataset description"),
-            ExtractionFileSummary(file_path="10.zip/10/fid", data_format="binary", metadata_signals=["raw spectral data"]),
-            ExtractionFileSummary(file_path="10.edit.jdx", data_format="JCAMP-DX", metadata_signals=["processed NMR spectrum"]),
-            ExtractionFileSummary(file_path="10.zip/10/acqus", metadata_signals=["acquisition parameter file"]),
-            ExtractionFileSummary(file_path="10.zip/10/pdata/1/proc", metadata_signals=["processing parameter file"]),
-            ExtractionFileSummary(file_path="10.zip/10/uxnmr.info", explicit_purpose="configuration information"),
-            ExtractionFileSummary(file_path="10.zip/10/audita.txt", explicit_purpose="audit trail"),
-        ]
-        ranked = [RankedFile(rank=index + 1, file_path=summary.file_path) for index, summary in enumerate(summaries)]
-
-        distributions = deterministic_grouped_distributions(
-            initial_file_summaries=summaries,
-            ranked_files=ranked,
-        )
-        titles = [item.title[0] for item in distributions]
-
-        self.assertIn("Documentation resources", titles)
-        self.assertIn("Raw data resources", titles)
-        self.assertIn("Processed data resources", titles)
-        self.assertIn("Acquisition parameter resources", titles)
-        self.assertIn("Processing parameter resources", titles)
-        self.assertIn("Instrument and configuration resources", titles)
-        self.assertIn("Audit and metadata resources", titles)
+        self.assertNotIn("dataset_distribution", ShallowDatasetLevelProjection.model_fields)
+        self.assertNotIn("dataset_distribution", level_projection.model_dump(mode="json"))
+        self.assertNotIn("dataset_distribution", prompt)
 
     def test_shallow_projection_fills_missing_ids_and_replaces_description_fallback(self):
         projection = ShallowDatasetProjection(
             title=["1H NMR"],
             description=["A proton NMR dataset with raw and processed Bruker files."],
-            dataset_distribution=[
-                ShallowDistributionProjection(
-                    title=["Acquisition file"],
-                    access_URL=[ShallowResourceProjection(title="acqu")],
-                )
-            ],
             was_generated_by=[],
         )
 
@@ -1708,7 +1647,7 @@ classes:
 
         self.assertEqual(document["description"], ["A proton NMR dataset with raw and processed Bruker files."])
         self.assertEqual(document["title"], ["1H NMR"])
-        self.assertIn("dataset_distribution", document)
+        self.assertNotIn("dataset_distribution", document)
         self.assertTrue(document["was_generated_by"][0]["id"].startswith("package-id:activity"))
         self.assertTrue(any(record.object_kind == "ScaffoldFact" for record in ledger))
 
@@ -1724,13 +1663,6 @@ classes:
                 "description": ["A proton NMR dataset containing Bruker acquisition and processing resources."],
                 "identifier": ["package-id"],
                 "keyword": ["NMR"],
-                "dataset_distribution": [
-                    {
-                        "access_URL": [{"id": "10.zip/10/acqu", "title": "acqu"}],
-                        "title": ["Acquisition parameters"],
-                        "description": ["Bruker acquisition parameter file."],
-                    }
-                ],
                 "was_generated_by": [
                     {
                         "title": ["NMR acquisition"],
@@ -1754,7 +1686,7 @@ classes:
         errors = sorted(Draft202012Validator(dataset_schema).iter_errors(document), key=str)
         self.assertEqual(errors, [])
         self.assertEqual(document["title"], ["1H NMR"])
-        self.assertIn("dataset_distribution", document)
+        self.assertNotIn("dataset_distribution", document)
         self.assertIn("carried_out_by", document["was_generated_by"][0])
 if __name__ == "__main__":
     unittest.main()

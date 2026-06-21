@@ -2152,15 +2152,8 @@ class OrientationService:
             data_package_id=data_package_id,
             fallback_title=self._fallback_title(data_package_id, self._merged_completed_evidence_context(state)),
         )
-        distributions = deterministic_grouped_distributions(
-            initial_file_summaries=state.initial_file_summaries,
-            ranked_files=state.ranked_files,
-        )
         fallback_document, fallback_records = shallow_projection_to_dcat_document(
-            dataset_level_to_shallow_projection(
-                ShallowDatasetLevelProjection.model_validate(skeleton),
-                distributions=distributions,
-            ),
+            ShallowDatasetProjection.model_validate(skeleton),
             data_package_id=data_package_id,
             fallback_title=(skeleton.get("title") or [data_package_id])[0],
         )
@@ -2173,13 +2166,6 @@ class OrientationService:
             return (
                 fallback_document,
                 [
-                    projection_stage_record(
-                        stage="deterministic_distributions",
-                        object_kind="DeterministicDistributions",
-                        status="projected",
-                        reason="Backend created deterministic grouped distributions.",
-                        projected_paths=["/dataset_distribution"] if distributions else [],
-                    ),
                     *fallback_records,
                 ],
             )
@@ -2223,10 +2209,7 @@ class OrientationService:
             )
             warnings.append(f"Dataset-level projection failed: {exc}")
             fallback_document_with_summary, fallback_records_with_summary = shallow_projection_to_dcat_document(
-                dataset_level_to_shallow_projection(
-                    ShallowDatasetLevelProjection.model_validate(skeleton),
-                    distributions=distributions,
-                ),
+                ShallowDatasetProjection.model_validate(skeleton),
                 data_package_id=data_package_id,
                 fallback_title=(skeleton.get("title") or [data_package_id])[0],
                 fallback_description=dataset_summary,
@@ -2238,24 +2221,14 @@ class OrientationService:
                         stage="dataset_level_projection",
                         object_kind="DatasetLevelProjection",
                         status="user_edit_required",
-                        reason="Dataset-level projection failed; persisted required fallback skeleton with deterministic distributions.",
+                        reason="Dataset-level projection failed; persisted required fallback skeleton.",
                         error=str(exc),
-                    ),
-                    projection_stage_record(
-                        stage="deterministic_distributions",
-                        object_kind="DeterministicDistributions",
-                        status="projected",
-                        reason="Backend created deterministic grouped distributions.",
-                        projected_paths=["/dataset_distribution"] if distributions else [],
                     ),
                     *fallback_records_with_summary,
                 ],
             )
 
-        projection = dataset_level_to_shallow_projection(
-            level_projection,
-            distributions=distributions,
-        )
+        projection = ShallowDatasetProjection.model_validate(level_projection.model_dump(mode="json"))
 
         document, scaffold_records = shallow_projection_to_dcat_document(
             projection,
@@ -2276,17 +2249,13 @@ class OrientationService:
                 validation_schema=validation_schema,
                 warnings=warnings,
                 state=state,
-                distributions=distributions,
                 fallback_description=dataset_summary,
             )
             if repaired is not None:
                 return repaired
             warnings.append(f"Dataset-level projection failed full profile validation: {error}")
             fallback_document_with_summary, fallback_records_with_summary = shallow_projection_to_dcat_document(
-                dataset_level_to_shallow_projection(
-                    ShallowDatasetLevelProjection.model_validate(skeleton),
-                    distributions=distributions,
-                ),
+                ShallowDatasetProjection.model_validate(skeleton),
                 data_package_id=data_package_id,
                 fallback_title=(skeleton.get("title") or [data_package_id])[0],
                 fallback_description=dataset_summary,
@@ -2298,15 +2267,8 @@ class OrientationService:
                         stage="dataset_level_projection",
                         object_kind="DatasetLevelProjection",
                         status="user_edit_required",
-                        reason="Dataset-level projection failed full profile validation; persisted required fallback skeleton with deterministic distributions.",
+                        reason="Dataset-level projection failed full profile validation; persisted required fallback skeleton.",
                         error=error,
-                    ),
-                    projection_stage_record(
-                        stage="deterministic_distributions",
-                        object_kind="DeterministicDistributions",
-                        status="projected",
-                        reason="Backend created deterministic grouped distributions.",
-                        projected_paths=["/dataset_distribution"] if distributions else [],
                     ),
                     *fallback_records_with_summary,
                 ],
@@ -2323,13 +2285,6 @@ class OrientationService:
                     reason="Dataset-level projection produced full-profile-valid Dataset draft.",
                     projected_paths=projected_paths,
                 ),
-                projection_stage_record(
-                    stage="deterministic_distributions",
-                    object_kind="DeterministicDistributions",
-                    status="projected",
-                    reason="Backend created deterministic grouped distributions.",
-                    projected_paths=["/dataset_distribution"] if distributions else [],
-                ),
                 *scaffold_records,
             ],
         )
@@ -2343,7 +2298,6 @@ class OrientationService:
         validation_schema: dict[str, Any],
         warnings: list[str],
         state: ExtractionRunState,
-        distributions: list[Any],
         fallback_description: str | None = None,
     ) -> tuple[dict[str, Any], list[ProjectionLedgerRecord]] | None:
         assert self.ollama_client is not None
@@ -2379,10 +2333,7 @@ class OrientationService:
             warnings.append(f"Dataset-level projection repair failed: {exc}")
             return None
 
-        projection = dataset_level_to_shallow_projection(
-            level_projection,
-            distributions=distributions,
-        )
+        projection = ShallowDatasetProjection.model_validate(level_projection.model_dump(mode="json"))
 
         document, scaffold_records = shallow_projection_to_dcat_document(
             projection,
@@ -2413,13 +2364,6 @@ class OrientationService:
                     status="projected",
                     reason="Dataset-level projection repair produced full-profile-valid Dataset draft.",
                     projected_paths=projected_paths,
-                ),
-                projection_stage_record(
-                    stage="deterministic_distributions",
-                    object_kind="DeterministicDistributions",
-                    status="projected",
-                    reason="Backend created deterministic grouped distributions.",
-                    projected_paths=["/dataset_distribution"] if distributions else [],
                 ),
                 *scaffold_records,
             ],

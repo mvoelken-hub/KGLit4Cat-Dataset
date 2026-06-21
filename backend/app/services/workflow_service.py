@@ -83,6 +83,11 @@ class WorkflowService(
         if not resume:
             self._clear_downstream_extraction_outputs(data_package_id)
             self._clear_prompt_diagnostics(data_package_id)
+            self._clear_evidence_token_usage(
+                data_package_id,
+                chunking_strategy=chunking_strategy,
+                chat_model=chat_model,
+            )
         await self.task_registry.create_task(
             coro=self._run_extraction_task(
                 data_package_id=data_package_id,
@@ -95,6 +100,86 @@ class WorkflowService(
                 chat_model=chat_model,
                 chunk_repair_mode=chunk_repair_mode,
                 evidence_critic_granularity=evidence_critic_granularity,
+            ),
+            type=TaskType.WORKFLOW,
+            name=task_name,
+        )
+        return None, TaskStatus.RUNNING
+
+    async def run_profile_projection(
+        self,
+        *,
+        data_package_id: str,
+        profile_identifier: str,
+        qualitative_vocab_identifiers: list[str] | None = None,
+        resume: bool = True,
+        force_rebuild: bool = False,
+        chunking_strategy: str = "semantic",
+        chat_model: str | None = None,
+    ) -> tuple[ExtractionRunResult | None, TaskStatus]:
+        self._require_runtime_dependencies()
+        assert self.datasource_service is not None
+        assert self.output_repository is not None
+        assert self.task_registry is not None
+
+        self.datasource_service.get_data_package(data_package_id)
+        normalized_profile_identifier = self._profile_identifier_for_stage(
+            profile_identifier=profile_identifier,
+            target_stage="profile",
+        )
+        assert normalized_profile_identifier is not None
+        self.profile_service.get_profile(normalized_profile_identifier)
+        self.profile_service.load_json_schema(normalized_profile_identifier)
+
+        chat_model = chat_model or self._current_chat_model()
+        task_name = self._extraction_task_name(
+            data_package_id,
+            chunking_strategy,
+            chat_model,
+            stage="profile",
+        )
+        task_info = self.task_registry.get_task_info(task_name)
+        if task_info is not None and task_info.status == TaskStatus.RUNNING:
+            return self._load_result_or_none(
+                data_package_id,
+                chunking_strategy=chunking_strategy,
+                chat_model=chat_model,
+            ), TaskStatus.RUNNING
+        if task_info is not None and task_info.status == TaskStatus.COMPLETED:
+            result = self._load_result_or_none(
+                data_package_id,
+                chunking_strategy=chunking_strategy,
+                chat_model=chat_model,
+            )
+            if result is not None and resume and not force_rebuild:
+                return result, TaskStatus.COMPLETED
+        persisted_state = self._load_run_state_or_none(
+            data_package_id,
+            chunking_strategy=chunking_strategy,
+            chat_model=chat_model,
+        )
+        if (
+            persisted_state is not None
+            and persisted_state.generated_final_draft is not None
+            and resume
+            and not force_rebuild
+        ):
+            return None, TaskStatus.COMPLETED
+
+        if force_rebuild:
+            self._clear_profile_projection_token_usage(
+                data_package_id,
+                chunking_strategy=chunking_strategy,
+                chat_model=chat_model,
+            )
+        await self.task_registry.create_task(
+            coro=self._run_profile_projection_task(
+                data_package_id=data_package_id,
+                profile_identifier=normalized_profile_identifier,
+                qualitative_vocab_identifiers=qualitative_vocab_identifiers,
+                force_rebuild=force_rebuild,
+                chunking_strategy=chunking_strategy,
+                chat_model=chat_model,
             ),
             type=TaskType.WORKFLOW,
             name=task_name,
@@ -139,6 +224,7 @@ class WorkflowService(
 
         if force_rerun:
             self.output_repository.clear_initial_context(data_package_id)
+            self._clear_initial_context_token_usage(data_package_id)
         else:
             self._clear_prompt_diagnostics(data_package_id)
 
@@ -538,8 +624,10 @@ class WorkflowService(
             return TaskStatus.UNKNOWN, None
         branch_strategy = chunking_strategy or "semantic"
         branch_model = chat_model or self._current_chat_model()
-        task_info = self.task_registry.get_task_info(
-            self._extraction_task_name(data_package_id, branch_strategy, branch_model)
+        task_info = self._active_extraction_task_info(
+            data_package_id,
+            branch_strategy,
+            branch_model,
         )
         if task_info is not None and chunking_strategy:
             state = self._load_run_state_or_none(data_package_id, chunking_strategy=branch_strategy, chat_model=branch_model)
@@ -836,6 +924,138 @@ class WorkflowService(
                 chunking_strategy=chunking_strategy or (state.chunking_strategy if state else "semantic"),
             )
         )
+
+    async def _run_profile_projection_task(
+        self,
+        *,
+        data_package_id: str,
+        profile_identifier: str,
+        qualitative_vocab_identifiers: list[str] | None,
+        force_rebuild: bool = False,
+        chunking_strategy: str = "semantic",
+        chat_model: str | None = None,
+    ) -> None:
+        self._require_runtime_dependencies()
+        assert self.output_repository is not None
+
+        profile_manifest = self.profile_service.get_profile(profile_identifier)
+        profile_json_schema = self.profile_service.load_json_schema(profile_identifier)
+        validation_schema = validation_schema_for_target_class(
+            json_schema=profile_json_schema,
+            target_class=profile_manifest.target_class,
+        )
+        chat_model = chat_model or self._current_chat_model()
+        state = self._load_run_state_or_none(
+            data_package_id,
+            chunking_strategy=chunking_strategy,
+            chat_model=chat_model,
+        )
+        state = self._with_initial_context_fallback(
+            data_package_id=data_package_id,
+            state=state,
+            chunking_strategy=chunking_strategy,
+            chat_model=chat_model,
+        )
+        evidence_context = self._load_evidence_context_or_none(
+            data_package_id,
+            chunking_strategy=chunking_strategy,
+            chat_model=chat_model,
+        )
+        if state is None or evidence_context is None:
+            raise ChunkingRequiredError(
+                "Run evidence extraction before building generated draft."
+            )
+
+        state.profile_identifier = profile_identifier
+        state.chat_model = chat_model
+        state.chunking_strategy = chunking_strategy
+        if force_rebuild:
+            self._clear_profile_projection_state(state)
+
+        warnings = self._load_warnings_or_empty(data_package_id)
+        progress = ExtractionRunProgress(
+            stage="profile_projection",
+            chunk_repair_mode=state.chunk_repair_mode,
+            evidence_critic_granularity=state.evidence_critic_granularity,
+            processed_chunks=self._completed_chunk_count(state),
+            total_chunks=len(state.chunk_results),
+            interim_evidence_context=evidence_context,
+            vocab_query_config=state.vocab_query_config
+            or self._default_vocab_query_config(qualitative_vocab_identifiers),
+            ranked_files=state.ranked_files,
+            initial_file_summaries=state.initial_file_summaries,
+            initial_file_summary_progress=state.initial_file_summary_progress,
+            initial_file_summary_status=state.initial_file_summary_status,
+            initial_extraction_overview=state.initial_extraction_overview,
+            initial_extraction_overview_status=state.initial_extraction_overview_status,
+            initial_extraction_overview_diagnostic=state.initial_extraction_overview_diagnostic,
+            dataset_summary=state.dataset_summary,
+            chunk_results=state.chunk_results,
+            vocab_queries=state.vocab_queries,
+            generated_final_draft=state.generated_final_draft,
+            generated_patched_draft=state.generated_patched_draft,
+            generated_reconstructed_draft=state.generated_reconstructed_draft,
+            curated_document=state.curated_document,
+            document_quality_state=state.document_quality_state,
+            draft_quality_state=state.draft_quality_state,
+            validation=state.validation,
+            curated_validation=state.curated_validation,
+            initial_draft_scaffold=state.initial_draft_scaffold,
+            projection_ledger=state.projection_ledger,
+            field_completion_ledger=state.field_completion_ledger,
+            curation_ledger=state.curation_ledger,
+            warnings=list(warnings),
+        )
+        if force_rebuild:
+            self._clear_profile_projection_progress(progress)
+        self._save_run_state(data_package_id, state)
+        self._update_progress(data_package_id, progress)
+
+        profile_document = await self._build_profile_document_by_patching(
+            data_package_id=data_package_id,
+            profile_identifier=profile_identifier,
+            profile_target_class=profile_manifest.target_class,
+            evidence_context=evidence_context,
+            validation_schema=validation_schema,
+            state=state,
+            progress=progress,
+            warnings=warnings,
+        )
+
+        if state.validation.status == "valid":
+            profile_document = await self._enrich_draft_with_requirements(
+                data_package_id=data_package_id,
+                profile_identifier=profile_identifier,
+                evidence_context=evidence_context,
+                validation_schema=validation_schema,
+                state=state,
+                progress=progress,
+                warnings=warnings,
+            )
+
+        progress.stage = "profile_draft"
+        progress.interim_evidence_context = evidence_context
+        progress.generated_final_draft = profile_document
+        progress.generated_patched_draft = state.generated_patched_draft
+        progress.generated_reconstructed_draft = state.generated_reconstructed_draft
+        progress.curated_document = state.curated_document
+        progress.draft_quality_state = state.draft_quality_state
+        progress.validation = state.validation
+        progress.curated_validation = state.curated_validation
+        progress.requirement_report = state.requirement_report
+        progress.initial_draft_scaffold = state.initial_draft_scaffold
+        progress.projection_ledger = state.projection_ledger
+        progress.field_completion_ledger = state.field_completion_ledger
+        progress.curation_ledger = state.curation_ledger
+        progress.vocab_queries = state.vocab_queries
+        progress.warnings = list(warnings)
+        self._save_run_state(data_package_id, state)
+        self._persist_state_artifacts(data_package_id, state)
+        self.output_repository.save_extraction_warnings(
+            workflow_id=data_package_id,
+            warnings=warnings,
+        )
+        self._update_progress(data_package_id, progress)
 
     async def _run_extraction_task(
         self,
@@ -1708,12 +1928,17 @@ class WorkflowService(
         if self.task_registry is None:
             return
         state = self._load_run_state_or_none(data_package_id)
+        current_task = asyncio.current_task()
+        current_name = current_task.get_name() if current_task is not None else ""
+        stage = "profile" if current_name.startswith(f"extraction:profile:{data_package_id}:") else "evidence"
+        task_name = self._extraction_task_name(
+            data_package_id,
+            state.chunking_strategy if state else "semantic",
+            state.chat_model if state else self._current_chat_model(),
+            stage=stage,
+        )
         self.task_registry.update_progress(
-            self._extraction_task_name(
-                data_package_id,
-                state.chunking_strategy if state else "semantic",
-                state.chat_model if state else self._current_chat_model(),
-            ),
+            task_name,
             progress.model_dump(mode="json"),
         )
 
@@ -2208,9 +2433,14 @@ class WorkflowService(
         task = asyncio.current_task()
         if task is None:
             return None
-        prefix = f"extraction:run:{data_package_id}:"
         name = task.get_name()
-        if not name.startswith(prefix):
+        prefixes = (
+            f"extraction:evidence:{data_package_id}:",
+            f"extraction:profile:{data_package_id}:",
+            f"extraction:run:{data_package_id}:",
+        )
+        prefix = next((candidate for candidate in prefixes if name.startswith(candidate)), None)
+        if prefix is None:
             return None
         remainder = name[len(prefix):]
         strategy, separator, chat_model = remainder.partition(":")
@@ -2484,8 +2714,43 @@ class WorkflowService(
         data_package_id: str,
         chunking_strategy: str = "semantic",
         chat_model: str | None = None,
+        *,
+        stage: str = "evidence",
     ) -> str:
-        return f"extraction:run:{data_package_id}:{chunking_strategy}:{chat_model or 'default-model'}"
+        return f"extraction:{stage}:{data_package_id}:{chunking_strategy}:{chat_model or 'default-model'}"
+
+    def _active_extraction_task_info(
+        self,
+        data_package_id: str,
+        chunking_strategy: str,
+        chat_model: str | None,
+    ) -> TaskInfo | None:
+        if self.task_registry is None:
+            return None
+        candidates = [
+            self._extraction_task_name(
+                data_package_id,
+                chunking_strategy,
+                chat_model,
+                stage="profile",
+            ),
+            self._extraction_task_name(
+                data_package_id,
+                chunking_strategy,
+                chat_model,
+                stage="evidence",
+            ),
+            f"extraction:run:{data_package_id}:{chunking_strategy}:{chat_model or 'default-model'}",
+        ]
+        completed: TaskInfo | None = None
+        for task_name in candidates:
+            task_info = self.task_registry.get_task_info(task_name)
+            if task_info is None:
+                continue
+            if task_info.status == TaskStatus.RUNNING:
+                return task_info
+            completed = completed or task_info
+        return completed
 
     @staticmethod
     def _complete_workflow_task_name(data_package_id: str) -> str:

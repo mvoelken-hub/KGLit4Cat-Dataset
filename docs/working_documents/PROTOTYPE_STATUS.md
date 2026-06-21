@@ -28,7 +28,7 @@ Stepwise workflow:
 1. Upload package.
 2. Optionally run initial context generation.
 3. Run chunking.
-4. Run extraction with a registered profile.
+4. Build the generated profile draft from the persisted evidence context with a registered profile.
 5. Poll progress and fetch final result.
 
 Complete workflow:
@@ -49,6 +49,7 @@ Important current API surfaces:
 - `GET /api/v1/extraction/stages/orientation/{data_package_id}/progress`
 - `POST /api/v1/extraction/stages/evidence`
 - `GET /api/v1/extraction/stages/evidence/{data_package_id}/progress`
+- `POST /api/v1/extraction/stages/profile`
 - `PUT /api/v1/extraction/stages/curation/{data_package_id}/document`
 - `POST /api/v1/extraction/stages/curation/{data_package_id}/field`
 - `PATCH /api/v1/extraction/stages/grounding/{data_package_id}/config`
@@ -90,11 +91,12 @@ Use `force_rerun=true` for repeatable workflow runs with deterministic package I
 | Generation determinism | Ollama runtime settings expose generation temperature and context-derived output-token cap enforcement. Default prototype behavior uses temperature 0 and enforced output caps for future LLM calls. |
 | Profile dependency | Final output requires a registered compatible profile and successful schema validation. |
 | Scientific correctness | A schema-valid final result is not automatically scientifically correct. Expert or benchmark evaluation is still required. |
-| Quantitative attribute coverage | Requirement enrichment groups `instrument_signal` and `measurement_condition` evidence by numeric value, quantity label, optional unit, and source neighborhood, then projects each group to a schema-valid owner or records a skip reason. `measurement_signal` evidence is retained in artifacts but ignored downstream; deterministic filtering is limited to domain-agnostic source/claim shape such as primary-data summaries, identifiers, paths, qualitative labels, placeholder/default values, or non-setting numeric labels. |
+| Quantitative attribute coverage | Requirement enrichment gives each routable measurement note one structured LLM call for activity/entity target path, stable merge key, and confidence. Routes below `0.7` confidence, unavailable calls, unresolved ownership, and unsupported paths are logged and skipped; no deterministic rescue path remains. Accepted notes merge by target path plus merge key and append one quantitative or qualitative attribute per cluster. |
 | Requirement report scoring | `requirement_report.json` separates deterministic filled-field coverage inventory, sliced LLM semantic requirement assessment, and deterministic used-evidence source trace scoring. Coverage patching is category-gated and no longer uses a single metadata completeness score. |
 | Semantic reconstruction | After semantic requirement assessment, projection asks the LLM for minimal schema-constrained write envelopes over provenance, technical agents, method plan, attribute parent suitability, instrument settings, dataset identity, and aboutness. The output schema is sliced to only the allowed target paths and reachable `$defs`; aboutness uses a lean `id`/`title`/`description` slice. Deterministic code creates missing containers, applies writes, rejects same-parent duplicate quantitative attributes, validates each edit, salvages valid writes, and records `semantic_reconstructions` in the requirement report. |
-| Dataset-description mining | After initial draft creation, the profile stage extracts independently validated atomic facts from top-level dataset descriptions, adapts them into a local portable evidence context, and reuses requirement selection, quantitative grouping, patch validation, and rollback. Descriptions remain unchanged during coverage patching; `description_facts.json` records validated and rejected facts, and description-derived evidence is excluded from source-trace scoring. | Implemented. Mining failure writes an audit artifact and falls back to source evidence. |
-| Profile draft artifacts | Profile draft persistence stores `generated_initial_draft.json`, `generated_patched_draft.json`, and `generated_reconstructed_draft.json` so coverage patching and semantic reconstruction effects can be compared directly. |
+| Dataset-description mining | After initial draft creation, the profile stage extracts independently validated atomic facts from top-level dataset descriptions, adapts them into a local portable evidence context, and reuses requirement selection, semantic measurement routing, patch validation, and rollback. Descriptions remain unchanged during coverage patching; `description_facts.json` records validated and rejected facts, and description-derived evidence is excluded from source-trace scoring. | Implemented. Mining failure writes an audit artifact and falls back to source evidence. |
+| Profile draft artifacts | Profile draft persistence stores `generated_initial_draft.json`, `generated_patched_draft.json`, and `generated_reconstructed_draft.json` so coverage patching and semantic reconstruction effects can be compared directly. The draft flow no longer includes `dataset_distribution`. |
+| Stage execution boundary | Evidence extraction and generated profile draft construction use separate stage entrypoints and task names. The profile stage consumes persisted evidence context and does not rerun chunk evidence extraction. Stage reruns clear only the relevant token-usage agents. |
 | Evaluation defensibility | Projection filters must not hardcode dataset-specific keys, vendors, instruments, file names, or benchmark examples. Sample-specific fixes belong in prompt/category semantics or profile-declared rules before they can affect evaluation. |
 
 ## Evaluation Status Snapshot

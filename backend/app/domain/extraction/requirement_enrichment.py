@@ -497,7 +497,7 @@ Prefer not_applicable only when the supplied evidence categories make the semant
 For aboutness, one concrete non-file-like is_about_entity OR one concrete non-file-like is_about_activity is fulfilled; file names are not evaluated entities.
 For method plans, explicit method/procedure/protocol/plan evidence is required for fulfilled; prefer method_signal, but accept another category when the claim/evidence explicitly says method, procedure, protocol, plan, sampling, or acquisition.
 For instrument settings, selected concrete role=parameter evidence, especially instrument_signal or measurement_condition evidence, must be represented by suitable attributes; otherwise mark partial.
-For attribute parent semantics, device/software cues belong to agent parents; role=parameter evidence with instrument_signal, measurement_condition, resource_signal, or activity_signal belongs to data-generating activity by default unless explicit evidence says it belongs to an agent or evaluated subject/activity.
+For attribute parent semantics, device/software cues belong to agent parents; role=parameter evidence with instrument_signal, measurement_condition, measurement_signal, or activity_signal belongs to data-generating activity by default unless explicit evidence says it belongs to an agent or evaluated subject/activity.
 """
 
 
@@ -518,10 +518,10 @@ Return schema-constrained write envelopes only for allowed_target_paths.
 Keep edits minimal: replace or append fields only when the semantic requirement justifies it.
 Preserve valid numeric instrument/configuration settings. Remove only obvious qualitative/default/placeholders from quantitative attributes.
 Do not satisfy missing role=parameter evidence by generalizing one existing quantitative attribute; add separate schema-valid attributes or return empty writes.
-For attribute parents, device/software cues belong to agent parents; role=parameter evidence with instrument_signal, measurement_condition, resource_signal, or activity_signal belongs to data-generating activity by default unless explicit evidence says it belongs to an agent or evaluated subject/activity.
+For attribute parents, device/software cues belong to agent parents; role=parameter evidence with instrument_signal, measurement_condition, measurement_signal, or activity_signal belongs to data-generating activity by default unless explicit evidence says it belongs to an agent or evaluated subject/activity.
 Represent numeric ranges as separate schema-valid minimum and maximum quantitative attributes with numeric values and source units when present; never put a range string in a quantitative value.
 For aboutness, write at most one lean is_about_entity or is_about_activity object with only id, title, and description.
-Do not use new evidence search. Do not patch distributions.
+Do not use new evidence search.
 Return an empty writes array when no safe semantic reconstruction is available.
 """
 
@@ -545,7 +545,7 @@ def build_requirement_evaluation_prompt(
             "software_signal": "software, scripts, executable systems, services, processing applications",
             "instrument_signal": "acquisition, instrument, processing, calibration, unit, threshold, and configuration settings",
             "surrounding_signal": "dates, labs, teams, people, organizations, ownership, origin, authorship, provenance context",
-            "measurement_signal": "primary/raw data values; downstream inert",
+            "measurement_signal": "measurement-related evidence that can route to quantitative or qualitative activity/entity attributes",
             "measurement_condition": "axis bounds, axis units, point counts, ranges, scales, and dataset-level measurement descriptors",
         },
     }
@@ -620,7 +620,7 @@ def build_semantic_reconstruction_prompt(
             "software_signal": "software, scripts, executable systems, services, processing applications",
             "instrument_signal": "acquisition, instrument, processing, calibration, unit, threshold, and configuration settings",
             "surrounding_signal": "dates, labs, teams, people, organizations, ownership, origin, authorship, provenance context",
-            "measurement_signal": "primary/raw data values; downstream inert",
+            "measurement_signal": "measurement-related evidence that can route to quantitative or qualitative activity/entity attributes",
             "measurement_condition": "axis bounds, axis units, point counts, ranges, scales, and dataset-level measurement descriptors",
         },
     }
@@ -800,8 +800,7 @@ def select_requirement_evidence_packet(
     candidates = [
         candidate
         for candidate in list(evidence_context.portable_evidence) + list(evidence_context.contextual_evidence)
-        if candidate.category != "measurement_signal"
-        and _candidate_allowed_for_requirement(requirement, candidate)
+        if _candidate_allowed_for_requirement(requirement, candidate)
     ]
     scored: list[tuple[int, EvidenceCandidate]] = []
     for candidate in candidates:
@@ -899,7 +898,7 @@ def _candidate_allowed_for_requirement(requirement: DcatRequirement, candidate: 
     if not requirement.allowed_categories or category in requirement.allowed_categories:
         return True
     if requirement.expected_target_class == "QuantitativeAttribute" and str(candidate.role) == "parameter":
-        return category != "measurement_signal"
+        return True
     if requirement.expected_target_class == "Plan" and _candidate_has_method_cue(candidate):
         return True
     return False

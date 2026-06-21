@@ -210,7 +210,7 @@ Rules:
 - Set role to one of: qualitative_attribute, identity, descriptor, context, parameter, other_metadata.
 - Use resource_signal for files, distributions, formats, access paths, and resource-scoped notes.
 - Use method_signal for realized plans, protocols, procedures, and methods.
-- Use measurement_signal for primary/raw observed values, row-like observations, table cells, or data extrema; these are evidence-only and should not become metadata attributes.
+- Use measurement_signal for primary/raw observed values, row-like observations, table cells, or data extrema; later semantic routing may project eligible notes into quantitative or qualitative activity/entity attributes.
 - Use measurement_condition for measurement descriptors such as axis bounds, axis units, point counts, sampling ranges, measurement scale labels, or dataset-level measurement conditions that describe how observations are organized.
 - Header/title-like identifiers are resource_signal or other unless the surrounding text explicitly says they name a device, instrument, software system, machine, or service.
 - Use software_signal for software, scripts, executable systems, services, or processing applications that explicitly carry out work.

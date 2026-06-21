@@ -21,6 +21,19 @@ async def generate_structured(*args: Any, **kwargs: Any) -> Any:
     return await workflow_service.generate_structured(*args, **kwargs)
 
 
+@dataclass
+class _MeasurementSemanticGroup:
+    group_id: str
+    merge_key: str
+    target_path: str
+    target_class: str
+    label: str
+    value: Any
+    unit: str | None
+    attribute_kind: str
+    notes: list[EvidenceCandidate]
+
+
 class ProjectionService:
     async def _build_profile_document_by_patching(
         self,
@@ -113,6 +126,8 @@ class ProjectionService:
             progress.generated_initial_draft = state.generated_initial_draft
         legacy_route = LegacyEvidencePatchRoute()
         for note in evidence_context.portable_evidence:
+            if note.category == "resource_signal" or self._measurement_note_is_routable(note):
+                continue
             route = legacy_route.route(note)
             target_path, target_class = route.target_path, route.target_class
             if target_path is None or target_class is None:
@@ -345,6 +360,7 @@ class ProjectionService:
 
         for item in coverage_items:
             requirement = requirements_by_id[item.requirement_id]
+            semantic_measurement_routing = False
             selected_evidence, context_window = select_requirement_evidence_packet(
                 requirement=requirement,
                 assessment=item,
@@ -361,7 +377,8 @@ class ProjectionService:
                 context_window=context_window,
             )
             if item.requirement_id == "instrument_settings_attributes" and item.applicable:
-                document = self._apply_quantitative_evidence_groups(
+                semantic_measurement_routing = True
+                document = await self._apply_quantitative_evidence_groups(
                     data_package_id=data_package_id,
                     profile_identifier=profile_identifier,
                     document=document,
@@ -379,7 +396,13 @@ class ProjectionService:
                 item.status = "fulfilled"
                 item.quality = 1.0
                 item.weighted_score = item.weight
-                item.rationale = "Coverage target path exists after deterministic projection."
+                item.rationale = (
+                    "Coverage target path exists after semantic measurement routing."
+                    if semantic_measurement_routing
+                    else "Coverage target path exists."
+                )
+            if semantic_measurement_routing:
+                continue
             if item.status != "missing" or not item.applicable:
                 continue
             if not selected_evidence:
@@ -1332,7 +1355,7 @@ class ProjectionService:
         progress.field_completion_ledger = state.field_completion_ledger
         progress.projection_ledger = state.projection_ledger
 
-    def _apply_quantitative_evidence_groups(
+    async def _apply_quantitative_evidence_groups(
         self,
         *,
         data_package_id: str,
@@ -1342,32 +1365,66 @@ class ProjectionService:
         validation_schema: dict[str, Any],
         state: ExtractionRunState,
         progress: ExtractionRunProgress,
-        requirement: DcatRequirement,
-        item: Any,
+        requirement: DcatRequirement | None = None,
+        item: Any | None = None,
     ) -> dict[str, Any]:
-        groups = self._quantitative_evidence_groups(evidence_context.portable_evidence)
+        skipped_before = sum(
+            1
+            for record in state.projection_ledger
+            if record.object_identifier.startswith("measurement_group:")
+            and record.merge_status == "skipped"
+        )
+        groups = await self._quantitative_evidence_groups(
+            data_package_id=data_package_id,
+            profile_identifier=profile_identifier,
+            document=document,
+            evidence_context=evidence_context,
+            validation_schema=validation_schema,
+            state=state,
+            progress=progress,
+        )
+        routing_skipped = max(
+            0,
+            sum(
+                1
+                for record in state.projection_ledger
+                if record.object_identifier.startswith("measurement_group:")
+                and record.merge_status == "skipped"
+            )
+            - skipped_before,
+        )
         if not groups:
+            if item is not None and routing_skipped:
+                item.rationale = (
+                    f"Semantic measurement routing skipped {routing_skipped} note(s); "
+                    "no safe attribute write was available."
+                )
+                item.patch = RequirementPatchAttempt(
+                    attempted=True,
+                    status="not_attempted",
+                    reason=item.rationale,
+                )
             return document
         projected = 0
-        skipped = 0
+        skipped = routing_skipped
         selected_notes: list[RequirementEvidenceItem] = []
         for group in groups:
             selected_notes.extend(self._requirement_evidence_items_for_group(group))
-            target_path, target_class, document = self._quantitative_target_path_for_group(
+            target_path, target_class, document = await self._quantitative_target_path_for_group(
                 data_package_id=data_package_id,
                 profile_identifier=profile_identifier,
                 document=document,
                 group=group,
                 validation_schema=validation_schema,
             )
-            instance = self._quantitative_attribute_instance_from_group(group)
+            instance = self._measurement_attribute_instance_from_group(group)
             if target_path is None:
                 skipped += 1
                 self._record_quantitative_group_skip(
                     state=state,
                     progress=progress,
                     group=group,
-                    reason="target_unresolved: no schema-valid owner path supports has_quantitative_attribute.",
+                    reason="target_unresolved: semantic router returned no writable target path.",
                 )
                 continue
             duplicate_reason = self._duplicate_requirement_patch_reason(
@@ -1403,12 +1460,13 @@ class ProjectionService:
                     target_path=target_path,
                 )
                 appended_index = int(actual_path.rsplit("/", 1)[-1]) if actual_path else None
-                self._strip_requirement_patch_forbidden_fields(
-                    document=document,
-                    target_path=target_path,
-                    target_class="QuantitativeAttribute",
-                    appended_index=appended_index,
-                )
+                if group.attribute_kind == "quantitative":
+                    self._strip_requirement_patch_forbidden_fields(
+                        document=document,
+                        target_path=target_path,
+                        target_class="QuantitativeAttribute",
+                        appended_index=appended_index,
+                    )
             except (ValueError, TypeError) as exc:
                 skipped += 1
                 document = original
@@ -1445,74 +1503,366 @@ class ProjectionService:
                 target_path=target_path,
                 target_class=target_class,
             )
-        if selected_notes:
+        if item is not None and selected_notes:
             item.selected_evidence = selected_notes
-        item.status = "fulfilled"
-        item.quality = 1.0
-        item.weighted_score = item.weight
-        item.rationale = (
-            f"Checked {len(groups)} portable numeric evidence group(s): "
-            f"{projected} projected, {skipped} skipped with ledger reasons."
-        )
-        item.patch = RequirementPatchAttempt(
-            attempted=True,
-            status="applied" if projected else "not_attempted",
-            target_class="QuantitativeAttribute",
-            reason=item.rationale,
-        )
+        if item is not None and projected:
+            item.status = "partial" if skipped else "fulfilled"
+            item.quality = 0.5 if skipped else 1.0
+            item.weighted_score = item.weight * item.quality
+            item.rationale = (
+                f"Checked {len(groups)} portable semantic measurement group(s): "
+                f"{projected} projected, {skipped} skipped with ledger reasons."
+            )
+            item.patch = RequirementPatchAttempt(
+                attempted=True,
+                status="applied" if projected else "not_attempted",
+                target_class=(
+                    "QuantitativeAttribute"
+                    if all(group.attribute_kind == "quantitative" for group in groups)
+                    else "QualitativeAttribute"
+                ),
+                reason=item.rationale,
+            )
         state.generated_final_draft = document
         progress.generated_final_draft = document
         return document
 
+    @staticmethod
+    def _measurement_allowed_target_paths() -> list[str]:
+        return [
+            "/was_generated_by/0/has_quantitative_attribute/-",
+            "/was_generated_by/0/has_qualitative_attribute/-",
+            "/is_about_activity/0/has_quantitative_attribute/-",
+            "/is_about_activity/0/has_qualitative_attribute/-",
+            "/is_about_entity/0/has_quantitative_attribute/-",
+            "/is_about_entity/0/has_qualitative_attribute/-",
+        ]
+
+    _MEASUREMENT_ROUTE_MIN_CONFIDENCE = 0.7
+
+    @staticmethod
+    def _measurement_target_class_for_path(target_path: str) -> str | None:
+        if target_path.startswith("/was_generated_by"):
+            return "DataGeneratingActivity"
+        if target_path.startswith("/is_about_activity"):
+            return "EvaluatedActivity"
+        if target_path.startswith("/is_about_entity"):
+            return "EvaluatedEntity"
+        return None
+
+    @staticmethod
+    def _measurement_attribute_kind_for_path(target_path: str) -> str | None:
+        if "/has_quantitative_attribute/" in target_path:
+            return "quantitative"
+        if "/has_qualitative_attribute/" in target_path:
+            return "qualitative"
+        return None
+
     @classmethod
-    def _quantitative_evidence_groups(
-        cls,
-        evidence_items: list[Any],
-    ) -> list[_QuantitativeEvidenceGroup]:
-        groups: dict[str, _QuantitativeEvidenceGroup] = {}
-        for note in evidence_items:
-            candidate = cls._quantitative_group_candidate(note)
-            if candidate is None:
+    def _measurement_router_draft_excerpt(cls, document: dict[str, Any]) -> dict[str, Any]:
+        return {
+            key: cls._value_at_json_pointer(document, f"/{key}")
+            for key in (
+                "was_generated_by",
+                "is_about_activity",
+                "is_about_entity",
+            )
+        }
+
+    @staticmethod
+    def _measurement_note_is_routable(note: EvidenceCandidate) -> bool:
+        role = str(getattr(note, "role", "") or "")
+        if note.category in {"measurement_signal", "measurement_condition"}:
+            return True
+        if note.category == "instrument_signal" and role in {"parameter", "qualitative_attribute"}:
+            return True
+        return False
+
+    async def _route_measurement_note_semantically(
+        self,
+        *,
+        data_package_id: str,
+        profile_identifier: str,
+        note: EvidenceCandidate,
+        contextual_notes: list[EvidenceCandidate],
+        document: dict[str, Any],
+        validation_schema: dict[str, Any],
+    ) -> MeasurementSemanticRouteDecision | None:
+        if self.ollama_client is None:
+            return None
+        allowed_target_paths = self._measurement_allowed_target_paths()
+        prompt = build_measurement_semantic_route_prompt(
+            note=note,
+            contextual_notes=contextual_notes,
+            draft_excerpt=self._measurement_router_draft_excerpt(document),
+            allowed_target_paths=allowed_target_paths,
+        )
+        try:
+            result = await generate_structured(
+                self.ollama_client,
+                model=self.ollama_client.chat_model,
+                system=MEASUREMENT_SEMANTIC_ROUTER_SYSTEM_PROMPT,
+                prompt=prompt,
+                output_type=MeasurementSemanticRouteDecision,
+                system_components=[
+                    ("measurement_semantic_router_system_prompt", MEASUREMENT_SEMANTIC_ROUTER_SYSTEM_PROMPT),
+                ],
+                prompt_components=[
+                    ("measurement_semantic_router_prompt", prompt),
+                ],
+                token_budgeter=self._prompt_token_budgeter(),
+                operation_id=self._prompt_operation_id("measurement_semantic_router"),
+                agent_name="measurement_semantic_router",
+                num_ctx=self.ollama_client.max_context_length,
+            )
+            self._record_llm_call_result(
+                data_package_id=data_package_id,
+                result=result,
+                agent_name="measurement_semantic_router",
+            )
+            decision = MeasurementSemanticRouteDecision.model_validate(result.output)
+        except (CompletionError, ValidationError) as exc:
+            self._record_llm_call_exception(
+                data_package_id=data_package_id,
+                exc=exc,
+                agent_name="measurement_semantic_router",
+            )
+            return None
+        if decision.target_path is None or decision.merge_key is None:
+            return decision
+        if not decision.merge_key.strip():
+            return decision.model_copy(
+                update={
+                    "reason": decision.reason or "Router returned an empty merge key.",
+                    "target_path": None,
+                    "merge_key": None,
+                }
+            )
+        if decision.confidence < self._MEASUREMENT_ROUTE_MIN_CONFIDENCE:
+            return decision.model_copy(
+                update={
+                    "reason": decision.reason
+                    or f"Router confidence below {self._MEASUREMENT_ROUTE_MIN_CONFIDENCE:.1f}.",
+                    "target_path": None,
+                    "merge_key": None,
+                }
+            )
+        if decision.target_path not in allowed_target_paths:
+            return decision.model_copy(
+                update={
+                    "reason": decision.reason or f"Router returned unsupported target path: {decision.target_path}",
+                    "target_path": None,
+                    "merge_key": None,
+                }
+            )
+        return decision
+
+    async def _quantitative_evidence_groups(
+        self,
+        *,
+        data_package_id: str,
+        profile_identifier: str,
+        document: dict[str, Any],
+        evidence_context: RoutedEvidenceContext,
+        validation_schema: dict[str, Any],
+        state: ExtractionRunState | None = None,
+        progress: ExtractionRunProgress | None = None,
+    ) -> list[_MeasurementSemanticGroup]:
+        groups: dict[tuple[str, str], _MeasurementSemanticGroup] = {}
+        for note in evidence_context.portable_evidence:
+            if not self._measurement_note_is_routable(note):
                 continue
-            group_id, label, value, unit = candidate
-            existing = groups.get(group_id)
+            contextual_notes = build_context_window_for_note(note, evidence_context)
+            decision = await self._route_measurement_note_semantically(
+                data_package_id=data_package_id,
+                profile_identifier=profile_identifier,
+                note=note,
+                contextual_notes=contextual_notes,
+                document=document,
+                validation_schema=validation_schema,
+            )
+            if decision is None:
+                if state is not None and progress is not None:
+                    skipped_group = _MeasurementSemanticGroup(
+                        group_id=f"measurement:{stable_evidence_id(note)}:routing-failed",
+                        merge_key="routing_failed",
+                        target_path="",
+                        target_class="",
+                        label=str(getattr(note, "claim", "") or getattr(note, "evidence_text", "") or "measurement"),
+                        value=str(getattr(note, "claim", "") or getattr(note, "evidence_text", "") or ""),
+                        unit=None,
+                        attribute_kind="quantitative",
+                        notes=[note],
+                    )
+                    self._record_quantitative_group_skip(
+                        state=state,
+                        progress=progress,
+                        group=skipped_group,
+                        reason="target_unresolved: LLM routing failed or was unavailable.",
+                    )
+                continue
+            if decision.target_path is None or decision.merge_key is None:
+                if state is not None and progress is not None:
+                    skipped_group = _MeasurementSemanticGroup(
+                        group_id=f"measurement:{stable_evidence_id(note)}:routing-skipped",
+                        merge_key=decision.merge_key or "routing_skipped",
+                        target_path=decision.target_path or "",
+                        target_class=self._measurement_target_class_for_path(decision.target_path or "") or "",
+                        label=str(getattr(note, "claim", "") or getattr(note, "evidence_text", "") or "measurement"),
+                        value=str(getattr(note, "claim", "") or getattr(note, "evidence_text", "") or ""),
+                        unit=None,
+                        attribute_kind=self._measurement_attribute_kind_for_path(decision.target_path or "") or "quantitative",
+                        notes=[note],
+                    )
+                    self._record_quantitative_group_skip(
+                        state=state,
+                        progress=progress,
+                        group=skipped_group,
+                        reason=decision.reason or "target_unresolved: LLM router skipped the note.",
+                    )
+                continue
+            attribute_kind = self._measurement_attribute_kind_for_path(decision.target_path)
+            if attribute_kind is None:
+                if state is not None and progress is not None:
+                    skipped_group = _MeasurementSemanticGroup(
+                        group_id=f"measurement:{stable_evidence_id(note)}:kind-unknown",
+                        merge_key=decision.merge_key or "kind_unknown",
+                        target_path=decision.target_path,
+                        target_class=self._measurement_target_class_for_path(decision.target_path) or "",
+                        label=str(getattr(note, "claim", "") or getattr(note, "evidence_text", "") or "measurement"),
+                        value=str(getattr(note, "claim", "") or getattr(note, "evidence_text", "") or ""),
+                        unit=None,
+                        attribute_kind="quantitative",
+                        notes=[note],
+                    )
+                    self._record_quantitative_group_skip(
+                        state=state,
+                        progress=progress,
+                        group=skipped_group,
+                        reason="target_unresolved: measurement target path has no attribute kind.",
+                        target_path=decision.target_path,
+                    )
+                continue
+            candidate = self._measurement_group_candidate(note, attribute_kind)
+            if candidate is None:
+                if state is not None and progress is not None:
+                    skipped_group = _MeasurementSemanticGroup(
+                        group_id=f"measurement:{stable_evidence_id(note)}:candidate-missing",
+                        merge_key=decision.merge_key,
+                        target_path=decision.target_path,
+                        target_class=self._measurement_target_class_for_path(decision.target_path) or "",
+                        label=str(getattr(note, "claim", "") or getattr(note, "evidence_text", "") or "measurement"),
+                        value=str(getattr(note, "claim", "") or getattr(note, "evidence_text", "") or ""),
+                        unit=None,
+                        attribute_kind=attribute_kind,
+                        notes=[note],
+                    )
+                    self._record_quantitative_group_skip(
+                        state=state,
+                        progress=progress,
+                        group=skipped_group,
+                        reason="target_unresolved: semantic router selected a target, but no attribute candidate could be parsed.",
+                        target_path=decision.target_path,
+                    )
+                continue
+            label, value, unit = candidate
+            target_class = self._measurement_target_class_for_path(decision.target_path)
+            if target_class is None:
+                if state is not None and progress is not None:
+                    skipped_group = _MeasurementSemanticGroup(
+                        group_id=f"measurement:{stable_evidence_id(note)}:class-unknown",
+                        merge_key=decision.merge_key,
+                        target_path=decision.target_path,
+                        target_class="",
+                        label=label,
+                        value=value,
+                        unit=unit,
+                        attribute_kind=attribute_kind,
+                        notes=[note],
+                    )
+                    self._record_quantitative_group_skip(
+                        state=state,
+                        progress=progress,
+                        group=skipped_group,
+                        reason="target_unresolved: measurement target class is unsupported by the profile schema.",
+                        target_path=decision.target_path,
+                    )
+                continue
+            key = (decision.target_path, decision.merge_key)
+            existing = groups.get(key)
             if existing is None:
-                groups[group_id] = _QuantitativeEvidenceGroup(
+                group_id = sha1(f"{decision.target_path}|{decision.merge_key}".encode("utf-8")).hexdigest()[:12]
+                groups[key] = _MeasurementSemanticGroup(
                     group_id=group_id,
+                    merge_key=decision.merge_key,
+                    target_path=decision.target_path,
+                    target_class=target_class,
                     label=label,
                     value=value,
                     unit=unit,
+                    attribute_kind=attribute_kind,
                     notes=[note],
                 )
             else:
                 existing.notes.append(note)
-        return cls._cap_repeated_quantitative_groups(list(groups.values()))
+        return list(groups.values())
 
     @classmethod
-    def _cap_repeated_quantitative_groups(
+    def _measurement_group_candidate(
         cls,
-        groups: list[_QuantitativeEvidenceGroup],
-        *,
-        per_skeleton_limit: int = 5,
-    ) -> list[_QuantitativeEvidenceGroup]:
-        kept: list[_QuantitativeEvidenceGroup] = []
-        counts: dict[str, int] = {}
-        for group in groups:
-            key = cls._quantitative_group_skeleton(group)
-            count = counts.get(key, 0)
-            if count >= per_skeleton_limit:
-                continue
-            counts[key] = count + 1
-            kept.append(group)
-        return kept
+        note: Any,
+        attribute_kind: str,
+    ) -> tuple[str, Any, str | None] | None:
+        if attribute_kind == "quantitative":
+            return cls._measurement_quantitative_candidate(note)
+        return cls._qualitative_group_candidate(note)
 
-    @staticmethod
-    def _quantitative_group_skeleton(group: _QuantitativeEvidenceGroup) -> str:
-        file_path = str(getattr(group.notes[0], "file_path", "") or "") if group.notes else ""
-        label = re.sub(r"[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?", " ", group.label.lower())
-        label = re.sub(r"\b(intensity|value|observed|detected|contains)\b", " ", label)
-        label = re.sub(r"[^a-z]+", " ", label).strip()
-        return "|".join([file_path, label, (group.unit or "").lower()])
+    @classmethod
+    def _measurement_quantitative_candidate(
+        cls,
+        note: Any,
+    ) -> tuple[str, Any, str | None] | None:
+        claim = str(getattr(note, "claim", "") or "")
+        evidence_text = str(getattr(note, "evidence_text", "") or "")
+        text = f"{claim} {evidence_text}".strip()
+        match = re.search(r"(?<![A-Za-z_])[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?(?![A-Za-z_])", text)
+        if not match:
+            return None
+        value = float(match.group(0))
+        unit = cls._unit_after_number(text, match.end())
+        label = cls._quantity_label_from_text(claim or evidence_text, match.group(0), unit)
+        if not label:
+            return None
+        return label, value, unit
+
+    @classmethod
+    def _qualitative_group_candidate(
+        cls,
+        note: Any,
+    ) -> tuple[str, Any, str | None] | None:
+        claim = str(getattr(note, "claim", "") or "")
+        evidence_text = str(getattr(note, "evidence_text", "") or "")
+        text = f"{claim} {evidence_text}".strip()
+        if not text:
+            return None
+        key, value = cls._assignment_from_note(note)
+        if key and value:
+            label = key.lower().strip("$")
+            return label, value, None
+        cleaned = re.sub(r"\s+", " ", text).strip()
+        cleaned = cleaned[:120]
+        if len(cleaned) < 3:
+            return None
+        return cleaned, cleaned, None
+
+    @classmethod
+    def _measurement_attribute_instance_from_group(
+        cls,
+        group: _MeasurementSemanticGroup,
+    ) -> dict[str, Any] | None:
+        if group.attribute_kind == "quantitative":
+            return cls._quantitative_attribute_instance_from_group(group)
+        return cls._qualitative_attribute_instance_from_group(group)
 
     @classmethod
     def _quantitative_group_candidate(
@@ -1550,7 +1900,7 @@ class ProjectionService:
         category = str(getattr(note, "category", "") or "")
         role = str(getattr(note, "role", "") or "")
         if category == "measurement_signal":
-            return False
+            return True
         if role == "parameter":
             return True
         if category in {"instrument_signal", "measurement_condition"}:
@@ -1620,213 +1970,28 @@ class ProjectionService:
             return None
         return cleaned[:120]
 
-    def _quantitative_target_path_for_group(
+    async def _quantitative_target_path_for_group(
         self,
         *,
         data_package_id: str,
         profile_identifier: str,
         document: dict[str, Any],
-        group: _QuantitativeEvidenceGroup,
+        group: _MeasurementSemanticGroup,
         validation_schema: dict[str, Any],
     ) -> tuple[str | None, str | None, dict[str, Any]]:
-        owners = self._quantitative_owner_paths(document, validation_schema)
-        if owners:
-            preferred_owner = self._preferred_quantitative_owner_class(group)
-            if preferred_owner:
-                matching_owners = [owner for owner in owners if owner[1] == preferred_owner]
-                if matching_owners:
-                    return f"{matching_owners[0][0]}/has_quantitative_attribute/-", matching_owners[0][1], document
-                if preferred_owner == "DataGeneratingActivity":
-                    created = self._create_quantitative_owner_if_reachable(
-                        data_package_id=data_package_id,
-                        profile_identifier=profile_identifier,
-                        document=document,
-                        group=group,
-                        validation_schema=validation_schema,
-                    )
-                    if created is not None:
-                        owner_path, owner_class, document = created
-                        return f"{owner_path}/has_quantitative_attribute/-", owner_class, document
-            return f"{owners[0][0]}/has_quantitative_attribute/-", owners[0][1], document
-        created = self._create_quantitative_owner_if_reachable(
-            data_package_id=data_package_id,
-            profile_identifier=profile_identifier,
-            document=document,
-            group=group,
-            validation_schema=validation_schema,
-        )
-        if created is None:
+        if not group.target_path or not group.target_class:
             return None, None, document
-        owner_path, owner_class, document = created
-        return f"{owner_path}/has_quantitative_attribute/-", owner_class, document
-
-    def _quantitative_owner_paths(
-        self,
-        document: dict[str, Any],
-        validation_schema: dict[str, Any],
-    ) -> list[tuple[str, str]]:
-        candidates: list[tuple[str, str]] = []
-        for key, owner_class in (
-            ("was_generated_by", "DataGeneratingActivity"),
-            ("is_about_activity", "EvaluatedActivity"),
-            ("is_about_entity", "EvaluatedEntity"),
-        ):
-            for index, value in enumerate(document.get(key) or []):
-                if isinstance(value, dict) and self._class_supports_quantitative_attribute(validation_schema, owner_class):
-                    candidates.append((f"/{key}/{index}", owner_class))
-        for activity_index, activity in enumerate(document.get("was_generated_by") or []):
-            if not isinstance(activity, dict):
-                continue
-            for agent_index, agent in enumerate(activity.get("carried_out_by") or []):
-                owner_class = self._quantitative_owner_class_from_object(agent)
-                if self._class_supports_quantitative_attribute(validation_schema, owner_class):
-                    candidates.append((f"/was_generated_by/{activity_index}/carried_out_by/{agent_index}", owner_class))
-        return candidates
-
-    def _create_quantitative_owner_if_reachable(
-        self,
-        *,
-        data_package_id: str,
-        profile_identifier: str,
-        document: dict[str, Any],
-        group: _QuantitativeEvidenceGroup,
-        validation_schema: dict[str, Any],
-    ) -> tuple[str, str, dict[str, Any]] | None:
-        preferred_owner = self._preferred_quantitative_owner_class(group)
-        if preferred_owner in {"Device", "Software"} and self._class_supports_quantitative_attribute(validation_schema, preferred_owner):
-            document = self._ensure_generation_activity_owner(
-                data_package_id=data_package_id,
-                profile_identifier=profile_identifier,
-                document=document,
-                validation_schema=validation_schema,
-            )
-            if document.get("was_generated_by"):
-                target_path = "/was_generated_by/0/carried_out_by/-"
-                if self._schema_for_json_pointer(validation_schema, target_path[:-2]):
-                    owner = {
-                        "title": preferred_owner,
-                        "description": f"{preferred_owner} inferred from quantitative evidence: {group.label}.",
-                        "rdf_type": {"title": preferred_owner},
-                    }
-                    original = self._clone_json_object(document)
-                    try:
-                        updated = apply_evidence_instance(
-                            document=document,
-                            target_path=target_path,
-                            instance=owner,
-                            data_package_id=data_package_id,
-                            target_schema=self._compact_schema_branch_for_target(
-                                validation_schema=validation_schema,
-                                target_path=target_path,
-                            ),
-                        )
-                    except ValueError:
-                        updated = None
-                    if updated is not None:
-                        validation = self.profile_service.validate_document(
-                            identifier=profile_identifier,
-                            document=updated,
-                        )
-                        if validation.valid:
-                            index = len(updated["was_generated_by"][0].get("carried_out_by") or []) - 1
-                            return f"/was_generated_by/0/carried_out_by/{index}", preferred_owner, updated
-                    document.clear()
-                    document.update(original)
-        if self._class_supports_quantitative_attribute(validation_schema, "DataGeneratingActivity"):
-            updated = self._ensure_generation_activity_owner(
-                data_package_id=data_package_id,
-                profile_identifier=profile_identifier,
-                document=document,
-                validation_schema=validation_schema,
-            )
-            if updated.get("was_generated_by"):
-                return f"/was_generated_by/{len(updated.get('was_generated_by') or []) - 1}", "DataGeneratingActivity", updated
-        return None
-
-    def _ensure_generation_activity_owner(
-        self,
-        *,
-        data_package_id: str,
-        profile_identifier: str,
-        document: dict[str, Any],
-        validation_schema: dict[str, Any],
-    ) -> dict[str, Any]:
-        if document.get("was_generated_by"):
-            return document
-        if not self._class_supports_quantitative_attribute(validation_schema, "DataGeneratingActivity"):
-            return document
-        original = self._clone_json_object(document)
-        try:
-            updated = apply_evidence_instance(
-                document=document,
-                target_path="/was_generated_by/-",
-                instance={
-                    "title": "Data generating activity",
-                    "description": "Activity inferred from quantitative evidence.",
-                },
-                data_package_id=data_package_id,
-                target_schema=self._compact_schema_branch_for_target(
-                    validation_schema=validation_schema,
-                    target_path="/was_generated_by/-",
-                ),
-            )
-        except ValueError:
-            return original
-        validation = self.profile_service.validate_document(
-            identifier=profile_identifier,
-            document=updated,
-        )
-        return updated if validation.valid else original
-
-    @staticmethod
-    def _preferred_quantitative_owner_class(group: _QuantitativeEvidenceGroup) -> str | None:
-        text = " ".join(
-            [group.label]
-            + [str(getattr(note, "claim", "") or "") for note in group.notes]
-            + [str(getattr(note, "evidence_text", "") or "") for note in group.notes]
-        ).lower()
-        if "software" in text:
-            return "Software"
-        if "device" in text:
-            return "Device"
-        if any(
-            str(getattr(note, "category", "") or "") in {"instrument_signal", "measurement_condition"}
-            or str(getattr(note, "role", "") or "") == "parameter"
-            for note in group.notes
-        ):
-            subject_cue = re.search(r"\b(evaluated entity|evaluated activity|sample|specimen|material|subject)\b", text)
-            if not subject_cue:
-                return "DataGeneratingActivity"
-        return None
-
-    @staticmethod
-    def _quantitative_owner_class_from_object(value: Any) -> str:
-        text = json.dumps(value, ensure_ascii=False).lower() if isinstance(value, dict) else ""
-        if "software" in text:
-            return "Software"
-        if "device" in text:
-            return "Device"
-        return "AgenticEntity"
-
-    @classmethod
-    def _class_supports_quantitative_attribute(
-        cls,
-        validation_schema: dict[str, Any],
-        class_name: str,
-    ) -> bool:
-        defs = validation_schema.get("$defs") if isinstance(validation_schema, dict) else None
-        if not isinstance(defs, dict):
-            return False
-        schema = cls._resolve_schema_node(defs.get(class_name, {}), validation_schema)
-        properties = schema.get("properties") if isinstance(schema, dict) else None
-        return isinstance(properties, dict) and "has_quantitative_attribute" in properties
+        schema_path = group.target_path[:-2] if group.target_path.endswith("/-") else group.target_path
+        if self._schema_for_json_pointer(validation_schema, schema_path):
+            return group.target_path, group.target_class, document
+        return None, None, document
 
     @staticmethod
     def _quantitative_attribute_instance_from_group(
-        group: _QuantitativeEvidenceGroup,
+        group: _MeasurementSemanticGroup,
     ) -> dict[str, Any]:
         title = group.label[:1].upper() + group.label[1:]
-        description = f"{title}: {group.value:g}"
+        description = f"{title}: {group.value:g}" if isinstance(group.value, (int, float)) else f"{title}: {group.value}"
         if group.unit:
             description = f"{description} {group.unit}"
         instance: dict[str, Any] = {
@@ -1839,12 +2004,25 @@ class ProjectionService:
             instance["unit"] = group.unit
         return instance
 
+    @staticmethod
+    def _qualitative_attribute_instance_from_group(
+        group: _MeasurementSemanticGroup,
+    ) -> dict[str, Any]:
+        title = group.label[:1].upper() + group.label[1:]
+        value = group.value if isinstance(group.value, str) else str(group.value)
+        description = f"{title}: {value}"
+        return {
+            "title": title,
+            "description": description,
+            "value": value,
+        }
+
     def _record_quantitative_group_projection(
         self,
         *,
         state: ExtractionRunState,
         progress: ExtractionRunProgress,
-        group: _QuantitativeEvidenceGroup,
+        group: _MeasurementSemanticGroup,
         document: dict[str, Any],
         target_path: str,
         target_class: str | None,
@@ -1853,6 +2031,7 @@ class ProjectionService:
         evidence_ids = self._evidence_ids_for_group(group)
         origins = self._evidence_origins(group.notes)
         generated_value = self._value_at_json_pointer(document, actual_path) if actual_path else None
+        field_name = "has_quantitative_attribute" if group.attribute_kind == "quantitative" else "has_qualitative_attribute"
         state.field_completion_ledger = [
             record
             for record in state.field_completion_ledger
@@ -1861,19 +2040,19 @@ class ProjectionService:
         state.field_completion_ledger.append(
             FieldCompletionLedgerRecord(
                 json_path=actual_path,
-                field_name="has_quantitative_attribute",
+                field_name=field_name,
                 generated_value=generated_value,
                 source_evidence=evidence_ids,
                 validation_status="valid",
                 enrichment_status="grounded",
                 issue_categories=[],
                 edit_needed_reason=(
-                    "instrument_settings_attributes: quantitative evidence group projected. "
+                    "instrument_settings_attributes: semantic measurement evidence group projected. "
                     f"Evidence origin: {', '.join(origins)}."
                 ),
             )
         )
-        object_identifier = f"quantitative_group:{group.group_id}:{actual_path}"
+        object_identifier = f"measurement_group:{group.group_id}:{actual_path}"
         state.projection_ledger = [
             record
             for record in state.projection_ledger
@@ -1882,24 +2061,26 @@ class ProjectionService:
         state.projection_ledger.append(
             ProjectionLedgerRecord(
                 object_identifier=object_identifier,
-                object_kind="QuantitativeAttribute",
+                object_kind="QuantitativeAttribute" if group.attribute_kind == "quantitative" else "QualitativeAttribute",
                 source_evidence=evidence_ids[0] if evidence_ids else None,
                 evidence_note_identifiers=evidence_ids,
                 status="projected",
                 projected_paths=[actual_path] if actual_path else [],
                 target_path=actual_path or None,
-                target_class=target_class or "QuantitativeAttribute",
+                target_class=target_class or ("QuantitativeAttribute" if group.attribute_kind == "quantitative" else "QualitativeAttribute"),
                 planner_status="instrument_settings_attributes",
-                planner_reason="Portable numeric evidence group projected.",
+                planner_reason="Portable semantic measurement evidence group projected.",
                 evidence_quality={
                     "quantity_label": group.label,
                     "value": group.value,
                     "unit": group.unit,
+                    "attribute_kind": group.attribute_kind,
+                    "merge_key": group.merge_key,
                     "evidence_ids": evidence_ids,
                     "evidence_origins": origins,
                 },
                 merge_status="applied",
-                reason="Projected schema-valid quantitative attribute.",
+                reason="Projected schema-valid semantic measurement attribute.",
             )
         )
         progress.field_completion_ledger = state.field_completion_ledger
@@ -1910,13 +2091,13 @@ class ProjectionService:
         *,
         state: ExtractionRunState,
         progress: ExtractionRunProgress,
-        group: _QuantitativeEvidenceGroup,
+        group: _MeasurementSemanticGroup,
         reason: str,
         target_path: str | None = None,
     ) -> None:
         evidence_ids = self._evidence_ids_for_group(group)
         origins = self._evidence_origins(group.notes)
-        object_identifier = f"quantitative_group:{group.group_id}:skip"
+        object_identifier = f"measurement_group:{group.group_id}:skip"
         state.projection_ledger = [
             record
             for record in state.projection_ledger
@@ -1925,19 +2106,21 @@ class ProjectionService:
         state.projection_ledger.append(
             ProjectionLedgerRecord(
                 object_identifier=object_identifier,
-                object_kind="QuantitativeAttribute",
+                object_kind="QuantitativeAttribute" if group.attribute_kind == "quantitative" else "QualitativeAttribute",
                 source_evidence=evidence_ids[0] if evidence_ids else None,
                 evidence_note_identifiers=evidence_ids,
                 status="not_projected",
                 projected_paths=[],
                 target_path=target_path,
-                target_class="QuantitativeAttribute",
+                target_class="QuantitativeAttribute" if group.attribute_kind == "quantitative" else "QualitativeAttribute",
                 planner_status="instrument_settings_attributes",
                 planner_reason=reason,
                 evidence_quality={
                     "quantity_label": group.label,
                     "value": group.value,
                     "unit": group.unit,
+                    "attribute_kind": group.attribute_kind,
+                    "merge_key": group.merge_key,
                     "evidence_ids": evidence_ids,
                     "evidence_origins": origins,
                 },
@@ -1958,7 +2141,7 @@ class ProjectionService:
         return list(dict.fromkeys(origins)) or ["unknown"]
 
     @staticmethod
-    def _evidence_ids_for_group(group: _QuantitativeEvidenceGroup) -> list[str]:
+    def _evidence_ids_for_group(group: _MeasurementSemanticGroup) -> list[str]:
         ids: list[str] = []
         for note in group.notes:
             evidence_id = getattr(note, "evidence_id", "") or stable_evidence_id(note)
@@ -1969,7 +2152,7 @@ class ProjectionService:
     @classmethod
     def _requirement_evidence_items_for_group(
         cls,
-        group: _QuantitativeEvidenceGroup,
+        group: _MeasurementSemanticGroup,
     ) -> list[RequirementEvidenceItem]:
         items: list[RequirementEvidenceItem] = []
         for note in group.notes:
@@ -3274,16 +3457,12 @@ class ProjectionService:
             return "/was_generated_by/0", "DataGeneratingActivity"
         if note.category == "method_signal":
             return "/was_generated_by/0/realized_plan", "Plan"
-        if note.category == "resource_signal" or any(term in text for term in ("format", "file", "distribution", "download", "access")):
-            return "/dataset_distribution/0", "Distribution"
         if any(term in text for term in ("dataset name", "title", "name")):
             return "/title", None
         if any(term in text for term in ("date", "timestamp", "modified", "modification")):
             return "/modification_date", None
         if any(term in text for term in ("type", "category", "class")):
             return "/type/0", "Concept"
-        if note.category == "resource_signal":
-            return "/dataset_distribution/0", "Distribution"
         return "/description", None
 
     @classmethod
@@ -3490,8 +3669,6 @@ class ProjectionService:
             return cls._date_value_for_notes(notes)
         if target_path == "/creator/0":
             return cls._fallback_creator_value(current_value, notes)
-        if target_path == "/dataset_distribution/0":
-            return cls._fallback_distribution_value(current_value, notes)
         if target_path == "/was_generated_by/0":
             return cls._fallback_activity_value(
                 current_value,
@@ -3565,7 +3742,7 @@ class ProjectionService:
         if target_path in {"/description", "/keyword"}:
             useful_keywords = cls._profile_keywords_for_notes(notes)
             if not useful_keywords and all(
-                note.category in {"method_signal", "measurement_signal", "resource_signal", "instrument_signal"}
+                note.category in {"method_signal", "measurement_signal", "instrument_signal"}
                 for note in notes
             ):
                 return (
@@ -3591,37 +3768,6 @@ class ProjectionService:
             return None
         value = cls._clone_json_object(current_value)
         value["name"] = cls._merge_unique_strings(value.get("name", []), names)
-        return value
-
-    @classmethod
-    def _fallback_distribution_value(
-        cls,
-        current_value: Any,
-        notes: list[EvidenceCandidate],
-    ) -> Any | None:
-        if not isinstance(current_value, dict):
-            return None
-        keywords = cls._profile_keywords_for_notes(notes)
-        file_like = any(
-            term in cls._note_search_text(note)
-            for note in notes
-            for term in ("file", "format", "distribution", "download", "archive")
-        )
-        if not file_like and not keywords:
-            return None
-        value = cls._clone_json_object(current_value)
-        title = "Primary dataset distribution"
-        value["title"] = cls._merge_unique_strings(value.get("title", []), [title])
-        description_parts = cls._profile_observation_sentences(notes, max_count=2)
-        if not description_parts:
-            description_parts = ["Dataset files contain data and associated metadata."]
-        value["description"] = cls._merge_unique_strings(value.get("description", []), description_parts)
-        if not isinstance(value.get("access_URL"), list) or not value.get("access_URL"):
-            value["access_URL"] = current_value.get("access_URL", [])
-        if not isinstance(value.get("format"), dict):
-            value["format"] = None
-        if not isinstance(value.get("media_type"), dict):
-            value["media_type"] = None
         return value
 
     @classmethod
@@ -3753,21 +3899,6 @@ class ProjectionService:
                 target_path="/keyword",
                 value=curated.get("keyword"),
             )
-        distributions = curated.get("dataset_distribution")
-        if isinstance(distributions, list):
-            for distribution in distributions:
-                if not isinstance(distribution, dict):
-                    continue
-                if "title" in distribution:
-                    distribution["title"] = cls._curate_profile_target_value(
-                        target_path="/dataset_distribution/0/title",
-                        value=distribution.get("title"),
-                    )
-                if "description" in distribution:
-                    distribution["description"] = cls._curate_profile_target_value(
-                        target_path="/dataset_distribution/0/description",
-                        value=distribution.get("description"),
-                    )
         return cls._curate_nested_profile_values(curated)
 
     @classmethod
@@ -4024,6 +4155,8 @@ class ProjectionService:
     def _note_has_curatable_profile_signal(cls, note: EvidenceCandidate) -> bool:
         if note.category == "measurement_signal":
             return False
+        if note.category == "resource_signal":
+            return False
         if cls._is_low_level_parameter_note(note):
             return False
         key, value = cls._assignment_from_note(note)
@@ -4039,9 +4172,6 @@ class ProjectionService:
             "instrument",
             "device",
             "equipment",
-            "format",
-            "file",
-            "distribution",
             "method",
             "measurement",
             "experiment",
@@ -4053,7 +4183,7 @@ class ProjectionService:
             if "spectrum title" in text and cls._title_value_from_note(note) is None:
                 return False
             return True
-        return note.category in {"software_signal", "activity_signal", "instrument_signal", "surrounding_signal", "resource_signal"} and bool(note.claim.strip())
+        return note.category in {"software_signal", "activity_signal", "instrument_signal", "surrounding_signal"} and bool(note.claim.strip())
 
     @classmethod
     def _entity_title_for_notes(cls, notes: list[EvidenceCandidate]) -> str | None:
@@ -4556,17 +4686,84 @@ class ProjectionService:
         )
         self._save_run_state(data_package_id, cleared)
 
-    def _clear_profile_projection_token_usage(self, data_package_id: str) -> None:
+    def _clear_token_usage_agents(
+        self,
+        data_package_id: str,
+        *,
+        agents: set[str],
+        chunking_strategy: str | None = None,
+        chat_model: str | None = None,
+    ) -> None:
         if self.output_repository is None:
             return
-        state = self._load_run_state_or_none(data_package_id)
-        chat_model = state.chat_model if state else (self.ollama_client.chat_model if self.ollama_client else None)
-        chunking_strategy = state.chunking_strategy if state else "semantic"
+        state = self._load_run_state_or_none(
+            data_package_id,
+            chunking_strategy=chunking_strategy or "semantic",
+            chat_model=chat_model,
+        )
+        resolved_chat_model = chat_model or (
+            state.chat_model
+            if state
+            else (self.ollama_client.chat_model if self.ollama_client else None)
+        )
+        resolved_chunking_strategy = chunking_strategy or (
+            state.chunking_strategy if state else "semantic"
+        )
         totals = self.output_repository.load_token_usage(
             data_package_id,
-            chat_model=chat_model,
-            chunking_strategy=chunking_strategy,
+            chat_model=resolved_chat_model,
+            chunking_strategy=resolved_chunking_strategy,
         )
+        pruned = {
+            agent_name: values
+            for agent_name, values in totals.items()
+            if agent_name not in agents
+        }
+        self.output_repository.save_token_usage(
+            workflow_id=data_package_id,
+            token_usage=pruned,
+            chat_model=resolved_chat_model,
+            chunking_strategy=resolved_chunking_strategy,
+        )
+
+    def _clear_evidence_token_usage(
+        self,
+        data_package_id: str,
+        *,
+        chunking_strategy: str | None = None,
+        chat_model: str | None = None,
+    ) -> None:
+        self._clear_token_usage_agents(
+            data_package_id,
+            agents={
+                "chunk_extraction",
+                "chunk_extraction_repair",
+                "evidence_critic",
+                "evidence_critic_repair",
+            },
+            chunking_strategy=chunking_strategy,
+            chat_model=chat_model,
+        )
+
+    def _clear_initial_context_token_usage(self, data_package_id: str) -> None:
+        self._clear_token_usage_agents(
+            data_package_id,
+            agents={
+                "file_ranking",
+                "initial_file_summary",
+                "initial_extraction_overview",
+                "initial_extraction_overview_fallback",
+                "dataset_summary",
+            },
+        )
+
+    def _clear_profile_projection_token_usage(
+        self,
+        data_package_id: str,
+        *,
+        chunking_strategy: str | None = None,
+        chat_model: str | None = None,
+    ) -> None:
         projection_agents = {
             "dataset_summary",
             "dataset_level_projection",
@@ -4582,16 +4779,11 @@ class ProjectionService:
             "metadata_completeness_evaluator",
             "metadata_requirement_patcher",
         }
-        pruned = {
-            agent_name: values
-            for agent_name, values in totals.items()
-            if agent_name not in projection_agents
-        }
-        self.output_repository.save_token_usage(
-            workflow_id=data_package_id,
-            token_usage=pruned,
-            chat_model=chat_model,
+        self._clear_token_usage_agents(
+            data_package_id,
+            agents=projection_agents,
             chunking_strategy=chunking_strategy,
+            chat_model=chat_model,
         )
 
     @classmethod
@@ -5034,7 +5226,6 @@ class ProjectionService:
         }
         core_slots = {
             "creator",
-            "dataset_distribution",
             "keyword",
             "type",
             "modification_date",
@@ -5047,8 +5238,6 @@ class ProjectionService:
             evidence_slots.add("modification_date")
         if "activity_signal" in evidence_categories:
             evidence_slots.add("is_about_activity")
-        if "resource_signal" in evidence_categories:
-            evidence_slots.add("dataset_distribution")
 
         for slot in sorted(core_slots | evidence_slots):
             if slot not in properties or slot in document:
@@ -5092,15 +5281,6 @@ class ProjectionService:
     ) -> Any:
         placeholders: dict[str, Any] = {
             "creator": {"name": []},
-            "dataset_distribution": {
-                "access_URL": [
-                    {"id": f"{data_package_id}:distribution:primary:access"}
-                ],
-                "title": [],
-                "description": [],
-                "format": None,
-                "media_type": None,
-            },
             "keyword": [],
             "type": [{"preferred_label": []}],
             "modification_date": "",
@@ -5130,7 +5310,6 @@ class ProjectionService:
     def _placeholder_target_class(slot: str) -> str | None:
         return {
             "creator": "Agent",
-            "dataset_distribution": "Distribution",
             "type": "Concept",
             "is_about_entity": "EvaluatedEntity",
             "is_about_activity": "EvaluatedActivity",
@@ -5287,7 +5466,6 @@ class ProjectionService:
             )
         for path, target_class, label in (
             ("/creator/0", "Agent", "creator"),
-            ("/dataset_distribution/0", "Distribution", "dataset distribution"),
             ("/type/0", "Concept", "dataset type"),
             ("/is_about_entity/0", "EvaluatedEntity", "evaluated entity"),
             ("/is_about_activity/0", "EvaluatedActivity", "evaluated activity"),
@@ -5305,8 +5483,6 @@ class ProjectionService:
             return ["software_signal", "instrument_signal"]
         if path.startswith("/creator"):
             return ["surrounding_signal"]
-        if path.startswith("/dataset_distribution"):
-            return ["resource_signal"]
         if path.startswith("/was_generated_by"):
             if "realized_plan" in path or target_class == "Plan":
                 return ["method_signal"]

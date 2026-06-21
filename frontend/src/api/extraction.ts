@@ -535,6 +535,22 @@ export async function runExtraction(input: {
   }));
 }
 
+export async function runProfileProjection(input: {
+  data_package_id: string;
+  profile_identifier: string;
+  qualitative_vocab_identifiers?: string[] | null;
+  resume?: boolean;
+  force_rebuild?: boolean;
+  chunking_strategy?: ChunkingStrategy;
+  chat_model?: string | null;
+}): Promise<ExtractionRunResponse> {
+  return readJson(await fetch(apiBaseUrl + '/extraction/stages/profile', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  }));
+}
+
 export async function runInitialContext(input: {
   data_package_id: string;
   force_rerun?: boolean;

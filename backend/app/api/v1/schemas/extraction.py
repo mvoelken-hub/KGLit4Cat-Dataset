@@ -60,6 +60,34 @@ class ExtractionRunRequest(BaseModel):
     )
 
 
+class ProfileProjectionRunRequest(BaseModel):
+    data_package_id: str = Field(..., description="ID of the uploaded data package.")
+    profile_identifier: str = Field(
+        ...,
+        description="Identifier of the registered extraction profile.",
+    )
+    qualitative_vocab_identifiers: list[str] | None = Field(
+        default=None,
+        description="Vocabulary identifiers to use for later qualitative attribute normalization.",
+    )
+    resume: bool = Field(
+        default=True,
+        description="Reuse existing generated draft/projection artifacts when available.",
+    )
+    force_rebuild: bool = Field(
+        default=False,
+        description="Clear generated draft/projection artifacts and rebuild from persisted evidence.",
+    )
+    chunking_strategy: str = Field(
+        default="semantic",
+        description="Chunking strategy branch to read: 'semantic' or 'fixed_tokens'.",
+    )
+    chat_model: str | None = Field(
+        default=None,
+        description="Chat model branch to read or run; defaults to the configured runtime model.",
+    )
+
+
 class ExtractionRunResponse(BaseModel):
     status: TaskStatus
     result: ExtractionRunResult | None = None

@@ -14,6 +14,7 @@ from app.api.v1.schemas import (
     ExtractionRunRequest,
     ExtractionRunResponse,
     InitialContextRunRequest,
+    ProfileProjectionRunRequest,
     VocabQueryConfigUpdateRequest,
     _data_package_response,
     _extraction_result_response,
@@ -121,6 +122,10 @@ async def run_evidence_stage(
     workflow_service: WorkflowService = Depends(get_workflow_service),
 ) -> ExtractionRunResponse:
     try:
+        if request.target_stage == "profile":
+            raise ValueError(
+                "Use /api/v1/extraction/stages/profile to build generated drafts from persisted evidence."
+            )
         result, task_status = await workflow_service.run_extraction(
             data_package_id=request.data_package_id,
             profile_identifier=request.profile_identifier,
@@ -132,6 +137,35 @@ async def run_evidence_stage(
             chat_model=request.chat_model,
             chunk_repair_mode=request.chunk_repair_mode,
             evidence_critic_granularity=request.evidence_critic_granularity,
+        )
+        _, progress = await workflow_service.get_extraction_progress(
+            data_package_id=request.data_package_id,
+            chunking_strategy=request.chunking_strategy,
+            chat_model=request.chat_model,
+        )
+        return _extraction_run_response(
+            status=task_status,
+            result=result,
+            progress=progress,
+        )
+    except Exception as exc:
+        _raise_extraction_error(exc)
+
+
+@router.post("/stages/profile", response_model=ExtractionRunResponse)
+async def run_profile_projection_stage(
+    request: ProfileProjectionRunRequest,
+    workflow_service: WorkflowService = Depends(get_workflow_service),
+) -> ExtractionRunResponse:
+    try:
+        result, task_status = await workflow_service.run_profile_projection(
+            data_package_id=request.data_package_id,
+            profile_identifier=request.profile_identifier,
+            qualitative_vocab_identifiers=request.qualitative_vocab_identifiers,
+            resume=request.resume,
+            force_rebuild=request.force_rebuild,
+            chunking_strategy=request.chunking_strategy,
+            chat_model=request.chat_model,
         )
         _, progress = await workflow_service.get_extraction_progress(
             data_package_id=request.data_package_id,

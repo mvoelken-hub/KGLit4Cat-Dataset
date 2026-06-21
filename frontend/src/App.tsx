@@ -13,6 +13,7 @@ import {
   rerunVocabQuery,
   runExtraction,
   runInitialContext,
+  runProfileProjection,
   runVocabularyGrounding,
   saveCuratedDocument,
   updateVocabQueryConfig,
@@ -1109,12 +1110,11 @@ export function App() {
     }
     setBusy('draft');
     try {
-      const response = await runExtraction({
+      const response = await runProfileProjection({
         data_package_id: selectedPackageId,
         profile_identifier: selectedProfile,
         resume: true,
-        force_profile_rebuild: isReplacingGeneratedDraft,
-        target_stage: 'profile',
+        force_rebuild: isReplacingGeneratedDraft,
         chunking_strategy: chunkViewStrategy,
         chat_model: workflowChatModel,
       });
@@ -1492,7 +1492,7 @@ export function App() {
                     tokenUsage={tokenUsage}
                     averageUnit="operation"
                     heading="Evidence extraction token usage"
-                    agentKeys={['chunk_extraction', 'chunk_extraction_repair', 'quantity_vocab_selection', 'qualitative_vocab_selection', 'profile_projection']}
+                    agentKeys={['chunk_extraction', 'chunk_extraction_repair', 'quantity_vocab_selection', 'qualitative_vocab_selection']}
                     budget={llmBudget}
                     notesByAgent={extractionTokenUsageNotes}
                   />

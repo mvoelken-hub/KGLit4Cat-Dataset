@@ -27,6 +27,15 @@ class EvidenceNoveltyDecision(BaseModel):
     corrected_target_class: str | None = None
 
 
+class MeasurementSemanticRouteDecision(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    target_path: str | None = None
+    merge_key: str | None = None
+    confidence: float = Field(ge=0.0, le=1.0)
+    reason: str = ""
+
+
 class EvidenceEnrichmentEvaluatedEntity(BaseModel):
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
@@ -200,11 +209,6 @@ def route_evidence_note_to_target(
     elif note.category == "method_signal":
         target_path = "/was_generated_by/0/realized_plan"
         target_class = "Plan"
-    elif note.category == "resource_signal" or any(
-        term in text for term in ("format", "file", "distribution", "download", "access")
-    ):
-        target_path = "/dataset_distribution/-"
-        target_class = "Distribution"
     elif any(term in text for term in ("dataset name", "title", "name")):
         target_path = "/title"
     elif any(term in text for term in ("date", "timestamp", "modified", "modification")):
@@ -225,7 +229,6 @@ def build_context_window_for_note(
     candidates = [
         candidate
         for candidate in list(evidence_context.portable_evidence) + list(evidence_context.contextual_evidence)
-        if candidate.category != "measurement_signal"
     ]
     matches: list[EvidenceCandidate] = []
     seen: set[tuple[str, str, int, int]] = set()
@@ -354,8 +357,6 @@ def _instance_label(instance: dict[str, Any]) -> str | None:
 
 
 def _kind_from_target_path(target_path: str) -> str:
-    if "dataset_distribution" in target_path:
-        return "distribution"
     if "creator" in target_path:
         return "agent"
     if "carried_out_by" in target_path:
@@ -452,6 +453,12 @@ EVIDENCE_INSTANCE_REPAIR_SYSTEM_PROMPT = (
     "You fix schema validation errors in a schema-constrained DCAT-AP+ write envelope."
 )
 
+MEASUREMENT_SEMANTIC_ROUTER_SYSTEM_PROMPT = (
+    "You route one measurement-related note into a DCAT-AP+ profile draft. "
+    "Choose only among the allowed activity/entity attribute paths, or return null when the note is not safely projectable. "
+    "Also return a stable merge key for semantically equivalent notes."
+)
+
 
 def build_novelty_evaluator_prompt(
     note: EvidenceCandidate,
@@ -526,6 +533,46 @@ def build_instance_builder_prompt(
         [
             "Emit one write envelope containing one JSON object matching the target class. Omit fields you cannot ground in the evidence.",
             "Include an `id` field only if a real stable identifier is present in the evidence; otherwise omit it and the backend will assign one.",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def build_measurement_semantic_route_prompt(
+    *,
+    note: EvidenceCandidate,
+    contextual_notes: list[EvidenceCandidate],
+    draft_excerpt: dict[str, Any],
+    allowed_target_paths: list[str],
+) -> str:
+    lines = [
+        "You are routing one measurement-related evidence note into a DCAT-AP+ profile draft.",
+        "Allowed target paths:",
+        json.dumps(allowed_target_paths, ensure_ascii=False, indent=2),
+        "Current draft excerpt around the allowed measurement parent branches:",
+        json.dumps(draft_excerpt, ensure_ascii=False, indent=2),
+        "Portable evidence note:",
+        f"  category: {note.category}",
+        f"  role: {note.role}",
+        f"  claim: {note.claim}",
+        f"  evidence_text: {note.evidence_text}",
+        f"  source_context: {note.source_context or note.evidence_text}",
+        f"  file_path: {note.file_path}",
+        "Nearby context notes from the same source chunk:",
+    ]
+    for context in contextual_notes:
+        lines.append(
+            f"  - [{context.category}] {context.claim} | evidence: {context.evidence_text} | source_context: {context.source_context or context.evidence_text}"
+        )
+    lines.extend(
+        [
+            "Routing rules:",
+            "- Choose exactly one allowed target path when the note is safely projectable.",
+            "- Use only activity/entity parents and only has_quantitative_attribute or has_qualitative_attribute terminals.",
+            "- Return target_path=null and merge_key=null when the note is too ambiguous, unsupported, or unsafe to project.",
+            "- confidence must be between 0 and 1. Use confidence below 0.7 when ownership or attribute kind is uncertain.",
+            "- merge_key must be stable across semantically equivalent notes and should ignore surface formatting differences.",
+            "Return concise reason text for the routing choice or skip decision.",
         ]
     )
     return "\n".join(lines)

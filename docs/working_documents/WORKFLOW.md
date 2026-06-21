@@ -73,7 +73,7 @@ Reasoning:
 - Rejected/contextual evidence can expose uncertainty instead of silently disappearing.
 - Evidence candidates carry both a broad signal category and a routing role. The category says what kind of source signal was observed; the role says how reusable metadata should treat it, such as identity, descriptor, context, qualitative attribute, or parameter.
 - Evidence candidates preserve two provenance spans: an atomic copied `evidence_text` support span and a backend-derived copied `source_context` window that keeps nearby local scope such as section, block, resource, method, instrument, software, or activity context for later parent routing.
-- Quantitative attribute grouping uses instrument-setting evidence, while primary/raw measurement values remain traceable evidence but are ignored for downstream metadata projection.
+- Measurement-related evidence receives one structured semantic-routing call per note. Routes below `0.7` confidence, unavailable calls, unresolved ownership, and unsupported paths are recorded and skipped without rescue; accepted notes merge by target path plus stable semantic key before one activity/entity quantitative or qualitative attribute is appended per cluster. Low-level resource/distribution file listings stay out of the profile-draft flow.
 
 Thesis claim supported: SIMONE makes traceability and evidence grounding central to metadata construction.
 
@@ -143,7 +143,7 @@ Reasoning:
 - Attribute parent semantics are evaluated separately from attribute presence: measurement conditions and instrument settings default to the data-generating activity, device/software cues can attach to agent parents, and evaluated entity/activity parents require explicit subject ownership evidence.
 - The profile draft artifacts expose the stage boundary explicitly: `generated_initial_draft.json`, `description_facts.json`, `generated_patched_draft.json`, and `generated_reconstructed_draft.json`.
 - Source trace scoring summarizes source-file evidence quality for evidence that actually supports projected draft content; description-derived facts remain explicitly marked and do not inflate it.
-- Deterministic distributions are workflow-owned and are not a patch/scoring requirement.
+- Dataset distribution material is no longer part of the profile-draft flow; profile construction now focuses on the draft itself and semantic attribute placement.
 - Requirement and patch filters must stay domain-agnostic: no field names, vendor names, file names, instrument names, or benchmark examples may be hardcoded to improve a sample run.
 
 Thesis claim supported: SIMONE distinguishes structural profile completion from semantic adequacy and evidence traceability.
