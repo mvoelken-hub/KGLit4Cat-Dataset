@@ -360,10 +360,9 @@ class EvidenceEnrichmentIntegrationTests(unittest.IsolatedAsyncioTestCase):
         )
         llm_result = Mock(
             output={
-                "should_apply": True,
                 "writes": [
                     {
-                        "target_path": "/was_generated_by/-",
+                        "target_path": "/was_generated_by",
                         "mode": "append",
                         "items": [{"title": "Data generating activity"}],
                         "reason": "Add activity.",
@@ -389,7 +388,7 @@ class EvidenceEnrichmentIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(instance, {"title": "Data generating activity"})
         self.assertIsInstance(mocked.call_args.kwargs["output_type"], dict)
         branch = mocked.call_args.kwargs["output_type"]["properties"]["writes"]["items"]["oneOf"][0]
-        self.assertEqual(branch["properties"]["target_path"]["const"], "/was_generated_by/-")
+        self.assertEqual(branch["properties"]["target_path"]["const"], "/was_generated_by")
 
     async def test_enrichment_skips_non_novel_notes(self):
         service = self._service()

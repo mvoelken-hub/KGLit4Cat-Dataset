@@ -115,3 +115,13 @@ Reason: Profile validation was catching useful but structurally invalid patches 
 Tradeoff: The first route supports upsert writes only. Removals, moves, and arbitrary nested JSON Patch edits are intentionally deferred until the schema-constrained route is reliable.
 
 Revisit trigger: Revisit if semantic reconstruction needs validated remove/move operations or if schema slices become too large for specific profile targets.
+
+### 2026-06-20: Simplify Write Envelopes And Separate Attribute Parent Semantics
+
+Decision: Schema-constrained write envelopes use `{writes, reason}`; empty `writes` means no-op. Append writes use canonical array paths instead of `/-`. Semantic requirements now include separate attribute parent semantics, aboutness is fulfilled by either a concrete entity or activity, and aboutness reconstruction uses lean `id`, `title`, and `description` objects.
+
+Reason: `should_apply` duplicated the meaning of empty writes, recursive aboutness schemas caused structured-output failures, and attribute presence needed to be separated from correct parent placement.
+
+Tradeoff: Range splitting remains prompt-led, so a schema-valid collapsed range can still pass if the model emits one.
+
+Revisit trigger: Revisit if evaluation shows prompt-led range handling remains unreliable or if richer profile-declared parent rules replace the current generic routing cues.

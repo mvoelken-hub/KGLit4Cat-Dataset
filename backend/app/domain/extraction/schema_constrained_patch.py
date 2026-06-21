@@ -31,7 +31,6 @@ class SchemaConstrainedWrite(BaseModel):
 class SchemaConstrainedPatchResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    should_apply: bool = False
     writes: list[SchemaConstrainedWrite] = Field(default_factory=list)
     reason: str = ""
 
@@ -41,9 +40,10 @@ def build_schema_constrained_patch_schema(
     validation_schema: dict[str, Any],
     allowed_target_paths: list[str],
 ) -> dict[str, Any]:
+    canonical_paths = _dedupe_paths(allowed_target_paths)
     branches = [
         _write_branch_schema(validation_schema, target_path)
-        for target_path in _dedupe_paths(allowed_target_paths)
+        for target_path in canonical_paths
     ]
     branches = [branch for branch in branches if branch]
     defs = _reachable_defs(validation_schema, branches)
@@ -55,20 +55,21 @@ def build_schema_constrained_patch_schema(
         "type": "object",
         "additionalProperties": False,
         "properties": {
-            "should_apply": {"type": "boolean"},
             "writes": {
                 "type": "array",
                 "items": {"oneOf": branches} if branches else False,
             },
             "reason": {"type": "string"},
         },
-        "required": ["should_apply", "writes", "reason"],
+        "required": ["writes", "reason"],
         "$defs": defs,
     }
 
 
 def parse_schema_constrained_patch_result(output: Any) -> SchemaConstrainedPatchResult:
-    return SchemaConstrainedPatchResult.model_validate(output)
+    result = SchemaConstrainedPatchResult.model_validate(output)
+    result.writes = [_normalize_write_target_path(write) for write in result.writes]
+    return result
 
 
 def apply_schema_constrained_writes(
@@ -81,6 +82,7 @@ def apply_schema_constrained_writes(
     updated = deepcopy(document)
     changed_paths: list[str] = []
     for write in writes:
+        write = _normalize_write_target_path(write)
         if write.mode == "append":
             array_path = _array_path(write.target_path)
             _ensure_container_path(
@@ -156,6 +158,7 @@ def _write_branch_schema(
     validation_schema: dict[str, Any],
     target_path: str,
 ) -> dict[str, Any] | None:
+    target_path = _canonical_target_path(target_path)
     schema_path = _array_path(target_path) if target_path.endswith("/-") else target_path
     target_schema = schema_for_json_pointer(validation_schema, schema_path)
     if not target_schema:
@@ -371,11 +374,22 @@ def _set_json_pointer_value(document: dict[str, Any], path: str, value: Any) -> 
 
 
 def _dedupe_paths(paths: list[str]) -> list[str]:
-    return list(dict.fromkeys(path for path in paths if path))
+    return list(dict.fromkeys(_canonical_target_path(path) for path in paths if path))
 
 
 def _array_path(path: str) -> str:
     return path[:-2] if path.endswith("/-") else path
+
+
+def _canonical_target_path(path: str) -> str:
+    return _array_path(path)
+
+
+def _normalize_write_target_path(write: SchemaConstrainedWrite) -> SchemaConstrainedWrite:
+    canonical = _canonical_target_path(write.target_path)
+    if canonical == write.target_path:
+        return write
+    return write.model_copy(update={"target_path": canonical})
 
 
 def _parent_path(path: str) -> str:

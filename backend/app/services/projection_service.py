@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from copy import deepcopy
+
 from app.domain.extraction.description_mining import (
     DESCRIPTION_FACT_MINING_SYSTEM_PROMPT,
     DescriptionMiningArtifact,
@@ -526,6 +528,7 @@ class ProjectionService:
             "provenance_context_semantics",
             "technical_agents_semantics",
             "method_plan_semantics",
+            "attribute_parent_semantics",
             "instrument_settings_semantics",
             "dataset_identity_semantics",
             "aboutness_semantics",
@@ -616,7 +619,11 @@ class ProjectionService:
         validation_schema: dict[str, Any],
     ) -> tuple[dict[str, Any], list[str], str, list[str]]:
         assert self.ollama_client is not None
-        allowed_paths = item.target_paths or requirement.target_paths
+        allowed_paths = self._semantic_reconstruction_allowed_paths(
+            document=document,
+            item=item,
+            requirement=requirement,
+        )
         draft_excerpt = {
             path: self._value_at_json_pointer(document, path)
             for path in allowed_paths
@@ -635,9 +642,10 @@ class ProjectionService:
             draft_excerpt=draft_excerpt,
             schema_branches=schema_branches,
         )
-        output_schema = SchemaConstrainedPatchRoute.output_schema(
+        output_schema = self._semantic_reconstruction_output_schema(
             validation_schema=validation_schema,
             allowed_target_paths=allowed_paths,
+            requirement_id=requirement.requirement_id,
         )
         try:
             result = await generate_structured(
@@ -668,12 +676,29 @@ class ProjectionService:
                 agent_name="semantic_reconstruction",
             )
             return document, [], f"Semantic reconstruction generation failed: {exc}", [str(exc)]
-        if not patch.should_apply or not patch.writes:
+        if not patch.writes:
             return document, [], patch.reason or "LLM found no safe reconstruction.", []
+        patch = patch.model_copy(
+            update={
+                "writes": self._sanitize_schema_constrained_writes(
+                    writes=patch.writes,
+                    requirement_id=requirement.requirement_id,
+                )
+            }
+        )
+        deduped_writes, duplicate_reasons = self._filter_duplicate_schema_writes(
+            document=document,
+            writes=patch.writes,
+        )
+        if not deduped_writes:
+            reason = patch.reason or "Semantic reconstruction only proposed duplicate writes."
+            if duplicate_reasons:
+                reason = f"{reason} {'; '.join(duplicate_reasons)}"
+            return document, [], reason, []
         try:
             updated, changed_paths = apply_schema_constrained_writes(
                 document=document,
-                writes=patch.writes,
+                writes=deduped_writes,
                 data_package_id=data_package_id,
                 validation_schema=validation_schema,
             )
@@ -687,7 +712,7 @@ class ProjectionService:
             salvaged = document
             salvaged_paths: list[str] = []
             rejected: list[str] = [issue.message for issue in validation.errors]
-            for write in patch.writes:
+            for write in deduped_writes:
                 candidate_writes = (
                     [
                         write.model_copy(update={"items": [item]})
@@ -697,10 +722,17 @@ class ProjectionService:
                     else [write]
                 )
                 for candidate_write in candidate_writes:
+                    candidate_deduped, candidate_duplicate_reasons = self._filter_duplicate_schema_writes(
+                        document=salvaged,
+                        writes=[candidate_write],
+                    )
+                    if not candidate_deduped:
+                        rejected.extend(candidate_duplicate_reasons)
+                        continue
                     try:
                         candidate, candidate_paths = apply_schema_constrained_writes(
                             document=salvaged,
-                            writes=[candidate_write],
+                            writes=candidate_deduped,
                             data_package_id=data_package_id,
                             validation_schema=validation_schema,
                         )
@@ -725,6 +757,153 @@ class ProjectionService:
                 )
             return document, [], patch.reason or "Semantic reconstruction failed validation.", list(dict.fromkeys(rejected))
         return updated, changed_paths, patch.reason, []
+
+    @classmethod
+    def _semantic_reconstruction_allowed_paths(
+        cls,
+        *,
+        document: dict[str, Any],
+        item: RequirementReportItem,
+        requirement: DcatRequirement,
+    ) -> list[str]:
+        paths = list(item.target_paths or requirement.target_paths)
+        if requirement.requirement_id not in {"instrument_settings_semantics", "attribute_parent_semantics"}:
+            return paths
+        parent_paths = cls._attribute_parent_candidate_paths(
+            document=document,
+            selected_evidence=item.selected_evidence,
+            fallback_paths=paths,
+        )
+        return parent_paths or paths
+
+    @classmethod
+    def _attribute_parent_candidate_paths(
+        cls,
+        *,
+        document: dict[str, Any],
+        selected_evidence: list[RequirementEvidenceItem],
+        fallback_paths: list[str],
+    ) -> list[str]:
+        text = " ".join(
+            " ".join((evidence.category, evidence.claim, evidence.evidence_text))
+            for evidence in selected_evidence
+        ).lower()
+        explicit_subject = bool(
+            re.search(r"\b(evaluated entity|evaluated activity|sample|specimen|material|subject)\b", text)
+        )
+        agent_cue = bool(re.search(r"\b(device|software|instrument|machine|sensor|apparatus)\b", text))
+        measurement_or_setting = any(
+            evidence.category in {"instrument_signal", "measurement_condition"}
+            for evidence in selected_evidence
+        )
+
+        candidates: list[str] = []
+        if agent_cue:
+            for activity_index, activity in enumerate(document.get("was_generated_by") or []):
+                if not isinstance(activity, dict):
+                    continue
+                for agent_index, agent in enumerate(activity.get("carried_out_by") or []):
+                    if isinstance(agent, dict):
+                        candidates.append(f"/was_generated_by/{activity_index}/carried_out_by/{agent_index}/has_quantitative_attribute")
+            if not candidates:
+                candidates.append("/was_generated_by/0/carried_out_by/0/has_quantitative_attribute")
+        if measurement_or_setting or not candidates:
+            candidates.append("/was_generated_by/0/has_quantitative_attribute")
+        if explicit_subject:
+            candidates.extend(
+                path
+                for path in (
+                    "/is_about_activity/0/has_quantitative_attribute",
+                    "/is_about_entity/0/has_quantitative_attribute",
+                )
+                if path in fallback_paths
+            )
+        candidates.extend(path for path in fallback_paths if path not in candidates)
+        return list(dict.fromkeys(candidates))
+
+    def _semantic_reconstruction_output_schema(
+        self,
+        *,
+        validation_schema: dict[str, Any],
+        allowed_target_paths: list[str],
+        requirement_id: str,
+    ) -> dict[str, Any]:
+        if requirement_id == "aboutness_semantics":
+            return self._lean_aboutness_output_schema(
+                validation_schema=validation_schema,
+                allowed_target_paths=allowed_target_paths,
+            )
+        return SchemaConstrainedPatchRoute.output_schema(
+            validation_schema=validation_schema,
+            allowed_target_paths=allowed_target_paths,
+        )
+
+    @classmethod
+    def _lean_aboutness_output_schema(
+        cls,
+        *,
+        validation_schema: dict[str, Any],
+        allowed_target_paths: list[str],
+    ) -> dict[str, Any]:
+        branches: list[dict[str, Any]] = []
+        canonical_paths = list(dict.fromkeys(path[:-2] if path.endswith("/-") else path for path in allowed_target_paths))
+        for target_path in canonical_paths:
+            if target_path not in {"/is_about_entity", "/is_about_activity"}:
+                continue
+            array_schema = schema_for_json_pointer(validation_schema, target_path)
+            item_schema = cls._resolve_schema_node(array_schema.get("items", {}), validation_schema)
+            properties = item_schema.get("properties", {}) if isinstance(item_schema, dict) else {}
+            lean_properties = {
+                name: deepcopy(properties[name])
+                for name in ("id", "title", "description")
+                if name in properties
+            }
+            if "id" not in lean_properties:
+                lean_properties["id"] = {"type": "string"}
+            item_required = (
+                [
+                    name
+                    for name in item_schema.get("required", [])
+                    if name in lean_properties
+                ]
+                if isinstance(item_schema, dict)
+                else ["id"]
+            )
+            branches.append(
+                {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "target_path": {"const": target_path},
+                        "mode": {"const": "append"},
+                        "items": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "properties": lean_properties,
+                                "required": item_required,
+                            },
+                        },
+                        "reason": {"type": "string"},
+                    },
+                    "required": ["target_path", "mode", "items", "reason"],
+                }
+            )
+        return {
+            "$schema": validation_schema.get("$schema", "https://json-schema.org/draft/2019-09/schema"),
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "writes": {
+                    "type": "array",
+                    "items": {"oneOf": branches} if branches else False,
+                },
+                "reason": {"type": "string"},
+            },
+            "required": ["writes", "reason"],
+        }
 
     @classmethod
     def _semantic_patch_paths_allowed(cls, operations: list[Any], allowed_paths: list[str]) -> bool:
@@ -887,6 +1066,12 @@ class ProjectionService:
             )[0]
             evaluated.selected_evidence = selected_evidence
             evaluated.context_window = context_window
+            if requirement.requirement_id == "aboutness_semantics" and self._aboutness_semantics_fulfilled(document):
+                evaluated.status = "fulfilled"
+                evaluated.applicable = True
+                evaluated.quality = 1.0
+                evaluated.weighted_score = evaluated.weight
+                evaluated.rationale = "Aboutness has at least one concrete non-file-like evaluated entity or evaluated activity."
             items.append(evaluated)
         score_requirement_items(items)
         return items
@@ -1440,7 +1625,20 @@ class ProjectionService:
         if owners:
             preferred_owner = self._preferred_quantitative_owner_class(group)
             if preferred_owner:
-                owners = sorted(owners, key=lambda owner: 0 if owner[1] == preferred_owner else 1)
+                matching_owners = [owner for owner in owners if owner[1] == preferred_owner]
+                if matching_owners:
+                    return f"{matching_owners[0][0]}/has_quantitative_attribute/-", matching_owners[0][1], document
+                if preferred_owner == "DataGeneratingActivity":
+                    created = self._create_quantitative_owner_if_reachable(
+                        data_package_id=data_package_id,
+                        profile_identifier=profile_identifier,
+                        document=document,
+                        group=group,
+                        validation_schema=validation_schema,
+                    )
+                    if created is not None:
+                        owner_path, owner_class, document = created
+                        return f"{owner_path}/has_quantitative_attribute/-", owner_class, document
             return f"{owners[0][0]}/has_quantitative_attribute/-", owners[0][1], document
         created = self._create_quantitative_owner_if_reachable(
             data_package_id=data_package_id,
@@ -1583,6 +1781,10 @@ class ProjectionService:
             return "Software"
         if "device" in text:
             return "Device"
+        if any(str(getattr(note, "category", "") or "") in {"instrument_signal", "measurement_condition"} for note in group.notes):
+            subject_cue = re.search(r"\b(evaluated entity|evaluated activity|sample|specimen|material|subject)\b", text)
+            if not subject_cue:
+                return "DataGeneratingActivity"
         return None
 
     @staticmethod
@@ -1854,6 +2056,32 @@ class ProjectionService:
         )
         return any(term in text for term in file_terms)
 
+    @classmethod
+    def _aboutness_semantics_fulfilled(cls, document: dict[str, Any]) -> bool:
+        entities = [
+            item
+            for item in document.get("is_about_entity") or []
+            if isinstance(item, dict)
+            and not cls._is_file_like_about_entity(item)
+            and cls._aboutness_item_has_label(item)
+        ]
+        activities = [
+            item
+            for item in document.get("is_about_activity") or []
+            if isinstance(item, dict) and cls._aboutness_item_has_label(item)
+        ]
+        return bool(entities or activities)
+
+    @staticmethod
+    def _aboutness_item_has_label(item: dict[str, Any]) -> bool:
+        for key in ("title", "description"):
+            value = item.get(key)
+            if isinstance(value, str) and value.strip():
+                return True
+            if isinstance(value, list) and any(isinstance(part, str) and part.strip() for part in value):
+                return True
+        return False
+
     async def _evaluate_dcat_requirements(
         self,
         *,
@@ -1985,7 +2213,7 @@ class ProjectionService:
                     reason=f"Requirement patch generation failed: {exc}",
                 ),
             )
-        if (not patch.should_apply or not patch.writes) and (
+        if not patch.writes and (
             target_class == "QuantitativeAttribute"
             or any("/has_quantitative_attribute/" in path for path in (item.target_paths or requirement.target_paths))
         ):
@@ -2017,14 +2245,13 @@ class ProjectionService:
                     )
                 )
                 patch = SchemaConstrainedPatchResult(
-                    should_apply=True,
                     writes=[fallback_write],
                     reason=(
                         "Deterministic quantitative constructor used selected measurement evidence "
                         "after patch model declined to build an instance."
                     ),
                 )
-        if not patch.should_apply or not patch.writes:
+        if not patch.writes:
             return (
                 document,
                 RequirementPatchAttempt(
@@ -2314,7 +2541,10 @@ class ProjectionService:
     ) -> str | None:
         if not target_path.endswith("/-"):
             existing = cls._value_at_json_pointer(document, target_path)
-            if isinstance(existing, dict) and cls._instances_semantically_equal(existing, instance):
+            if isinstance(existing, dict) and (
+                cls._instances_semantically_equal(existing, instance)
+                or cls._quantitative_attributes_semantically_equal(existing, instance)
+            ):
                 return f"Requirement patch duplicates existing object at {target_path}."
             return None
         parent_path = target_path[:-2]
@@ -2322,7 +2552,10 @@ class ProjectionService:
         if not isinstance(existing_items, list):
             return None
         for existing in existing_items:
-            if isinstance(existing, dict) and cls._instances_semantically_equal(existing, instance):
+            if isinstance(existing, dict) and (
+                cls._instances_semantically_equal(existing, instance)
+                or cls._quantitative_attributes_semantically_equal(existing, instance)
+            ):
                 return f"Requirement patch duplicates existing object at {parent_path}."
         return None
 
@@ -2339,6 +2572,107 @@ class ProjectionService:
         left_sig = cls._instance_semantic_signature(left)
         right_sig = cls._instance_semantic_signature(right)
         return bool(left_sig and left_sig == right_sig)
+
+    @classmethod
+    def _sanitize_schema_constrained_writes(
+        cls,
+        *,
+        writes: list[SchemaConstrainedWrite],
+        requirement_id: str,
+    ) -> list[SchemaConstrainedWrite]:
+        sanitized: list[SchemaConstrainedWrite] = []
+        for write in writes:
+            if requirement_id == "aboutness_semantics" or write.target_path.startswith(("/is_about_entity", "/is_about_activity")):
+                if write.mode == "append":
+                    sanitized.append(
+                        write.model_copy(
+                            update={
+                                "items": [
+                                    cls._sanitize_aboutness_item(item)
+                                    for item in write.items
+                                ]
+                            }
+                        )
+                    )
+                    continue
+                if isinstance(write.value, dict):
+                    sanitized.append(write.model_copy(update={"value": cls._sanitize_aboutness_item(write.value)}))
+                    continue
+            sanitized.append(write)
+        return sanitized
+
+    @staticmethod
+    def _sanitize_aboutness_item(item: Any) -> Any:
+        if not isinstance(item, dict):
+            return item
+        return {
+            key: item[key]
+            for key in ("id", "title", "description")
+            if key in item and item[key] not in (None, "", [])
+        }
+
+    @classmethod
+    def _filter_duplicate_schema_writes(
+        cls,
+        *,
+        document: dict[str, Any],
+        writes: list[SchemaConstrainedWrite],
+    ) -> tuple[list[SchemaConstrainedWrite], list[str]]:
+        filtered: list[SchemaConstrainedWrite] = []
+        reasons: list[str] = []
+        for write in writes:
+            if write.mode != "append" or "has_quantitative_attribute" not in write.target_path:
+                filtered.append(write)
+                continue
+            parent_path = write.target_path[:-2] if write.target_path.endswith("/-") else write.target_path
+            existing_items = cls._value_at_json_pointer(document, parent_path)
+            if not isinstance(existing_items, list):
+                filtered.append(write)
+                continue
+            kept_items: list[Any] = []
+            comparison_items = [item for item in existing_items if isinstance(item, dict)]
+            for item in write.items:
+                if not isinstance(item, dict):
+                    kept_items.append(item)
+                    continue
+                duplicate = any(
+                    cls._quantitative_attributes_semantically_equal(existing, item)
+                    for existing in comparison_items
+                )
+                if duplicate:
+                    reasons.append(f"Duplicate quantitative attribute skipped at {parent_path}.")
+                    continue
+                kept_items.append(item)
+                comparison_items.append(item)
+            if kept_items:
+                filtered.append(write.model_copy(update={"items": kept_items}))
+        return filtered, list(dict.fromkeys(reasons))
+
+    @classmethod
+    def _quantitative_attributes_semantically_equal(
+        cls,
+        left: dict[str, Any],
+        right: dict[str, Any],
+    ) -> bool:
+        left_sig = cls._quantitative_attribute_signature(left)
+        right_sig = cls._quantitative_attribute_signature(right)
+        return bool(left_sig and right_sig and left_sig == right_sig)
+
+    @staticmethod
+    def _quantitative_attribute_signature(instance: dict[str, Any]) -> tuple[str, str, str] | None:
+        quantity = instance.get("has_quantity_type")
+        if isinstance(quantity, dict):
+            quantity = quantity.get("id") or quantity.get("title")
+        quantity_text = re.sub(r"\s+", " ", str(quantity or "")).strip().lower()
+        value = ProjectionService._first_number(instance.get("value"))
+        if not quantity_text or value is None:
+            return None
+        unit = instance.get("unit")
+        if isinstance(unit, dict):
+            unit = unit.get("id") or unit.get("title")
+        unit_text = re.sub(r"\s+", " ", str(unit or "")).strip().lower()
+        value_text = ("%0.12g" % value).rstrip("0").rstrip(".")
+        return quantity_text, value_text, unit_text
 
     @staticmethod
     def _instance_semantic_signature(instance: dict[str, Any]) -> tuple[str, str] | None:
@@ -2487,7 +2821,7 @@ class ProjectionService:
                 agent_name="evidence_instance_builder",
             )
             patch = parse_schema_constrained_patch_result(result.output)
-            if not patch.should_apply or not patch.writes:
+            if not patch.writes:
                 return None
             first = patch.writes[0]
             if first.mode == "append":
@@ -2551,7 +2885,7 @@ class ProjectionService:
                 agent_name="evidence_instance_repair",
             )
             patch = parse_schema_constrained_patch_result(result.output)
-            if not patch.should_apply or not patch.writes:
+            if not patch.writes:
                 return None
             first = patch.writes[0]
             if first.mode == "append":

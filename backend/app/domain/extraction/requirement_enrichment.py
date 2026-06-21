@@ -141,7 +141,6 @@ class JsonPatchOperation(BaseModel):
 class SemanticReconstructionPatchResult(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    should_apply: bool = False
     operations: list[JsonPatchOperation] = Field(default_factory=list)
     reason: str = ""
 
@@ -423,7 +422,7 @@ DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS: tuple[DcatRequirement, ...] = (
     DcatRequirement(
         requirement_id="aboutness_semantics",
         label="Aboutness semantics",
-        description="Aboutness identifies a concrete evaluated entity/activity; generic inferred subject is partial; file names are not entities.",
+        description="Aboutness identifies at least one concrete evaluated entity or evaluated activity; generic inferred subject is partial; file names are not entities.",
         weight=1.25,
         target_paths=["/is_about_entity", "/is_about_activity"],
         evidence_hints=["sample", "entity", "spectrum", "evaluated", "activity"],
@@ -457,6 +456,20 @@ DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS: tuple[DcatRequirement, ...] = (
         allowed_categories=["instrument_signal", "measurement_condition"],
     ),
     DcatRequirement(
+        requirement_id="attribute_parent_semantics",
+        label="Attribute parent semantics",
+        description="Quantitative and qualitative attributes are attached to a suitable current or minimal created parent according to generic evidence cues.",
+        weight=1.25,
+        target_paths=[
+            "/was_generated_by/0/has_quantitative_attribute",
+            "/was_generated_by/0/carried_out_by/0/has_quantitative_attribute",
+            "/is_about_activity/0/has_quantitative_attribute",
+            "/is_about_entity/0/has_quantitative_attribute",
+        ],
+        evidence_hints=["attribute parent", "instrument setting", "measurement condition", "device", "software", "evaluated entity", "evaluated activity"],
+        allowed_categories=["instrument_signal", "measurement_condition", "agent_signal", "activity_signal"],
+    ),
+    DcatRequirement(
         requirement_id="provenance_context_semantics",
         label="Provenance context semantics",
         description="Dates, people, labs, teams, and origins from surrounding evidence are placed in suitable generic provenance/context fields when present.",
@@ -479,8 +492,10 @@ Assess semantic adequacy, not JSON Schema validity or field coverage.
 Use statuses: fulfilled, partial, missing, not_applicable.
 quality must be 1 for fulfilled, 0.5 for partial, 0 for missing/not_applicable.
 Prefer not_applicable only when the supplied evidence categories make the semantic requirement irrelevant.
-For aboutness, file names are not evaluated entities. For method plans, explicit method_signal evidence is required for fulfilled.
+For aboutness, one concrete non-file-like is_about_entity OR one concrete non-file-like is_about_activity is fulfilled; file names are not evaluated entities.
+For method plans, explicit method_signal evidence is required for fulfilled.
 For instrument settings, selected concrete instrument_signal or measurement_condition evidence must be represented by suitable attributes; otherwise mark partial.
+For attribute parent semantics, device/software cues belong to agent parents; instrument_signal and measurement_condition evidence belongs to data-generating activity by default; evaluated entity/activity parents require explicit evidence that the attribute belongs to that subject/activity.
 """
 
 
@@ -488,7 +503,7 @@ REQUIREMENT_PATCH_SYSTEM_PROMPT = """
 You create one schema-constrained DCAT-AP+ write envelope for one missing requirement.
 Return only JSON matching the supplied schema.
 Use only selected evidence. Do not invent facts.
-Set should_apply=false if evidence is insufficient.
+Return an empty writes array if evidence is insufficient.
 Return writes only for allowed_target_paths. Use mode=append for array targets and mode=replace for scalar/object targets.
 """
 
@@ -500,10 +515,12 @@ Use only the current draft, selected evidence, and context window. Do not invent
 Return schema-constrained write envelopes only for allowed_target_paths.
 Keep edits minimal: replace or append fields only when the semantic requirement justifies it.
 Preserve valid numeric instrument/configuration settings. Remove only obvious qualitative/default/placeholders from quantitative attributes.
-Do not satisfy missing instrument_signal or measurement_condition evidence by generalizing one existing quantitative attribute; add separate schema-valid attributes or set should_apply=false.
-Represent numeric ranges as separate schema-valid minimum and maximum quantitative attributes with numeric values; never put a range string in a quantitative value.
+Do not satisfy missing instrument_signal or measurement_condition evidence by generalizing one existing quantitative attribute; add separate schema-valid attributes or return empty writes.
+For attribute parents, device/software cues belong to agent parents; instrument_signal and measurement_condition evidence belongs to data-generating activity by default; evaluated entity/activity parents require explicit evidence that the attribute belongs to that subject/activity.
+Represent numeric ranges as separate schema-valid minimum and maximum quantitative attributes with numeric values and source units when present; never put a range string in a quantitative value.
+For aboutness, write at most one lean is_about_entity or is_about_activity object with only id, title, and description.
 Do not use new evidence search. Do not patch distributions.
-Set should_apply=false when no safe semantic reconstruction is available.
+Return an empty writes array when no safe semantic reconstruction is available.
 """
 
 
@@ -546,10 +563,11 @@ def build_requirement_patch_prompt(
     draft_excerpt: Any,
     schema_branch: dict[str, Any],
 ) -> str:
+    allowed_target_paths = _canonical_target_paths(assessment.target_paths or requirement.target_paths)
     payload = {
         "requirement": requirement.model_dump(mode="json"),
         "assessment": assessment.model_dump(mode="json"),
-        "allowed_target_paths": assessment.target_paths or requirement.target_paths,
+        "allowed_target_paths": allowed_target_paths,
         "expected_target_class": assessment.expected_target_class or requirement.expected_target_class,
         "draft_excerpt": draft_excerpt,
         "schema_branch": schema_branch,
@@ -571,6 +589,7 @@ def build_semantic_reconstruction_prompt(
     draft_excerpt: dict[str, Any],
     schema_branches: dict[str, Any],
 ) -> str:
+    allowed_target_paths = _canonical_target_paths(item.target_paths or requirement.target_paths)
     payload = {
         "requirement": requirement.model_dump(mode="json"),
         "assessment": {
@@ -580,13 +599,15 @@ def build_semantic_reconstruction_prompt(
             "rationale": item.rationale,
             "target_paths": item.target_paths,
         },
-        "allowed_target_paths": item.target_paths or requirement.target_paths,
+        "allowed_target_paths": allowed_target_paths,
         "current_document": document,
         "draft_excerpt": draft_excerpt,
         "schema_branches": schema_branches,
         "reconstruction_rules": [
-            "Do not satisfy missing instrument_signal or measurement_condition evidence by generalizing one existing quantitative attribute; add separate schema-valid attributes or set should_apply=false.",
-            "Represent numeric ranges as separate schema-valid minimum and maximum quantitative attributes with numeric values; never put a range string in a quantitative value.",
+            "Do not satisfy missing instrument_signal or measurement_condition evidence by generalizing one existing quantitative attribute; add separate schema-valid attributes or return empty writes.",
+            "Device/software cues belong to agent parents; instrument_signal and measurement_condition evidence belongs to data-generating activity by default; evaluated entity/activity parents require explicit evidence that the attribute belongs to that subject/activity.",
+            "Represent numeric ranges as separate schema-valid minimum and maximum quantitative attributes with numeric values and source units when present; never put a range string in a quantitative value.",
+            "For aboutness, write at most one lean is_about_entity or is_about_activity object with only id, title, and description.",
         ],
         "selected_evidence": [evidence.model_dump(mode="json") for evidence in item.selected_evidence],
         "context_window": [evidence.model_dump(mode="json") for evidence in item.context_window],
@@ -606,6 +627,10 @@ def build_semantic_reconstruction_prompt(
         ensure_ascii=False,
         indent=2,
     )
+
+
+def _canonical_target_paths(paths: list[str]) -> list[str]:
+    return list(dict.fromkeys(path[:-2] if path.endswith("/-") else path for path in paths if path))
 
 
 def score_requirement_items(items: list[RequirementReportItem]) -> float:
