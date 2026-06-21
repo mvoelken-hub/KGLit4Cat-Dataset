@@ -165,3 +165,13 @@ Reason: Building or rebuilding the generated draft should not rerun chunk eviden
 Tradeoff: Users must run evidence extraction before profile projection; missing evidence is reported as an explicit stage-order error instead of being repaired implicitly.
 
 Revisit trigger: Revisit only if a future complete-workflow controller needs a combined orchestration endpoint with clearly separate subtask state.
+
+### 2026-06-21: Split Semantic Reconstruction Into Diagnosis, Compilation, And Synthesis
+
+Decision: Semantic reconstruction no longer asks the LLM for profile patch envelopes as its main repair mechanism. The profile stage now evaluates smaller semantic requirements, runs backend duplicate/range cleanup, asks the LLM for compact defect diagnoses, optionally asks for small synthesized target values, and lets backend code compile and validate all mutations.
+
+Reason: The prior broad requirements and patch-envelope prompt produced unchanged reconstructed drafts and fragile structured output. Smaller requirements improve traceability; small diagnosis schemas give the model semantic headroom; backend compilation keeps JSON Pointer mutation, deduplication, validation, salvage, and artifact accounting deterministic.
+
+Tradeoff: Some repairs remain unresolved unless a deterministic compiler or synthesis path exists for that defect type. This is preferred over silently accepting no-op reconstruction as success.
+
+Revisit trigger: Revisit when evaluation shows a recurring unresolved defect type that should gain a deterministic compiler, a small synthesis schema, or a profile-declared rule.

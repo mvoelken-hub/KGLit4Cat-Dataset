@@ -10,7 +10,21 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.domain.extraction.evidence_context import EvidenceCandidate, RoutedEvidenceContext
 
 
-RequirementStatus = Literal["fulfilled", "partial", "missing", "not_applicable"]
+RequirementStatus = Literal["fulfilled", "partial", "missing", "unanswered", "unresolved", "not_applicable"]
+RequirementIterationKind = Literal["coverage", "semantic_diagnosis", "semantic_reconstruction"]
+SemanticDefectType = Literal[
+    "duplicate_attribute",
+    "wrong_parent",
+    "bad_range",
+    "bad_label",
+    "missing_plan",
+    "bad_identity",
+    "bad_agent",
+    "bad_aboutness",
+    "bad_provenance",
+    "no_defect",
+]
+SemanticRecommendedAction = Literal["merge", "remove", "move", "replace", "append", "no_action"]
 
 
 class DcatRequirement(BaseModel):
@@ -70,7 +84,7 @@ class RequirementPatchResult(BaseModel):
 
 class RequirementPatchAttempt(BaseModel):
     attempted: bool = False
-    status: Literal["not_attempted", "applied", "failed", "rolled_back"] = "not_attempted"
+    status: Literal["not_attempted", "applied", "failed", "rolled_back", "unresolved"] = "not_attempted"
     target_path: str | None = None
     target_class: str | None = None
     validation_errors: list[str] = Field(default_factory=list)
@@ -91,6 +105,11 @@ class RequirementReportItem(BaseModel):
     selected_evidence: list[RequirementEvidenceItem] = Field(default_factory=list)
     context_window: list[RequirementEvidenceItem] = Field(default_factory=list)
     patch: RequirementPatchAttempt = Field(default_factory=RequirementPatchAttempt)
+    iteration_kind: RequirementIterationKind = "coverage"
+    defect_type: str = ""
+    diagnosed_defects_count: int = 0
+    compiled_actions_count: int = 0
+    synthesis_calls_count: int = 0
 
 
 class CoverageFieldReport(BaseModel):
@@ -116,7 +135,7 @@ class SourceTraceReport(BaseModel):
 
 class SemanticReconstructionRecord(BaseModel):
     requirement_id: str
-    status: Literal["applied", "skipped", "failed", "rolled_back"] = "skipped"
+    status: Literal["applied", "skipped", "failed", "rolled_back", "unresolved"] = "skipped"
     target_paths: list[str] = Field(default_factory=list)
     changed_paths: list[str] = Field(default_factory=list)
     reason: str = ""
@@ -124,6 +143,29 @@ class SemanticReconstructionRecord(BaseModel):
     applied_actions_count: int = 0
     rejected_actions_count: int = 0
     rejected_reasons: list[str] = Field(default_factory=list)
+    iteration_kind: RequirementIterationKind = "semantic_reconstruction"
+    defect_type: str = ""
+    diagnosed_defects_count: int = 0
+    compiled_actions_count: int = 0
+    synthesis_calls_count: int = 0
+
+
+class SemanticReconstructionDefect(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    defect_type: SemanticDefectType
+    target_path: str
+    entry_indices: list[int] = Field(default_factory=list)
+    recommended_action: SemanticRecommendedAction = "no_action"
+    needs_synthesis: bool = False
+    reason: str = ""
+
+
+class SemanticReconstructionDiagnosis(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    defects: list[SemanticReconstructionDefect] = Field(default_factory=list)
+    reason: str = ""
 
 
 class JsonPatchOperation(BaseModel):
@@ -408,62 +450,101 @@ DCAT_AP_PLUS_COVERAGE_REQUIREMENTS: tuple[DcatRequirement, ...] = (
 
 DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS: tuple[DcatRequirement, ...] = (
     DcatRequirement(
-        requirement_id="dataset_identity_semantics",
-        label="Dataset identity semantics",
-        description="Title and description identify the dataset rather than the extraction/projection process.",
-        weight=1.0,
-        target_paths=["/title", "/description"],
-        evidence_hints=["dataset title", "dataset description", "identifier"],
+        requirement_id="dataset_title_identity",
+        label="Dataset title identity",
+        description="Title identifies the dataset itself rather than only a source file or projection process.",
+        weight=0.75,
+        target_paths=["/title"],
+        evidence_hints=["dataset title", "dataset identifier", "dataset name"],
     ),
     DcatRequirement(
-        requirement_id="dataset_generation_semantics",
-        label="Dataset generation semantics",
-        description="was_generated_by describes a real data-generating activity.",
-        weight=1.25,
+        requirement_id="dataset_description_identity",
+        label="Dataset description identity",
+        description="Description summarizes dataset content and visible source-backed facts.",
+        weight=1.0,
+        target_paths=["/description"],
+        evidence_hints=["dataset description", "summary", "content"],
+    ),
+    DcatRequirement(
+        requirement_id="generation_activity_reality",
+        label="Generation activity reality",
+        description="was_generated_by represents a real acquisition, measurement, processing, or generation activity.",
+        weight=1.0,
         target_paths=["/was_generated_by"],
         evidence_hints=["activity", "acquisition", "processing", "generated", "method", "procedure", "instrument", "software", "setting"],
         allowed_categories=["activity_signal", "method_signal", "software_signal", "instrument_signal"],
     ),
     DcatRequirement(
-        requirement_id="aboutness_semantics",
-        label="Aboutness semantics",
-        description="Aboutness identifies at least one concrete evaluated entity or evaluated activity; generic inferred subject is partial; file names are not entities.",
-        weight=1.25,
-        target_paths=["/is_about_entity", "/is_about_activity"],
-        evidence_hints=["sample", "entity", "spectrum", "evaluated", "activity"],
-        allowed_categories=["activity_signal", "resource_signal", "surrounding_signal"],
-    ),
-    DcatRequirement(
-        requirement_id="technical_agents_semantics",
-        label="Technical agents semantics",
+        requirement_id="technical_agent_kind",
+        label="Technical agent kind",
         description="carried_out_by contains instruments, software, or devices rather than people or provenance metadata.",
-        weight=1.25,
+        weight=1.0,
         target_paths=["/was_generated_by/0/carried_out_by"],
         evidence_hints=["instrument", "software", "device"],
         allowed_categories=["software_signal", "instrument_signal"],
     ),
     DcatRequirement(
-        requirement_id="method_plan_semantics",
-        label="Method plan semantics",
-        description="realized_plan is grounded in explicit method/procedure/plan evidence; activity-only inference is partial at most.",
+        requirement_id="method_plan_presence",
+        label="Method plan presence",
+        description="Explicit method or procedure evidence maps to realized_plan when available.",
         weight=1.0,
         target_paths=["/was_generated_by/0/realized_plan"],
         evidence_hints=["method", "protocol", "plan", "procedure", "program"],
         allowed_categories=["method_signal"],
     ),
     DcatRequirement(
-        requirement_id="instrument_settings_semantics",
-        label="Instrument settings semantics",
-        description="Instrument/configuration settings selected as concrete evidence are represented as suitable attributes.",
-        weight=1.5,
-        target_paths=["/was_generated_by/0/has_quantitative_attribute", "/is_about_entity/0/has_quantitative_attribute"],
-        evidence_hints=["temperature", "frequency", "width", "unit", "parameter", "threshold", "setting", "range", "points"],
-        allowed_categories=["instrument_signal", "measurement_condition"],
+        requirement_id="aboutness_concreteness",
+        label="Aboutness concreteness",
+        description="Aboutness identifies concrete evaluated entity or activity, not only file-like labels.",
+        weight=1.0,
+        target_paths=["/is_about_entity", "/is_about_activity"],
+        evidence_hints=["sample", "entity", "spectrum", "evaluated", "activity"],
+        allowed_categories=["activity_signal", "resource_signal", "surrounding_signal"],
     ),
     DcatRequirement(
-        requirement_id="attribute_parent_semantics",
-        label="Attribute parent semantics",
-        description="Quantitative and qualitative attributes are attached to a suitable current or minimal created parent according to generic evidence cues.",
+        requirement_id="attribute_duplicate_coherence",
+        label="Attribute duplicate coherence",
+        description="Duplicate quantitative or qualitative attributes under the same parent are merged or removed.",
+        weight=1.0,
+        target_paths=[
+            "/was_generated_by/0/has_quantitative_attribute",
+            "/was_generated_by/0/carried_out_by/0/has_quantitative_attribute",
+            "/is_about_activity/0/has_quantitative_attribute",
+            "/is_about_entity/0/has_quantitative_attribute",
+        ],
+        evidence_hints=["duplicate", "same value", "same quantity", "attribute"],
+        allowed_categories=["instrument_signal", "measurement_condition", "measurement_signal", "software_signal", "activity_signal"],
+    ),
+    DcatRequirement(
+        requirement_id="attribute_range_decomposition",
+        label="Attribute range decomposition",
+        description="Ranges are represented as separate minimum and maximum attributes, not string fragments or invalid units.",
+        weight=1.0,
+        target_paths=[
+            "/was_generated_by/0/has_quantitative_attribute",
+            "/is_about_entity/0/has_quantitative_attribute",
+        ],
+        evidence_hints=["range", "minimum", "maximum", "from", "to", "spanning"],
+        allowed_categories=["measurement_condition", "measurement_signal", "instrument_signal"],
+    ),
+    DcatRequirement(
+        requirement_id="attribute_label_quality",
+        label="Attribute label quality",
+        description="Attribute labels are concise semantic quantities rather than copied sentence fragments.",
+        weight=0.75,
+        target_paths=[
+            "/was_generated_by/0/has_quantitative_attribute",
+            "/was_generated_by/0/carried_out_by/0/has_quantitative_attribute",
+            "/is_about_activity/0/has_quantitative_attribute",
+            "/is_about_entity/0/has_quantitative_attribute",
+        ],
+        evidence_hints=["quantity", "attribute", "label", "unit"],
+        allowed_categories=["instrument_signal", "measurement_condition", "measurement_signal", "software_signal", "activity_signal"],
+    ),
+    DcatRequirement(
+        requirement_id="attribute_parent_placement",
+        label="Attribute parent placement",
+        description="Attributes attach to activity, entity, or agent parents according to generic evidence ownership cues.",
         weight=1.25,
         target_paths=[
             "/was_generated_by/0/has_quantitative_attribute",
@@ -472,13 +553,13 @@ DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS: tuple[DcatRequirement, ...] = (
             "/is_about_entity/0/has_quantitative_attribute",
         ],
         evidence_hints=["attribute parent", "instrument setting", "measurement condition", "device", "software", "evaluated entity", "evaluated activity"],
-        allowed_categories=["instrument_signal", "measurement_condition", "software_signal", "activity_signal"],
+        allowed_categories=["instrument_signal", "measurement_condition", "measurement_signal", "software_signal", "activity_signal"],
     ),
     DcatRequirement(
-        requirement_id="provenance_context_semantics",
-        label="Provenance context semantics",
+        requirement_id="provenance_context_placement",
+        label="Provenance context placement",
         description="Dates, people, labs, teams, and origins from surrounding evidence are placed in suitable generic provenance/context fields when present.",
-        weight=1.0,
+        weight=0.75,
         target_paths=["/creator", "/modification_date"],
         evidence_hints=["date", "creator", "owner", "origin", "laboratory", "team"],
         allowed_categories=["surrounding_signal"],
@@ -662,6 +743,93 @@ def build_semantic_reconstruction_prompt(
     )
 
 
+def build_semantic_diagnosis_prompt(
+    *,
+    requirement: DcatRequirement,
+    item: RequirementReportItem,
+    draft_excerpt: dict[str, Any],
+) -> str:
+    allowed_target_paths = _canonical_target_paths(item.target_paths or requirement.target_paths)
+    payload = {
+        "requirement": requirement.model_dump(mode="json"),
+        "assessment": {
+            "requirement_id": item.requirement_id,
+            "status": item.status,
+            "quality": item.quality,
+            "rationale": item.rationale,
+            "target_paths": item.target_paths,
+        },
+        "allowed_target_paths": allowed_target_paths,
+        "draft_excerpt": draft_excerpt,
+        "selected_evidence": [evidence.model_dump(mode="json") for evidence in item.selected_evidence],
+        "context_window": [evidence.model_dump(mode="json") for evidence in item.context_window],
+        "diagnosis_rules": [
+            "Return only defects[]. Do not return JSON Patch operations or action envelopes.",
+            "Use entry_indices only for entries already visible in the target array excerpt.",
+            "Set needs_synthesis true only when a new value or object must be generated from evidence.",
+            "Use no_action when the requirement is unresolved but no safe repair can be identified.",
+        ],
+    }
+    return "Diagnose semantic draft defects for this one requirement. Do not write the profile.\n\n" + json.dumps(
+        payload,
+        ensure_ascii=False,
+        indent=2,
+    )
+
+
+def semantic_diagnosis_output_schema() -> dict[str, Any]:
+    return {
+        "$schema": "https://json-schema.org/draft/2019-09/schema",
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "defects": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "defect_type": {
+                            "enum": [
+                                "duplicate_attribute",
+                                "wrong_parent",
+                                "bad_range",
+                                "bad_label",
+                                "missing_plan",
+                                "bad_identity",
+                                "bad_agent",
+                                "bad_aboutness",
+                                "bad_provenance",
+                                "no_defect",
+                            ]
+                        },
+                        "target_path": {"type": "string"},
+                        "entry_indices": {
+                            "type": "array",
+                            "items": {"type": "integer", "minimum": 0},
+                        },
+                        "recommended_action": {
+                            "enum": ["merge", "remove", "move", "replace", "append", "no_action"]
+                        },
+                        "needs_synthesis": {"type": "boolean"},
+                        "reason": {"type": "string"},
+                    },
+                    "required": [
+                        "defect_type",
+                        "target_path",
+                        "entry_indices",
+                        "recommended_action",
+                        "needs_synthesis",
+                        "reason",
+                    ],
+                },
+            },
+            "reason": {"type": "string"},
+        },
+        "required": ["defects", "reason"],
+    }
+
+
 def _canonical_target_paths(paths: list[str]) -> list[str]:
     return list(dict.fromkeys(path[:-2] if path.endswith("/-") else path for path in paths if path))
 
@@ -739,7 +907,7 @@ def normalized_requirement_evaluation(
         if assessment is None:
             assessment = RequirementAssessment(
                 requirement_id=requirement.requirement_id,
-                status="missing",
+                status="unanswered",
                 quality=0.0,
                 applicable=True,
                 rationale="Requirement evaluator did not return this requirement.",
@@ -787,7 +955,7 @@ def report_items_from_evaluation(
         if assessment is None:
             assessment = RequirementAssessment(
                 requirement_id=req.requirement_id,
-                status="missing",
+                status="unanswered",
                 quality=0.0,
                 applicable=True,
                 rationale="Requirement evaluator did not return this requirement.",
@@ -810,6 +978,7 @@ def report_items_from_evaluation(
                 rationale=assessment.rationale,
                 target_paths=assessment.target_paths or req.target_paths,
                 evidence_search_hints=assessment.evidence_search_hints or req.evidence_hints,
+                iteration_kind="semantic_diagnosis" if req in DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS else "coverage",
             )
         )
     return items
@@ -901,6 +1070,9 @@ def _normalized_assessment(assessment: RequirementAssessment) -> RequirementAsse
     elif status == "not_applicable":
         quality = 0.0
         applicable = False
+    elif status in {"unanswered", "unresolved"}:
+        quality = 0.0
+        applicable = bool(assessment.applicable)
     else:
         quality = 0.0
         applicable = bool(assessment.applicable)

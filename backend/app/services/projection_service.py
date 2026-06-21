@@ -34,6 +34,15 @@ class _MeasurementSemanticGroup:
     notes: list[EvidenceCandidate]
 
 
+@dataclass
+class _CompiledSemanticActions:
+    writes: list[SchemaConstrainedWrite]
+    reason: str
+    diagnosed_defects_count: int = 0
+    synthesis_calls_count: int = 0
+    rejected_reasons: list[str] | None = None
+
+
 class ProjectionService:
     async def _build_profile_document_by_patching(
         self,
@@ -548,15 +557,20 @@ class ProjectionService:
         progress: ExtractionRunProgress,
     ) -> tuple[dict[str, Any], list[SemanticReconstructionRecord]]:
         order = [
-            "provenance_context_semantics",
-            "technical_agents_semantics",
-            "method_plan_semantics",
-            "attribute_parent_semantics",
-            "instrument_settings_semantics",
-            "dataset_identity_semantics",
-            "aboutness_semantics",
+            "attribute_duplicate_coherence",
+            "attribute_range_decomposition",
+            "attribute_label_quality",
+            "attribute_parent_placement",
+            "technical_agent_kind",
+            "method_plan_presence",
+            "generation_activity_reality",
+            "dataset_title_identity",
+            "dataset_description_identity",
+            "aboutness_concreteness",
+            "provenance_context_placement",
         ]
         by_id = {item.requirement_id: item for item in semantic_items}
+        order = order + [requirement_id for requirement_id in by_id if requirement_id not in order]
         records: list[SemanticReconstructionRecord] = []
         current = document
         for requirement_id in order:
@@ -579,13 +593,15 @@ class ProjectionService:
                 profile_identifier=profile_identifier,
                 document=current,
                 item=item,
-                requirement=next(req for req in DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS if req.requirement_id == requirement_id),
+                requirement=self._semantic_requirement_for_item(item),
                 validation_schema=validation_schema,
             )
             if len(update_result) == 4:
                 updated, changed_paths, reason, validation_errors = update_result
                 applied_actions_count = 1 if changed_paths else 0
                 rejected_reasons = list(validation_errors)
+                diagnosed_defects_count = 0
+                synthesis_calls_count = 0
             else:
                 (
                     updated,
@@ -595,17 +611,26 @@ class ProjectionService:
                     applied_actions_count,
                     rejected_reasons,
                 ) = update_result
+                diagnosed_defects_count = item.diagnosed_defects_count
+                synthesis_calls_count = item.synthesis_calls_count
             if not changed_paths:
+                status = "failed" if validation_errors else "skipped"
+                if status == "skipped" and item.status in {"partial", "missing", "unanswered", "unresolved"}:
+                    status = "unresolved"
                 records.append(
                     SemanticReconstructionRecord(
                         requirement_id=requirement_id,
-                        status="failed" if validation_errors else "skipped",
+                        status=status,
                         target_paths=item.target_paths,
                         reason=reason or "No semantic reconstruction was proposed.",
                         validation_errors=validation_errors,
                         applied_actions_count=applied_actions_count,
                         rejected_actions_count=len(rejected_reasons),
                         rejected_reasons=rejected_reasons,
+                        defect_type=item.defect_type,
+                        diagnosed_defects_count=diagnosed_defects_count,
+                        compiled_actions_count=applied_actions_count,
+                        synthesis_calls_count=synthesis_calls_count,
                     )
                 )
                 continue
@@ -625,6 +650,10 @@ class ProjectionService:
                         applied_actions_count=applied_actions_count,
                         rejected_actions_count=len(rejected_reasons),
                         rejected_reasons=rejected_reasons,
+                        defect_type=item.defect_type,
+                        diagnosed_defects_count=diagnosed_defects_count,
+                        compiled_actions_count=applied_actions_count,
+                        synthesis_calls_count=synthesis_calls_count,
                     )
                 )
                 current = original
@@ -639,6 +668,10 @@ class ProjectionService:
                 applied_actions_count=applied_actions_count,
                 rejected_actions_count=len(rejected_reasons),
                 rejected_reasons=rejected_reasons,
+                defect_type=item.defect_type,
+                diagnosed_defects_count=diagnosed_defects_count,
+                compiled_actions_count=applied_actions_count,
+                synthesis_calls_count=synthesis_calls_count,
             )
             records.append(record)
             self._record_semantic_reconstruction_ledgers(
@@ -669,28 +702,33 @@ class ProjectionService:
             item=item,
             requirement=requirement,
         )
-        draft_excerpt = {
-            path: self._value_at_json_pointer(document, path)
-            for path in allowed_paths
-        }
-        schema_branches = {
-            path: self._compact_schema_branch_for_target(
+        deterministic = await self._compile_deterministic_semantic_actions(
+            data_package_id=data_package_id,
+            document=document,
+            item=item,
+            requirement=requirement,
+            validation_schema=validation_schema,
+        )
+        if deterministic.writes:
+            updated, changed_paths, reason, errors, applied, rejected = self._apply_semantic_reconstruction_writes(
+                data_package_id=data_package_id,
+                profile_identifier=profile_identifier,
+                document=document,
+                writes=deterministic.writes,
+                reason=deterministic.reason,
                 validation_schema=validation_schema,
-                target_path=path,
+                rejected_reasons=deterministic.rejected_reasons or [],
             )
-            for path in allowed_paths
-        }
-        prompt = build_semantic_reconstruction_prompt(
+            item.diagnosed_defects_count = deterministic.diagnosed_defects_count
+            item.compiled_actions_count = applied
+            item.synthesis_calls_count = deterministic.synthesis_calls_count
+            return updated, changed_paths, reason, errors, applied, rejected
+
+        draft_excerpt = {path: self._value_at_json_pointer(document, path) for path in allowed_paths}
+        prompt = build_semantic_diagnosis_prompt(
             requirement=requirement,
             item=item,
-            document=document,
             draft_excerpt=draft_excerpt,
-            schema_branches=schema_branches,
-        )
-        output_schema = self._semantic_reconstruction_output_schema(
-            validation_schema=validation_schema,
-            allowed_target_paths=allowed_paths,
-            requirement_id=requirement.requirement_id,
         )
         try:
             result = await generate_structured(
@@ -698,7 +736,7 @@ class ProjectionService:
                 model=self.ollama_client.chat_model,
                 system=SEMANTIC_RECONSTRUCTION_SYSTEM_PROMPT,
                 prompt=prompt,
-                output_type=output_schema,
+                output_type=semantic_diagnosis_output_schema(),
                 system_components=[
                     ("semantic_reconstruction_system_prompt", SEMANTIC_RECONSTRUCTION_SYSTEM_PROMPT),
                 ],
@@ -713,58 +751,98 @@ class ProjectionService:
                 result=result,
                 agent_name="semantic_reconstruction",
             )
-            legacy_reason = self._legacy_json_patch_response_reason(result.output)
+            legacy_reason = self._legacy_semantic_diagnosis_response_reason(result.output)
             if legacy_reason:
                 return document, [], legacy_reason, [legacy_reason], 0, [legacy_reason]
-            patch = parse_schema_constrained_patch_result(result.output)
+            diagnosis = SemanticReconstructionDiagnosis.model_validate(result.output)
         except (CompletionError, ValidationError) as exc:
             self._record_llm_call_exception(
                 data_package_id=data_package_id,
                 exc=exc,
                 agent_name="semantic_reconstruction",
             )
-            return document, [], f"Semantic reconstruction generation failed: {exc}", [str(exc)], 0, [str(exc)]
-        if not patch.writes:
-            return document, [], patch.reason or "LLM found no safe reconstruction.", [], 0, []
+            return document, [], f"Semantic reconstruction diagnosis failed: {exc}", [str(exc)], 0, [str(exc)]
+        compiled = await self._compile_semantic_diagnosis_actions(
+            data_package_id=data_package_id,
+            document=document,
+            item=item,
+            requirement=requirement,
+            diagnosis=diagnosis,
+            validation_schema=validation_schema,
+        )
+        if not compiled.writes:
+            reason = compiled.reason or diagnosis.reason or "semantic_defect_unresolved_empty_diagnosis"
+            rejected = compiled.rejected_reasons or []
+            item.diagnosed_defects_count = compiled.diagnosed_defects_count
+            item.compiled_actions_count = 0
+            item.synthesis_calls_count = compiled.synthesis_calls_count
+            return document, [], reason, [], 0, rejected
+        updated, changed_paths, reason, errors, applied, rejected = self._apply_semantic_reconstruction_writes(
+            data_package_id=data_package_id,
+            profile_identifier=profile_identifier,
+            document=document,
+            writes=compiled.writes,
+            reason=compiled.reason or diagnosis.reason,
+            validation_schema=validation_schema,
+            rejected_reasons=compiled.rejected_reasons or [],
+        )
+        item.diagnosed_defects_count = compiled.diagnosed_defects_count
+        item.compiled_actions_count = applied
+        item.synthesis_calls_count = compiled.synthesis_calls_count
+        return updated, changed_paths, reason, errors, applied, rejected
+
+    @staticmethod
+    def _semantic_requirement_for_item(item: RequirementReportItem) -> DcatRequirement:
+        for requirement in DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS:
+            if requirement.requirement_id == item.requirement_id:
+                return requirement
+        return DcatRequirement(
+            requirement_id=item.requirement_id,
+            label=item.label or item.requirement_id,
+            description=item.rationale or item.requirement_id,
+            weight=item.weight or 1.0,
+            target_paths=list(item.target_paths),
+            evidence_hints=list(item.evidence_search_hints),
+        )
+
+    def _apply_semantic_reconstruction_writes(
+        self,
+        *,
+        data_package_id: str,
+        profile_identifier: str,
+        document: dict[str, Any],
+        writes: list[SchemaConstrainedWrite],
+        reason: str,
+        validation_schema: dict[str, Any],
+        rejected_reasons: list[str] | None = None,
+    ) -> tuple[dict[str, Any], list[str], str, list[str], int, list[str]]:
+        patch = SchemaConstrainedPatchResult(writes=writes, reason=reason)
         patch = patch.model_copy(
             update={
                 "writes": self._sanitize_schema_constrained_writes(
                     writes=patch.writes,
-                    requirement_id=requirement.requirement_id,
+                    requirement_id="semantic_reconstruction",
                 )
             }
         )
         allowed_rejected = self._semantic_reconstruction_rejected_actions(
             writes=patch.writes,
-            allowed_paths=allowed_paths,
+            allowed_paths=list(dict.fromkeys(write.target_path for write in patch.writes)),
         )
-        if allowed_rejected:
-            patch = patch.model_copy(
-                update={
-                    "writes": [
-                        write
-                        for write in patch.writes
-                        if not self._semantic_reconstruction_action_rejected(
-                            write=write,
-                            allowed_paths=allowed_paths,
-                        )
-                    ]
-                }
-            )
         deduped_writes, duplicate_reasons = self._filter_duplicate_schema_writes(
             document=document,
             writes=patch.writes,
         )
         if not deduped_writes:
             reason = patch.reason or "Semantic reconstruction only proposed duplicate writes."
-            rejected = list(dict.fromkeys(allowed_rejected + duplicate_reasons))
+            rejected = list(dict.fromkeys((rejected_reasons or []) + allowed_rejected + duplicate_reasons))
             if rejected:
                 reason = f"{reason} {'; '.join(rejected)}"
             return document, [], reason, [], 0, rejected
         updated = document
         changed_paths: list[str] = []
         applied = 0
-        rejected = list(allowed_rejected + duplicate_reasons)
+        rejected = list((rejected_reasons or []) + allowed_rejected + duplicate_reasons)
         for write in self._semantic_reconstruction_candidate_writes(deduped_writes):
             write_rejections = self._validate_semantic_reconstruction_action(
                 document=updated,
@@ -809,7 +887,12 @@ class ProjectionService:
         requirement: DcatRequirement,
     ) -> list[str]:
         paths = list(item.target_paths or requirement.target_paths)
-        if requirement.requirement_id not in {"instrument_settings_semantics", "attribute_parent_semantics"}:
+        if requirement.requirement_id not in {
+            "attribute_duplicate_coherence",
+            "attribute_range_decomposition",
+            "attribute_label_quality",
+            "attribute_parent_placement",
+        }:
             return paths
         parent_paths = cls._attribute_parent_candidate_paths(
             document=document,
@@ -880,6 +963,405 @@ class ProjectionService:
             allowed_target_paths=allowed_target_paths,
         )
 
+    async def _compile_deterministic_semantic_actions(
+        self,
+        *,
+        data_package_id: str,
+        document: dict[str, Any],
+        item: RequirementReportItem,
+        requirement: DcatRequirement,
+        validation_schema: dict[str, Any],
+    ) -> _CompiledSemanticActions:
+        if requirement.requirement_id == "attribute_duplicate_coherence":
+            writes, count = self._attribute_duplicate_coherence_writes(document)
+            return _CompiledSemanticActions(
+                writes=writes,
+                reason="Deterministic duplicate attribute coherence cleanup.",
+                diagnosed_defects_count=count,
+            )
+        if requirement.requirement_id == "attribute_range_decomposition":
+            writes, count = self._attribute_range_decomposition_writes(document=document, item=item)
+            return _CompiledSemanticActions(
+                writes=writes,
+                reason="Deterministic range decomposition cleanup.",
+                diagnosed_defects_count=count,
+            )
+        return _CompiledSemanticActions(writes=[], reason="")
+
+    async def _compile_semantic_diagnosis_actions(
+        self,
+        *,
+        data_package_id: str,
+        document: dict[str, Any],
+        item: RequirementReportItem,
+        requirement: DcatRequirement,
+        diagnosis: SemanticReconstructionDiagnosis,
+        validation_schema: dict[str, Any],
+    ) -> _CompiledSemanticActions:
+        writes: list[SchemaConstrainedWrite] = []
+        rejected: list[str] = []
+        synthesis_calls = 0
+        allowed_paths = self._semantic_reconstruction_allowed_paths(
+            document=document,
+            item=item,
+            requirement=requirement,
+        )
+        for defect in diagnosis.defects:
+            if defect.defect_type == "no_defect" or defect.recommended_action == "no_action":
+                continue
+            if not self._semantic_path_allowed(defect.target_path, allowed_paths):
+                rejected.append(f"Diagnosis target outside allowed semantic reconstruction paths: {defect.target_path}")
+                continue
+            if defect.needs_synthesis:
+                write, synth_rejected = await self._synthesize_semantic_reconstruction_write(
+                    data_package_id=data_package_id,
+                    requirement=requirement,
+                    defect=defect,
+                    item=item,
+                    validation_schema=validation_schema,
+                )
+                synthesis_calls += 1
+                if write is None:
+                    rejected.extend(synth_rejected)
+                else:
+                    writes.append(write)
+                continue
+            if defect.recommended_action == "merge":
+                if len(defect.entry_indices) < 2:
+                    rejected.append(f"Merge diagnosis needs at least two entry indices at {defect.target_path}.")
+                    continue
+                survivor, *merged = defect.entry_indices
+                writes.append(
+                    SchemaConstrainedWrite(
+                        target_path=defect.target_path,
+                        mode="merge",
+                        survivor_index=survivor,
+                        merged_indices=merged,
+                        reason=defect.reason,
+                    )
+                )
+                continue
+            if defect.recommended_action == "remove":
+                if defect.entry_indices:
+                    for index in sorted(set(defect.entry_indices), reverse=True):
+                        writes.append(
+                            SchemaConstrainedWrite(
+                                target_path=f"{defect.target_path.rstrip('/')}/{index}",
+                                mode="remove",
+                                reason=defect.reason,
+                            )
+                        )
+                else:
+                    writes.append(
+                        SchemaConstrainedWrite(
+                            target_path=defect.target_path,
+                            mode="remove",
+                            reason=defect.reason,
+                        )
+                    )
+                continue
+            rejected.append(f"Diagnosis action requires synthesis or explicit compiler support: {defect.recommended_action}.")
+        reason = diagnosis.reason or "Compiled semantic diagnosis actions."
+        if not writes and not rejected and item.status in {"partial", "missing", "unanswered", "unresolved"}:
+            reason = "semantic_defect_unresolved_empty_diagnosis"
+        return _CompiledSemanticActions(
+            writes=writes,
+            reason=reason,
+            diagnosed_defects_count=len(diagnosis.defects),
+            synthesis_calls_count=synthesis_calls,
+            rejected_reasons=list(dict.fromkeys(rejected)),
+        )
+
+    async def _synthesize_semantic_reconstruction_write(
+        self,
+        *,
+        data_package_id: str,
+        requirement: DcatRequirement,
+        defect: SemanticReconstructionDefect,
+        item: RequirementReportItem,
+        validation_schema: dict[str, Any],
+    ) -> tuple[SchemaConstrainedWrite | None, list[str]]:
+        schema = self._semantic_synthesis_schema(requirement=requirement, defect=defect)
+        prompt = self._semantic_synthesis_prompt(requirement=requirement, defect=defect, item=item)
+        try:
+            result = await generate_structured(
+                self.ollama_client,
+                model=self.ollama_client.chat_model,
+                system=SEMANTIC_RECONSTRUCTION_SYSTEM_PROMPT,
+                prompt=prompt,
+                output_type=schema,
+                system_components=[("semantic_reconstruction_system_prompt", SEMANTIC_RECONSTRUCTION_SYSTEM_PROMPT)],
+                prompt_components=[],
+                token_budgeter=self._prompt_token_budgeter(),
+                operation_id=self._prompt_operation_id("semantic_reconstruction_synthesis"),
+                agent_name="semantic_reconstruction_synthesis",
+                num_ctx=self.ollama_client.max_context_length,
+            )
+            self._record_llm_call_result(
+                data_package_id=data_package_id,
+                result=result,
+                agent_name="semantic_reconstruction_synthesis",
+            )
+        except (CompletionError, ValidationError) as exc:
+            self._record_llm_call_exception(
+                data_package_id=data_package_id,
+                exc=exc,
+                agent_name="semantic_reconstruction_synthesis",
+            )
+            return None, [f"Semantic reconstruction synthesis failed: {exc}"]
+        value = result.output
+        if defect.recommended_action == "append":
+            return (
+                SchemaConstrainedWrite(
+                    target_path=defect.target_path,
+                    mode="append",
+                    items=[value],
+                    reason=defect.reason or "Synthesized semantic value.",
+                ),
+                [],
+            )
+        return (
+            SchemaConstrainedWrite(
+                target_path=defect.target_path,
+                mode="replace",
+                value=value,
+                reason=defect.reason or "Synthesized semantic value.",
+            ),
+            [],
+        )
+
+    @staticmethod
+    def _semantic_synthesis_schema(*, requirement: DcatRequirement, defect: SemanticReconstructionDefect) -> dict[str, Any]:
+        if requirement.requirement_id == "method_plan_presence":
+            return {
+                "$schema": "https://json-schema.org/draft/2019-09/schema",
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "title": {"type": "string"},
+                    "description": {"type": "string"},
+                    "type": {"type": "object"},
+                },
+                "required": ["title", "description"],
+            }
+        if requirement.requirement_id == "technical_agent_kind":
+            return {
+                "$schema": "https://json-schema.org/draft/2019-09/schema",
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "title": {"type": "string"},
+                    "description": {"type": "string"},
+                    "type": {"type": "object"},
+                },
+                "required": ["title", "description"],
+            }
+        if requirement.requirement_id in {"attribute_label_quality", "attribute_parent_placement", "attribute_range_decomposition"}:
+            return {
+                "$schema": "https://json-schema.org/draft/2019-09/schema",
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "title": {"type": "string"},
+                    "description": {"type": "string"},
+                    "value": {"type": ["number", "string"]},
+                    "has_quantity_type": {"type": ["string", "object"]},
+                    "unit": {"type": ["string", "object"]},
+                },
+                "required": ["value", "has_quantity_type"],
+            }
+        return {
+            "$schema": "https://json-schema.org/draft/2019-09/schema",
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "id": {"type": "string"},
+                "title": {"type": ["string", "array"]},
+                "description": {"type": ["string", "array"]},
+            },
+            "required": ["title", "description"],
+        }
+
+    @staticmethod
+    def _semantic_synthesis_prompt(
+        *,
+        requirement: DcatRequirement,
+        defect: SemanticReconstructionDefect,
+        item: RequirementReportItem,
+    ) -> str:
+        payload = {
+            "requirement": requirement.model_dump(mode="json"),
+            "defect": defect.model_dump(mode="json"),
+            "selected_evidence": [evidence.model_dump(mode="json") for evidence in item.selected_evidence],
+            "context_window": [evidence.model_dump(mode="json") for evidence in item.context_window],
+            "rules": [
+                "Return one small schema-valid object or value for the defect target.",
+                "Use only selected evidence and context window.",
+                "Do not include profile patch operations.",
+            ],
+        }
+        return "Synthesize one semantic reconstruction value for backend compilation.\n\n" + json.dumps(
+            payload,
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    @classmethod
+    def _attribute_duplicate_coherence_writes(
+        cls,
+        document: dict[str, Any],
+    ) -> tuple[list[SchemaConstrainedWrite], int]:
+        writes: list[SchemaConstrainedWrite] = []
+        for parent_path, items in cls._attribute_array_items(document):
+            groups: dict[tuple[str, str, str, str, str], list[int]] = {}
+            for index, item in enumerate(items):
+                if not isinstance(item, dict):
+                    continue
+                slot = cls._attribute_semantic_slot(parent_path=parent_path, instance=item)
+                if not slot:
+                    continue
+                groups.setdefault(slot, []).append(index)
+            for indices in groups.values():
+                if len(indices) < 2:
+                    continue
+                writes.append(
+                    SchemaConstrainedWrite(
+                        target_path=parent_path,
+                        mode="merge",
+                        survivor_index=indices[0],
+                        merged_indices=indices[1:],
+                        reason="Same-parent duplicate semantic attribute slot.",
+                    )
+                )
+        return writes, len(writes)
+
+    @classmethod
+    def _attribute_range_decomposition_writes(
+        cls,
+        *,
+        document: dict[str, Any],
+        item: RequirementReportItem,
+    ) -> tuple[list[SchemaConstrainedWrite], int]:
+        writes: list[SchemaConstrainedWrite] = []
+        evidence_text = " ".join(
+            " ".join([evidence.claim, evidence.evidence_text, evidence.source_context])
+            for evidence in list(item.selected_evidence) + list(item.context_window)
+        )
+        for parent_path, items in cls._attribute_array_items(document):
+            remove_indices: list[int] = []
+            append_items: list[dict[str, Any]] = []
+            for index, attribute in enumerate(items):
+                if not isinstance(attribute, dict) or not cls._attribute_looks_like_bad_range(attribute):
+                    continue
+                combined = " ".join(
+                    str(part or "")
+                    for part in (
+                        attribute.get("title"),
+                        attribute.get("description"),
+                        attribute.get("has_quantity_type"),
+                        attribute.get("unit"),
+                        evidence_text,
+                    )
+                )
+                numbers = cls._numbers_from_text(combined)
+                numbers = list(dict.fromkeys(numbers))
+                if len(numbers) < 2:
+                    continue
+                low, high = min(numbers), max(numbers)
+                base = cls._range_base_label(attribute)
+                unit = cls._range_unit_text(combined)
+                append_items.extend(
+                    [
+                        cls._range_attribute(base=base, bound="minimum", value=low, unit=unit),
+                        cls._range_attribute(base=base, bound="maximum", value=high, unit=unit),
+                    ]
+                )
+                remove_indices.append(index)
+            if append_items:
+                writes.append(
+                    SchemaConstrainedWrite(
+                        target_path=parent_path,
+                        mode="append",
+                        items=append_items,
+                        reason="Decompose range into minimum and maximum attributes.",
+                    )
+                )
+                for index in sorted(remove_indices, reverse=True):
+                    writes.append(
+                        SchemaConstrainedWrite(
+                            target_path=f"{parent_path}/{index}",
+                            mode="remove",
+                            reason="Remove invalid range fragment attribute.",
+                        )
+                    )
+        return writes, len(writes)
+
+    @classmethod
+    def _attribute_array_items(cls, document: Any, *, path: str = "") -> list[tuple[str, list[Any]]]:
+        result: list[tuple[str, list[Any]]] = []
+        if isinstance(document, dict):
+            for key, value in document.items():
+                child_path = f"{path}/{key}" if path else f"/{key}"
+                if key in {"has_quantitative_attribute", "has_qualitative_attribute"} and isinstance(value, list):
+                    result.append((child_path, value))
+                result.extend(cls._attribute_array_items(value, path=child_path))
+        elif isinstance(document, list):
+            for index, value in enumerate(document):
+                child_path = f"{path}/{index}" if path else f"/{index}"
+                result.extend(cls._attribute_array_items(value, path=child_path))
+        return result
+
+    @classmethod
+    def _attribute_looks_like_bad_range(cls, attribute: dict[str, Any]) -> bool:
+        text = " ".join(
+            cls._normalized_text(attribute.get(key))
+            for key in ("title", "description", "has_quantity_type", "unit")
+        )
+        return "range" in text or re.search(r"\bto\b", text) is not None or cls._normalized_unit(attribute.get("unit")) == "to"
+
+    @staticmethod
+    def _numbers_from_text(text: str) -> list[float]:
+        text = re.sub(r"(?<=\d)-(?=\d)", " ", text)
+        text = re.sub(r"\b1\s*/\s*cm\b|\bcm\s*-?\s*1\b", " ", text, flags=re.IGNORECASE)
+        values: list[float] = []
+        for match in re.finditer(r"(?<![a-zA-Z])[-+]?\d+(?:\.\d+)?(?:e[-+]?\d+)?", text, flags=re.IGNORECASE):
+            try:
+                values.append(float(match.group(0)))
+            except ValueError:
+                continue
+        return values
+
+    @classmethod
+    def _range_base_label(cls, attribute: dict[str, Any]) -> str:
+        text = cls._normalized_attribute_label(
+            " ".join(str(attribute.get(key) or "") for key in ("has_quantity_type", "title", "description"))
+        )
+        if "transmittance" in text or text in {"y", "max y", "min y"}:
+            return "transmittance"
+        if "wavenumber" in text or "wavelength" in text or text in {"x", "max x", "min x", "first x", "last x"}:
+            return "wavenumber"
+        return text or "range"
+
+    @classmethod
+    def _range_unit_text(cls, text: str) -> str:
+        normalized = cls._normalized_text(text)
+        for candidate in ("1/cm", "cm-1", "percent", "%"):
+            if candidate in normalized:
+                return cls._normalized_unit(candidate)
+        return ""
+
+    @staticmethod
+    def _range_attribute(*, base: str, bound: str, value: float, unit: str) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            "title": f"{bound.title()} {base}",
+            "description": f"{bound.title()} {base}: {value:g}",
+            "value": value,
+            "has_quantity_type": f"{bound} {base}",
+        }
+        if unit:
+            result["unit"] = unit
+        return result
+
     @staticmethod
     def _legacy_json_patch_response_reason(output: Any) -> str:
         if not isinstance(output, dict):
@@ -891,6 +1373,25 @@ class ProjectionService:
             if isinstance(write, dict) and ("op" in write or ("path" in write and "target_path" not in write)):
                 return "Semantic reconstruction returned JSON Patch syntax; expected schema action envelope."
         return ""
+
+    @staticmethod
+    def _legacy_semantic_diagnosis_response_reason(output: Any) -> str:
+        if not isinstance(output, dict):
+            return "Semantic reconstruction diagnosis returned non-object output."
+        if "operations" in output or "writes" in output:
+            return "Semantic reconstruction returned patch/action syntax; expected diagnosis defects only."
+        if "defects" not in output:
+            return "Semantic reconstruction diagnosis missing defects array."
+        return ""
+
+    @classmethod
+    def _semantic_path_allowed(cls, target_path: str, allowed_paths: list[str]) -> bool:
+        target = target_path.rstrip("/") or "/"
+        for allowed_path in allowed_paths:
+            allowed = allowed_path.rstrip("/") or "/"
+            if target == allowed or target.startswith(f"{allowed}/"):
+                return True
+        return False
 
     @classmethod
     def _semantic_reconstruction_candidate_writes(
@@ -1122,6 +1623,11 @@ class ProjectionService:
                 planner_reason=record.reason,
                 evidence_quality={
                     "requirement_id": item.requirement_id,
+                    "iteration_kind": record.iteration_kind,
+                    "defect_type": record.defect_type,
+                    "diagnosed_defects_count": record.diagnosed_defects_count,
+                    "compiled_actions_count": record.compiled_actions_count,
+                    "synthesis_calls_count": record.synthesis_calls_count,
                     "applied_actions_count": record.applied_actions_count,
                     "rejected_actions_count": record.rejected_actions_count,
                     "rejected_reasons": record.rejected_reasons,
@@ -1185,6 +1691,7 @@ class ProjectionService:
                 weighted_score=0.0,
                 target_paths=list(requirement.target_paths),
                 evidence_search_hints=list(requirement.evidence_hints),
+                iteration_kind="semantic_diagnosis",
             )
             selected_evidence, context_window = select_requirement_evidence_packet(
                 requirement=requirement,
@@ -1208,12 +1715,13 @@ class ProjectionService:
             )[0]
             evaluated.selected_evidence = selected_evidence
             evaluated.context_window = context_window
-            if requirement.requirement_id == "aboutness_semantics" and self._aboutness_semantics_fulfilled(document):
+            if requirement.requirement_id == "aboutness_concreteness" and self._aboutness_semantics_fulfilled(document):
                 evaluated.status = "fulfilled"
                 evaluated.applicable = True
                 evaluated.quality = 1.0
                 evaluated.weighted_score = evaluated.weight
                 evaluated.rationale = "Aboutness has at least one concrete non-file-like evaluated entity or evaluated activity."
+            evaluated.iteration_kind = "semantic_diagnosis"
             items.append(evaluated)
         score_requirement_items(items)
         return items
@@ -3079,6 +3587,23 @@ class ProjectionService:
         tokens = text.split()
         if "point" in tokens and "count" in tokens:
             return "point count"
+        token_set = set(tokens)
+        has_max = "max" in token_set or "first" in token_set or "upper" in token_set
+        has_min = "min" in token_set or "last" in token_set or "lower" in token_set
+        has_x_axis = "x" in token_set or "wavenumber" in token_set or "wavelength" in token_set
+        has_y_axis = "y" in token_set or "transmittance" in token_set or "intensity" in token_set
+        if has_y_axis and has_max:
+            return "max transmittance"
+        if has_y_axis and has_min:
+            return "min transmittance"
+        if has_x_axis and has_max:
+            return "max wavenumber"
+        if has_x_axis and has_min:
+            return "min wavenumber"
+        if "threshold" in token_set:
+            return "threshold"
+        if "resolution" in token_set:
+            return "resolution"
         return text
 
     @staticmethod

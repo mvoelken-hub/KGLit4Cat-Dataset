@@ -24,6 +24,7 @@ from app.domain.extraction import (
     build_schema_constrained_patch_schema,
     build_requirement_evaluation_prompt,
     build_requirement_report,
+    build_semantic_diagnosis_prompt,
     build_semantic_reconstruction_prompt,
     compute_coverage_report,
     compute_source_trace_report,
@@ -32,6 +33,7 @@ from app.domain.extraction import (
     report_items_from_evaluation,
     score_requirement_items,
     score_requirement_report,
+    semantic_diagnosis_output_schema,
     select_requirement_evidence_packet,
     stable_evidence_id,
 )
@@ -137,7 +139,7 @@ class RequirementScoringTests(unittest.TestCase):
         self.assertEqual(report.used_evidence_count, 1)
         self.assertEqual(report.evidence_ids, [source_id])
 
-    def test_missing_evaluator_requirement_becomes_missing_report_item(self):
+    def test_missing_evaluator_requirement_becomes_unanswered_report_item(self):
         req = DcatRequirement(
             requirement_id="method_plan",
             label="Method",
@@ -149,7 +151,7 @@ class RequirementScoringTests(unittest.TestCase):
             requirements=[req],
             evaluation=RequirementEvaluation(assessments=[]),
         )
-        self.assertEqual(items[0].status, "missing")
+        self.assertEqual(items[0].status, "unanswered")
         self.assertEqual(items[0].target_paths, ["/was_generated_by/0/realized_plan"])
         self.assertEqual(items[0].evidence_search_hints, ["pulse sequence"])
 
@@ -175,7 +177,7 @@ class RequirementScoringTests(unittest.TestCase):
 
         self.assertEqual([item.requirement_id for item in evaluation.assessments], [req.requirement_id for req in requirements])
         self.assertEqual(evaluation.assessments[0].quality, 1.0)
-        self.assertEqual(evaluation.assessments[1].status, "missing")
+        self.assertEqual(evaluation.assessments[1].status, "unanswered")
 
     def test_core_requirement_not_applicable_is_treated_as_missing(self):
         requirement = next(req for req in DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS if req.requirement_id == "method_plan")
@@ -609,11 +611,11 @@ class RequirementEvidencePacketTests(unittest.TestCase):
 
         self.assertEqual([entry.candidate_id for entry in selected], ["procedure"])
 
-    def test_dataset_generation_semantics_accepts_supporting_activity_evidence(self):
+    def test_generation_activity_reality_accepts_supporting_activity_evidence(self):
         requirement = next(
             req
             for req in DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS
-            if req.requirement_id == "dataset_generation_semantics"
+            if req.requirement_id == "generation_activity_reality"
         )
         method = EvidenceCandidate(
             candidate_id="method",
@@ -659,11 +661,11 @@ class RequirementEvidencePacketTests(unittest.TestCase):
             {"method", "agent", "setting"},
         )
 
-    def test_instrument_settings_prompt_requires_selected_settings(self):
+    def test_attribute_range_prompt_requires_selected_settings(self):
         requirement = next(
             req
             for req in DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS
-            if req.requirement_id == "instrument_settings_semantics"
+            if req.requirement_id == "attribute_range_decomposition"
         )
 
         prompt = build_requirement_evaluation_prompt(
@@ -683,15 +685,15 @@ class RequirementEvidencePacketTests(unittest.TestCase):
         )
 
         self.assertIn(
-            "selected as concrete evidence are represented as suitable attributes",
+            "Ranges are represented as separate minimum and maximum attributes",
             prompt,
         )
 
-    def test_instrument_reconstruction_prompt_preserves_specific_quantity(self):
+    def test_semantic_diagnosis_prompt_preserves_specific_quantity(self):
         requirement = next(
             req
             for req in DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS
-            if req.requirement_id == "instrument_settings_semantics"
+            if req.requirement_id == "attribute_range_decomposition"
         )
         item = RequirementReportItem(
             requirement_id=requirement.requirement_id,
@@ -704,16 +706,14 @@ class RequirementEvidencePacketTests(unittest.TestCase):
             target_paths=list(requirement.target_paths),
         )
 
-        prompt = build_semantic_reconstruction_prompt(
+        prompt = build_semantic_diagnosis_prompt(
             requirement=requirement,
             item=item,
-            document={},
             draft_excerpt={},
-            schema_branches={},
         )
 
-        self.assertIn("add separate schema-valid attributes or return empty writes", prompt)
-        self.assertIn("Represent numeric ranges as separate schema-valid minimum and maximum", prompt)
+        self.assertIn("Do not write the profile", prompt)
+        self.assertIn("Ranges are represented as separate minimum and maximum", prompt)
 
 
 class FakeProfileService:
@@ -1429,15 +1429,15 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state.projection_ledger[0].merge_status, "skipped")
         self.assertIn("failed or was unavailable", state.projection_ledger[0].reason)
 
-    async def test_semantic_reconstruction_applies_schema_constrained_write(self):
+    async def test_semantic_reconstruction_uses_diagnosis_schema(self):
         service = WorkflowService(
             profile_service=FakeProfileService(),
             settings=Settings(),
             ollama_client=Mock(chat_model="test-model", max_context_length=4096),
         )
         item = RequirementReportItem(
-            requirement_id="dataset_identity_semantics",
-            label="Identity",
+            requirement_id="dataset_description_identity",
+            label="Description",
             weight=1.0,
             status="partial",
             applicable=True,
@@ -1447,15 +1447,17 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         llm_result = Mock(
             output={
-                "writes": [
+                "defects": [
                     {
+                        "defect_type": "bad_identity",
                         "target_path": "/description",
-                        "mode": "replace",
-                        "value": ["Dataset acquired with a documented method."],
-                        "reason": "Streamlined dataset identity.",
+                        "entry_indices": [],
+                        "recommended_action": "no_action",
+                        "needs_synthesis": False,
+                        "reason": "No safe repair.",
                     }
                 ],
-                "reason": "Streamlined dataset identity.",
+                "reason": "No safe repair.",
             },
             usage=None,
         )
@@ -1473,22 +1475,23 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
                 },
                 item=item,
                 requirement=DcatRequirement(
-                    requirement_id="dataset_identity_semantics",
-                    label="Identity",
-                    description="Identity semantics",
+                    requirement_id="dataset_description_identity",
+                    label="Description",
+                    description="Description identity",
                     target_paths=["/description"],
                 ),
                 validation_schema=quantitative_schema("DataGeneratingActivity"),
             )
 
-        self.assertEqual(paths, ["/description"])
+        self.assertEqual(paths, [])
         self.assertEqual(errors, [])
-        self.assertEqual(reason, "Streamlined dataset identity.")
-        self.assertEqual(updated["description"], ["Dataset acquired with a documented method."])
+        self.assertEqual(reason, "semantic_defect_unresolved_empty_diagnosis")
+        self.assertEqual(updated["description"], ["Dataset acquired with a documented method. Raw measurement values are summarized."])
         call_kwargs = mocked.call_args.kwargs
         self.assertEqual(call_kwargs["agent_name"], "semantic_reconstruction")
         self.assertIsInstance(call_kwargs["output_type"], dict)
-        self.assertIn("allowed_target_paths", call_kwargs["prompt"])
+        self.assertIn("defects", call_kwargs["output_type"]["properties"])
+        self.assertIn("draft_excerpt", call_kwargs["prompt"])
 
     async def test_requirement_gap_patcher_uses_schema_constrained_output(self):
         service = WorkflowService(
@@ -1541,15 +1544,15 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(updated["was_generated_by"][0]["has_quantitative_attribute"][0]["value"], 0.93)
         self.assertIsInstance(mocked.call_args.kwargs["output_type"], dict)
 
-    async def test_semantic_reconstruction_schema_only_allows_target_paths(self):
+    async def test_semantic_reconstruction_diagnosis_rejects_action_envelope(self):
         service = WorkflowService(
             profile_service=FakeProfileService(),
             settings=Settings(),
             ollama_client=Mock(chat_model="test-model", max_context_length=4096),
         )
         item = RequirementReportItem(
-            requirement_id="dataset_identity_semantics",
-            label="Identity",
+            requirement_id="dataset_description_identity",
+            label="Description",
             weight=1.0,
             status="partial",
             applicable=True,
@@ -1557,10 +1560,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             weighted_score=0.5,
             target_paths=["/description"],
         )
-        llm_result = Mock(
-            output={"writes": [], "reason": "No safe write."},
-            usage=None,
-        )
+        llm_result = Mock(output={"writes": [], "reason": "No safe write."}, usage=None)
 
         with patch("app.services.projection_service.generate_structured", AsyncMock(return_value=llm_result)) as mocked:
             updated, paths, reason, errors, applied, rejected = await service._semantic_reconstruction_update(
@@ -1569,9 +1569,9 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
                 document={"description": ["Original."], "dataset_distribution": [{"title": ["D"]}]},
                 item=item,
                 requirement=DcatRequirement(
-                    requirement_id="dataset_identity_semantics",
-                    label="Identity",
-                    description="Identity semantics",
+                    requirement_id="dataset_description_identity",
+                    label="Description",
+                    description="Description identity",
                     target_paths=["/description"],
                 ),
                 validation_schema={
@@ -1586,12 +1586,10 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(updated["description"], ["Original."])
         self.assertEqual(paths, [])
-        self.assertEqual(reason, "No safe write.")
-        self.assertEqual(errors, [])
+        self.assertIn("patch/action syntax", reason)
+        self.assertEqual(errors, [reason])
         output_schema = mocked.call_args.kwargs["output_type"]
-        branch = output_schema["properties"]["writes"]["items"]["oneOf"][0]
-        replace_branch = next(item for item in branch["oneOf"] if item["properties"]["mode"]["const"] == "replace")
-        self.assertEqual(replace_branch["properties"]["target_path"]["const"], "/description")
+        self.assertIn("defects", output_schema["properties"])
 
     def test_schema_constrained_apply_normalizes_legacy_append_path(self):
         document = {"was_generated_by": [{"has_quantitative_attribute": []}]}
@@ -1654,65 +1652,42 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             [{"id": "entity:1", "title": "sample", "description": "evaluated sample"}],
         )
 
-    async def test_semantic_reconstruction_skips_duplicate_quantitative_write(self):
+    def test_semantic_action_compiler_skips_duplicate_quantitative_write(self):
         service = WorkflowService(
             profile_service=FakeProfileService(),
             settings=Settings(),
             ollama_client=Mock(chat_model="test-model", max_context_length=4096),
         )
-        llm_result = Mock(
-            output={
-                "writes": [
+        updated, paths, reason, errors, applied, rejected = service._apply_semantic_reconstruction_writes(
+            data_package_id="pkg",
+            profile_identifier="profile",
+            document={
+                "was_generated_by": [
                     {
-                        "target_path": "/was_generated_by/0/has_quantitative_attribute",
-                        "mode": "append",
-                        "items": [
-                            {
-                                "title": "Threshold",
-                                "description": "Threshold: 0.93",
-                                "value": 0.93,
-                                "has_quantity_type": "threshold",
-                            }
-                        ],
-                        "reason": "duplicate",
+                        "has_quantitative_attribute": [
+                            {"value": 0.93, "has_quantity_type": "threshold"}
+                        ]
                     }
-                ],
-                "reason": "duplicate",
+                ]
             },
-            usage=None,
-        )
-
-        with patch("app.services.projection_service.generate_structured", AsyncMock(return_value=llm_result)):
-            updated, paths, reason, errors, applied, rejected = await service._semantic_reconstruction_update(
-                data_package_id="pkg",
-                profile_identifier="profile",
-                document={
-                    "was_generated_by": [
+            writes=[
+                SchemaConstrainedWrite(
+                    target_path="/was_generated_by/0/has_quantitative_attribute",
+                    mode="append",
+                    items=[
                         {
-                            "has_quantitative_attribute": [
-                                {"value": 0.93, "has_quantity_type": "threshold"}
-                            ]
+                            "title": "Threshold",
+                            "description": "Threshold: 0.93",
+                            "value": 0.93,
+                            "has_quantity_type": "threshold",
                         }
-                    ]
-                },
-                item=RequirementReportItem(
-                    requirement_id="instrument_settings_semantics",
-                    label="Instrument settings",
-                    weight=1.0,
-                    status="partial",
-                    applicable=True,
-                    quality=0.5,
-                    weighted_score=0.5,
-                    target_paths=["/was_generated_by/0/has_quantitative_attribute"],
-                ),
-                requirement=DcatRequirement(
-                    requirement_id="instrument_settings_semantics",
-                    label="Instrument settings",
-                    description="Instrument settings semantics",
-                    target_paths=["/was_generated_by/0/has_quantitative_attribute"],
-                ),
-                validation_schema=quantitative_schema("DataGeneratingActivity"),
-            )
+                    ],
+                    reason="duplicate",
+                )
+            ],
+            reason="duplicate",
+            validation_schema=quantitative_schema("DataGeneratingActivity"),
+        )
 
         self.assertEqual(paths, [])
         self.assertEqual(errors, [])
@@ -1773,68 +1748,38 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(updated["description"], ["Original."])
         self.assertEqual(paths, [])
         self.assertEqual(applied, 0)
-        self.assertIn("JSON Patch syntax", reason)
+        self.assertIn("patch/action syntax", reason)
         self.assertEqual(errors, rejected)
 
-    async def test_semantic_reconstruction_remove_deletes_duplicate_attribute(self):
+    def test_semantic_action_compiler_remove_deletes_duplicate_attribute(self):
         service = WorkflowService(
             profile_service=FakeProfileService(),
             settings=Settings(),
             ollama_client=Mock(chat_model="test-model", max_context_length=4096),
         )
-        llm_result = Mock(
-            output={
-                "writes": [
+        updated, paths, reason, errors, applied, rejected = service._apply_semantic_reconstruction_writes(
+            data_package_id="pkg",
+            profile_identifier="profile",
+            document={
+                "was_generated_by": [
                     {
-                        "target_path": "/was_generated_by/0/has_quantitative_attribute/1",
-                        "mode": "remove",
-                        "reason": "Remove duplicate threshold.",
+                        "has_quantitative_attribute": [
+                            {"value": 0.93, "has_quantity_type": "threshold"},
+                            {"value": 0.93, "has_quantity_type": "threshold"},
+                        ]
                     }
-                ],
-                "reason": "Remove duplicate threshold.",
+                ]
             },
-            usage=None,
+            writes=[
+                SchemaConstrainedWrite(
+                    target_path="/was_generated_by/0/has_quantitative_attribute/1",
+                    mode="remove",
+                    reason="Remove duplicate threshold.",
+                )
+            ],
+            reason="Remove duplicate threshold.",
+            validation_schema={},
         )
-
-        with patch("app.services.projection_service.generate_structured", AsyncMock(return_value=llm_result)):
-            updated, paths, reason, errors, applied, rejected = await service._semantic_reconstruction_update(
-                data_package_id="pkg",
-                profile_identifier="profile",
-                document={
-                    "was_generated_by": [
-                        {
-                            "has_quantitative_attribute": [
-                                {"value": 0.93, "has_quantity_type": "threshold"},
-                                {"value": 0.93, "has_quantity_type": "threshold"},
-                            ]
-                        }
-                    ]
-                },
-                item=RequirementReportItem(
-                    requirement_id="instrument_settings_semantics",
-                    label="Instrument settings",
-                    weight=1.0,
-                    status="partial",
-                    applicable=True,
-                    quality=0.5,
-                    weighted_score=0.5,
-                    target_paths=["/was_generated_by/0/has_quantitative_attribute"],
-                ),
-                requirement=DcatRequirement(
-                    requirement_id="instrument_settings_semantics",
-                    label="Instrument settings",
-                    description="Instrument settings semantics",
-                    target_paths=["/was_generated_by/0/has_quantitative_attribute"],
-                ),
-                validation_schema={
-                    "$schema": "https://json-schema.org/draft/2019-09/schema",
-                    "type": "object",
-                    "properties": {
-                        "description": {"type": "array", "items": {"type": "string"}},
-                        "dataset_distribution": {"type": "array", "items": {"type": "object"}},
-                    },
-                },
-            )
 
         self.assertEqual(len(updated["was_generated_by"][0]["has_quantitative_attribute"]), 1)
         self.assertEqual(paths, ["/was_generated_by/0/has_quantitative_attribute/1"])
@@ -1843,67 +1788,43 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rejected, [])
         self.assertEqual(reason, "Remove duplicate threshold.")
 
-    async def test_semantic_reconstruction_merge_keeps_survivor_and_removes_duplicates(self):
+    async def test_semantic_duplicate_coherence_merges_point_count_variants(self):
         service = WorkflowService(
             profile_service=FakeProfileService(),
             settings=Settings(),
             ollama_client=Mock(chat_model="test-model", max_context_length=4096),
         )
-        llm_result = Mock(
-            output={
-                "writes": [
+        updated, paths, reason, errors, applied, rejected = await service._semantic_reconstruction_update(
+            data_package_id="pkg",
+            profile_identifier="profile",
+            document={
+                "was_generated_by": [
                     {
-                        "target_path": "/was_generated_by/0/has_quantitative_attribute",
-                        "mode": "merge",
-                        "survivor_index": 0,
-                        "merged_indices": [1],
-                        "reason": "Merge duplicate point count.",
+                        "has_quantitative_attribute": [
+                            {"title": "Number data points", "value": 2559, "has_quantity_type": "number data points"},
+                            {"title": "Point count", "value": 2559, "has_quantity_type": "point count"},
+                        ]
                     }
-                ],
-                "reason": "Merge duplicate point count.",
+                ]
             },
-            usage=None,
+            item=RequirementReportItem(
+                requirement_id="attribute_duplicate_coherence",
+                label="Duplicate coherence",
+                weight=1.0,
+                status="partial",
+                applicable=True,
+                quality=0.5,
+                weighted_score=0.5,
+                target_paths=["/was_generated_by/0/has_quantitative_attribute"],
+            ),
+            requirement=DcatRequirement(
+                requirement_id="attribute_duplicate_coherence",
+                label="Duplicate coherence",
+                description="Duplicate attributes",
+                target_paths=["/was_generated_by/0/has_quantitative_attribute"],
+            ),
+            validation_schema={},
         )
-
-        with patch("app.services.projection_service.generate_structured", AsyncMock(return_value=llm_result)):
-            updated, paths, reason, errors, applied, rejected = await service._semantic_reconstruction_update(
-                data_package_id="pkg",
-                profile_identifier="profile",
-                document={
-                    "was_generated_by": [
-                        {
-                            "has_quantitative_attribute": [
-                                {"title": "Number data points", "value": 2559, "has_quantity_type": "number data points"},
-                                {"title": "Point count", "value": 2559, "has_quantity_type": "point count"},
-                            ]
-                        }
-                    ]
-                },
-                item=RequirementReportItem(
-                    requirement_id="instrument_settings_semantics",
-                    label="Instrument settings",
-                    weight=1.0,
-                    status="partial",
-                    applicable=True,
-                    quality=0.5,
-                    weighted_score=0.5,
-                    target_paths=["/was_generated_by/0/has_quantitative_attribute"],
-                ),
-                requirement=DcatRequirement(
-                    requirement_id="instrument_settings_semantics",
-                    label="Instrument settings",
-                    description="Instrument settings semantics",
-                    target_paths=["/was_generated_by/0/has_quantitative_attribute"],
-                ),
-                validation_schema={
-                    "$schema": "https://json-schema.org/draft/2019-09/schema",
-                    "type": "object",
-                    "properties": {
-                        "description": {"type": "array", "items": {"type": "string"}},
-                        "dataset_distribution": {"type": "array", "items": {"type": "object"}},
-                    },
-                },
-            )
 
         attributes = updated["was_generated_by"][0]["has_quantitative_attribute"]
         self.assertEqual(len(attributes), 1)
@@ -1913,26 +1834,117 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(applied, 1)
         self.assertEqual(rejected, [])
 
-    async def test_semantic_reconstruction_invalid_merge_is_rejected(self):
+    async def test_semantic_duplicate_coherence_merges_max_transmittance_variants(self):
         service = WorkflowService(
             profile_service=FakeProfileService(),
             settings=Settings(),
             ollama_client=Mock(chat_model="test-model", max_context_length=4096),
         )
-        llm_result = Mock(
-            output={
-                "writes": [
+
+        updated, paths, reason, errors, applied, rejected = await service._semantic_reconstruction_update(
+            data_package_id="pkg",
+            profile_identifier="profile",
+            document={
+                "is_about_entity": [
                     {
-                        "target_path": "/was_generated_by/0/has_quantitative_attribute",
-                        "mode": "merge",
-                        "survivor_index": 0,
-                        "merged_indices": [3],
-                        "reason": "Bad merge.",
+                        "has_quantitative_attribute": [
+                            {"title": "Maximum Y", "value": 0.9801868804981199, "has_quantity_type": "maximum Y"},
+                            {"title": "Maximum transmittance dataset", "value": 0.9801868804981199, "has_quantity_type": "maximum transmittance dataset"},
+                        ]
                     }
-                ],
-                "reason": "Bad merge.",
+                ]
             },
-            usage=None,
+            item=RequirementReportItem(
+                requirement_id="attribute_duplicate_coherence",
+                label="Duplicate coherence",
+                weight=1.0,
+                status="partial",
+                applicable=True,
+                quality=0.5,
+                weighted_score=0.5,
+                target_paths=["/is_about_entity/0/has_quantitative_attribute"],
+            ),
+            requirement=DcatRequirement(
+                requirement_id="attribute_duplicate_coherence",
+                label="Duplicate coherence",
+                description="Duplicate attributes",
+                target_paths=["/is_about_entity/0/has_quantitative_attribute"],
+            ),
+            validation_schema={},
+        )
+
+        attributes = updated["is_about_entity"][0]["has_quantitative_attribute"]
+        self.assertEqual(len(attributes), 1)
+        self.assertIn("/is_about_entity/0/has_quantitative_attribute/1", paths)
+        self.assertEqual(errors, [])
+        self.assertEqual(applied, 1)
+
+    async def test_semantic_range_decomposition_splits_bad_range_attribute(self):
+        service = WorkflowService(
+            profile_service=FakeProfileService(),
+            settings=Settings(),
+            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
+        )
+        item = RequirementReportItem(
+            requirement_id="attribute_range_decomposition",
+            label="Range decomposition",
+            weight=1.0,
+            status="partial",
+            applicable=True,
+            quality=0.5,
+            weighted_score=0.5,
+            target_paths=["/was_generated_by/0/has_quantitative_attribute"],
+            selected_evidence=[
+                RequirementEvidenceItem(
+                    candidate_id="range",
+                    category="measurement_condition",
+                    role="parameter",
+                    claim="Wavenumber range from 373.96 to 3997.45 1/CM.",
+                    evidence_text="spanning 373.96-3997.45 1/CM",
+                )
+            ],
+        )
+
+        updated, paths, reason, errors, applied, rejected = await service._semantic_reconstruction_update(
+            data_package_id="pkg",
+            profile_identifier="profile",
+            document={
+                "was_generated_by": [
+                    {
+                        "has_quantitative_attribute": [
+                            {
+                                "title": "Wavenumber range",
+                                "description": "Wavenumber range: 373.96 to",
+                                "value": 373.96,
+                                "has_quantity_type": "Wavenumber range",
+                                "unit": "to",
+                            }
+                        ]
+                    }
+                ]
+            },
+            item=item,
+            requirement=DcatRequirement(
+                requirement_id="attribute_range_decomposition",
+                label="Range decomposition",
+                description="Range decomposition",
+                target_paths=["/was_generated_by/0/has_quantitative_attribute"],
+            ),
+            validation_schema={},
+        )
+
+        attributes = updated["was_generated_by"][0]["has_quantitative_attribute"]
+        self.assertEqual([attribute["has_quantity_type"] for attribute in attributes], ["minimum wavenumber", "maximum wavenumber"])
+        self.assertEqual([attribute["value"] for attribute in attributes], [373.96, 3997.45])
+        self.assertIn("/was_generated_by/0/has_quantitative_attribute/0", paths)
+        self.assertEqual(errors, [])
+        self.assertEqual(applied, 3)
+
+    def test_semantic_action_compiler_invalid_merge_is_rejected(self):
+        service = WorkflowService(
+            profile_service=FakeProfileService(),
+            settings=Settings(),
+            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
         )
         document = {
             "was_generated_by": [
@@ -1944,36 +1956,22 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             ]
         }
 
-        with patch("app.services.projection_service.generate_structured", AsyncMock(return_value=llm_result)):
-            updated, paths, reason, errors, applied, rejected = await service._semantic_reconstruction_update(
-                data_package_id="pkg",
-                profile_identifier="profile",
-                document=document,
-                item=RequirementReportItem(
-                    requirement_id="instrument_settings_semantics",
-                    label="Instrument settings",
-                    weight=1.0,
-                    status="partial",
-                    applicable=True,
-                    quality=0.5,
-                    weighted_score=0.5,
-                    target_paths=["/was_generated_by/0/has_quantitative_attribute"],
-                ),
-                requirement=DcatRequirement(
-                    requirement_id="instrument_settings_semantics",
-                    label="Instrument settings",
-                    description="Instrument settings semantics",
-                    target_paths=["/was_generated_by/0/has_quantitative_attribute"],
-                ),
-                validation_schema={
-                    "$schema": "https://json-schema.org/draft/2019-09/schema",
-                    "type": "object",
-                    "properties": {
-                        "description": {"type": "array", "items": {"type": "string"}},
-                        "dataset_distribution": {"type": "array", "items": {"type": "object"}},
-                    },
-                },
-            )
+        updated, paths, reason, errors, applied, rejected = service._apply_semantic_reconstruction_writes(
+            data_package_id="pkg",
+            profile_identifier="profile",
+            document=document,
+            writes=[
+                SchemaConstrainedWrite(
+                    target_path="/was_generated_by/0/has_quantitative_attribute",
+                    mode="merge",
+                    survivor_index=0,
+                    merged_indices=[3],
+                    reason="Bad merge.",
+                )
+            ],
+            reason="Bad merge.",
+            validation_schema={},
+        )
 
         self.assertEqual(updated, document)
         self.assertEqual(paths, [])
@@ -2061,59 +2059,27 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(paths[0], "/was_generated_by/0/has_quantitative_attribute")
 
-    async def test_semantic_reconstruction_creates_missing_generation_activity_parent(self):
+    def test_semantic_action_compiler_creates_missing_generation_activity_parent(self):
         service = WorkflowService(
             profile_service=FakeProfileService(),
             settings=Settings(),
             ollama_client=Mock(chat_model="test-model", max_context_length=4096),
         )
-        llm_result = Mock(
-            output={
-                "writes": [
-                    {
-                        "target_path": "/was_generated_by/0/has_quantitative_attribute",
-                        "mode": "append",
-                        "items": [{"value": 2559, "has_quantity_type": "data point count"}],
-                        "reason": "Attach measurement condition to generation activity.",
-                    }
-                ],
-                "reason": "Attach measurement condition to generation activity.",
-            },
-            usage=None,
+        updated, paths, reason, errors, applied, rejected = service._apply_semantic_reconstruction_writes(
+            data_package_id="pkg",
+            profile_identifier="profile",
+            document={"id": "pkg"},
+            writes=[
+                SchemaConstrainedWrite(
+                    target_path="/was_generated_by/0/has_quantitative_attribute",
+                    mode="append",
+                    items=[{"value": 2559, "has_quantity_type": "data point count"}],
+                    reason="Attach measurement condition to generation activity.",
+                )
+            ],
+            reason="Attach measurement condition to generation activity.",
+            validation_schema=quantitative_schema("DataGeneratingActivity"),
         )
-
-        with patch("app.services.projection_service.generate_structured", AsyncMock(return_value=llm_result)):
-            updated, paths, reason, errors, applied, rejected = await service._semantic_reconstruction_update(
-                data_package_id="pkg",
-                profile_identifier="profile",
-                document={"id": "pkg"},
-                item=RequirementReportItem(
-                    requirement_id="attribute_parent_semantics",
-                    label="Attribute parent",
-                    weight=1.0,
-                    status="partial",
-                    applicable=True,
-                    quality=0.5,
-                    weighted_score=0.5,
-                    target_paths=["/was_generated_by/0/has_quantitative_attribute"],
-                    selected_evidence=[
-                        RequirementEvidenceItem(
-                            candidate_id="points",
-                            category="measurement_condition",
-                            role="parameter",
-                            claim="2559 data points collected.",
-                            evidence_text="NPOINTS=2559",
-                        )
-                    ],
-                ),
-                requirement=DcatRequirement(
-                    requirement_id="attribute_parent_semantics",
-                    label="Attribute parent",
-                    description="Attribute parent semantics",
-                    target_paths=["/was_generated_by/0/has_quantitative_attribute"],
-                ),
-                validation_schema=quantitative_schema("DataGeneratingActivity"),
-            )
 
         self.assertEqual(paths, ["/was_generated_by/0/has_quantitative_attribute/0"])
         self.assertEqual(errors, [])
@@ -2121,7 +2087,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(updated["was_generated_by"][0]["has_quantitative_attribute"][0]["value"], 2559)
         self.assertEqual(reason, "Attach measurement condition to generation activity.")
 
-    async def test_semantic_reconstruction_salvages_valid_writes_when_one_fails_validation(self):
+    def test_semantic_action_compiler_salvages_valid_writes_when_one_fails_validation(self):
         class RejectBadAttributeProfileService(FakeProfileService):
             def validate_document(self, *, identifier: str, document: dict) -> ProfileValidationResult:
                 for index, attribute in enumerate(document["was_generated_by"][0]["has_quantitative_attribute"]):
@@ -2143,64 +2109,34 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             settings=Settings(),
             ollama_client=Mock(chat_model="test-model", max_context_length=4096),
         )
-        item = RequirementReportItem(
-            requirement_id="instrument_settings_semantics",
-            label="Instrument settings",
-            weight=1.0,
-            status="partial",
-            applicable=True,
-            quality=0.5,
-            weighted_score=0.5,
-            target_paths=["/was_generated_by/0/has_quantitative_attribute"],
-        )
-        llm_result = Mock(
-            output={
-                "writes": [
-                    {
-                        "target_path": "/was_generated_by/0/has_quantitative_attribute",
-                        "mode": "append",
-                        "items": [
-                            {
-                                "title": "Transmittance",
-                                "description": "Transmittance value range maximum.",
-                                "value": 0.98,
-                                "has_quantity_type": "maximum transmittance",
-                            },
-                            {
-                                "title": "Bad",
-                                "description": "Rejected test setting.",
-                                "value": 1.0,
-                                "has_quantity_type": "bad setting",
-                            },
-                        ],
-                        "reason": "Attach instrument evidence.",
-                    }
-                ],
-                "reason": "Attach instrument evidence.",
-            },
-            usage=None,
-        )
-
-        with patch("app.services.projection_service.generate_structured", AsyncMock(return_value=llm_result)):
-            updated, paths, reason, errors, applied, rejected = await service._semantic_reconstruction_update(
-                data_package_id="pkg",
-                profile_identifier="profile",
-                document={
-                    "was_generated_by": [
+        updated, paths, reason, errors, applied, rejected = service._apply_semantic_reconstruction_writes(
+            data_package_id="pkg",
+            profile_identifier="profile",
+            document={"was_generated_by": [{"has_quantitative_attribute": []}]},
+            writes=[
+                SchemaConstrainedWrite(
+                    target_path="/was_generated_by/0/has_quantitative_attribute",
+                    mode="append",
+                    items=[
                         {
-                            "has_quantitative_attribute": []
-                        }
-                    ]
-                },
-                item=item,
-                requirement=DcatRequirement(
-                    requirement_id="instrument_settings_semantics",
-                    label="Instrument settings",
-                    description="Instrument settings semantics",
-                    target_paths=["/was_generated_by/0/has_quantitative_attribute"],
-                ),
-                validation_schema=quantitative_schema("DataGeneratingActivity"),
-            )
+                            "title": "Transmittance",
+                            "description": "Transmittance value range maximum.",
+                            "value": 0.98,
+                            "has_quantity_type": "maximum transmittance",
+                        },
+                        {
+                            "title": "Bad",
+                            "description": "Rejected test setting.",
+                            "value": 1.0,
+                            "has_quantity_type": "bad setting",
+                        },
+                    ],
+                    reason="Attach instrument evidence.",
+                )
+            ],
+            reason="Attach instrument evidence.",
+            validation_schema=quantitative_schema("DataGeneratingActivity"),
+        )
 
         attributes = updated["was_generated_by"][0]["has_quantitative_attribute"]
         self.assertEqual(len(attributes), 1)
@@ -2251,6 +2187,42 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(document["description"], ["Original. Raw data points 10."])
         self.assertEqual(records[-1].status, "rolled_back")
         self.assertEqual(records[-1].validation_errors, ["bad"])
+
+    async def test_semantic_reconstruction_empty_defective_action_is_unresolved(self):
+        service = WorkflowService(
+            profile_service=FakeProfileService(),
+            settings=Settings(),
+            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
+        )
+        state = ExtractionRunState(generated_final_draft={"description": ["Original."]})
+        progress = ExtractionRunProgress(warnings=[])
+        item = RequirementReportItem(
+            requirement_id="dataset_description_identity",
+            label="Description",
+            weight=1.0,
+            status="partial",
+            applicable=True,
+            quality=0.5,
+            weighted_score=0.5,
+            target_paths=["/description"],
+        )
+        service._semantic_reconstruction_update = AsyncMock(
+            return_value=({"description": ["Original."]}, [], "semantic_defect_unresolved_empty_diagnosis", [], 0, [])
+        )
+
+        document, records = await service._reconstruct_semantic_defects(
+            data_package_id="pkg",
+            profile_identifier="profile",
+            document={"description": ["Original."]},
+            semantic_items=[item],
+            validation_schema={},
+            state=state,
+            progress=progress,
+        )
+
+        self.assertEqual(document["description"], ["Original."])
+        self.assertEqual(records[-1].status, "unresolved")
+        self.assertEqual(records[-1].reason, "semantic_defect_unresolved_empty_diagnosis")
 
     def test_requirement_patch_strip_removes_auto_ids_from_schema_forbidden_targets(self):
         service = WorkflowService(
