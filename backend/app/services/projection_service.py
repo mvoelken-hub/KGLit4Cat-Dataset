@@ -574,7 +574,7 @@ class ProjectionService:
                 )
                 continue
             original = self._clone_json_object(current)
-            updated, changed_paths, reason, validation_errors = await self._semantic_reconstruction_update(
+            update_result = await self._semantic_reconstruction_update(
                 data_package_id=data_package_id,
                 profile_identifier=profile_identifier,
                 document=current,
@@ -582,6 +582,19 @@ class ProjectionService:
                 requirement=next(req for req in DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS if req.requirement_id == requirement_id),
                 validation_schema=validation_schema,
             )
+            if len(update_result) == 4:
+                updated, changed_paths, reason, validation_errors = update_result
+                applied_actions_count = 1 if changed_paths else 0
+                rejected_reasons = list(validation_errors)
+            else:
+                (
+                    updated,
+                    changed_paths,
+                    reason,
+                    validation_errors,
+                    applied_actions_count,
+                    rejected_reasons,
+                ) = update_result
             if not changed_paths:
                 records.append(
                     SemanticReconstructionRecord(
@@ -590,6 +603,9 @@ class ProjectionService:
                         target_paths=item.target_paths,
                         reason=reason or "No semantic reconstruction was proposed.",
                         validation_errors=validation_errors,
+                        applied_actions_count=applied_actions_count,
+                        rejected_actions_count=len(rejected_reasons),
+                        rejected_reasons=rejected_reasons,
                     )
                 )
                 continue
@@ -606,6 +622,9 @@ class ProjectionService:
                         changed_paths=changed_paths,
                         reason=reason or "Semantic reconstruction failed validation.",
                         validation_errors=[issue.message for issue in validation.errors],
+                        applied_actions_count=applied_actions_count,
+                        rejected_actions_count=len(rejected_reasons),
+                        rejected_reasons=rejected_reasons,
                     )
                 )
                 current = original
@@ -617,6 +636,9 @@ class ProjectionService:
                 target_paths=item.target_paths,
                 changed_paths=changed_paths,
                 reason=reason,
+                applied_actions_count=applied_actions_count,
+                rejected_actions_count=len(rejected_reasons),
+                rejected_reasons=rejected_reasons,
             )
             records.append(record)
             self._record_semantic_reconstruction_ledgers(
@@ -640,7 +662,7 @@ class ProjectionService:
         item: RequirementReportItem,
         requirement: DcatRequirement,
         validation_schema: dict[str, Any],
-    ) -> tuple[dict[str, Any], list[str], str, list[str]]:
+    ) -> tuple[dict[str, Any], list[str], str, list[str], int, list[str]]:
         assert self.ollama_client is not None
         allowed_paths = self._semantic_reconstruction_allowed_paths(
             document=document,
@@ -691,6 +713,9 @@ class ProjectionService:
                 result=result,
                 agent_name="semantic_reconstruction",
             )
+            legacy_reason = self._legacy_json_patch_response_reason(result.output)
+            if legacy_reason:
+                return document, [], legacy_reason, [legacy_reason], 0, [legacy_reason]
             patch = parse_schema_constrained_patch_result(result.output)
         except (CompletionError, ValidationError) as exc:
             self._record_llm_call_exception(
@@ -698,9 +723,9 @@ class ProjectionService:
                 exc=exc,
                 agent_name="semantic_reconstruction",
             )
-            return document, [], f"Semantic reconstruction generation failed: {exc}", [str(exc)]
+            return document, [], f"Semantic reconstruction generation failed: {exc}", [str(exc)], 0, [str(exc)]
         if not patch.writes:
-            return document, [], patch.reason or "LLM found no safe reconstruction.", []
+            return document, [], patch.reason or "LLM found no safe reconstruction.", [], 0, []
         patch = patch.model_copy(
             update={
                 "writes": self._sanitize_schema_constrained_writes(
@@ -709,77 +734,71 @@ class ProjectionService:
                 )
             }
         )
+        allowed_rejected = self._semantic_reconstruction_rejected_actions(
+            writes=patch.writes,
+            allowed_paths=allowed_paths,
+        )
+        if allowed_rejected:
+            patch = patch.model_copy(
+                update={
+                    "writes": [
+                        write
+                        for write in patch.writes
+                        if not self._semantic_reconstruction_action_rejected(
+                            write=write,
+                            allowed_paths=allowed_paths,
+                        )
+                    ]
+                }
+            )
         deduped_writes, duplicate_reasons = self._filter_duplicate_schema_writes(
             document=document,
             writes=patch.writes,
         )
         if not deduped_writes:
             reason = patch.reason or "Semantic reconstruction only proposed duplicate writes."
-            if duplicate_reasons:
-                reason = f"{reason} {'; '.join(duplicate_reasons)}"
-            return document, [], reason, []
-        try:
-            updated, changed_paths = apply_schema_constrained_writes(
-                document=document,
-                writes=deduped_writes,
-                data_package_id=data_package_id,
-                validation_schema=validation_schema,
+            rejected = list(dict.fromkeys(allowed_rejected + duplicate_reasons))
+            if rejected:
+                reason = f"{reason} {'; '.join(rejected)}"
+            return document, [], reason, [], 0, rejected
+        updated = document
+        changed_paths: list[str] = []
+        applied = 0
+        rejected = list(allowed_rejected + duplicate_reasons)
+        for write in self._semantic_reconstruction_candidate_writes(deduped_writes):
+            write_rejections = self._validate_semantic_reconstruction_action(
+                document=updated,
+                write=write,
             )
-        except Exception as exc:
-            return document, [], f"Semantic reconstruction writes could not be applied: {exc}", [str(exc)]
-        validation = self.profile_service.validate_document(
-            identifier=profile_identifier,
-            document=updated,
-        )
-        if not validation.valid:
-            salvaged = document
-            salvaged_paths: list[str] = []
-            rejected: list[str] = [issue.message for issue in validation.errors]
-            for write in deduped_writes:
-                candidate_writes = (
-                    [
-                        write.model_copy(update={"items": [item]})
-                        for item in write.items
-                    ]
-                    if write.mode == "append" and len(write.items) > 1
-                    else [write]
+            if write_rejections:
+                rejected.extend(write_rejections)
+                continue
+            try:
+                candidate, candidate_paths = apply_schema_constrained_writes(
+                    document=updated,
+                    writes=[write],
+                    data_package_id=data_package_id,
+                    validation_schema=validation_schema,
                 )
-                for candidate_write in candidate_writes:
-                    candidate_deduped, candidate_duplicate_reasons = self._filter_duplicate_schema_writes(
-                        document=salvaged,
-                        writes=[candidate_write],
-                    )
-                    if not candidate_deduped:
-                        rejected.extend(candidate_duplicate_reasons)
-                        continue
-                    try:
-                        candidate, candidate_paths = apply_schema_constrained_writes(
-                            document=salvaged,
-                            writes=candidate_deduped,
-                            data_package_id=data_package_id,
-                            validation_schema=validation_schema,
-                        )
-                    except Exception as exc:
-                        rejected.append(str(exc))
-                        continue
-                    candidate_validation = self.profile_service.validate_document(
-                        identifier=profile_identifier,
-                        document=candidate,
-                    )
-                    if not candidate_validation.valid:
-                        rejected.extend(issue.message for issue in candidate_validation.errors)
-                        continue
-                    salvaged = candidate
-                    salvaged_paths.extend(candidate_paths)
-            if salvaged_paths:
-                return (
-                    salvaged,
-                    list(dict.fromkeys(salvaged_paths)),
-                    f"{patch.reason} Applied valid operations; rejected invalid operations.",
-                    [],
-                )
-            return document, [], patch.reason or "Semantic reconstruction failed validation.", list(dict.fromkeys(rejected))
-        return updated, changed_paths, patch.reason, []
+            except Exception as exc:
+                rejected.append(str(exc))
+                continue
+            candidate_validation = self.profile_service.validate_document(
+                identifier=profile_identifier,
+                document=candidate,
+            )
+            if not candidate_validation.valid:
+                rejected.extend(issue.message for issue in candidate_validation.errors)
+                continue
+            updated = candidate
+            changed_paths.extend(candidate_paths)
+            applied += 1
+        if changed_paths:
+            reason = patch.reason
+            if rejected:
+                reason = f"{reason} Applied valid operations; rejected invalid operations."
+            return updated, list(dict.fromkeys(changed_paths)), reason, [], applied, list(dict.fromkeys(rejected))
+        return document, [], patch.reason or "Semantic reconstruction failed validation.", list(dict.fromkeys(rejected)), 0, list(dict.fromkeys(rejected))
 
     @classmethod
     def _semantic_reconstruction_allowed_paths(
@@ -860,6 +879,101 @@ class ProjectionService:
             validation_schema=validation_schema,
             allowed_target_paths=allowed_target_paths,
         )
+
+    @staticmethod
+    def _legacy_json_patch_response_reason(output: Any) -> str:
+        if not isinstance(output, dict):
+            return ""
+        writes = output.get("writes")
+        if not isinstance(writes, list):
+            return ""
+        for write in writes:
+            if isinstance(write, dict) and ("op" in write or ("path" in write and "target_path" not in write)):
+                return "Semantic reconstruction returned JSON Patch syntax; expected schema action envelope."
+        return ""
+
+    @classmethod
+    def _semantic_reconstruction_candidate_writes(
+        cls,
+        writes: list[SchemaConstrainedWrite],
+    ) -> list[SchemaConstrainedWrite]:
+        candidates: list[SchemaConstrainedWrite] = []
+        for write in writes:
+            if write.mode == "append" and len(write.items) > 1:
+                candidates.extend(write.model_copy(update={"items": [item]}) for item in write.items)
+            else:
+                candidates.append(write)
+        return candidates
+
+    @classmethod
+    def _semantic_reconstruction_rejected_actions(
+        cls,
+        *,
+        writes: list[SchemaConstrainedWrite],
+        allowed_paths: list[str],
+    ) -> list[str]:
+        return [
+            f"Action target outside allowed semantic reconstruction paths: {write.target_path}"
+            for write in writes
+            if cls._semantic_reconstruction_action_rejected(write=write, allowed_paths=allowed_paths)
+        ]
+
+    @classmethod
+    def _semantic_reconstruction_action_rejected(
+        cls,
+        *,
+        write: SchemaConstrainedWrite,
+        allowed_paths: list[str],
+    ) -> bool:
+        target = write.target_path.rstrip("/") or "/"
+        allowed = [path.rstrip("/") or "/" for path in allowed_paths if path]
+        for allowed_path in allowed:
+            if target == allowed_path:
+                return False
+            if write.mode == "remove" and target.startswith(f"{allowed_path}/"):
+                return False
+        return True
+
+    @classmethod
+    def _validate_semantic_reconstruction_action(
+        cls,
+        *,
+        document: dict[str, Any],
+        write: SchemaConstrainedWrite,
+    ) -> list[str]:
+        if write.mode != "merge":
+            return []
+        array_value = cls._value_at_json_pointer(document, write.target_path)
+        if not isinstance(array_value, list):
+            return [f"Merge target path is not an array: {write.target_path}"]
+        survivor_index = write.survivor_index
+        if survivor_index is None:
+            return ["Merge action missing survivor_index."]
+        indices = list(dict.fromkeys(write.merged_indices))
+        all_indices = [survivor_index] + indices
+        invalid = [index for index in all_indices if index < 0 or index >= len(array_value)]
+        if invalid:
+            return [f"Merge index out of range at {write.target_path}: {invalid}"]
+        survivor = array_value[survivor_index]
+        if not isinstance(survivor, dict):
+            return [f"Merge survivor is not an object at {write.target_path}/{survivor_index}."]
+        survivor_slot = cls._attribute_semantic_slot(
+            parent_path=write.target_path,
+            instance=survivor,
+        )
+        if not survivor_slot:
+            return [f"Merge survivor has no semantic slot at {write.target_path}/{survivor_index}."]
+        rejected: list[str] = []
+        for index in indices:
+            item = array_value[index]
+            item_slot = (
+                cls._attribute_semantic_slot(parent_path=write.target_path, instance=item)
+                if isinstance(item, dict)
+                else None
+            )
+            if item_slot != survivor_slot:
+                rejected.append(f"Merge item at {write.target_path}/{index} is not semantically compatible with survivor.")
+        return rejected
 
     @classmethod
     def _lean_aboutness_output_schema(
@@ -1006,7 +1120,12 @@ class ProjectionService:
                 target_class=None,
                 planner_status=item.requirement_id,
                 planner_reason=record.reason,
-                evidence_quality={"requirement_id": item.requirement_id},
+                evidence_quality={
+                    "requirement_id": item.requirement_id,
+                    "applied_actions_count": record.applied_actions_count,
+                    "rejected_actions_count": record.rejected_actions_count,
+                    "rejected_reasons": record.rejected_reasons,
+                },
                 merge_status="applied",
                 reason=record.reason,
             )
@@ -2738,22 +2857,27 @@ class ProjectionService:
     ) -> str | None:
         if not target_path.endswith("/-"):
             existing = cls._value_at_json_pointer(document, target_path)
+            existing_slot = cls._attribute_semantic_slot(parent_path=target_path, instance=existing) if isinstance(existing, dict) else None
+            instance_slot = cls._attribute_semantic_slot(parent_path=target_path, instance=instance)
             if isinstance(existing, dict) and (
                 cls._instances_semantically_equal(existing, instance)
                 or cls._quantitative_attributes_semantically_equal(existing, instance)
+                or (existing_slot and existing_slot == instance_slot)
             ):
-                return f"Requirement patch duplicates existing object at {target_path}."
+                return f"duplicate_semantic_slot: requirement patch duplicates existing object at {target_path}."
             return None
         parent_path = target_path[:-2]
         existing_items = cls._value_at_json_pointer(document, parent_path)
         if not isinstance(existing_items, list):
             return None
+        instance_slot = cls._attribute_semantic_slot(parent_path=parent_path, instance=instance)
         for existing in existing_items:
             if isinstance(existing, dict) and (
                 cls._instances_semantically_equal(existing, instance)
                 or cls._quantitative_attributes_semantically_equal(existing, instance)
+                or (instance_slot and cls._attribute_semantic_slot(parent_path=parent_path, instance=existing) == instance_slot)
             ):
-                return f"Requirement patch duplicates existing object at {parent_path}."
+                return f"duplicate_semantic_slot: requirement patch duplicates existing object at {parent_path}."
         return None
 
     @classmethod
@@ -2818,7 +2942,10 @@ class ProjectionService:
         filtered: list[SchemaConstrainedWrite] = []
         reasons: list[str] = []
         for write in writes:
-            if write.mode != "append" or "has_quantitative_attribute" not in write.target_path:
+            if write.mode != "append" or not any(
+                attribute_path in write.target_path
+                for attribute_path in ("has_quantitative_attribute", "has_qualitative_attribute")
+            ):
                 filtered.append(write)
                 continue
             parent_path = write.target_path[:-2] if write.target_path.endswith("/-") else write.target_path
@@ -2828,19 +2955,27 @@ class ProjectionService:
                 continue
             kept_items: list[Any] = []
             comparison_items = [item for item in existing_items if isinstance(item, dict)]
+            comparison_slots = {
+                slot
+                for item in comparison_items
+                if (slot := cls._attribute_semantic_slot(parent_path=parent_path, instance=item))
+            }
             for item in write.items:
                 if not isinstance(item, dict):
                     kept_items.append(item)
                     continue
+                slot = cls._attribute_semantic_slot(parent_path=parent_path, instance=item)
                 duplicate = any(
                     cls._quantitative_attributes_semantically_equal(existing, item)
                     for existing in comparison_items
-                )
+                ) or bool(slot and slot in comparison_slots)
                 if duplicate:
-                    reasons.append(f"Duplicate quantitative attribute skipped at {parent_path}.")
+                    reasons.append(f"duplicate_semantic_slot: duplicate attribute skipped at {parent_path}.")
                     continue
                 kept_items.append(item)
                 comparison_items.append(item)
+                if slot:
+                    comparison_slots.add(slot)
             if kept_items:
                 filtered.append(write.model_copy(update={"items": kept_items}))
         return filtered, list(dict.fromkeys(reasons))
@@ -2870,6 +3005,103 @@ class ProjectionService:
         unit_text = re.sub(r"\s+", " ", str(unit or "")).strip().lower()
         value_text = ("%0.12g" % value).rstrip("0").rstrip(".")
         return quantity_text, value_text, unit_text
+
+    @classmethod
+    def _attribute_semantic_slot(
+        cls,
+        *,
+        parent_path: str,
+        instance: dict[str, Any],
+    ) -> tuple[str, str, str, str, str] | None:
+        if not isinstance(instance, dict):
+            return None
+        kind = (
+            "quantitative"
+            if "value" in instance and ("has_quantity_type" in instance or cls._first_number(instance.get("value")) is not None)
+            else "qualitative"
+        )
+        label = instance.get("has_quantity_type") if kind == "quantitative" else instance.get("has_attribute_type")
+        if isinstance(label, dict):
+            label = label.get("id") or label.get("title")
+        label_text = " ".join(
+            str(part or "")
+            for part in (
+                label,
+                instance.get("title"),
+                instance.get("description"),
+            )
+        )
+        normalized_label = cls._normalized_attribute_label(label_text)
+        if not normalized_label:
+            return None
+        value = cls._first_number(instance.get("value"))
+        if value is None:
+            value_text = cls._normalized_text(instance.get("value"))
+            if not value_text:
+                return None
+        else:
+            value_text = ("%0.12g" % value).rstrip("0").rstrip(".")
+        unit = instance.get("unit")
+        if isinstance(unit, dict):
+            unit = unit.get("id") or unit.get("title")
+        unit_text = cls._normalized_unit(unit)
+        return parent_path.rstrip("/"), kind, normalized_label, value_text, unit_text
+
+    @classmethod
+    def _normalized_attribute_label(cls, value: Any) -> str:
+        text = cls._normalized_text(value)
+        if not text:
+            return ""
+        replacements = {
+            "npoints": "point count",
+            "data points": "point count",
+            "number data points": "point count",
+            "number of data points": "point count",
+            "point count": "point count",
+            "points": "point count",
+            "maximum": "max",
+            "minimum": "min",
+            "transmittance value": "transmittance",
+            "transmittance spectrum": "transmittance",
+            "wavelength value": "wavelength",
+            "wavenumber value": "wavenumber",
+            "x axis": "x",
+            "y axis": "y",
+        }
+        for source, target in replacements.items():
+            text = re.sub(rf"\b{re.escape(source)}\b", target, text)
+        text = re.sub(
+            r"\b(the|a|an|value|values|recorded|from|in|of|spectrum|spectra|measurement|measured|data)\b",
+            " ",
+            text,
+        )
+        text = re.sub(r"\s+", " ", text).strip()
+        tokens = text.split()
+        if "point" in tokens and "count" in tokens:
+            return "point count"
+        return text
+
+    @staticmethod
+    def _normalized_unit(value: Any) -> str:
+        text = ProjectionService._normalized_text(value)
+        aliases = {
+            "1 cm": "1/cm",
+            "1/cm": "1/cm",
+            "cm-1": "1/cm",
+            "%": "%",
+            "percent": "%",
+        }
+        return aliases.get(text, text)
+
+    @staticmethod
+    def _normalized_text(value: Any) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, list):
+            value = " ".join(str(item) for item in value)
+        text = str(value).lower()
+        text = re.sub(r"[^a-z0-9%/+-]+", " ", text)
+        return re.sub(r"\s+", " ", text).strip()
 
     @staticmethod
     def _instance_semantic_signature(instance: dict[str, Any]) -> tuple[str, str] | None:

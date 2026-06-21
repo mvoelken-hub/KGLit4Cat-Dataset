@@ -653,7 +653,7 @@ classes:
         self.assertEqual([note.candidate_id for note in routed.contextual_evidence], ["contextual"])
         self.assertEqual(routed.rejected_evidence, [])
 
-    def test_repeated_evidence_dedupe_keeps_best_representative(self):
+    def test_repeated_evidence_dedupe_keeps_independent_sources(self):
         context = EvidenceContext(
             candidates=[
                 EvidenceCandidate(
@@ -682,10 +682,41 @@ classes:
             file_rank_by_path={"rank1.jdx": 1, "rank2.jdx": 2},
         )
 
-        self.assertEqual([note.candidate_id for note in deduped.notes], ["primary"])
+        self.assertEqual([note.candidate_id for note in deduped.notes], ["secondary", "primary"])
+        self.assertEqual(dropped, [])
+
+    def test_repeated_evidence_dedupe_removes_same_source_semantic_duplicate(self):
+        context = EvidenceContext(
+            candidates=[
+                EvidenceCandidate(
+                    candidate_id="short",
+                    category="resource_signal",
+                    role="descriptor",
+                    claim="Format.",
+                    evidence_text="##JCAMP-DX=5.00",
+                    file_path="rank1.jdx",
+                    start_idx=0,
+                    end_idx=10,
+                ),
+                EvidenceCandidate(
+                    candidate_id="rich",
+                    category="resource_signal",
+                    role="descriptor",
+                    claim="Format.",
+                    evidence_text="##JCAMP-DX=5.00",
+                    file_path="rank1.jdx",
+                    start_idx=0,
+                    end_idx=10,
+                ),
+            ]
+        )
+
+        deduped, dropped = dedupe_repeated_evidence_notes(context)
+
+        self.assertEqual([note.candidate_id for note in deduped.notes], ["short"])
         self.assertEqual(len(dropped), 1)
         self.assertEqual(dropped[0].reason, "duplicate_evidence")
-        self.assertEqual(dropped[0].duplicate_representative_id, "primary")
+        self.assertEqual(dropped[0].duplicate_representative_id, "short")
 
     def test_evidence_validation_rejects_synthetic_paraphrase(self):
         chunk = "##TITLE= Real JCAMP record\n##XUNITS= 1/CM"

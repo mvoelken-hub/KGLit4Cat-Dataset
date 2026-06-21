@@ -523,7 +523,7 @@ def dedupe_repeated_evidence_notes(
     grouped: dict[str, list[tuple[int, EvidenceCandidate]]] = {}
     unique_without_key: list[tuple[int, EvidenceCandidate]] = []
     for index, note in enumerate(context.portable_evidence):
-        key = _normalize_evidence_text(note.evidence_text)
+        key = _dedupe_evidence_note_key(note)
         if not key:
             unique_without_key.append((index, note))
             continue
@@ -784,6 +784,18 @@ def _normalize_evidence_text(value: str) -> str:
     normalized = re.sub(r"\s+", " ", normalized)
     normalized = re.sub(r"[\u2010-\u2015]", "-", normalized)
     return normalized.strip()
+
+
+def _dedupe_evidence_note_key(note: EvidenceCandidate) -> str:
+    evidence = _normalize_evidence_text(note.evidence_text)
+    if not evidence:
+        return ""
+    claim = _normalize_evidence_text(note.claim)
+    file_path = (note.file_path or "").strip().lower()
+    span = f"{note.start_idx}:{note.end_idx}"
+    category = str(getattr(note, "category", "") or "")
+    role = str(getattr(note, "role", "") or "")
+    return "|".join([file_path, span, category, role, claim, evidence])
 
 
 def _compact_prompt_values(

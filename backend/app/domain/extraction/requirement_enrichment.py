@@ -121,6 +121,9 @@ class SemanticReconstructionRecord(BaseModel):
     changed_paths: list[str] = Field(default_factory=list)
     reason: str = ""
     validation_errors: list[str] = Field(default_factory=list)
+    applied_actions_count: int = 0
+    rejected_actions_count: int = 0
+    rejected_reasons: list[str] = Field(default_factory=list)
 
 
 class JsonPatchOperation(BaseModel):
@@ -606,10 +609,38 @@ def build_semantic_reconstruction_prompt(
         "draft_excerpt": draft_excerpt,
         "schema_branches": schema_branches,
         "reconstruction_rules": [
+            "Return only the action envelope with writes[]. Do not return JSON Patch operations. Never use keys named op or path.",
+            "Allowed write modes are append, replace, remove, and merge.",
+            "Use remove only for exact target paths that are semantically unsupported or duplicate after merge/cleanup.",
+            "Use merge for duplicate entries in the same array: target_path is the array path, survivor_index is the entry to keep, merged_indices are duplicate entries to remove.",
             "Do not satisfy missing role=parameter evidence by generalizing one existing quantitative attribute; add separate schema-valid attributes or return empty writes.",
             "Device/software cues belong to agent parents; role=parameter evidence with instrument_signal, measurement_condition, resource_signal, or activity_signal belongs to data-generating activity by default unless explicit evidence says it belongs to an agent or evaluated subject/activity.",
             "Represent numeric ranges as separate schema-valid minimum and maximum quantitative attributes with numeric values and source units when present; never put a range string in a quantitative value.",
             "For aboutness, write at most one lean is_about_entity or is_about_activity object with only id, title, and description.",
+        ],
+        "write_examples": [
+            {
+                "writes": [
+                    {
+                        "target_path": "/was_generated_by/0/has_quantitative_attribute",
+                        "mode": "merge",
+                        "survivor_index": 0,
+                        "merged_indices": [2],
+                        "reason": "Both entries describe the same point count.",
+                    }
+                ],
+                "reason": "Merged duplicate attributes.",
+            },
+            {
+                "writes": [
+                    {
+                        "target_path": "/is_about_entity/0/has_quantitative_attribute/3",
+                        "mode": "remove",
+                        "reason": "Entry duplicates a better-supported attribute.",
+                    }
+                ],
+                "reason": "Removed duplicate attribute.",
+            },
         ],
         "selected_evidence": [evidence.model_dump(mode="json") for evidence in item.selected_evidence],
         "context_window": [evidence.model_dump(mode="json") for evidence in item.context_window],

@@ -7,7 +7,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-PatchWriteMode = Literal["append", "replace"]
+PatchWriteMode = Literal["append", "replace", "remove", "merge"]
 
 
 class SchemaConstrainedWrite(BaseModel):
@@ -17,6 +17,8 @@ class SchemaConstrainedWrite(BaseModel):
     mode: PatchWriteMode
     items: list[Any] = Field(default_factory=list)
     value: Any = None
+    survivor_index: int | None = None
+    merged_indices: list[int] = Field(default_factory=list)
     reason: str = ""
 
     @model_validator(mode="after")
@@ -25,6 +27,13 @@ class SchemaConstrainedWrite(BaseModel):
             raise ValueError("append write requires at least one item")
         if self.mode == "replace" and "value" not in self.model_fields_set:
             raise ValueError("replace write requires value")
+        if self.mode == "merge":
+            if self.survivor_index is None:
+                raise ValueError("merge write requires survivor_index")
+            if not self.merged_indices:
+                raise ValueError("merge write requires merged_indices")
+            if self.survivor_index in self.merged_indices:
+                raise ValueError("merge write cannot merge survivor_index into itself")
         return self
 
 
@@ -108,6 +117,21 @@ def apply_schema_constrained_writes(
                 changed_paths.append(f"{array_path}/{index}")
             continue
 
+        if write.mode == "remove":
+            updated = _remove_json_pointer_value(updated, write.target_path)
+            changed_paths.append(write.target_path)
+            continue
+
+        if write.mode == "merge":
+            updated, merge_paths = _merge_json_pointer_array_items(
+                updated,
+                write.target_path,
+                survivor_index=write.survivor_index,
+                merged_indices=write.merged_indices,
+            )
+            changed_paths.extend(merge_paths)
+            continue
+
         _ensure_container_path(
             updated,
             validation_schema=validation_schema,
@@ -166,30 +190,85 @@ def _write_branch_schema(
     if _schema_is_array(target_schema, validation_schema):
         item_schema = target_schema.get("items", {})
         return {
-            "type": "object",
-            "additionalProperties": False,
-            "properties": {
-                "target_path": {"const": target_path},
-                "mode": {"const": "append"},
-                "items": {
-                    "type": "array",
-                    "minItems": 1,
-                    "items": deepcopy(item_schema),
+            "oneOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "target_path": {"const": target_path},
+                        "mode": {"const": "append"},
+                        "items": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": deepcopy(item_schema),
+                        },
+                        "reason": {"type": "string"},
+                    },
+                    "required": ["target_path", "mode", "items", "reason"],
                 },
-                "reason": {"type": "string"},
-            },
-            "required": ["target_path", "mode", "items", "reason"],
+                {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "target_path": {"const": target_path},
+                        "mode": {"const": "replace"},
+                        "value": deepcopy(target_schema),
+                        "reason": {"type": "string"},
+                    },
+                    "required": ["target_path", "mode", "value", "reason"],
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "target_path": {"const": target_path},
+                        "mode": {"const": "remove"},
+                        "reason": {"type": "string"},
+                    },
+                    "required": ["target_path", "mode", "reason"],
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "target_path": {"const": target_path},
+                        "mode": {"const": "merge"},
+                        "survivor_index": {"type": "integer", "minimum": 0},
+                        "merged_indices": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {"type": "integer", "minimum": 0},
+                        },
+                        "reason": {"type": "string"},
+                    },
+                    "required": ["target_path", "mode", "survivor_index", "merged_indices", "reason"],
+                },
+            ],
         }
     return {
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {
-            "target_path": {"const": target_path},
-            "mode": {"const": "replace"},
-            "value": deepcopy(target_schema),
-            "reason": {"type": "string"},
-        },
-        "required": ["target_path", "mode", "value", "reason"],
+        "oneOf": [
+            {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "target_path": {"const": target_path},
+                    "mode": {"const": "replace"},
+                    "value": deepcopy(target_schema),
+                    "reason": {"type": "string"},
+                },
+                "required": ["target_path", "mode", "value", "reason"],
+            },
+            {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "target_path": {"const": target_path},
+                    "mode": {"const": "remove"},
+                    "reason": {"type": "string"},
+                },
+                "required": ["target_path", "mode", "reason"],
+            },
+        ],
     }
 
 
@@ -371,6 +450,64 @@ def _set_json_pointer_value(document: dict[str, Any], path: str, value: Any) -> 
     else:
         raise ValueError(f"Cannot set JSON Pointer path '{path}'.")
     return result
+
+
+def _remove_json_pointer_value(document: dict[str, Any], path: str) -> dict[str, Any]:
+    if not path or path == "/":
+        raise ValueError("Root removal is not supported.")
+    result = deepcopy(document)
+    current: Any = result
+    parts = [_json_pointer_unescape(part) for part in path.strip("/").split("/")]
+    for part in parts[:-1]:
+        if isinstance(current, list) and part.isdigit():
+            index = int(part)
+            if index >= len(current):
+                raise ValueError(f"Cannot traverse JSON Pointer path '{path}'.")
+            current = current[index]
+        elif isinstance(current, dict) and part in current:
+            current = current[part]
+        else:
+            raise ValueError(f"Cannot traverse JSON Pointer path '{path}'.")
+    leaf = parts[-1]
+    if isinstance(current, dict):
+        if leaf not in current:
+            raise ValueError(f"Cannot remove missing JSON Pointer path '{path}'.")
+        del current[leaf]
+        return result
+    if isinstance(current, list) and leaf.isdigit():
+        index = int(leaf)
+        if index >= len(current):
+            raise ValueError(f"Cannot remove missing JSON Pointer path '{path}'.")
+        current.pop(index)
+        return result
+    raise ValueError(f"Cannot remove JSON Pointer path '{path}'.")
+
+
+def _merge_json_pointer_array_items(
+    document: dict[str, Any],
+    path: str,
+    *,
+    survivor_index: int | None,
+    merged_indices: list[int],
+) -> tuple[dict[str, Any], list[str]]:
+    if survivor_index is None:
+        raise ValueError("merge write requires survivor_index")
+    result = deepcopy(document)
+    array_value = _value_at_json_pointer(result, path)
+    if not isinstance(array_value, list):
+        raise ValueError(f"Merge target path is not an array: {path}")
+    indices = list(dict.fromkeys(merged_indices))
+    if survivor_index in indices:
+        raise ValueError("merge write cannot merge survivor_index into itself")
+    all_indices = [survivor_index] + indices
+    missing = [index for index in all_indices if index < 0 or index >= len(array_value)]
+    if missing:
+        raise ValueError(f"Merge index out of range at {path}: {missing}")
+    changed_paths = [f"{path}/{index}" for index in sorted(indices)]
+    for index in sorted(indices, reverse=True):
+        array_value.pop(index)
+    changed_paths.append(path)
+    return result, changed_paths
 
 
 def _dedupe_paths(paths: list[str]) -> list[str]:

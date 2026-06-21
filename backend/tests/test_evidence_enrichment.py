@@ -399,7 +399,8 @@ class EvidenceEnrichmentIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(instance, {"title": "Data generating activity"})
         self.assertIsInstance(mocked.call_args.kwargs["output_type"], dict)
         branch = mocked.call_args.kwargs["output_type"]["properties"]["writes"]["items"]["oneOf"][0]
-        self.assertEqual(branch["properties"]["target_path"]["const"], "/was_generated_by")
+        append_branch = next(item for item in branch["oneOf"] if item["properties"]["mode"]["const"] == "append")
+        self.assertEqual(append_branch["properties"]["target_path"]["const"], "/was_generated_by")
 
     async def test_enrichment_skips_non_novel_notes(self):
         service = self._service()
