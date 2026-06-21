@@ -23,9 +23,14 @@ from app.domain.extraction import (
     EXTRACTION_OVERVIEW_FALLBACK_SYSTEM_PROMPT,
     EXTRACTION_OVERVIEW_SYSTEM_PROMPT,
     QUDT_QUANTITY_KIND_VOCAB,
+    QUDT_QUANTITY_KIND_URI,
+    QUDT_QUANTITY_URI,
+    QUDT_SCHEMA_VOCAB,
     QUDT_UNIT_VOCAB,
+    QUDT_UNIT_URI,
     VOCAB_CANDIDATE_SELECTION_SYSTEM_PROMPT,
     VOCAB_FALLBACK_QUERY_SYSTEM_PROMPT,
+    VOCAB_QUERY_FORMULATION_SYSTEM_PROMPT,
     VOCAB_OBJECT_GROUNDING_SELECTION_SYSTEM_PROMPT,
     ChunkingRequiredError,
     CompleteWorkflowProgress,
@@ -33,6 +38,7 @@ from app.domain.extraction import (
     CurationLedgerRecord,
     DefinedTerm,
     DocumentQualityState,
+    DraftQualityState,
     DraftValidationResult,
     EVIDENCE_INSTANCE_BUILDER_SYSTEM_PROMPT,
     EVIDENCE_INSTANCE_REPAIR_SYSTEM_PROMPT,
@@ -133,6 +139,7 @@ from app.domain.extraction import (
     FileRankingResult,
     FieldCompletionLedgerRecord,
     GroundedExtractionObject,
+    GroundingRolePolicy,
     ProfileFieldNormalization,
     ProfileObjectPatchResult,
     PromptTokenBudgeter,
@@ -151,6 +158,7 @@ from app.domain.extraction import (
     TracedExtractionObject,
     VocabularyCandidateSelection,
     VocabularyFallbackQuery,
+    VocabularyQueryFormulation,
     VocabularyTermMapping,
     build_dataset_level_projection_prompt_components,
     build_dataset_summary_prompt_components,
@@ -171,6 +179,8 @@ from app.domain.extraction import (
     is_noisy_payload_chunk,
     build_fallback_query_prompt,
     build_fallback_query_prompt_components,
+    build_query_formulation_prompt,
+    build_query_formulation_prompt_components,
     build_object_grounding_selection_prompt,
     build_object_grounding_selection_prompt_components,
     ShallowDatasetProjection,
@@ -416,6 +426,7 @@ class _ProfileFieldCandidateDiscovery:
     source_value: str
     vocabulary_identifier: str
     query_ids: list[str]
+    role: str = ""
 
 
 @dataclass

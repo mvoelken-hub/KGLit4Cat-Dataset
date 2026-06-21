@@ -24,6 +24,8 @@ class GroundingService:
                 "Cannot update vocabulary query configuration because the extraction run state is missing or unreadable."
             )
         state.vocab_query_config = config
+        state.vocab_queries = []
+        state.generated_final_draft = None
         self._save_run_state(data_package_id, state)
         return ExtractionRunProgress(
             stage="vocabulary_config_updated",
@@ -81,7 +83,11 @@ class GroundingService:
             configured_query = self._configured_vocab_query(
                 record.query,
                 state.vocab_query_config,
-                group="quantitative" if record.kind in {"quantity_kind", "unit"} else "qualitative",
+                group=(
+                    "quantitative"
+                    if record.kind in {"quantity_kind", "unit", "profile_has_quantity_type", "profile_unit"}
+                    else "qualitative"
+                ),
             )
             record.query = configured_query
             record.rdf_type = configured_query.rdf_type
@@ -101,6 +107,133 @@ class GroundingService:
             warnings=warnings,
         )
 
+    async def run_grounding_stage(
+        self,
+        *,
+        data_package_id: str,
+        chunking_strategy: str | None = None,
+        chat_model: str | None = None,
+    ) -> ExtractionRunResult:
+        """Run the vocabulary grounding stage as a standalone step.
+
+        Grounds the persisted profile draft (curated_document or
+        generated_reconstructed_draft) without rebuilding the projection or
+        requirement-enrichment stages. Discovers DefinedTerm fields, runs
+        vocabulary queries, normalizes, and persists the grounded
+        generated_final_draft.
+        """
+        self._require_runtime_dependencies()
+        assert self.output_repository is not None
+        state = self._load_run_state_or_none(
+            data_package_id,
+            chunking_strategy=chunking_strategy or "semantic",
+            chat_model=chat_model,
+        )
+        if state is None:
+            raise ValueError(
+                "Cannot run the grounding stage because the extraction run state is missing or unreadable. Build the profile draft first."
+            )
+        profile_identifier = state.profile_identifier
+        if not profile_identifier:
+            raise ValueError(
+                "Cannot run the grounding stage because this extraction run has no profile identifier."
+            )
+        grounding_document = state.curated_document or state.generated_reconstructed_draft
+        if grounding_document is None:
+            raise ValueError(
+                "Cannot run the grounding stage because no profile draft is available. Build the profile draft first."
+            )
+        profile_manifest = self.profile_service.get_profile(profile_identifier)
+        profile_json_schema = self.profile_service.load_json_schema(profile_identifier)
+        validation_schema = validation_schema_for_target_class(
+            json_schema=profile_json_schema,
+            target_class=profile_manifest.target_class,
+        )
+        evidence_context = self._merged_completed_evidence_context(state)
+        warnings = self._load_warnings_or_empty(data_package_id)
+        vocab_query_semaphore = asyncio.Semaphore(self._vocab_query_concurrency())
+
+        def persist_vocab_progress() -> None:
+            self._save_run_state(data_package_id, state)
+
+        sources = self._profile_vocab_sources(
+            grounding_document,
+            enrichable_fields=getattr(profile_manifest, "enrichable_fields", []),
+            validation_schema=validation_schema,
+        )
+        candidate_tasks = [
+            asyncio.create_task(
+                self._discover_profile_field_candidates(
+                    json_path=json_path,
+                    field_name=field_name,
+                    source_value=source_value,
+                    document=grounding_document,
+                    state=state,
+                    data_package_id=data_package_id,
+                    query_semaphore=vocab_query_semaphore,
+                    on_progress=persist_vocab_progress,
+                    warnings=warnings,
+                )
+            )
+            for json_path, field_name, source_value in sources
+        ]
+        try:
+            normalization = await self._normalize_profile_field_candidate_tasks(
+                data_package_id=data_package_id,
+                state=state,
+                candidate_tasks=candidate_tasks,
+                warnings=warnings,
+            )
+        except asyncio.CancelledError:
+            await self._cancel_candidate_tasks(candidate_tasks)
+            raise
+        self._save_run_state(data_package_id, state)
+        result = await self._save_profile_result(
+            data_package_id=data_package_id,
+            profile_identifier=profile_identifier,
+            evidence_context=evidence_context,
+            normalization=normalization,
+            document=grounding_document,
+            profile_manifest=profile_manifest,
+            validation_schema=validation_schema,
+            state=state,
+            warnings=warnings,
+        )
+        if self.task_registry is not None:
+            self.task_registry.update_progress(
+                self._extraction_task_name(data_package_id, state.chunking_strategy, state.chat_model),
+                ExtractionRunProgress(
+                    stage="completed",
+                    processed_chunks=self._completed_chunk_count(state),
+                    total_chunks=len(state.chunk_results),
+                    normalized_quantities=len(normalization.quantities),
+                    normalized_qualitative_attributes=len(normalization.qualitative_attributes),
+                    interim_evidence_context=evidence_context,
+                    vocab_query_config=state.vocab_query_config,
+                    ranked_files=state.ranked_files,
+                    initial_file_summaries=state.initial_file_summaries,
+                    initial_file_summary_progress=state.initial_file_summary_progress,
+                    initial_file_summary_status=state.initial_file_summary_status,
+                    initial_extraction_overview=state.initial_extraction_overview,
+                    initial_extraction_overview_status=state.initial_extraction_overview_status,
+                    initial_extraction_overview_diagnostic=state.initial_extraction_overview_diagnostic,
+                    chunk_results=state.chunk_results,
+                    vocab_queries=state.vocab_queries,
+                    generated_final_draft=result.generated_final_draft,
+                    curated_document=result.curated_document,
+                    document_quality_state=result.document_quality_state,
+                    draft_quality_state=result.draft_quality_state,
+                    validation=result.validation,
+                    curated_validation=result.curated_validation,
+                    initial_draft_scaffold=state.initial_draft_scaffold,
+                    projection_ledger=result.projection_ledger,
+                    field_completion_ledger=result.field_completion_ledger,
+                    curation_ledger=result.curation_ledger,
+                    warnings=warnings,
+                ).model_dump(mode="json"),
+            )
+        return result
+
     async def _rerun_vocab_downstream(
         self,
         *,
@@ -116,10 +249,14 @@ class GroundingService:
             target_class=profile_manifest.target_class,
         )
         evidence_context = self._merged_completed_evidence_context(state)
-        profile_document = state.generated_final_draft or self._fallback_profile_document(
+        profile_document = (
+            state.curated_document
+            or state.generated_reconstructed_draft
+            or self._fallback_profile_document(
             data_package_id=data_package_id,
             evidence_context=evidence_context,
             validation_schema=validation_schema,
+            )
         )
         normalization = await self._normalize_profile_fields_from_state_vocab_queries(
             data_package_id=data_package_id,
@@ -434,12 +571,70 @@ class GroundingService:
             object_groundings=object_grounding_results,
         )
 
+    @staticmethod
+    def _grounding_context_label_text(node: Any) -> str:
+        if not isinstance(node, dict):
+            return ""
+        parts: list[str] = []
+        for key in ("title", "description", "preferred_label", "label", "name"):
+            value = node.get(key)
+            if isinstance(value, list):
+                value = next((entry for entry in value if isinstance(entry, str) and entry.strip()), None)
+            if isinstance(value, str) and value.strip():
+                parts.append(value.strip())
+        return " ".join(parts)
+
+    @staticmethod
+    def _grounding_resolve_json_pointer(document: Any, json_path: str) -> Any:
+        if json_path in ("", "/"):
+            return document
+        node: Any = document
+        for raw_seg in json_path.split("/"):
+            if raw_seg == "":
+                continue
+            seg = raw_seg.replace("~1", "/").replace("~0", "~")
+            if isinstance(node, list):
+                try:
+                    node = node[int(seg)]
+                except (ValueError, IndexError):
+                    return None
+            elif isinstance(node, dict):
+                node = node.get(seg)
+            else:
+                return None
+            if node is None:
+                return None
+        return node
+
+    @classmethod
+    def _grounding_semantic_context(cls, document: dict[str, Any], json_path: str, *, include_root: bool = True, max_chars: int = 500) -> str:
+        if not isinstance(document, dict) or not json_path:
+            return ""
+        segments = [seg for seg in json_path.split("/") if seg]
+        if not segments:
+            return ""
+        prefixes = [""] if include_root else []
+        current = ""
+        for seg in segments[:-1]:
+            current = current + "/" + seg
+            prefixes.append(current)
+        parts: list[str] = []
+        for prefix in prefixes:
+            text = cls._grounding_context_label_text(cls._grounding_resolve_json_pointer(document, prefix))
+            if text and text not in parts:
+                parts.append(text)
+        context = " | ".join(parts)
+        if len(context) > max_chars:
+            context = context[:max_chars].rstrip()
+        return context
+
     async def _discover_profile_field_candidates(
         self,
         *,
         json_path: str,
         field_name: str,
         source_value: str,
+        document: dict[str, Any],
         state: ExtractionRunState,
         data_package_id: str,
         query_semaphore: asyncio.Semaphore,
@@ -452,12 +647,31 @@ class GroundingService:
             "field_name": field_name,
             "source_value": source_value,
         }
+        role = self._grounding_role_for_field(field_name)
+        source_context["role"] = role
+        semantic_context = self._grounding_semantic_context(document, json_path)
+        brief_context = self._grounding_semantic_context(document, json_path, include_root=False, max_chars=160)
+        source_context["semantic_context"] = semantic_context
+        formulated_query = await self._formulate_vocab_query(
+            data_package_id=data_package_id,
+            agent_name="vocab_query_formulation",
+            source_value=source_value,
+            source_context=source_context,
+            query_semaphore=query_semaphore,
+            warnings=warnings,
+        )
+        if formulated_query:
+            vector_query_text = formulated_query
+            fulltext_query_text = formulated_query
+        else:
+            vector_query_text = " ".join(part for part in (semantic_context, source_value) if part)
+            fulltext_query_text = " ".join(part for part in (brief_context, source_value) if part)
         if field_name == "has_quantity_type":
             query = self._configured_vocab_query(
                 VocabQuery(
                     rdf_type="qudt__QuantityKind",
-                    vector_query=source_value,
-                    fulltext_query=source_value,
+                    vector_query=vector_query_text,
+                    fulltext_query=fulltext_query_text,
                     vector_top_k=12,
                     fulltext_top_k=12,
                     seed_top_k=6,
@@ -491,13 +705,14 @@ class GroundingService:
                 source_value=source_value,
                 vocabulary_identifier=QUDT_QUANTITY_KIND_VOCAB,
                 query_ids=query_ids,
+                role=role,
             )
         if field_name == "unit":
             query = self._configured_vocab_query(
                 VocabQuery(
                     rdf_type="qudt__Unit",
-                    vector_query=source_value,
-                    fulltext_query=source_value,
+                    vector_query=vector_query_text,
+                    fulltext_query=fulltext_query_text,
                     vector_top_k=12,
                     fulltext_top_k=12,
                     seed_top_k=6,
@@ -531,46 +746,30 @@ class GroundingService:
                 source_value=source_value,
                 vocabulary_identifier=QUDT_UNIT_VOCAB,
                 query_ids=query_ids,
+                role=role,
             )
 
-        vocabulary_identifier = "https://w3id.org/nfdi4cat/voc4cat"
-        if self.semantic_service is None:
-            warnings.append(
-                f"Profile field '{json_path}' was not grounded because semantic service is unavailable."
-            )
+        policy = self._grounding_policy_for_role(state.vocab_query_config, role)
+        vocabulary_identifiers = self._policy_vocabularies(policy, state.vocab_query_config)
+        if policy is None or not policy.enabled or not policy.rdf_type or not vocabulary_identifiers:
+            if field_name == "rdf_type":
+                warnings.append(
+                    f"Profile field '{json_path}' skipped because rdf_type grounding policy is incomplete."
+                )
             return _ProfileFieldCandidateDiscovery(
                 json_path=json_path,
                 field_name=field_name,
                 source_value=source_value,
-                vocabulary_identifier=vocabulary_identifier,
+                vocabulary_identifier="",
                 query_ids=[],
+                role=role,
             )
-        try:
-            vocab_info = await self.semantic_service.get_vocabulary(vocabulary_identifier)
-        except Exception as exc:
-            warnings.append(f"Vocabulary '{vocabulary_identifier}' unavailable: {exc}")
-            return _ProfileFieldCandidateDiscovery(
-                json_path=json_path,
-                field_name=field_name,
-                source_value=source_value,
-                vocabulary_identifier=vocabulary_identifier,
-                query_ids=[],
-            )
-        if vocab_info is None:
-            warnings.append(f"Vocabulary '{vocabulary_identifier}' is not registered.")
-            return _ProfileFieldCandidateDiscovery(
-                json_path=json_path,
-                field_name=field_name,
-                source_value=source_value,
-                vocabulary_identifier=vocabulary_identifier,
-                query_ids=[],
-            )
-        for term_scheme in vocab_info.vocab_term_schemes:
+        for vocabulary_identifier in vocabulary_identifiers:
             query = self._configured_vocab_query(
                 VocabQuery(
-                    rdf_type=term_scheme.rdf_type,
-                    vector_query=source_value,
-                    fulltext_query=source_value,
+                    rdf_type=policy.rdf_type,
+                    vector_query=vector_query_text,
+                    fulltext_query=fulltext_query_text,
                     vector_top_k=6,
                     fulltext_top_k=6,
                     seed_top_k=3,
@@ -602,8 +801,9 @@ class GroundingService:
             json_path=json_path,
             field_name=field_name,
             source_value=source_value,
-            vocabulary_identifier=vocabulary_identifier,
+            vocabulary_identifier=",".join(vocabulary_identifiers),
             query_ids=query_ids,
+            role=role,
         )
 
     async def _normalize_profile_field_candidate_tasks(
@@ -647,6 +847,7 @@ class GroundingService:
                     source_value=source_value,
                     vocabulary_identifier=record.vocabulary_identifier,
                     query_ids=[],
+                    role=str(record.source_context.get("role", field_name)),
                 ),
             )
             discovery.query_ids.append(record.query_id)
@@ -1306,7 +1507,7 @@ class GroundingService:
                 "run",
                 kind,
                 source_value,
-                repr(sorted(source_context.items())),
+                repr(sorted((key, value) for key, value in source_context.items() if key != "semantic_context")),
                 vocabulary_identifier,
                 rdf_type,
             )
@@ -1436,6 +1637,66 @@ class GroundingService:
             warnings=warnings,
         )
 
+    async def _formulate_vocab_query(
+        self,
+        *,
+        data_package_id: str,
+        agent_name: str,
+        source_value: str,
+        source_context: dict[str, Any],
+        query_semaphore: asyncio.Semaphore,
+        warnings: list[str],
+    ) -> str:
+        """Distill source_value + semantic context into a concise vocabulary search phrase.
+
+        Returns the phrase, or an empty string when formulation fails so callers fall back
+        to the context-based query text.
+        """
+        if self.ollama_client is None:
+            return ""
+        async with query_semaphore:
+            try:
+                prompt_components = build_query_formulation_prompt_components(
+                    source_value=source_value,
+                    source_context=source_context,
+                )
+                prompt_budgeter = self._prompt_token_budgeter()
+                result = await generate_structured(
+                    self.ollama_client,
+                    model=self.ollama_client.chat_model,
+                    system=VOCAB_QUERY_FORMULATION_SYSTEM_PROMPT,
+                    prompt="".join(text for _, text in prompt_components),
+                    system_components=[
+                        ("vocab_query_formulation_system_prompt", VOCAB_QUERY_FORMULATION_SYSTEM_PROMPT),
+                    ],
+                    prompt_components=prompt_components,
+                    token_budgeter=prompt_budgeter,
+                    operation_id=self._prompt_operation_id(
+                        agent_name,
+                        "query_formulation",
+                        source_value,
+                    ),
+                    agent_name=agent_name,
+                    diagnostic_metadata={"source_value": source_value},
+                    output_type=VocabularyQueryFormulation,
+                    num_ctx=self.ollama_client.max_context_length,
+                )
+            except CompletionError as exc:
+                self._record_llm_call_exception(
+                    data_package_id=data_package_id,
+                    exc=exc,
+                    agent_name=agent_name,
+                )
+                warnings.append(f"Vocabulary query formulation failed for '{source_value}': {exc}")
+                return ""
+        self._record_llm_call_result(
+            data_package_id=data_package_id,
+            result=result,
+            agent_name=agent_name,
+        )
+        return (result.output.query or "").strip()
+
+
     async def _build_fallback_query(
         self,
         *,
@@ -1514,13 +1775,55 @@ class GroundingService:
         return list(by_uri.values())
 
     @staticmethod
+    def _grounding_role_for_field(field_name: str) -> str:
+        if field_name in {"type", "rdf_type", "has_quantity_type", "unit"}:
+            return field_name
+        return field_name
+
+    @staticmethod
+    def _grounding_policy_for_role(
+        config: ExtractionVocabQueryConfig,
+        role: str,
+    ) -> GroundingRolePolicy | None:
+        if role == "type":
+            return config.type_policy
+        if role == "rdf_type":
+            return config.rdf_type_policy
+        return None
+
+    @staticmethod
+    def _policy_vocabularies(
+        policy: GroundingRolePolicy | None,
+        config: ExtractionVocabQueryConfig,
+    ) -> list[str]:
+        if policy is None:
+            return []
+        values = policy.vocabulary_identifiers or (
+            config.qualitative_vocab_identifiers
+            if policy is config.type_policy
+            else []
+        )
+        if policy is config.type_policy and not values:
+            values = DEFAULT_QUALITATIVE_VOCAB_IDENTIFIERS
+        return [value for value in values if value.strip()]
+
+    @staticmethod
     def _default_vocab_query_config(
         qualitative_vocab_identifiers: list[str] | None,
     ) -> ExtractionVocabQueryConfig:
+        qualitative = qualitative_vocab_identifiers or DEFAULT_QUALITATIVE_VOCAB_IDENTIFIERS
         return ExtractionVocabQueryConfig(
-            qualitative_vocab_identifiers=(
-                qualitative_vocab_identifiers or DEFAULT_QUALITATIVE_VOCAB_IDENTIFIERS
-            )
+            qualitative_vocab_identifiers=qualitative,
+            type_policy=GroundingRolePolicy(
+                vocabulary_identifiers=qualitative,
+                rdf_type="skos__Concept",
+                enabled=True,
+            ),
+            rdf_type_policy=GroundingRolePolicy(
+                vocabulary_identifiers=[],
+                rdf_type="",
+                enabled=False,
+            ),
         )
 
     @staticmethod

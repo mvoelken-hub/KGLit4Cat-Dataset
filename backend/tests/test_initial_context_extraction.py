@@ -28,6 +28,7 @@ from app.domain.extraction import (
     FileRankingResult,
     GroundedExtractionObject,
     PromptTokenBudgeter,
+    ProfileFieldNormalization,
     ProfilePatchDocument,
     ProfileTargetDecision,
     ProfileTargetWriteDocument,
@@ -2509,6 +2510,111 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 ("/unit", "unit", "K"),
             ],
         )
+
+    def test_profile_vocab_sources_include_schema_defined_terms(self):
+        schema = {
+            "$defs": {
+                "Dataset": {
+                    "type": "object",
+                    "properties": {
+                        "sample": {
+                            "type": "object",
+                            "properties": {
+                                "type": {"$ref": "#/$defs/DefinedTerm"}
+                            },
+                        }
+                    },
+                },
+                "DefinedTerm": {
+                    "type": "object",
+                    "properties": {"id": {"type": "string"}, "title": {"type": "string"}},
+                },
+            },
+            "$ref": "#/$defs/Dataset",
+        }
+
+        sources = WorkflowService._profile_vocab_sources(
+            {"sample": {"type": "catalyst sample"}},
+            enrichable_fields=[],
+            validation_schema=schema,
+        )
+
+        self.assertEqual(sources, [("/sample/type", "type", "catalyst sample")])
+
+    def test_grounded_profile_document_writes_selected_terms_and_qudt_classes(self):
+        schema = {
+            "type": "object",
+            "properties": {
+                "type": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "title": {"type": "string"},
+                        "from_CV": {"type": "string"},
+                    },
+                },
+                "has_quantitative_attribute": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "value": {"type": "number"},
+                            "rdf_type": {"type": "object", "properties": {"id": {"type": "string"}, "from_CV": {"type": "string"}}},
+                            "has_quantity_type": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {"type": "string"},
+                                    "title": {"type": "string"},
+                                    "from_CV": {"type": "string"},
+                                    "rdf_type": {"type": "object", "properties": {"id": {"type": "string"}, "from_CV": {"type": "string"}}},
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        }
+        normalization = ExtractionNormalization(
+            profile_fields=[
+                ProfileFieldNormalization(
+                    json_path="/type",
+                    field_name="type",
+                    source_value="dataset",
+                    term=VocabularyTermMapping(
+                        source_value="dataset",
+                        vocabulary_identifier="https://w3id.org/nfdi4cat/voc4cat",
+                        selected_uri="https://example.org/dataset",
+                        selected_title="Dataset",
+                    ),
+                ),
+                ProfileFieldNormalization(
+                    json_path="/has_quantitative_attribute/0/has_quantity_type",
+                    field_name="has_quantity_type",
+                    source_value="temperature",
+                    term=VocabularyTermMapping(
+                        source_value="temperature",
+                        vocabulary_identifier="http://qudt.org/vocab/quantitykind",
+                        selected_uri="http://qudt.org/vocab/quantitykind/Temperature",
+                        selected_title="Temperature",
+                    ),
+                ),
+            ]
+        )
+
+        grounded = WorkflowService._grounded_profile_document(
+            document={
+                "type": "dataset",
+                "has_quantitative_attribute": [{"value": 298.15, "has_quantity_type": "temperature"}],
+            },
+            normalization=normalization,
+            validation_schema=schema,
+        )
+
+        self.assertEqual(grounded["type"]["id"], "https://example.org/dataset")
+        attribute = grounded["has_quantitative_attribute"][0]
+        self.assertEqual(attribute["rdf_type"]["id"], "https://qudt.org/schema/qudt/Quantity")
+        self.assertEqual(attribute["has_quantity_type"]["id"], "http://qudt.org/vocab/quantitykind/Temperature")
+        self.assertEqual(attribute["has_quantity_type"]["rdf_type"]["id"], "https://qudt.org/schema/qudt/QuantityKind")
 
     async def test_run_extraction_requires_completed_chunks(self):
         service, _, _ = make_service([])

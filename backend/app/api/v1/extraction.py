@@ -408,6 +408,30 @@ async def get_complete_workflow_progress(
     return CompleteWorkflowProgressResponse(status=status_value, progress=progress)
 
 
+@router.post("/stages/grounding/{data_package_id}/run")
+async def run_grounding_stage(
+    data_package_id: str,
+    chunking_strategy: Literal["semantic", "fixed_tokens"] | None = None,
+    chat_model: str | None = None,
+    workflow_service: WorkflowService = Depends(get_workflow_service),
+):
+    """Run the vocabulary grounding stage as a standalone step.
+
+    Grounds the persisted profile draft without rebuilding the projection or
+    requirement-enrichment stages.
+    """
+    try:
+        return _extraction_result_response(
+            await workflow_service.run_grounding_stage(
+                data_package_id=data_package_id,
+                chunking_strategy=chunking_strategy,
+                chat_model=chat_model,
+            )
+        )
+    except Exception as exc:
+        _raise_extraction_error(exc)
+
+
 @router.post("/stages/grounding/{data_package_id}/rerun")
 async def rerun_vocab_queries(
     data_package_id: str,

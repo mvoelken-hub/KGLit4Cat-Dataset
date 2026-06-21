@@ -16,6 +16,16 @@ Each decision should include:
 
 ## Decisions
 
+### 2026-06-21: Run Vocabulary Grounding As A Separate Stage
+
+Decision: Vocabulary grounding is invoked through a dedicated POST /extraction/stages/grounding/{id}/run endpoint that grounds the persisted curated or reconstructed profile draft in place, instead of driving the full evidence-resume pipeline up to the grounding stage.
+
+Reason: Resuming the whole workflow to reach grounding re-ran profile projection and requirement enrichment every time, rebuilding the draft the user only wanted to ground. Grounding is the final enrichment step and should be runnable independently once a profile draft exists.
+
+Tradeoff: The dedicated run cannot build a profile draft from scratch; it requires a prior profile draft (curated_document or generated_reconstructed_draft) and completed evidence context. The general resume path remains available for end-to-end runs.
+
+Revisit trigger: Revisit if grounding needs inputs only produced by re-running an earlier stage, or if first-time grounding should also discover fields incrementally.
+
 ### 2026-06-19: Default Prototype LLM Calls To Deterministic Generation
 
 Decision: Prototype LLM calls use `OLLAMA_GENERATION_TEMPERATURE=0.0` by default and can enforce a context-derived `num_predict` output cap.
@@ -155,6 +165,36 @@ Reason: Vocabulary grounding should normalize the meaning of selected profile va
 Tradeoff: Ungrounded raw labels and units remain in intermediate profile-draft artifacts until the final grounding stage.
 
 Revisit trigger: Revisit only if a future profile explicitly requires grounded identifiers to make an earlier structural placement decision.
+
+### 2026-06-21: Treat Reconstructed Draft As Completed Profile Stage
+
+Decision: The profile-draft stage is completed at `generated_reconstructed_draft.json`. Vocabulary grounding reads `curated_document` when present, otherwise that reconstructed draft, and writes a separate grounded `generated_final_draft`.
+
+Reason: Semantic reconstruction and grounding answer different questions. Reconstruction decides whether values are in the right profile objects and fields; grounding assigns controlled identifiers to already placed values. Keeping the documents separate makes stage review possible and avoids hiding raw reconstruction behavior behind vocabulary normalization.
+
+Tradeoff: The runtime now carries two closely related profile documents, so artifact names and UI labels must stay explicit.
+
+Revisit trigger: Revisit only if future profiles require grounded identifiers during reconstruction, or if artifact naming is migrated to make raw and grounded documents impossible to confuse.
+
+### 2026-06-21: Separate Concept Type From Ontology RDF Type
+
+Decision: Grounding policy treats `type` fields as vocabulary concept roles, normally SKOS concepts, and `rdf_type` fields as ontology-class roles. General `rdf_type` grounding requires an explicit ontology vocabulary and class policy; it does not fall back to fake SKOS semantics.
+
+Reason: `type` and `rdf_type` carry different semantics. Concept vocabularies classify domain terms, while RDF type links instances or terms to ontology classes. Mixing them would create schema-valid but semantically weak metadata.
+
+Tradeoff: Non-quantitative `rdf_type` fields may remain ungrounded until the user configures an ontology vocabulary and class.
+
+Revisit trigger: Revisit when profiles declare their own ontology-class policies or when imported vocabularies expose reliable class scopes.
+
+### 2026-06-21: Ground Quantitative DefinedTerms With QUDT Classes
+
+Decision: Quantitative attributes receive deterministic QUDT class terms during final grounding: the attribute `rdf_type` is QUDT `Quantity`, grounded `has_quantity_type` terms receive QUDT `QuantityKind`, and grounded `unit` terms receive QUDT `Unit`.
+
+Reason: These class assignments are known from the schema role before querying. Querying should normalize the specific quantity kind or unit identifier, not rediscover the ontology class of the field.
+
+Tradeoff: Unit synonym normalization is still vocabulary-query dependent; this decision only fixes class typing and controlled-vocabulary source policy.
+
+Revisit trigger: Revisit if profile schemas rename the quantity-kind role or if deterministic unit synonym mapping is introduced.
 
 ### 2026-06-21: Separate Evidence Extraction From Profile Draft Construction
 

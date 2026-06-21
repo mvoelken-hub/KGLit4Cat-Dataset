@@ -5691,22 +5691,40 @@ class ProjectionService:
         warnings: list[str],
     ) -> ExtractionRunResult:
         assert self.output_repository is not None
+        source_document = remove_null_values(self._clone_json_object(document))
+        grounded_document = self._grounded_profile_document(
+            document=source_document,
+            normalization=normalization,
+            validation_schema=validation_schema,
+        )
         pruned_document = self._prune_initial_draft_scaffold(
-            document,
+            grounded_document,
             state.initial_draft_scaffold,
         )
-        curated_document = self._curate_generated_profile_document(pruned_document)
-        clean_document = remove_null_values(curated_document)
+        clean_document = remove_null_values(
+            self._curate_generated_profile_document(pruned_document)
+        )
         validation = self._validate_profile_document(
             profile_identifier=profile_identifier,
             document=clean_document,
         )
+        had_reconstructed_draft = state.generated_reconstructed_draft is not None
         state.generated_final_draft = clean_document
-        state.generated_reconstructed_draft = clean_document
+        if state.generated_reconstructed_draft is None:
+            state.generated_reconstructed_draft = self._clone_json_object(source_document)
         state.validation = validation
         if state.curated_document is None:
-            state.curated_document = self._clone_json_object(clean_document)
-            state.curated_validation = validation
+            default_curated_document = (
+                source_document
+                if normalization.profile_fields or had_reconstructed_draft
+                else clean_document
+            )
+            curated_document = self._clone_json_object(default_curated_document)
+            state.curated_document = curated_document
+            state.curated_validation = self._validate_profile_document(
+                profile_identifier=profile_identifier,
+                document=curated_document,
+            )
         elif state.curated_validation is None:
             state.curated_validation = self._validate_profile_document(
                 profile_identifier=profile_identifier,
@@ -5740,6 +5758,9 @@ class ProjectionService:
             workflow_id=data_package_id,
             vocab_queries=state.vocab_queries,
             normalization=normalization,
+            grounding_policy=state.vocab_query_config,
+            grounded_validation=validation,
+            grounded_document=clean_document,
             chat_model=state.chat_model,
             chunking_strategy=state.chunking_strategy,
         )
@@ -5819,7 +5840,7 @@ class ProjectionService:
         validation: DraftValidationResult,
         projection_ledger: list[ProjectionLedgerRecord],
         field_completion_ledger: list[FieldCompletionLedgerRecord],
-    ) -> str:
+    ) -> DraftQualityState:
         if not projection_ledger or not any(
             record.status == "projected" for record in projection_ledger
         ):
@@ -5834,6 +5855,101 @@ class ProjectionService:
         if validation.status == "valid" and not has_projection_issue and not has_field_issue:
             return "complete_final_draft"
         return "imperfect_final_draft"
+
+    @classmethod
+    def _grounded_profile_document(
+        cls,
+        *,
+        document: dict[str, Any],
+        normalization: ExtractionNormalization,
+        validation_schema: dict[str, Any],
+    ) -> dict[str, Any]:
+        grounded = cls._apply_deterministic_quantitative_terms(
+            cls._clone_json_object(document)
+        )
+        for item in normalization.profile_fields:
+            if item.term is None or not item.term.selected_uri:
+                continue
+            exists, existing_value = cls._json_pointer_value(grounded, item.json_path)
+            field_schema = cls._schema_for_json_pointer(validation_schema, item.json_path)
+            selected_value = cls._selected_vocab_value_for_schema(
+                field_schema=field_schema,
+                root_schema=validation_schema,
+                selected_uri=item.term.selected_uri,
+                selected_title=item.term.selected_title,
+                vocabulary_identifier=item.term.vocabulary_identifier,
+                existing_value=existing_value if exists else None,
+                rdf_type_term=cls._rdf_type_term_for_grounding_role(item.field_name),
+            )
+            grounded = cls._set_json_pointer_value(
+                grounded,
+                item.json_path,
+                selected_value,
+            )
+        return grounded
+
+    @classmethod
+    def _apply_deterministic_quantitative_terms(cls, value: Any) -> Any:
+        if isinstance(value, list):
+            return [cls._apply_deterministic_quantitative_terms(item) for item in value]
+        if not isinstance(value, dict):
+            return value
+        result = {
+            key: cls._apply_deterministic_quantitative_terms(item)
+            for key, item in value.items()
+        }
+        if "value" in result and "has_quantity_type" in result:
+            result.setdefault(
+                "rdf_type",
+                cls._defined_term(
+                    QUDT_QUANTITY_URI,
+                    "Quantity",
+                    QUDT_SCHEMA_VOCAB,
+                ),
+            )
+        if isinstance(result.get("has_quantity_type"), dict):
+            result["has_quantity_type"].setdefault(
+                "rdf_type",
+                cls._rdf_type_term_for_grounding_role("has_quantity_type"),
+            )
+        if isinstance(result.get("unit"), dict):
+            result["unit"].setdefault(
+                "rdf_type",
+                cls._rdf_type_term_for_grounding_role("unit"),
+            )
+        return result
+
+    @staticmethod
+    def _rdf_type_term_for_grounding_role(role: str) -> dict[str, Any] | None:
+        if role == "has_quantity_type":
+            return ProjectionService._defined_term(
+                QUDT_QUANTITY_KIND_URI,
+                "QuantityKind",
+                QUDT_SCHEMA_VOCAB,
+            )
+        if role == "unit":
+            return ProjectionService._defined_term(
+                QUDT_UNIT_URI,
+                "Unit",
+                QUDT_SCHEMA_VOCAB,
+            )
+        return None
+
+    @staticmethod
+    def _defined_term(
+        term_id: str,
+        title: str | None = None,
+        from_cv: str | None = None,
+        rdf_type: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        value: dict[str, Any] = {"id": term_id}
+        if title:
+            value["title"] = title
+        if from_cv:
+            value["from_CV"] = from_cv
+        if rdf_type is not None:
+            value["rdf_type"] = rdf_type
+        return value
 
     def _build_field_completion_ledger(
         self,
@@ -5850,6 +5966,7 @@ class ProjectionService:
         profile_sources = self._profile_vocab_sources(
             generated_document,
             enrichable_fields=enrichable_fields,
+            validation_schema=validation_schema,
         )
         paths.update(path for path, _field_name, _value in profile_sources)
         paths.update(
@@ -6350,6 +6467,7 @@ class ProjectionService:
         selected_title: str | None,
         vocabulary_identifier: str | None,
         existing_value: Any,
+        rdf_type_term: dict[str, Any] | None = None,
     ) -> Any:
         field_schema = cls._resolve_schema_node(field_schema, root_schema)
         if cls._schema_is_array(field_schema, root_schema):
@@ -6364,6 +6482,7 @@ class ProjectionService:
                     selected_uri=selected_uri,
                     selected_title=selected_title,
                     vocabulary_identifier=vocabulary_identifier,
+                    rdf_type_term=rdf_type_term,
                 )
                 if cls._schema_accepts_term_object(item_schema, root_schema)
                 else selected_uri
@@ -6379,6 +6498,7 @@ class ProjectionService:
                 selected_uri=selected_uri,
                 selected_title=selected_title,
                 vocabulary_identifier=vocabulary_identifier,
+                rdf_type_term=rdf_type_term,
             )
         return selected_uri
 
@@ -6423,6 +6543,7 @@ class ProjectionService:
         selected_uri: str,
         selected_title: str | None,
         vocabulary_identifier: str | None,
+        rdf_type_term: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         schema = cls._resolve_schema_node(schema, root_schema)
         properties = schema.get("properties", {}) if isinstance(schema, dict) else {}
@@ -6433,6 +6554,8 @@ class ProjectionService:
             value["title"] = selected_title
         if "from_CV" in properties and vocabulary_identifier is not None:
             value["from_CV"] = vocabulary_identifier
+        if "rdf_type" in properties and rdf_type_term is not None:
+            value["rdf_type"] = rdf_type_term
         return value
 
     @staticmethod
@@ -7157,10 +7280,35 @@ class ProjectionService:
         document: dict[str, Any],
         *,
         enrichable_fields: list[str],
+        validation_schema: dict[str, Any] | None = None,
     ) -> list[tuple[str, str, str]]:
         target_fields = {"has_quantity_type", "unit"} | set(enrichable_fields)
         sources: list[tuple[str, str, str]] = []
         seen: set[tuple[str, str, str]] = set()
+
+        def term_source_text(value: Any) -> str:
+            if isinstance(value, dict):
+                for key in ("title", "preferred_label", "label", "name", "id"):
+                    item = value.get(key)
+                    if isinstance(item, list):
+                        item = next((entry for entry in item if isinstance(entry, str) and entry.strip()), None)
+                    if isinstance(item, str) and item.strip():
+                        return item.strip()
+                return ""
+            if isinstance(value, str):
+                return value.strip()
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                return str(value)
+            return ""
+
+        def collect_term_values(value: Any, path: str) -> list[tuple[str, str]]:
+            if isinstance(value, list):
+                collected: list[tuple[str, str]] = []
+                for index, item in enumerate(value):
+                    collected.extend(collect_term_values(item, f"{path}/{index}"))
+                return collected
+            text = term_source_text(value)
+            return [(path, text)] if text else []
 
         def collect_scalar_values(value: Any, path: str) -> list[tuple[str, str]]:
             if isinstance(value, str):
@@ -7186,8 +7334,19 @@ class ProjectionService:
             if isinstance(value, dict):
                 for key, item in value.items():
                     item_path = f"{path}/{cls._json_pointer_escape(key)}"
-                    if key in target_fields:
-                        for scalar_path, scalar in collect_scalar_values(item, item_path):
+                    schema_accepts_term = False
+                    if validation_schema is not None:
+                        field_schema = cls._schema_for_json_pointer(
+                            validation_schema,
+                            item_path,
+                        )
+                        schema_accepts_term = cls._schema_accepts_term_object(
+                            field_schema,
+                            validation_schema,
+                        )
+                    if key in target_fields or schema_accepts_term:
+                        collector = collect_term_values if schema_accepts_term else collect_scalar_values
+                        for scalar_path, scalar in collector(item, item_path):
                             record = (scalar_path, key, scalar)
                             if record not in seen:
                                 seen.add(record)

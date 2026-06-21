@@ -11,6 +11,7 @@ from app.domain.extraction import (
     ExtractionOverviewStatus,
     ExtractionRunResult,
     ExtractionRunState,
+    ExtractionVocabQueryConfig,
     ExtractionVocabQueryRecord,
     FieldCompletionLedgerRecord,
     FilteredEvidenceLedger,
@@ -282,6 +283,9 @@ class ExtractionOutputRepository(Protocol):
         workflow_id: str,
         vocab_queries: list[ExtractionVocabQueryRecord],
         normalization: ExtractionNormalization,
+        grounding_policy: ExtractionVocabQueryConfig | None = None,
+        grounded_validation: DraftValidationResult | None = None,
+        grounded_document: dict[str, Any] | None = None,
         chat_model: str | None = None,
         chunking_strategy: str = "semantic",
     ) -> None: ...

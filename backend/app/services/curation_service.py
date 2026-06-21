@@ -115,12 +115,21 @@ class CurationService:
                 selected_title=selected_title,
                 vocabulary_identifier=vocabulary_identifier,
                 existing_value=self._json_pointer_value(curated_document, json_path)[1],
+                rdf_type_term=self._rdf_type_term_for_grounding_role(
+                    self._field_name_from_pointer(json_path)
+                ),
             )
             curated_document = self._set_json_pointer_value(
                 curated_document,
                 json_path,
                 selected_value,
             )
+            if state.generated_final_draft is not None:
+                state.generated_final_draft = self._set_json_pointer_value(
+                    state.generated_final_draft,
+                    json_path,
+                    selected_value,
+                )
 
         state.curated_document = curated_document
         state.curated_validation = self._validate_profile_document(

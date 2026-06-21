@@ -17,9 +17,9 @@ The intended contribution is a traceable extraction architecture:
 5. Extract grounded evidence from chunks.
 6. Accumulate and route extracted evidence.
 7. Project the accumulated evidence context into a metadata profile draft.
-8. Improve coverage, reconstruct semantic placement, validate, and optionally curate the draft.
-9. Ground selected fields of the finalized profile draft against semantic vocabularies.
-10. Validate and persist the final document.
+8. Improve coverage, reconstruct semantic placement, validate, and optionally curate the draft. This completes the profile-draft stage.
+9. Ground selected fields of the profile draft against semantic vocabularies into a separate final draft.
+10. Validate and persist the grounded final document.
 
 ## Core Design Reasoning
 
@@ -105,15 +105,21 @@ Thesis claim supported: SIMONE separates extraction from profile-specific metada
 
 ### Vocabulary Grounding Is Final Enrichment
 
-After profile draft construction, semantic reconstruction, validation, and optional curation, selected fields already placed in the profile are normalized against semantic vocabularies. Vocabulary grounding is the final workflow enrichment step before final validation and persistence.
+After profile draft construction, semantic reconstruction, validation, and optional curation, selected fields already placed in the profile are normalized against semantic vocabularies. Vocabulary grounding is the final workflow enrichment step before final validation and persistence. It reads the curated document when present, otherwise the raw reconstructed draft, and writes a grounded final draft as a separate document.
 
 Reasoning:
 
 - Evidence extraction identifies candidate meaning in source text.
 - Profile construction determines where that evidence belongs in the target schema.
+- `generated_reconstructed_draft.json` is the completed profile-draft artifact and remains raw enough to inspect reconstruction output before grounding.
+- `generated_final_draft` is the grounded final document produced from the curated document when available, otherwise from the reconstructed draft.
 - Vocabulary grounding then links selected placed values to reusable identifiers.
+- Fields typed as `DefinedTerm` are discovered from the active profile schema, not only from hardcoded field names.
+- `type` fields represent vocabulary concepts, usually SKOS concepts. `rdf_type` fields represent ontology classes.
+- Quantitative attributes receive deterministic QUDT class terms: the attribute itself is a QUDT `Quantity`, `has_quantity_type` terms are QUDT `QuantityKind`, and `unit` terms are QUDT `Unit`.
 - Vector search, full-text search, graph context, and candidate selection provide a controlled grounding process.
 - Failed grounding preserves raw values and warnings instead of fabricating semantic links.
+- Grounding runs as its own stage (POST /extraction/stages/grounding/{id}/run) and never rebuilds the profile draft: it grounds the persisted curated or reconstructed draft in place. Rerun all queries only refreshes existing query records without re-discovering fields.
 
 Thesis claim supported: SIMONE combines evidence-backed profile construction with final ontology- or vocabulary-backed semantic normalization.
 
@@ -162,8 +168,10 @@ Dataset package
   -> initialized profile draft
   -> evidence-backed coverage patching
   -> semantic reconstruction and validation
+  -> completed raw reconstructed profile draft
   -> optional curation
   -> final vocabulary grounding of placed profile fields
+  -> grounded final draft
   -> validated and persisted result
 ```
 

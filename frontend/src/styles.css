@@ -285,6 +285,52 @@ h2 { margin: 0; font-size: clamp(1.6rem, 3vw, 2.6rem); letter-spacing: -0.04em; 
 .draft-grounding-panel > summary > div { min-width: 0; display: grid; gap: 3px; }
 .draft-grounding-panel > summary span { display: block; color: var(--muted); font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; }
 .draft-grounding-panel > summary strong { display: block; overflow-wrap: anywhere; font-size: 0.96rem; }
+.grounding-console { display: grid; gap: 12px; margin-top: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,0.58); }
+.grounding-toolbar { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.grounding-toolbar > div:first-child { min-width: 0; display: grid; gap: 4px; }
+.grounding-toolbar span, .grounding-query-group-heading span, .grounding-vocabulary-manager summary span { display: block; color: var(--muted); font-size: 0.7rem; font-weight: 800; letter-spacing: 0.1em; line-height: 1.2; text-transform: uppercase; }
+.grounding-toolbar strong, .grounding-query-group-heading strong, .grounding-vocabulary-manager summary strong { display: block; overflow-wrap: anywhere; font-size: 1rem; line-height: 1.25; }
+.grounding-toolbar > div:last-child { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.grounding-stats, .grounding-policy-chips, .grounding-query-inspection-summary { display: flex; flex-wrap: wrap; gap: 7px; }
+.grounding-stats span, .grounding-policy-chips span, .grounding-query-inspection-summary span { min-width: 0; border: 1px solid var(--line); border-radius: 999px; padding: 0.32rem 0.58rem; color: var(--muted); background: rgba(255,255,255,0.72); font-size: 0.76rem; line-height: 1.2; overflow-wrap: anywhere; }
+.grounding-stats strong { color: var(--ink); margin-right: 3px; }
+.grounding-stats span.danger { border-color: rgba(188, 57, 43, 0.56); color: #bc392b; background: rgba(255,239,236,0.82); }
+.grounding-policy-chips span { color: var(--accent-dark); background: rgba(246,250,239,0.76); border-color: rgba(99,154,0,0.28); }
+.grounding-console .vocab-query-config-panel { border-radius: 8px; box-shadow: none; background: rgba(248,250,247,0.68); }
+.grounding-query-groups { display: grid; gap: 10px; }
+.grounding-query-group { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,0.5); }
+.grounding-query-group.quantitative { border-color: rgba(0, 120, 180, 0.32); background: rgba(238,248,252,0.68); }
+.grounding-query-group.qualitative { border-color: rgba(99,154,0,0.28); background: rgba(248,251,242,0.66); }
+.grounding-query-group-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.grounding-query-group-heading small { flex: 0 0 auto; color: var(--muted); font-size: 0.76rem; font-weight: 800; text-align: right; }
+.grounding-query-list { display: grid; gap: 7px; }
+.grounding-query-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 9px; border: 1px solid rgba(36,43,51,0.1); border-radius: 7px; background: rgba(255,255,255,0.72); }
+.grounding-query-row.running { border-color: rgba(202,116,6,0.48); }
+.grounding-query-row.failed { border-color: rgba(188,57,43,0.58); background: rgba(255,239,236,0.76); }
+.grounding-query-main { min-width: 0; display: grid; gap: 3px; padding: 0; border: 0; border-radius: 0; background: transparent; color: inherit; text-align: left; box-shadow: none; }
+.grounding-query-main:hover:not(:disabled), .grounding-query-main:focus-visible { background: transparent; color: inherit; transform: none; outline: 2px solid rgba(99,154,0,0.28); outline-offset: 3px; }
+.grounding-query-main span { color: var(--muted); font-size: 0.68rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+.grounding-query-main strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.88rem; line-height: 1.25; }
+.grounding-query-main small { min-width: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.76rem; line-height: 1.3; }
+.grounding-query-meta, .grounding-query-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.grounding-query-meta span { border: 1px solid var(--line); border-radius: 999px; padding: 0.22rem 0.46rem; color: var(--muted); background: rgba(255,255,255,0.78); font-size: 0.7rem; font-weight: 700; white-space: nowrap; }
+.grounding-empty-state, .grounding-query-empty { display: grid; gap: 8px; padding: 12px; border: 1px dashed var(--line); border-radius: 8px; background: rgba(255,255,255,0.5); }
+.grounding-empty-state p { margin: 0; }
+.grounding-empty-state button { width: fit-content; }
+.grounding-result-dialog { width: min(1040px, 94vw); max-height: 88vh; background: #fff; grid-template-rows: auto minmax(0, 1fr); }
+.grounding-result-dialog-body { min-height: 0; overflow: auto; display: grid; align-content: start; gap: 10px; }
+.grounding-query-inspection-summary button { padding-top: 0.3rem; padding-bottom: 0.3rem; }
+.grounding-query-inspection-head { border: 1px solid var(--line); border-radius: 8px; background: rgba(248,250,247,0.7); overflow: hidden; }
+.grounding-query-inspection-head dl { margin: 0; display: grid; }
+.grounding-query-inspection-head dl > div { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 10px; padding: 9px 11px; border-bottom: 1px solid rgba(36,43,51,0.08); }
+.grounding-query-inspection-head dl > div:last-child { border-bottom: 0; }
+.grounding-query-inspection-head dt { color: var(--muted); font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; }
+.grounding-query-inspection-head dd { min-width: 0; margin: 0; overflow-wrap: anywhere; font-size: 0.82rem; line-height: 1.4; }
+.grounding-vocabulary-manager { margin-top: 12px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,0.48); overflow: hidden; }
+.grounding-vocabulary-manager > summary { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 14px; cursor: pointer; list-style: none; }
+.grounding-vocabulary-manager > summary::-webkit-details-marker { display: none; }
+.grounding-vocabulary-manager > summary > div { min-width: 0; display: grid; gap: 3px; }
+.grounding-vocabulary-manager .workflow-vocabulary-panel .panel { margin-top: 0; border-width: 1px 0 0; border-radius: 0; }
 .chunk-vocab-query > summary { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 10px; cursor: pointer; list-style: none; }
 .chunk-vocab-query > summary::-webkit-details-marker { display: none; }
 .chunk-vocab-query > summary div { min-width: 0; }
@@ -818,6 +864,13 @@ button.small { padding: 0.4rem 0.7rem; font-size: 0.78rem; }
   .step-index { border-right: 0; border-bottom: 1px solid var(--line); padding: 14px 24px; }
   .step-header { grid-template-columns: auto minmax(0, 1fr); }
   .step-header-actions { grid-column: 2; justify-content: flex-start; }
+  .grounding-toolbar, .grounding-query-group-heading { flex-direction: column; align-items: stretch; }
+  .grounding-toolbar > div:last-child { justify-content: stretch; }
+  .grounding-toolbar > div:last-child button { flex: 1 1 140px; }
+  .grounding-query-row { grid-template-columns: 1fr; align-items: stretch; }
+  .grounding-query-meta, .grounding-query-actions { justify-content: flex-start; }
+  .grounding-query-main strong, .grounding-query-main small { white-space: normal; overflow-wrap: anywhere; }
+  .grounding-query-inspection-head dl > div { grid-template-columns: 1fr; gap: 4px; }
   .json-editor { grid-template-columns: 1fr; }
   .json-editor-sidebar { max-height: 200px; }
   .json-editor-resize-handle { display: none; }

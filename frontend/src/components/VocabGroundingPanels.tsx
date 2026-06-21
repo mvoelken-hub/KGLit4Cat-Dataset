@@ -165,7 +165,9 @@ const QUANTITATIVE_ATTRIBUTE_VOCABULARIES = [
 ];
 
 type VocabQueryNumericField = {
-  key: keyof ExtractionVocabQueryConfig;
+  key: {
+    [K in keyof ExtractionVocabQueryConfig]: ExtractionVocabQueryConfig[K] extends number ? K : never
+  }[keyof ExtractionVocabQueryConfig];
   label: string;
   step?: string;
   min?: string;
@@ -213,9 +215,23 @@ const QUANTITATIVE_VOCAB_QUERY_DEFAULTS = {
 type VocabQueryConfigMode = 'qualitative' | 'quantitative';
 
 function normalizeVocabQueryConfig(config: ExtractionVocabQueryConfig): ExtractionVocabQueryConfig {
+  const qualitativeVocabularies = config.qualitative_vocab_identifiers ?? [];
+  const typePolicy = config.type_policy ?? {};
+  const rdfTypePolicy = config.rdf_type_policy ?? {};
   return {
     ...QUANTITATIVE_VOCAB_QUERY_DEFAULTS,
     ...config,
+    qualitative_vocab_identifiers: qualitativeVocabularies,
+    type_policy: {
+      vocabulary_identifiers: typePolicy.vocabulary_identifiers ?? qualitativeVocabularies,
+      rdf_type: typePolicy.rdf_type ?? 'skos__Concept',
+      enabled: typePolicy.enabled ?? true,
+    },
+    rdf_type_policy: {
+      vocabulary_identifiers: rdfTypePolicy.vocabulary_identifiers ?? [],
+      rdf_type: rdfTypePolicy.rdf_type ?? '',
+      enabled: rdfTypePolicy.enabled ?? false,
+    },
   };
 }
 
@@ -262,6 +278,8 @@ function VocabQueryConfigPanel({
       || prev.quantitative_vector_weight !== normalized.quantitative_vector_weight
       || prev.quantitative_fulltext_weight !== normalized.quantitative_fulltext_weight
       || prev.quantitative_rrf_k !== normalized.quantitative_rrf_k
+      || JSON.stringify(prev.type_policy) !== JSON.stringify(normalized.type_policy)
+      || JSON.stringify(prev.rdf_type_policy) !== JSON.stringify(normalized.rdf_type_policy)
     );
     if (changed) {
       setDraft(normalized);
@@ -297,6 +315,12 @@ function VocabQueryConfigPanel({
     setDraft((current) => ({ ...current, [key]: Number.isFinite(parsed) ? parsed : 0 }));
   };
   const validateDraft = () => {
+    if (draft.type_policy.enabled && !draft.type_policy.rdf_type.trim()) {
+      return 'Type RDF type is required.';
+    }
+    if (draft.rdf_type_policy.enabled && (!draft.rdf_type_policy.rdf_type.trim() || !draft.rdf_type_policy.vocabulary_identifiers.length)) {
+      return 'rdf_type grounding needs an RDF type and at least one ontology vocabulary.';
+    }
     for (const field of VOCAB_QUERY_NUMERIC_FIELDS) {
       const value = draft[field.key];
       const min = Number(field.min ?? '1');
@@ -331,6 +355,12 @@ function VocabQueryConfigPanel({
       qualitative_vocab_identifiers: checked
         ? Array.from(new Set([...current.qualitative_vocab_identifiers, identifier]))
         : current.qualitative_vocab_identifiers.filter((item) => item !== identifier),
+      type_policy: {
+        ...current.type_policy,
+        vocabulary_identifiers: checked
+          ? Array.from(new Set([...current.type_policy.vocabulary_identifiers, identifier]))
+          : current.type_policy.vocabulary_identifiers.filter((item) => item !== identifier),
+      },
     }));
   };
   const addVocabOption = () => {
@@ -340,8 +370,32 @@ function VocabQueryConfigPanel({
     setDraft((current) => ({
       ...current,
       qualitative_vocab_identifiers: Array.from(new Set([...current.qualitative_vocab_identifiers, identifier])),
+      type_policy: {
+        ...current.type_policy,
+        vocabulary_identifiers: Array.from(new Set([...current.type_policy.vocabulary_identifiers, identifier])),
+      },
     }));
     setSelectedVocabIdentifier('');
+  };
+  const setRolePolicy = (
+    role: 'type_policy' | 'rdf_type_policy',
+    update: Partial<ExtractionVocabQueryConfig['type_policy']>,
+  ) => {
+    setDraft((current) => ({
+      ...current,
+      [role]: {
+        ...current[role],
+        ...update,
+      },
+    }));
+  };
+  const setRolePolicyVocab = (role: 'type_policy' | 'rdf_type_policy', value: string) => {
+    setRolePolicy(role, {
+      vocabulary_identifiers: value
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean),
+    });
   };
   const addableVocabularies = availableVocabularies.filter((identifier) => !draft.qualitative_vocab_identifiers.includes(identifier));
   const renderNumberFields = (fields: VocabQueryNumericField[]) => fields.map((field) => (
@@ -399,6 +453,42 @@ function VocabQueryConfigPanel({
             <option value="outgoing">Outgoing</option>
             <option value="incoming">Incoming</option>
           </select>
+        </label>
+        <label>
+          <span>Type RDF type</span>
+          <input
+            value={draft.type_policy.rdf_type}
+            onChange={(event) => setRolePolicy('type_policy', { rdf_type: event.target.value })}
+          />
+        </label>
+        <label>
+          <span>Type vocabularies</span>
+          <input
+            value={draft.type_policy.vocabulary_identifiers.join(', ')}
+            onChange={(event) => setRolePolicyVocab('type_policy', event.target.value)}
+          />
+        </label>
+        <label>
+          <span>rdf_type enabled</span>
+          <input
+            type="checkbox"
+            checked={draft.rdf_type_policy.enabled}
+            onChange={(event) => setRolePolicy('rdf_type_policy', { enabled: event.target.checked })}
+          />
+        </label>
+        <label>
+          <span>rdf_type RDF type</span>
+          <input
+            value={draft.rdf_type_policy.rdf_type}
+            onChange={(event) => setRolePolicy('rdf_type_policy', { rdf_type: event.target.value })}
+          />
+        </label>
+        <label>
+          <span>rdf_type vocabularies</span>
+          <input
+            value={draft.rdf_type_policy.vocabulary_identifiers.join(', ')}
+            onChange={(event) => setRolePolicyVocab('rdf_type_policy', event.target.value)}
+          />
         </label>
       </div>
     </section>
@@ -499,7 +589,7 @@ function VocabQueryTraceList({
   const completed = queries.filter((query) => query.status === 'completed').length;
   const failed = queries.filter((query) => query.status === 'failed').length;
   const running = queries.filter((query) => query.status === 'running').length;
-  const quantitativeQueries = queries.filter((query) => query.kind === 'quantity_kind' || query.kind === 'unit');
+  const quantitativeQueries = queries.filter((query) => ['quantity_kind', 'unit', 'profile_has_quantity_type', 'profile_unit'].includes(query.kind));
   const qualitativeQueries = queries.filter((query) => query.kind === 'qualitative_attribute');
   const objectGroundingQueries = queries.filter((query) => query.kind === 'object_grounding');
   const otherQueries = queries.filter((query) => !quantitativeQueries.includes(query) && !qualitativeQueries.includes(query) && !objectGroundingQueries.includes(query));
@@ -657,6 +747,133 @@ function VocabQueryTraceModal({
   };
 }
 
+type GroundingQueryGroup = {
+  key: string;
+  title: string;
+  description: string;
+  queries: ExtractionVocabQueryRecord[];
+};
+
+function candidateSeedsForQuery(query: ExtractionVocabQueryRecord) {
+  return query.result ? coerceVocabQueryResult(query.result)?.seeds ?? [] : [];
+}
+
+function candidateCountForQuery(query: ExtractionVocabQueryRecord) {
+  return candidateSeedsForQuery(query).length;
+}
+
+function resourceCountForQuery(query: ExtractionVocabQueryRecord) {
+  return query.result ? Object.keys(asRecord(query.result.resources) ?? {}).length : 0;
+}
+
+function groundingQueryGroups(queries: ExtractionVocabQueryRecord[]): GroundingQueryGroup[] {
+  const quantitativeKinds = new Set(['quantity_kind', 'unit', 'profile_has_quantity_type', 'profile_unit']);
+  const objectKinds = new Set(['object_grounding', 'profile_type', 'profile_rdf_type']);
+  const objectGroundingQueries = queries.filter((query) => objectKinds.has(query.kind) || query.kind.includes('rdf_type'));
+  const quantitativeQueries = queries.filter((query) => quantitativeKinds.has(query.kind));
+  const qualitativeQueries = queries.filter((query) => query.kind === 'qualitative_attribute');
+  const grouped = new Set([...objectGroundingQueries, ...quantitativeQueries, ...qualitativeQueries]);
+  const otherQueries = queries.filter((query) => !grouped.has(query));
+  return [
+    { key: 'object-grounding', title: 'Object, type, rdf_type', description: 'Ontology classes and typed profile terms', queries: objectGroundingQueries },
+    { key: 'quantitative', title: 'Quantity kind and unit', description: 'QUDT quantity-kind and unit lookups', queries: quantitativeQueries },
+    { key: 'qualitative', title: 'Qualitative concepts', description: 'Concept terms for descriptive fields', queries: qualitativeQueries },
+    ...(otherQueries.length ? [{ key: 'other', title: 'Other queries', description: 'Additional vocabulary lookups', queries: otherQueries }] : []),
+  ];
+}
+
+function groundingStatusSummary(groupQueries: ExtractionVocabQueryRecord[]) {
+  const completed = groupQueries.filter((query) => query.status === 'completed').length;
+  const running = groupQueries.filter((query) => query.status === 'running').length;
+  const failed = groupQueries.filter((query) => query.status === 'failed').length;
+  return `${completed}/${groupQueries.length} done${running ? `, ${running} running` : ''}${failed ? `, ${failed} failed` : ''}`;
+}
+
+function GroundingQueryInspectionDialog({
+  query,
+  onClose,
+  onRerun,
+  onSelectCandidate,
+  onMarkUnresolved,
+}: {
+  query: ExtractionVocabQueryRecord;
+  onClose: () => void;
+  onRerun?: (queryId: string) => void;
+  onSelectCandidate?: (query: ExtractionVocabQueryRecord, uri: string, title?: string | null) => void;
+  onMarkUnresolved?: (query: ExtractionVocabQueryRecord) => void;
+}) {
+  const jsonPath = sourceContextJsonPointer(query);
+  const candidateSeeds = candidateSeedsForQuery(query).slice(0, 8);
+  const canCurateField = Boolean(jsonPath && query.kind.startsWith('profile_'));
+  return createPortal(
+    <div className="vocab-dialog-overlay" onClick={onClose}>
+      <div className="vocab-dialog grounding-result-dialog" onClick={(event) => event.stopPropagation()}>
+        <div className="vocab-dialog-header">
+          <div>
+            <span>Vocabulary query</span>
+            <strong>{formatExtractionStage(query.kind)}</strong>
+          </div>
+          <button className="ghost" type="button" onClick={onClose}>Close</button>
+        </div>
+        <div className="vocab-dialog-body grounding-result-dialog-body">
+          <div className="grounding-query-inspection-summary">
+            <span>{query.status}</span>
+            {query.duration_ms ? <span>{formatDuration(query.duration_ms)} query time</span> : null}
+            <span>{candidateCountForQuery(query)} candidates</span>
+            <span>{resourceCountForQuery(query)} resources</span>
+            {jsonPath ? <span>{jsonPath}</span> : null}
+            <button className="small ghost" type="button" disabled={!onRerun} onClick={() => onRerun?.(query.query_id)}>Rerun query</button>
+          </div>
+          <div className="grounding-query-inspection-head">
+            <dl>
+              <div>
+                <dt>Source value</dt>
+                <dd>{query.source_value || 'Not set'}</dd>
+              </div>
+              <div>
+                <dt>Vocabulary</dt>
+                <dd>{query.vocabulary_identifier}</dd>
+              </div>
+              <div>
+                <dt>RDF type</dt>
+                <dd>{query.rdf_type}</dd>
+              </div>
+            </dl>
+          </div>
+          {canCurateField ? (
+            <div className="vocab-curation-actions">
+              {candidateSeeds.map((seed) => {
+                const title = query.result ? vocabResourceTitle(query.result, seed.uri) : null;
+                return (
+                  <button
+                    className="small ghost"
+                    type="button"
+                    key={seed.uri}
+                    disabled={!onSelectCandidate}
+                    onClick={() => onSelectCandidate?.(query, seed.uri, title)}
+                    title={seed.uri}
+                  >
+                    {title || seed.uri}
+                  </button>
+                );
+              })}
+              <button className="small ghost" type="button" disabled={!onMarkUnresolved} onClick={() => onMarkUnresolved?.(query)}>
+                Mark unresolved
+              </button>
+            </div>
+          ) : null}
+          {query.error && <p className="warning">{query.error}</p>}
+          <JsonDetails title="Query input" value={query.query} />
+          <JsonDetails title="Source context" value={query.source_context} />
+          {query.result && <VocabQueryGraphPanel result={query.result} />}
+          <JsonDetails title="Full query result" value={query.result ?? null} />
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 export function DraftGroundingPanel({
   progress,
   disabled,
@@ -666,6 +883,7 @@ export function DraftGroundingPanel({
   onRerunVocabQuery,
   onSelectCandidate,
   onMarkUnresolved,
+  onRefresh,
 }: {
   progress?: WorkflowProgress | null;
   disabled?: boolean;
@@ -675,50 +893,125 @@ export function DraftGroundingPanel({
   onRerunVocabQuery?: (queryId: string) => void;
   onSelectCandidate?: (query: ExtractionVocabQueryRecord, uri: string, title?: string | null) => void;
   onMarkUnresolved?: (query: ExtractionVocabQueryRecord) => void;
+  onRefresh?: () => void;
 }) {
   const queries = progress?.vocab_queries ?? [];
+  const config = progress?.vocab_query_config;
+  const [selectedQuery, setSelectedQuery] = useState<ExtractionVocabQueryRecord | null>(null);
   const completed = queries.filter((query) => query.status === 'completed').length;
-  const profileFields = queries.filter((query) => query.kind.startsWith('profile_'));
+  const failed = queries.filter((query) => query.status === 'failed').length;
+  const running = queries.filter((query) => query.status === 'running').length;
+  const unresolved = progress?.field_completion_ledger?.filter((record) => ['no_candidate', 'intentionally_unresolved'].includes(record.enrichment_status)).length ?? 0;
+  const groups = groundingQueryGroups(queries);
+  const policyChips = config ? [
+    `type: ${config.type_policy.enabled ? config.type_policy.rdf_type : 'off'}`,
+    `rdf_type: ${config.rdf_type_policy.enabled ? config.rdf_type_policy.rdf_type : 'off'}`,
+    'quantity kind: QUDT',
+    'unit: QUDT',
+  ] : [];
+
   return (
-    <details className="draft-grounding-panel">
-      <summary>
+    <section className="grounding-console">
+      <div className="grounding-toolbar">
         <div>
-          <span>Advanced grounding</span>
-          <strong>{queries.length ? `${completed}/${queries.length} vocabulary queries completed` : 'Profile-path vocabulary grounding'}</strong>
+          <span>Vocabulary grounding</span>
+          <strong>{queries.length ? `${completed}/${queries.length} queries completed` : 'Run final grounding queries'}</strong>
         </div>
-      </summary>
-      <div className="draft-grounding-body">
-        <div className="chunk-call-meta">
+        <div>
           <button className="small" type="button" disabled={disabled || !onRunGrounding} onClick={() => onRunGrounding?.()}>
-            Run vocabulary grounding
+            Run grounding
           </button>
           <button className="small ghost" type="button" disabled={disabled || !queries.length || !onRerunAllVocabQueries} onClick={() => onRerunAllVocabQueries?.()}>
-            Rerun vocabulary queries
+            Rerun all queries
+          </button>
+          <button className="small ghost" type="button" disabled={disabled || !onRefresh} onClick={() => onRefresh?.()}>
+            Refresh
           </button>
         </div>
-        {progress?.vocab_query_config ? (
-          <VocabQueryConfigPanel
-            config={progress.vocab_query_config}
-            disabled={disabled}
-            onApply={onUpdateVocabQueryConfig}
-            onRerunAll={onRerunAllVocabQueries}
-          />
-        ) : null}
-        {queries.length ? (
-          <VocabQueryTraceList
-            queries={queries}
-            onRerun={onRerunVocabQuery}
-            onSelectCandidate={onSelectCandidate}
-            onMarkUnresolved={onMarkUnresolved}
-          />
-        ) : (
-          <p className="muted">No profile vocabulary queries have been generated yet.</p>
-        )}
-        {profileFields.length && profileFields.length !== queries.length ? (
-          <p className="muted">{profileFields.length} query{profileFields.length === 1 ? '' : 'ies'} target profile fields.</p>
-        ) : null}
       </div>
-    </details>
+
+      <div className="grounding-stats">
+        <span><strong>{queries.length}</strong> total</span>
+        <span><strong>{completed}</strong> completed</span>
+        <span><strong>{running}</strong> running</span>
+        <span className={failed ? 'danger' : ''}><strong>{failed}</strong> failed</span>
+        <span><strong>{unresolved}</strong> no candidate</span>
+      </div>
+
+      {policyChips.length ? (
+        <div className="grounding-policy-chips">
+          {policyChips.map((chip) => <span key={chip}>{chip}</span>)}
+        </div>
+      ) : null}
+
+      {config ? (
+        <VocabQueryConfigPanel
+          config={config}
+          disabled={disabled}
+          onApply={onUpdateVocabQueryConfig}
+          onRerunAll={onRerunAllVocabQueries}
+        />
+      ) : null}
+
+      {queries.length ? (
+        <div className="grounding-query-groups">
+          {groups.map((group) => (
+            <section className={`grounding-query-group ${group.key}`} key={group.key}>
+              <div className="grounding-query-group-heading">
+                <div>
+                  <span>{group.description}</span>
+                  <strong>{group.title}</strong>
+                </div>
+                <small>{groundingStatusSummary(group.queries)}</small>
+              </div>
+              {group.queries.length ? (
+                <div className="grounding-query-list">
+                  {group.queries.map((query) => {
+                    const jsonPath = sourceContextJsonPointer(query);
+                    return (
+                      <section className={`grounding-query-row ${query.status}`} key={query.query_id}>
+                        <button className="grounding-query-main" type="button" onClick={() => setSelectedQuery(query)}>
+                          <span>{formatExtractionStage(query.kind)}</span>
+                          <strong>{query.source_value || 'Empty source value'}</strong>
+                          <small>{jsonPath || query.vocabulary_identifier}</small>
+                        </button>
+                        <div className="grounding-query-meta">
+                          <span>{query.status}</span>
+                          <span>{candidateCountForQuery(query)} candidates</span>
+                          <span>{resourceCountForQuery(query)} resources</span>
+                        </div>
+                        <div className="grounding-query-actions">
+                          <button className="small ghost" type="button" disabled={!onRerunVocabQuery} onClick={() => onRerunVocabQuery?.(query.query_id)}>Rerun</button>
+                          <button className="small ghost" type="button" onClick={() => setSelectedQuery(query)}>Inspect</button>
+                        </div>
+                      </section>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="muted grounding-query-empty">No queries in this group.</p>
+              )}
+            </section>
+          ))}
+        </div>
+      ) : (
+        <div className="grounding-empty-state">
+          <strong>No vocabulary queries yet.</strong>
+          <p className="muted">Run grounding to discover profile fields, query configured vocabularies, and write selected terms into the final draft.</p>
+          <button type="button" disabled={disabled || !onRunGrounding} onClick={() => onRunGrounding?.()}>Run grounding</button>
+        </div>
+      )}
+
+      {selectedQuery && (
+        <GroundingQueryInspectionDialog
+          query={selectedQuery}
+          onClose={() => setSelectedQuery(null)}
+          onRerun={onRerunVocabQuery}
+          onSelectCandidate={onSelectCandidate}
+          onMarkUnresolved={onMarkUnresolved}
+        />
+      )}
+    </section>
   );
 }
 
