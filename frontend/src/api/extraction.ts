@@ -137,7 +137,7 @@ export type RequirementEvidenceItem = {
 
 export type RequirementPatchAttempt = {
   attempted: boolean;
-  status: 'not_attempted' | 'applied' | 'failed' | 'rolled_back';
+  status: 'not_attempted' | 'applied' | 'failed' | 'rolled_back' | 'unresolved';
   target_path?: string | null;
   target_class?: string | null;
   validation_errors?: string[];
@@ -158,6 +158,32 @@ export type RequirementReportItem = {
   selected_evidence?: RequirementEvidenceItem[];
   context_window?: RequirementEvidenceItem[];
   patch?: RequirementPatchAttempt;
+  iteration_kind?: 'coverage' | 'semantic_diagnosis' | 'semantic_reconstruction';
+  defect_type?: string;
+  diagnosed_defects_count?: number;
+  compiled_actions_count?: number;
+  synthesis_calls_count?: number;
+  diagnosed_defects?: SemanticReconstructionDefect[];
+  compiled_actions?: SemanticCompiledAction[];
+};
+
+export type SemanticReconstructionDefect = {
+  defect_type: string;
+  target_path: string;
+  entry_indices: number[];
+  recommended_action: 'merge' | 'remove' | 'move' | 'replace' | 'append' | 'no_action';
+  needs_synthesis: boolean;
+  reason: string;
+};
+
+export type SemanticCompiledAction = {
+  target_path: string;
+  mode: 'append' | 'replace' | 'remove' | 'merge';
+  items?: unknown[];
+  value?: unknown;
+  survivor_index?: number | null;
+  merged_indices?: number[];
+  reason?: string;
 };
 
 export type CoverageFieldReport = {
@@ -183,11 +209,21 @@ export type SourceTraceReport = {
 
 export type SemanticReconstructionRecord = {
   requirement_id: string;
-  status: 'applied' | 'skipped' | 'failed' | 'rolled_back';
+  status: 'applied' | 'skipped' | 'failed' | 'rolled_back' | 'unresolved';
   target_paths: string[];
   changed_paths: string[];
   reason: string;
   validation_errors: string[];
+  applied_actions_count?: number;
+  rejected_actions_count?: number;
+  rejected_reasons?: string[];
+  iteration_kind?: 'coverage' | 'semantic_diagnosis' | 'semantic_reconstruction';
+  defect_type?: string;
+  diagnosed_defects_count?: number;
+  compiled_actions_count?: number;
+  synthesis_calls_count?: number;
+  diagnosed_defects?: SemanticReconstructionDefect[];
+  compiled_actions?: SemanticCompiledAction[];
 };
 
 export type RequirementReport = {

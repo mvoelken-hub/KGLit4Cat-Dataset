@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import math
 
 from app.domain.extraction.description_mining import (
     DESCRIPTION_FACT_MINING_SYSTEM_PROMPT,
@@ -41,6 +42,8 @@ class _CompiledSemanticActions:
     diagnosed_defects_count: int = 0
     synthesis_calls_count: int = 0
     rejected_reasons: list[str] | None = None
+    diagnosed_defects: list[dict[str, Any]] | None = None
+    compiled_actions: list[dict[str, Any]] | None = None
 
 
 class ProjectionService:
@@ -515,6 +518,10 @@ class ProjectionService:
             document=document,
             evidence_context=evidence_context,
         )
+        self._carry_semantic_reconstruction_trace(
+            semantic_items=semantic_items,
+            records=semantic_reconstructions,
+        )
         coverage = compute_coverage_report(document, validation_schema)
         source_trace = compute_source_trace_report(
             evidence_context,
@@ -544,6 +551,24 @@ class ProjectionService:
         self._persist_state_artifacts(data_package_id, state)
         self._update_progress(data_package_id, progress)
         return document
+
+    @staticmethod
+    def _carry_semantic_reconstruction_trace(
+        *,
+        semantic_items: list[RequirementReportItem],
+        records: list[SemanticReconstructionRecord],
+    ) -> None:
+        records_by_id = {record.requirement_id: record for record in records}
+        for item in semantic_items:
+            record = records_by_id.get(item.requirement_id)
+            if record is None:
+                continue
+            item.defect_type = record.defect_type
+            item.diagnosed_defects_count = record.diagnosed_defects_count
+            item.compiled_actions_count = record.compiled_actions_count
+            item.synthesis_calls_count = record.synthesis_calls_count
+            item.diagnosed_defects = list(record.diagnosed_defects)
+            item.compiled_actions = list(record.compiled_actions)
 
     async def _reconstruct_semantic_defects(
         self,
@@ -629,8 +654,10 @@ class ProjectionService:
                         rejected_reasons=rejected_reasons,
                         defect_type=item.defect_type,
                         diagnosed_defects_count=diagnosed_defects_count,
-                        compiled_actions_count=applied_actions_count,
+                        compiled_actions_count=item.compiled_actions_count,
                         synthesis_calls_count=synthesis_calls_count,
+                        diagnosed_defects=item.diagnosed_defects,
+                        compiled_actions=item.compiled_actions,
                     )
                 )
                 continue
@@ -652,8 +679,10 @@ class ProjectionService:
                         rejected_reasons=rejected_reasons,
                         defect_type=item.defect_type,
                         diagnosed_defects_count=diagnosed_defects_count,
-                        compiled_actions_count=applied_actions_count,
+                        compiled_actions_count=item.compiled_actions_count,
                         synthesis_calls_count=synthesis_calls_count,
+                        diagnosed_defects=item.diagnosed_defects,
+                        compiled_actions=item.compiled_actions,
                     )
                 )
                 current = original
@@ -670,8 +699,10 @@ class ProjectionService:
                 rejected_reasons=rejected_reasons,
                 defect_type=item.defect_type,
                 diagnosed_defects_count=diagnosed_defects_count,
-                compiled_actions_count=applied_actions_count,
+                compiled_actions_count=item.compiled_actions_count,
                 synthesis_calls_count=synthesis_calls_count,
+                diagnosed_defects=item.diagnosed_defects,
+                compiled_actions=item.compiled_actions,
             )
             records.append(record)
             self._record_semantic_reconstruction_ledgers(
@@ -710,6 +741,7 @@ class ProjectionService:
             validation_schema=validation_schema,
         )
         if deterministic.writes:
+            self._set_semantic_item_trace(item=item, compiled=deterministic)
             updated, changed_paths, reason, errors, applied, rejected = self._apply_semantic_reconstruction_writes(
                 data_package_id=data_package_id,
                 profile_identifier=profile_identifier,
@@ -720,7 +752,6 @@ class ProjectionService:
                 rejected_reasons=deterministic.rejected_reasons or [],
             )
             item.diagnosed_defects_count = deterministic.diagnosed_defects_count
-            item.compiled_actions_count = applied
             item.synthesis_calls_count = deterministic.synthesis_calls_count
             return updated, changed_paths, reason, errors, applied, rejected
 
@@ -734,11 +765,11 @@ class ProjectionService:
             result = await generate_structured(
                 self.ollama_client,
                 model=self.ollama_client.chat_model,
-                system=SEMANTIC_RECONSTRUCTION_SYSTEM_PROMPT,
+                system=SEMANTIC_DIAGNOSIS_SYSTEM_PROMPT,
                 prompt=prompt,
                 output_type=semantic_diagnosis_output_schema(),
                 system_components=[
-                    ("semantic_reconstruction_system_prompt", SEMANTIC_RECONSTRUCTION_SYSTEM_PROMPT),
+                    ("semantic_diagnosis_system_prompt", SEMANTIC_DIAGNOSIS_SYSTEM_PROMPT),
                 ],
                 prompt_components=[],
                 token_budgeter=self._prompt_token_budgeter(),
@@ -770,11 +801,11 @@ class ProjectionService:
             diagnosis=diagnosis,
             validation_schema=validation_schema,
         )
+        self._set_semantic_item_trace(item=item, compiled=compiled)
         if not compiled.writes:
             reason = compiled.reason or diagnosis.reason or "semantic_defect_unresolved_empty_diagnosis"
             rejected = compiled.rejected_reasons or []
             item.diagnosed_defects_count = compiled.diagnosed_defects_count
-            item.compiled_actions_count = 0
             item.synthesis_calls_count = compiled.synthesis_calls_count
             return document, [], reason, [], 0, rejected
         updated, changed_paths, reason, errors, applied, rejected = self._apply_semantic_reconstruction_writes(
@@ -787,9 +818,26 @@ class ProjectionService:
             rejected_reasons=compiled.rejected_reasons or [],
         )
         item.diagnosed_defects_count = compiled.diagnosed_defects_count
-        item.compiled_actions_count = applied
         item.synthesis_calls_count = compiled.synthesis_calls_count
         return updated, changed_paths, reason, errors, applied, rejected
+
+    @staticmethod
+    def _set_semantic_item_trace(
+        *,
+        item: RequirementReportItem,
+        compiled: _CompiledSemanticActions,
+    ) -> None:
+        item.diagnosed_defects = list(compiled.diagnosed_defects or [])
+        item.compiled_actions = list(compiled.compiled_actions or [])
+        item.compiled_actions_count = len(item.compiled_actions)
+        defect_types = list(
+            dict.fromkeys(
+                str(defect.get("defect_type") or "")
+                for defect in item.diagnosed_defects
+                if defect.get("defect_type") and defect.get("defect_type") != "no_defect"
+            )
+        )
+        item.defect_type = ",".join(defect_types)
 
     @staticmethod
     def _semantic_requirement_for_item(item: RequirementReportItem) -> DcatRequirement:
@@ -978,6 +1026,18 @@ class ProjectionService:
                 writes=writes,
                 reason="Deterministic duplicate attribute coherence cleanup.",
                 diagnosed_defects_count=count,
+                diagnosed_defects=[
+                    {
+                        "defect_type": "duplicate_attribute",
+                        "target_path": write.target_path,
+                        "entry_indices": [write.survivor_index, *write.merged_indices],
+                        "recommended_action": "merge",
+                        "needs_synthesis": False,
+                        "reason": write.reason,
+                    }
+                    for write in writes
+                ],
+                compiled_actions=[write.model_dump(mode="json") for write in writes],
             )
         if requirement.requirement_id == "attribute_range_decomposition":
             writes, count = self._attribute_range_decomposition_writes(document=document, item=item)
@@ -985,6 +1045,37 @@ class ProjectionService:
                 writes=writes,
                 reason="Deterministic range decomposition cleanup.",
                 diagnosed_defects_count=count,
+                diagnosed_defects=[
+                    {
+                        "defect_type": "bad_range",
+                        "target_path": write.target_path,
+                        "entry_indices": [],
+                        "recommended_action": write.mode,
+                        "needs_synthesis": False,
+                        "reason": write.reason,
+                    }
+                    for write in writes
+                ],
+                compiled_actions=[write.model_dump(mode="json") for write in writes],
+            )
+        if requirement.requirement_id == "attribute_parent_placement":
+            writes, count = self._attribute_parent_placement_writes(document)
+            return _CompiledSemanticActions(
+                writes=writes,
+                reason="Deterministic cross-parent attribute placement cleanup.",
+                diagnosed_defects_count=count,
+                diagnosed_defects=[
+                    {
+                        "defect_type": "cross_parent_duplicate",
+                        "target_path": write.target_path,
+                        "entry_indices": [],
+                        "recommended_action": "remove",
+                        "needs_synthesis": False,
+                        "reason": write.reason,
+                    }
+                    for write in writes
+                ],
+                compiled_actions=[write.model_dump(mode="json") for write in writes],
             )
         return _CompiledSemanticActions(writes=[], reason="")
 
@@ -1013,10 +1104,50 @@ class ProjectionService:
                 rejected.append(f"Diagnosis target outside allowed semantic reconstruction paths: {defect.target_path}")
                 continue
             if defect.needs_synthesis:
+                if defect.recommended_action in {"merge", "remove", "move", "no_action"}:
+                    rejected.append(
+                        f"Mechanical action {defect.recommended_action} must not request synthesis at "
+                        f"{defect.target_path}."
+                    )
+                    continue
+                if requirement.requirement_id == "attribute_range_decomposition":
+                    rejected.append(
+                        "Range decomposition requires backend-recoverable bounds; refusing single-value synthesis at "
+                        f"{defect.target_path}."
+                    )
+                    continue
+                synthesis_defect = defect
+                current_target = self._value_at_json_pointer(document, defect.target_path)
+                attribute_array_target = defect.target_path.rstrip("/").endswith(
+                    ("/has_quantitative_attribute", "/has_qualitative_attribute")
+                )
+                if (
+                    defect.recommended_action == "replace"
+                    and isinstance(current_target, list)
+                    and attribute_array_target
+                ):
+                    indices = list(dict.fromkeys(defect.entry_indices))
+                    if len(indices) != 1:
+                        rejected.append(
+                            "Array replacement diagnosis must identify exactly one entry; "
+                            f"refusing collection-wide replacement at {defect.target_path}."
+                        )
+                        continue
+                    index = indices[0]
+                    if index < 0 or index >= len(current_target):
+                        rejected.append(f"Replacement index out of range at {defect.target_path}: {index}.")
+                        continue
+                    synthesis_defect = defect.model_copy(
+                        update={
+                            "target_path": f"{defect.target_path.rstrip('/')}/{index}",
+                            "entry_indices": [],
+                        }
+                    )
                 write, synth_rejected = await self._synthesize_semantic_reconstruction_write(
                     data_package_id=data_package_id,
+                    document=document,
                     requirement=requirement,
-                    defect=defect,
+                    defect=synthesis_defect,
                     item=item,
                     validation_schema=validation_schema,
                 )
@@ -1070,27 +1201,41 @@ class ProjectionService:
             diagnosed_defects_count=len(diagnosis.defects),
             synthesis_calls_count=synthesis_calls,
             rejected_reasons=list(dict.fromkeys(rejected)),
+            diagnosed_defects=[defect.model_dump(mode="json") for defect in diagnosis.defects],
+            compiled_actions=[write.model_dump(mode="json") for write in writes],
         )
 
     async def _synthesize_semantic_reconstruction_write(
         self,
         *,
         data_package_id: str,
+        document: dict[str, Any],
         requirement: DcatRequirement,
         defect: SemanticReconstructionDefect,
         item: RequirementReportItem,
         validation_schema: dict[str, Any],
     ) -> tuple[SchemaConstrainedWrite | None, list[str]]:
-        schema = self._semantic_synthesis_schema(requirement=requirement, defect=defect)
-        prompt = self._semantic_synthesis_prompt(requirement=requirement, defect=defect, item=item)
+        schema = self._semantic_synthesis_schema(
+            validation_schema=validation_schema,
+            requirement=requirement,
+            defect=defect,
+        )
+        if not schema:
+            return None, [f"No target schema found for semantic synthesis path: {defect.target_path}"]
+        prompt = self._semantic_synthesis_prompt(
+            requirement=requirement,
+            defect=defect,
+            item=item,
+            current_target=self._value_at_json_pointer(document, defect.target_path),
+        )
         try:
             result = await generate_structured(
                 self.ollama_client,
                 model=self.ollama_client.chat_model,
-                system=SEMANTIC_RECONSTRUCTION_SYSTEM_PROMPT,
+                system=SEMANTIC_SYNTHESIS_SYSTEM_PROMPT,
                 prompt=prompt,
                 output_type=schema,
-                system_components=[("semantic_reconstruction_system_prompt", SEMANTIC_RECONSTRUCTION_SYSTEM_PROMPT)],
+                system_components=[("semantic_synthesis_system_prompt", SEMANTIC_SYNTHESIS_SYSTEM_PROMPT)],
                 prompt_components=[],
                 token_budgeter=self._prompt_token_budgeter(),
                 operation_id=self._prompt_operation_id("semantic_reconstruction_synthesis"),
@@ -1110,7 +1255,15 @@ class ProjectionService:
             )
             return None, [f"Semantic reconstruction synthesis failed: {exc}"]
         value = result.output
-        if defect.recommended_action == "append":
+        target_schema = self._resolve_schema_node(
+            schema_for_json_pointer(validation_schema, defect.target_path),
+            validation_schema,
+        )
+        target_type = target_schema.get("type") if isinstance(target_schema, dict) else None
+        target_is_array = target_type == "array" or (
+            isinstance(target_type, list) and "array" in target_type
+        )
+        if defect.recommended_action == "append" and target_is_array:
             return (
                 SchemaConstrainedWrite(
                     target_path=defect.target_path,
@@ -1130,31 +1283,135 @@ class ProjectionService:
             [],
         )
 
+    @classmethod
+    def _semantic_synthesis_schema(
+        cls,
+        *,
+        validation_schema: dict[str, Any],
+        requirement: DcatRequirement,
+        defect: SemanticReconstructionDefect,
+    ) -> dict[str, Any]:
+        target_path = defect.target_path[:-2] if defect.target_path.endswith("/-") else defect.target_path
+        target_schema = schema_for_json_pointer(validation_schema, target_path)
+        if defect.recommended_action == "append":
+            resolved = cls._resolve_schema_node(target_schema, validation_schema)
+            if isinstance(resolved, dict) and isinstance(resolved.get("items"), dict):
+                target_schema = cls._resolve_schema_node(resolved["items"], validation_schema)
+        if not target_schema:
+            return cls._fallback_semantic_synthesis_schema(requirement=requirement, defect=defect)
+        allowed_properties = {
+            "method_plan_presence": {"id", "title", "description", "type"},
+            "technical_agent_kind": {"id", "title", "description", "type"},
+            "attribute_label_quality": {"title", "description", "value", "has_quantity_type", "has_attribute_type", "unit"},
+            "attribute_parent_placement": {"title", "description", "value", "has_quantity_type", "has_attribute_type", "unit"},
+            "attribute_range_decomposition": {"title", "description", "value", "has_quantity_type", "unit"},
+            "generation_activity_reality": {
+                "id",
+                "title",
+                "description",
+                "type",
+                "carried_out_by",
+                "realized_plan",
+                "has_quantitative_attribute",
+                "has_qualitative_attribute",
+            },
+            "aboutness_concreteness": {"id", "title", "description", "type"},
+            "provenance_context_placement": {"id", "title", "description", "type"},
+        }.get(requirement.requirement_id)
+        compact = cls._compact_synthesis_schema_node(
+            target_schema,
+            validation_schema,
+            allowed_properties=allowed_properties,
+        )
+        if compact:
+            compact["$schema"] = "https://json-schema.org/draft/2019-09/schema"
+        return compact
+
+    @classmethod
+    def _compact_synthesis_schema_node(
+        cls,
+        node: Any,
+        root: dict[str, Any],
+        *,
+        allowed_properties: set[str] | None = None,
+        depth: int = 0,
+    ) -> dict[str, Any]:
+        resolved = cls._resolve_schema_node(node, root)
+        if not isinstance(resolved, dict):
+            return {}
+        for union_key in ("anyOf", "oneOf"):
+            branches = resolved.get(union_key)
+            if isinstance(branches, list):
+                compact_branches = [
+                    cls._compact_synthesis_schema_node(branch, root, depth=depth + 1)
+                    for branch in branches
+                ]
+                compact_branches = [branch for branch in compact_branches if branch]
+                return {union_key: compact_branches} if compact_branches else {}
+        schema_type = resolved.get("type")
+        result: dict[str, Any] = {}
+        for key in ("type", "enum", "const", "format", "minimum", "maximum", "minItems", "maxItems"):
+            if key in resolved:
+                result[key] = deepcopy(resolved[key])
+        if schema_type == "array" or (isinstance(schema_type, list) and "array" in schema_type):
+            item_schema = cls._compact_synthesis_schema_node(
+                resolved.get("items", {}),
+                root,
+                depth=depth + 1,
+            )
+            if item_schema:
+                result["items"] = item_schema
+            return result
+        properties = resolved.get("properties")
+        if not isinstance(properties, dict):
+            return result
+        required = {str(name) for name in resolved.get("required", [])}
+        nested_defaults = {
+            "id",
+            "title",
+            "description",
+            "type",
+            "from_CV",
+            "value",
+            "unit",
+            "has_quantity_type",
+            "has_attribute_type",
+        }
+        selected_names = required | (allowed_properties if allowed_properties is not None else nested_defaults)
+        compact_properties: dict[str, Any] = {}
+        for name in properties:
+            if name not in selected_names:
+                continue
+            compact_child = cls._compact_synthesis_schema_node(
+                properties[name],
+                root,
+                allowed_properties=None,
+                depth=depth + 1,
+            )
+            if compact_child:
+                compact_properties[name] = compact_child
+        result["type"] = schema_type or "object"
+        result["additionalProperties"] = False
+        result["properties"] = compact_properties
+        compact_required = [name for name in resolved.get("required", []) if name in compact_properties]
+        if compact_required:
+            result["required"] = compact_required
+        return result
+
     @staticmethod
-    def _semantic_synthesis_schema(*, requirement: DcatRequirement, defect: SemanticReconstructionDefect) -> dict[str, Any]:
-        if requirement.requirement_id == "method_plan_presence":
+    def _fallback_semantic_synthesis_schema(
+        *,
+        requirement: DcatRequirement,
+        defect: SemanticReconstructionDefect,
+    ) -> dict[str, Any]:
+        if defect.target_path.rstrip("/") in {"/title", "/description"}:
+            if defect.recommended_action == "append":
+                return {"$schema": "https://json-schema.org/draft/2019-09/schema", "type": "string"}
             return {
                 "$schema": "https://json-schema.org/draft/2019-09/schema",
-                "type": "object",
-                "additionalProperties": False,
-                "properties": {
-                    "title": {"type": "string"},
-                    "description": {"type": "string"},
-                    "type": {"type": "object"},
-                },
-                "required": ["title", "description"],
-            }
-        if requirement.requirement_id == "technical_agent_kind":
-            return {
-                "$schema": "https://json-schema.org/draft/2019-09/schema",
-                "type": "object",
-                "additionalProperties": False,
-                "properties": {
-                    "title": {"type": "string"},
-                    "description": {"type": "string"},
-                    "type": {"type": "object"},
-                },
-                "required": ["title", "description"],
+                "type": "array",
+                "items": {"type": "string"},
+                "minItems": 1,
             }
         if requirement.requirement_id in {"attribute_label_quality", "attribute_parent_placement", "attribute_range_decomposition"}:
             return {
@@ -1176,8 +1433,9 @@ class ProjectionService:
             "additionalProperties": False,
             "properties": {
                 "id": {"type": "string"},
-                "title": {"type": ["string", "array"]},
-                "description": {"type": ["string", "array"]},
+                "title": {"type": "array", "items": {"type": "string"}},
+                "description": {"type": "array", "items": {"type": "string"}},
+                "type": {"type": "object"},
             },
             "required": ["title", "description"],
         }
@@ -1188,12 +1446,20 @@ class ProjectionService:
         requirement: DcatRequirement,
         defect: SemanticReconstructionDefect,
         item: RequirementReportItem,
+        current_target: Any,
     ) -> str:
         payload = {
             "requirement": requirement.model_dump(mode="json"),
             "defect": defect.model_dump(mode="json"),
-            "selected_evidence": [evidence.model_dump(mode="json") for evidence in item.selected_evidence],
-            "context_window": [evidence.model_dump(mode="json") for evidence in item.context_window],
+            "current_target": current_target,
+            "selected_evidence": compact_requirement_evidence(
+                item.selected_evidence,
+                include_source_context=True,
+            ),
+            "context_window": compact_requirement_evidence(
+                item.context_window,
+                include_source_context=False,
+            ),
             "rules": [
                 "Return one small schema-valid object or value for the defect target.",
                 "Use only selected evidence and context window.",
@@ -1213,24 +1479,40 @@ class ProjectionService:
     ) -> tuple[list[SchemaConstrainedWrite], int]:
         writes: list[SchemaConstrainedWrite] = []
         for parent_path, items in cls._attribute_array_items(document):
-            groups: dict[tuple[str, str, str, str, str], list[int]] = {}
+            groups: list[list[int]] = []
             for index, item in enumerate(items):
                 if not isinstance(item, dict):
                     continue
-                slot = cls._attribute_semantic_slot(parent_path=parent_path, instance=item)
-                if not slot:
-                    continue
-                groups.setdefault(slot, []).append(index)
-            for indices in groups.values():
+                group = next(
+                    (
+                        candidate
+                        for candidate in groups
+                        if cls._attributes_semantically_compatible(
+                            parent_path=parent_path,
+                            left=items[candidate[0]],
+                            right=item,
+                        )
+                    ),
+                    None,
+                )
+                if group is None:
+                    groups.append([index])
+                else:
+                    group.append(index)
+            for indices in groups:
                 if len(indices) < 2:
                     continue
+                survivor_index = max(
+                    indices,
+                    key=lambda index: cls._attribute_survivor_score(items[index]),
+                )
                 writes.append(
                     SchemaConstrainedWrite(
                         target_path=parent_path,
                         mode="merge",
-                        survivor_index=indices[0],
-                        merged_indices=indices[1:],
-                        reason="Same-parent duplicate semantic attribute slot.",
+                        survivor_index=survivor_index,
+                        merged_indices=[index for index in indices if index != survivor_index],
+                        reason="Same-parent duplicate semantic attribute slot with equivalent value.",
                     )
                 )
         return writes, len(writes)
@@ -1243,39 +1525,40 @@ class ProjectionService:
         item: RequirementReportItem,
     ) -> tuple[list[SchemaConstrainedWrite], int]:
         writes: list[SchemaConstrainedWrite] = []
-        evidence_text = " ".join(
-            " ".join([evidence.claim, evidence.evidence_text, evidence.source_context])
-            for evidence in list(item.selected_evidence) + list(item.context_window)
-        )
         for parent_path, items in cls._attribute_array_items(document):
             remove_indices: list[int] = []
             append_items: list[dict[str, Any]] = []
             for index, attribute in enumerate(items):
                 if not isinstance(attribute, dict) or not cls._attribute_looks_like_bad_range(attribute):
                     continue
-                combined = " ".join(
-                    str(part or "")
-                    for part in (
-                        attribute.get("title"),
-                        attribute.get("description"),
-                        attribute.get("has_quantity_type"),
-                        attribute.get("unit"),
-                        evidence_text,
+                bounds = cls._range_bounds_from_evidence(
+                    attribute=attribute,
+                    evidence=list(item.selected_evidence) + list(item.context_window),
+                )
+                if bounds is None:
+                    bounds = cls._range_bounds_from_document_description(document)
+                if bounds is None:
+                    bounds = cls._range_bounds_from_sibling_attributes(
+                        attribute=attribute,
+                        siblings=items,
                     )
-                )
-                numbers = cls._numbers_from_text(combined)
-                numbers = list(dict.fromkeys(numbers))
-                if len(numbers) < 2:
+                if bounds is None:
                     continue
-                low, high = min(numbers), max(numbers)
+                low, high, supporting_text = bounds
                 base = cls._range_base_label(attribute)
-                unit = cls._range_unit_text(combined)
-                append_items.extend(
-                    [
-                        cls._range_attribute(base=base, bound="minimum", value=low, unit=unit),
-                        cls._range_attribute(base=base, bound="maximum", value=high, unit=unit),
-                    ]
-                )
+                unit = cls._range_unit_text(supporting_text)
+                for bound, value in (("minimum", low), ("maximum", high)):
+                    candidate = cls._range_attribute(base=base, bound=bound, value=value, unit=unit)
+                    if not any(
+                        isinstance(existing, dict)
+                        and cls._range_bound_matches_existing(
+                            candidate=candidate,
+                            existing=existing,
+                        )
+                        for existing in items
+                        if existing is not attribute
+                    ):
+                        append_items.append(candidate)
                 remove_indices.append(index)
             if append_items:
                 writes.append(
@@ -1286,15 +1569,231 @@ class ProjectionService:
                         reason="Decompose range into minimum and maximum attributes.",
                     )
                 )
-                for index in sorted(remove_indices, reverse=True):
-                    writes.append(
-                        SchemaConstrainedWrite(
-                            target_path=f"{parent_path}/{index}",
-                            mode="remove",
-                            reason="Remove invalid range fragment attribute.",
-                        )
+            for index in sorted(remove_indices, reverse=True):
+                writes.append(
+                    SchemaConstrainedWrite(
+                        target_path=f"{parent_path}/{index}",
+                        mode="remove",
+                        reason="Remove invalid range fragment attribute.",
                     )
+                )
         return writes, len(writes)
+
+    @classmethod
+    def _attribute_parent_placement_writes(
+        cls,
+        document: dict[str, Any],
+    ) -> tuple[list[SchemaConstrainedWrite], int]:
+        entries: list[tuple[str, int, dict[str, Any]]] = []
+        for parent_path, items in cls._attribute_array_items(document):
+            entries.extend(
+                (parent_path, index, item)
+                for index, item in enumerate(items)
+                if isinstance(item, dict)
+            )
+        groups: list[list[tuple[str, int, dict[str, Any]]]] = []
+        for entry in entries:
+            matching = next(
+                (
+                    group
+                    for group in groups
+                    if any(
+                        other_path != entry[0]
+                        and cls._cross_parent_attributes_compatible(other, entry[2])
+                        for other_path, _, other in group
+                    )
+                ),
+                None,
+            )
+            if matching is None:
+                groups.append([entry])
+            else:
+                matching.append(entry)
+
+        removals: list[tuple[str, int]] = []
+        for group in groups:
+            if len({path for path, _, _ in group}) < 2:
+                continue
+            survivor = max(
+                group,
+                key=lambda entry: cls._attribute_parent_survivor_score(entry[0], entry[2]),
+            )
+            removals.extend((path, index) for path, index, _ in group if (path, index) != survivor[:2])
+        removals.sort(key=lambda entry: (entry[0], -entry[1]))
+        writes = [
+            SchemaConstrainedWrite(
+                target_path=f"{path}/{index}",
+                mode="remove",
+                reason="Remove cross-parent duplicate from the less suitable semantic owner.",
+            )
+            for path, index in removals
+        ]
+        return writes, len(writes)
+
+    @classmethod
+    def _cross_parent_attributes_compatible(
+        cls,
+        left: dict[str, Any],
+        right: dict[str, Any],
+    ) -> bool:
+        left_slot = cls._attribute_semantic_slot(parent_path="", instance=left)
+        right_slot = cls._attribute_semantic_slot(parent_path="", instance=right)
+        if not left_slot or not right_slot or left_slot[1:3] != right_slot[1:3]:
+            return False
+        left_unit = left_slot[4]
+        right_unit = right_slot[4]
+        pseudo_units = {"transmittance", "intensity", "count", "points", "point count"}
+        if left_unit != right_unit and not (
+            not left_unit
+            or not right_unit
+            or left_unit in pseudo_units
+            or right_unit in pseudo_units
+        ):
+            return False
+        left_number = cls._first_number(left.get("value"))
+        right_number = cls._first_number(right.get("value"))
+        if left_number is not None or right_number is not None:
+            if left_number is None or right_number is None:
+                return False
+            if left_number == right_number:
+                return True
+            if left_number == 0 or right_number == 0:
+                return False
+            return math.isclose(left_number, right_number, rel_tol=1e-6, abs_tol=1e-9)
+        return left_slot[3] == right_slot[3]
+
+    @classmethod
+    def _attribute_parent_survivor_score(
+        cls,
+        parent_path: str,
+        instance: dict[str, Any],
+    ) -> tuple[int, int, int, int]:
+        slot = cls._attribute_semantic_slot(parent_path="", instance=instance)
+        label = slot[2] if slot else ""
+        preferred = 0
+        if any(family in label for family in ("wavenumber", "transmittance", "point count", "resolution", "scaling")):
+            preferred = 2 if parent_path.startswith("/is_about_entity/") else 0
+        elif "threshold" in label:
+            preferred = 2 if parent_path.startswith("/is_about_activity/") else 0
+        precision, populated, label_score = cls._attribute_survivor_score(instance)
+        return preferred, precision, populated, label_score
+
+    @classmethod
+    def _range_bounds_from_evidence(
+        cls,
+        *,
+        attribute: dict[str, Any],
+        evidence: list[RequirementEvidenceItem],
+    ) -> tuple[float, float, str] | None:
+        for evidence_item in evidence:
+            for text in (evidence_item.claim, evidence_item.evidence_text):
+                normalized = cls._normalized_text(text)
+                if not (
+                    "range" in normalized
+                    or "spanning" in normalized
+                    or re.search(r"\bfrom\b.+\bto\b", normalized)
+                ):
+                    continue
+                numbers = list(dict.fromkeys(cls._numbers_from_text(text)))
+                if len(numbers) == 2:
+                    support = " ".join(
+                        (evidence_item.claim, evidence_item.evidence_text, evidence_item.source_context)
+                    )
+                    return min(numbers), max(numbers), support
+        attribute_text = " ".join(
+            str(attribute.get(key) or "")
+            for key in ("title", "description", "has_quantity_type", "unit")
+        )
+        numbers = list(dict.fromkeys(cls._numbers_from_text(attribute_text)))
+        if len(numbers) != 2:
+            return None
+        return min(numbers), max(numbers), attribute_text
+
+    @classmethod
+    def _range_bounds_from_document_description(
+        cls,
+        document: dict[str, Any],
+    ) -> tuple[float, float, str] | None:
+        descriptions = document.get("description") or []
+        if isinstance(descriptions, str):
+            descriptions = [descriptions]
+        number = r"[-+]?\d+(?:\.\d+)?(?:e[-+]?\d+)?"
+        pattern = re.compile(
+            rf"\b(?:spanning|range(?:\s+from)?|from)\s+({number})\s*(?:-|\bto\b)\s*({number})",
+            flags=re.IGNORECASE,
+        )
+        for description in descriptions:
+            text = str(description or "")
+            match = pattern.search(text)
+            if not match:
+                continue
+            low, high = float(match.group(1)), float(match.group(2))
+            return min(low, high), max(low, high), text
+        return None
+
+    @classmethod
+    def _range_bounds_from_sibling_attributes(
+        cls,
+        *,
+        attribute: dict[str, Any],
+        siblings: list[Any],
+    ) -> tuple[float, float, str] | None:
+        base = cls._range_base_label(attribute)
+        expected = {
+            "wavenumber": {"min wavenumber", "max wavenumber"},
+            "transmittance": {"min transmittance", "max transmittance"},
+        }.get(base)
+        if not expected:
+            return None
+        values: dict[str, float] = {}
+        supporting_parts: list[str] = []
+        for sibling in siblings:
+            if sibling is attribute or not isinstance(sibling, dict):
+                continue
+            label = cls._normalized_attribute_label(
+                " ".join(str(sibling.get(key) or "") for key in ("has_quantity_type", "title"))
+            )
+            value = cls._first_number(sibling.get("value"))
+            if label not in expected or value is None:
+                continue
+            values[label] = value
+            supporting_parts.extend(
+                str(sibling.get(key) or "") for key in ("title", "has_quantity_type", "unit")
+            )
+        minimum = values.get(f"min {base}")
+        maximum = values.get(f"max {base}")
+        if minimum is None or maximum is None:
+            return None
+        return min(minimum, maximum), max(minimum, maximum), " ".join(supporting_parts)
+
+    @classmethod
+    def _range_bound_matches_existing(
+        cls,
+        *,
+        candidate: dict[str, Any],
+        existing: dict[str, Any],
+    ) -> bool:
+        candidate_label = cls._normalized_attribute_label(
+            " ".join(str(candidate.get(key) or "") for key in ("has_quantity_type", "title"))
+        )
+        existing_label = cls._normalized_attribute_label(
+            " ".join(str(existing.get(key) or "") for key in ("has_quantity_type", "title"))
+        )
+        if not candidate_label or candidate_label != existing_label:
+            return False
+        candidate_value = cls._first_number(candidate.get("value"))
+        existing_value = cls._first_number(existing.get("value"))
+        if candidate_value is None or existing_value is None:
+            return False
+        candidate_text = str(candidate.get("value"))
+        decimal_places = len(candidate_text.partition(".")[2].split("e", maxsplit=1)[0])
+        rounding_tolerance = 0.5 * (10 ** -decimal_places) if decimal_places else 0.0
+        return math.isclose(
+            candidate_value,
+            existing_value,
+            rel_tol=1e-9,
+            abs_tol=max(1e-12, rounding_tolerance),
+        )
 
     @classmethod
     def _attribute_array_items(cls, document: Any, *, path: str = "") -> list[tuple[str, list[Any]]]:
@@ -1345,7 +1844,7 @@ class ProjectionService:
     @classmethod
     def _range_unit_text(cls, text: str) -> str:
         normalized = cls._normalized_text(text)
-        for candidate in ("1/cm", "cm-1", "percent", "%"):
+        for candidate in ("1/cm", "1 cm", "cm-1", "percent", "%"):
             if candidate in normalized:
                 return cls._normalized_unit(candidate)
         return ""
@@ -1458,21 +1957,16 @@ class ProjectionService:
         survivor = array_value[survivor_index]
         if not isinstance(survivor, dict):
             return [f"Merge survivor is not an object at {write.target_path}/{survivor_index}."]
-        survivor_slot = cls._attribute_semantic_slot(
-            parent_path=write.target_path,
-            instance=survivor,
-        )
-        if not survivor_slot:
+        if not cls._attribute_semantic_slot(parent_path=write.target_path, instance=survivor):
             return [f"Merge survivor has no semantic slot at {write.target_path}/{survivor_index}."]
         rejected: list[str] = []
         for index in indices:
             item = array_value[index]
-            item_slot = (
-                cls._attribute_semantic_slot(parent_path=write.target_path, instance=item)
-                if isinstance(item, dict)
-                else None
-            )
-            if item_slot != survivor_slot:
+            if not isinstance(item, dict) or not cls._attributes_semantically_compatible(
+                parent_path=write.target_path,
+                left=survivor,
+                right=item,
+            ):
                 rejected.append(f"Merge item at {write.target_path}/{index} is not semantically compatible with survivor.")
         return rejected
 
@@ -1631,6 +2125,8 @@ class ProjectionService:
                     "applied_actions_count": record.applied_actions_count,
                     "rejected_actions_count": record.rejected_actions_count,
                     "rejected_reasons": record.rejected_reasons,
+                    "diagnosed_defects": record.diagnosed_defects,
+                    "compiled_actions": record.compiled_actions,
                 },
                 merge_status="applied",
                 reason=record.reason,
@@ -1698,6 +2194,19 @@ class ProjectionService:
                 assessment=seed_item,
                 evidence_context=evidence_context,
             )
+            if requirement.requirement_id in {
+                "attribute_duplicate_coherence",
+                "attribute_range_decomposition",
+            }:
+                seed_item.selected_evidence = selected_evidence
+                seed_item.context_window = context_window
+                self._guard_semantic_requirement_assessment(
+                    requirement=requirement,
+                    document=document,
+                    item=seed_item,
+                )
+                items.append(seed_item)
+                continue
             draft_excerpt = {
                 path: self._value_at_json_pointer(document, path)
                 for path in requirement.target_paths
@@ -1715,6 +2224,11 @@ class ProjectionService:
             )[0]
             evaluated.selected_evidence = selected_evidence
             evaluated.context_window = context_window
+            self._guard_semantic_requirement_assessment(
+                requirement=requirement,
+                document=document,
+                item=evaluated,
+            )
             if requirement.requirement_id == "aboutness_concreteness" and self._aboutness_semantics_fulfilled(document):
                 evaluated.status = "fulfilled"
                 evaluated.applicable = True
@@ -1725,6 +2239,90 @@ class ProjectionService:
             items.append(evaluated)
         score_requirement_items(items)
         return items
+
+    @classmethod
+    def _guard_semantic_requirement_assessment(
+        cls,
+        *,
+        requirement: DcatRequirement,
+        document: dict[str, Any],
+        item: RequirementReportItem,
+    ) -> None:
+        target_present = any(
+            cls._semantic_value_present(cls._value_at_json_pointer(document, path))
+            for path in requirement.target_paths
+        )
+        if item.status == "fulfilled" and not target_present:
+            item.status = "partial" if item.selected_evidence else "missing"
+            item.quality = 0.5 if item.selected_evidence else 0.0
+            item.applicable = True
+            item.rationale = (
+                "Evidence establishes applicability, but none of the requirement target paths "
+                "contains a placed draft value."
+            )
+        if requirement.requirement_id == "attribute_duplicate_coherence":
+            duplicate_writes, _ = cls._attribute_duplicate_coherence_writes(document)
+            if duplicate_writes:
+                item.status = "partial"
+                item.quality = 0.5
+                item.applicable = True
+                item.rationale = "Backend inspection found same-parent attributes in equivalent semantic slots."
+            else:
+                item.status = "fulfilled"
+                item.quality = 1.0
+                item.applicable = True
+                item.rationale = "Backend inspection found no same-parent duplicate semantic attribute slots."
+        if requirement.requirement_id == "attribute_range_decomposition":
+            if cls._document_has_bad_range_attribute(document):
+                item.status = "partial"
+                item.quality = 0.5
+                item.applicable = True
+                item.rationale = "Backend inspection found a collapsed or malformed range attribute."
+            else:
+                item.status = "fulfilled"
+                item.quality = 1.0
+                item.applicable = True
+                item.rationale = "Backend inspection found no collapsed or malformed range attributes."
+        if requirement.requirement_id == "technical_agent_kind":
+            agents = [
+                agent
+                for activity in document.get("was_generated_by", [])
+                if isinstance(activity, dict)
+                for agent in (activity.get("carried_out_by") or [])
+                if isinstance(agent, dict)
+            ]
+            if agents and all(cls._agent_is_technical(agent) for agent in agents):
+                item.status = "fulfilled"
+                item.quality = 1.0
+                item.applicable = True
+                item.rationale = "Backend inspection found only instruments, software, or devices in carried_out_by."
+        if not item.rationale.strip():
+            item.rationale = f"Semantic evaluator returned {item.status} without an explanation."
+        item.weighted_score = item.weight * item.quality if item.applicable else 0.0
+
+    @staticmethod
+    def _semantic_value_present(value: Any) -> bool:
+        return value not in (None, "", [], {})
+
+    @classmethod
+    def _document_has_bad_range_attribute(cls, document: dict[str, Any]) -> bool:
+        return any(
+            isinstance(attribute, dict) and cls._attribute_looks_like_bad_range(attribute)
+            for _, attributes in cls._attribute_array_items(document)
+            for attribute in attributes
+        )
+
+    @classmethod
+    def _agent_is_technical(cls, agent: dict[str, Any]) -> bool:
+        parts: list[str] = []
+        for key in ("id", "title", "description", "type", "rdf_type"):
+            value = agent.get(key)
+            if isinstance(value, dict):
+                parts.extend(str(value.get(field) or "") for field in ("id", "title", "from_CV"))
+            else:
+                parts.append(str(value or ""))
+        text = cls._normalized_text(" ".join(parts))
+        return bool(re.search(r"\b(software|instrument|device|equipment|sensor|application)\b", text))
 
     @staticmethod
     def _used_evidence_ids(*, state: ExtractionRunState) -> list[str]:
@@ -3365,12 +3963,13 @@ class ProjectionService:
     ) -> str | None:
         if not target_path.endswith("/-"):
             existing = cls._value_at_json_pointer(document, target_path)
-            existing_slot = cls._attribute_semantic_slot(parent_path=target_path, instance=existing) if isinstance(existing, dict) else None
-            instance_slot = cls._attribute_semantic_slot(parent_path=target_path, instance=instance)
             if isinstance(existing, dict) and (
                 cls._instances_semantically_equal(existing, instance)
-                or cls._quantitative_attributes_semantically_equal(existing, instance)
-                or (existing_slot and existing_slot == instance_slot)
+                or cls._attributes_semantically_compatible(
+                    parent_path=target_path,
+                    left=existing,
+                    right=instance,
+                )
             ):
                 return f"duplicate_semantic_slot: requirement patch duplicates existing object at {target_path}."
             return None
@@ -3378,12 +3977,14 @@ class ProjectionService:
         existing_items = cls._value_at_json_pointer(document, parent_path)
         if not isinstance(existing_items, list):
             return None
-        instance_slot = cls._attribute_semantic_slot(parent_path=parent_path, instance=instance)
         for existing in existing_items:
             if isinstance(existing, dict) and (
                 cls._instances_semantically_equal(existing, instance)
-                or cls._quantitative_attributes_semantically_equal(existing, instance)
-                or (instance_slot and cls._attribute_semantic_slot(parent_path=parent_path, instance=existing) == instance_slot)
+                or cls._attributes_semantically_compatible(
+                    parent_path=parent_path,
+                    left=existing,
+                    right=instance,
+                )
             ):
                 return f"duplicate_semantic_slot: requirement patch duplicates existing object at {parent_path}."
         return None
@@ -3411,7 +4012,13 @@ class ProjectionService:
     ) -> list[SchemaConstrainedWrite]:
         sanitized: list[SchemaConstrainedWrite] = []
         for write in writes:
-            if requirement_id == "aboutness_semantics" or write.target_path.startswith(("/is_about_entity", "/is_about_activity")):
+            path_parts = [part for part in write.target_path.strip("/").split("/") if part]
+            is_aboutness_object_path = (
+                bool(path_parts)
+                and path_parts[0] in {"is_about_entity", "is_about_activity"}
+                and len(path_parts) <= 2
+            )
+            if is_aboutness_object_path:
                 if write.mode == "append":
                     sanitized.append(
                         write.model_copy(
@@ -3463,27 +4070,23 @@ class ProjectionService:
                 continue
             kept_items: list[Any] = []
             comparison_items = [item for item in existing_items if isinstance(item, dict)]
-            comparison_slots = {
-                slot
-                for item in comparison_items
-                if (slot := cls._attribute_semantic_slot(parent_path=parent_path, instance=item))
-            }
             for item in write.items:
                 if not isinstance(item, dict):
                     kept_items.append(item)
                     continue
-                slot = cls._attribute_semantic_slot(parent_path=parent_path, instance=item)
                 duplicate = any(
-                    cls._quantitative_attributes_semantically_equal(existing, item)
+                    cls._attributes_semantically_compatible(
+                        parent_path=parent_path,
+                        left=existing,
+                        right=item,
+                    )
                     for existing in comparison_items
-                ) or bool(slot and slot in comparison_slots)
+                )
                 if duplicate:
                     reasons.append(f"duplicate_semantic_slot: duplicate attribute skipped at {parent_path}.")
                     continue
                 kept_items.append(item)
                 comparison_items.append(item)
-                if slot:
-                    comparison_slots.add(slot)
             if kept_items:
                 filtered.append(write.model_copy(update={"items": kept_items}))
         return filtered, list(dict.fromkeys(reasons))
@@ -3494,9 +4097,11 @@ class ProjectionService:
         left: dict[str, Any],
         right: dict[str, Any],
     ) -> bool:
-        left_sig = cls._quantitative_attribute_signature(left)
-        right_sig = cls._quantitative_attribute_signature(right)
-        return bool(left_sig and right_sig and left_sig == right_sig)
+        return cls._attributes_semantically_compatible(
+            parent_path="",
+            left=left,
+            right=right,
+        )
 
     @staticmethod
     def _quantitative_attribute_signature(instance: dict[str, Any]) -> tuple[str, str, str] | None:
@@ -3554,6 +4159,49 @@ class ProjectionService:
             unit = unit.get("id") or unit.get("title")
         unit_text = cls._normalized_unit(unit)
         return parent_path.rstrip("/"), kind, normalized_label, value_text, unit_text
+
+    @classmethod
+    def _attributes_semantically_compatible(
+        cls,
+        *,
+        parent_path: str,
+        left: dict[str, Any],
+        right: dict[str, Any],
+    ) -> bool:
+        left_slot = cls._attribute_semantic_slot(parent_path=parent_path, instance=left)
+        right_slot = cls._attribute_semantic_slot(parent_path=parent_path, instance=right)
+        if not left_slot or not right_slot:
+            return False
+        left_identity = left_slot[:3] + left_slot[4:]
+        right_identity = right_slot[:3] + right_slot[4:]
+        if left_identity != right_identity:
+            return False
+        left_number = cls._first_number(left.get("value"))
+        right_number = cls._first_number(right.get("value"))
+        if left_number is not None or right_number is not None:
+            if left_number is None or right_number is None:
+                return False
+            if left_number == right_number:
+                return True
+            if left_number == 0 or right_number == 0:
+                return False
+            return math.isclose(left_number, right_number, rel_tol=1e-6, abs_tol=1e-9)
+        return left_slot[3] == right_slot[3]
+
+    @classmethod
+    def _attribute_survivor_score(cls, instance: Any) -> tuple[int, int, int]:
+        if not isinstance(instance, dict):
+            return 0, 0, 0
+        value_text = str(instance.get("value", "")).lower().split("e", maxsplit=1)[0]
+        significant_digits = len(re.sub(r"[^0-9]", "", value_text).lstrip("0").rstrip("0"))
+        populated_fields = sum(value not in (None, "", [], {}) for value in instance.values())
+        semantic_label = cls._normalized_attribute_label(
+            " ".join(
+                str(instance.get(key) or "")
+                for key in ("has_quantity_type", "has_attribute_type", "title")
+            )
+        )
+        return significant_digits, populated_fields, len(semantic_label)
 
     @classmethod
     def _normalized_attribute_label(cls, value: Any) -> str:

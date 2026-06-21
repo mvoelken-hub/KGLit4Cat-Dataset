@@ -110,6 +110,8 @@ class RequirementReportItem(BaseModel):
     diagnosed_defects_count: int = 0
     compiled_actions_count: int = 0
     synthesis_calls_count: int = 0
+    diagnosed_defects: list[dict[str, Any]] = Field(default_factory=list)
+    compiled_actions: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class CoverageFieldReport(BaseModel):
@@ -148,6 +150,8 @@ class SemanticReconstructionRecord(BaseModel):
     diagnosed_defects_count: int = 0
     compiled_actions_count: int = 0
     synthesis_calls_count: int = 0
+    diagnosed_defects: list[dict[str, Any]] = Field(default_factory=list)
+    compiled_actions: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class SemanticReconstructionDefect(BaseModel):
@@ -575,13 +579,16 @@ You evaluate one DCAT-AP+ scientific semantic requirement for one Dataset draft 
 Return only JSON matching the supplied schema.
 Return exactly one assessment for every supplied requirement_id. Do not omit requirements.
 Assess semantic adequacy, not JSON Schema validity or field coverage.
+Evidence establishes applicability and supports interpretation. Only values visibly present at the supplied draft target paths can establish fulfillment.
+Never mark a requirement fulfilled when all supplied target paths are empty or absent.
 Use statuses: fulfilled, partial, missing, not_applicable.
 quality must be 1 for fulfilled, 0.5 for partial, 0 for missing/not_applicable.
 Prefer not_applicable only when the supplied evidence categories make the semantic requirement irrelevant.
 For aboutness, one concrete non-file-like is_about_entity OR one concrete non-file-like is_about_activity is fulfilled; file names are not evaluated entities.
 For method plans, explicit method/procedure/protocol/plan evidence is required for fulfilled; prefer method_signal, but accept another category when the claim/evidence explicitly says method, procedure, protocol, plan, sampling, or acquisition.
 For instrument settings, selected concrete role=parameter evidence, especially instrument_signal or measurement_condition evidence, must be represented by suitable attributes; otherwise mark partial.
-For attribute parent semantics, device/software cues belong to agent parents; role=parameter evidence with instrument_signal, measurement_condition, measurement_signal, or activity_signal belongs to data-generating activity by default unless explicit evidence says it belongs to an agent or evaluated subject/activity.
+For attribute parent semantics, device/software configuration belongs to agent parents; acquisition/processing settings and thresholds belong to activities; axis bounds, point counts, transmittance/intensity extents, resolution, and data scaling belong to the evaluated data entity unless evidence explicitly says otherwise.
+For technical agents, instruments, software, and devices are all valid carried_out_by entries; people and provenance-only origins are not.
 """
 
 
@@ -602,11 +609,32 @@ Return schema-constrained write envelopes only for allowed_target_paths.
 Keep edits minimal: replace or append fields only when the semantic requirement justifies it.
 Preserve valid numeric instrument/configuration settings. Remove only obvious qualitative/default/placeholders from quantitative attributes.
 Do not satisfy missing role=parameter evidence by generalizing one existing quantitative attribute; add separate schema-valid attributes or return empty writes.
-For attribute parents, device/software cues belong to agent parents; role=parameter evidence with instrument_signal, measurement_condition, measurement_signal, or activity_signal belongs to data-generating activity by default unless explicit evidence says it belongs to an agent or evaluated subject/activity.
+For attribute parents, device/software configuration belongs to agent parents; acquisition/processing settings and thresholds belong to activities; axis bounds, point counts, transmittance/intensity extents, resolution, and data scaling belong to the evaluated data entity unless evidence explicitly says otherwise.
 Represent numeric ranges as separate schema-valid minimum and maximum quantitative attributes with numeric values and source units when present; never put a range string in a quantitative value.
 For aboutness, write at most one lean is_about_entity or is_about_activity object with only id, title, and description.
 Do not use new evidence search.
 Return an empty writes array when no safe semantic reconstruction is available.
+"""
+
+
+SEMANTIC_DIAGNOSIS_SYSTEM_PROMPT = """
+You diagnose one semantic defect class in one DCAT-AP+ Dataset draft slice.
+Return only JSON matching the supplied diagnosis schema with top-level keys defects and reason.
+Each defect must use exactly: defect_type, target_path, entry_indices, recommended_action, needs_synthesis, and reason.
+Do not return writes, operations, JSON Patch, action envelopes, replacement values, or profile objects.
+Use only the supplied draft excerpt and evidence. Do not invent facts.
+Use no_action when the defect is real but the supplied context cannot justify a safe repair.
+When a missing target is directly supported by selected evidence, recommend append or replace and set needs_synthesis true.
+Any append or replace that needs a new value must set needs_synthesis true.
+"""
+
+
+SEMANTIC_SYNTHESIS_SYSTEM_PROMPT = """
+You synthesize exactly one small value for a backend-validated semantic reconstruction action.
+Return only JSON matching the supplied target schema.
+Do not return writes, operations, JSON Patch, action envelopes, target paths, or commentary.
+Use only the supplied current target value and evidence. Preserve schema-required value shapes such as arrays.
+Do not invent facts. Return the smallest value that resolves the diagnosed defect.
 """
 
 
@@ -620,8 +648,8 @@ def build_requirement_evaluation_prompt(
     payload = {
         "draft_excerpt": document,
         "requirements": [req.model_dump(mode="json") for req in requirements],
-        "selected_evidence": [item.model_dump(mode="json") for item in selected_evidence or []],
-        "context_window": [item.model_dump(mode="json") for item in context_window or []],
+        "selected_evidence": _prompt_evidence_payload(selected_evidence or [], include_source_context=True),
+        "context_window": _prompt_evidence_payload(context_window or [], include_source_context=False),
         "category_meanings": {
             "resource_signal": "files, distributions, formats, access paths, and resource-scoped notes",
             "method_signal": "explicit realized plans, protocols, methods, procedures",
@@ -761,12 +789,15 @@ def build_semantic_diagnosis_prompt(
         },
         "allowed_target_paths": allowed_target_paths,
         "draft_excerpt": draft_excerpt,
-        "selected_evidence": [evidence.model_dump(mode="json") for evidence in item.selected_evidence],
-        "context_window": [evidence.model_dump(mode="json") for evidence in item.context_window],
+        "selected_evidence": _prompt_evidence_payload(item.selected_evidence, include_source_context=True),
+        "context_window": _prompt_evidence_payload(item.context_window, include_source_context=False),
         "diagnosis_rules": [
             "Return only defects[]. Do not return JSON Patch operations or action envelopes.",
             "Use entry_indices only for entries already visible in the target array excerpt.",
             "Set needs_synthesis true only when a new value or object must be generated from evidence.",
+            "For append or replace of a missing/incorrect value, set needs_synthesis true unless the value already exists visibly in the draft excerpt.",
+            "When selected evidence directly supports a missing required target, prefer append or replace with needs_synthesis true over no_action.",
+            "Instruments, software, and devices are all valid technical agents; do not diagnose software as invalid merely because it is not a physical instrument.",
             "Use no_action when the requirement is unresolved but no safe repair can be identified.",
         ],
     }
@@ -832,6 +863,35 @@ def semantic_diagnosis_output_schema() -> dict[str, Any]:
 
 def _canonical_target_paths(paths: list[str]) -> list[str]:
     return list(dict.fromkeys(path[:-2] if path.endswith("/-") else path for path in paths if path))
+
+
+def compact_requirement_evidence(
+    items: list[RequirementEvidenceItem],
+    *,
+    include_source_context: bool,
+) -> list[dict[str, Any]]:
+    return _prompt_evidence_payload(items, include_source_context=include_source_context)
+
+
+def _prompt_evidence_payload(
+    items: list[RequirementEvidenceItem],
+    *,
+    include_source_context: bool,
+) -> list[dict[str, Any]]:
+    payload: list[dict[str, Any]] = []
+    for item in items:
+        value: dict[str, Any] = {
+            "evidence_id": item.evidence_id,
+            "category": item.category,
+            "role": item.role,
+            "claim": item.claim,
+            "evidence_text": item.evidence_text,
+            "file_path": item.file_path,
+        }
+        if include_source_context and item.source_context:
+            value["source_context"] = item.source_context
+        payload.append(value)
+    return payload
 
 
 def score_requirement_items(items: list[RequirementReportItem]) -> float:
@@ -992,6 +1052,11 @@ def select_requirement_evidence_packet(
     max_selected: int = 5,
     max_context: int = 12,
 ) -> tuple[list[RequirementEvidenceItem], list[RequirementEvidenceItem]]:
+    selected_limit, context_limit = _requirement_evidence_limits(
+        requirement.requirement_id,
+        max_selected=max_selected,
+        max_context=max_context,
+    )
     hints = [
         token
         for hint in ((assessment.evidence_search_hints or requirement.evidence_hints))
@@ -1008,19 +1073,48 @@ def select_requirement_evidence_packet(
         score = sum(1 for token in hints if token in text)
         if requirement.expected_target_class:
             score += _class_hint_score(requirement.expected_target_class, candidate)
+        if requirement.requirement_id == "attribute_range_decomposition" and (
+            "range" in text
+            or "spanning" in text
+            or re.search(r"\bfrom\b.+\bto\b", text)
+        ):
+            score += 100
         if score > 0:
             scored.append((score, candidate))
     scored.sort(key=lambda item: (-item[0], item[1].file_path, item[1].start_idx, item[1].candidate_id))
-    selected_candidates = _dedupe_candidates([candidate for _, candidate in scored[:max_selected]])
+    selected_candidates = _dedupe_candidates([candidate for _, candidate in scored[:selected_limit]])
     context_candidates: list[EvidenceCandidate] = []
-    for selected in selected_candidates:
-        context_candidates.extend(
-            candidate
-            for candidate in candidates
-            if candidate.file_path == selected.file_path
-            and abs(candidate.start_idx - selected.start_idx) <= 500
-        )
-    context_candidates = _dedupe_candidates(context_candidates)[:max_context]
+    if context_limit:
+        compact_semantic_packet = requirement.requirement_id in {
+            "attribute_duplicate_coherence",
+            "attribute_label_quality",
+            "attribute_range_decomposition",
+            "attribute_parent_placement",
+            "dataset_title_identity",
+            "dataset_description_identity",
+            "generation_activity_reality",
+            "technical_agent_kind",
+            "method_plan_presence",
+            "aboutness_concreteness",
+            "provenance_context_placement",
+        }
+        selected_keys = {
+            f"{candidate.candidate_id}|{candidate.file_path}|{candidate.start_idx}|{candidate.end_idx}"
+            for candidate in selected_candidates
+        }
+        for selected in selected_candidates:
+            context_candidates.extend(
+                candidate
+                for candidate in candidates
+                if candidate.file_path == selected.file_path
+                and abs(candidate.start_idx - selected.start_idx) <= 500
+                and (
+                    not compact_semantic_packet
+                    or f"{candidate.candidate_id}|{candidate.file_path}|{candidate.start_idx}|{candidate.end_idx}"
+                    not in selected_keys
+                )
+            )
+        context_candidates = _dedupe_candidates(context_candidates)[:context_limit]
     return (
         [_evidence_item(candidate) for candidate in selected_candidates],
         [_evidence_item(candidate) for candidate in context_candidates],
@@ -1174,6 +1268,29 @@ def _evidence_item(candidate: EvidenceCandidate) -> RequirementEvidenceItem:
         end_idx=candidate.end_idx,
         evidence_match_score=float(getattr(candidate, "evidence_match_score", 0.0) or 0.0),
     )
+
+
+def _requirement_evidence_limits(
+    requirement_id: str,
+    *,
+    max_selected: int,
+    max_context: int,
+) -> tuple[int, int]:
+    limits = {
+        "attribute_duplicate_coherence": (0, 0),
+        "attribute_label_quality": (0, 0),
+        "attribute_range_decomposition": (3, 0),
+        "attribute_parent_placement": (4, 2),
+        "dataset_title_identity": (3, 1),
+        "dataset_description_identity": (3, 1),
+        "generation_activity_reality": (3, 2),
+        "technical_agent_kind": (3, 2),
+        "method_plan_presence": (3, 2),
+        "aboutness_concreteness": (2, 0),
+        "provenance_context_placement": (3, 2),
+    }
+    selected_limit, context_limit = limits.get(requirement_id, (max_selected, max_context))
+    return min(max_selected, selected_limit), min(max_context, context_limit)
 
 
 def stable_evidence_id(candidate: EvidenceCandidate, *, run_id: str = "") -> str:

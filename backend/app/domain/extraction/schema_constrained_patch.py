@@ -112,6 +112,7 @@ def apply_schema_constrained_writes(
                     target_path=write.target_path,
                     index=index,
                     target_schema=item_schema,
+                    validation_schema=validation_schema,
                 )
                 array_value.append(deepcopy(normalized))
                 changed_paths.append(f"{array_path}/{index}")
@@ -145,6 +146,7 @@ def apply_schema_constrained_writes(
             target_path=write.target_path,
             index=0,
             target_schema=value_schema,
+            validation_schema=validation_schema,
         )
         updated = _set_json_pointer_value(updated, write.target_path, deepcopy(value))
         changed_paths.append(write.target_path)
@@ -384,18 +386,18 @@ def _normalize_instance_ids(
     target_path: str,
     index: int,
     target_schema: dict[str, Any] | None = None,
+    validation_schema: dict[str, Any] | None = None,
 ) -> Any:
     if not isinstance(instance, dict):
         return instance
     value = deepcopy(instance)
-    allowed_properties = (
-        set(target_schema.get("properties", {}).keys())
-        if isinstance(target_schema, dict)
-        else set()
+    allowed_properties, properties_constrained = _schema_object_properties(
+        target_schema,
+        validation_schema or {},
     )
-    if allowed_properties and "id" not in allowed_properties:
+    if properties_constrained and "id" not in allowed_properties:
         value.pop("id", None)
-    if (not allowed_properties or "id" in allowed_properties) and not _non_empty_string(value.get("id")):
+    if (not properties_constrained or "id" in allowed_properties) and not _non_empty_string(value.get("id")):
         label = _instance_label(value) or f"patched-{index}"
         value["id"] = _build_patch_id(data_package_id, f"{target_path}/{label}")
     for key, child in list(value.items()):
@@ -406,6 +408,32 @@ def _normalize_instance_ids(
                 if isinstance(item, dict) and not _non_empty_string(item.get("id")):
                     item["id"] = _build_patch_id(data_package_id, f"{target_path}/{key}/{child_index}")
     return value
+
+
+def _schema_object_properties(
+    schema: dict[str, Any] | None,
+    root: dict[str, Any],
+) -> tuple[set[str], bool]:
+    resolved = resolve_schema_node(schema, root)
+    if not isinstance(resolved, dict):
+        return set(), False
+    properties = resolved.get("properties")
+    if isinstance(properties, dict):
+        return set(properties), True
+    for union_key in ("anyOf", "oneOf"):
+        branches = resolved.get(union_key)
+        if not isinstance(branches, list):
+            continue
+        allowed: set[str] = set()
+        constrained = False
+        for branch in branches:
+            branch_allowed, branch_constrained = _schema_object_properties(branch, root)
+            if branch_constrained:
+                allowed.update(branch_allowed)
+                constrained = True
+        if constrained:
+            return allowed, True
+    return set(), False
 
 
 def _value_at_json_pointer(document: Any, path: str) -> Any:

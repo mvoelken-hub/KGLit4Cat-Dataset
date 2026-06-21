@@ -175,3 +175,15 @@ Reason: The prior broad requirements and patch-envelope prompt produced unchange
 Tradeoff: Some repairs remain unresolved unless a deterministic compiler or synthesis path exists for that defect type. This is preferred over silently accepting no-op reconstruction as success.
 
 Revisit trigger: Revisit when evaluation shows a recurring unresolved defect type that should gain a deterministic compiler, a small synthesis schema, or a profile-declared rule.
+
+### 2026-06-21: Keep Semantic Model Contracts Target-Specific And Auditable
+
+Decision: Semantic diagnosis returns defects only, synthesis returns one value matching a schema derived from the exact target path, and backend artifacts persist both diagnosed defects and compiled actions. Requirement-specific evidence limits omit evidence from mechanical draft checks and bound semantic placement context. Evidence can establish applicability but cannot satisfy an empty draft target. Same-parent numeric deduplication uses canonical quantity and unit identity plus a small numeric tolerance.
+
+Reason: A fresh profile run exposed conflicting diagnosis instructions, target-shape synthesis failures, oversized attribute prompts, false evidence-based fulfillment, and rounded duplicate values that bypassed exact signatures.
+
+Safety follow-up: Mechanical merge/remove/move actions never synthesize replacement values, indexed attribute diagnoses cannot replace whole collections, range bounds may be recovered deterministically from the dataset description or sibling boundary attributes, and verified cross-parent measurement duplicates keep the semantically preferred owner.
+
+Tradeoff: Tolerant deduplication and compact prompt policies add deterministic judgment before model reasoning. Numeric values near zero require exact nonzero agreement against zero, and unusual target schemas may still remain unresolved rather than receive a generic synthesized object.
+
+Revisit trigger: Revisit the numeric tolerance or requirement packet limits when multi-dataset evaluation shows false merges, missing context, or recurring unresolved target types.
