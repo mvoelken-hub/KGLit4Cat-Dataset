@@ -426,6 +426,7 @@ class _ProfileFieldCandidateDiscovery:
     source_value: str
     vocabulary_identifier: str
     query_ids: list[str]
+    formulated_query: str = ""
     role: str = ""
 
 

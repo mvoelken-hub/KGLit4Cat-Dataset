@@ -118,15 +118,23 @@ class ExtractionNormalization(BaseModel):
 VOCAB_CANDIDATE_SELECTION_SYSTEM_PROMPT = """
 You select a single controlled-vocabulary term that normalizes a metadata field, or return null.
 Match on the physical quantity or concept the field actually measures, using the source value AND the
-semantic context (dataset/entity/attribute title and description). When several candidates describe the same
-kind of quantity or concept, prefer the most general/plain one over a more specific or named variant of it.
+semantic context (dataset/entity/attribute title and description). Read each candidate's label AND definition,
+not just its URI fragment.
+When several candidates describe the same kind of quantity or concept, prefer the most general/plain one over a
+more specific or named variant of it. But "most general" only applies among candidates that are the same
+quantity - it never justifies picking a wrong-domain term.
 Hard rules - return null for selected_uri when ANY of these hold:
 - No candidate describes the same physical quantity or concept as the field. Sharing a token or a symbol with
   the source value is not a match. Common traps include axis or column codes, ordinals (first/last/minimum/
-  maximum), incidental words, and unit symbols or mathematical symbols.
+  maximum), incidental words, and unit symbols or mathematical symbols; a single letter or a unit symbol is
+  never a quantity kind by itself.
+- The candidate belongs to a different scientific or engineering domain than the measurement described in the
+  context (for example, a radioactivity, electrical-impedance, typography/printing, aerospace, or oceanography
+  term used for a measurement in an unrelated field). A different-domain candidate is not a match even if it
+  is the most general available - return null.
 - The best candidate is only a superficial or adjacent match rather than the same quantity or concept.
 - You are not confident the candidate is the same quantity. In that case return null with confidence 0 and a
-  short reason, rather than forcing a match.
+  short reason naming the trap, rather than forcing a match.
 Use only candidate URIs from the prompt. Always include selected_uri, confidence (0.0-1.0), and reason.
 You MUST NOT select a candidate you just argued does not fit - return null instead. Return only JSON.
 """
@@ -144,8 +152,16 @@ Use the source value AND the semantic context (dataset/entity/attribute title an
 physical quantity or concept the field measures, then return that concept as a plain search phrase a controlled
 vocabulary would label (e.g. a unit written as a symbol or abbreviation -> the full unit name).
 Rules:
-- Output the plain concept name only (1-6 words). Do NOT echo axis or column codes, ordinals (first/last/min/
-  max), raw numbers, or the literal field name unless they ARE the concept.
+- Always reduce the value to the underlying physical quantity or concept. Never echo the raw value, an axis or
+  column code, or a unit token.
+- When the value is an axis or column label (for example a single letter paired with a unit, or an ordinal like
+  first/last/min/max applied to an axis), name the physical quantity that axis or column measures, using the
+  semantic context (what the dataset/entity actually records).
+- A unit written as "1/X" or "X^-1" denotes the reciprocal of unit X; formulate it as "reciprocal X" (e.g.
+  "1/m" -> "reciprocal metre"). Likewise a value with a reciprocal unit usually measures the quantity whose
+  standard unit is that reciprocal unit.
+- Output the plain concept name only (1-6 words). Do NOT echo ordinals, raw numbers, or the literal field name
+  unless they ARE the concept.
 - If you cannot identify the concept, still return your best short phrase based on the context.
 Return only JSON.
 """

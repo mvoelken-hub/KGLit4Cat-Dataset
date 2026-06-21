@@ -703,6 +703,7 @@ class GroundingService:
                 json_path=json_path,
                 field_name=field_name,
                 source_value=source_value,
+                formulated_query=formulated_query,
                 vocabulary_identifier=QUDT_QUANTITY_KIND_VOCAB,
                 query_ids=query_ids,
                 role=role,
@@ -744,6 +745,7 @@ class GroundingService:
                 json_path=json_path,
                 field_name=field_name,
                 source_value=source_value,
+                formulated_query=formulated_query,
                 vocabulary_identifier=QUDT_UNIT_VOCAB,
                 query_ids=query_ids,
                 role=role,
@@ -760,6 +762,7 @@ class GroundingService:
                 json_path=json_path,
                 field_name=field_name,
                 source_value=source_value,
+                formulated_query=formulated_query,
                 vocabulary_identifier="",
                 query_ids=[],
                 role=role,
@@ -801,6 +804,7 @@ class GroundingService:
             json_path=json_path,
             field_name=field_name,
             source_value=source_value,
+            formulated_query=formulated_query,
             vocabulary_identifier=",".join(vocabulary_identifiers),
             query_ids=query_ids,
             role=role,
@@ -874,10 +878,15 @@ class GroundingService:
                 record = self._find_vocab_query_record(state, query_id)
                 if record and record.result:
                     candidates.extend(self._candidate_records(record.result))
+            selection_source_value = (
+                discovery.formulated_query or discovery.source_value
+                if discovery.field_name == "unit"
+                else discovery.source_value
+            )
             mapping = await self._select_from_candidates_with_semaphore(
                 data_package_id=data_package_id,
                 agent_name="profile_field_vocab_selection",
-                source_value=discovery.source_value,
+                source_value=selection_source_value,
                 source_context={
                     "json_path": discovery.json_path,
                     "field_name": discovery.field_name,
@@ -1507,7 +1516,7 @@ class GroundingService:
                 "run",
                 kind,
                 source_value,
-                repr(sorted((key, value) for key, value in source_context.items() if key != "semantic_context")),
+                repr(sorted((key, value) for key, value in source_context.items() if key not in {"semantic_context", "formulated_query"})),
                 vocabulary_identifier,
                 rdf_type,
             )
