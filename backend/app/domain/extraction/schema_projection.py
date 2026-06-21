@@ -278,7 +278,7 @@ def _branch_category_affinities(branch: SchemaBranch) -> list[str]:
     if branch.range_class == "AgenticEntity" or any(
         candidate.class_name == "Device" for candidate in branch.subclass_candidates
     ):
-        affinities.append("agent_signal")
+        affinities.append("software_signal")
     if branch.range_class in {"DataGeneratingActivity", "EvaluatedActivity"}:
         affinities.append("activity_signal")
     if branch.range_class == "Plan":

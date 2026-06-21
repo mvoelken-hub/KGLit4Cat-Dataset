@@ -1532,7 +1532,10 @@ class ProjectionService:
         label = cls._quantity_label_from_text(claim or evidence_text, match.group(0), unit)
         if not label:
             return None
-        if cls._quantitative_label_is_noise(label, claim, evidence_text, unit, str(getattr(note, "category", "") or "")):
+        category = str(getattr(note, "category", "") or "")
+        role = str(getattr(note, "role", "") or "")
+        category_for_noise = "measurement_condition" if role == "parameter" and category != "measurement_signal" else category
+        if cls._quantitative_label_is_noise(label, claim, evidence_text, unit, category_for_noise):
             return None
         normalized_label = re.sub(r"[^a-z0-9]+", " ", label.lower()).strip()
         value_key = ("%f" % value).rstrip("0").rstrip(".")
@@ -1545,6 +1548,11 @@ class ProjectionService:
     @staticmethod
     def _quantitative_note_category_allowed(note: Any, claim: str) -> bool:
         category = str(getattr(note, "category", "") or "")
+        role = str(getattr(note, "role", "") or "")
+        if category == "measurement_signal":
+            return False
+        if role == "parameter":
+            return True
         if category in {"instrument_signal", "measurement_condition"}:
             return True
         return False
@@ -1559,11 +1567,11 @@ class ProjectionService:
     ) -> bool:
         lowered = f"{label} {claim} {evidence_text}".lower()
         quantity_like = re.search(
-            r"\b(threshold|calibration|unit|scale|scan|average|frequency|temperature|duration|delay|gain|power|resolution|voltage|current|pressure|speed|rate|limit|offset|phase|width|height|depth|length|distance|angle|time|count|number|size|mass|weight|volume|concentration|dose|flow)\b",
+            r"\b(threshold|calibration|unit|scale|factor|scan|average|frequency|temperature|duration|delay|gain|power|resolution|voltage|current|pressure|speed|rate|limit|offset|phase|width|height|depth|length|distance|angle|time|count|number|points?|minimum|maximum|min|max|bound|axis|increment|size|mass|weight|volume|concentration|dose|flow)\b",
             lowered,
         )
         configurable_like = re.search(
-            r"\b(threshold|calibration|unit|scale|scan|average|frequency|temperature|duration|delay|gain|power|resolution|voltage|current|pressure|speed|rate|limit|offset|phase|width|height|depth|length|distance|angle|time|size|mass|weight|volume|concentration|dose|flow|setting|configured|configuration|parameter)\b",
+            r"\b(threshold|calibration|unit|scale|factor|scan|average|frequency|temperature|duration|delay|gain|power|resolution|voltage|current|pressure|speed|rate|limit|offset|phase|width|height|depth|length|distance|angle|time|increment|size|mass|weight|volume|concentration|dose|flow|setting|configured|configuration|parameter)\b",
             lowered,
         )
         setting_like = quantity_like or configurable_like
@@ -1781,7 +1789,11 @@ class ProjectionService:
             return "Software"
         if "device" in text:
             return "Device"
-        if any(str(getattr(note, "category", "") or "") in {"instrument_signal", "measurement_condition"} for note in group.notes):
+        if any(
+            str(getattr(note, "category", "") or "") in {"instrument_signal", "measurement_condition"}
+            or str(getattr(note, "role", "") or "") == "parameter"
+            for note in group.notes
+        ):
             subject_cue = re.search(r"\b(evaluated entity|evaluated activity|sample|specimen|material|subject)\b", text)
             if not subject_cue:
                 return "DataGeneratingActivity"
@@ -1966,8 +1978,10 @@ class ProjectionService:
                     evidence_id=getattr(note, "evidence_id", "") or stable_evidence_id(note),
                     candidate_id=str(getattr(note, "candidate_id", "") or ""),
                     category=str(getattr(note, "category", "") or ""),
+                    role=str(getattr(note, "role", "") or ""),
                     claim=str(getattr(note, "claim", "") or ""),
                     evidence_text=str(getattr(note, "evidence_text", "") or ""),
+                    source_context=str(getattr(note, "source_context", "") or ""),
                     file_path=str(getattr(note, "file_path", "") or ""),
                     start_idx=int(getattr(note, "start_idx", 0) or 0),
                     end_idx=int(getattr(note, "end_idx", 0) or 0),
@@ -3252,7 +3266,7 @@ class ProjectionService:
         text = f"{note.candidate_id} {note.category} {note.claim} {note.evidence_text}".lower()
         if note.category == "measurement_signal":
             return "", None
-        if note.category in {"agent_signal", "instrument_signal"} or cls._note_has_device_signal(note):
+        if note.category in {"software_signal", "instrument_signal"} or cls._note_has_device_signal(note):
             return "/was_generated_by/0/carried_out_by/-", "AgenticEntity"
         if note.category == "surrounding_signal" and any(term in text for term in ("origin", "owner", "creator", "author", "team", "laboratory")):
             return "/creator/0", "Agent"
@@ -4039,7 +4053,7 @@ class ProjectionService:
             if "spectrum title" in text and cls._title_value_from_note(note) is None:
                 return False
             return True
-        return note.category in {"agent_signal", "activity_signal", "instrument_signal", "surrounding_signal", "resource_signal"} and bool(note.claim.strip())
+        return note.category in {"software_signal", "activity_signal", "instrument_signal", "surrounding_signal", "resource_signal"} and bool(note.claim.strip())
 
     @classmethod
     def _entity_title_for_notes(cls, notes: list[EvidenceCandidate]) -> str | None:
@@ -5288,7 +5302,7 @@ class ProjectionService:
     @staticmethod
     def _target_category_affinities(path: str, target_class: str | None) -> list[str]:
         if "carried_out_by" in path or target_class == "AgenticEntity":
-            return ["agent_signal", "instrument_signal"]
+            return ["software_signal", "instrument_signal"]
         if path.startswith("/creator"):
             return ["surrounding_signal"]
         if path.startswith("/dataset_distribution"):

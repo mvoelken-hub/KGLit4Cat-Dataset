@@ -3,7 +3,7 @@
 **Project topic:** LLM-supported semantic metadata extraction from catalysis-related research data packages  
 **Prototype:** SIMONE — Semantic Inference Module for Ontology-driven Node Extraction  
 **Document type:** working overview for thesis writing, prototype documentation, and evaluation planning  
-**Current focus:** staged extraction workflow, semantic grounding, schema/profile projection, and evaluation design
+**Current focus:** staged extraction workflow, schema/profile construction, final semantic grounding, and evaluation design
 
 ---
 
@@ -11,7 +11,7 @@
 
 This thesis develops and evaluates an LLM-supported workflow for extracting semantic metadata from heterogeneous catalysis-related research data packages. The workflow addresses a practical research-data-management problem: experimental catalysis data are often stored in ZIP archives containing reports, spreadsheets, instrument exports, images, raw measurements, scripts, and descriptive notes. Much of the scientifically relevant metadata is not directly machine-actionable. It is distributed across files, expressed in inconsistent terminology, and often only interpretable by humans.
 
-The SIMONE prototype implements a full-stack system that turns uploaded data packages into structured metadata proposals. It performs file handling, text extraction, file ranking, semantic chunking, chunk-wise LLM extraction, vocabulary-backed normalization, profile projection, validation, progress tracking, and frontend-based inspection. The current implementation emphasizes direct extraction, semantic normalization, and final schema projection.
+The SIMONE prototype implements a full-stack system that turns uploaded data packages into structured metadata proposals. It performs file handling, text extraction, file ranking, semantic chunking, chunk-wise LLM extraction, profile projection and reconstruction, validation, final vocabulary-backed normalization, progress tracking, and frontend-based inspection. The current implementation emphasizes evidence-backed profile construction followed by final semantic normalization.
 
 The thesis should position SIMONE as an assistance system rather than an autonomous replacement for expert curation. Its contribution lies in decomposing metadata extraction into inspectable workflow stages, preserving provenance at chunk and source-text level, grounding extracted terms in controlled vocabularies, and validating the final result against an application profile.
 
@@ -33,15 +33,15 @@ The central objective is to design, implement, and evaluate a workflow that conv
 
 A suitable central research question is:
 
-> How can large language models be integrated into a controlled workflow for extracting, normalizing, and projecting semantic metadata from heterogeneous catalysis research data packages?
+> How can large language models be integrated into a controlled workflow for extracting, projecting, and semantically normalizing metadata from heterogeneous catalysis research data packages?
 
 Supporting research questions:
 
 1. Which metadata-relevant entities and attributes can be extracted from heterogeneous dataset packages using a chunk-wise LLM workflow?
 2. How can extraction outputs be made traceable to file-level and text-level evidence?
-3. How can extracted quantitative and qualitative attributes be normalized against controlled vocabularies such as QUDT, Voc4Cat, CHMO, and nmrCV?
-4. How can intermediate extraction objects be projected into an application profile such as DCAT-AP Plus or ChemDCAT-AP-style metadata?
-5. Which failure modes occur in extraction, grounding, and profile projection, and how can they be evaluated?
+3. How can intermediate extraction objects be projected into an application profile such as DCAT-AP Plus or ChemDCAT-AP-style metadata?
+4. How can quantitative and qualitative attributes already placed in that profile be normalized against controlled vocabularies such as QUDT, Voc4Cat, CHMO, and nmrCV?
+5. Which failure modes occur in extraction, profile construction, and final grounding, and how can they be evaluated?
 
 ---
 
@@ -114,11 +114,17 @@ Every extracted object is paired with a source-text snippet to preserve traceabi
 
 ### Stage 6: Merging and deduplication
 
-Chunk-level extraction contexts are merged into a data-package-level context. Duplicate or near-duplicate objects are consolidated. The merged context becomes the basis for vocabulary normalization and profile projection.
+Chunk-level extraction contexts are merged into a data-package-level context. Duplicate or near-duplicate objects are consolidated. The merged context becomes the basis for profile projection.
 
-This separation helps identify whether an error originated in chunking, extraction, merging, grounding, or projection.
+This separation helps identify whether an error originated in chunking, extraction, merging, profile construction, or final grounding.
 
-### Stage 7: Vocabulary-backed normalization
+### Stage 7: Profile projection and semantic reconstruction
+
+The merged evidence context is projected into a selected application profile. The profile defines where extracted information belongs. Coverage patching and semantic reconstruction improve the draft before its fields are vocabulary-grounded.
+
+The projected metadata draft is validated against the registered profile schema. Optional curation can update the draft before final grounding.
+
+### Stage 8: Vocabulary-backed normalization
 
 Quantitative attributes are normalized against QUDT:
 
@@ -139,16 +145,12 @@ The semantic service retrieves candidate terms using a hybrid strategy:
 4. local graph expansion around candidate seed nodes;
 5. compaction into a candidate context for inspection or LLM-assisted selection.
 
-The model then selects a candidate URI only when it clearly matches the extracted source value. Otherwise the mapping remains unresolved. This is preferable to forcing a possibly wrong URI.
-
-### Stage 8: Profile projection
-
-The normalized extraction context is projected into a selected application profile. The profile defines the final document structure, while vocabularies provide term-level semantic grounding. This distinction is central:
+The model then selects a candidate URI only when it clearly matches a value already placed in the finalized profile draft. Otherwise the mapping remains unresolved. This is preferable to forcing a possibly wrong URI. This distinction is central:
 
 - a vocabulary answers what a concept, unit, method, or term means;
-- a profile defines where that information belongs in the final metadata document.
+- a profile has already defined where that information belongs in the metadata document.
 
-The projected metadata document is validated against the registered profile schema before being stored as an extraction result.
+Vocabulary grounding is the final enrichment stage before final validation and result persistence.
 
 ### Stage 9: Inspection and reruns
 
@@ -381,7 +383,7 @@ The thesis already has a clear conceptual direction and a strong workflow narrat
 2. Semantic metadata and controlled vocabularies are necessary for interoperability.
 3. Manual extraction does not scale.
 4. LLMs can assist extraction but must be embedded into a controlled workflow.
-5. SIMONE implements such a workflow through staged extraction, normalization, and profile projection.
+5. SIMONE implements such a workflow through staged extraction, profile construction, and final vocabulary normalization.
 
 The theoretical background is comparatively mature. It covers catalysis, metadata, Semantic Web technologies, ontologies, LLMs, retrieval-augmented generation, and structured-output techniques. The method chapter is also well developed because the current prototype has a concrete architecture that can be described in detail.
 
@@ -436,8 +438,8 @@ A compact structure aligned with the current repository state:
    - file ranking;
    - semantic chunking;
    - extraction context design;
-   - vocabulary grounding;
-   - profile projection;
+   - profile projection and semantic reconstruction;
+   - final vocabulary grounding;
    - validation and traceability.
 
 5. **Results and Evaluation**
@@ -477,7 +479,7 @@ Appendices:
 - Vocabulary grounding through both vector and lexical retrieval.
 - Reciprocal-rank fusion for candidate ranking.
 - Local graph context expansion around candidate terms.
-- Separation between vocabulary grounding and profile projection.
+- Separation between profile construction and final vocabulary grounding.
 - Schema validation of final output.
 - Frontend support for inspection and reruns.
 - Token and progress tracking.
@@ -503,7 +505,7 @@ Appendices:
 
 ### 13.1 Why a staged workflow matters
 
-A staged workflow makes the system inspectable. Instead of asking whether an opaque LLM output is correct, the thesis can analyze where correctness is gained or lost: file ranking, chunking, extraction, merging, vocabulary grounding, or projection.
+A staged workflow makes the system inspectable. Instead of asking whether an opaque LLM output is correct, the thesis can analyze where correctness is gained or lost: file ranking, chunking, extraction, merging, profile construction, or final vocabulary grounding.
 
 ### 13.2 Why an intermediate extraction context matters
 
@@ -544,4 +546,4 @@ Potential future work after the thesis:
 
 ## 15. Short Working Abstract
 
-This thesis develops and evaluates SIMONE, a prototype workflow for LLM-supported semantic metadata extraction from heterogeneous catalysis research data packages. The workflow accepts ZIP-based data packages, extracts text from supported files, ranks metadata-relevant files, splits content into semantic chunks, and uses an LLM to generate traceable intermediate extraction contexts. Extracted quantitative attributes are normalized against QUDT quantity-kind and unit vocabularies, while qualitative attributes can be grounded against domain vocabularies such as Voc4Cat, CHMO, and nmrCV. A Neo4j-backed semantic service retrieves vocabulary candidates through vector search, full-text search, reciprocal-rank fusion, and local graph expansion. The normalized extraction context is then projected into a registered metadata profile and validated as a final metadata document. The thesis investigates how this staged architecture can make LLM-supported metadata extraction more traceable, inspectable, and semantically interoperable for catalysis data management.
+This thesis develops and evaluates SIMONE, a prototype workflow for LLM-supported semantic metadata extraction from heterogeneous catalysis research data packages. The workflow accepts ZIP-based data packages, extracts text from supported files, ranks metadata-relevant files, splits content into semantic chunks, and uses an LLM to generate traceable intermediate extraction contexts. This evidence is projected into a registered metadata profile, enriched through coverage patching and semantic reconstruction, and validated as a profile draft. In the final enrichment stage, quantitative fields can be normalized against QUDT quantity-kind and unit vocabularies, while qualitative fields can be grounded against domain vocabularies such as Voc4Cat, CHMO, and nmrCV. A Neo4j-backed semantic service retrieves vocabulary candidates through vector search, full-text search, reciprocal-rank fusion, and local graph expansion. The thesis investigates how this staged architecture can make LLM-supported metadata extraction more traceable, inspectable, and semantically interoperable for catalysis data management.

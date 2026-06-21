@@ -16,9 +16,10 @@ The intended contribution is a traceable extraction architecture:
 4. Split source text into manageable chunks.
 5. Extract grounded evidence from chunks.
 6. Accumulate and route extracted evidence.
-7. Ground selected terms against semantic vocabularies.
-8. Project the accumulated context into a metadata profile.
-9. Validate the final document against the selected profile.
+7. Project the accumulated evidence context into a metadata profile draft.
+8. Improve coverage, reconstruct semantic placement, validate, and optionally curate the draft.
+9. Ground selected fields of the finalized profile draft against semantic vocabularies.
+10. Validate and persist the final document.
 
 ## Core Design Reasoning
 
@@ -70,6 +71,8 @@ Reasoning:
 - Source text makes later review and validation possible.
 - Routing evidence into portable, contextual, and rejected groups separates strong claims from weak or local observations.
 - Rejected/contextual evidence can expose uncertainty instead of silently disappearing.
+- Evidence candidates carry both a broad signal category and a routing role. The category says what kind of source signal was observed; the role says how reusable metadata should treat it, such as identity, descriptor, context, qualitative attribute, or parameter.
+- Evidence candidates preserve two provenance spans: an atomic copied `evidence_text` support span and a backend-derived copied `source_context` window that keeps nearby local scope such as section, block, resource, method, instrument, software, or activity context for later parent routing.
 - Quantitative attribute grouping uses instrument-setting evidence, while primary/raw measurement values remain traceable evidence but are ignored for downstream metadata projection.
 
 Thesis claim supported: SIMONE makes traceability and evidence grounding central to metadata construction.
@@ -87,30 +90,32 @@ Reasoning:
 
 Thesis claim supported: SIMONE constructs metadata through staged intermediate representations.
 
-### Vocabulary Grounding Separates Extraction From Semantics
-
-After evidence extraction, selected terms are normalized against semantic vocabularies. This is a distinct step from detecting that a quantity, unit, material, method, or qualitative attribute exists.
-
-Reasoning:
-
-- LLM extraction identifies candidate meaning in source text.
-- Vocabulary grounding links candidate meaning to reusable identifiers.
-- Vector search, full-text search, graph context, and candidate selection provide a more controlled grounding process than free-text generation alone.
-- Failed grounding should preserve raw values and warnings instead of fabricating semantic links.
-
-Thesis claim supported: SIMONE combines LLM-assisted extraction with ontology- or vocabulary-backed semantic normalization.
-
 ### Profile Projection Is Late Binding
 
-The workflow keeps a generic intermediate representation before projecting into a selected metadata profile. The final document is produced only after evidence extraction and vocabulary normalization.
+The workflow keeps a generic evidence representation before projecting it into a selected metadata profile. Profile construction happens before vocabulary grounding so object and attribute placement can be assessed and corrected against the profile schema first.
 
 Reasoning:
 
-- A generic context can support different target schemas in principle.
-- Profile-specific requirements should constrain final output, not all earlier evidence collection.
-- Late projection reduces coupling between extraction prompts and one metadata profile.
+- A generic evidence context can support different target schemas in principle.
+- Profile-specific requirements should constrain draft construction, not all earlier evidence collection.
+- Coverage patching and semantic reconstruction establish which profile objects own each extracted value before semantic identifiers are assigned.
+- Late profile binding reduces coupling between extraction prompts and one metadata profile.
 
 Thesis claim supported: SIMONE separates extraction from profile-specific metadata generation.
+
+### Vocabulary Grounding Is Final Enrichment
+
+After profile draft construction, semantic reconstruction, validation, and optional curation, selected fields already placed in the profile are normalized against semantic vocabularies. Vocabulary grounding is the final workflow enrichment step before final validation and persistence.
+
+Reasoning:
+
+- Evidence extraction identifies candidate meaning in source text.
+- Profile construction determines where that evidence belongs in the target schema.
+- Vocabulary grounding then links selected placed values to reusable identifiers.
+- Vector search, full-text search, graph context, and candidate selection provide a controlled grounding process.
+- Failed grounding preserves raw values and warnings instead of fabricating semantic links.
+
+Thesis claim supported: SIMONE combines evidence-backed profile construction with final ontology- or vocabulary-backed semantic normalization.
 
 ### Validation Is A Boundary, Not Decoration
 
@@ -152,9 +157,12 @@ Dataset package
   -> source-local chunks
   -> grounded evidence candidates
   -> routed and accumulated evidence context
-  -> vocabulary-normalized attributes
-  -> profile-specific metadata document
-  -> schema-validated result
+  -> initialized profile draft
+  -> evidence-backed coverage patching
+  -> semantic reconstruction and validation
+  -> optional curation
+  -> final vocabulary grounding of placed profile fields
+  -> validated and persisted result
 ```
 
 ## Current Thesis Boundaries

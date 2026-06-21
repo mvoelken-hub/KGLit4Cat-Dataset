@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import unittest
@@ -29,6 +29,7 @@ class EvidenceEnrichmentRouterTests(unittest.TestCase):
         defaults = {
             "candidate_id": "c1",
             "category": "other",
+            "role": "other_metadata",
             "claim": "claim",
             "evidence_text": "evidence",
             "file_path": "f.txt",
@@ -39,7 +40,8 @@ class EvidenceEnrichmentRouterTests(unittest.TestCase):
 
     def test_device_signal_routes_to_activity_carried_out_by(self):
         note = self._note(
-            category="agent_signal",
+            category="instrument_signal",
+            role="identity",
             claim="spectra acquired with Bruker Avance 500 MHz spectrometer",
             evidence_text="Bruker instrument",
         )
@@ -50,6 +52,7 @@ class EvidenceEnrichmentRouterTests(unittest.TestCase):
     def test_surrounding_signal_routes_to_creator(self):
         note = self._note(
             category="surrounding_signal",
+            role="context",
             claim="owner is nmr",
             evidence_text="OWNER= nmr",
         )
@@ -60,6 +63,7 @@ class EvidenceEnrichmentRouterTests(unittest.TestCase):
     def test_activity_signal_routes_to_was_generated_by(self):
         note = self._note(
             category="activity_signal",
+            role="descriptor",
             claim="file contains acquisition activity parameters",
             evidence_text="acquisition",
         )
@@ -70,6 +74,7 @@ class EvidenceEnrichmentRouterTests(unittest.TestCase):
     def test_measurement_signal_has_no_downstream_target(self):
         note = self._note(
             category="measurement_signal",
+            role="parameter",
             claim="field width is 125000",
             evidence_text="FW= 125000",
         )
@@ -80,6 +85,7 @@ class EvidenceEnrichmentRouterTests(unittest.TestCase):
     def test_method_signal_routes_to_realized_plan(self):
         note = self._note(
             category="method_signal",
+            role="descriptor",
             claim="NMR pulse sequence zg30",
             evidence_text="zg30",
         )
@@ -90,6 +96,7 @@ class EvidenceEnrichmentRouterTests(unittest.TestCase):
     def test_resource_signal_routes_to_distribution(self):
         note = self._note(
             category="resource_signal",
+            role="descriptor",
             claim="downloadable parameter file",
             evidence_text="download",
         )
@@ -100,6 +107,7 @@ class EvidenceEnrichmentRouterTests(unittest.TestCase):
     def test_measurement_signal_is_excluded_from_context_window(self):
         note = self._note(
             category="measurement_signal",
+            role="parameter",
             claim="raw point count is 2559",
             evidence_text="NPOINTS=2559",
         )
@@ -113,6 +121,7 @@ class EvidenceEnrichmentContextWindowTests(unittest.TestCase):
         defaults = {
             "candidate_id": "c1",
             "category": "instrument_signal",
+            "role": "identity",
             "claim": "claim",
             "evidence_text": "evidence",
             "file_path": "f.txt",
@@ -320,6 +329,7 @@ class EvidenceEnrichmentIntegrationTests(unittest.IsolatedAsyncioTestCase):
         note = EvidenceCandidate(
             candidate_id="n1",
             category="activity_signal",
+            role="descriptor",
             claim="new activity",
             evidence_text="ACTIVITY= x",
             file_path="f.txt",
@@ -355,6 +365,7 @@ class EvidenceEnrichmentIntegrationTests(unittest.IsolatedAsyncioTestCase):
         note = EvidenceCandidate(
             candidate_id="n1",
             category="activity_signal",
+            role="descriptor",
             claim="new activity",
             evidence_text="ACTIVITY= x",
         )
@@ -403,6 +414,7 @@ class EvidenceEnrichmentIntegrationTests(unittest.IsolatedAsyncioTestCase):
         note = EvidenceCandidate(
             candidate_id="n1",
             category="activity_signal",
+            role="descriptor",
             claim="same activity",
             evidence_text="ACTIVITY= x",
             file_path="f.txt",
@@ -426,5 +438,6 @@ class EvidenceEnrichmentIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 for record in state.projection_ledger
             )
         )
+
 
 

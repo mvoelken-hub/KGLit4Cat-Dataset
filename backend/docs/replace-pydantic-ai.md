@@ -31,11 +31,11 @@ Chunking remains a prerequisite. Extraction does not auto-create chunks.
 |---|---|---|
 | File ranking | `FileRankingResult` | Sort package files by likely metadata value. |
 | Chunk extraction | `ExtractionContext` | Extract activities, entities, datasets, quantities, and qualitative attributes from one chunk. |
-| Vocabulary candidate selection | `VocabularyCandidateSelection` | Choose a term URI from deterministic vocabulary query candidates, or return no match. |
+| Profile projection | Selected profile JSON Schema | Transform merged evidence context into a schema-valid profile draft. |
+| Vocabulary candidate selection | `VocabularyCandidateSelection` | After profile finalization, choose a term URI for an enrichable profile field or return no match. |
 | Vocabulary fallback query | `VocabularyFallbackQuery` | Create a focused alternate query when deterministic candidates do not fit. |
-| Profile projection | Selected profile JSON Schema | Transform merged, normalized context into the final profile document. |
 
-The profile transformation is intentionally LLM-based. A deterministic mapper from arbitrary `ExtractionContext` data into a profile-specific schema is too brittle for the current profiles. Deterministic code only orchestrates calls, builds vocabulary queries, records warnings/token usage, removes nulls, persists artifacts, and validates the final document.
+The profile transformation is intentionally LLM-based. A deterministic mapper from arbitrary evidence context into a profile-specific schema is too brittle for the current profiles. Vocabulary queries run afterward against enrichable fields already placed in the finalized profile draft. Deterministic code orchestrates calls, records warnings/token usage, removes nulls, persists artifacts, and validates profile writes and the final document.
 
 ## Public API
 

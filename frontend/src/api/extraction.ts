@@ -11,11 +11,11 @@ export type EvidenceRoute = 'portable_evidence' | 'contextual_evidence' | 'rejec
 export type EvidenceCandidate = {
   candidate_id: string;
   category: string;
+  role: string;
   claim: string;
   evidence_text: string;
+  source_context: string;
   uncertainty: string;
-  scope: string;
-  explicitness: string;
   file_path: string;
   start_idx: number;
   end_idx: number;
@@ -126,8 +126,10 @@ export type RequirementEvidenceItem = {
   evidence_id?: string;
   candidate_id: string;
   category: string;
+  role?: string;
   claim: string;
   evidence_text: string;
+  source_context?: string;
   file_path?: string;
   start_idx?: number;
   end_idx?: number;
@@ -682,7 +684,7 @@ export function initialContextFromEvidenceContext(context: RoutedEvidenceContext
     }));
   const activitySignals = evidenceByCategory('activity_signal');
   const agentSignals = [
-    ...evidenceByCategory('agent_signal'),
+    ...evidenceByCategory('software_signal'),
     ...evidenceByCategory('instrument_signal'),
   ];
   const methodSignals = evidenceByCategory('method_signal');

@@ -12,7 +12,7 @@ Within the thesis context, this prototype explores whether large language models
 
 The prototype aims to turn an uploaded dataset archive into a progressively refined metadata representation. It does this by extracting document content, deriving artifact context from the source material, generating an initial metadata draft, refining that draft iteratively, and enriching selected fields with vocabulary-backed semantic references.
 
-The active backend workflow is direct extraction, vocabulary normalization, profile projection, validation, and persistence. Some older "initial draft" and "patch review" names still exist in the frontend for compatibility, but manual patch review is no longer the active backend pipeline.
+The active backend workflow is evidence extraction, profile draft construction and validation, optional curation, final vocabulary grounding, and result persistence. Vocabulary grounding operates on fields already placed in the profile draft; it is the last enrichment step before the final result is saved. Some older "initial draft" and "patch review" names still exist in the frontend for compatibility, but manual patch review is no longer the active backend pipeline.
 
 ## Running the App
 

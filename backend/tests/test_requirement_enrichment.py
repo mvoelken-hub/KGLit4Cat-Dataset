@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
@@ -100,6 +100,7 @@ class RequirementScoringTests(unittest.TestCase):
         used = EvidenceCandidate(
             candidate_id="m1",
             category="method_signal",
+            role="descriptor",
             claim="Plan.",
             evidence_text="PULPROG=zg30",
             evidence_match_score=0.8,
@@ -107,6 +108,7 @@ class RequirementScoringTests(unittest.TestCase):
         unused = EvidenceCandidate(
             candidate_id="m2",
             category="method_signal",
+            role="descriptor",
             claim="Other.",
             evidence_text="PULPROG=noesy",
             evidence_match_score=1.0,
@@ -119,6 +121,8 @@ class RequirementScoringTests(unittest.TestCase):
     def test_source_trace_excludes_unknown_description_evidence_ids(self):
         source = EvidenceCandidate(
             candidate_id="source",
+            category="other",
+            role="other_metadata",
             claim="Source fact.",
             evidence_text="Source fact.",
             evidence_match_score=1.0,
@@ -205,6 +209,7 @@ class RequirementScoringTests(unittest.TestCase):
                 {
                     "candidate_id": "e1",
                     "category": "method_signal",
+                    "role": "descriptor",
                     "claim": "Pulse sequence is zg30.",
                     "evidence_text": "PULPROG= zg30",
                 }
@@ -371,6 +376,7 @@ class RequirementEvidencePacketTests(unittest.TestCase):
         left = EvidenceCandidate(
             candidate_id="candidate-0",
             category="measurement_signal",
+            role="parameter",
             claim="Observe frequency is 500 MHz.",
             evidence_text="##.OBSERVE FREQUENCY=500.133088507478",
             file_path="10.edit.jdx",
@@ -380,6 +386,7 @@ class RequirementEvidencePacketTests(unittest.TestCase):
         right = EvidenceCandidate(
             candidate_id="candidate-0",
             category="resource_signal",
+            role="descriptor",
             claim="Parameter file.",
             evidence_text="##TITLE= Parameter file",
             file_path="10.zip/10/acqus",
@@ -398,6 +405,7 @@ class RequirementEvidencePacketTests(unittest.TestCase):
         target = EvidenceCandidate(
             candidate_id="m1",
             category="method_signal",
+            role="descriptor",
             claim="Pulse sequence is zg30.",
             evidence_text="PULPROG= zg30",
             file_path="acqus",
@@ -407,6 +415,7 @@ class RequirementEvidencePacketTests(unittest.TestCase):
         nearby = EvidenceCandidate(
             candidate_id="m2",
             category="measurement_signal",
+            role="parameter",
             claim="Acquisition temperature is 298 K.",
             evidence_text="TE= 298",
             file_path="acqus",
@@ -415,7 +424,8 @@ class RequirementEvidencePacketTests(unittest.TestCase):
         )
         unrelated = EvidenceCandidate(
             candidate_id="x1",
-            category="agent_signal",
+            category="instrument_signal",
+            role="identity",
             claim="Owner is nmr.",
             evidence_text="OWNER=nmr",
             file_path="owner",
@@ -454,6 +464,7 @@ class RequirementEvidencePacketTests(unittest.TestCase):
         observe = EvidenceCandidate(
             candidate_id="observe",
             category="instrument_signal",
+            role="identity",
             claim="The NMR spectrum was recorded at an observe frequency of 500.133088507478 MHz.",
             evidence_text="##.OBSERVE FREQUENCY=500.133088507478",
             file_path="10.edit.jdx",
@@ -463,6 +474,7 @@ class RequirementEvidencePacketTests(unittest.TestCase):
         max_y = EvidenceCandidate(
             candidate_id="max_y",
             category="measurement_signal",
+            role="parameter",
             claim="The maximum y-value in the NMR peak table is 6786105183.528301 arbitrary units.",
             evidence_text="##MAXY=6786105183.528301",
             file_path="10.edit.jdx",
@@ -498,12 +510,14 @@ class RequirementEvidencePacketTests(unittest.TestCase):
         points = EvidenceCandidate(
             candidate_id="points",
             category="measurement_condition",
+            role="parameter",
             claim="The spectrum contains 2559 data points.",
             evidence_text="NPOINTS=2559",
         )
         raw = EvidenceCandidate(
             candidate_id="raw",
             category="measurement_signal",
+            role="parameter",
             claim="A row-like transmittance value is 0.42.",
             evidence_text="1234.5 0.42",
         )
@@ -527,6 +541,72 @@ class RequirementEvidencePacketTests(unittest.TestCase):
 
         self.assertEqual([entry.candidate_id for entry in selected], ["points"])
 
+    def test_quantitative_packet_accepts_parameter_role_from_resource_signal(self):
+        requirement = next(
+            req
+            for req in DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS
+            if req.requirement_id == "instrument_settings_attributes"
+        )
+        threshold = EvidenceCandidate(
+            candidate_id="threshold",
+            category="resource_signal",
+            role="parameter",
+            claim="The threshold value is 0.93.",
+            evidence_text="##$CSTHRESHOLD=0.93",
+        )
+        context = RoutedEvidenceContext(portable_evidence=[threshold])
+        item = RequirementReportItem(
+            requirement_id=requirement.requirement_id,
+            label=requirement.label,
+            weight=requirement.weight,
+            status="missing",
+            applicable=True,
+            quality=0.0,
+            weighted_score=0.0,
+            evidence_search_hints=["threshold"],
+        )
+
+        selected, _ = select_requirement_evidence_packet(
+            requirement=requirement,
+            assessment=item,
+            evidence_context=context,
+        )
+
+        self.assertEqual([entry.candidate_id for entry in selected], ["threshold"])
+
+    def test_method_plan_packet_accepts_explicit_procedure_cue_from_instrument_signal(self):
+        requirement = next(
+            req
+            for req in DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS
+            if req.requirement_id == "method_plan"
+        )
+        procedure = EvidenceCandidate(
+            candidate_id="procedure",
+            category="instrument_signal",
+            role="descriptor",
+            claim="The sampling procedure is Diamant ATR.",
+            evidence_text="##SAMPLING PROCEDURE=Diamant ATR",
+        )
+        context = RoutedEvidenceContext(portable_evidence=[procedure])
+        item = RequirementReportItem(
+            requirement_id=requirement.requirement_id,
+            label=requirement.label,
+            weight=requirement.weight,
+            status="missing",
+            applicable=True,
+            quality=0.0,
+            weighted_score=0.0,
+            evidence_search_hints=requirement.evidence_hints,
+        )
+
+        selected, _ = select_requirement_evidence_packet(
+            requirement=requirement,
+            assessment=item,
+            evidence_context=context,
+        )
+
+        self.assertEqual([entry.candidate_id for entry in selected], ["procedure"])
+
     def test_dataset_generation_semantics_accepts_supporting_activity_evidence(self):
         requirement = next(
             req
@@ -536,18 +616,21 @@ class RequirementEvidencePacketTests(unittest.TestCase):
         method = EvidenceCandidate(
             candidate_id="method",
             category="method_signal",
+            role="descriptor",
             claim="The data was acquired using Diamant ATR sampling procedure.",
             evidence_text="##SAMPLING PROCEDURE=Diamant ATR",
         )
         agent = EvidenceCandidate(
             candidate_id="agent",
-            category="agent_signal",
+            category="instrument_signal",
+            role="identity",
             claim="The instrument used is Bruker ALPHA.",
             evidence_text="instrument: Bruker ALPHA",
         )
         instrument = EvidenceCandidate(
             candidate_id="setting",
             category="instrument_signal",
+            role="identity",
             claim="The threshold for peak detection is set to 0.93.",
             evidence_text="##$CSTHRESHOLD=0.93",
         )
@@ -589,6 +672,7 @@ class RequirementEvidencePacketTests(unittest.TestCase):
                     evidence_id="ev:unit",
                     candidate_id="unit",
                     category="instrument_signal",
+                    role="identity",
                     claim="X-axis units are 1/CM.",
                     evidence_text="##XUNITS=1/CM",
                 )
@@ -765,6 +849,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
                 EvidenceCandidate(
                     candidate_id="p1",
                     category="method_signal",
+                    role="descriptor",
                     claim="Pulse sequence is zg30.",
                     evidence_text="PULPROG= zg30",
                 )
@@ -964,6 +1049,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
                 EvidenceCandidate(
                     candidate_id="p1",
                     category="method_signal",
+                    role="descriptor",
                     claim="Pulse sequence is zg30.",
                     evidence_text="PULPROG= zg30",
                 )
@@ -1059,6 +1145,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
                 EvidenceCandidate(
                     candidate_id="p1",
                     category="method_signal",
+                    role="descriptor",
                     claim="Pulse sequence is zg30.",
                     evidence_text="PULPROG= zg30",
                 )
@@ -1147,6 +1234,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             EvidenceCandidate(
                 candidate_id="frequency",
                 category="instrument_signal",
+                role="identity",
                 claim="Observation frequency is 400.13 MHz.",
                 evidence_text="OBSERVE FREQUENCY=400.13 MHz",
                 file_path="acqus",
@@ -1156,6 +1244,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             EvidenceCandidate(
                 candidate_id="scans",
                 category="instrument_signal",
+                role="identity",
                 claim="Number of scans is 16.",
                 evidence_text="NS=16",
                 file_path="acqus",
@@ -1175,6 +1264,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             EvidenceCandidate(
                 candidate_id="a",
                 category="instrument_signal",
+                role="identity",
                 claim="Temperature is 298 K.",
                 evidence_text="TEMP=298 K",
                 file_path="acqus",
@@ -1184,6 +1274,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             EvidenceCandidate(
                 candidate_id="b",
                 category="instrument_signal",
+                role="identity",
                 claim="Temperature is 298 K.",
                 evidence_text="TEMP=298 K",
                 file_path="acqus",
@@ -1197,29 +1288,83 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(groups), 1)
         self.assertEqual(len(groups[0].notes), 2)
 
+    def test_quantitative_grouping_accepts_parameter_role_from_resource_signal(self):
+        notes = [
+            EvidenceCandidate(
+                candidate_id="threshold",
+                category="resource_signal",
+                role="parameter",
+                claim="The threshold value is 0.93.",
+                evidence_text="##$CSTHRESHOLD=0.93",
+                file_path="peaks.jdx",
+                start_idx=10,
+                end_idx=20,
+            ),
+            EvidenceCandidate(
+                candidate_id="raw",
+                category="measurement_signal",
+                role="parameter",
+                claim="The observed value is 0.93.",
+                evidence_text="1000 0.93",
+                file_path="peaks.jdx",
+                start_idx=30,
+                end_idx=40,
+            ),
+        ]
+
+        groups = WorkflowService._quantitative_evidence_groups(notes)
+
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].notes[0].candidate_id, "threshold")
+        self.assertEqual(groups[0].value, 0.93)
+
+    def test_quantitative_grouping_accepts_parameter_role_axis_extrema(self):
+        notes = [
+            EvidenceCandidate(
+                candidate_id="max_x",
+                category="resource_signal",
+                role="parameter",
+                claim="The maximum X value is 3997.453.",
+                evidence_text="##MAXX=3997.453",
+                file_path="peaks.jdx",
+                start_idx=10,
+                end_idx=20,
+            )
+        ]
+
+        groups = WorkflowService._quantitative_evidence_groups(notes)
+
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].label.lower(), "maximum x")
+        self.assertEqual(groups[0].value, 3997.453)
+
     def test_quantitative_grouping_rejects_identifier_and_path_numbers(self):
         notes = [
             EvidenceCandidate(
                 candidate_id="title",
                 category="resource_signal",
+                role="descriptor",
                 claim="Dataset name is 1H_NMR_clean.",
                 evidence_text="##TITLE=1H_NMR_clean /opt/topspin3.5pl6/data",
             ),
             EvidenceCandidate(
                 candidate_id="program",
                 category="method_signal",
+                role="descriptor",
                 claim="Pulse sequence used was zg30.",
                 evidence_text="/opt/topspin3.5pl6/exp/stan/nmr/lists/pp/zg30",
             ),
             EvidenceCandidate(
                 candidate_id="software",
-                category="agent_signal",
+                category="instrument_signal",
+                role="identity",
                 claim="TopSpin 3.5 pl 6 software version.",
                 evidence_text="TopSpin 3.5 pl 6",
             ),
             EvidenceCandidate(
                 candidate_id="good",
                 category="instrument_signal",
+                role="identity",
                 claim="Observation frequency is 400.13 MHz.",
                 evidence_text="OBSERVE FREQUENCY=400.13 MHz",
             ),
@@ -1235,6 +1380,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             EvidenceCandidate(
                 candidate_id=f"peak-{index}",
                 category="measurement_signal",
+                role="parameter",
                 claim=f"Peak observed spectrum at {7.0 + index / 1000} ppm.",
                 evidence_text=f"{7.0 + index / 1000} ppm",
                 file_path="peaks.txt",
@@ -1253,24 +1399,28 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             EvidenceCandidate(
                 candidate_id="identifier",
                 category="instrument_signal",
+                role="identity",
                 claim="The run identifier is A-42.",
                 evidence_text="RUN=A-42",
             ),
             EvidenceCandidate(
                 candidate_id="maximum",
                 category="instrument_signal",
+                role="identity",
                 claim="The maximum observed signal value is 3997.453.",
                 evidence_text="UPPER_BOUND=3997.453",
             ),
             EvidenceCandidate(
                 candidate_id="rows",
                 category="instrument_signal",
+                role="identity",
                 claim="The number of data points in the result table is 23.",
                 evidence_text="ROWS=23",
             ),
             EvidenceCandidate(
                 candidate_id="threshold",
                 category="instrument_signal",
+                role="identity",
                 claim="The threshold for peak detection is set to 0.93.",
                 evidence_text="THRESHOLD=0.93",
             ),
@@ -1285,12 +1435,14 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             EvidenceCandidate(
                 candidate_id="points",
                 category="measurement_condition",
+                role="parameter",
                 claim="The spectrum contains a data point count of 2559.",
                 evidence_text="NPOINTS=2559",
             ),
             EvidenceCandidate(
                 candidate_id="raw",
                 category="measurement_signal",
+                role="parameter",
                 claim="A raw observed transmittance value is 0.42.",
                 evidence_text="1234.5 0.42",
             ),
@@ -1306,18 +1458,21 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             EvidenceCandidate(
                 candidate_id="name",
                 category="instrument_signal",
+                role="identity",
                 claim="The solvent name is unspecified.",
                 evidence_text="MATERIAL_NAME=- - -",
             ),
             EvidenceCandidate(
                 candidate_id="value",
                 category="instrument_signal",
+                role="identity",
                 claim="The material value is set to 0.",
                 evidence_text="MATERIAL_VALUE=0",
             ),
             EvidenceCandidate(
                 candidate_id="position",
                 category="instrument_signal",
+                role="identity",
                 claim="The material x-position is set to 0.",
                 evidence_text="MATERIAL_X=0",
             ),
@@ -1331,6 +1486,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         note = EvidenceCandidate(
             candidate_id="threshold",
             category="instrument_signal",
+            role="identity",
             claim="The threshold is set to 0.93.",
             evidence_text="THRESHOLD=0.93",
         )
@@ -1630,6 +1786,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
                 RequirementEvidenceItem(
                     candidate_id="range",
                     category="measurement_condition",
+                    role="parameter",
                     claim="Range is 1 to 2 units.",
                     evidence_text="range 1-2 units",
                 )
@@ -1681,6 +1838,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
                         RequirementEvidenceItem(
                             candidate_id="points",
                             category="measurement_condition",
+                            role="parameter",
                             claim="2559 data points collected.",
                             evidence_text="NPOINTS=2559",
                         )
@@ -1865,6 +2023,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
                 EvidenceCandidate(
                     candidate_id="freq",
                     category="instrument_signal",
+                    role="identity",
                     claim="Observation frequency is 400.13 MHz.",
                     evidence_text="OBSERVE FREQUENCY=400.13 MHz",
                     file_path="acqus",
@@ -1874,6 +2033,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
                 EvidenceCandidate(
                     candidate_id="scans",
                     category="instrument_signal",
+                    role="identity",
                     claim="Number of scans is 16.",
                     evidence_text="NS=16",
                     file_path="acqus",
@@ -1927,6 +2087,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
                 EvidenceCandidate(
                     candidate_id="device-temp",
                     category="instrument_signal",
+                    role="identity",
                     claim="Device temperature is 298 K.",
                     evidence_text="temperature 298 K",
                     file_path="run.txt",
@@ -1978,6 +2139,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
                 EvidenceCandidate(
                     candidate_id="value",
                     category="measurement_signal",
+                    role="parameter",
                     claim="Measured value is 12.",
                     evidence_text="value 12",
                     file_path="run.txt",
@@ -2020,6 +2182,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
                         evidence_id="ev:width",
                         candidate_id="candidate-1",
                         category="measurement_signal",
+                        role="parameter",
                         claim="Field width is 125000",
                         evidence_text="FW= 125000",
                     ),
@@ -2027,6 +2190,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
                         evidence_id="ev:frequency",
                         candidate_id="candidate-0",
                         category="measurement_signal",
+                        role="parameter",
                         claim="The NMR spectrum was recorded at an observe frequency of 500.133088507478 MHz.",
                         evidence_text="##.OBSERVE FREQUENCY=500.133088507478",
                     ),
@@ -2048,6 +2212,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
                 EvidenceCandidate(
                     candidate_id="frequency",
                     category="instrument_signal",
+                    role="identity",
                     claim="Observation frequency is 500.133088507478 MHz.",
                     evidence_text="##.OBSERVE FREQUENCY=500.133088507478 MHz",
                     file_path="acqus",
@@ -2143,6 +2308,7 @@ class DescriptionMiningIntegrationTests(unittest.IsolatedAsyncioTestCase):
                         {
                             "source_description_path": "/description/0",
                             "category": "instrument_signal",
+                            "role": "identity",
                             "claim": "Acquisition frequency was 500 MHz.",
                             "evidence_text": "frequency was 500 MHz",
                         }
@@ -2226,6 +2392,7 @@ class DescriptionMiningIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 EvidenceCandidate(
                     candidate_id="description:1",
                     category="other",
+                    role="other_metadata",
                     claim="Description fact.",
                     evidence_text="Description fact.",
                     file_path="draft-description:/description/0",
@@ -2265,4 +2432,5 @@ class DescriptionMiningIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(events, ["mine", "semantic", "semantic"])
         self.assertEqual(state.generated_initial_draft["description"], ["Description fact."])
         self.assertEqual(state.generated_patched_draft["description"], ["Description fact."])
+
 

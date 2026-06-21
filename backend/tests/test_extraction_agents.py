@@ -1,4 +1,4 @@
-import json
+﻿import json
 import re
 import unittest
 from pathlib import Path
@@ -30,10 +30,12 @@ from app.domain.extraction import (
     Resource,
     TracedExtractionObject,
     build_evidence_context_prompt,
+    build_evidence_critic_prompt,
     build_evidence_system_prompt_with_overview,
     build_schema_branch_index,
     build_schema_search_query,
     dedupe_repeated_evidence_notes,
+    derive_source_context_for_evidence,
     evidence_text_match_score,
     route_evidence_candidates,
     build_file_ranking_prompt,
@@ -290,12 +292,14 @@ classes:
                 EvidenceCandidate(
                     candidate_id="n1",
                     category="resource_signal",
+                    role="descriptor",
                     claim="The chunk names Sample A.",
                     evidence_text="##TITLE= Sample A",
                 ),
                 EvidenceCandidate(
                     candidate_id="n2",
-                    category="agent_signal",
+                    category="instrument_signal",
+                    role="identity",
                     claim="The owner is Lab Team.",
                     evidence_text="##OWNER=    Lab Team",
                 ),
@@ -321,6 +325,7 @@ classes:
                 EvidenceCandidate(
                     candidate_id="method_group",
                     category="method_signal",
+                    role="descriptor",
                     claim="The resource states a calibration experiment method.",
                     evidence_text="method: calibration experiment",
                 )
@@ -347,7 +352,7 @@ classes:
         self.assertNotIn("signal_level", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
 
     def test_evidence_prompt_prevents_file_local_signals_from_becoming_dataset_identity(self):
-        self.assertIn("scope to package, resource, section, execution_environment, or unknown", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("Set role to one of", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
         self.assertIn("A later critic will route them", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
         self.assertNotIn("TOPSPIN", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
         self.assertNotIn("Bruker", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
@@ -356,15 +361,101 @@ classes:
 
     def test_evidence_prompt_is_domain_agnostic(self):
         self.assertIn("Do not use domain-specific key names", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
-        self.assertIn("Use agent_signal only for software, devices", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("Use software_signal for software", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("Use instrument_signal for devices", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
         self.assertIn("origins are surrounding_signal", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
         self.assertIn("measurement_condition for measurement descriptors", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
         self.assertIn("axis bounds, axis units, point counts", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
         self.assertIn("threshold, unit, or processing choice", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
         self.assertIn("stitch together non-contiguous source text", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("Do not populate source_context", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
+        self.assertIn("Never compose evidence_text", EVIDENCE_CONTEXT_SYSTEM_PROMPT)
         self.assertNotIn("nucleus", EVIDENCE_CONTEXT_SYSTEM_PROMPT.lower())
         self.assertNotIn("solvent", EVIDENCE_CONTEXT_SYSTEM_PROMPT.lower())
         self.assertNotIn("pulse", EVIDENCE_CONTEXT_SYSTEM_PROMPT.lower())
+
+    def test_evidence_validation_derives_verbatim_source_context(self):
+        chunk = "##DATA TYPE=PEAKTABLE\n##NPOINTS=23\n##$CSTHRESHOLD=0.93"
+        context = EvidenceContext(
+            candidates=[
+                EvidenceCandidate(
+                    category="measurement_condition",
+                    role="parameter",
+                    claim="The threshold for the peak table is 0.93.",
+                    evidence_text="##$CSTHRESHOLD=0.93",
+                )
+            ]
+        )
+
+        validated, dropped = validate_evidence_context_for_chunk(
+            context,
+            chunk_content=chunk,
+            file_path="sample.jdx",
+            start_idx=10,
+            end_idx=70,
+        )
+
+        self.assertEqual(dropped, [])
+        self.assertEqual(validated.candidates[0].source_context, chunk)
+
+    def test_evidence_validation_ignores_model_supplied_source_context(self):
+        chunk = "##DATA TYPE=PEAKTABLE\n##$CSTHRESHOLD=0.93"
+        context = EvidenceContext(
+            candidates=[
+                EvidenceCandidate(
+                    category="measurement_condition",
+                    role="parameter",
+                    claim="The threshold is 0.93.",
+                    evidence_text="##$CSTHRESHOLD=0.93",
+                    source_context="invented peak table context",
+                )
+            ]
+        )
+
+        validated, dropped = validate_evidence_context_for_chunk(
+            context,
+            chunk_content=chunk,
+            file_path="sample.jdx",
+            start_idx=10,
+            end_idx=55,
+        )
+
+        self.assertEqual(dropped, [])
+        self.assertEqual(validated.candidates[0].source_context, chunk)
+
+    def test_source_context_is_omitted_from_critic_prompt(self):
+        chunk = "##DATA TYPE=PEAKTABLE\n##$CSTHRESHOLD=0.93"
+        prompt = build_evidence_critic_prompt(
+            candidates=[
+                EvidenceCandidate(
+                    candidate_id="c1",
+                    category="measurement_condition",
+                    role="parameter",
+                    claim="The threshold is 0.93.",
+                    evidence_text="##$CSTHRESHOLD=0.93",
+                    source_context=chunk,
+                )
+            ],
+            chunk_context=EvidenceChunkContext(
+                content=chunk,
+                metadata=EvidenceChunkMetadata(
+                    start_idx=0,
+                    end_idx=len(chunk),
+                    file_path="sample.jdx",
+                    data_package_name="pkg",
+                ),
+            ),
+        )
+
+        self.assertNotIn("source_context", prompt)
+        self.assertIn("##$CSTHRESHOLD=0.93", prompt)
+
+    def test_source_context_helper_returns_compact_line_window(self):
+        chunk = "title\nsection\nkey=value\nnext=value\nfar=value"
+        self.assertEqual(
+            derive_source_context_for_evidence("key=value", chunk, window_lines=1),
+            "section\nkey=value\nnext=value",
+        )
 
     def test_evidence_chunk_prompt_normalizes_control_characters(self):
         prompt = build_evidence_context_prompt(
@@ -526,8 +617,8 @@ classes:
     def test_route_evidence_candidates_uses_generic_assessment(self):
         context = EvidenceContext(
             candidates=[
-                EvidenceCandidate(candidate_id="portable", category="resource_signal", claim="Dataset title is Sample A.", evidence_text="Dataset title: Sample A"),
-                EvidenceCandidate(candidate_id="contextual", category="method_signal", claim="A local runtime path is present.", evidence_text="Path: C:/tmp/run"),
+                EvidenceCandidate(candidate_id="portable", category="resource_signal", role="identity", claim="Dataset title is Sample A.", evidence_text="Dataset title: Sample A"),
+                EvidenceCandidate(candidate_id="contextual", category="method_signal", role="descriptor", claim="A local runtime path is present.", evidence_text="Path: C:/tmp/run"),
             ]
         )
 
@@ -572,6 +663,7 @@ classes:
                 EvidenceCandidate(
                     candidate_id="secondary",
                     category="resource_signal",
+                    role="descriptor",
                     claim="Format.",
                     evidence_text="##JCAMP-DX=5.00",
                     file_path="rank2.jdx",
@@ -580,6 +672,7 @@ classes:
                 EvidenceCandidate(
                     candidate_id="primary",
                     category="resource_signal",
+                    role="descriptor",
                     claim="JCAMP-DX file syntax format version 5.00 is declared.",
                     evidence_text="##JCAMP-DX=5.00",
                     file_path="rank1.jdx",
@@ -605,6 +698,7 @@ classes:
                 EvidenceCandidate(
                     candidate_id="synthetic",
                     category="measurement_signal",
+                    role="parameter",
                     claim="Synthetic experiment for testing.",
                     evidence_text="experiment-1 synthetic data for testing",
                 )
@@ -806,14 +900,14 @@ classes:
                 chunk_index=0, file_path="a.txt", start_idx=0, end_idx=1,
                 status="completed",
                 evidence_context=EvidenceContext(candidates=[
-                    EvidenceCandidate(candidate_id="a", category="resource_signal", claim="A", evidence_text="a"),
+                    EvidenceCandidate(candidate_id="a", category="resource_signal", role="descriptor", claim="A", evidence_text="a"),
                 ]),
             ),
             ExtractionChunkResult(
                 chunk_index=1, file_path="b.txt", start_idx=0, end_idx=1,
                 status="completed",
                 evidence_context=EvidenceContext(candidates=[
-                    EvidenceCandidate(candidate_id="b", category="resource_signal", claim="B", evidence_text="b"),
+                    EvidenceCandidate(candidate_id="b", category="resource_signal", role="descriptor", claim="B", evidence_text="b"),
                 ]),
             ),
         ])
@@ -836,7 +930,7 @@ classes:
                 chunk_index=5, file_path="a.txt", start_idx=0, end_idx=1,
                 status="completed",
                 evidence_context=EvidenceContext(candidates=[
-                    EvidenceCandidate(candidate_id="later", category="resource_signal", claim="Later", evidence_text="later"),
+                    EvidenceCandidate(candidate_id="later", category="resource_signal", role="descriptor", claim="Later", evidence_text="later"),
                 ]),
             ),
         ])
@@ -854,6 +948,7 @@ classes:
         first = EvidenceCandidate(
             candidate_id="software_version",
             category="resource_signal",
+            role="descriptor",
             claim="TOPSPIN version",
             evidence_text="##TITLE= Audit trail, TOPSPIN Version 3.2",
             file_path="10.zip/10/audita.txt",
@@ -863,6 +958,7 @@ classes:
         second = EvidenceCandidate(
             candidate_id="software_version",
             category="resource_signal",
+            role="descriptor",
             claim="TOPSPIN processing version",
             evidence_text="##TITLE= Parameter file, TOPSPIN Version 3.2",
             file_path="10.zip/10/pdata/1/outd",
@@ -881,18 +977,21 @@ classes:
                 EvidenceCandidate(
                     candidate_id="instrument",
                     category="surrounding_signal",
+                    role="context",
                     claim="Instrument owner is Bruker.",
                     evidence_text="##ORIGIN= Bruker BioSpin GmbH",
                 ),
                 EvidenceCandidate(
                     candidate_id="solvent",
                     category="activity_signal",
+                    role="descriptor",
                     claim="Solvent is CDCl3.",
                     evidence_text="SOLVENT= <CDCl3>",
                 ),
                 EvidenceCandidate(
                     candidate_id="pulse",
                     category="method_signal",
+                    role="descriptor",
                     claim="Pulse sequence is zg30.",
                     evidence_text="PULPROG= <zg30>",
                 ),
@@ -984,6 +1083,7 @@ classes:
         note = EvidenceCandidate(
             candidate_id="instrument",
             category="resource_signal",
+            role="descriptor",
             claim="Instrument used is Bruker Avance 500 MHz.",
             evidence_text="instrument: Bruker Avance 500 MHz",
         )
@@ -1061,12 +1161,14 @@ classes:
     def test_instrument_note_uses_free_text_observation_without_facets(self):
         note = EvidenceCandidate(
             candidate_id="instrument",
-            category="agent_signal",
+            category="instrument_signal",
+            role="identity",
             claim="Instrument/device used is Bruker Avance 500 MHz.",
             evidence_text="instrument: Bruker Avance 500 MHz",
         )
 
-        self.assertEqual(note.category, "agent_signal")
+        self.assertEqual(note.category, "instrument_signal")
+        self.assertEqual(note.role, "identity")
         self.assertIn("Instrument/device", note.claim)
         self.assertFalse(hasattr(note, "facets"))
 
@@ -1074,6 +1176,7 @@ classes:
         note = EvidenceCandidate(
             candidate_id="td_setting",
             category="method_signal",
+            role="descriptor",
             claim="Low-level parameter TD is set to 65536.",
             evidence_text="##$TD= 65536",
         )
@@ -1086,6 +1189,7 @@ classes:
             EvidenceCandidate(
                 candidate_id="td_setting",
                 category="method_signal",
+                role="descriptor",
                 claim="NMR acquisition parameter TD is 65536.",
                 evidence_text="##$TD= 65536",
             )
@@ -1104,6 +1208,7 @@ classes:
             EvidenceCandidate(
                 candidate_id="note_15",
                 category="method_signal",
+                role="descriptor",
                 claim="Bla01Eth parameter is set to '<149.236.99.254>'.",
                 evidence_text="##$Bla01Eth= <149.236.99.254>",
                 file_path="10.zip/10/uxnmr.par",
@@ -1111,6 +1216,7 @@ classes:
             EvidenceCandidate(
                 candidate_id="note_16",
                 category="method_signal",
+                role="descriptor",
                 claim="Bla01Nam parameter is set to '<BLAXH300/100 E 200-600MHZ INR>'.",
                 evidence_text="##$Bla01Nam= <BLAXH300/100 E 200-600MHZ INR>",
                 file_path="10.zip/10/uxnmr.par",
@@ -1148,6 +1254,7 @@ classes:
                 EvidenceCandidate(
                     candidate_id="method_setting",
                     category="activity_signal",
+                    role="descriptor",
                     claim="The workflow uses a calibration method.",
                     evidence_text="method = calibration",
                 )
@@ -1166,6 +1273,7 @@ classes:
                 EvidenceCandidate(
                     candidate_id="format_file",
                     category="resource_signal",
+                    role="descriptor",
                     claim="The file declares a structured data format.",
                     evidence_text="format = structured text",
                     file_path="data.txt",
@@ -1182,6 +1290,7 @@ classes:
         note = EvidenceCandidate(
             candidate_id="instrument",
             category="resource_signal",
+            role="descriptor",
             claim="Instrument used is Bruker Avance 500 MHz.",
             evidence_text="instrument: Bruker Avance 500 MHz",
             signal_level="high",
@@ -1297,12 +1406,14 @@ classes:
                 EvidenceCandidate(
                     candidate_id="audit_trail",
                     category="resource_signal",
+                    role="descriptor",
                     claim="Audit trail records software version and user actions",
                     evidence_text="##AUDIT TRAIL= ... TOPSPIN 3.2",
                 ),
                 EvidenceCandidate(
                     candidate_id="dataset_name",
                     category="surrounding_signal",
+                    role="context",
                     claim="Dataset name is 1H NMR",
                     evidence_text="dataset name: 1H NMR",
                 ),
@@ -1319,6 +1430,7 @@ classes:
                 EvidenceCandidate(
                     candidate_id="dataset_name",
                     category="surrounding_signal",
+                    role="context",
                     claim="Dataset name is 1H NMR",
                     evidence_text="dataset name: 1H NMR",
                     signal_level="high",
@@ -1326,6 +1438,7 @@ classes:
                 EvidenceCandidate(
                     candidate_id="bfreq_setting",
                     category="measurement_signal",
+                    role="parameter",
                     claim="BFREQ parameter is set to 500.13.",
                     evidence_text="##$BFREQ= 500.13",
                     signal_level="high",
@@ -1333,6 +1446,7 @@ classes:
                 EvidenceCandidate(
                     candidate_id="blocks",
                     category="measurement_signal",
+                    role="parameter",
                     claim="single block structure",
                     evidence_text="##BLOCKS=1",
                     signal_level="high",
@@ -1359,6 +1473,7 @@ classes:
                 EvidenceCandidate(
                     candidate_id="format_version_1",
                     category="resource_signal",
+                    role="descriptor",
                     claim="Structured data format version 5.00",
                     evidence_text="FORMAT=5.00",
                     file_path="data.txt",
@@ -1369,6 +1484,7 @@ classes:
                 EvidenceCandidate(
                     candidate_id="format_version_2",
                     category="resource_signal",
+                    role="descriptor",
                     claim="Structured data format version 5.00",
                     evidence_text="FORMAT=5.00",
                     file_path="data.txt",
@@ -1405,6 +1521,7 @@ classes:
                 EvidenceCandidate(
                     candidate_id="sample",
                     category="activity_signal",
+                    role="descriptor",
                     claim="Primary sample is catalyst batch A.",
                     evidence_text="sample = catalyst batch A",
                     file_path="metadata.txt",
@@ -1641,5 +1758,6 @@ classes:
         self.assertIn("carried_out_by", document["was_generated_by"][0])
 if __name__ == "__main__":
     unittest.main()
+
 
 

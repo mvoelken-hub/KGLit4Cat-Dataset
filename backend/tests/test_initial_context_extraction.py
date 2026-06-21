@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -468,6 +468,7 @@ def evidence_context(
     evidence_text: str | None = None,
     *,
     category: str = "resource_signal",
+    role: str = "descriptor",
     file_path: str = "README.md",
 ) -> EvidenceContext:
     return EvidenceContext(
@@ -475,6 +476,7 @@ def evidence_context(
             EvidenceCandidate(
                 candidate_id=identifier,
                 category=category,
+                role=role,
                 claim=observation,
                 evidence_text=evidence_text or observation,
                 signal_level="high",
@@ -530,6 +532,7 @@ class EvidenceCandidateDefaultsTests(unittest.TestCase):
             candidates=[
                 EvidenceCandidate(
                     category="resource_signal",
+                    role="descriptor",
                     claim="Dataset title is Sample.",
                     evidence_text="Dataset title is Sample.",
                 )
@@ -2002,6 +2005,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 EvidenceCandidate(
                     candidate_id="old",
                     category="resource_signal",
+                    role="descriptor",
                     claim="Old context",
                     evidence_text="old evidence",
                     signal_level="high",
@@ -2308,6 +2312,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             "Sample SG-V4050",
             "##TITLE=SG-V4050",
             category="surrounding_signal",
+            role="context",
         )
         warnings: list[str] = []
 
@@ -2457,6 +2462,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     "Beta NMR spectrum file.",
                     "sample two",
                     category="measurement_signal",
+                    role="parameter",
                 ),
                 usage=RunUsage(requests=1, input_tokens=20, output_tokens=5),
             ),
@@ -2524,6 +2530,10 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     usage=RunUsage(requests=1),
                 )
             self.assertIs(kwargs["output_type"], EvidenceContext)
+            self.assertIn(
+                "source_context",
+                kwargs["omitted_fields"]["EvidenceCandidate"],
+            )
             seen_components["system"] = [name for name, _ in kwargs["system_components"]]
             seen_components["prompt"] = [name for name, _ in kwargs["prompt_components"]]
             return CompletionResult(
@@ -2532,6 +2542,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                         EvidenceCandidate(
                             candidate_id="context-only",
                             category="resource_signal",
+                            role="descriptor",
                             claim="Context only resource.",
                             evidence_text="metadata",
                             signal_level="high",
@@ -3007,6 +3018,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                         EvidenceCandidate(
                             candidate_id="resource-one",
                             category="resource_signal",
+                            role="descriptor",
                             claim="First partial resource.",
                             evidence_text="sample one",
                             signal_level="high",
@@ -3058,6 +3070,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                         EvidenceCandidate(
                             candidate_id="resource-two",
                             category="resource_signal",
+                            role="descriptor",
                             claim="Repaired resource.",
                             evidence_text="sample two",
                             signal_level="high",
@@ -3103,6 +3116,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                         EvidenceCandidate(
                             candidate_id="resource-one",
                             category="resource_signal",
+                            role="descriptor",
                             claim="First partial resource.",
                             evidence_text="sample one",
                             signal_level="high",
@@ -3184,6 +3198,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                         EvidenceCandidate(
                             candidate_id="resource-two",
                             category="resource_signal",
+                            role="descriptor",
                             claim="Second chunk evidence.",
                             evidence_text="sample two",
                             signal_level="high",
@@ -3216,6 +3231,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                         EvidenceCandidate(
                             candidate_id="resource-one",
                             category="resource_signal",
+                            role="descriptor",
                             claim="Repaired first chunk evidence.",
                             evidence_text="sample one",
                             signal_level="high",
@@ -3286,6 +3302,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                             EvidenceCandidate(
                                 candidate_id="resource-one",
                                 category="resource_signal",
+                                role="descriptor",
                                 claim="First chunk evidence.",
                                 evidence_text="sample one",
                                 signal_level="high",
@@ -3345,6 +3362,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                         EvidenceCandidate(
                             candidate_id="resource-two",
                             category="resource_signal",
+                            role="descriptor",
                             claim="Second chunk evidence.",
                             evidence_text="sample two",
                             signal_level="high",
@@ -4245,5 +4263,6 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
 
 

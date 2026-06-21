@@ -12,14 +12,14 @@ This document is the implementation-facing counterpart to `WORKFLOW.md`. It reco
 | Convert accessible source files into text | Text extraction covers plain text/default decoded files, CSV/spreadsheets, PDFs, and placeholder text for images. | Implemented for text-accessible sources. Images are not OCR-processed; binary instrument files are not semantically interpreted unless text extraction succeeds. |
 | Build dataset-level orientation context | Initial file summaries, an extraction overview, and a compact dataset summary are generated and stored in workflow state. Backend-filled file summary fields are omitted from the LLM-visible schema. | Implemented. Used as orientation context, not source evidence. |
 | Split source text into manageable chunks | Chunking supports semantic embedding-distance breakpoints and fixed-token grouping, with min/max token post-processing. | Implemented. Stepwise extraction still requires completed chunks. |
-| Extract grounded evidence from chunks | Chunk extraction uses structured LLM output for evidence candidates, validates copied evidence against chunk text, critiques evidence, and routes it into portable/contextual/rejected groups. Evidence categories separate resource, method, primary measurement, agent, activity, instrument, surrounding metadata, and other signals. Backend-filled evidence fields are omitted from the LLM-visible schema to save prompt/output tokens. | Implemented. Quality depends on configured chat model and source text quality. |
+| Extract grounded evidence from chunks | Chunk extraction uses structured LLM output for evidence candidates, validates copied evidence against chunk text, critiques evidence, and routes it into portable/contextual/rejected groups. Evidence categories separate resource, method, primary measurement, measurement condition, software, activity, instrument/device, surrounding metadata, and other signals. Each candidate carries a required routing role: qualitative attribute, identity, descriptor, context, parameter, or other metadata. Candidates also carry copied `evidence_text` plus a backend-derived copied `source_context` window so later profile stages can see local section/block scope without relying on paraphrased claims or extra extraction output. Backend-filled evidence fields are still overwritten by validation. | Implemented. Quality depends on configured chat model and source text quality; a small live probe showed the model can emit the new role field after prompt tightening. |
 | Accumulate and route extracted evidence | Routed evidence is merged into interim extraction context and persisted with progress, warnings, and token usage. | Implemented. Context size still needs caps and careful prompt management. |
-| Ground selected terms against vocabularies | Semantic service imports RDF vocabularies, creates vector/full-text indexes, retrieves candidates, expands graph context, and supports candidate selection for quantitative and qualitative attributes. | Implemented. Quality depends on vocabulary coverage, embeddings, Neo4j state, and LLM candidate selection. |
-| Project accumulated context into metadata profile | Final profile projection uses selected profile schema and normalized context to produce a profile-shaped document. | Implemented. Projection can fail if schema requirements are not satisfied. |
-| Validate final document | Result is validated against selected profile before final persistence. | Implemented. Validation checks schema conformance, not scientific correctness. |
+| Project accumulated evidence into metadata profile | Profile projection uses the selected schema to create an initial draft, improve evidence-backed coverage, evaluate semantic requirements, and reconstruct semantic placement. | Implemented. Projection can fail if schema requirements are not satisfied. |
+| Validate and optionally curate profile draft | Draft writes are schema-validated throughout profile construction; the generated draft can be curated before final grounding. | Implemented. Validation checks schema conformance, not scientific correctness. |
+| Ground selected profile fields against vocabularies | After profile construction, the semantic service discovers and selects vocabulary candidates for enrichable fields already placed in the profile document. This is the final enrichment stage before final validation and result persistence. | Implemented. Quality depends on vocabulary coverage, embeddings, Neo4j state, and LLM candidate selection. |
 | Retrieve result and inspect artifacts | Result, progress, warnings, token usage, vocabulary query records, and evidence/projection state are persisted and exposed through stage/workflow API and frontend paths. | Implemented at prototype level. Some internal artifact names still use draft/projection terminology where they describe profile construction. |
 
-The backend extraction implementation is split by workflow responsibility: `WorkflowService` orchestrates task scheduling, progress, state, and result retrieval; stage services handle orientation, evidence extraction, vocabulary grounding, profile projection, and curation. Deterministic extraction helpers remain in `app.domain.extraction` rather than in runtime services.
+The backend extraction implementation is split by workflow responsibility: `WorkflowService` orchestrates task scheduling, progress, state, and result retrieval; stage services handle orientation, evidence extraction, profile projection, curation, and final vocabulary grounding. Deterministic extraction helpers remain in `app.domain.extraction` rather than in runtime services.
 
 ## Current Workflow Entrypoints
 
@@ -39,6 +39,8 @@ Complete workflow:
 4. Run extraction.
 5. Poll progress and fetch final result.
 
+Within extraction, `target_stage="profile"` returns after profile construction and semantic reconstruction. `target_stage="grounding"` and `target_stage="complete"` continue from that profile document into vocabulary normalization, which is the final enrichment stage before result persistence.
+
 Important current API surfaces:
 
 - `POST /api/v1/datasources`
@@ -47,10 +49,10 @@ Important current API surfaces:
 - `GET /api/v1/extraction/stages/orientation/{data_package_id}/progress`
 - `POST /api/v1/extraction/stages/evidence`
 - `GET /api/v1/extraction/stages/evidence/{data_package_id}/progress`
-- `PATCH /api/v1/extraction/stages/grounding/{data_package_id}/config`
-- `POST /api/v1/extraction/stages/grounding/{data_package_id}/rerun`
 - `PUT /api/v1/extraction/stages/curation/{data_package_id}/document`
 - `POST /api/v1/extraction/stages/curation/{data_package_id}/field`
+- `PATCH /api/v1/extraction/stages/grounding/{data_package_id}/config`
+- `POST /api/v1/extraction/stages/grounding/{data_package_id}/rerun`
 - `POST /api/v1/extraction/workflows`
 - `GET /api/v1/extraction/workflows/{data_package_id}/progress`
 - `GET /api/v1/extraction/workflows/{data_package_id}/token-usage`
@@ -81,7 +83,7 @@ Use `force_rerun=true` for repeatable workflow runs with deterministic package I
 | --- | --- |
 | Image understanding | Images return placeholder text; no OCR or visual interpretation is implemented. |
 | Binary/instrument files | Retained as package resources, but not semantically interpreted unless text extraction succeeds. |
-| Manual patch review | Removed from the active API/frontend path; active backend workflow is evidence extraction, normalization, projection, curation, and validation. |
+| Manual patch review | Removed from the active API/frontend path; active backend workflow is evidence extraction, profile construction and semantic reconstruction, optional curation, final vocabulary grounding, validation, and persistence. |
 | Evaluation completeness | In-repo offline scoring harness removed; thesis-level quality evaluation will be done later against completed workflow outputs. |
 | Vocabulary coverage | Initial vocabularies can be imported, but grounding quality depends on imported vocabularies, term schemes, embeddings, and candidate selection. |
 | Model dependency | Extraction, overview generation, candidate selection, fallback query generation, and profile projection depend on the configured Ollama chat model. |

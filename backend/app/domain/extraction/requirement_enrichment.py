@@ -48,8 +48,10 @@ class RequirementEvidenceItem(BaseModel):
     evidence_id: str = ""
     candidate_id: str
     category: str
+    role: str = ""
     claim: str
     evidence_text: str
+    source_context: str = ""
     file_path: str = ""
     start_idx: int = 0
     end_idx: int = 0
@@ -346,7 +348,7 @@ DCAT_AP_PLUS_COVERAGE_REQUIREMENTS: tuple[DcatRequirement, ...] = (
         target_paths=["/was_generated_by/-"],
         expected_target_class="DataGeneratingActivity",
         evidence_hints=["acquisition", "measurement", "processing", "generated", "experiment", "method", "procedure", "instrument", "software", "setting"],
-        allowed_categories=["activity_signal", "method_signal", "agent_signal", "instrument_signal"],
+        allowed_categories=["activity_signal", "method_signal", "software_signal", "instrument_signal"],
     ),
     DcatRequirement(
         requirement_id="about_entity_or_activity",
@@ -366,7 +368,7 @@ DCAT_AP_PLUS_COVERAGE_REQUIREMENTS: tuple[DcatRequirement, ...] = (
         target_paths=["/was_generated_by/-"],
         expected_target_class="DataGeneratingActivity",
         evidence_hints=["acquisition", "processing", "experiment type", "method"],
-        allowed_categories=["activity_signal", "method_signal", "agent_signal", "instrument_signal"],
+        allowed_categories=["activity_signal", "method_signal", "software_signal", "instrument_signal"],
     ),
     DcatRequirement(
         requirement_id="technical_agents",
@@ -376,7 +378,7 @@ DCAT_AP_PLUS_COVERAGE_REQUIREMENTS: tuple[DcatRequirement, ...] = (
         target_paths=["/was_generated_by/0/carried_out_by/-"],
         expected_target_class="AgenticEntity",
         evidence_hints=["instrument", "software", "device"],
-        allowed_categories=["agent_signal"],
+        allowed_categories=["software_signal", "instrument_signal"],
     ),
     DcatRequirement(
         requirement_id="method_plan",
@@ -417,7 +419,7 @@ DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS: tuple[DcatRequirement, ...] = (
         weight=1.25,
         target_paths=["/was_generated_by"],
         evidence_hints=["activity", "acquisition", "processing", "generated", "method", "procedure", "instrument", "software", "setting"],
-        allowed_categories=["activity_signal", "method_signal", "agent_signal", "instrument_signal"],
+        allowed_categories=["activity_signal", "method_signal", "software_signal", "instrument_signal"],
     ),
     DcatRequirement(
         requirement_id="aboutness_semantics",
@@ -435,7 +437,7 @@ DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS: tuple[DcatRequirement, ...] = (
         weight=1.25,
         target_paths=["/was_generated_by/0/carried_out_by"],
         evidence_hints=["instrument", "software", "device"],
-        allowed_categories=["agent_signal"],
+        allowed_categories=["software_signal", "instrument_signal"],
     ),
     DcatRequirement(
         requirement_id="method_plan_semantics",
@@ -467,7 +469,7 @@ DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS: tuple[DcatRequirement, ...] = (
             "/is_about_entity/0/has_quantitative_attribute",
         ],
         evidence_hints=["attribute parent", "instrument setting", "measurement condition", "device", "software", "evaluated entity", "evaluated activity"],
-        allowed_categories=["instrument_signal", "measurement_condition", "agent_signal", "activity_signal"],
+        allowed_categories=["instrument_signal", "measurement_condition", "software_signal", "activity_signal"],
     ),
     DcatRequirement(
         requirement_id="provenance_context_semantics",
@@ -493,9 +495,9 @@ Use statuses: fulfilled, partial, missing, not_applicable.
 quality must be 1 for fulfilled, 0.5 for partial, 0 for missing/not_applicable.
 Prefer not_applicable only when the supplied evidence categories make the semantic requirement irrelevant.
 For aboutness, one concrete non-file-like is_about_entity OR one concrete non-file-like is_about_activity is fulfilled; file names are not evaluated entities.
-For method plans, explicit method_signal evidence is required for fulfilled.
-For instrument settings, selected concrete instrument_signal or measurement_condition evidence must be represented by suitable attributes; otherwise mark partial.
-For attribute parent semantics, device/software cues belong to agent parents; instrument_signal and measurement_condition evidence belongs to data-generating activity by default; evaluated entity/activity parents require explicit evidence that the attribute belongs to that subject/activity.
+For method plans, explicit method/procedure/protocol/plan evidence is required for fulfilled; prefer method_signal, but accept another category when the claim/evidence explicitly says method, procedure, protocol, plan, sampling, or acquisition.
+For instrument settings, selected concrete role=parameter evidence, especially instrument_signal or measurement_condition evidence, must be represented by suitable attributes; otherwise mark partial.
+For attribute parent semantics, device/software cues belong to agent parents; role=parameter evidence with instrument_signal, measurement_condition, resource_signal, or activity_signal belongs to data-generating activity by default unless explicit evidence says it belongs to an agent or evaluated subject/activity.
 """
 
 
@@ -515,8 +517,8 @@ Use only the current draft, selected evidence, and context window. Do not invent
 Return schema-constrained write envelopes only for allowed_target_paths.
 Keep edits minimal: replace or append fields only when the semantic requirement justifies it.
 Preserve valid numeric instrument/configuration settings. Remove only obvious qualitative/default/placeholders from quantitative attributes.
-Do not satisfy missing instrument_signal or measurement_condition evidence by generalizing one existing quantitative attribute; add separate schema-valid attributes or return empty writes.
-For attribute parents, device/software cues belong to agent parents; instrument_signal and measurement_condition evidence belongs to data-generating activity by default; evaluated entity/activity parents require explicit evidence that the attribute belongs to that subject/activity.
+Do not satisfy missing role=parameter evidence by generalizing one existing quantitative attribute; add separate schema-valid attributes or return empty writes.
+For attribute parents, device/software cues belong to agent parents; role=parameter evidence with instrument_signal, measurement_condition, resource_signal, or activity_signal belongs to data-generating activity by default unless explicit evidence says it belongs to an agent or evaluated subject/activity.
 Represent numeric ranges as separate schema-valid minimum and maximum quantitative attributes with numeric values and source units when present; never put a range string in a quantitative value.
 For aboutness, write at most one lean is_about_entity or is_about_activity object with only id, title, and description.
 Do not use new evidence search. Do not patch distributions.
@@ -540,7 +542,7 @@ def build_requirement_evaluation_prompt(
             "resource_signal": "files, distributions, formats, access paths, and resource-scoped notes",
             "method_signal": "explicit realized plans, protocols, methods, procedures",
             "activity_signal": "data-generating activities and other activities",
-            "agent_signal": "software, devices, instruments, machines, services, executable systems",
+            "software_signal": "software, scripts, executable systems, services, processing applications",
             "instrument_signal": "acquisition, instrument, processing, calibration, unit, threshold, and configuration settings",
             "surrounding_signal": "dates, labs, teams, people, organizations, ownership, origin, authorship, provenance context",
             "measurement_signal": "primary/raw data values; downstream inert",
@@ -604,8 +606,8 @@ def build_semantic_reconstruction_prompt(
         "draft_excerpt": draft_excerpt,
         "schema_branches": schema_branches,
         "reconstruction_rules": [
-            "Do not satisfy missing instrument_signal or measurement_condition evidence by generalizing one existing quantitative attribute; add separate schema-valid attributes or return empty writes.",
-            "Device/software cues belong to agent parents; instrument_signal and measurement_condition evidence belongs to data-generating activity by default; evaluated entity/activity parents require explicit evidence that the attribute belongs to that subject/activity.",
+            "Do not satisfy missing role=parameter evidence by generalizing one existing quantitative attribute; add separate schema-valid attributes or return empty writes.",
+            "Device/software cues belong to agent parents; role=parameter evidence with instrument_signal, measurement_condition, resource_signal, or activity_signal belongs to data-generating activity by default unless explicit evidence says it belongs to an agent or evaluated subject/activity.",
             "Represent numeric ranges as separate schema-valid minimum and maximum quantitative attributes with numeric values and source units when present; never put a range string in a quantitative value.",
             "For aboutness, write at most one lean is_about_entity or is_about_activity object with only id, title, and description.",
         ],
@@ -615,7 +617,7 @@ def build_semantic_reconstruction_prompt(
             "resource_signal": "files, distributions, formats, access paths, and resource-scoped notes",
             "method_signal": "explicit realized plans, protocols, methods, procedures",
             "activity_signal": "data-generating activities and other activities",
-            "agent_signal": "software, devices, instruments, machines, services, executable systems",
+            "software_signal": "software, scripts, executable systems, services, processing applications",
             "instrument_signal": "acquisition, instrument, processing, calibration, unit, threshold, and configuration settings",
             "surrounding_signal": "dates, labs, teams, people, organizations, ownership, origin, authorship, provenance context",
             "measurement_signal": "primary/raw data values; downstream inert",
@@ -799,7 +801,7 @@ def select_requirement_evidence_packet(
         candidate
         for candidate in list(evidence_context.portable_evidence) + list(evidence_context.contextual_evidence)
         if candidate.category != "measurement_signal"
-        and (not requirement.allowed_categories or str(candidate.category) in requirement.allowed_categories)
+        and _candidate_allowed_for_requirement(requirement, candidate)
     ]
     scored: list[tuple[int, EvidenceCandidate]] = []
     for candidate in candidates:
@@ -883,11 +885,29 @@ def _candidate_search_text(candidate: EvidenceCandidate) -> str:
         [
             candidate.candidate_id,
             candidate.category,
+            candidate.role,
             candidate.claim,
             candidate.evidence_text,
+            candidate.source_context,
             candidate.file_path,
         ]
     ).lower()
+
+
+def _candidate_allowed_for_requirement(requirement: DcatRequirement, candidate: EvidenceCandidate) -> bool:
+    category = str(candidate.category)
+    if not requirement.allowed_categories or category in requirement.allowed_categories:
+        return True
+    if requirement.expected_target_class == "QuantitativeAttribute" and str(candidate.role) == "parameter":
+        return category != "measurement_signal"
+    if requirement.expected_target_class == "Plan" and _candidate_has_method_cue(candidate):
+        return True
+    return False
+
+
+def _candidate_has_method_cue(candidate: EvidenceCandidate) -> bool:
+    text = _candidate_search_text(candidate)
+    return bool(re.search(r"\b(method|procedure|protocol|plan|sampling|acquisition)\b", text))
 
 
 def _class_hint_score(target_class: str, candidate: EvidenceCandidate) -> int:
@@ -898,7 +918,7 @@ def _class_hint_score(target_class: str, candidate: EvidenceCandidate) -> int:
     ):
         return 2
     if target_class == "AgenticEntity" and (
-        category in {"agent_signal", "instrument_signal"} or any(term in text for term in ("instrument", "software", "device", "equipment", "sensor"))
+        category in {"software_signal", "instrument_signal"} or any(term in text for term in ("instrument", "software", "device", "equipment", "sensor"))
     ):
         return 2
     if target_class == "EvaluatedEntity" and category == "activity_signal":
@@ -907,9 +927,12 @@ def _class_hint_score(target_class: str, candidate: EvidenceCandidate) -> int:
         category == "resource_signal" or any(term in text for term in ("file", "format", "download"))
     ):
         return 2
-    if target_class == "Plan" and category == "method_signal":
+    if target_class == "Plan" and (category == "method_signal" or _candidate_has_method_cue(candidate)):
         return 2
-    if target_class == "QuantitativeAttribute" and category in {"instrument_signal", "measurement_condition"}:
+    if target_class == "QuantitativeAttribute" and (
+        category in {"instrument_signal", "measurement_condition"}
+        or str(candidate.role) == "parameter"
+    ):
         score = 2
         if any(term in text for term in ("frequency", "temperature", "width", "count", "points", "range", "axis", "threshold", "unit", "setting", "parameter")):
             score += 1
@@ -940,8 +963,10 @@ def _evidence_item(candidate: EvidenceCandidate) -> RequirementEvidenceItem:
         evidence_id=stable_evidence_id(candidate),
         candidate_id=candidate.candidate_id,
         category=str(candidate.category),
+        role=str(candidate.role),
         claim=candidate.claim,
         evidence_text=candidate.evidence_text,
+        source_context=candidate.source_context,
         file_path=candidate.file_path,
         start_idx=candidate.start_idx,
         end_idx=candidate.end_idx,
@@ -960,6 +985,7 @@ def stable_evidence_id(candidate: EvidenceCandidate, *, run_id: str = "") -> str
             candidate.candidate_id,
             candidate.claim,
             candidate.evidence_text,
+            candidate.source_context,
         ]
     )
     return f"ev:{sha1(payload.encode('utf-8')).hexdigest()[:16]}"

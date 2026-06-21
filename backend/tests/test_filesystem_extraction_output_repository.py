@@ -352,6 +352,7 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
                         note=EvidenceCandidate(
                             candidate_id="low",
                             category="method_signal",
+                            role="descriptor",
                             claim="Low-level parameter.",
                             evidence_text="parameter",
                         ),
@@ -538,3 +539,4 @@ class AtomicReplaceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

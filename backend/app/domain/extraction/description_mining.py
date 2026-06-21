@@ -9,7 +9,9 @@ from pydantic import BaseModel, Field
 from app.domain.extraction.evidence_context import (
     EvidenceCandidate,
     EvidenceCategory,
+    EvidenceRole,
     RoutedEvidenceContext,
+    derive_source_context_for_evidence,
 )
 
 
@@ -17,18 +19,27 @@ DESCRIPTION_FACT_MINING_SYSTEM_PROMPT = """
 Extract atomic evidence facts from the supplied dataset-level description texts.
 Use only explicit description content. Do not infer facts or route them to a schema.
 Split compound statements into separate, complete claims.
-Copy evidence_text verbatim from the supplied description.
+Copy evidence_text verbatim from the supplied description. Do not paraphrase,
+normalize, reorder, or stitch together non-contiguous text.
 Return each source_description_path exactly as supplied.
 Use only these categories: resource_signal, method_signal, measurement_signal,
-measurement_condition, agent_signal, activity_signal, instrument_signal,
+measurement_condition, software_signal, activity_signal, instrument_signal,
 surrounding_signal, other.
+Set role to one of: qualitative_attribute, identity, descriptor, context,
+parameter, other_metadata.
 Use measurement_signal for observed/raw values. Use measurement_condition for
 axis bounds, point counts, ranges, axis units, and other dataset-level
 measurement descriptors. Use instrument_signal only for settings, parameters,
 thresholds, units, calibration, or processing choices.
 Use resource_signal for resources/formats, method_signal for realized procedures,
-agent_signal for devices/software that carry out work, activity_signal for activities,
+instrument_signal for devices/instruments that carry out work, software_signal for
+software/executable systems that carry out work, activity_signal for activities,
 and surrounding_signal for people, organizations, dates, ownership, or origin.
+Use role=parameter for quantitative values that may become attributes,
+role=qualitative_attribute for non-numeric attributes, role=identity for names
+or identifiers, role=descriptor for type/class/summary/format facts, role=context
+for provenance/surrounding facts, and role=other_metadata only when no precise
+role applies.
 Ignore prose that does not contain a reusable structured fact.
 """
 
@@ -38,11 +49,19 @@ _EVIDENCE_CATEGORIES = {
     "method_signal",
     "measurement_signal",
     "measurement_condition",
-    "agent_signal",
+    "software_signal",
     "activity_signal",
     "instrument_signal",
     "surrounding_signal",
     "other",
+}
+_EVIDENCE_ROLES = {
+    "qualitative_attribute",
+    "identity",
+    "descriptor",
+    "context",
+    "parameter",
+    "other_metadata",
 }
 
 
@@ -52,10 +71,12 @@ class DescriptionSource(BaseModel):
 
 
 class RawDescriptionFact(BaseModel):
-    source_description_path: str = ""
-    category: str = ""
-    claim: str = ""
-    evidence_text: str = ""
+    source_description_path: str
+    category: str
+    role: str
+    claim: str
+    evidence_text: str
+    source_context: str = ""
 
 
 class RawDescriptionFacts(BaseModel):
@@ -66,8 +87,10 @@ class DescriptionFact(BaseModel):
     candidate_id: str
     source_description_path: str
     category: EvidenceCategory
+    role: EvidenceRole
     claim: str
     evidence_text: str
+    source_context: str = ""
     start_idx: int = Field(ge=0)
     end_idx: int = Field(ge=0)
 
@@ -124,6 +147,8 @@ def validate_description_facts(
             reason = "unknown_source_description_path"
         elif raw.category not in _EVIDENCE_CATEGORIES:
             reason = "unknown_evidence_category"
+        elif raw.role not in _EVIDENCE_ROLES:
+            reason = "unknown_evidence_role"
         elif not raw.claim.strip():
             reason = "empty_claim"
         elif not raw.evidence_text.strip():
@@ -143,11 +168,14 @@ def validate_description_facts(
 
         assert source is not None
         start_idx = source.text.index(raw.evidence_text)
+        source_context = derive_source_context_for_evidence(raw.evidence_text, source.text)
         candidate_id = _description_fact_id(
             source_path=source.path,
             category=raw.category,
+            role=raw.role,
             claim=raw.claim.strip(),
             evidence_text=raw.evidence_text,
+            source_context=source_context,
         )
         if candidate_id in seen:
             rejections.append(
@@ -164,8 +192,10 @@ def validate_description_facts(
                 candidate_id=candidate_id,
                 source_description_path=source.path,
                 category=raw.category,
+                role=raw.role,
                 claim=raw.claim.strip(),
                 evidence_text=raw.evidence_text,
+                source_context=source_context,
                 start_idx=start_idx,
                 end_idx=start_idx + len(raw.evidence_text),
             )
@@ -186,10 +216,10 @@ def description_fact_to_evidence_candidate(fact: DescriptionFact) -> EvidenceCan
     return EvidenceCandidate(
         candidate_id=fact.candidate_id,
         category=fact.category,
+        role=fact.role,
         claim=fact.claim,
         evidence_text=fact.evidence_text,
-        scope="package",
-        explicitness="explicit",
+        source_context=fact.source_context,
         file_path=f"{DESCRIPTION_EVIDENCE_PREFIX}{fact.source_description_path}",
         start_idx=fact.start_idx,
         end_idx=fact.end_idx,
@@ -201,6 +231,14 @@ def is_description_derived_path(file_path: str) -> bool:
     return file_path.startswith(DESCRIPTION_EVIDENCE_PREFIX)
 
 
-def _description_fact_id(*, source_path: str, category: str, claim: str, evidence_text: str) -> str:
-    payload = "|".join([source_path, category, claim, evidence_text])
+def _description_fact_id(
+    *,
+    source_path: str,
+    category: str,
+    role: str,
+    claim: str,
+    evidence_text: str,
+    source_context: str,
+) -> str:
+    payload = "|".join([source_path, category, role, claim, evidence_text, source_context])
     return f"description:{sha1(payload.encode('utf-8')).hexdigest()[:16]}"

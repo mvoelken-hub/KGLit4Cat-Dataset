@@ -1181,6 +1181,7 @@ class WorkflowService(
                                 "file_path",
                                 "start_idx",
                                 "end_idx",
+                                "source_context",
                                 "evidence_match_score",
                             ]
                         },

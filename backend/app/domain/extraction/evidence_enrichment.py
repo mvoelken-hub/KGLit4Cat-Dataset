@@ -183,7 +183,7 @@ def route_evidence_note_to_target(
 
     if note.category == "measurement_signal":
         return None, None
-    if note.category in {"agent_signal", "instrument_signal"} or _note_has_device_signal(note):
+    if note.category in {"software_signal", "instrument_signal"} or _note_has_device_signal(note):
         target_path = "/was_generated_by/0/carried_out_by/-"
         target_class = "AgenticEntity"
     elif note.category == "surrounding_signal" and any(term in text for term in ("date", "timestamp", "modified", "modification")):
@@ -475,12 +475,13 @@ def build_novelty_evaluator_prompt(
         f"  category: {note.category}",
         f"  claim: {note.claim}",
         f"  evidence_text: {note.evidence_text}",
+        f"  source_context: {note.source_context or note.evidence_text}",
         f"  file_path: {note.file_path}",
         "Contextual notes from the same source chunk (compact, no raw chunk text):",
     ]
     for context in contextual_notes:
         lines.append(
-            f"  - [{context.category}] {context.claim} | evidence: {context.evidence_text}"
+            f"  - [{context.category}] {context.claim} | evidence: {context.evidence_text} | source_context: {context.source_context or context.evidence_text}"
         )
     lines.extend(
         [
@@ -513,12 +514,13 @@ def build_instance_builder_prompt(
         f"  category: {note.category}",
         f"  claim: {note.claim}",
         f"  evidence_text: {note.evidence_text}",
+        f"  source_context: {note.source_context or note.evidence_text}",
         f"  file_path: {note.file_path}",
         "Contextual notes:",
     ]
     for context in contextual_notes:
         lines.append(
-            f"  - [{context.category}] {context.claim} | evidence: {context.evidence_text}"
+            f"  - [{context.category}] {context.claim} | evidence: {context.evidence_text} | source_context: {context.source_context or context.evidence_text}"
         )
     lines.extend(
         [

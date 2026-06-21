@@ -49,11 +49,11 @@ function extractionTraceFields(trace: ExtractionTrace): Record<string, unknown> 
     route: trace.route,
     candidate_id: trace.object.candidate_id,
     category: trace.object.category,
+    role: trace.object.role,
     claim: trace.object.claim,
     evidence_text: trace.object.evidence_text,
+    source_context: trace.object.source_context,
     uncertainty: trace.object.uncertainty,
-    scope: trace.object.scope,
-    explicitness: trace.object.explicitness,
     file_path: trace.object.file_path,
     start_idx: trace.object.start_idx,
     end_idx: trace.object.end_idx,
@@ -63,8 +63,8 @@ function extractionTraceFields(trace: ExtractionTrace): Record<string, unknown> 
 
 function evidenceCandidatePreviewFields(candidate: EvidenceCandidate): Array<[string, string | number]> {
   return [
-    ['scope', candidate.scope],
-    ['explicitness', candidate.explicitness],
+    ['role', candidate.role],
+    ['category', candidate.category],
     ['route_score', candidate.evidence_match_score],
     ['file_path', candidate.file_path],
     ['line_span', `${candidate.start_idx}-${candidate.end_idx}`],

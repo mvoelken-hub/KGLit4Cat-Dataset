@@ -21,20 +21,20 @@ EvidenceCategory = Literal[
     "method_signal",
     "measurement_signal",
     "measurement_condition",
-    "agent_signal",
-    "activity_signal",
+    "software_signal",
     "instrument_signal",
+    "activity_signal",
     "surrounding_signal",
     "other",
 ]
-EvidenceScope = Literal[
-    "package",
-    "resource",
-    "section",
-    "execution_environment",
-    "unknown",
+EvidenceRole = Literal[
+    "qualitative_attribute",
+    "identity",
+    "descriptor",
+    "context",
+    "parameter",
+    "other_metadata",
 ]
-EvidenceExplicitness = Literal["explicit", "lightly_normalized", "synthesized"]
 EvidenceRoute = Literal["portable_evidence", "contextual_evidence", "rejected_evidence"]
 EvidenceCriticGranularity = Literal["per_chunk", "per_candidate", "disabled"]
 EvidenceAssessmentJudgement = Literal["yes", "partial", "no"]
@@ -50,6 +50,7 @@ EVIDENCE_OVERVIEW_PROMPT_BUDGET_TOKENS = 220
 EVIDENCE_FILE_SUMMARY_PROMPT_BUDGET_TOKENS = 200
 EVIDENCE_ORIENTATION_LINE_TOKENS = 45
 EVIDENCE_ORIENTATION_VALUES_PER_SECTION = 4
+EVIDENCE_SOURCE_CONTEXT_WINDOW_LINES = 2
 
 
 class EvidenceCandidate(BaseModel):
@@ -57,8 +58,17 @@ class EvidenceCandidate(BaseModel):
 
     candidate_id: str = Field("", description="Stable candidate identifier within the chunk.")
     category: EvidenceCategory = Field(
-        "other",
+        ...,
         description="Broad evidence category.",
+    )
+    role: EvidenceRole = Field(
+        ...,
+        description=(
+            "Profile-routing role. Use parameter for quantitative attributes, "
+            "qualitative_attribute for non-numeric attributes, identity for names/identifiers, "
+            "descriptor for descriptive type/class/summary facts, context for provenance or surrounding facts, "
+            "and other_metadata for reusable metadata that does not fit another role."
+        ),
     )
     claim: str = Field(
         ...,
@@ -72,12 +82,19 @@ class EvidenceCandidate(BaseModel):
         ...,
         description="Text copied from the current chunk that supports the observation.",
     )
+    source_context: str = Field(
+        "",
+        description=(
+            "Smallest contiguous text span copied from the current chunk that preserves "
+            "the local source scope for this evidence. It may equal evidence_text when "
+            "no extra section, block, resource, method, instrument, software, or activity "
+            "context is needed."
+        ),
+    )
     uncertainty: str = Field(
         "",
         description="Short uncertainty note; empty string when the evidence is straightforward.",
     )
-    scope: EvidenceScope = "unknown"
-    explicitness: EvidenceExplicitness = "explicit"
     file_path: str = ""
     start_idx: int = Field(0, ge=0)
     end_idx: int = Field(0, ge=0)
@@ -182,29 +199,37 @@ Return only a valid EvidenceContext JSON object.
 Rules:
 - Produce concise evidence candidates only when the current chunk contains human-readable evidence.
 - Every evidence_text must be a short substring copied from the current chunk. Do not paraphrase, normalize, reorder, or stitch together non-contiguous source text.
+- If a fact depends on multiple nearby source lines, set evidence_text to one exact contiguous source span that contains the supporting lines, or emit separate candidates for the separate lines. Never compose evidence_text by selecting only separated min/max or key/value lines while omitting intervening source text.
+- Do not populate source_context; the backend derives source_context from the validated evidence_text and local chunk. Spend output budget on complete candidates instead.
 - Use initial overview and file summary only to understand context; do not cite them as evidence.
 - If the chunk contains only encoded payload, raw numeric signal rows, checksums, empty declarations, or unreadable data, return candidates: [].
 - Extract reasonably interpretable candidates even when they are technical, local, operational, or ambiguous. A later critic will route them.
 - Do not decide whether a candidate is valuable enough for profile projection.
 - Do not use domain-specific key names, file formats, instruments, vendors, or scientific concepts as quality criteria.
-- Use only these categories: resource_signal, method_signal, measurement_signal, measurement_condition, agent_signal, activity_signal, instrument_signal, surrounding_signal, other.
+- Use only these categories: resource_signal, method_signal, measurement_signal, measurement_condition, software_signal, instrument_signal, activity_signal, surrounding_signal, other.
+- Set role to one of: qualitative_attribute, identity, descriptor, context, parameter, other_metadata.
 - Use resource_signal for files, distributions, formats, access paths, and resource-scoped notes.
 - Use method_signal for realized plans, protocols, procedures, and methods.
 - Use measurement_signal for primary/raw observed values, row-like observations, table cells, or data extrema; these are evidence-only and should not become metadata attributes.
 - Use measurement_condition for measurement descriptors such as axis bounds, axis units, point counts, sampling ranges, measurement scale labels, or dataset-level measurement conditions that describe how observations are organized.
 - Header/title-like identifiers are resource_signal or other unless the surrounding text explicitly says they name a device, instrument, software system, machine, or service.
-- Use agent_signal only for software, devices, instruments, machines, services, or executable systems that explicitly carry out work.
+- Use software_signal for software, scripts, executable systems, services, or processing applications that explicitly carry out work.
+- Use instrument_signal for devices, instruments, machines, sensors, acquisition hardware, processing/configuration settings, calibration, units, thresholds, and parameters that can describe an instrument or activity.
 - Use activity_signal for data-generating activities and other activities.
-- Use instrument_signal for acquisition, instrument, processing, calibration, unit, threshold, and configuration settings that can describe an instrument or activity.
 - Do not use instrument_signal for qualitative labels, names, categories, statuses, placeholder values, unset values, null/default markers, or encoded enum values; use resource_signal, surrounding_signal, measurement_signal, or other as appropriate.
+- Do not use instrument_signal for data type, data class, spectrum type, table type, file type, or resource title; use resource_signal with role=descriptor or role=identity.
 - Use surrounding_signal for dates, laboratories, research teams, people, organizations, ownership, origin, authorship, creators, and other provenance/context metadata.
 - People, teams, organizations, dates, ownership, authorship, and origins are surrounding_signal even when the claim wording says "acquired by", "generated by", or "created by".
 - Numeric values are measurement_signal when they are observed data values, extrema, or row-like observations; use measurement_condition when the number describes an axis bound, point count, sampling range, or measurement scale; use instrument_signal only when the number configures a setting, parameter, threshold, unit, or processing choice.
 - File formats, data classes, table categories, and serialization versions are resource_signal unless they explicitly describe a realized method/procedure.
+- Use role=parameter for values that may become quantitative attributes, including settings, thresholds, units, point counts, ranges, axis descriptors, measurement scales, and numeric method parameters.
+- Use role=qualitative_attribute for non-numeric qualities or settings that may become attributes.
+- Use role=identity for names, identifiers, titles, labels, or explicit identities of datasets, agents, activities, resources, or subjects.
+- Use role=descriptor for types, classes, summaries, formats, and descriptive characteristics.
+- Use role=context for every surrounding_signal candidate: provenance, authorship, dates, people, organizations, locations, ownership, or other surrounding context.
+- Use role=other_metadata only when the candidate is reusable metadata but no more precise role applies.
 - Use other only when none of the categories applies.
-- Use claim for the candidate fact. Prefer molecular claims that can be checked against evidence_text.
-- Set scope to package, resource, section, execution_environment, or unknown.
-- Set explicitness to explicit when the claim is directly stated, lightly_normalized when only formatting is normalized, and synthesized only when adjacent evidence is combined.
+- Use claim for the candidate fact. Prefer molecular claims that can be checked against evidence_text and preserve explicit local source scope in the claim when that scope affects meaning.
 - Record uncertainty when labels are ambiguous, evidence is only technical, or a setting cannot be safely interpreted.
 """
 
@@ -281,7 +306,7 @@ def build_evidence_critic_prompt_components(
         (
             "validated_candidates",
             "Validated evidence candidates JSON:\n"
-            f"{[candidate.model_dump(mode='json') for candidate in candidates]}\n\n",
+            f"{[candidate.model_dump(mode='json', exclude={'source_context'}) for candidate in candidates]}\n\n",
         ),
         (
             "local_chunk_context",
@@ -546,10 +571,12 @@ def validate_evidence_candidates(
     dropped: list[EvidenceCandidate] = []
     for index, candidate in enumerate(context.candidates):
         score = evidence_text_match_score(candidate.evidence_text, chunk_content)
+        source_context = derive_source_context_for_evidence(candidate.evidence_text, chunk_content)
         candidate_id = candidate.candidate_id or f"{file_path}:{start_idx}:{end_idx}:{index}"
         updated = candidate.model_copy(
             update={
                 "candidate_id": candidate_id,
+                "source_context": source_context,
                 "file_path": file_path,
                 "start_idx": start_idx,
                 "end_idx": end_idx,
@@ -580,6 +607,28 @@ def validate_evidence_context_for_chunk(
         end_idx=end_idx,
         threshold=threshold,
     )
+
+
+def derive_source_context_for_evidence(
+    evidence_text: str,
+    chunk_content: str,
+    *,
+    window_lines: int = EVIDENCE_SOURCE_CONTEXT_WINDOW_LINES,
+) -> str:
+    evidence = normalize_chunk_text_for_evidence_prompt(evidence_text)
+    content = normalize_chunk_text_for_evidence_prompt(chunk_content)
+    if not evidence:
+        return ""
+    match_index = content.find(evidence)
+    if match_index < 0:
+        return evidence_text
+    match_end = match_index + len(evidence)
+    start_line = content[:match_index].count("\n")
+    end_line = content[:match_end].count("\n")
+    lines = content.split("\n")
+    context_start = max(0, start_line - max(0, window_lines))
+    context_end = min(len(lines), end_line + max(0, window_lines) + 1)
+    return "\n".join(lines[context_start:context_end]).strip() or evidence_text
 
 
 def route_evidence_candidates(

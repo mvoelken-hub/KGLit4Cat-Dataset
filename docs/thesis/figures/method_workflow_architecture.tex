@@ -57,26 +57,25 @@
 \draw[arr] (chunk) -- (extract);
 \draw[arr] (extract) -- (context);
 
-% Semantic grounding row
-\node[support, below=1.15cm of chunk] (vocabs) {Controlled vocabularies\\{\footnotesize QUDT, Voc4Cat, CHMO, nmrCV}};
+% Profile construction row
+\node[support, below=1.15cm of chunk] (profile) {Application profile\\{\footnotesize DCAT-AP+/LinkML schema}};
+\node[stage, right=0.58cm of profile] (projection) {Profile projection +\\semantic reconstruction};
+\node[data, right=0.58cm of projection] (draft) {Validated\\profile draft};
+
+\draw[arr] (profile) -- (projection);
+\draw[arr] (projection) -- (draft);
+\draw[dashedarr] (context.south) |- (projection.north);
+
+% Final semantic grounding row
+\node[support, below=1.10cm of profile] (vocabs) {Controlled vocabularies\\{\footnotesize QUDT, Voc4Cat, CHMO, nmrCV}};
 \node[stage, right=0.58cm of vocabs] (retrieval) {Hybrid candidate\\retrieval + graph context};
 \node[stage, right=0.58cm of retrieval] (selection) {LLM candidate\\selection};
-\node[data, right=0.58cm of selection] (normalization) {Normalization\\records};
+\node[output, right=0.58cm of selection] (result) {Grounded semantic\\metadata result};
 
 \draw[arr] (vocabs) -- (retrieval);
 \draw[arr] (retrieval) -- (selection);
-\draw[arr] (selection) -- (normalization);
-\draw[dashedarr] (context.south) |- (retrieval.north);
-
-% Projection row
-\node[support, below=1.10cm of retrieval] (profile) {Application profile\\{\footnotesize DCAT-AP+/LinkML schema}};
-\node[stage, right=0.72cm of profile] (projection) {Profile\\projection};
-\node[output, right=0.72cm of projection] (result) {Schema-valid\\semantic metadata};
-
-\draw[arr] (profile) -- (projection);
-\draw[arr] (projection) -- (result);
-\draw[dashedarr] (context.south east) |- (projection.north);
-\draw[dashedarr] (normalization.south) |- (projection.north);
+\draw[arr] (selection) -- (result);
+\draw[dashedarr] (draft.south) |- (retrieval.north);
 
 % Boundary label
 \draw[TUgreen!65!black, thick, rounded corners=6pt]
