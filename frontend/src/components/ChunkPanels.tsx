@@ -12,6 +12,8 @@ const chunkColors = [
   'rgba(0, 160, 140, 0.18)',
 ];
 
+const imageFileExtensions = new Set(['.jpg', '.jpeg', '.png', '.bmp', '.gif', '.tiff', '.tif']);
+
 export function FileViewer({ file, content, chunksByFile, onClose }: {
   file: FileEntryResponse;
   content: string;
@@ -152,7 +154,7 @@ export function ChunkingStatusPanel({
 }) {
   const chunkGroups = chunksByFile.filter((group) => group.length > 0);
   const visibleChunks = chunkGroups.flat().length;
-  const fileCount = dataPackage?.files.length ?? 0;
+  const fileCount = dataPackage?.files.filter(isChunkableFile).length ?? 0;
   const chunkedFiles = chunkGroups.length;
   const includedLines = chunkGroups
     .flat()
@@ -217,6 +219,10 @@ export function ChunkingStatusPanel({
 function chunkLineCount(chunk: ChunkResponse): number {
   if (chunk.filtered_line_indices?.length) return chunk.filtered_line_indices.length;
   return Math.max(0, chunk.end_idx - chunk.start_idx + 1);
+}
+
+function isChunkableFile(file: FileEntryResponse): boolean {
+  return !imageFileExtensions.has(file.file_extension.toLowerCase());
 }
 
 function formatBytes(bytes: number): string {

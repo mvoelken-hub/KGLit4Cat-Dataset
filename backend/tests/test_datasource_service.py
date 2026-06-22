@@ -31,6 +31,16 @@ def make_chunk() -> ContentChunk:
     )
 
 
+def make_image_chunk() -> ContentChunk:
+    return ContentChunk(
+        content="[Image content cannot be extracted as text]",
+        data_package_id="package-id",
+        file_path="plot.png",
+        start_idx=0,
+        end_idx=0,
+    )
+
+
 class FakeBlobRepository:
     def __init__(self, chunks_by_file_path: dict[str, list[ContentChunk]]):
         self.data_package = make_data_package()
@@ -152,6 +162,30 @@ class DataSourceServiceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, [[chunk]])
 
+    def test_persisted_image_chunks_are_not_exposed(self):
+        chunk = make_chunk()
+        image_chunk = make_image_chunk()
+        service, blob_repository, _ = self.make_service(
+            chunks_by_file_path={
+                "metadata.txt": [chunk],
+                "plot.png": [image_chunk],
+            },
+            task_status=TaskStatus.COMPLETED,
+        )
+        blob_repository.data_package.files.append(
+            FileEntry(
+                file_path="plot.png",
+                file_name="plot.png",
+                file_extension=".png",
+                raw_content=b"image-bytes",
+            )
+        )
+
+        result = service.get_completed_content_chunks_by_file("package-id")
+
+        self.assertEqual(result, [[chunk]])
+        self.assertEqual(blob_repository.loaded_chunk_paths, ["metadata.txt"])
+
     async def test_chunk_request_returns_persisted_chunks_after_task_registry_restart(self):
         chunk = make_chunk()
         service, _, task_registry = self.make_service(
@@ -239,6 +273,39 @@ class DataSourceServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(captured["min_tokens_per_chunk"], 64)
         self.assertEqual(captured["max_tokens_per_chunk"], 1500)
         self.assertIn("token_budgeter", captured)
+
+    async def test_chunking_task_skips_image_files(self):
+        ollama_client = FakeOllamaClient()
+        service, blob_repository, _ = self.make_service(
+            chunks_by_file_path={},
+            task_status=None,
+            ollama_client=ollama_client,
+        )
+        blob_repository.data_package.files.append(
+            FileEntry(
+                file_path="plot.png",
+                file_name="plot.png",
+                file_extension=".png",
+                raw_content=b"image-bytes",
+            )
+        )
+
+        with patch.object(
+            ContentChunk,
+            "create_chunks_for_file_entry",
+            return_value=[make_chunk()],
+        ) as create_chunks:
+            await service._run_chunking_task(
+                data_package_id="package-id",
+                buffer_window_size=1,
+                semantic_chunking_threshold=95.0,
+            )
+
+        self.assertEqual(create_chunks.await_count, 1)
+        self.assertEqual(
+            create_chunks.await_args.kwargs["file_entry"].file_path,
+            "metadata.txt",
+        )
 
     async def test_chunk_request_replace_existing_starts_task_and_deletes_chunks(self):
         chunk = make_chunk()

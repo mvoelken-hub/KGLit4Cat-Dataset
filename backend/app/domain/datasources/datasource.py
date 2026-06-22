@@ -28,6 +28,10 @@ class FileEntry(BaseModel):
     
     def is_data_package(self) -> bool:
         return self.file_type == FileType.ARCHIVE
+
+    def is_chunkable(self) -> bool:
+        """Return whether this file can provide source text for chunking."""
+        return self.file_type != FileType.IMAGE
     
     def get_extracted_content(self) -> str:
         return extract_text_from_file(content=self.raw_content, file_name=self.file_name)
