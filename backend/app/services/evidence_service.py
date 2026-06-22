@@ -199,6 +199,7 @@ class EvidenceService:
         state.projection_ledger = []
         state.initial_draft_scaffold = {}
         state.field_completion_ledger = []
+        state.evidence_query_ledger = []
         state.curation_ledger = []
         state.vocab_queries = []
 
@@ -217,6 +218,7 @@ class EvidenceService:
         progress.projection_ledger = []
         progress.initial_draft_scaffold = {}
         progress.field_completion_ledger = []
+        progress.evidence_query_ledger = []
         progress.curation_ledger = []
         progress.vocab_queries = []
 

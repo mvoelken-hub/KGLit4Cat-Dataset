@@ -879,6 +879,33 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("metadata_requirement_patcher", output_repository.token_usage)
         self.assertIn("initial_file_summary", output_repository.token_usage)
 
+    def test_profile_projection_reset_clears_draft_stage_artifacts(self):
+        service, _task_registry, _output_repository = make_service([[make_chunk()]])
+        state = ExtractionRunState(
+            generated_final_draft={"id": "final"},
+            generated_initial_draft={"id": "initial"},
+            generated_patched_draft={"id": "patched"},
+            generated_reconstructed_draft={"id": "reconstructed"},
+        )
+        progress = ExtractionRunProgress(
+            generated_final_draft={"id": "final"},
+            generated_initial_draft={"id": "initial"},
+            generated_patched_draft={"id": "patched"},
+            generated_reconstructed_draft={"id": "reconstructed"},
+        )
+
+        service._clear_profile_projection_state(state)
+        service._clear_profile_projection_progress(progress)
+
+        self.assertIsNone(state.generated_final_draft)
+        self.assertIsNone(state.generated_initial_draft)
+        self.assertIsNone(state.generated_patched_draft)
+        self.assertIsNone(state.generated_reconstructed_draft)
+        self.assertIsNone(progress.generated_final_draft)
+        self.assertIsNone(progress.generated_initial_draft)
+        self.assertIsNone(progress.generated_patched_draft)
+        self.assertIsNone(progress.generated_reconstructed_draft)
+
     async def test_profile_projection_task_uses_persisted_evidence_without_chunk_extraction(self):
         service, task_registry, output_repository = make_service([[make_chunk()]])
         persisted_context = RoutedEvidenceContext.model_validate(

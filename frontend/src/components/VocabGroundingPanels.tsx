@@ -1268,6 +1268,16 @@ export function ProjectionWorkflowPanel({
   const applicableRequirements = requirementReport?.semantic_requirements.filter((requirement) => requirement.applicable) ?? [];
   const coverageFilled = requirementReport?.coverage.filled_fields ?? requirementReport?.coverage_score ?? 0;
   const coverageTotal = requirementReport?.coverage.total_fields ?? 0;
+  const draftSteps = profileDraftSteps(progress, status);
+  const activeDraftStep = draftSteps.find((step) => step.status === 'active');
+  const completedDraftSteps = draftSteps.filter((step) => step.status === 'completed').length;
+  const draftHeadline = activeDraftStep?.title
+    ?? (completedDraftSteps === 3
+      ? 'Complete'
+      : draftSteps.some((step) => ['skipped', 'failed', 'cancelled'].includes(step.status))
+        ? 'Incomplete'
+        : 'Not started');
+  const draftActivity = profileDraftActivity(progress?.stage, activeDraftStep?.title, draftSteps);
   const showRequirementPopover = (event: SyntheticEvent<HTMLElement>, requirement: RequirementReportItem) => {
     const rect = event.currentTarget.getBoundingClientRect();
     setHoveredRequirement({ requirement, x: rect.left, y: rect.bottom + 8 });
@@ -1275,9 +1285,35 @@ export function ProjectionWorkflowPanel({
 
   return (
     <section className="projection-workflow-panel">
+      <section className="draft-stage-progress" aria-label="Draft creation progress">
+        <div className="draft-stage-progress-heading">
+          <div>
+            <span>Draft creation</span>
+            <strong>{draftHeadline}</strong>
+          </div>
+          <small>{completedDraftSteps}/3 completed</small>
+        </div>
+        <div className="draft-stage-list">
+          {draftSteps.map((step) => (
+            <article
+              key={step.number}
+              className={`draft-stage-item ${step.status}`}
+              aria-current={step.status === 'active' ? 'step' : undefined}
+            >
+              <span className="draft-stage-number">#{step.number}</span>
+              <div>
+                <strong>{step.title}</strong>
+                <small>{step.description}</small>
+              </div>
+              <span className="draft-stage-status">{formatExtractionStage(step.status)}</span>
+            </article>
+          ))}
+        </div>
+        <p className={`draft-stage-activity ${activeDraftStep ? 'active' : ''}`}>{draftActivity}</p>
+      </section>
       <div className="projection-workflow-heading">
         <div>
-          <span>Projection run</span>
+          <span>Projection ledger</span>
           <strong>{formatExtractionStage(progress?.stage || status || 'not started')}</strong>
         </div>
         <div>
@@ -1387,6 +1423,88 @@ export function ProjectionWorkflowPanel({
       {selectedRequirement && <RequirementReviewDialog requirement={selectedRequirement} onClose={() => setSelectedRequirement(null)} />}
     </section>
   );
+}
+
+type DraftStageStatus = 'pending' | 'active' | 'completed' | 'skipped' | 'failed' | 'cancelled';
+
+type DraftStageItem = {
+  number: number;
+  title: string;
+  description: string;
+  status: DraftStageStatus;
+};
+
+function profileDraftSteps(
+  progress?: WorkflowProgress | null,
+  status?: WorkflowTaskStatus | null,
+): DraftStageItem[] {
+  const stage = progress?.stage ?? '';
+  const initialComplete = Boolean(
+    progress?.generated_initial_draft
+    || progress?.generated_patched_draft
+    || progress?.generated_reconstructed_draft
+    || (stage === 'profile_draft' && progress?.generated_final_draft),
+  );
+  const patchingComplete = Boolean(progress?.generated_patched_draft || progress?.generated_reconstructed_draft);
+  const reconstructionComplete = Boolean(progress?.generated_reconstructed_draft);
+  const activeIndex = stage === 'profile_projection'
+    ? 0
+    : ['evidence_patching', 'description_mining', 'coverage_scoring'].includes(stage)
+      ? 1
+      : ['semantic_evaluation', 'semantic_reconstruction', 'semantic_revalidation'].includes(stage)
+        ? 2
+        : -1;
+  const runEnded = stage === 'profile_draft' || status === 'completed';
+  const runFailed = status === 'crashed';
+  const runCancelled = status === 'cancelled';
+  const completed = [initialComplete, patchingComplete, reconstructionComplete];
+  const definitions = [
+    {
+      title: 'Initial draft creation',
+      description: 'Create the profile structure and initial DCAT-AP+ class instances.',
+    },
+    {
+      title: 'Evidence patching',
+      description: 'Mine grounded facts, score coverage, and patch missing profile fields.',
+    },
+    {
+      title: 'Semantic reconstruction',
+      description: 'Evaluate semantics and repair placement, ranges, and duplicate attributes.',
+    },
+  ];
+
+  return definitions.map((definition, index) => {
+    let stepStatus: DraftStageStatus = completed[index] ? 'completed' : 'pending';
+    if (!completed[index] && index === activeIndex) {
+      stepStatus = runFailed ? 'failed' : runCancelled ? 'cancelled' : 'active';
+    } else if (!completed[index] && runEnded) {
+      stepStatus = 'skipped';
+    }
+    return {
+      number: index + 1,
+      ...definition,
+      status: stepStatus,
+    };
+  });
+}
+
+function profileDraftActivity(stage: string | undefined, activeTitle: string | undefined, steps: DraftStageItem[]): string {
+  if (stage === 'profile_draft') {
+    const completedCount = steps.filter((step) => step.status === 'completed').length;
+    return completedCount === 3
+      ? 'Draft creation finished. The initial, patched, and reconstructed artifacts are available for inspection.'
+      : `Draft creation ended with ${completedCount}/3 substeps complete. Skipped substeps did not produce boundary artifacts.`;
+  }
+  const detailByStage: Record<string, string> = {
+    profile_projection: 'Building the initial profile structure and class instances from accumulated evidence.',
+    evidence_patching: 'Initial draft saved. Preparing the evidence-backed coverage pass.',
+    description_mining: 'Mining dataset descriptions for additional grounded facts.',
+    coverage_scoring: 'Checking profile coverage and applying evidence-backed patches to missing fields.',
+    semantic_evaluation: 'Evaluating semantic requirements before reconstructing the draft.',
+    semantic_reconstruction: 'Applying semantic placement, range, and coherence repairs.',
+    semantic_revalidation: 'Re-evaluating the reconstructed draft and compiling the final requirement report.',
+  };
+  return detailByStage[stage ?? ''] ?? (activeTitle ? `${activeTitle} is running.` : 'Draft creation has not started.');
 }
 
 function buildVocabGraph(result: VocabQueryResult) {

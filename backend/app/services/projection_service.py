@@ -353,7 +353,11 @@ class ProjectionService:
             return state.generated_final_draft or {}
         if state.generated_initial_draft is None:
             state.generated_initial_draft = self._clone_json_object(document)
-            progress.generated_initial_draft = state.generated_initial_draft
+        progress.generated_initial_draft = state.generated_initial_draft
+        progress.stage = "evidence_patching"
+        self._save_run_state(data_package_id, state)
+        self._persist_state_artifacts(data_package_id, state)
+        self._update_progress(data_package_id, progress)
         document = self._remove_file_like_about_entities(document)
         state.generated_final_draft = document
         progress.generated_final_draft = document
@@ -367,6 +371,7 @@ class ProjectionService:
         )
 
         progress.stage = "coverage_scoring"
+        self._update_progress(data_package_id, progress)
         coverage = compute_coverage_report(document, validation_schema)
         coverage_requirements = list(DCAT_AP_PLUS_COVERAGE_REQUIREMENTS)
         coverage_items = self._coverage_items_from_document(
@@ -493,6 +498,11 @@ class ProjectionService:
         state.generated_final_draft = document
         state.generated_patched_draft = self._clone_json_object(document)
         progress.generated_patched_draft = state.generated_patched_draft
+        progress.validation = state.validation
+        progress.stage = "semantic_evaluation"
+        self._save_run_state(data_package_id, state)
+        self._persist_state_artifacts(data_package_id, state)
+        self._update_progress(data_package_id, progress)
         coverage = compute_coverage_report(document, validation_schema)
         semantic_items = await self._evaluate_semantic_requirements(
             data_package_id=data_package_id,
@@ -500,6 +510,7 @@ class ProjectionService:
             evidence_context=evidence_context,
         )
         progress.stage = "semantic_reconstruction"
+        self._update_progress(data_package_id, progress)
         document, semantic_reconstructions = await self._reconstruct_semantic_defects(
             data_package_id=data_package_id,
             profile_identifier=profile_identifier,
@@ -523,6 +534,10 @@ class ProjectionService:
             warnings=[],
         )
         progress.stage = "semantic_revalidation"
+        progress.validation = state.validation
+        self._save_run_state(data_package_id, state)
+        self._persist_state_artifacts(data_package_id, state)
+        self._update_progress(data_package_id, progress)
         semantic_items = await self._evaluate_semantic_requirements(
             data_package_id=data_package_id,
             document=document,

@@ -544,6 +544,29 @@ textarea.json-editor-input { resize: vertical; min-height: 80px; }
 .patch-progress-summary { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .patch-progress-summary span { border: 1px solid var(--line); border-radius: 999px; padding: 0.35rem 0.6rem; background: rgba(255, 255, 255, 0.66); }
 .projection-workflow-panel { margin-top: 14px; padding: 14px; border: 1px solid rgba(99, 154, 0, 0.24); border-radius: 10px; background: rgba(248, 251, 244, 0.78); display: grid; gap: 10px; }
+.draft-stage-progress { display: grid; gap: 10px; padding-bottom: 12px; border-bottom: 1px solid rgba(99, 154, 0, 0.2); }
+.draft-stage-progress-heading { display: flex; justify-content: space-between; gap: 12px; align-items: end; flex-wrap: wrap; }
+.draft-stage-progress-heading > div { display: grid; gap: 2px; }
+.draft-stage-progress-heading span { color: var(--muted); font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; }
+.draft-stage-progress-heading strong { color: var(--ink); font-size: 1rem; }
+.draft-stage-progress-heading small { color: var(--muted); font-size: 0.76rem; font-weight: 800; }
+.draft-stage-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.draft-stage-item { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 3px 8px; min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 9px; background: rgba(255, 255, 255, 0.62); }
+.draft-stage-number { grid-row: 1 / span 2; align-self: start; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 999px; background: rgba(26, 26, 26, 0.08); color: var(--muted); font-size: 0.72rem; font-weight: 900; }
+.draft-stage-item > div { display: grid; gap: 3px; min-width: 0; }
+.draft-stage-item strong { color: var(--ink); font-size: 0.8rem; line-height: 1.25; }
+.draft-stage-item small { color: var(--muted); font-size: 0.69rem; line-height: 1.35; }
+.draft-stage-status { grid-column: 2; width: fit-content; padding: 0.2rem 0.42rem; border-radius: 999px; background: rgba(26, 26, 26, 0.07); color: var(--muted); font-size: 0.64rem; font-weight: 900; letter-spacing: 0.06em; text-transform: uppercase; }
+.draft-stage-item.active { border-color: rgba(31, 96, 142, 0.48); background: rgba(239, 247, 252, 0.94); box-shadow: 0 0 0 2px rgba(31, 96, 142, 0.08); }
+.draft-stage-item.active .draft-stage-number, .draft-stage-item.active .draft-stage-status { background: #1f608e; color: #fff; }
+.draft-stage-item.completed { border-color: rgba(99, 154, 0, 0.34); background: rgba(246, 250, 239, 0.88); }
+.draft-stage-item.completed .draft-stage-number, .draft-stage-item.completed .draft-stage-status { background: var(--accent); color: #fff; }
+.draft-stage-item.skipped { opacity: 0.65; }
+.draft-stage-item.failed { border-color: rgba(188, 57, 43, 0.5); background: rgba(255, 239, 236, 0.88); }
+.draft-stage-item.failed .draft-stage-number, .draft-stage-item.failed .draft-stage-status { background: #bc392b; color: #fff; }
+.draft-stage-item.cancelled { border-color: rgba(202, 116, 6, 0.48); background: rgba(255, 248, 234, 0.9); }
+.draft-stage-activity { margin: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, 0.68); color: var(--muted); font-size: 0.76rem; line-height: 1.4; }
+.draft-stage-activity.active { border-color: rgba(31, 96, 142, 0.34); background: rgba(239, 247, 252, 0.9); color: var(--ink); }
 .projection-workflow-heading { display: flex; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
 .projection-workflow-heading > div { display: grid; gap: 2px; }
 .projection-workflow-heading span { color: var(--muted); font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; }
@@ -553,6 +576,10 @@ textarea.json-editor-input { resize: vertical; min-height: 80px; }
 .projection-sink-note.compact { font-size: 0.72rem; color: var(--muted); }
 .projection-sink-note.warning { border-color: rgba(202, 116, 6, 0.48); background: rgba(255, 248, 234, 0.88); }
 .projection-sink-note code { font-size: 0.76rem; }
+
+@media (max-width: 780px) {
+  .draft-stage-list { grid-template-columns: 1fr; }
+}
 
 @keyframes progress-slide {
   0% { transform: translateX(-120%); }

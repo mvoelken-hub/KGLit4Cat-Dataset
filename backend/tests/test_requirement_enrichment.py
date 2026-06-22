@@ -890,6 +890,8 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             ollama_client=Mock(chat_model="test-model", max_context_length=4096),
             output_repository=repo,
         )
+        published_stages: list[str] = []
+        service._update_progress = lambda _data_package_id, current: published_stages.append(current.stage)  # type: ignore[method-assign]
         service._evaluate_dcat_requirements = AsyncMock(
             return_value=RequirementEvaluation(
                 assessments=[
@@ -1002,6 +1004,17 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         repo.save_requirement_report.assert_called()
         repo.save_generated_initial_draft.assert_called()
+        expected_stages = [
+            "evidence_patching",
+            "coverage_scoring",
+            "semantic_evaluation",
+            "semantic_reconstruction",
+            "semantic_revalidation",
+        ]
+        self.assertEqual(
+            list(dict.fromkeys(stage for stage in published_stages if stage in expected_stages)),
+            expected_stages,
+        )
 
     async def test_semantic_reconstruction_runs_between_semantic_evaluations(self):
         service = WorkflowService(
