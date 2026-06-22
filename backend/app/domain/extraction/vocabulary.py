@@ -125,9 +125,12 @@ more specific or named variant of it. But "most general" only applies among cand
 quantity - it never justifies picking a wrong-domain term.
 Hard rules - return null for selected_uri when ANY of these hold:
 - No candidate describes the same physical quantity or concept as the field. Sharing a token or a symbol with
-  the source value is not a match. Common traps include axis or column codes, ordinals (first/last/minimum/
-  maximum), incidental words, and unit symbols or mathematical symbols; a single letter or a unit symbol is
-  never a quantity kind by itself.
+  the source value is not a match. Common traps include bare axis or column codes, incidental words, and unit
+  symbols or mathematical symbols; a single letter or a unit symbol by itself is never a quantity kind.
+- An ordinal or extremum modifier (first/last/minimum/maximum) by itself is not a quantity kind. However, when
+  it qualifies a field whose semantic context or source value clearly identifies the underlying physical
+  quantity, the ordinal does NOT disqualify the match - select the candidate that matches that underlying
+  quantity. Only abstain when the ordinal is the ONLY signal and no underlying quantity can be identified.
 - The candidate belongs to a different scientific or engineering domain than the measurement described in the
   context (for example, a radioactivity, electrical-impedance, typography/printing, aerospace, or oceanography
   term used for a measurement in an unrelated field). A different-domain candidate is not a match even if it
@@ -145,7 +148,6 @@ You create a short vocabulary search query after an initial deterministic search
 Use the source value and local context only. Return only JSON.
 """
 
-
 VOCAB_QUERY_FORMULATION_SYSTEM_PROMPT = """
 You rewrite a metadata field value into a short, on-target vocabulary search phrase.
 Use the source value AND the semantic context (dataset/entity/attribute title and description) to identify the
@@ -154,6 +156,10 @@ vocabulary would label (e.g. a unit written as a symbol or abbreviation -> the f
 Rules:
 - Always reduce the value to the underlying physical quantity or concept. Never echo the raw value, an axis or
   column code, or a unit token.
+- A unit symbol or abbreviation appearing in the value (e.g. %, cm, Hz, K, 1/cm) describes the unit of
+  measurement, not the physical quantity. Strip it entirely from the formulated phrase - do not incorporate
+  the unit name into the quantity search phrase. For example, a field named "length %" formulates as "length",
+  not "length percentage"; a field named "voltage Hz" formulates as "voltage", not "voltage hertz".
 - When the value is an axis or column label (for example a single letter paired with a unit, or an ordinal like
   first/last/min/max applied to an axis), name the physical quantity that axis or column measures, using the
   semantic context (what the dataset/entity actually records).

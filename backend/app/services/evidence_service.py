@@ -186,28 +186,38 @@ class EvidenceService:
 
     @staticmethod
     def _clear_profile_projection_state(state: ExtractionRunState) -> None:
+        state.generated_initial_draft = None
         state.generated_final_draft = None
         state.generated_patched_draft = None
         state.generated_reconstructed_draft = None
+        state.requirement_report = None
+        state.curated_document = None
+        state.document_quality_state = None
         state.draft_quality_state = None
         state.validation = DraftValidationResult()
         state.curated_validation = None
         state.projection_ledger = []
         state.initial_draft_scaffold = {}
         state.field_completion_ledger = []
+        state.curation_ledger = []
         state.vocab_queries = []
 
     @staticmethod
     def _clear_profile_projection_progress(progress: ExtractionRunProgress) -> None:
+        progress.generated_initial_draft = None
         progress.generated_final_draft = None
         progress.generated_patched_draft = None
         progress.generated_reconstructed_draft = None
+        progress.requirement_report = None
+        progress.curated_document = None
+        progress.document_quality_state = None
         progress.draft_quality_state = None
         progress.validation = DraftValidationResult()
         progress.curated_validation = None
         progress.projection_ledger = []
         progress.initial_draft_scaffold = {}
         progress.field_completion_ledger = []
+        progress.curation_ledger = []
         progress.vocab_queries = []
 
     @staticmethod

@@ -146,6 +146,18 @@ Tradeoff: Range splitting remains prompt-led, so a schema-valid collapsed range 
 
 Revisit trigger: Revisit if evaluation shows prompt-led range handling remains unreliable or if richer profile-declared parent rules replace the current generic routing cues.
 
+### 2026-06-22: Separate Dataset Subject From Activity Evaluation Target
+
+Decision: Dataset `is_about_entity`/`is_about_activity` and DataGeneratingActivity `evaluated_entity`/`evaluated_activity` are projected, scored, and repaired as distinct claims. Every generation activity must name at least one directly examined target. The same unambiguous referent may reuse one `id`, but neither edge family is mirrored automatically and each needs independent semantic justification.
+
+Implementation guard: Either evaluation-target family independently fulfills the activity requirement. Reconstruction may remove invalid or self-referential edges but must not synthesize a missing evaluation-target relation. Forced profile rebuilds clear stale curated/report artifacts, and the requirement report is deterministically revalidated against the delivered grounded document.
+
+Reason: Dataset aboutness answers what the Dataset is about; activity evaluation targets answer what one data-generating activity measured, observed, analysed, or studied. Conflating them loses the claim expressed by the owning relation and can turn generated outputs or central Dataset subjects into unsupported experiment targets.
+
+Tradeoff: Relation support remains prompt-interpreted rather than encoded as a new evidence field. Missing target evidence therefore remains a visible semantic defect, and unsupported mirrored edges may be removed even when another requirement becomes missing.
+
+Revisit trigger: Revisit if prompt-only relation interpretation is unstable enough to require explicit evidence relation claims or profile-declared target rules.
+
 ### 2026-06-21: Preserve Evidence Source Context For Parent Routing
 
 Decision: Evidence candidates keep `evidence_text` as the exact atomic support span and add backend-derived `source_context` as a compact contiguous copied source window needed to preserve local scope for later routing. Prompts explicitly forbid paraphrasing, normalization, reordering, and stitched non-contiguous range evidence, but they tell the model not to populate `source_context`.

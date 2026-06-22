@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from app.domain.extraction import (
     DefinedTerm,
+    DATASET_LEVEL_PROJECTION_SYSTEM_PROMPT,
     EvidenceContext,
     EvidenceAssessment,
     EvidenceChunkContext,
@@ -1662,6 +1663,8 @@ classes:
         self.assertNotIn("dataset_distribution", ShallowDatasetLevelProjection.model_fields)
         self.assertNotIn("dataset_distribution", level_projection.model_dump(mode="json"))
         self.assertNotIn("dataset_distribution", prompt)
+        self.assertIn("Never mirror these", DATASET_LEVEL_PROJECTION_SYSTEM_PROMPT)
+        self.assertIn("merely generated output", DATASET_LEVEL_PROJECTION_SYSTEM_PROMPT)
 
     def test_shallow_projection_fills_missing_ids_and_replaces_description_fallback(self):
         projection = ShallowDatasetProjection(
@@ -1681,6 +1684,61 @@ classes:
         self.assertNotIn("dataset_distribution", document)
         self.assertTrue(document["was_generated_by"][0]["id"].startswith("package-id:activity"))
         self.assertTrue(any(record.object_kind == "ScaffoldFact" for record in ledger))
+
+    def test_shallow_projection_preserves_dataset_subject_and_activity_targets_separately(self):
+        projection = ShallowDatasetProjection.model_validate(
+            {
+                "title": ["Process study"],
+                "description": ["Measurements of a sample during a reaction."],
+                "is_about_entity": [{"id": "sample:1", "title": "Sample 1"}],
+                "is_about_activity": [{"id": "reaction:1", "title": ["Reaction 1"]}],
+                "was_generated_by": [
+                    {
+                        "id": "measurement:1",
+                        "title": ["Spectral measurement"],
+                        "evaluated_entity": [{"id": "sample:1", "title": "Sample 1"}],
+                        "evaluated_activity": [{"id": "reaction:1", "title": ["Reaction 1"]}],
+                    }
+                ],
+            }
+        )
+
+        document, _ = shallow_projection_to_dcat_document(
+            projection,
+            data_package_id="package-id",
+        )
+
+        activity = document["was_generated_by"][0]
+        self.assertEqual(document["is_about_entity"][0]["id"], "sample:1")
+        self.assertEqual(activity["evaluated_entity"][0]["id"], "sample:1")
+        self.assertEqual(document["is_about_activity"][0]["id"], "reaction:1")
+        self.assertEqual(activity["evaluated_activity"][0]["id"], "reaction:1")
+        self.assertNotIn("evaluated_entity", document["is_about_activity"][0])
+
+    def test_shallow_projection_does_not_merge_relation_objects_by_label(self):
+        projection = ShallowDatasetProjection.model_validate(
+            {
+                "title": ["Two samples"],
+                "description": ["Dataset subject and measured target share a label but lack common identity."],
+                "is_about_entity": [{"title": "Sample"}],
+                "was_generated_by": [
+                    {
+                        "title": ["Measurement"],
+                        "evaluated_entity": [{"title": "Sample"}],
+                    }
+                ],
+            }
+        )
+
+        document, _ = shallow_projection_to_dcat_document(
+            projection,
+            data_package_id="package-id",
+        )
+
+        self.assertNotEqual(
+            document["is_about_entity"][0]["id"],
+            document["was_generated_by"][0]["evaluated_entity"][0]["id"],
+        )
 
     def test_shallow_projection_outputs_schema_valid_dcat_ap_plus_dataset(self):
         schema_path = Path(".runtime/profiles/dcat-ap-plus/json_schema.json")
