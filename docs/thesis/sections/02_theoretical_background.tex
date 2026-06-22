@@ -57,20 +57,32 @@ The standard also enables validation, allowing generated metadata records to be 
 
 \section{Semantic Web Technologies}
 \label{sec:semantic-web-technologies}
-Semantic web technologies provide the rules and language for representing data in a machine-actionable form.
+Semantic web technologies provide the representation languages, identifiers, vocabularies and validation mechanisms that enable standards to be implemented in a machine-actionable form.
 Their central idea is to move from a web of human-readable documents to a web of data whose meaning is explicitly described for computational processing \cite{jannidis2017digitalhumanities}.
-In contrast to the free-text documentation of metadata attached to files, semantic approaches explicitly describe entities, relations, and constraints. This transforms data into interconnected statements that can be searched, queried, validated, combined, and reused across repositories and workflows.
+
 
 \subsection{Semantic Modelling of Domain Knowledge}
 \label{sec:semantic-modelling-domain-knowledge}
 
-An ontology is a formal specification of the concepts and relations that are relevant in a domain. In contrast to an informal glossary, an ontology not only lists terms, but also defines how these terms may be related, for example through class hierarchies, properties, restrictions, and equivalence relations. Ontologies therefore provide a shared conceptual model that can be used by both humans and machines to interpret data consistently \cite{stuckenschmidt2011ontologien}. Controlled vocabularies are more limited resources: they provide predefined terms and descriptions, but usually do not formalize the meaning of these terms with the same axiomatic detail as an ontology \cite{marquardt2010ontocape}. For this thesis, both resource types are relevant because metadata extraction needs stable labels for terms as well as structured relations between extracted entities.
+A semantic model distinguishes between general concepts and concrete entities.
+General concepts are represented as classes, such as \textit{Catalyst}, \textit{Catalytic Reaction}, or \textit{Reaction Condition}, while individual objects or events are represented as instances of these classes.
+A specific iron-based catalyst can therefore be modelled as an instance of the class \textit{Catalyst}, and a particular methane conversion experiment as an instance of the class \textit{Catalytic Reaction}.
+Relations connect these instances and express domain-specific statements, for example that a reaction uses a certain catalyst, occurs under a defined temperature, or produces a specific product.
+Additional values, such as names, numerical measurements, or timestamps, can be attached as descriptive properties.
+Together, these elements form a graph-like representation in which domain entities are described not only by their individual attributes, but also by their semantic context \cite{stuckenschmidt2011ontologien,wulf2021unified}.
 
-The scope of an ontology is normally restricted by domain and modelling purpose. Upper ontologies describe very general categories, domain ontologies capture the terminology of a field, and application ontologies adapt these concepts to a concrete tool, workflow, or data model \cite{guarino1998formal,nfdi4cat2024whitepaper}. This distinction matters for SIMONE because the prototype does not introduce a universal catalysis ontology. Instead, it uses existing vocabularies and profiles for the narrower task of grounding extracted dataset metadata and projecting it into a reusable metadata document.
+Ontologies provide a formal specification of such semantic models.
+They define the concepts that are relevant to a domain, organise them into class hierarchies, and describe the relations that may hold between them.
+In addition, ontologies can express axioms that restrict or clarify the meaning of these concepts and relations, for example by declaring that every \textit{Catalyst} is a type of \textit{Material}, that two classes are disjoint, or that a particular relation can only connect certain kinds of entities.
+Ontologies can be distinguished into upper ontologies, which provide general, domain-independent concepts to support interoperability across fields, and domain ontologies, which capture specialised knowledge for a particular area such as catalysis.
+In this way, an ontology represents an explicit and logically interpretable conceptualisation of a domain.
+Shared ontologies can therefore support consistent annotation, semantic interoperability, and automated reasoning across independently created datasets and software systems \cite{stuckenschmidt2011ontologien,arp2015building,w3c2012owl2primer}.
 
-The central modelling elements used in this work are classes, individuals, properties, relations, literals, and identifiers. Classes represent types of entities such as catalysts, reactions, measurements, units, or analytical methods. Individuals represent concrete instances, for example a particular catalyst sample, experiment, extracted value, or dataset record. Properties connect entities to one another or to literal values such as numbers, strings, or labels. Axioms and restrictions can further state subclass relations, allowed value types, or required relations. In knowledge graph construction, the ontology therefore provides the semantic framework: nodes and edges instantiate ontology classes and properties \cite{stuckenschmidt2011ontologien,arp2015building,diaz2025knowledgegraphs}.
+The Resource Description Framework (RDF) provides the graph representation model here to represent statements as subject--predicate--object triples \cite{w3c2014rdf11concepts}.
+Instance data in such a graph can be typed by linking a resource to an ontology class with \texttt{rdf:type}, while further predicates connect that resource to other instance resources or literal values. Figure~\ref{fig:ontology-grounding-layers} illustrates this schema-instance distinction for catalysis metadata.
+Furthermore, the resources and predicates can be identified with Uniform Resource Identifiers (URIs), which allows statements from different sources to refer to the same concept rather than only to local text labels \cite{w3c2014rdf11concepts,huskova2025improvement}.
 
-The Resource Description Framework (RDF) provides the graph data model for representing such grounded metadata as subject--predicate--object triples \cite{w3c2014rdf11concepts}. RDF resources and predicates can be identified with IRIs or URIs, which allows statements from different sources to refer to the same concept rather than only to local text labels \cite{w3c2014rdf11concepts,huskova2025improvement}. RDF alone, however, is not yet sufficient for reusable metadata. A triple becomes semantically useful only when its subject, predicate, or object is linked to a vocabulary term, class, property, or individual with a stable identifier and an interpretable meaning. Figure~\ref{fig:ontology-grounding-layers} illustrates this schema-instance distinction for catalysis metadata.
+The Shapes Constraint Language (SHACL) can be used to formalise validation rules for instance data in an RDF graph. A SHACL shape may, for example, require that every catalytic experiment has a catalyst, restrict a temperature value to a numerical datatype, or define how often a particular property may occur. SHACL therefore evaluates whether the available data conform structurally to the intended representation, whereas an ontology provides the logical vocabulary and axioms used for classification, inference, and semantic interpretation \cite{w3c2017shacl}.
 
 \input{figures/ontology_grounding_layers}
 
