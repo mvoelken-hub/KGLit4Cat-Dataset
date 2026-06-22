@@ -1,7 +1,7 @@
 \ProvidesPackage{PackagesForThesis}
 
 
-\usepackage[left= 2.5cm,right = 2cm, bottom = 4cm]{geometry}
+\usepackage[left= 2.5cm,right = 2cm, top = 2.5cm, bottom = 4cm]{geometry}
 \usepackage[onehalfspacing]{setspace} 
 \usepackage{fontspec}
 \usepackage{graphicx}
@@ -104,10 +104,16 @@
 }
 \renewcommand{\chaptermark}[1]{\markboth{#1}{}}
 \renewcommand{\@makechapterhead}[1]{%
-    \vspace*{20pt}%
+    \vspace*{0pt}%
     {\parindent \z@ \raggedright
     \normalfont\Large\bfseries \thechapter.\quad \MakeUppercase{#1}\par\nobreak
-    \vskip 20pt}%
+    \vskip 14pt}%
+}
+\renewcommand{\@makeschapterhead}[1]{%
+    \vspace*{0pt}%
+    {\parindent \z@ \raggedright
+    \normalfont\Large\bfseries \MakeUppercase{#1}\par\nobreak
+    \vskip 14pt}%
 }
 \makeatother
 
