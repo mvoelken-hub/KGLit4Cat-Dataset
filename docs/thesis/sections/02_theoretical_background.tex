@@ -1,17 +1,24 @@
 \label{chap:background}
 
-This chapter provides the scientific and technical foundations required for building a system that extracts metadata from unstructured datasets in catalysis. The first section introduces the concept of catalysis and the data landscape of catalytic experiments, which motivates the need for an application-specific schema. The second section introduces semantic web technologies as a technical foundation for representing the data in a machine-actionable form. The third section introduces large language models as a technical foundation for extracting and structuring metadata from unstructured sources.
+In order to develop a workflow that can extract metadata from arbitrary catalysis datasets and represent it in a standardised, machine-actionable form, it is necessary to understand the scientific context of the data to be extracted, as well as the technical foundations of the system that will execute the workflow.
+The theoretical background is therefore structured into three sections.
+The first section introduces the landscape of data in catalytic experiments, motivating the need for application-specific schemas as a metadata standard.
+As these standards should be based on a widely shared conceptual model, the second section introduces semantic web technologies as a toolset for representing and connecting the data in a machine-actionable form, as well as providing a common language with which to formulate the standards.
+The third section provides background on large language models (LLMs), as this work aims to utilise their capabilities to translate information from an unstructured, human-readable form into a machine-actionable one.
 
-\section{Catalysis}
-\label{sec:catalysis}
-
-Catalysis refers to the acceleration of a chemical reaction by a substance that participates in the reaction but is not consumed by it. A catalyst therefore changes the kinetic route of a reaction rather than the thermodynamic equilibrium: it can lower the effective activation barrier and allow a reaction to proceed under milder or more technically useful conditions, as schematically shown in Figure~\ref{fig:catalysis-activation-energy}. Catalysts may operate in the same phase as the reactants, referred to as homogeneous catalysis, or in a different phase, referred to as heterogeneous catalysis. In technical chemistry, their value lies not only in increasing reaction rates, but also in directing complex reaction networks toward desired products and maintaining performance over time. Activity, selectivity, and stability are therefore central descriptors of catalyst performance and already show why catalytic systems have to be studied under well-defined reaction and material conditions \cite{fechete2012past,job2021physikalische}.
-\input{figures/catalysis_activation_energy}
-
-\subsection{Catalytic Experiments}
+\section{Catalytic Experiments}
 \label{sec:catalytic-experiments}
 
-Catalytic experiments investigate how catalysts are prepared, activated, characterized, and used to transform reactants under defined reaction conditions. The resulting data landscape is therefore not limited to final performance indicators, but spans the full experimental chain from catalyst synthesis to functional analysis \cite{marshall2023digital}.
+Catalysis refers to the acceleration of a chemical reaction by a substance that participates in the reaction but is not consumed by it.
+A catalyst can lower the effective activation barrier and allow a reaction to proceed under milder or more technically useful conditions, as schematically shown in Figure~\ref{fig:catalysis-activation-energy}.
+Consequently, catalysts are widely studied across application fields such as energy cost reduction, environmental recovery, chemical manufacturing, and materials science.
+Catalytic experiments investigate how catalysts are prepared, activated, characterized, and used to transform reactants under defined reaction conditions.
+The resulting data landscape is therefore not limited to final performance indicators, but spans the full experimental chain from catalyst synthesis to functional analysis \cite{marshall2023digital}.
+\input{figures/catalysis_activation_energy}
+
+\section{Catalytic Data and Metadata}
+\label{sec:catalytic-data-metadata}
+
 During the life cycle of a catalyst, a precursor may be transformed into an activated material and subsequently into a spent or deactivated sample. Each stage in this process can yield new characterisation and performance data, which must be linked to the corresponding material state \cite{mendes2025data}.
 For this reason, a catalytic result such as a conversion, selectivity, yield, or reaction rate is only interpretable together with relevant metadata \cite{wulf2021unified}.
 Table~\ref{tab:catalytic-data-landscape} summarizes this landscape by grouping representative data and metadata into material, preparation, characterization, reactor, operating, and performance-related categories. These categories indicate which contextual links have to be preserved when heterogeneous datasets and kinetic measurements, are interpreted together \cite{mendes2025data,schumann2025nomad,stroemert2026chemdcat}.
