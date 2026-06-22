@@ -10,12 +10,14 @@ from app.domain.semantics import VocabQuery
 
 QUDT_QUANTITY_KIND_VOCAB = "http://qudt.org/vocab/quantitykind"
 QUDT_UNIT_VOCAB = "http://qudt.org/vocab/unit"
+QUDT_SCHEMA_VOCAB = "http://qudt.org/schema/qudt"
+QUDT_QUANTITY_URI = "https://qudt.org/schema/qudt/Quantity"
+QUDT_QUANTITY_KIND_URI = "https://qudt.org/schema/qudt/QuantityKind"
+QUDT_UNIT_URI = "https://qudt.org/schema/qudt/Unit"
 QUDT_QUANTITY_KIND_RDF_TYPE = "qudt__QuantityKind"
 QUDT_UNIT_RDF_TYPE = "qudt__Unit"
 DEFAULT_QUALITATIVE_VOCAB_IDENTIFIERS = [
     "https://w3id.org/nfdi4cat/voc4cat",
-    "http://purl.obolibrary.org/obo/chmo.owl",
-    "http://nmrML.org/nmrCV",
 ]
 
 
@@ -38,6 +40,11 @@ class VocabularyFallbackQuery(BaseModel):
         if not self.vector_query and not self.fulltext_query:
             raise ValueError("At least one fallback query string is required.")
         return self
+
+
+class VocabularyQueryFormulation(BaseModel):
+    query: str = Field(default="", description="A concise vocabulary search phrase distilled from the source value and its semantic context.")
+    reason: str = ""
 
 
 class VocabularyTermMapping(BaseModel):
@@ -109,9 +116,30 @@ class ExtractionNormalization(BaseModel):
 
 
 VOCAB_CANDIDATE_SELECTION_SYSTEM_PROMPT = """
-You select controlled-vocabulary terms for metadata normalization.
-Return null for selected_uri unless one candidate clearly represents the supplied source value.
-Use only candidate URIs from the prompt. Return only JSON.
+You select a single controlled-vocabulary term that normalizes a metadata field, or return null.
+Match on the physical quantity or concept the field actually measures, using the source value AND the
+semantic context (dataset/entity/attribute title and description). Read each candidate's label AND definition,
+not just its URI fragment.
+When several candidates describe the same kind of quantity or concept, prefer the most general/plain one over a
+more specific or named variant of it. But "most general" only applies among candidates that are the same
+quantity - it never justifies picking a wrong-domain term.
+Hard rules - return null for selected_uri when ANY of these hold:
+- No candidate describes the same physical quantity or concept as the field. Sharing a token or a symbol with
+  the source value is not a match. Common traps include bare axis or column codes, incidental words, and unit
+  symbols or mathematical symbols; a single letter or a unit symbol by itself is never a quantity kind.
+- An ordinal or extremum modifier (first/last/minimum/maximum) by itself is not a quantity kind. However, when
+  it qualifies a field whose semantic context or source value clearly identifies the underlying physical
+  quantity, the ordinal does NOT disqualify the match - select the candidate that matches that underlying
+  quantity. Only abstain when the ordinal is the ONLY signal and no underlying quantity can be identified.
+- The candidate belongs to a different scientific or engineering domain than the measurement described in the
+  context (for example, a radioactivity, electrical-impedance, typography/printing, aerospace, or oceanography
+  term used for a measurement in an unrelated field). A different-domain candidate is not a match even if it
+  is the most general available - return null.
+- The best candidate is only a superficial or adjacent match rather than the same quantity or concept.
+- You are not confident the candidate is the same quantity. In that case return null with confidence 0 and a
+  short reason naming the trap, rather than forcing a match.
+Use only candidate URIs from the prompt. Always include selected_uri, confidence (0.0-1.0), and reason.
+You MUST NOT select a candidate you just argued does not fit - return null instead. Return only JSON.
 """
 
 
@@ -119,6 +147,59 @@ VOCAB_FALLBACK_QUERY_SYSTEM_PROMPT = """
 You create a short vocabulary search query after an initial deterministic search failed.
 Use the source value and local context only. Return only JSON.
 """
+
+VOCAB_QUERY_FORMULATION_SYSTEM_PROMPT = """
+You rewrite a metadata field value into a short, on-target vocabulary search phrase.
+Use the source value AND the semantic context (dataset/entity/attribute title and description) to identify the
+physical quantity or concept the field measures, then return that concept as a plain search phrase a controlled
+vocabulary would label (e.g. a unit written as a symbol or abbreviation -> the full unit name).
+Rules:
+- Always reduce the value to the underlying physical quantity or concept. Never echo the raw value, an axis or
+  column code, or a unit token.
+- A unit symbol or abbreviation appearing in the value (e.g. %, cm, Hz, K, 1/cm) describes the unit of
+  measurement, not the physical quantity. Strip it entirely from the formulated phrase - do not incorporate
+  the unit name into the quantity search phrase. For example, a field named "length %" formulates as "length",
+  not "length percentage"; a field named "voltage Hz" formulates as "voltage", not "voltage hertz".
+- When the value is an axis or column label (for example a single letter paired with a unit, or an ordinal like
+  first/last/min/max applied to an axis), name the physical quantity that axis or column measures, using the
+  semantic context (what the dataset/entity actually records).
+- A unit written as "1/X" or "X^-1" denotes the reciprocal of unit X; formulate it as "reciprocal X" (e.g.
+  "1/m" -> "reciprocal metre"). Likewise a value with a reciprocal unit usually measures the quantity whose
+  standard unit is that reciprocal unit.
+- Output the plain concept name only (1-6 words). Do NOT echo ordinals, raw numbers, or the literal field name
+  unless they ARE the concept.
+- If you cannot identify the concept, still return your best short phrase based on the context.
+Return only JSON.
+"""
+
+
+def build_query_formulation_prompt(
+    *,
+    source_value: str,
+    source_context: dict[str, Any],
+) -> str:
+    return "".join(
+        text
+        for _, text in build_query_formulation_prompt_components(
+            source_value=source_value,
+            source_context=source_context,
+        )
+    )
+
+
+def build_query_formulation_prompt_components(
+    *,
+    source_value: str,
+    source_context: dict[str, Any],
+) -> list[tuple[str, str]]:
+    return [
+        ("source_value", "Source value:\n" f"{source_value}\n\n"),
+        ("source_context", "Source context JSON:\n" f"{source_context}\n\n"),
+        (
+            "formulation_instruction",
+            "Return the short vocabulary search phrase for this field value.",
+        ),
+    ]
 
 
 VOCAB_OBJECT_GROUNDING_SELECTION_SYSTEM_PROMPT = """

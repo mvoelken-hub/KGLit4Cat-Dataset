@@ -36,6 +36,10 @@ class DefinedTerm(BaseModel):
         default=None,
         description="Identifier of the source controlled vocabulary.",
     )
+    rdf_type: "DefinedTerm | None" = Field(
+        default=None,
+        description="Ontology class of this term when the profile carries it explicitly.",
+    )
 
 
 class BaseExtractionModel(BaseModel):

@@ -1,17 +1,24 @@
 \label{chap:background}
 
-This chapter provides the scientific and technical foundations required for building a system that extracts metadata from unstructured datasets in catalysis. The first section introduces the concept of catalysis and the data landscape of catalytic experiments, which motivates the need for an application-specific schema. The second section introduces semantic web technologies as a technical foundation for representing the data in a machine-actionable form. The third section introduces large language models as a technical foundation for extracting and structuring metadata from unstructured sources.
+In order to develop a workflow that can extract metadata from arbitrary catalysis datasets and represent it in a standardised, machine-actionable form, it is necessary to understand the scientific context of the data to be extracted, as well as the technical foundations of the system that will execute the workflow.
+The first section introduces the landscape of data in catalytic experiments, motivating the need for application-specific schemas as a metadata standard.
+After that, a short section presents metadata standards on a conceptual level.
+As these standards should align with common rules, the third section introduces semantic web technologies as a toolset for representing and connecting the data in a machine-actionable form, as well as providing a common language with which to formulate the standards.
+The fourth section provides background on large language models (LLMs), as this work aims to utilize their capabilities to extract information from an unstructured, human-readable form into any specified structured format.
 
-\section{Catalysis}
-\label{sec:catalysis}
-
-Catalysis refers to the acceleration of a chemical reaction by a substance that participates in the reaction but is not consumed by it. A catalyst therefore changes the kinetic route of a reaction rather than the thermodynamic equilibrium: it can lower the effective activation barrier and allow a reaction to proceed under milder or more technically useful conditions, as schematically shown in Figure~\ref{fig:catalysis-activation-energy}. Catalysts may operate in the same phase as the reactants, referred to as homogeneous catalysis, or in a different phase, referred to as heterogeneous catalysis. In technical chemistry, their value lies not only in increasing reaction rates, but also in directing complex reaction networks toward desired products and maintaining performance over time. Activity, selectivity, and stability are therefore central descriptors of catalyst performance and already show why catalytic systems have to be studied under well-defined reaction and material conditions \cite{fechete2012past,job2021physikalische}.
-\input{figures/catalysis_activation_energy}
-
-\subsection{Catalytic Experiments}
+\section{Catalytic Experiments}
 \label{sec:catalytic-experiments}
 
-Catalytic experiments investigate how catalysts are prepared, activated, characterized, and used to transform reactants under defined reaction conditions. The resulting data landscape is therefore not limited to final performance indicators, but spans the full experimental chain from catalyst synthesis to functional analysis \cite{marshall2023digital}.
+Catalysis refers to the acceleration of a chemical reaction by a substance that participates in the reaction but is not consumed by it.
+A catalyst can lower the effective activation barrier and allow a reaction to proceed under milder or more technically useful conditions, as schematically shown in Figure~\ref{fig:catalysis-activation-energy}.
+Consequently, catalysts are widely studied across application fields such as energy cost reduction, environmental recovery, chemical manufacturing, and materials science \cite{osman2024coordination}.
+Catalytic experiments investigate how catalysts are prepared, activated, characterized, and used to transform reactants under defined reaction conditions.
+The resulting data landscape is therefore not limited to final performance indicators, but spans the full experimental chain from catalyst synthesis to functional analysis \cite{marshall2023digital}.
+\input{figures/catalysis_activation_energy}
+
+\subsection{Catalytic Data and Metadata}
+\label{sec:catalytic-data-metadata}
+
 During the life cycle of a catalyst, a precursor may be transformed into an activated material and subsequently into a spent or deactivated sample. Each stage in this process can yield new characterisation and performance data, which must be linked to the corresponding material state \cite{mendes2025data}.
 For this reason, a catalytic result such as a conversion, selectivity, yield, or reaction rate is only interpretable together with relevant metadata \cite{wulf2021unified}.
 Table~\ref{tab:catalytic-data-landscape} summarizes this landscape by grouping representative data and metadata into material, preparation, characterization, reactor, operating, and performance-related categories. These categories indicate which contextual links have to be preserved when heterogeneous datasets and kinetic measurements, are interpreted together \cite{mendes2025data,schumann2025nomad,stroemert2026chemdcat}.
@@ -20,12 +27,39 @@ Table~\ref{tab:catalytic-data-landscape} summarizes this landscape by grouping r
 
 Experimental metadata describe the context in which primary data were generated, processed, and interpreted. In catalytic experiments, this includes sample provenance, instrument settings, calibration procedures, and processing choices. Such information is not just a secondary annotation layer, but rather an integral part of the scientific evidence, because the same numerical activity value can have a different meaning when the catalyst pretreatment or analytical calibration changes \cite{wulf2021unified}. Metadata therefore turn isolated measurements into documented experimental records and provide the basis for reproducing experiments or comparing evaluation studies across different catalysts, reactors, and laboratories \cite{wulf2021unified,salim2026methane}. In automated catalyst testing, they also keep raw data, evaluated data, standard operating procedures, and database entries connected throughout the experimental workflow \cite{moshantaf2024advancing}.
 
-TODO: Give a real example of metadata entries from an experiment and how they affect the interpretation of a result.
+\subsection{NMR Spectroscopy Data}
+\label{subsec:nmr-spectroscopy-data}
+
+Nuclear magnetic resonance (NMR) spectroscopy is a common analytical method for characterising chemical samples and following transformations in reaction systems. In a catalytic experiment, NMR data may describe the identity of products, the presence of intermediates or impurities, changes in reactant concentration, or the state of catalyst-related molecular species \cite{marshall2023digital,mendes2025data}. Within the catalytic data landscape, NMR therefore belongs primarily to the characterization category, while quantitative reaction monitoring also links it to performance data \cite{mendes2025data}.
+
+An NMR experiment typically produces raw time-domain data, commonly represented as a free induction decay, which are processed into a frequency-domain spectrum. The resulting spectrum distributes signal intensity over a chemical-shift axis, usually reported in parts per million \cite{nmrmlSpecification}. Rather than forming a single scalar measurement, the data contain peaks, peak groups, integrals, multiplicities, coupling patterns, and background components such as noise, baseline drift, solvent signals, or processing artefacts. Two-dimensional NMR experiments additionally record correlations across two frequency axes \cite{nmrmlSpecification}. In practice, NMR datasets are often distributed as instrument-specific directory structures containing the raw signal and acquisition parameters side by side. They may also include processed spectra, exchange formats such as JCAMP-DX, peak or integration tables, and graphical previews \cite{nmrmlSpecification,steinbeck2023nfdi4chem}. This makes NMR an instructive example for metadata extraction, because the relevant signals include the evaluated entities as well as the contextual information of the data generating experiment \cite{nmrmlSpecification,steinbeck2023nfdi4chem}.
+
+For semantic metadata extraction, NMR therefore illustrates why a dataset record has to preserve the link between measured arrays, derived peak tables, processing steps, instrument settings, sample state, and the catalytic experiment in which the measurement was taken \cite{stroemert2026chemdcat,chemdcatapDocumentation}.
+Profiles such as ChemDCAT-AP and vocabularies such as nmrCV provide a route for representing these links in a machine-actionable way instead of leaving them implicit in file names, figure captions, or supplementary text \cite{stroemert2026chemdcat,chemdcatapDocumentation,nmrmlSpecification}.
+
+\section{Metadata Standards}
+\label{sec:metadata-standards}
+
+As the previous section demonstrated, catalytic measurements only become scientifically useful when they are connected to their experimental context.
+Metadata standards address this need by defining how such context should be documented in a consistent, reusable way.
+Conceptually, a metadata standard specifies the expected information, how it should be structured and how values should be expressed, enabling records to be interpreted beyond the laboratory in which they were created \cite{wulf2021unified,mendes2025data}.
+
+Therefore, a metadata standard does more than list descriptive labels.
+It establishes a shared framework for reporting on the entities, activities, quantities, units, methods, instruments and provenance relations required to comprehend a dataset.
+Some requirements describe the minimum information necessary for an experiment to be interpreted, compared, or reproduced.
+Other requirements concern consistency, stipulating that values use stable units, controlled terms, identifiers and data types instead of uncontrolled local wording.
+In this sense, a standard establishes an agreement between data producers and users regarding what constitutes sufficient context for reuse \cite{wulf2021unified,steinbeck2020nfdi4chem}.
+
+This agreement is particularly important for automated metadata extraction.
+While an extraction system can identify candidate values in files, tables, captions, or instrument exports, it still requires a target structure in which these values can be placed.
+The standard provides this target structure, distinguishing, for instance, whether an extracted phrase refers to a sample, an instrument, a measured quantity, a processing step or a data-generating activity.
+The standard also enables validation, allowing generated metadata records to be checked for missing required fields, incompatible units, unsupported value types or relations that do not fit the expected model \cite{w3c2017shacl,stroemert2026chemdcat}.
 
 \section{Semantic Web Technologies}
 \label{sec:semantic-web-technologies}
-The previous section showed that catalytic data only become scientifically interpretable when measurements are connected to their experimental context. Semantic web technologies provide the technical foundation for representing this context in a machine-actionable form. Their central idea is to move from a web of human-readable documents to a web of data whose meaning is explicitly described for computational processing \cite{jannidis2017digitalhumanities}.
-In contrast to the free-text documentation of metadata attached to files, semantic approaches explicitly describe entities, relations, and constraints. This transforms data from mere stored information into interconnected statements that can be searched, queried, validated, combined, and reused across repositories and workflows.
+Semantic web technologies provide the rules and language for representing data in a machine-actionable form.
+Their central idea is to move from a web of human-readable documents to a web of data whose meaning is explicitly described for computational processing \cite{jannidis2017digitalhumanities}.
+In contrast to the free-text documentation of metadata attached to files, semantic approaches explicitly describe entities, relations, and constraints. This transforms data into interconnected statements that can be searched, queried, validated, combined, and reused across repositories and workflows.
 
 \subsection{Semantic Modelling of Domain Knowledge}
 \label{sec:semantic-modelling-domain-knowledge}

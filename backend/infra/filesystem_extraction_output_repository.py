@@ -18,6 +18,7 @@ from app.domain.extraction import (
     ExtractionOverviewStatus,
     ExtractionRunResult,
     ExtractionRunState,
+    ExtractionVocabQueryConfig,
     ExtractionVocabQueryRecord,
     FieldCompletionLedgerRecord,
     FilteredEvidenceLedger,
@@ -60,6 +61,9 @@ CURATION_LEDGER_FILE = "curation_ledger.json"
 VALIDATION_FILE = "validation.json"
 VOCAB_QUERIES_FILE = "vocab_queries.json"
 NORMALIZATION_FILE = "normalization.json"
+GROUNDING_POLICY_FILE = "grounding_policy.json"
+GROUNDED_VALIDATION_FILE = "grounded_validation.json"
+GROUNDED_FINAL_DRAFT_FILE = "grounded_final_draft.json"
 ARTIFACT_INDEX_FILE = "artifact_index.json"
 
 
@@ -135,7 +139,12 @@ class FileSystemExtractionOutputRepository:
             self.save_generated_initial_draft(workflow_id=workflow_id, document=result.generated_initial_draft, chat_model=chat_model, chunking_strategy=chunking_strategy)
         if result.generated_patched_draft is not None:
             self.save_generated_patched_draft(workflow_id=workflow_id, document=result.generated_patched_draft, chat_model=chat_model, chunking_strategy=chunking_strategy)
-        self.save_generated_final_draft(workflow_id=workflow_id, document=result.generated_final_draft, chat_model=chat_model, chunking_strategy=chunking_strategy)
+        self.save_generated_final_draft(
+            workflow_id=workflow_id,
+            document=result.generated_reconstructed_draft or result.generated_final_draft,
+            chat_model=chat_model,
+            chunking_strategy=chunking_strategy,
+        )
         if result.requirement_report is not None:
             self.save_requirement_report(workflow_id=workflow_id, report=result.requirement_report, chat_model=chat_model, chunking_strategy=chunking_strategy)
         if result.curated_document is not None:
@@ -518,12 +527,21 @@ class FileSystemExtractionOutputRepository:
         workflow_id: str,
         vocab_queries: list[ExtractionVocabQueryRecord],
         normalization: ExtractionNormalization,
+        grounding_policy: ExtractionVocabQueryConfig | None = None,
+        grounded_validation: DraftValidationResult | None = None,
+        grounded_document: dict[str, Any] | None = None,
         chat_model: str | None = None,
         chunking_strategy: str = "semantic",
     ) -> None:
         output_dir = self._branch_dir(workflow_id, "grounding", chunking_strategy, chat_model)
         self._write_json_artifact(output_dir / VOCAB_QUERIES_FILE, [item.model_dump(mode="json") for item in vocab_queries])
         self._write_json_artifact(output_dir / NORMALIZATION_FILE, normalization.model_dump(mode="json"))
+        if grounding_policy is not None:
+            self._write_json_artifact(output_dir / GROUNDING_POLICY_FILE, grounding_policy.model_dump(mode="json"))
+        if grounded_validation is not None:
+            self._write_json_artifact(output_dir / GROUNDED_VALIDATION_FILE, grounded_validation.model_dump(mode="json"))
+        if grounded_document is not None:
+            self._write_json_artifact(output_dir / GROUNDED_FINAL_DRAFT_FILE, grounded_document)
 
     def save_extraction_run_state(
         self,

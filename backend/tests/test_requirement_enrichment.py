@@ -10,6 +10,7 @@ from app.core.config import Settings
 from app.domain.extraction import (
     DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS,
     DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS,
+    CurationLedgerRecord,
     DcatRequirement,
     EvidenceCandidate,
     MeasurementSemanticRouteDecision,
@@ -18,9 +19,11 @@ from app.domain.extraction import (
     RequirementPatchAttempt,
     RequirementEvidenceItem,
     RequirementReportItem,
+    REQUIREMENT_EVALUATOR_SYSTEM_PROMPT,
     SEMANTIC_DIAGNOSIS_SYSTEM_PROMPT,
     SEMANTIC_SYNTHESIS_SYSTEM_PROMPT,
     SemanticReconstructionDefect,
+    SemanticReconstructionDiagnosis,
     SemanticReconstructionRecord,
     SchemaConstrainedWrite,
     apply_schema_constrained_writes,
@@ -48,6 +51,11 @@ from app.services.workflow_service import WorkflowService
 
 
 class RequirementScoringTests(unittest.TestCase):
+    def test_requirement_prompt_distinguishes_dataset_subject_from_activity_target(self):
+        self.assertIn("is_about_entity/is_about_activity answer what the Dataset is about", REQUIREMENT_EVALUATOR_SYSTEM_PROMPT)
+        self.assertIn("evaluated_entity/evaluated_activity answer what that specific", REQUIREMENT_EVALUATOR_SYSTEM_PROMPT)
+        self.assertIn("Never infer is_about_* from evaluated_*", REQUIREMENT_EVALUATOR_SYSTEM_PROMPT)
+
     def test_semantic_score_excludes_not_applicable(self):
         items = [
             RequirementReportItem(
@@ -2449,7 +2457,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(errors, [])
         self.assertEqual(applied, 1)
         self.assertEqual(item.defect_type, "duplicate_attribute")
-        self.assertEqual(item.compiled_actions[0]["mode"], "merge")
+        self.assertEqual(item.compiled_actions[0]["mode"], "remove")
 
     async def test_semantic_duplicate_coherence_keeps_materially_different_values(self):
         service = WorkflowService(
@@ -3156,6 +3164,507 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(cleaned["is_about_entity"]), 1)
         self.assertEqual(cleaned["is_about_entity"][0]["title"], "CDCl3 solvent")
+
+
+    def test_activity_evaluation_target_expands_paths_for_every_activity(self):
+        configured = next(
+            requirement
+            for requirement in DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS
+            if requirement.requirement_id == "activity_evaluation_target"
+        )
+
+        requirement = WorkflowService._runtime_semantic_requirement(
+            requirement=configured,
+            document={"was_generated_by": [{"id": "a:0"}, {"id": "a:1"}]},
+        )
+
+        self.assertEqual(
+            requirement.target_paths,
+            [
+                "/was_generated_by/0/evaluated_entity",
+                "/was_generated_by/0/evaluated_activity",
+                "/was_generated_by/1/evaluated_entity",
+                "/was_generated_by/1/evaluated_activity",
+            ],
+        )
+
+    def test_activity_evaluation_target_guard_checks_every_activity(self):
+        configured = next(
+            requirement
+            for requirement in DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS
+            if requirement.requirement_id == "activity_evaluation_target"
+        )
+        document = {
+            "was_generated_by": [
+                {"id": "a:0", "evaluated_entity": [{"id": "sample:1"}]},
+                {"id": "a:1"},
+            ]
+        }
+        requirement = WorkflowService._runtime_semantic_requirement(
+            requirement=configured,
+            document=document,
+        )
+        item = RequirementReportItem(
+            requirement_id=requirement.requirement_id,
+            label=requirement.label,
+            weight=requirement.weight,
+            status="fulfilled",
+            applicable=True,
+            quality=1.0,
+            weighted_score=requirement.weight,
+            target_paths=requirement.target_paths,
+        )
+
+        WorkflowService._guard_semantic_requirement_assessment(
+            requirement=requirement,
+            document=document,
+            item=item,
+        )
+
+        self.assertEqual(item.status, "partial")
+        self.assertIn("without an evaluation target", item.rationale)
+
+    def test_activity_evaluation_target_guard_rejects_self_reference(self):
+        configured = next(
+            requirement
+            for requirement in DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS
+            if requirement.requirement_id == "activity_evaluation_target"
+        )
+        document = {
+            "was_generated_by": [
+                {"id": "activity:1", "evaluated_activity": [{"id": "activity:1"}]},
+            ]
+        }
+        requirement = WorkflowService._runtime_semantic_requirement(
+            requirement=configured,
+            document=document,
+        )
+        item = RequirementReportItem(
+            requirement_id=requirement.requirement_id,
+            label=requirement.label,
+            weight=requirement.weight,
+            status="fulfilled",
+            applicable=True,
+            quality=1.0,
+            weighted_score=requirement.weight,
+            target_paths=requirement.target_paths,
+        )
+
+        WorkflowService._guard_semantic_requirement_assessment(
+            requirement=requirement,
+            document=document,
+            item=item,
+        )
+
+        self.assertEqual(item.status, "missing")
+        self.assertIn("no evaluation target", item.rationale)
+
+    def test_subject_target_distinction_not_applicable_without_both_levels(self):
+        configured = next(
+            requirement
+            for requirement in DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS
+            if requirement.requirement_id == "dataset_subject_evaluation_distinction"
+        )
+        document = {
+            "is_about_entity": [{"id": "sample:1"}],
+            "was_generated_by": [{"id": "activity:1"}],
+        }
+        requirement = WorkflowService._runtime_semantic_requirement(
+            requirement=configured,
+            document=document,
+        )
+        item = RequirementReportItem(
+            requirement_id=requirement.requirement_id,
+            label=requirement.label,
+            weight=requirement.weight,
+            status="fulfilled",
+            applicable=True,
+            quality=1.0,
+            weighted_score=requirement.weight,
+            target_paths=requirement.target_paths,
+        )
+
+        WorkflowService._guard_semantic_requirement_assessment(
+            requirement=requirement,
+            document=document,
+            item=item,
+        )
+
+        self.assertEqual(item.status, "not_applicable")
+        self.assertFalse(item.applicable)
+
+    async def test_activity_evaluation_target_compiler_removes_self_reference(self):
+        service = WorkflowService(
+            profile_service=FakeProfileService(),
+            settings=Settings(),
+            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
+        )
+        requirement = next(
+            requirement
+            for requirement in DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS
+            if requirement.requirement_id == "activity_evaluation_target"
+        )
+        document = {
+            "was_generated_by": [
+                {"id": "activity:1", "evaluated_activity": [{"id": "activity:1"}]},
+            ]
+        }
+        item = RequirementReportItem(
+            requirement_id=requirement.requirement_id,
+            label=requirement.label,
+            weight=requirement.weight,
+            status="partial",
+            applicable=True,
+            quality=0.5,
+            weighted_score=0.625,
+            target_paths=[
+                "/was_generated_by/0/evaluated_entity",
+                "/was_generated_by/0/evaluated_activity",
+            ],
+        )
+
+        compiled = await service._compile_deterministic_semantic_actions(
+            data_package_id="pkg",
+            document=document,
+            item=item,
+            requirement=requirement,
+            validation_schema={},
+        )
+
+        self.assertEqual(len(compiled.writes), 1)
+        self.assertEqual(compiled.writes[0].mode, "remove")
+        self.assertEqual(
+            compiled.writes[0].target_path,
+            "/was_generated_by/0/evaluated_activity/0",
+        )
+
+    def test_unsupported_subject_edge_removal_preserves_supported_activity_target(self):
+        service = WorkflowService(
+            profile_service=FakeProfileService(),
+            settings=Settings(),
+            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
+        )
+        document = {
+            "is_about_entity": [{"id": "sample:1", "title": "Sample"}],
+            "was_generated_by": [
+                {
+                    "id": "activity:1",
+                    "evaluated_entity": [{"id": "sample:1", "title": "Sample"}],
+                }
+            ],
+        }
+
+        updated, paths, _, errors, applied, rejected = service._apply_semantic_reconstruction_writes(
+            data_package_id="pkg",
+            profile_identifier="profile",
+            document=document,
+            writes=[
+                SchemaConstrainedWrite(
+                    target_path="/is_about_entity/0",
+                    mode="remove",
+                    reason="Dataset-subject edge lacks independent support.",
+                )
+            ],
+            reason="Remove unsupported mirrored edge.",
+            validation_schema={},
+        )
+
+        self.assertEqual(updated["is_about_entity"], [])
+        self.assertEqual(updated["was_generated_by"][0]["evaluated_entity"][0]["id"], "sample:1")
+        self.assertEqual(paths, ["/is_about_entity/0"])
+        self.assertEqual(errors, [])
+        self.assertEqual(rejected, [])
+        self.assertEqual(applied, 1)
+
+    def test_semantic_write_rejects_evaluated_activity_self_reference(self):
+        document = {"was_generated_by": [{"id": "activity:1"}]}
+        rejected = WorkflowService._validate_semantic_reconstruction_action(
+            document=document,
+            write=SchemaConstrainedWrite(
+                target_path="/was_generated_by/0/evaluated_activity",
+                mode="append",
+                items=[{"id": "activity:1", "title": ["Self"]}],
+                reason="Invalid self target.",
+            ),
+        )
+
+        self.assertEqual(len(rejected), 1)
+        self.assertIn("must not self-reference", rejected[0])
+
+
+    def test_profile_rebuild_clears_stale_curated_and_semantic_artifacts(self):
+        state = ExtractionRunState(
+            generated_initial_draft={"id": "old-initial"},
+            generated_final_draft={"id": "old-final"},
+            generated_patched_draft={"id": "old-patched"},
+            generated_reconstructed_draft={"id": "old-reconstructed"},
+            curated_document={"id": "old-curated"},
+            requirement_report=build_requirement_report(
+                schema_valid=True,
+                coverage=compute_coverage_report({}, {}),
+                semantic_requirements=[],
+                source_trace=compute_source_trace_report(RoutedEvidenceContext(), []),
+                coverage_patches=[],
+            ),
+            curation_ledger=[CurationLedgerRecord(json_path="/title", field_name="title")],
+        )
+        progress = ExtractionRunProgress(
+            generated_initial_draft={"id": "old-initial"},
+            generated_final_draft={"id": "old-final"},
+            generated_patched_draft={"id": "old-patched"},
+            generated_reconstructed_draft={"id": "old-reconstructed"},
+            curated_document={"id": "old-curated"},
+            requirement_report=state.requirement_report,
+        )
+
+        WorkflowService._clear_profile_projection_state(state)
+        WorkflowService._clear_profile_projection_progress(progress)
+
+        for artifact in (
+            state.generated_initial_draft,
+            state.generated_final_draft,
+            state.generated_patched_draft,
+            state.generated_reconstructed_draft,
+            state.curated_document,
+            state.requirement_report,
+            progress.generated_initial_draft,
+            progress.generated_final_draft,
+            progress.generated_patched_draft,
+            progress.generated_reconstructed_draft,
+            progress.curated_document,
+            progress.requirement_report,
+        ):
+            self.assertIsNone(artifact)
+        self.assertEqual(state.curation_ledger, [])
+
+    def test_activity_target_guard_treats_either_relation_family_as_fulfilled(self):
+        configured = next(
+            requirement
+            for requirement in DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS
+            if requirement.requirement_id == "activity_evaluation_target"
+        )
+        document = {
+            "was_generated_by": [
+                {"id": "activity:1", "evaluated_entity": [{"id": "sample:1", "title": "Sample"}]},
+            ]
+        }
+        requirement = WorkflowService._runtime_semantic_requirement(
+            requirement=configured,
+            document=document,
+        )
+        item = RequirementReportItem(
+            requirement_id=requirement.requirement_id,
+            label=requirement.label,
+            weight=requirement.weight,
+            status="partial",
+            applicable=True,
+            quality=0.5,
+            weighted_score=requirement.weight * 0.5,
+            target_paths=requirement.target_paths,
+        )
+
+        WorkflowService._guard_semantic_requirement_assessment(
+            requirement=requirement,
+            document=document,
+            item=item,
+        )
+
+        self.assertEqual(item.status, "fulfilled")
+        self.assertEqual(item.quality, 1.0)
+
+    async def test_activity_target_reconstruction_refuses_synthesized_relation(self):
+        service = WorkflowService(
+            profile_service=FakeProfileService(),
+            settings=Settings(),
+            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
+        )
+        requirement = next(
+            requirement
+            for requirement in DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS
+            if requirement.requirement_id == "activity_evaluation_target"
+        ).model_copy(update={"target_paths": ["/was_generated_by/0/evaluated_activity"]})
+        item = RequirementReportItem(
+            requirement_id=requirement.requirement_id,
+            label=requirement.label,
+            weight=requirement.weight,
+            status="missing",
+            applicable=True,
+            quality=0.0,
+            weighted_score=0.0,
+            target_paths=requirement.target_paths,
+        )
+        diagnosis = SemanticReconstructionDiagnosis(
+            defects=[
+                SemanticReconstructionDefect(
+                    defect_type="bad_provenance",
+                    target_path="/was_generated_by/0/evaluated_activity",
+                    recommended_action="append",
+                    needs_synthesis=True,
+                    reason="No evidence directly supports adding an activity.",
+                )
+            ]
+        )
+
+        compiled = await service._compile_semantic_diagnosis_actions(
+            data_package_id="pkg",
+            document={"was_generated_by": [{"id": "activity:1"}]},
+            item=item,
+            requirement=requirement,
+            diagnosis=diagnosis,
+            validation_schema={},
+        )
+
+        self.assertEqual(compiled.writes, [])
+        rejected_reasons = compiled.rejected_reasons or []
+        self.assertIn("refusing synthesized relation", rejected_reasons[0])
+
+    async def test_aboutness_reconstruction_refuses_synthesized_relation(self):
+        service = WorkflowService(
+            profile_service=FakeProfileService(),
+            settings=Settings(),
+            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
+        )
+        requirement = next(
+            requirement
+            for requirement in DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS
+            if requirement.requirement_id == "aboutness_concreteness"
+        )
+        item = RequirementReportItem(
+            requirement_id=requirement.requirement_id,
+            label=requirement.label,
+            weight=requirement.weight,
+            status="missing",
+            applicable=True,
+            quality=0.0,
+            weighted_score=0.0,
+            target_paths=requirement.target_paths,
+        )
+        diagnosis = SemanticReconstructionDiagnosis(
+            defects=[
+                SemanticReconstructionDefect(
+                    defect_type="bad_aboutness",
+                    target_path="/is_about_entity",
+                    recommended_action="append",
+                    needs_synthesis=True,
+                    reason="No concrete subject evidence is available.",
+                )
+            ]
+        )
+
+        compiled = await service._compile_semantic_diagnosis_actions(
+            data_package_id="pkg",
+            document={"id": "pkg"},
+            item=item,
+            requirement=requirement,
+            diagnosis=diagnosis,
+            validation_schema={},
+        )
+
+        self.assertEqual(compiled.writes, [])
+        self.assertIn("refusing synthesized relation", (compiled.rejected_reasons or [""])[0])
+
+    def test_relation_projection_completes_subject_and_target_from_resource_type_evidence(self):
+        document = {"id": "pkg", "was_generated_by": [{"id": "activity:1"}]}
+        context = RoutedEvidenceContext(
+            portable_evidence=[
+                EvidenceCandidate(
+                    candidate_id="identity",
+                    category="resource_signal",
+                    role="identity",
+                    claim="The resource title is 'R-1'.",
+                    evidence_text="TITLE=R-1",
+                    file_path="resource.txt",
+                ),
+                EvidenceCandidate(
+                    candidate_id="type",
+                    category="resource_signal",
+                    role="descriptor",
+                    claim="The data type is 'measurement table'.",
+                    evidence_text="DATA TYPE=measurement table",
+                    file_path="resource.txt",
+                ),
+            ]
+        )
+
+        updated = WorkflowService._complete_relation_targets_from_resource_evidence(
+            document=document,
+            evidence_context=context,
+            data_package_id="pkg",
+        )
+
+        self.assertEqual(updated["is_about_entity"][0]["title"], "Measurement table")
+        self.assertEqual(updated["was_generated_by"][0]["evaluated_entity"][0]["id"], updated["is_about_entity"][0]["id"])
+
+    def test_distinction_no_defect_trace_resolves_revalidation_contradiction(self):
+        item = RequirementReportItem(
+            requirement_id="dataset_subject_evaluation_distinction",
+            label="Distinction",
+            weight=1.0,
+            status="partial",
+            applicable=True,
+            quality=0.5,
+            weighted_score=0.5,
+        )
+        record = SemanticReconstructionRecord(
+            requirement_id=item.requirement_id,
+            status="skipped",
+            reason="No defect.",
+            diagnosed_defects=[
+                {
+                    "defect_type": "no_defect",
+                    "recommended_action": "no_action",
+                    "reason": "Both edges have independent support.",
+                }
+            ],
+        )
+
+        WorkflowService._carry_semantic_reconstruction_trace(
+            semantic_items=[item],
+            records=[record],
+        )
+
+        self.assertEqual(item.status, "fulfilled")
+        self.assertEqual(item.rationale, "Both edges have independent support.")
+
+    def test_absence_placeholder_is_not_a_method_plan(self):
+        self.assertTrue(
+            WorkflowService._semantic_absence_placeholder(
+                {"title": "No method evidence", "description": "No explicit method or procedure evidence available"}
+            )
+        )
+
+    def test_delivered_document_revalidation_prevents_stale_fulfilled_target_status(self):
+        item = RequirementReportItem(
+            requirement_id="activity_evaluation_target",
+            label="Activity evaluation target",
+            weight=1.25,
+            status="fulfilled",
+            applicable=True,
+            quality=1.0,
+            weighted_score=1.25,
+            target_paths=["/was_generated_by/0/evaluated_entity", "/was_generated_by/0/evaluated_activity"],
+        )
+        state = ExtractionRunState(
+            requirement_report=build_requirement_report(
+                schema_valid=True,
+                coverage=compute_coverage_report({}, {}),
+                semantic_requirements=[item],
+                source_trace=compute_source_trace_report(RoutedEvidenceContext(), []),
+                coverage_patches=[],
+            )
+        )
+
+        WorkflowService._revalidate_requirement_report_against_delivered_document(
+            state=state,
+            document={"was_generated_by": [{"id": "activity:1"}]},
+            validation_schema={},
+            schema_valid=True,
+        )
+
+        self.assertIsNotNone(state.requirement_report)
+        delivered_item = state.requirement_report.semantic_requirements[0]  # type: ignore[union-attr]
+        self.assertEqual(delivered_item.status, "missing")
+        self.assertEqual(delivered_item.quality, 0.0)
 
 
 class DescriptionMiningIntegrationTests(unittest.IsolatedAsyncioTestCase):

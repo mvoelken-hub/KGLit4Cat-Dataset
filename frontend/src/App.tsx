@@ -14,7 +14,7 @@ import {
   runExtraction,
   runInitialContext,
   runProfileProjection,
-  runVocabularyGrounding,
+  runGroundingStage,
   saveCuratedDocument,
   updateVocabQueryConfig,
 } from './api/extraction';
@@ -763,12 +763,12 @@ export function App() {
       setChunksByFile(chunks);
       if (status.has_chunks) {
         setChunkResult((prev) => prev ? { ...prev, status: 'completed', chunks } : prev);
-        setMessage(`Chunking completed — ${chunks.flat().length} chunks created.`);
+        setMessage(`Chunking completed Ã¢â‚¬â€ ${chunks.flat().length} chunks created.`);
       } else {
         setChunkResult((prev) => prev ? { ...prev, status: status.status, chunks } : prev);
         const chunkCount = chunks.flat().length;
         if (chunkCount > 0) {
-          setMessage(`Chunking in progress — ${chunkCount} chunks created so far...`);
+          setMessage(`Chunking in progress Ã¢â‚¬â€ ${chunkCount} chunks created so far...`);
         }
       }
     } catch {
@@ -1174,7 +1174,7 @@ export function App() {
     if (!selectedPackageId || !selectedProfile) return;
     setBusy('patch');
     try {
-      const result = await runVocabularyGrounding({ data_package_id: selectedPackageId, profile_identifier: selectedProfile, chunking_strategy: chunkViewStrategy, chat_model: workflowChatModel });
+      const result = await runGroundingStage({ data_package_id: selectedPackageId, chunking_strategy: chunkViewStrategy, chat_model: workflowChatModel });
       setCuratedDocument(result.curated_document);
       setPatchStatus(result.status);
       const { progress } = await getWorkflowProgress(selectedPackageId, chunkViewStrategy, workflowChatModel);
@@ -1637,9 +1637,6 @@ export function App() {
             number="05"
             title="Grounding and validation"
             description="Review projection validity, run vocabulary grounding, and manage the vocabulary resources used for enrichment."
-            actions={hasProfileArtifacts && (
-              <button className="ghost draft-refresh-button" onClick={() => void refreshExtractionProgress()} disabled={!selectedPackageId || busy === 'load'}>Refresh</button>
-            )}
           >
               {hasProfileArtifacts ? (
                 <section className="patch-progress grounding-validation-summary">
@@ -1669,11 +1666,20 @@ export function App() {
                   onRerunVocabQuery={(queryId) => void onRerunVocabularyQueries(queryId)}
                   onSelectCandidate={(query, uri, title) => void onSelectVocabularyCandidate(query, uri, title)}
                   onMarkUnresolved={(query) => void onMarkVocabularyUnresolved(query)}
+                  onRefresh={() => void refreshExtractionProgress()}
                 />
               )}
-              <div className="workflow-vocabulary-panel">
-                <VocabularyPanel onError={setMessage} />
-              </div>
+              <details className="grounding-vocabulary-manager">
+                <summary>
+                  <div>
+                    <span>Vocabulary resources</span>
+                    <strong>Manage vocabularies</strong>
+                  </div>
+                </summary>
+                <div className="workflow-vocabulary-panel">
+                  <VocabularyPanel onError={setMessage} />
+                </div>
+              </details>
           </StepPanel>
         </section>
       </section>

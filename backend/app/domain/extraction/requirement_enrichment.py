@@ -498,21 +498,80 @@ DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS: tuple[DcatRequirement, ...] = (
     ),
     DcatRequirement(
         requirement_id="aboutness_concreteness",
-        label="Aboutness concreteness",
-        description="Aboutness identifies concrete evaluated entity or activity, not only file-like labels.",
+        label="Dataset subject concreteness",
+        description="Dataset aboutness identifies a concrete subject entity or activity, not an activity evaluation target or file-like label.",
         weight=1.0,
         target_paths=["/is_about_entity", "/is_about_activity"],
-        evidence_hints=["sample", "entity", "spectrum", "evaluated", "activity"],
+        evidence_hints=["dataset subject", "about", "sample", "entity", "spectrum", "activity", "process"],
         allowed_categories=["activity_signal", "resource_signal", "surrounding_signal"],
+    ),
+    DcatRequirement(
+        requirement_id="activity_evaluation_target",
+        label="Activity evaluation target",
+        description="Every data-generating activity identifies at least one concrete entity or other activity it directly measured, observed, analysed, or studied.",
+        weight=1.25,
+        target_paths=[
+            "/was_generated_by/0/evaluated_entity",
+            "/was_generated_by/0/evaluated_activity",
+        ],
+        evidence_hints=[
+            "evaluated entity",
+            "evaluated activity",
+            "measured sample",
+            "observed process",
+            "analysed input",
+            "studied target",
+        ],
+        allowed_categories=[
+            "activity_signal",
+            "resource_signal",
+            "measurement_signal",
+            "measurement_condition",
+            "method_signal",
+        ],
+    ),
+    DcatRequirement(
+        requirement_id="dataset_subject_evaluation_distinction",
+        label="Dataset subject and activity target distinction",
+        description="Dataset subject relations and activity evaluation-target relations express independently supported claims and are never mirrored automatically.",
+        weight=1.0,
+        target_paths=[
+            "/is_about_entity",
+            "/is_about_activity",
+            "/was_generated_by/0/evaluated_entity",
+            "/was_generated_by/0/evaluated_activity",
+        ],
+        evidence_hints=[
+            "dataset subject",
+            "about entity",
+            "about activity",
+            "evaluated entity",
+            "evaluated activity",
+            "measured",
+            "observed",
+            "analysed",
+            "studied",
+        ],
+        allowed_categories=[
+            "activity_signal",
+            "resource_signal",
+            "measurement_signal",
+            "measurement_condition",
+            "method_signal",
+            "surrounding_signal",
+        ],
+        allow_not_applicable=True,
     ),
     DcatRequirement(
         requirement_id="attribute_duplicate_coherence",
         label="Attribute duplicate coherence",
-        description="Duplicate quantitative or qualitative attributes under the same parent are merged or removed.",
+        description="Duplicate quantitative or qualitative attributes under the same parent or across parents are merged or removed.",
         weight=1.0,
         target_paths=[
             "/was_generated_by/0/has_quantitative_attribute",
             "/was_generated_by/0/carried_out_by/0/has_quantitative_attribute",
+            "/was_generated_by/0/evaluated_entity/0/has_quantitative_attribute",
+            "/was_generated_by/0/evaluated_activity/0/has_quantitative_attribute",
             "/is_about_activity/0/has_quantitative_attribute",
             "/is_about_entity/0/has_quantitative_attribute",
         ],
@@ -539,6 +598,8 @@ DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS: tuple[DcatRequirement, ...] = (
         target_paths=[
             "/was_generated_by/0/has_quantitative_attribute",
             "/was_generated_by/0/carried_out_by/0/has_quantitative_attribute",
+            "/was_generated_by/0/evaluated_entity/0/has_quantitative_attribute",
+            "/was_generated_by/0/evaluated_activity/0/has_quantitative_attribute",
             "/is_about_activity/0/has_quantitative_attribute",
             "/is_about_entity/0/has_quantitative_attribute",
         ],
@@ -553,6 +614,8 @@ DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS: tuple[DcatRequirement, ...] = (
         target_paths=[
             "/was_generated_by/0/has_quantitative_attribute",
             "/was_generated_by/0/carried_out_by/0/has_quantitative_attribute",
+            "/was_generated_by/0/evaluated_entity/0/has_quantitative_attribute",
+            "/was_generated_by/0/evaluated_activity/0/has_quantitative_attribute",
             "/is_about_activity/0/has_quantitative_attribute",
             "/is_about_entity/0/has_quantitative_attribute",
         ],
@@ -584,7 +647,11 @@ Never mark a requirement fulfilled when all supplied target paths are empty or a
 Use statuses: fulfilled, partial, missing, not_applicable.
 quality must be 1 for fulfilled, 0.5 for partial, 0 for missing/not_applicable.
 Prefer not_applicable only when the supplied evidence categories make the semantic requirement irrelevant.
-For aboutness, one concrete non-file-like is_about_entity OR one concrete non-file-like is_about_activity is fulfilled; file names are not evaluated entities.
+For Dataset subject matter, is_about_entity/is_about_activity answer what the Dataset is about. They do not state what a DataGeneratingActivity evaluated.
+For activity targets, evaluated_entity/evaluated_activity answer what that specific DataGeneratingActivity directly measured, observed, analysed, or studied. Every data-generating activity needs at least one concrete target. A merely generated output is not an evaluated target; an input file is valid only when evidence says it was directly analysed.
+Never infer is_about_* from evaluated_* or evaluated_* from is_about_*. One evidence span may support both only when it independently entails both claims. Shared unambiguous referents may reuse one id because the relation properties carry the distinct meanings.
+Forbid a DataGeneratingActivity from referencing its own id through evaluated_activity.
+For aboutness, one concrete non-file-like is_about_entity OR one concrete non-file-like is_about_activity is fulfilled; file names are not Dataset subjects.
 For method plans, explicit method/procedure/protocol/plan evidence is required for fulfilled; prefer method_signal, but accept another category when the claim/evidence explicitly says method, procedure, protocol, plan, sampling, or acquisition.
 For instrument settings, selected concrete role=parameter evidence, especially instrument_signal or measurement_condition evidence, must be represented by suitable attributes; otherwise mark partial.
 For attribute parent semantics, device/software configuration belongs to agent parents; acquisition/processing settings and thresholds belong to activities; axis bounds, point counts, transmittance/intensity extents, resolution, and data scaling belong to the evaluated data entity unless evidence explicitly says otherwise.
@@ -612,6 +679,8 @@ Do not satisfy missing role=parameter evidence by generalizing one existing quan
 For attribute parents, device/software configuration belongs to agent parents; acquisition/processing settings and thresholds belong to activities; axis bounds, point counts, transmittance/intensity extents, resolution, and data scaling belong to the evaluated data entity unless evidence explicitly says otherwise.
 Represent numeric ranges as separate schema-valid minimum and maximum quantitative attributes with numeric values and source units when present; never put a range string in a quantitative value.
 For aboutness, write at most one lean is_about_entity or is_about_activity object with only id, title, and description.
+For activity evaluation targets, write a lean evaluated_entity or evaluated_activity only when evidence directly identifies what that activity measured, observed, analysed, or studied. Never use a generated output merely because it was generated.
+Never mirror Dataset is_about_* and activity evaluated_* relations. If both relations are justified for one unambiguous referent, preserve or reuse its id but justify each edge independently.
 Do not use new evidence search.
 Return an empty writes array when no safe semantic reconstruction is available.
 """
@@ -626,6 +695,9 @@ Use only the supplied draft excerpt and evidence. Do not invent facts.
 Use no_action when the defect is real but the supplied context cannot justify a safe repair.
 When a missing target is directly supported by selected evidence, recommend append or replace and set needs_synthesis true.
 Any append or replace that needs a new value must set needs_synthesis true.
+Treat Dataset is_about_* as subject-matter edges and DataGeneratingActivity evaluated_* as activity-target edges. Never diagnose their shared id alone as duplication: shared identity is valid when both edges have independent support.
+For unsupported mirroring, remove only the exact unsupported relation entry. Never remove the supported counterpart object.
+For activity evaluation targets, diagnose every generating activity independently and forbid evaluated_activity self-reference.
 """
 
 
@@ -726,6 +798,10 @@ def build_semantic_reconstruction_prompt(
             "Device/software cues belong to agent parents; role=parameter evidence with instrument_signal, measurement_condition, resource_signal, or activity_signal belongs to data-generating activity by default unless explicit evidence says it belongs to an agent or evaluated subject/activity.",
             "Represent numeric ranges as separate schema-valid minimum and maximum quantitative attributes with numeric values and source units when present; never put a range string in a quantitative value.",
             "For aboutness, write at most one lean is_about_entity or is_about_activity object with only id, title, and description.",
+            "Dataset is_about_entity/is_about_activity state Dataset subject matter; DataGeneratingActivity evaluated_entity/evaluated_activity state what that activity directly measured, observed, analysed, or studied.",
+            "Never mirror is_about_* and evaluated_* automatically. One evidence span may support both only when it independently entails both claims; a shared unambiguous referent may reuse one id.",
+            "A merely generated output is not an evaluated target. A file may be evaluated_entity only when evidence states that the activity directly analysed it.",
+            "Remove only the exact unsupported relation entry when repairing unsupported mirroring, and never create evaluated_activity self-reference.",
         ],
         "write_examples": [
             {
@@ -1096,6 +1172,8 @@ def select_requirement_evidence_packet(
             "technical_agent_kind",
             "method_plan_presence",
             "aboutness_concreteness",
+            "activity_evaluation_target",
+            "dataset_subject_evaluation_distinction",
             "provenance_context_placement",
         }
         selected_keys = {
@@ -1287,6 +1365,8 @@ def _requirement_evidence_limits(
         "technical_agent_kind": (3, 2),
         "method_plan_presence": (3, 2),
         "aboutness_concreteness": (2, 0),
+        "activity_evaluation_target": (4, 2),
+        "dataset_subject_evaluation_distinction": (6, 2),
         "provenance_context_placement": (3, 2),
     }
     selected_limit, context_limit = limits.get(requirement_id, (max_selected, max_context))

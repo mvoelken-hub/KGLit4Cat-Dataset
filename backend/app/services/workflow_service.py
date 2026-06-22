@@ -1676,7 +1676,12 @@ class WorkflowService(
 
         progress.stage = "vocabulary_normalization"
         progress.interim_evidence_context = evidence_context
-        progress.generated_final_draft = profile_document
+        grounding_document = (
+            state.curated_document
+            or state.generated_reconstructed_draft
+            or profile_document
+        )
+        progress.generated_final_draft = state.generated_final_draft
         progress.curated_document = state.curated_document
         progress.draft_quality_state = state.draft_quality_state
         progress.validation = state.validation
@@ -1705,12 +1710,18 @@ class WorkflowService(
             self._save_run_state(data_package_id, state)
             self._update_progress(data_package_id, progress)
 
+        sources = self._profile_vocab_sources(
+            grounding_document,
+            enrichable_fields=getattr(profile_manifest, "enrichable_fields", []),
+            validation_schema=validation_schema,
+        )
         candidate_tasks = [
             asyncio.create_task(
                 self._discover_profile_field_candidates(
                     json_path=json_path,
                     field_name=field_name,
                     source_value=source_value,
+                    document=grounding_document,
                     state=state,
                     data_package_id=data_package_id,
                     query_semaphore=vocab_query_semaphore,
@@ -1718,10 +1729,7 @@ class WorkflowService(
                     warnings=warnings,
                 )
             )
-            for json_path, field_name, source_value in self._profile_vocab_sources(
-                profile_document,
-                enrichable_fields=getattr(profile_manifest, "enrichable_fields", []),
-            )
+            for json_path, field_name, source_value in sources
         ]
         try:
             normalization = await self._normalize_profile_field_candidate_tasks(
@@ -1750,7 +1758,7 @@ class WorkflowService(
             profile_identifier=profile_identifier,
             evidence_context=evidence_context,
             normalization=normalization,
-            document=profile_document,
+            document=grounding_document,
             profile_manifest=profile_manifest,
             validation_schema=validation_schema,
             state=state,

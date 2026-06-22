@@ -47,8 +47,20 @@ class ExtractionChunkRef(BaseModel):
     end_idx: int = Field(..., ge=0)
 
 
+class GroundingRolePolicy(BaseModel):
+    vocabulary_identifiers: list[str] = Field(default_factory=list)
+    rdf_type: str = "skos__Concept"
+    enabled: bool = True
+
+
 class ExtractionVocabQueryConfig(BaseModel):
     qualitative_vocab_identifiers: list[str] = Field(default_factory=list)
+    type_policy: GroundingRolePolicy = Field(
+        default_factory=lambda: GroundingRolePolicy(rdf_type="skos__Concept")
+    )
+    rdf_type_policy: GroundingRolePolicy = Field(
+        default_factory=lambda: GroundingRolePolicy(rdf_type="", enabled=False)
+    )
     vector_top_k: int = Field(default=12, ge=1)
     fulltext_top_k: int = Field(default=12, ge=1)
     seed_top_k: int = Field(default=6, ge=1)
@@ -60,7 +72,7 @@ class ExtractionVocabQueryConfig(BaseModel):
     rrf_k: int = Field(default=60, ge=1)
     quantitative_vector_top_k: int = Field(default=12, ge=1)
     quantitative_fulltext_top_k: int = Field(default=12, ge=1)
-    quantitative_seed_top_k: int = Field(default=6, ge=1)
+    quantitative_seed_top_k: int = Field(default=10, ge=1)
     quantitative_max_hops: int = Field(default=0, ge=0)
     quantitative_max_statements_per_seed: int = Field(default=12, ge=1)
     quantitative_traversal_direction: str = "undirected"

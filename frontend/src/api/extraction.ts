@@ -271,8 +271,16 @@ export type DocumentQualityState = {
   warnings: QualityIssue[];
 };
 
+export type GroundingRolePolicy = {
+  vocabulary_identifiers: string[];
+  rdf_type: string;
+  enabled: boolean;
+};
+
 export type ExtractionVocabQueryConfig = {
   qualitative_vocab_identifiers: string[];
+  type_policy: GroundingRolePolicy;
+  rdf_type_policy: GroundingRolePolicy;
   vector_top_k: number;
   fulltext_top_k: number;
   seed_top_k: number;
@@ -685,6 +693,22 @@ export async function runVocabularyGrounding(input: {
   return {
     curated_document: response.result?.curated_document ?? response.result?.generated_final_draft ?? response.progress?.curated_document ?? response.progress?.generated_final_draft ?? {},
     status: response.status,
+  };
+}
+
+export async function runGroundingStage(input: {
+  data_package_id: string;
+  chunking_strategy?: ChunkingStrategy;
+  chat_model?: string | null;
+}): Promise<VocabularyGroundingResponse> {
+  const response = await fetch(
+    apiBaseUrl + '/extraction/stages/grounding/' + encodeURIComponent(input.data_package_id) + '/run' + buildQuery({ chunking_strategy: input.chunking_strategy, chat_model: input.chat_model }),
+    { method: 'POST' },
+  );
+  const result = await readJson(await response) as ExtractionRunResult;
+  return {
+    curated_document: result.curated_document ?? result.generated_final_draft ?? {},
+    status: 'completed',
   };
 }
 

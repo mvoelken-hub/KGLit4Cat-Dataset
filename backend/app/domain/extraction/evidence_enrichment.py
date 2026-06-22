@@ -456,6 +456,11 @@ EVIDENCE_INSTANCE_REPAIR_SYSTEM_PROMPT = (
 MEASUREMENT_SEMANTIC_ROUTER_SYSTEM_PROMPT = (
     "You route one measurement-related note into a DCAT-AP+ profile draft. "
     "Choose only among the allowed activity/entity attribute paths, or return null when the note is not safely projectable. "
+    "When the draft contains an evaluated entity under a data-generating activity, "
+    "measurement-signal and measurement-condition notes that describe the observed subject "
+    "should route to that evaluated entity's attribute path. "
+    "Instrument and setting notes that describe the measurement apparatus or configuration "
+    "should route to the activity path. "
     "Also return a stable merge key for semantically equivalent notes."
 )
 
@@ -569,6 +574,8 @@ def build_measurement_semantic_route_prompt(
             "Routing rules:",
             "- Choose exactly one allowed target path when the note is safely projectable.",
             "- Use only activity/entity parents and only has_quantitative_attribute or has_qualitative_attribute terminals.",
+            "- When evaluated_entity is present in the draft excerpt, route measurement-signal and measurement-condition notes that describe the observed subject to the evaluated_entity attribute path.",
+            "- Route instrument and setting notes that describe the measurement apparatus or configuration to the activity attribute path.",
             "- Return target_path=null and merge_key=null when the note is too ambiguous, unsupported, or unsafe to project.",
             "- confidence must be between 0 and 1. Use confidence below 0.7 when ownership or attribute kind is uncertain.",
             "- merge_key must be stable across semantically equivalent notes and should ignore surface formatting differences.",

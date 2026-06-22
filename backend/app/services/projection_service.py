@@ -100,6 +100,11 @@ class ProjectionService:
             warnings=warnings,
         )
         document = remove_null_values(projection)
+        document = self._complete_relation_targets_from_resource_evidence(
+            document=document,
+            evidence_context=evidence_context,
+            data_package_id=data_package_id,
+        )
         state.projection_ledger = projection_records
         state.generated_final_draft = document
         progress.generated_final_draft = document
@@ -476,6 +481,11 @@ class ProjectionService:
             self._save_run_state(data_package_id, state)
             self._update_progress(data_package_id, progress)
 
+        document = self._complete_relation_targets_from_resource_evidence(
+            document=document,
+            evidence_context=coverage_evidence_context,
+            data_package_id=data_package_id,
+        )
         validation = self.profile_service.validate_document(
             identifier=profile_identifier,
             document=document,
@@ -584,6 +594,21 @@ class ProjectionService:
             item.synthesis_calls_count = record.synthesis_calls_count
             item.diagnosed_defects = list(record.diagnosed_defects)
             item.compiled_actions = list(record.compiled_actions)
+            if (
+                item.requirement_id == "dataset_subject_evaluation_distinction"
+                and record.diagnosed_defects
+                and all(
+                    defect.get("defect_type") == "no_defect"
+                    or defect.get("recommended_action") == "no_action"
+                    for defect in record.diagnosed_defects
+                )
+                and not record.rejected_reasons
+            ):
+                item.status = "fulfilled"
+                item.applicable = True
+                item.quality = 1.0
+                item.weighted_score = item.weight
+                item.rationale = str(record.diagnosed_defects[0].get("reason") or record.reason)
 
     async def _reconstruct_semantic_defects(
         self,
@@ -607,6 +632,8 @@ class ProjectionService:
             "dataset_title_identity",
             "dataset_description_identity",
             "aboutness_concreteness",
+            "activity_evaluation_target",
+            "dataset_subject_evaluation_distinction",
             "provenance_context_placement",
         ]
         by_id = {item.requirement_id: item for item in semantic_items}
@@ -617,7 +644,17 @@ class ProjectionService:
             item = by_id.get(requirement_id)
             if item is None:
                 continue
-            if item.status in {"fulfilled", "not_applicable"}:
+            distinction_became_applicable = (
+                requirement_id == "dataset_subject_evaluation_distinction"
+                and self._subject_target_distinction_applicable(current)
+            )
+            if item.status == "not_applicable" and distinction_became_applicable:
+                item.status = "partial"
+                item.applicable = True
+                item.quality = 0.5
+                item.weighted_score = item.weight * item.quality
+                item.rationale = "Both relation levels became present during semantic reconstruction and require an independence check."
+            if item.status == "fulfilled" or (item.status == "not_applicable" and not distinction_became_applicable):
                 records.append(
                     SemanticReconstructionRecord(
                         requirement_id=requirement_id,
@@ -730,6 +767,62 @@ class ProjectionService:
             )
         progress.projection_ledger = state.projection_ledger
         progress.field_completion_ledger = state.field_completion_ledger
+
+        # Post-reconstruction deterministic cleanup: merge same-parent duplicates,
+        # remove cross-parent duplicates / misplaced attributes, and clean labels
+        # that LLM reconstructions may have introduced or left behind.
+        dup_writes, dup_count = self._attribute_duplicate_coherence_writes(current)
+        cross_writes, cross_count = self._attribute_parent_placement_writes(current)
+        label_writes, label_count = self._attribute_label_quality_writes(current)
+        cleanup_writes = dup_writes + cross_writes + label_writes
+        if cleanup_writes:
+            cleanup_reason = (
+                f"Post-reconstruction deterministic cleanup: {dup_count} same-parent merge(s), "
+                f"{cross_count} cross-parent/placement removal(s), {label_count} label clean(s)."
+            )
+            current, cleanup_changed, _, cleanup_errors, _, _ = self._apply_semantic_reconstruction_writes(
+                data_package_id=data_package_id,
+                profile_identifier=profile_identifier,
+                document=current,
+                writes=cleanup_writes,
+                reason=cleanup_reason,
+                validation_schema=validation_schema,
+                rejected_reasons=[],
+            )
+            if cleanup_changed:
+                validation = self.profile_service.validate_document(
+                    identifier=profile_identifier,
+                    document=current,
+                )
+                if not validation.valid:
+                    current = self._clone_json_object(document)
+                    records.append(
+                        SemanticReconstructionRecord(
+                            requirement_id="attribute_duplicate_coherence",
+                            status="rolled_back",
+                            target_paths=[],
+                            changed_paths=cleanup_changed,
+                            reason=cleanup_reason,
+                            validation_errors=[issue.message for issue in validation.errors],
+                            applied_actions_count=0,
+                            rejected_actions_count=len(cleanup_errors),
+                            rejected_reasons=cleanup_errors,
+                        )
+                    )
+                else:
+                    records.append(
+                        SemanticReconstructionRecord(
+                            requirement_id="attribute_duplicate_coherence",
+                            status="applied",
+                            target_paths=[],
+                            changed_paths=cleanup_changed,
+                            reason=cleanup_reason,
+                            applied_actions_count=len(cleanup_changed),
+                            rejected_actions_count=len(cleanup_errors),
+                            rejected_reasons=cleanup_errors,
+                        )
+                    )
+
         return current, records
 
     async def _semantic_reconstruction_update(
@@ -858,7 +951,7 @@ class ProjectionService:
     def _semantic_requirement_for_item(item: RequirementReportItem) -> DcatRequirement:
         for requirement in DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS:
             if requirement.requirement_id == item.requirement_id:
-                return requirement
+                return requirement.model_copy(update={"target_paths": list(item.target_paths)})
         return DcatRequirement(
             requirement_id=item.requirement_id,
             label=item.label or item.requirement_id,
@@ -1073,6 +1166,25 @@ class ProjectionService:
                 ],
                 compiled_actions=[write.model_dump(mode="json") for write in writes],
             )
+        if requirement.requirement_id == "attribute_label_quality":
+            writes, count = self._attribute_label_quality_writes(document)
+            return _CompiledSemanticActions(
+                writes=writes,
+                reason="Deterministic attribute label cleaning: stripped parent entity title fragments and file-index suffixes.",
+                diagnosed_defects_count=count,
+                diagnosed_defects=[
+                    {
+                        "defect_type": "bad_label",
+                        "target_path": write.target_path,
+                        "entry_indices": [],
+                        "recommended_action": "replace",
+                        "needs_synthesis": False,
+                        "reason": write.reason,
+                    }
+                    for write in writes
+                ],
+                compiled_actions=[write.model_dump(mode="json") for write in writes],
+            )
         if requirement.requirement_id == "attribute_parent_placement":
             writes, count = self._attribute_parent_placement_writes(document)
             return _CompiledSemanticActions(
@@ -1092,6 +1204,34 @@ class ProjectionService:
                 ],
                 compiled_actions=[write.model_dump(mode="json") for write in writes],
             )
+        if requirement.requirement_id == "activity_evaluation_target":
+            paths = self._evaluated_activity_self_reference_paths(document)
+            writes = [
+                SchemaConstrainedWrite(
+                    target_path=path,
+                    mode="remove",
+                    reason="Remove evaluated_activity self-reference from data-generating activity.",
+                )
+                for path in sorted(paths, reverse=True)
+            ]
+            if writes:
+                return _CompiledSemanticActions(
+                    writes=writes,
+                    reason="Deterministic evaluated-activity self-reference cleanup.",
+                    diagnosed_defects_count=len(writes),
+                    diagnosed_defects=[
+                        {
+                            "defect_type": "self_referential_evaluated_activity",
+                            "target_path": write.target_path,
+                            "entry_indices": [],
+                            "recommended_action": "remove",
+                            "needs_synthesis": False,
+                            "reason": write.reason,
+                        }
+                        for write in writes
+                    ],
+                    compiled_actions=[write.model_dump(mode="json") for write in writes],
+                )
         return _CompiledSemanticActions(writes=[], reason="")
 
     async def _compile_semantic_diagnosis_actions(
@@ -1129,6 +1269,12 @@ class ProjectionService:
                     rejected.append(
                         "Range decomposition requires backend-recoverable bounds; refusing single-value synthesis at "
                         f"{defect.target_path}."
+                    )
+                    continue
+                if requirement.requirement_id in {"aboutness_concreteness", "activity_evaluation_target"}:
+                    rejected.append(
+                        "Subject and evaluation-target relations must come from explicit projection evidence; "
+                        f"refusing synthesized relation at {defect.target_path}."
                     )
                     continue
                 synthesis_defect = defect
@@ -1207,6 +1353,16 @@ class ProjectionService:
                     )
                 continue
             rejected.append(f"Diagnosis action requires synthesis or explicit compiler support: {defect.recommended_action}.")
+        diagnosis_found_no_defect = bool(diagnosis.defects) and all(
+            defect.defect_type == "no_defect" or defect.recommended_action == "no_action"
+            for defect in diagnosis.defects
+        )
+        if requirement.requirement_id == "dataset_subject_evaluation_distinction" and diagnosis_found_no_defect:
+            item.status = "fulfilled"
+            item.applicable = True
+            item.quality = 1.0
+            item.weighted_score = item.weight
+            item.rationale = diagnosis.defects[0].reason or diagnosis.reason or "Independent relation support verified."
         reason = diagnosis.reason or "Compiled semantic diagnosis actions."
         if not writes and not rejected and item.status in {"partial", "missing", "unanswered", "unresolved"}:
             reason = "semantic_defect_unresolved_empty_diagnosis"
@@ -1270,6 +1426,10 @@ class ProjectionService:
             )
             return None, [f"Semantic reconstruction synthesis failed: {exc}"]
         value = result.output
+        if self._semantic_absence_placeholder(value):
+            return None, [
+                f"Semantic synthesis returned an absence placeholder instead of evidence-backed content at {defect.target_path}."
+            ]
         target_schema = self._resolve_schema_node(
             schema_for_json_pointer(validation_schema, defect.target_path),
             validation_schema,
@@ -1507,6 +1667,15 @@ class ProjectionService:
                             left=items[candidate[0]],
                             right=item,
                         )
+                        or cls._attributes_value_equivalent(
+                            left=items[candidate[0]],
+                            right=item,
+                        )
+                        or cls._attributes_same_semantic_identity(
+                            parent_path=parent_path,
+                            left=items[candidate[0]],
+                            right=item,
+                        )
                     ),
                     None,
                 )
@@ -1514,6 +1683,10 @@ class ProjectionService:
                     groups.append([index])
                 else:
                     group.append(index)
+            # Collect all non-survivor indices across all groups, then emit
+            # individual remove writes in descending index order so that
+            # removals do not shift earlier indices.
+            removals: list[int] = []
             for indices in groups:
                 if len(indices) < 2:
                     continue
@@ -1521,12 +1694,12 @@ class ProjectionService:
                     indices,
                     key=lambda index: cls._attribute_survivor_score(items[index]),
                 )
+                removals.extend(index for index in indices if index != survivor_index)
+            for index in sorted(removals, reverse=True):
                 writes.append(
                     SchemaConstrainedWrite(
-                        target_path=parent_path,
-                        mode="merge",
-                        survivor_index=survivor_index,
-                        merged_indices=[index for index in indices if index != survivor_index],
+                        target_path=f"{parent_path}/{index}",
+                        mode="remove",
                         reason="Same-parent duplicate semantic attribute slot with equivalent value.",
                     )
                 )
@@ -1643,6 +1816,76 @@ class ProjectionService:
             )
             for path, index in removals
         ]
+
+        # ------------------------------------------------------------------
+        # Detect misplaced measurement attributes on activities that share
+        # significant vocabulary with evaluated_entity attributes.  If an
+        # activity attribute shares >=2 significant words with any evaluated
+        # entity attribute, it is likely a measurement condition that belongs
+        # on the evaluated entity, not the generating activity.
+        # ------------------------------------------------------------------
+        _stop = {"the", "of", "for", "in", "and", "a", "an", "is", "are", "was", "were",
+                 "be", "been", "being", "have", "has", "had", "do", "does", "did"}
+        for act_idx, activity in enumerate(document.get("was_generated_by") or []):
+            if not isinstance(activity, dict):
+                continue
+            act_attrs = activity.get("has_quantitative_attribute") or []
+            if not act_attrs:
+                continue
+            evaluated_entities = activity.get("evaluated_entity") or []
+            if not evaluated_entities:
+                continue
+            # Collect significant words from all evaluated_entity quantitative attributes
+            ee_words: set[str] = set()
+            for ee in evaluated_entities:
+                if not isinstance(ee, dict):
+                    continue
+                for attr in ee.get("has_quantitative_attribute") or []:
+                    if not isinstance(attr, dict):
+                        continue
+                    label = cls._normalized_attribute_label(
+                        " ".join(str(attr.get(k) or "") for k in ("has_quantity_type", "title"))
+                    )
+                    ee_words.update(w for w in label.split() if len(w) > 1 and w not in _stop)
+            if not ee_words:
+                continue
+            # Check each activity quantitative attribute for vocabulary overlap
+            move_indices: list[int] = []
+            move_items: list[dict[str, Any]] = []
+            for attr_idx, attr in enumerate(act_attrs):
+                if not isinstance(attr, dict):
+                    continue
+                # Skip if this attribute is already targeted for cross-parent removal
+                if any(path == f"/was_generated_by/{act_idx}/has_quantitative_attribute" and index == attr_idx
+                       for path, index in removals):
+                    continue
+                label = cls._normalized_attribute_label(
+                    " ".join(str(attr.get(k) or "") for k in ("has_quantity_type", "title"))
+                )
+                attr_words = {w for w in label.split() if len(w) > 1 and w not in _stop}
+                shared = attr_words & ee_words
+                if len(shared) >= 2:
+                    move_indices.append(attr_idx)
+                    move_items.append(dict(attr))
+            if move_indices:
+                # Remove from activity in descending index order
+                for attr_idx in sorted(move_indices, reverse=True):
+                    writes.append(
+                        SchemaConstrainedWrite(
+                            target_path=f"/was_generated_by/{act_idx}/has_quantitative_attribute/{attr_idx}",
+                            mode="remove",
+                            reason="Move misplaced measurement attribute from activity to evaluated_entity.",
+                        )
+                    )
+                # Append to first evaluated_entity
+                writes.append(
+                    SchemaConstrainedWrite(
+                        target_path=f"/was_generated_by/{act_idx}/evaluated_entity/0/has_quantitative_attribute/-",
+                        mode="append",
+                        items=move_items,
+                        reason="Move misplaced measurement attribute from activity to evaluated_entity.",
+                    )
+                )
         return writes, len(writes)
 
     @classmethod
@@ -1654,17 +1897,20 @@ class ProjectionService:
         left_slot = cls._attribute_semantic_slot(parent_path="", instance=left)
         right_slot = cls._attribute_semantic_slot(parent_path="", instance=right)
         if not left_slot or not right_slot or left_slot[1:3] != right_slot[1:3]:
-            return False
-        left_unit = left_slot[4]
-        right_unit = right_slot[4]
-        pseudo_units = {"transmittance", "intensity", "count", "points", "point count"}
-        if left_unit != right_unit and not (
-            not left_unit
-            or not right_unit
-            or left_unit in pseudo_units
-            or right_unit in pseudo_units
-        ):
-            return False
+            # Secondary check: same numeric value and compatible units even with different labels
+            if not cls._attributes_value_equivalent(left, right):
+                return False
+        else:
+            left_unit = left_slot[4]
+            right_unit = right_slot[4]
+            pseudo_units = {"transmittance", "intensity", "count", "points", "point count"}
+            if left_unit != right_unit and not (
+                not left_unit
+                or not right_unit
+                or left_unit in pseudo_units
+                or right_unit in pseudo_units
+            ):
+                return False
         left_number = cls._first_number(left.get("value"))
         right_number = cls._first_number(right.get("value"))
         if left_number is not None or right_number is not None:
@@ -1677,19 +1923,119 @@ class ProjectionService:
             return math.isclose(left_number, right_number, rel_tol=1e-6, abs_tol=1e-9)
         return left_slot[3] == right_slot[3]
 
+    # ------------------------------------------------------------------
+    # Label-quality cleaning: strip parent entity title words and
+    # trailing file-index suffixes from attribute labels.
+    # ------------------------------------------------------------------
+
+    _LABEL_CLEAN_STOP_WORDS: frozenset[str] = frozenset({
+        "the", "of", "for", "in", "and", "a", "an", "is", "are", "was", "were",
+        "be", "been", "being", "have", "has", "had", "do", "does", "did",
+        "will", "would", "could", "should", "may", "might", "must", "can",
+        "shall", "this", "that", "these", "those", "it", "its", "they",
+        "them", "their", "there", "here", "where", "when", "how", "why",
+        "what", "which", "who", "whom", "whose", "data", "set", "dataset",
+        "record", "file", "source", "entity", "activity",
+    })
+
+    @classmethod
+    def _parent_entity_title_words(
+        cls,
+        document: dict[str, Any],
+        parent_array_path: str,
+    ) -> set[str]:
+        """Extract significant words from the parent entity title for label cleaning."""
+        parts = [p for p in parent_array_path.strip("/").split("/") if p]
+        if len(parts) < 2:
+            return set()
+        entity_path = "/" + "/".join(parts[:-1])
+        entity = cls._value_at_json_pointer(document, entity_path)
+        if not isinstance(entity, dict):
+            return set()
+        title = entity.get("title", "")
+        if not title:
+            return set()
+        normalized = cls._normalized_text(title)
+        return {
+            w for w in normalized.split()
+            if len(w) > 2 and w not in cls._LABEL_CLEAN_STOP_WORDS
+        }
+
+    @classmethod
+    def _clean_attribute_label(
+        cls,
+        label: str,
+        entity_words: set[str],
+    ) -> str | None:
+        """Strip parent entity title words and trailing file-index suffix from *label*.
+
+        Returns the cleaned label if it changed, or None when no change is needed.
+        """
+        if not label or not entity_words:
+            return None
+        cleaned = label
+        for word in sorted(entity_words, key=len, reverse=True):
+            cleaned = re.sub(r"\b" + re.escape(word) + r"\b", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s*-\s*\d+\s*$", "", cleaned)
+        cleaned = re.sub(r"\s*-\s*$", "", cleaned)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        if not cleaned or cleaned == label:
+            return None
+        return cleaned
+
+    @classmethod
+    def _attribute_label_quality_writes(
+        cls,
+        document: dict[str, Any],
+    ) -> tuple[list[SchemaConstrainedWrite], int]:
+        """Generate replace writes for attributes whose labels contain parent entity
+        title fragments or trailing file-index suffixes."""
+        writes: list[SchemaConstrainedWrite] = []
+        for parent_path, items in cls._attribute_array_items(document):
+            entity_words = cls._parent_entity_title_words(document, parent_path)
+            if not entity_words:
+                continue
+            for index in range(len(items) - 1, -1, -1):
+                item = items[index]
+                if not isinstance(item, dict):
+                    continue
+                title = str(item.get("title") or "")
+                qty_type = str(item.get("has_quantity_type") or "")
+                cleaned_title = cls._clean_attribute_label(title, entity_words)
+                cleaned_qty = cls._clean_attribute_label(qty_type, entity_words)
+                if cleaned_title is None and cleaned_qty is None:
+                    continue
+                cleaned_item = dict(item)
+                if cleaned_title is not None:
+                    cleaned_item["title"] = cleaned_title
+                if cleaned_qty is not None:
+                    cleaned_item["has_quantity_type"] = cleaned_qty
+                writes.append(
+                    SchemaConstrainedWrite(
+                        target_path=f"{parent_path}/{index}",
+                        mode="replace",
+                        value=cleaned_item,
+                        reason="Cleaned attribute label: removed parent entity title fragment and file-index suffix.",
+                    )
+                )
+        return writes, len(writes)
+
     @classmethod
     def _attribute_parent_survivor_score(
         cls,
         parent_path: str,
         instance: dict[str, Any],
     ) -> tuple[int, int, int, int]:
-        slot = cls._attribute_semantic_slot(parent_path="", instance=instance)
-        label = slot[2] if slot else ""
+        # Generic preference: measured properties belong to the evaluated entity,
+        # not the generating activity or dataset subject. The evaluated entity is
+        # the most specific semantic owner; the dataset subject is more general.
         preferred = 0
-        if any(family in label for family in ("wavenumber", "transmittance", "point count", "resolution", "scaling")):
-            preferred = 2 if parent_path.startswith("/is_about_entity/") else 0
-        elif "threshold" in label:
-            preferred = 2 if parent_path.startswith("/is_about_activity/") else 0
+        if "/evaluated_entity/" in parent_path:
+            preferred = 3
+        elif "/is_about_entity/" in parent_path:
+            preferred = 2
+        elif "/evaluated_activity/" in parent_path or "/is_about_activity/" in parent_path:
+            preferred = 1
         precision, populated, label_score = cls._attribute_survivor_score(instance)
         return preferred, precision, populated, label_score
 
@@ -1918,6 +2264,23 @@ class ProjectionService:
                 candidates.extend(write.model_copy(update={"items": [item]}) for item in write.items)
             else:
                 candidates.append(write)
+        # Sort writes so that merges and removes targeting the same array path
+        # are applied from highest index to lowest, preventing index-shift errors.
+        def _sort_key(write: SchemaConstrainedWrite) -> tuple[str, int]:
+            indices: list[int] = []
+            if write.survivor_index is not None:
+                indices.append(write.survivor_index)
+            indices.extend(write.merged_indices)
+            parts = [p for p in write.target_path.strip("/").split("/") if p]
+            if parts:
+                try:
+                    indices.append(int(parts[-1]))
+                except ValueError:
+                    pass
+            max_index = max(indices) if indices else 0
+            parent = write.target_path.rsplit("/", 1)[0] if "/" in write.target_path else write.target_path
+            return (parent, -max_index)
+        candidates.sort(key=_sort_key)
         return candidates
 
     @classmethod
@@ -1956,6 +2319,40 @@ class ProjectionService:
         document: dict[str, Any],
         write: SchemaConstrainedWrite,
     ) -> list[str]:
+        target_parts = [part for part in write.target_path.strip("/").split("/") if part]
+        relation_names = {"is_about_entity", "is_about_activity", "evaluated_entity", "evaluated_activity"}
+        relation_target = next((part for part in target_parts if part in relation_names), "")
+        if relation_target and write.mode in {"append", "replace"}:
+            proposed = list(write.items) if write.mode == "append" else [write.value]
+            invalid = [
+                item
+                for item in proposed
+                if not isinstance(item, dict)
+                or not (
+                    cls._semantic_value_present(item.get("title"))
+                    or cls._semantic_value_present(item.get("description"))
+                )
+                or cls._relation_item_looks_like_requirement_placeholder(item)
+            ]
+            if invalid:
+                return [f"Relation item at {write.target_path} must be a concrete evidence-backed object, not a placeholder."]
+        if (
+            len(target_parts) >= 3
+            and target_parts[0] == "was_generated_by"
+            and target_parts[1].isdigit()
+            and target_parts[2] == "evaluated_activity"
+            and write.mode in {"append", "replace"}
+        ):
+            activity_index = int(target_parts[1])
+            activities = document.get("was_generated_by") or []
+            activity = activities[activity_index] if activity_index < len(activities) else None
+            activity_id = str(activity.get("id") or "").strip() if isinstance(activity, dict) else ""
+            proposed = list(write.items) if write.mode == "append" else [write.value]
+            if activity_id and any(
+                isinstance(item, dict) and str(item.get("id") or "").strip() == activity_id
+                for item in proposed
+            ):
+                return [f"evaluated_activity must not self-reference {activity_id} at {write.target_path}."]
         if write.mode != "merge":
             return []
         array_value = cls._value_at_json_pointer(document, write.target_path)
@@ -1977,13 +2374,30 @@ class ProjectionService:
         rejected: list[str] = []
         for index in indices:
             item = array_value[index]
-            if not isinstance(item, dict) or not cls._attributes_semantically_compatible(
-                parent_path=write.target_path,
-                left=survivor,
-                right=item,
+            if not isinstance(item, dict) or not (
+                cls._attributes_semantically_compatible(
+                    parent_path=write.target_path,
+                    left=survivor,
+                    right=item,
+                )
+                or cls._attributes_value_equivalent(survivor, item)
             ):
                 rejected.append(f"Merge item at {write.target_path}/{index} is not semantically compatible with survivor.")
         return rejected
+
+    @staticmethod
+    def _relation_item_looks_like_requirement_placeholder(item: dict[str, Any]) -> bool:
+        identifier = str(item.get("id") or "").strip().lower()
+        title = str(item.get("title") or "").strip().lower()
+        description = str(item.get("description") or "").strip().lower()
+        placeholder_terms = {
+            "aboutness_concreteness",
+            "activity_evaluation_target",
+            "dataset_subject_evaluation_distinction",
+        }
+        if identifier in placeholder_terms or title in placeholder_terms:
+            return True
+        return "requirement" in description and "evidence" not in description
 
     @classmethod
     def _lean_aboutness_output_schema(
@@ -2191,7 +2605,11 @@ class ProjectionService:
         evidence_context: RoutedEvidenceContext,
     ) -> list[RequirementReportItem]:
         items: list[RequirementReportItem] = []
-        for requirement in DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS:
+        for configured_requirement in DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS:
+            requirement = self._runtime_semantic_requirement(
+                requirement=configured_requirement,
+                document=document,
+            )
             seed_item = RequirementReportItem(
                 requirement_id=requirement.requirement_id,
                 label=requirement.label,
@@ -2211,6 +2629,8 @@ class ProjectionService:
             )
             if requirement.requirement_id in {
                 "attribute_duplicate_coherence",
+                "attribute_label_quality",
+                "attribute_parent_placement",
                 "attribute_range_decomposition",
             }:
                 seed_item.selected_evidence = selected_evidence
@@ -2237,6 +2657,7 @@ class ProjectionService:
                 requirements=[requirement],
                 evaluation=evaluation,
             )[0]
+            evaluated.target_paths = list(requirement.target_paths)
             evaluated.selected_evidence = selected_evidence
             evaluated.context_window = context_window
             self._guard_semantic_requirement_assessment(
@@ -2249,11 +2670,81 @@ class ProjectionService:
                 evaluated.applicable = True
                 evaluated.quality = 1.0
                 evaluated.weighted_score = evaluated.weight
-                evaluated.rationale = "Aboutness has at least one concrete non-file-like evaluated entity or evaluated activity."
+                evaluated.rationale = "Dataset aboutness has at least one concrete non-file-like subject entity or subject activity."
             evaluated.iteration_kind = "semantic_diagnosis"
             items.append(evaluated)
         score_requirement_items(items)
         return items
+
+    @staticmethod
+    def _runtime_semantic_requirement(
+        *,
+        requirement: DcatRequirement,
+        document: dict[str, Any],
+    ) -> DcatRequirement:
+        attribute_requirement_ids = {
+            "attribute_parent_placement",
+            "attribute_duplicate_coherence",
+            "attribute_label_quality",
+            "attribute_range_decomposition",
+        }
+        if requirement.requirement_id not in (
+            "activity_evaluation_target",
+            "dataset_subject_evaluation_distinction",
+            *attribute_requirement_ids,
+        ):
+            return requirement
+        activities = document.get("was_generated_by")
+        activity_indices = [
+            index
+            for index, activity in enumerate(activities if isinstance(activities, list) else [])
+            if isinstance(activity, dict)
+        ] or [0]
+        evaluated_attr_paths = [
+            f"/was_generated_by/{index}/{relation}/{attr_index}/has_quantitative_attribute"
+            for index in activity_indices
+            for relation in ("evaluated_entity", "evaluated_activity")
+            for attr_index in range(
+                len(
+                    next(
+                        (
+                            activity
+                            for i, activity in enumerate(activities if isinstance(activities, list) else [])
+                            if i == index and isinstance(activity, dict)
+                        ),
+                        {},
+                    ).get(relation, [])
+                )
+                if isinstance(activities, list)
+                else 0
+            )
+        ] or [
+            f"/was_generated_by/{index}/{relation}/0/has_quantitative_attribute"
+            for index in activity_indices
+            for relation in ("evaluated_entity", "evaluated_activity")
+        ]
+        if requirement.requirement_id == "activity_evaluation_target":
+            activity_paths = [
+                f"/was_generated_by/{index}/{relation}"
+                for index in activity_indices
+                for relation in ("evaluated_entity", "evaluated_activity")
+            ]
+            return requirement.model_copy(update={"target_paths": activity_paths})
+        if requirement.requirement_id == "dataset_subject_evaluation_distinction":
+            activity_paths = ["/is_about_entity", "/is_about_activity", *[
+                f"/was_generated_by/{index}/{relation}"
+                for index in activity_indices
+                for relation in ("evaluated_entity", "evaluated_activity")
+            ]]
+            return requirement.model_copy(update={"target_paths": activity_paths})
+        # Attribute requirements: add evaluated_entity/evaluated_activity attribute paths
+        existing_paths = list(requirement.target_paths)
+        for index in activity_indices:
+            for relation in ("evaluated_entity", "evaluated_activity"):
+                existing_paths.append(
+                    f"/was_generated_by/{index}/{relation}/0/has_quantitative_attribute"
+                )
+        return requirement.model_copy(update={"target_paths": existing_paths})
 
     @classmethod
     def _guard_semantic_requirement_assessment(
@@ -2277,16 +2768,21 @@ class ProjectionService:
             )
         if requirement.requirement_id == "attribute_duplicate_coherence":
             duplicate_writes, _ = cls._attribute_duplicate_coherence_writes(document)
-            if duplicate_writes:
+            cross_writes, _ = cls._attribute_parent_placement_writes(document)
+            total_duplicates = len(duplicate_writes) + len(cross_writes)
+            if total_duplicates:
                 item.status = "partial"
                 item.quality = 0.5
                 item.applicable = True
-                item.rationale = "Backend inspection found same-parent attributes in equivalent semantic slots."
+                item.rationale = (
+                    f"Backend inspection found {len(duplicate_writes)} same-parent "
+                    f"and {len(cross_writes)} cross-parent duplicate semantic attribute slots."
+                )
             else:
                 item.status = "fulfilled"
                 item.quality = 1.0
                 item.applicable = True
-                item.rationale = "Backend inspection found no same-parent duplicate semantic attribute slots."
+                item.rationale = "Backend inspection found no duplicate semantic attribute slots."
         if requirement.requirement_id == "attribute_range_decomposition":
             if cls._document_has_bad_range_attribute(document):
                 item.status = "partial"
@@ -2298,6 +2794,36 @@ class ProjectionService:
                 item.quality = 1.0
                 item.applicable = True
                 item.rationale = "Backend inspection found no collapsed or malformed range attributes."
+        if requirement.requirement_id == "attribute_parent_placement":
+            cross_writes, cross_count = cls._attribute_parent_placement_writes(document)
+            if cross_count:
+                item.status = "partial"
+                item.quality = 0.5
+                item.applicable = True
+                item.rationale = (
+                    f"Backend inspection found {cross_count} attribute placement "
+                    "issues (cross-parent duplicates or misplaced measurement attributes)."
+                )
+            else:
+                item.status = "fulfilled"
+                item.quality = 1.0
+                item.applicable = True
+                item.rationale = "Backend inspection found no attribute placement issues."
+        if requirement.requirement_id == "attribute_label_quality":
+            label_writes, label_count = cls._attribute_label_quality_writes(document)
+            if label_count:
+                item.status = "partial"
+                item.quality = 0.5
+                item.applicable = True
+                item.rationale = (
+                    f"Backend inspection found {label_count} attribute labels "
+                    "containing parent entity title fragments or file-index suffixes."
+                )
+            else:
+                item.status = "fulfilled"
+                item.quality = 1.0
+                item.applicable = True
+                item.rationale = "Backend inspection found no label quality issues."
         if requirement.requirement_id == "technical_agent_kind":
             agents = [
                 agent
@@ -2311,6 +2837,65 @@ class ProjectionService:
                 item.quality = 1.0
                 item.applicable = True
                 item.rationale = "Backend inspection found only instruments, software, or devices in carried_out_by."
+        if requirement.requirement_id == "activity_evaluation_target":
+            activities = [
+                activity
+                for activity in (document.get("was_generated_by") or [])
+                if isinstance(activity, dict)
+            ]
+            valid_target_counts = [cls._concrete_activity_target_count(activity) for activity in activities]
+            self_references = cls._evaluated_activity_self_reference_paths(document)
+            if not activities or not any(valid_target_counts):
+                item.status = "missing"
+                item.quality = 0.0
+                item.applicable = True
+                item.rationale = "Backend inspection found no evaluation target on any data-generating activity."
+            elif self_references or any(count == 0 for count in valid_target_counts):
+                item.status = "partial"
+                item.quality = 0.5
+                item.applicable = True
+                item.rationale = (
+                    "Backend inspection found a self-referential evaluated activity."
+                    if self_references
+                    else "Backend inspection found at least one data-generating activity without an evaluation target."
+                )
+            else:
+                item.status = "fulfilled"
+                item.quality = 1.0
+                item.applicable = True
+                item.rationale = "Backend inspection found at least one concrete evaluation target on every data-generating activity."
+        if requirement.requirement_id == "method_plan_presence":
+            activities = [
+                activity
+                for activity in (document.get("was_generated_by") or [])
+                if isinstance(activity, dict)
+            ]
+            meaningful = [
+                activity.get("realized_plan") not in (None, "", [], {})
+                and not cls._semantic_absence_placeholder(activity.get("realized_plan"))
+                for activity in activities
+            ]
+            if not activities or not any(meaningful):
+                item.status = "missing"
+                item.quality = 0.0
+                item.applicable = True
+                item.rationale = "Backend inspection found no evidence-backed method, procedure, protocol, or plan."
+            elif not all(meaningful):
+                item.status = "partial"
+                item.quality = 0.5
+                item.applicable = True
+                item.rationale = "Backend inspection found at least one data-generating activity without an evidence-backed plan."
+        if requirement.requirement_id == "dataset_subject_evaluation_distinction":
+            if not cls._subject_target_distinction_applicable(document):
+                item.status = "not_applicable"
+                item.quality = 0.0
+                item.applicable = False
+                item.rationale = "Distinction check requires both Dataset aboutness and activity evaluation-target relations."
+            elif item.status in {"missing", "not_applicable"}:
+                item.status = "partial"
+                item.quality = 0.5
+                item.applicable = True
+                item.rationale = "Both relation levels are present, but independent semantic support was not established."
         if not item.rationale.strip():
             item.rationale = f"Semantic evaluator returned {item.status} without an explanation."
         item.weighted_score = item.weight * item.quality if item.applicable else 0.0
@@ -2318,6 +2903,78 @@ class ProjectionService:
     @staticmethod
     def _semantic_value_present(value: Any) -> bool:
         return value not in (None, "", [], {})
+
+    @classmethod
+    def _semantic_absence_placeholder(cls, value: Any) -> bool:
+        if isinstance(value, dict):
+            text = " ".join(str(part) for part in value.values() if not isinstance(part, (dict, list)))
+            nested = any(cls._semantic_absence_placeholder(part) for part in value.values() if isinstance(part, (dict, list)))
+        elif isinstance(value, list):
+            text = " ".join(str(part) for part in value if not isinstance(part, (dict, list)))
+            nested = any(cls._semantic_absence_placeholder(part) for part in value if isinstance(part, (dict, list)))
+        else:
+            text = str(value or "")
+            nested = False
+        normalized = cls._normalized_text(text)
+        return nested or any(
+            phrase in normalized
+            for phrase in (
+                "no explicit method",
+                "no method evidence",
+                "no evidence available",
+                "not available",
+                "not specified",
+                "unknown method",
+            )
+        )
+
+    @classmethod
+    def _concrete_activity_target_count(cls, activity: dict[str, Any]) -> int:
+        activity_id = str(activity.get("id") or "").strip()
+        count = 0
+        for relation in ("evaluated_entity", "evaluated_activity"):
+            targets = activity.get(relation) or []
+            if not isinstance(targets, list):
+                continue
+            for target in targets:
+                if not isinstance(target, dict):
+                    continue
+                target_id = str(target.get("id") or "").strip()
+                if relation == "evaluated_activity" and activity_id and target_id == activity_id:
+                    continue
+                if cls._relation_item_looks_like_requirement_placeholder(target):
+                    continue
+                if cls._semantic_value_present(target_id) or cls._relation_item_is_concrete(target):
+                    count += 1
+        return count
+
+    @staticmethod
+    def _evaluated_activity_self_reference_paths(document: dict[str, Any]) -> list[str]:
+        paths: list[str] = []
+        for activity_index, activity in enumerate(document.get("was_generated_by") or []):
+            if not isinstance(activity, dict):
+                continue
+            activity_id = str(activity.get("id") or "").strip()
+            if not activity_id:
+                continue
+            for target_index, target in enumerate(activity.get("evaluated_activity") or []):
+                if isinstance(target, dict) and str(target.get("id") or "").strip() == activity_id:
+                    paths.append(f"/was_generated_by/{activity_index}/evaluated_activity/{target_index}")
+        return paths
+
+    @classmethod
+    def _subject_target_distinction_applicable(cls, document: dict[str, Any]) -> bool:
+        aboutness_present = any(
+            cls._semantic_value_present(document.get(key))
+            for key in ("is_about_entity", "is_about_activity")
+        )
+        evaluation_target_present = any(
+            cls._semantic_value_present(activity.get(key))
+            for activity in (document.get("was_generated_by") or [])
+            if isinstance(activity, dict)
+            for key in ("evaluated_entity", "evaluated_activity")
+        )
+        return aboutness_present and evaluation_target_present
 
     @classmethod
     def _document_has_bad_range_attribute(cls, document: dict[str, Any]) -> bool:
@@ -2772,6 +3429,8 @@ class ProjectionService:
         return [
             "/was_generated_by/0/has_quantitative_attribute/-",
             "/was_generated_by/0/has_qualitative_attribute/-",
+            "/was_generated_by/0/evaluated_entity/0/has_quantitative_attribute/-",
+            "/was_generated_by/0/evaluated_entity/0/has_qualitative_attribute/-",
             "/is_about_activity/0/has_quantitative_attribute/-",
             "/is_about_activity/0/has_qualitative_attribute/-",
             "/is_about_entity/0/has_quantitative_attribute/-",
@@ -2782,6 +3441,8 @@ class ProjectionService:
 
     @staticmethod
     def _measurement_target_class_for_path(target_path: str) -> str | None:
+        if "/evaluated_entity/" in target_path:
+            return "EvaluatedEntity"
         if target_path.startswith("/was_generated_by"):
             return "DataGeneratingActivity"
         if target_path.startswith("/is_about_activity"):
@@ -2800,7 +3461,7 @@ class ProjectionService:
 
     @classmethod
     def _measurement_router_draft_excerpt(cls, document: dict[str, Any]) -> dict[str, Any]:
-        return {
+        excerpt: dict[str, Any] = {
             key: cls._value_at_json_pointer(document, f"/{key}")
             for key in (
                 "was_generated_by",
@@ -2808,6 +3469,16 @@ class ProjectionService:
                 "is_about_entity",
             )
         }
+        # Include evaluated_entity from the first activity so the router
+        # can place measurement attributes on the evaluated target when one exists.
+        activities = excerpt.get("was_generated_by")
+        if isinstance(activities, list) and activities:
+            first_activity = activities[0]
+            if isinstance(first_activity, dict):
+                evaluated_entities = first_activity.get("evaluated_entity")
+                if isinstance(evaluated_entities, list) and evaluated_entities:
+                    excerpt["evaluated_entity"] = evaluated_entities
+        return excerpt
 
     @staticmethod
     def _measurement_note_is_routable(note: EvidenceCandidate) -> bool:
@@ -2817,6 +3488,144 @@ class ProjectionService:
         if note.category == "instrument_signal" and role in {"parameter", "qualitative_attribute"}:
             return True
         return False
+
+    @classmethod
+    def _complete_relation_targets_from_resource_evidence(
+        cls,
+        *,
+        document: dict[str, Any],
+        evidence_context: RoutedEvidenceContext | EvidenceContext,
+        data_package_id: str,
+    ) -> dict[str, Any]:
+        entity = cls._resource_entity_from_evidence(
+            evidence=list(getattr(evidence_context, "portable_evidence", []) or []),
+            data_package_id=data_package_id,
+        )
+        if entity is None:
+            return document
+        updated = cls._clone_json_object(document)
+        cls._remove_non_concrete_relation_items(updated)
+        if not cls._relation_array_has_concrete_item(updated.get("is_about_entity")):
+            updated["is_about_entity"] = [cls._clone_json_object(entity)]
+        activities = updated.get("was_generated_by")
+        if not isinstance(activities, list):
+            return updated
+        for activity in activities:
+            if not isinstance(activity, dict):
+                continue
+            if cls._concrete_activity_target_count(activity) > 0:
+                continue
+            activity["evaluated_entity"] = [cls._clone_json_object(entity)]
+        return updated
+
+    @classmethod
+    def _remove_non_concrete_relation_items(cls, document: dict[str, Any]) -> None:
+        for key in ("is_about_entity", "is_about_activity"):
+            value = document.get(key)
+            if not isinstance(value, list):
+                continue
+            kept = [item for item in value if cls._relation_item_is_concrete(item)]
+            if kept:
+                document[key] = kept
+            else:
+                document.pop(key, None)
+        for activity in document.get("was_generated_by") or []:
+            if not isinstance(activity, dict):
+                continue
+            for key in ("evaluated_entity", "evaluated_activity"):
+                value = activity.get(key)
+                if not isinstance(value, list):
+                    continue
+                kept = [item for item in value if cls._relation_item_is_concrete(item)]
+                if kept:
+                    activity[key] = kept
+                else:
+                    activity.pop(key, None)
+
+    @classmethod
+    def _relation_item_is_concrete(cls, item: Any) -> bool:
+        return isinstance(item, dict) and (
+            cls._semantic_value_present(item.get("title"))
+            or cls._semantic_value_present(item.get("description"))
+        )
+
+    @classmethod
+    def _resource_entity_from_evidence(
+        cls,
+        *,
+        evidence: list[EvidenceCandidate],
+        data_package_id: str,
+    ) -> dict[str, Any] | None:
+        by_file: dict[str, list[EvidenceCandidate]] = {}
+        for note in evidence:
+            by_file.setdefault(str(note.file_path or ""), []).append(note)
+        for notes in by_file.values():
+            type_note = next((note for note in notes if cls._note_resource_type_value(note)), None)
+            if type_note is None:
+                continue
+            type_value = cls._note_resource_type_value(type_note)
+            if not type_value:
+                continue
+            identity = next((cls._note_identity_value(note) for note in notes if cls._note_identity_value(note)), "")
+            title = cls._human_label(type_value)
+            slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-") or "resource"
+            description_parts = [f"Source evidence identifies a resource of type {title}."]
+            if identity:
+                description_parts.append(f"Source identity: {identity}.")
+            return {
+                "id": f"{data_package_id}:entity:{slug}",
+                "title": title,
+                "description": " ".join(description_parts),
+            }
+        return None
+
+    @classmethod
+    def _note_resource_type_value(cls, note: EvidenceCandidate) -> str:
+        if note.category != "resource_signal" or note.role != "descriptor":
+            return ""
+        text = " ".join(str(value or "") for value in (note.claim, note.evidence_text))
+        normalized = cls._normalized_text(text)
+        if "data type" not in normalized and "resource type" not in normalized:
+            return ""
+        return cls._quoted_value(text) or cls._value_after_label(text, ("data type", "resource type"))
+
+    @classmethod
+    def _note_identity_value(cls, note: EvidenceCandidate) -> str:
+        if note.category != "resource_signal" or note.role != "identity":
+            return ""
+        text = " ".join(str(value or "") for value in (note.claim, note.evidence_text))
+        return cls._quoted_value(text) or cls._value_after_label(text, ("title", "name", "identity"))
+
+    @staticmethod
+    def _quoted_value(text: str) -> str:
+        match = re.search(r"['\"]([^'\"]{2,80})['\"]", text)
+        return re.sub(r"\s+", " ", match.group(1)).strip() if match else ""
+
+    @staticmethod
+    def _value_after_label(text: str, labels: tuple[str, ...]) -> str:
+        for label in labels:
+            match = re.search(rf"\b{re.escape(label)}\b\s*(?:is|=|:)\s*([^\n.;,]+)", text, flags=re.IGNORECASE)
+            if match:
+                return re.sub(r"\s+", " ", match.group(1)).strip().strip("'\"")
+        return ""
+
+    @staticmethod
+    def _human_label(value: str) -> str:
+        text = re.sub(r"[_-]+", " ", value).strip().lower()
+        return re.sub(r"\s+", " ", text).capitalize()
+
+    @classmethod
+    def _relation_array_has_concrete_item(cls, value: Any) -> bool:
+        if not isinstance(value, list):
+            return False
+        return any(
+            isinstance(item, dict)
+            and (
+                cls._semantic_value_present(item.get("title"))
+                or cls._semantic_value_present(item.get("description"))
+            )
+            for item in value
+        )
 
     async def _route_measurement_note_semantically(
         self,
@@ -4033,13 +4842,25 @@ class ProjectionService:
                 and path_parts[0] in {"is_about_entity", "is_about_activity"}
                 and len(path_parts) <= 2
             )
-            if is_aboutness_object_path:
+            evaluation_relation_index = next(
+                (
+                    index
+                    for index, part in enumerate(path_parts)
+                    if part in {"evaluated_entity", "evaluated_activity"}
+                ),
+                None,
+            )
+            is_evaluation_target_path = (
+                evaluation_relation_index is not None
+                and len(path_parts) <= evaluation_relation_index + 2
+            )
+            if is_aboutness_object_path or is_evaluation_target_path:
                 if write.mode == "append":
                     sanitized.append(
                         write.model_copy(
                             update={
                                 "items": [
-                                    cls._sanitize_aboutness_item(item)
+                                    cls._sanitize_relation_item(item)
                                     for item in write.items
                                 ]
                             }
@@ -4047,18 +4868,18 @@ class ProjectionService:
                     )
                     continue
                 if isinstance(write.value, dict):
-                    sanitized.append(write.model_copy(update={"value": cls._sanitize_aboutness_item(write.value)}))
+                    sanitized.append(write.model_copy(update={"value": cls._sanitize_relation_item(write.value)}))
                     continue
             sanitized.append(write)
         return sanitized
 
     @staticmethod
-    def _sanitize_aboutness_item(item: Any) -> Any:
+    def _sanitize_relation_item(item: Any) -> Any:
         if not isinstance(item, dict):
             return item
         return {
             key: item[key]
-            for key in ("id", "title", "description")
+            for key in ("id", "title", "description", "type", "rdf_type")
             if key in item and item[key] not in (None, "", [])
         }
 
@@ -4204,6 +5025,89 @@ class ProjectionService:
         return left_slot[3] == right_slot[3]
 
     @classmethod
+    def _attributes_same_semantic_identity(
+        cls,
+        *,
+        parent_path: str,
+        left: dict[str, Any],
+        right: dict[str, Any],
+    ) -> bool:
+        """Check if two attributes share the same semantic identity (kind, label, unit)
+        regardless of their values.  Used to detect same-label different-value duplicates.
+
+        Only returns True when the *original* (pre-normalization) labels also match or
+        share significant words, to avoid merging different quantities that happen to
+        normalize to the same semantic label.
+        """
+        left_slot = cls._attribute_semantic_slot(parent_path=parent_path, instance=left)
+        right_slot = cls._attribute_semantic_slot(parent_path=parent_path, instance=right)
+        if not left_slot or not right_slot:
+            return False
+        left_identity = left_slot[:3] + left_slot[4:]
+        right_identity = right_slot[:3] + right_slot[4:]
+        if left_identity != right_identity:
+            return False
+        # Require original labels to match or share significant words, not just
+        # the normalized label (which may collapse different quantities).
+        left_raw = cls._normalized_text(
+            " ".join(str(left.get(k) or "") for k in ("has_quantity_type", "has_attribute_type", "title"))
+        )
+        right_raw = cls._normalized_text(
+            " ".join(str(right.get(k) or "") for k in ("has_quantity_type", "has_attribute_type", "title"))
+        )
+        if left_raw == right_raw:
+            return True
+        _stop = {"the", "of", "for", "in", "and", "a", "an", "is", "are", "was", "were",
+                 "be", "been", "being", "have", "has", "had", "do", "does", "did"}
+        left_words = {w for w in left_raw.split() if len(w) > 1 and w not in _stop}
+        right_words = {w for w in right_raw.split() if len(w) > 1 and w not in _stop}
+        shared = left_words & right_words
+        # Require ALL content words to match (not just some), to avoid merging
+        # "maximum Y" with "maximum transmittance" just because they share "maximum".
+        return bool(left_words and right_words and left_words == right_words)
+
+    @classmethod
+    def _attributes_value_equivalent(
+        cls,
+        left: dict[str, Any],
+        right: dict[str, Any],
+    ) -> bool:
+        """Check if two quantitative attributes have the same numeric value and compatible units, regardless of label.
+
+        Only returns True when labels share at least one significant word, to avoid merging
+        different quantities that happen to share a numeric value.
+        """
+        left_slot = cls._attribute_semantic_slot(parent_path="", instance=left)
+        right_slot = cls._attribute_semantic_slot(parent_path="", instance=right)
+        if not left_slot or not right_slot:
+            return False
+        if left_slot[1] != right_slot[1]:
+            return False
+        left_number = cls._first_number(left.get("value"))
+        right_number = cls._first_number(right.get("value"))
+        if left_number is None or right_number is None:
+            return False
+        if left_number == 0 and right_number == 0:
+            return True
+        if left_number == 0 or right_number == 0:
+            return False
+        if not math.isclose(left_number, right_number, rel_tol=1e-6, abs_tol=1e-9):
+            return False
+        left_unit = left_slot[4]
+        right_unit = right_slot[4]
+        if left_unit and right_unit and left_unit != right_unit:
+            return False
+        # Require at least one shared significant word between labels to avoid merging
+        # different quantities that happen to share a numeric value.
+        left_label = left_slot[2]
+        right_label = right_slot[2]
+        if left_label == right_label:
+            return True
+        left_words = {w for w in left_label.split() if len(w) > 1 and w not in {"the", "of", "for", "in", "and"}}
+        right_words = {w for w in right_label.split() if len(w) > 1 and w not in {"the", "of", "for", "in", "and"}}
+        return bool(left_words and right_words and (left_words & right_words))
+
+    @classmethod
     def _attribute_survivor_score(cls, instance: Any) -> tuple[int, int, int]:
         if not isinstance(instance, dict):
             return 0, 0, 0
@@ -4279,6 +5183,8 @@ class ProjectionService:
             "%": "%",
             "percent": "%",
         }
+        if text.endswith("/percent") or "vocab/unit/percent" in text:
+            return "%"
         return aliases.get(text, text)
 
     @staticmethod
@@ -5706,22 +6612,46 @@ class ProjectionService:
         warnings: list[str],
     ) -> ExtractionRunResult:
         assert self.output_repository is not None
+        source_document = remove_null_values(self._clone_json_object(document))
+        grounded_document = self._grounded_profile_document(
+            document=source_document,
+            normalization=normalization,
+            validation_schema=validation_schema,
+        )
         pruned_document = self._prune_initial_draft_scaffold(
-            document,
+            grounded_document,
             state.initial_draft_scaffold,
         )
-        curated_document = self._curate_generated_profile_document(pruned_document)
-        clean_document = remove_null_values(curated_document)
+        clean_document = remove_null_values(
+            self._curate_generated_profile_document(pruned_document)
+        )
         validation = self._validate_profile_document(
             profile_identifier=profile_identifier,
             document=clean_document,
         )
+        self._revalidate_requirement_report_against_delivered_document(
+            state=state,
+            document=clean_document,
+            validation_schema=validation_schema,
+            schema_valid=validation.status == "valid",
+        )
+        had_reconstructed_draft = state.generated_reconstructed_draft is not None
         state.generated_final_draft = clean_document
-        state.generated_reconstructed_draft = clean_document
+        if state.generated_reconstructed_draft is None:
+            state.generated_reconstructed_draft = self._clone_json_object(source_document)
         state.validation = validation
         if state.curated_document is None:
-            state.curated_document = self._clone_json_object(clean_document)
-            state.curated_validation = validation
+            default_curated_document = (
+                source_document
+                if normalization.profile_fields or had_reconstructed_draft
+                else clean_document
+            )
+            curated_document = self._clone_json_object(default_curated_document)
+            state.curated_document = curated_document
+            state.curated_validation = self._validate_profile_document(
+                profile_identifier=profile_identifier,
+                document=curated_document,
+            )
         elif state.curated_validation is None:
             state.curated_validation = self._validate_profile_document(
                 profile_identifier=profile_identifier,
@@ -5755,6 +6685,9 @@ class ProjectionService:
             workflow_id=data_package_id,
             vocab_queries=state.vocab_queries,
             normalization=normalization,
+            grounding_policy=state.vocab_query_config,
+            grounded_validation=validation,
+            grounded_document=clean_document,
             chat_model=state.chat_model,
             chunking_strategy=state.chunking_strategy,
         )
@@ -5801,6 +6734,47 @@ class ProjectionService:
         self._save_run_state(data_package_id, state)
         return result
 
+    @classmethod
+    def _revalidate_requirement_report_against_delivered_document(
+        cls,
+        *,
+        state: ExtractionRunState,
+        document: dict[str, Any],
+        validation_schema: dict[str, Any],
+        schema_valid: bool,
+    ) -> None:
+        report = state.requirement_report
+        if report is None:
+            return
+        configured = {
+            requirement.requirement_id: requirement
+            for requirement in DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS
+        }
+        semantic_items = [item.model_copy(deep=True) for item in report.semantic_requirements]
+        for item in semantic_items:
+            requirement = configured.get(item.requirement_id)
+            if requirement is None:
+                continue
+            runtime_requirement = cls._runtime_semantic_requirement(
+                requirement=requirement,
+                document=document,
+            )
+            item.target_paths = list(runtime_requirement.target_paths)
+            cls._guard_semantic_requirement_assessment(
+                requirement=runtime_requirement,
+                document=document,
+                item=item,
+            )
+        score_requirement_items(semantic_items)
+        state.requirement_report = build_requirement_report(
+            schema_valid=schema_valid,
+            coverage=compute_coverage_report(document, validation_schema),
+            semantic_requirements=semantic_items,
+            source_trace=report.source_trace,
+            coverage_patches=report.coverage_patches,
+            semantic_reconstructions=report.semantic_reconstructions,
+        )
+
     def _validate_profile_document(
         self,
         *,
@@ -5834,7 +6808,7 @@ class ProjectionService:
         validation: DraftValidationResult,
         projection_ledger: list[ProjectionLedgerRecord],
         field_completion_ledger: list[FieldCompletionLedgerRecord],
-    ) -> str:
+    ) -> DraftQualityState:
         if not projection_ledger or not any(
             record.status == "projected" for record in projection_ledger
         ):
@@ -5849,6 +6823,101 @@ class ProjectionService:
         if validation.status == "valid" and not has_projection_issue and not has_field_issue:
             return "complete_final_draft"
         return "imperfect_final_draft"
+
+    @classmethod
+    def _grounded_profile_document(
+        cls,
+        *,
+        document: dict[str, Any],
+        normalization: ExtractionNormalization,
+        validation_schema: dict[str, Any],
+    ) -> dict[str, Any]:
+        grounded = cls._apply_deterministic_quantitative_terms(
+            cls._clone_json_object(document)
+        )
+        for item in normalization.profile_fields:
+            if item.term is None or not item.term.selected_uri:
+                continue
+            exists, existing_value = cls._json_pointer_value(grounded, item.json_path)
+            field_schema = cls._schema_for_json_pointer(validation_schema, item.json_path)
+            selected_value = cls._selected_vocab_value_for_schema(
+                field_schema=field_schema,
+                root_schema=validation_schema,
+                selected_uri=item.term.selected_uri,
+                selected_title=item.term.selected_title,
+                vocabulary_identifier=item.term.vocabulary_identifier,
+                existing_value=existing_value if exists else None,
+                rdf_type_term=cls._rdf_type_term_for_grounding_role(item.field_name),
+            )
+            grounded = cls._set_json_pointer_value(
+                grounded,
+                item.json_path,
+                selected_value,
+            )
+        return grounded
+
+    @classmethod
+    def _apply_deterministic_quantitative_terms(cls, value: Any) -> Any:
+        if isinstance(value, list):
+            return [cls._apply_deterministic_quantitative_terms(item) for item in value]
+        if not isinstance(value, dict):
+            return value
+        result = {
+            key: cls._apply_deterministic_quantitative_terms(item)
+            for key, item in value.items()
+        }
+        if "value" in result and "has_quantity_type" in result:
+            result.setdefault(
+                "rdf_type",
+                cls._defined_term(
+                    QUDT_QUANTITY_URI,
+                    "Quantity",
+                    QUDT_SCHEMA_VOCAB,
+                ),
+            )
+        if isinstance(result.get("has_quantity_type"), dict):
+            result["has_quantity_type"].setdefault(
+                "rdf_type",
+                cls._rdf_type_term_for_grounding_role("has_quantity_type"),
+            )
+        if isinstance(result.get("unit"), dict):
+            result["unit"].setdefault(
+                "rdf_type",
+                cls._rdf_type_term_for_grounding_role("unit"),
+            )
+        return result
+
+    @staticmethod
+    def _rdf_type_term_for_grounding_role(role: str) -> dict[str, Any] | None:
+        if role == "has_quantity_type":
+            return ProjectionService._defined_term(
+                QUDT_QUANTITY_KIND_URI,
+                "QuantityKind",
+                QUDT_SCHEMA_VOCAB,
+            )
+        if role == "unit":
+            return ProjectionService._defined_term(
+                QUDT_UNIT_URI,
+                "Unit",
+                QUDT_SCHEMA_VOCAB,
+            )
+        return None
+
+    @staticmethod
+    def _defined_term(
+        term_id: str,
+        title: str | None = None,
+        from_cv: str | None = None,
+        rdf_type: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        value: dict[str, Any] = {"id": term_id}
+        if title:
+            value["title"] = title
+        if from_cv:
+            value["from_CV"] = from_cv
+        if rdf_type is not None:
+            value["rdf_type"] = rdf_type
+        return value
 
     def _build_field_completion_ledger(
         self,
@@ -5865,6 +6934,7 @@ class ProjectionService:
         profile_sources = self._profile_vocab_sources(
             generated_document,
             enrichable_fields=enrichable_fields,
+            validation_schema=validation_schema,
         )
         paths.update(path for path, _field_name, _value in profile_sources)
         paths.update(
@@ -6365,6 +7435,7 @@ class ProjectionService:
         selected_title: str | None,
         vocabulary_identifier: str | None,
         existing_value: Any,
+        rdf_type_term: dict[str, Any] | None = None,
     ) -> Any:
         field_schema = cls._resolve_schema_node(field_schema, root_schema)
         if cls._schema_is_array(field_schema, root_schema):
@@ -6379,6 +7450,7 @@ class ProjectionService:
                     selected_uri=selected_uri,
                     selected_title=selected_title,
                     vocabulary_identifier=vocabulary_identifier,
+                    rdf_type_term=rdf_type_term,
                 )
                 if cls._schema_accepts_term_object(item_schema, root_schema)
                 else selected_uri
@@ -6394,6 +7466,7 @@ class ProjectionService:
                 selected_uri=selected_uri,
                 selected_title=selected_title,
                 vocabulary_identifier=vocabulary_identifier,
+                rdf_type_term=rdf_type_term,
             )
         return selected_uri
 
@@ -6438,6 +7511,7 @@ class ProjectionService:
         selected_uri: str,
         selected_title: str | None,
         vocabulary_identifier: str | None,
+        rdf_type_term: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         schema = cls._resolve_schema_node(schema, root_schema)
         properties = schema.get("properties", {}) if isinstance(schema, dict) else {}
@@ -6448,6 +7522,8 @@ class ProjectionService:
             value["title"] = selected_title
         if "from_CV" in properties and vocabulary_identifier is not None:
             value["from_CV"] = vocabulary_identifier
+        if "rdf_type" in properties and rdf_type_term is not None:
+            value["rdf_type"] = rdf_type_term
         return value
 
     @staticmethod
@@ -7172,10 +8248,35 @@ class ProjectionService:
         document: dict[str, Any],
         *,
         enrichable_fields: list[str],
+        validation_schema: dict[str, Any] | None = None,
     ) -> list[tuple[str, str, str]]:
         target_fields = {"has_quantity_type", "unit"} | set(enrichable_fields)
         sources: list[tuple[str, str, str]] = []
         seen: set[tuple[str, str, str]] = set()
+
+        def term_source_text(value: Any) -> str:
+            if isinstance(value, dict):
+                for key in ("title", "preferred_label", "label", "name", "id"):
+                    item = value.get(key)
+                    if isinstance(item, list):
+                        item = next((entry for entry in item if isinstance(entry, str) and entry.strip()), None)
+                    if isinstance(item, str) and item.strip():
+                        return item.strip()
+                return ""
+            if isinstance(value, str):
+                return value.strip()
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                return str(value)
+            return ""
+
+        def collect_term_values(value: Any, path: str) -> list[tuple[str, str]]:
+            if isinstance(value, list):
+                collected: list[tuple[str, str]] = []
+                for index, item in enumerate(value):
+                    collected.extend(collect_term_values(item, f"{path}/{index}"))
+                return collected
+            text = term_source_text(value)
+            return [(path, text)] if text else []
 
         def collect_scalar_values(value: Any, path: str) -> list[tuple[str, str]]:
             if isinstance(value, str):
@@ -7201,8 +8302,19 @@ class ProjectionService:
             if isinstance(value, dict):
                 for key, item in value.items():
                     item_path = f"{path}/{cls._json_pointer_escape(key)}"
-                    if key in target_fields:
-                        for scalar_path, scalar in collect_scalar_values(item, item_path):
+                    schema_accepts_term = False
+                    if validation_schema is not None:
+                        field_schema = cls._schema_for_json_pointer(
+                            validation_schema,
+                            item_path,
+                        )
+                        schema_accepts_term = cls._schema_accepts_term_object(
+                            field_schema,
+                            validation_schema,
+                        )
+                    if key in target_fields or schema_accepts_term:
+                        collector = collect_term_values if schema_accepts_term else collect_scalar_values
+                        for scalar_path, scalar in collector(item, item_path):
                             record = (scalar_path, key, scalar)
                             if record not in seen:
                                 seen.add(record)
