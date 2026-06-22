@@ -82,9 +82,9 @@ The Resource Description Framework (RDF) provides the graph representation model
 Instance data in such a graph can be typed by linking a resource to an ontology class with \texttt{rdf:type}, while further predicates connect that resource to other instance resources or literal values. Figure~\ref{fig:ontology-grounding-layers} illustrates this schema-instance distinction for catalysis metadata.
 Furthermore, the resources and predicates can be identified with Uniform Resource Identifiers (URIs), which allows statements from different sources to refer to the same concept rather than only to local text labels \cite{w3c2014rdf11concepts,huskova2025improvement}.
 
-The Shapes Constraint Language (SHACL) can be used to formalise validation rules for instance data in an RDF graph. A SHACL shape may, for example, require that every catalytic experiment has a catalyst, restrict a temperature value to a numerical datatype, or define how often a particular property may occur. SHACL therefore evaluates whether the available data conform structurally to the intended representation, whereas an ontology provides the logical vocabulary and axioms used for classification, inference, and semantic interpretation \cite{w3c2017shacl}.
-
 \input{figures/ontology_grounding_layers}
+
+The Shapes Constraint Language (SHACL) can be used to formalise validation rules for instance data in an RDF graph. A SHACL shape may, for example, require that every catalytic experiment has a catalyst, restrict a temperature value to a numerical datatype, or define how often a particular property may occur. SHACL therefore evaluates whether the available data conform structurally to the intended representation, whereas an ontology provides the logical vocabulary and axioms used for classification, inference, and semantic interpretation \cite{w3c2017shacl}.
 
 \subsection{Standards and Resources for Semantic Metadata}
 \label{subsec:semantic-standards-resources}
