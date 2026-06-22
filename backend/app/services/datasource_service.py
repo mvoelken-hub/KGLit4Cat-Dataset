@@ -81,6 +81,8 @@ class DataSourceService:
         data_package = self.get_data_package(data_package_id)
         content_chunks_by_file: list[list[ContentChunk]] = []
         for file_entry in data_package.files:
+            if not file_entry.is_chunkable():
+                continue
             content_chunks = self.blob_repository.load_content_chunks_by_file_path(
                 data_package_id,
                 file_entry.file_path,
@@ -189,6 +191,8 @@ class DataSourceService:
         content_chunks_by_file: list[list[ContentChunk]] = []        
 
         for file_entry in files:
+            if not file_entry.is_chunkable():
+                continue
             content_chunks = self.blob_repository.load_content_chunks_by_file_path(
                 data_package_id,
                 file_entry.file_path,
@@ -274,6 +278,8 @@ class DataSourceService:
         )
         
         for file_entry in files:
+            if not file_entry.is_chunkable():
+                continue
             file_protected = protected_line_indices.get(file_entry.file_path) if protected_line_indices else None
             content_chunks = await ContentChunk.create_chunks_for_file_entry(
                 data_package_id=data_package_id,
