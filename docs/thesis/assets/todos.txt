@@ -1,9 +1,4 @@
-greek und latin symbols zusammenfassen
-keine indices in tabelle aufführen
-Alphabetisch sortieren
 Abbreviations nur einpflegen wenn öfters verwendet wird (Einträge prüfen)
-NFDI - Deutscher Eigenname Nationale Forschungsdateninfrastruktur
-Theoretsicher Background wirklich nur für 
 Journal Abbreviations in Literaturverzeichnis
 arxiv als onlinequelle mit "last accessed"
 chemrxiv auch mit last accessed

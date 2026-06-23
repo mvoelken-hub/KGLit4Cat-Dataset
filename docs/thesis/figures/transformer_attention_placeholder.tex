@@ -1,87 +1,63 @@
 \begin{figure}[H]
     \centering
-    \resizebox{\textwidth}{!}{%
+    \resizebox{0.88\textwidth}{!}{%
     \begin{tikzpicture}[
-        font=\normalfont,
+        font=\normalfont\small,
         >=Stealth,
-        token/.style={
+        input/.style={
             rounded rectangle,
             draw=black!55,
             fill=black!4,
-            line width=0.8pt,
-            minimum width=1.75cm,
-            minimum height=0.75cm,
-            align=center,
-            font=\normalfont\small
-        },
-        vector/.style={
-            rounded rectangle,
-            draw=blue!70!black,
-            fill=blue!6,
-            line width=0.9pt,
-            minimum width=2.15cm,
-            minimum height=0.75cm,
-            align=center,
-            font=\normalfont\small
+            line width=0.7pt,
+            minimum width=2.45cm,
+            minimum height=0.78cm,
+            align=center
         },
         block/.style={
             rounded rectangle,
-            draw=green!45!black,
-            fill=green!7,
-            line width=1.0pt,
-            minimum width=3.0cm,
-            minimum height=0.95cm,
-            align=center,
-            font=\normalfont\small
+            draw=TUgreen!65!black,
+            fill=TUgreen!8,
+            line width=0.9pt,
+            minimum width=3.05cm,
+            minimum height=0.86cm,
+            align=center
         },
-        outblock/.style={
+        output/.style={
             rounded rectangle,
             draw=orange!80!black,
-            fill=orange!9,
-            line width=1.0pt,
-            minimum width=2.6cm,
-            minimum height=0.85cm,
-            align=center,
-            font=\normalfont\small
+            fill=orange!10,
+            line width=0.9pt,
+            minimum width=2.85cm,
+            minimum height=0.86cm,
+            align=center
         },
-        arrow/.style={->, line width=0.9pt, draw=black!65},
-        attn/.style={->, line width=0.9pt, draw=red!70!black, bend left=28}
+        arrow/.style={->, line width=0.85pt, draw=black!65},
+        faint/.style={->, line width=0.65pt, draw=red!70!black}
     ]
 
-    \node[token] (tok1) at (-6.3,3.0) {Token 1};
-    \node[token] (tok2) at (-4.3,3.0) {Token 2};
-    \node[token] (tok3) at (-2.3,3.0) {Token 3};
-    \node[token] (tok4) at (-0.3,3.0) {Token 4};
+    \node[input] (tokens) at (0,0) {Tokens\\+ position};
+    \node[block] (qkv) at (3.35,0) {Query, key, value\\projections};
+    \node[block] (attn) at (6.75,0) {Multi-head\\self-attention};
+    \node[block] (ffn) at (10.0,0) {Feed-forward\\update};
+    \node[output] (next) at (13.25,0) {Next-token\\probabilities};
 
-    \node[vector] (emb1) at (-6.3,1.55) {Embedding\\+ position};
-    \node[vector] (emb2) at (-4.3,1.55) {Embedding\\+ position};
-    \node[vector] (emb3) at (-2.3,1.55) {Embedding\\+ position};
-    \node[vector] (emb4) at (-0.3,1.55) {Embedding\\+ position};
-
-    \node[block] (qkv) at (3.0,1.55) {Query, key, value\\projections};
-    \node[block] (attention) at (3.0,-0.1) {Multi-head\\self-attention};
-    \node[block] (ffn) at (3.0,-1.75) {Feed-forward layer\\+ residual paths};
-    \node[outblock] (next) at (6.8,-1.75) {Next-token\\probabilities};
-
-    \draw[arrow] (tok1) -- (emb1);
-    \draw[arrow] (tok2) -- (emb2);
-    \draw[arrow] (tok3) -- (emb3);
-    \draw[arrow] (tok4) -- (emb4);
-
-    \draw[arrow] (emb1) -- (qkv);
-    \draw[arrow] (emb2) -- (qkv);
-    \draw[arrow] (emb3) -- (qkv);
-    \draw[arrow] (emb4) -- (qkv);
-    \draw[arrow] (qkv) -- (attention);
-    \draw[arrow] (attention) -- (ffn);
+    \draw[arrow] (tokens) -- (qkv);
+    \draw[arrow] (qkv) -- (attn);
+    \draw[arrow] (attn) -- (ffn);
     \draw[arrow] (ffn) -- (next);
 
-    \draw[attn] (tok1.north) to (tok3.north);
-    \draw[attn] (tok2.north) to (tok4.north);
-    \draw[attn] (tok4.north) to[bend left=42] (tok1.north);
+    \node[font=\normalfont\scriptsize, align=center] (t1) at (5.85,1.25) {token};
+    \node[font=\normalfont\scriptsize, align=center] (t2) at (6.75,1.25) {token};
+    \node[font=\normalfont\scriptsize, align=center] (t3) at (7.65,1.25) {token};
+    \draw[faint, bend left=22] (t1) to (t2);
+    \draw[faint, bend left=22] (t2) to (t3);
+    \draw[faint, bend left=28] (t3) to (t1);
+
+    \node[font=\normalfont\scriptsize, align=center, text=black!70] at (6.75,-0.92)
+        {context-dependent token representations};
 
     \end{tikzpicture}%
     }
-    \caption{Placeholder sketch of a transformer block and self-attention mechanism. Tokens are mapped to embeddings with positional information, transformed into query, key, and value vectors, and contextualised through multi-head self-attention before the decoder produces next-token probabilities \cite{vaswani2017attention}.}
+    \caption{Simplified view of a generative transformer block. Tokens with positional information are projected into query, key, and value vectors, contextualised through multi-head self-attention, refined by a feed-forward layer, and mapped to probabilities for the next token \cite{vaswani2017attention}.}
     \label{fig:transformer-attention-placeholder}
 \end{figure}

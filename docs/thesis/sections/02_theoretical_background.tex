@@ -120,22 +120,28 @@ The following sections introduce the technical principles most relevant to under
 \subsection{Transformer Architecture}
 \label{subsec:transformer-architecture}
 
-Most current LLMs are based on the transformer architecture, which replaced recurrent sequence processing paradigm with attention-based computation.
-The difference here is that recurrent processing steps through data sequentially and summarizes the past into a hidden state, while attention-based computation looks at all data points simultaneously and directly maps links between them with a self-attention mechanism \cite{vaswani2017attention,zhao2026surveyllms}.
-Those data points are sub units of text, also referred to as tokens, which are mapped to numerical vector representations, so called token embeddings.
-For each token, the model computes query, key, and value vectors.
-The query of one token is compared with the keys of the other tokens to calculate attention weights.
-The model then calculates a weighted sum of the value vectors, producing a context-dependent representation of the token.
-For example in the sentence \textit{The catalyst was tested after \textbf{it} was activated}, the token \textit{it} refers to \textit{catalyst}, and the attention mechanism allows the model to incorporate information from the token \textit{catalyst} when processing the token \textit{it}.
+Most current LLMs are based on the transformer architecture, which largely replaced the recurrent sequence-processing paradigm with attention-based computation.
+Whereas recurrent models process tokens sequentially and summarize preceding information in a hidden state, transformers use self-attention to directly model relationships between positions in a sequence and can perform many of these computations in parallel \cite{vaswani2017attention,zhao2026surveyllms}.
+The sequence consists of subunits of text, referred to as tokens, which are mapped to numerical vector representations called token embeddings.
+For each token representation, the model computes query, key, and value vectors.
+The query of one token is compared with the keys of the permitted token positions to calculate attention weights.
+In generative models, causal attention restricts these positions to the current and preceding tokens, thereby preventing the model from accessing later tokens during prediction.
+The model then calculates a weighted sum of the corresponding value vectors, producing a context-dependent representation of the token.
+For example, in the sentence \textit{The catalyst was tested after \textbf{it} was activated}, the token \textit{it} refers to \textit{catalyst}, and the attention mechanism allows the model to incorporate information from the token \textit{catalyst} when processing the token \textit{it}.
 Multi-head attention performs several such attention operations in parallel using different learned projections.
 This allows the model to capture several interaction patterns between tokens at the same time.
 Each transformer block combines attention with a feed-forward network, while residual connections and layer normalisation support stable information processing.
 By stacking multiple blocks, the model progressively refines the token representations.
-For generative LLMs, the representation produced by the final transformer block is mapped to a score for every token in the model's vocabulary.
-These scores are converted into a probability distribution that expresses which token is most likely to follow the preceding context.
-The model selects or samples one token from this distribution, appends it to the existing sequence, and repeats the same process autoregressively until the response is complete.
+For generative LLMs, the representation produced at the latest sequence position by the final transformer block is mapped to a score for every token in the model's vocabulary.
+These scores are converted into a probability distribution that expresses how likely each token is to follow the preceding context.
+The model selects or samples one token from this distribution, appends it to the existing sequence, and repeats the process autoregressively until it generates an end-of-sequence token or another stopping condition is reached.
 
-\input{figures/transformer_attention_placeholder}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/self_attention.png}
+    \caption{...}
+    \label{fig:self-attention}
+\end{figure}
 
 Transformer models are commonly grouped into encoder-only, decoder-only, and encoder--decoder architectures \cite{zhao2026surveyllms}. Encoder-only models, such as BERT-like systems, process the input bidirectionally and are well suited for representation learning, classification, and span-level tasks \cite{devlin2019bert,zhao2026surveyllms}. Decoder-only models, such as GPT-style systems, generate text autoregressively by predicting the next token from the preceding context and then repeating this step until a complete output has been produced \cite{brown2020language,zhao2026surveyllms}. Encoder--decoder models combine an input encoder with an output decoder and are commonly used for sequence-to-sequence transformations \cite{vaswani2017attention,zhao2026surveyllms}.
 
