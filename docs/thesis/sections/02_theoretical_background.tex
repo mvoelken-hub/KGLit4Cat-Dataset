@@ -4,7 +4,7 @@ In order to develop a workflow that can extract metadata from arbitrary catalysi
 The first section introduces the landscape of data in catalytic experiments, motivating the need for application-specific schemas as a metadata standard.
 After that, a short section presents metadata standards on a conceptual level.
 As these standards should align with common rules, the third section introduces semantic web technologies as a toolset for representing and connecting the data in a machine-actionable form, as well as providing a common language with which to formulate the standards.
-The fourth section provides background on large language models (LLMs), as this work aims to utilize their capabilities to extract information from an unstructured, human-readable form into any specified structured format.
+The fourth section provides background on large language models (LLMs), as this work aims to utilize their capabilities to extract information from an unstructured, human-readable form into any specified format.
 
 \section{Catalytic Experiments}
 \label{sec:catalytic-experiments}
@@ -44,8 +44,7 @@ As the previous section demonstrated, catalytic measurements only become scienti
 Metadata standards address this need by defining how such context should be documented in a consistent, reusable way.
 Conceptually, a metadata standard specifies the expected information, how it should be structured and how values should be expressed, enabling records to be interpreted beyond the laboratory in which they were created \cite{wulf2021unified,mendes2025data}.
 
-Therefore, a metadata standard does more than list descriptive labels.
-It establishes a shared framework for reporting on the entities, activities, quantities, units, methods, instruments and provenance relations required to comprehend a dataset.
+Therefore, a metadata standard establishes a shared framework for reporting on the entities, activities, quantities, units, methods, instruments and provenance relations required to comprehend a dataset.
 Some requirements describe the minimum information necessary for an experiment to be interpreted, compared, or reproduced.
 Other requirements concern consistency, stipulating that values use stable units, controlled terms, identifiers and data types instead of uncontrolled local wording.
 In this sense, a standard establishes an agreement between data producers and users regarding what constitutes sufficient context for reuse \cite{wulf2021unified,steinbeck2020nfdi4chem}.
