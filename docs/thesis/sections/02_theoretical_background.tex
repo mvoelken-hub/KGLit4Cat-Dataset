@@ -83,29 +83,57 @@ Furthermore, the resources and predicates can be identified with Uniform Resourc
 
 \input{figures/ontology_grounding_layers}
 
-The Shapes Constraint Language (SHACL) can be used to formalise validation rules for instance data in an RDF graph. A SHACL shape may, for example, require that every catalytic experiment has a catalyst, restrict a temperature value to a numerical datatype, or define how often a particular property may occur. SHACL therefore evaluates whether the available data conform structurally to the intended representation, whereas an ontology provides the logical vocabulary and axioms used for classification, inference, and semantic interpretation \cite{w3c2017shacl}.
+The Shapes Constraint Language (SHACL) can be used to formalise validation rules for instance data in an RDF graph. A SHACL shape may, for example, require that every catalytic experiment has a catalyst, restrict a temperature value to a numerical datatype, or define how often a particular property may occur.
+SHACL therefore evaluates whether the available data conform structurally to the intended representation, whereas an ontology provides the logical vocabulary and axioms used for classification, inference, and semantic interpretation \cite{w3c2017shacl}.
 
 \subsection{Querying and Reasoning}
 \label{subsec:querying-reasoning}
 
-Representing metadata as a graph enables information to be retrieved through its semantic structure rather than only through textual similarity. A graph query describes relations between entities and returns the parts of the graph that satisfy this pattern. In RDF-based knowledge graphs, such queries are commonly expressed in the SPARQL Protocol and RDF Query Language (SPARQL) as patterns over subject--predicate--object statements \cite{w3c2013sparql11query,w3c2013sparql11overview}. Property-graph databases use related declarative query languages such as Cypher or the standardised Graph Query Language (GQL) \cite{neo4jCypherManual,openCypherSpecification,iso2024gql}. Although their underlying graph models differ, both approaches allow data to be retrieved by following explicit connections between entities.
+Representing metadata as a graph enables information to be retrieved through its semantic structure rather than only through textual similarity.
+A graph query describes relations between entities and returns the parts of the graph that satisfy this pattern.
+In RDF-based knowledge graphs, such queries are commonly expressed in the SPARQL Protocol and RDF Query Language (SPARQL) as patterns over subject--predicate--object statements \cite{w3c2013sparql11query,w3c2013sparql11overview}.
+Property-graph databases use related declarative query languages such as Cypher or the standardised Graph Query Language (GQL) \cite{neo4jCypherManual,openCypherSpecification,iso2024gql}.
+Although their underlying graph models differ, both approaches allow data to be retrieved by following explicit connections between entities.
 
-This structural access is particularly relevant for semantic metadata processing. An extracted term does not have to be treated as an isolated label, but can be examined together with its position in a vocabulary or ontology. After a candidate concept has been identified, a graph query can retrieve its identifier, preferred and alternative labels, broader concepts, associated classes, or other directly connected semantic information. The graph therefore provides controlled context for deciding whether a candidate term corresponds to the meaning intended in the source data. Textual and embedding-based retrieval can support the initial identification of candidates, while graph queries expose the relations required for their subsequent interpretation.
+This structural access is particularly relevant for semantic metadata processing.
+An extracted term does not have to be treated as an isolated label, but can be examined together with its position in a vocabulary or ontology.
+After a candidate concept has been identified, a graph query can retrieve its identifier, preferred and alternative labels, broader concepts, associated classes, or other directly connected semantic information.
+The graph therefore provides controlled context for deciding whether a candidate term corresponds to the meaning intended in the source data.
+Textual and embedding-based retrieval can support the initial identification of candidates, while graph queries expose the relations required for their subsequent interpretation.
 
-Querying operates primarily on statements that are explicitly present in the graph. Reasoning extends this access by deriving statements that follow from the semantic model. Axioms can, for example, propagate class membership through subclass relations or recognise that differently named resources represent equivalent concepts \cite{w3c2014rdfschema,w3c2012owl2primer}. A query for instances of a general class can consequently also return entities that were only asserted as instances of a more specialised subclass. Reasoning therefore separates the way knowledge was originally recorded from the level of abstraction at which it can later be retrieved.
+Querying operates primarily on statements that are explicitly present in the graph.
+Reasoning extends this access by deriving statements that follow from the semantic model.
+Axioms can, for example, propagate class membership through subclass relations or recognise that differently named resources represent equivalent concepts \cite{w3c2014rdfschema,w3c2012owl2primer}.
+A query for instances of a general class can consequently also return entities that were only asserted as instances of a more specialised subclass.
+Reasoning therefore separates the way knowledge was originally recorded from the level of abstraction at which it can later be retrieved.
 
-Within the workflow developed in this thesis, querying is primarily used to access and inspect the semantic context of vocabulary terms stored in the Neo4j-backed vocabulary layer. Candidate terms identified from dataset content can be connected to their surrounding graph neighbourhood before they are used for metadata generation. This allows the extraction process to rely not only on lexical similarity, but also on explicit semantic relations and stable identifiers. Querying and reasoning thus provide the connection between initially extracted expressions and the controlled domain knowledge against which the resulting metadata are grounded.
+Within the workflow developed in this thesis, querying is primarily used to access and inspect the semantic context of vocabulary terms stored in the Neo4j-backed vocabulary layer.
+Candidate terms identified from dataset content can be connected to their surrounding graph neighbourhood before they are used for metadata generation.
+This allows the extraction process to rely not only on lexical similarity, but also on explicit semantic relations and stable identifiers.
+Querying and reasoning thus provide the connection between initially extracted expressions and the controlled domain knowledge against which the resulting metadata are grounded.
 
 \section{Large Language Models}
 \label{sec:large-language-models}
-Large Language Models (LLMs) are neural language models that learn statistical regularities from large text corpora and use these learned representations to predict, generate, transform, and classify text \cite{zhao2026surveyllms,brown2020language}. They are part of the broader development of generative artificial intelligence, in which models do not only assign labels to predefined inputs, but generate new sequences such as natural-language explanations, code, tables, or structured records \cite{zhao2026surveyllms,dagdelen2024structured}. The following sections introduce the technical foundations that are most relevant for understanding LLM-based systems: transformer architectures, retrieval-augmented generation, and methods for structured output generation.
+Large language models (LLMs) are systems based on neural networks that learn statistical patterns from large amounts of text. They use these patterns to predict the next segment of text in a sequence, and this capability can be used to generate arbitrary outputs, such as queries or even structured RDF graphs. \cite{zhao2026surveyllms,brown2020language}.
+The following sections introduce the technical principles most relevant to understanding LLM-based systems, including transformer architectures, retrieval-augmented generation and methods for generating structured outputs.
 
 \subsection{Transformer Architecture}
 \label{subsec:transformer-architecture}
 
-Most current LLMs are based on the transformer architecture, which replaced recurrent sequence processing with attention-based computation \cite{vaswani2017attention,zhao2026surveyllms}. Text is first divided into tokens, which are mapped to numerical vector representations. These token embeddings do not store words as discrete symbols alone, but place them in a continuous vector space in which semantic and syntactic regularities can be represented numerically \cite{devlin2019bert}. Positional information is added so that the model can distinguish the order of tokens, because the attention mechanism itself processes the sequence as a set of vector representations \cite{vaswani2017attention}.
-
-The central mechanism of a transformer is self-attention \cite{vaswani2017attention}. For each token, the model computes query, key, and value vectors. Attention weights are obtained by comparing queries with keys, and these weights determine how strongly the value vectors of other tokens contribute to the updated representation of the current token. Multi-head attention repeats this operation in several learned subspaces, allowing the model to represent different types of relationships in parallel. Feed-forward layers, residual connections, layer normalisation, and stacked transformer blocks then transform these contextualised token representations into deeper representations that can support language understanding and generation \cite{vaswani2017attention,devlin2019bert}.
+Most current LLMs are based on the transformer architecture, which replaced recurrent sequence processing paradigm with attention-based computation.
+The difference here is that recurrent processing steps through data sequentially and summarizes the past into a hidden state, while attention-based computation looks at all data points simultaneously and directly maps links between them with a self-attention mechanism \cite{vaswani2017attention,zhao2026surveyllms}.
+Those data points are sub units of text, also referred to as tokens, which are mapped to numerical vector representations, so called token embeddings.
+For each token, the model computes query, key, and value vectors.
+The query of one token is compared with the keys of the other tokens to calculate attention weights.
+The model then calculates a weighted sum of the value vectors, producing a context-dependent representation of the token.
+For example in the sentence \textit{The catalyst was tested after \textbf{it} was activated}, the token \textit{it} refers to \textit{catalyst}, and the attention mechanism allows the model to incorporate information from the token \textit{catalyst} when processing the token \textit{it}.
+Multi-head attention performs several such attention operations in parallel using different learned projections.
+This allows the model to capture several interaction patterns between tokens at the same time.
+Each transformer block combines attention with a feed-forward network, while residual connections and layer normalisation support stable information processing.
+By stacking multiple blocks, the model progressively refines the token representations.
+For generative LLMs, the representation produced by the final transformer block is mapped to a score for every token in the model's vocabulary.
+These scores are converted into a probability distribution that expresses which token is most likely to follow the preceding context.
+The model selects or samples one token from this distribution, appends it to the existing sequence, and repeats the same process autoregressively until the response is complete.
 
 \input{figures/transformer_attention_placeholder}
 
