@@ -141,67 +141,94 @@ Property graphs are particularly suited to database-oriented traversal, applicat
 
 \section{Large Language Models}
 \label{sec:large-language-models}
-Large language models (LLMs) are systems based on neural networks that learn statistical patterns from large amounts of text. They use these patterns to predict the next segment of text in a sequence, and this capability can be used to generate arbitrary outputs, such as queries or even structured RDF graphs. \cite{zhao2026surveyllms,brown2020language}.
+Large language models (LLMs) are systems based on layers of transformers and feed-forward neural networks that learn statistical patterns from large amounts of text.
+They use these patterns to predict the next piece of text in a sequence, and this capability can be used to generate arbitrary outputs, such as queries against a property graph or even structured RDF graphs \cite{zhao2026surveyllms,brown2020language}.
 The following sections introduce the technical principles most relevant to understanding LLM-based systems, including transformer architectures, retrieval-augmented generation and methods for generating structured outputs.
 
-\subsection{Transformer Architecture}
-\label{subsec:transformer-architecture}
+\subsection{Tokenization}
+\label{subsec:tokenization}
 
-Most current LLMs are based on the transformer architecture, which largely replaced the recurrent sequence-processing paradigm with attention-based computation.
-Whereas recurrent models process tokens sequentially and summarize preceding information in a hidden state, transformers use self-attention to directly model relationships between positions in a sequence and can perform many of these computations in parallel \cite{vaswani2017attention,zhao2026surveyllms}.
-The sequence consists of subunits of text, referred to as tokens, which are mapped to numerical vector representations called token embeddings.
-For each token representation, the model computes query, key, and value vectors.
-The query of one token is compared with the keys of the permitted token positions to calculate attention weights.
-In generative models, causal attention restricts these positions to the current and preceding tokens, thereby preventing the model from accessing later tokens during prediction.
-The model then calculates a weighted sum of the corresponding value vectors, producing a context-dependent representation of the token.
-For example, in the sentence \textit{The catalyst was tested after \textbf{it} was activated}, the token \textit{it} refers to \textit{catalyst}, and the attention mechanism allows the model to incorporate information from the token \textit{catalyst} when processing the token \textit{it}.
-Multi-head attention performs several such attention operations in parallel using different learned projections.
-This allows the model to capture several interaction patterns between tokens at the same time.
-Each transformer block combines attention with a feed-forward network, while residual connections and layer normalisation support stable information processing.
-By stacking multiple blocks, the model progressively refines the token representations.
-For generative LLMs, the representation produced at the latest sequence position by the final transformer block is mapped to a score for every token in the model's vocabulary.
-These scores are converted into a probability distribution that expresses how likely each token is to follow the preceding context.
-The model selects or samples one token from this distribution, appends it to the existing sequence, and repeats the process autoregressively until it generates an end-of-sequence token or another stopping condition is reached.
+LLMs do not process raw text directly.
+Before text enters the transformer, a tokenizer divides it into a sequence of discrete units called tokens.
+Depending on the tokenizer, a token may represent a complete word, a word fragment, punctuation, digits, whitespace, or a special control symbol.
+Subword tokenization allows a fixed vocabulary to represent both frequent terms as single tokens and uncommon expressions as combinations of smaller units \cite{kudo2018sentencepiece}.
+This is particularly relevant for scientific text, where chemical formulas, identifiers, units, and uncommon technical terms may each be divided into several tokens.
+
+Each token is mapped to an integer identifier, which is then used to retrieve a learned numerical vector called a token embedding.
+Because an embedding alone does not identify where a token occurs in the sequence, positional information is combined with the token representation before it is processed by the transformer \cite{vaswani2017attention}.
+The number of tokens produced by this process, rather than the number of words or characters in the original text, determines how much of the model's context window is occupied.
+
+\subsection{Context Processing}
+\label{subsec:context-processing}
+
+The embedded token sequence is processed by a stack of transformer blocks.
+Within each block, self-attention allows the representation of a token to incorporate information from other tokens in the sequence.
+For this purpose, the model derives query, key, and value vectors from each token representation.
+The query of one position is compared with the keys of other accessible positions, and the resulting attention weights determine how their value vectors are combined.
+In a generative decoder model, a causal mask restricts this operation to the preceding tokens.
+Multi-head attention performs several such operations using different learned projections, allowing the model to represent different interaction patterns simultaneously \cite{vaswani2017attention}.
+
+Figure~\ref{fig:self-attention} illustrates the self-attention mechanism and shows how each attention operation is followed by a position-wise feed-forward network that applies learned nonlinear transformations to every token representation.
+While attention exchanges information between sequence positions, the feed-forward layers provide additional representational capacity for transforming the information available at each position.
+During training, the parameters of both components are adjusted to encode statistical patterns present in the training data.
+By repeatedly applying attention and feed-forward transformations, successive blocks construct increasingly context-dependent token representations.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.88\textwidth]{figures/self_attention.png}
-    \caption{...}
+    \caption{Self-Attention Mechanism}
     \label{fig:self-attention}
 \end{figure}
 
-Transformer models are commonly grouped into encoder-only, decoder-only, and encoder--decoder architectures \cite{zhao2026surveyllms}. Encoder-only models, such as BERT-like systems, process the input bidirectionally and are well suited for representation learning, classification, and span-level tasks \cite{devlin2019bert,zhao2026surveyllms}. Decoder-only models, such as GPT-style systems, generate text autoregressively by predicting the next token from the preceding context and then repeating this step until a complete output has been produced \cite{brown2020language,zhao2026surveyllms}. Encoder--decoder models combine an input encoder with an output decoder and are commonly used for sequence-to-sequence transformations \cite{vaswani2017attention,zhao2026surveyllms}.
+These computations consist predominantly of large matrix operations and are therefore commonly executed on graphics processing units (GPUs), which can perform many numerical operations in parallel.
+For efficient execution, model weights, intermediate activations, and attention-related data must normally be available in the GPU's video random-access memory (VRAM).
+System random-access memory (RAM) can be used through offloading, but repeatedly transferring data between RAM and the GPU introduces substantial latency and generally reduces processing speed.
 
-The generative behaviour of many LLMs is based on language modelling \cite{zhao2026surveyllms,brown2020language}. During pretraining, the model learns from large text collections with a self-supervised objective, such as predicting missing or subsequent tokens. Although this objective is simple, large-scale pretraining can produce models that capture linguistic regularities, factual associations, and task-like patterns from text \cite{brown2020language,zhao2026surveyllms}. A pretrained model, however, does not automatically behave like a helpful instruction-following assistant \cite{ouyang2022training}. Later training stages therefore adapt the model to user-facing tasks. Instruction tuning trains the model on examples of instructions and desired responses, while reinforcement learning from human feedback can further align outputs with human preferences and task intent \cite{ouyang2022training,zhao2026surveyllms}.
+The context window specifies the maximum combined number of input tokens that the model can process.
+Its size is restricted by both the model architecture and computational resources.
+In the standard attention formulation, processing an input sequence requires comparisons between pairs of token positions, causing the computational cost to grow quadratically with the sequence length.
+During autoregressive generation, previously calculated key and value vectors are commonly retained in a key--value cache so that they do not have to be recomputed for every new token.
+The size of this cache grows with the sequence length and can consume a substantial fraction of the available VRAM \cite{kwon2023pagedattention}.
+Longer contexts therefore increase processing time and memory consumption even when memory-efficient attention implementations are used.
 
-In-context learning describes the ability of large language models to adapt their behaviour from information provided directly in the prompt, without updating the model weights \cite{brown2020language,zhao2026surveyllms}. A prompt may contain a task description, formatting rules, background information, or a small number of examples. The model processes these elements together with the current input as one context and generates a continuation that follows the patterns implied by that context \cite{brown2020language,liu2024lostmiddle}. This makes the prompt an operational part of the model interaction: it can specify what kind of output is expected, how ambiguities should be handled, and which examples should guide the response, while the underlying model parameters remain unchanged.
+\subsection{Output Generation}
+\label{subsec:output-generation}
 
-Text embeddings are also important beyond the internal token representations of a transformer \cite{reimers2019sentencebert}. Encoder models and specialised sentence-transformer models can map words, sentences, paragraphs, or documents into dense vectors that capture semantic similarity \cite{devlin2019bert,reimers2019sentencebert}. Such embeddings make it possible to compare texts by vector distance, cluster related passages, or retrieve semantically similar documents \cite{reimers2019sentencebert,dreger2025knowledgegraph}. They therefore provide a bridge between symbolic text and numerical search procedures, which is one reason why embeddings are frequently used together with retrieval-based LLM systems \cite{gao2023ragsurvey}.
+After the input context has been processed inside the transformer layers as shown in Figure~\ref{fig:self-attention}, an LLM maps the representation at the latest sequence position to a score for every token in its vocabulary.
+These scores are converted into a probability distribution.
+A decoding strategy then selects the next token.
+Decoding parameters such as temperature and nucleus-sampling thresholds modify this selection process and consequently influence the variability of the generated output \cite{holtzman2019curious}.
+A temperature parameter which is set to 0 selects the token with the highest probability, whereas sampling-based strategies may select alternative tokens according to their probabilities.
 
-\subsection{Retrieval Augmented Generation}
+The selected token is appended to the sequence, after which the model predicts the following token.
+This autoregressive procedure continues until an end token, a length limit, or another stopping condition is reached.
+The output is therefore generated as a sequence of individual token decisions rather than as a complete data structure.
+Even when the prompt requests JavaScript Object Notation (JSON), RDF, or another formal representation, ordinary decoding does not inherently guarantee valid syntax, the presence of required fields, or the correct assignment of extracted values.
+
+A structured extraction workflow must consequently distinguish between generation, parsing, and validation.
+The generated text can first be passed to a strict parser and subsequently checked against a schema or constraint model.
+If parsing fails, fallback strategies may isolate the intended output block, correct unambiguous syntactic defects, or repeat generation while providing the detected validation error.
+When supported by the inference system, grammar-constrained decoding can prevent the generation of tokens that would violate a specified formal grammar and thereby guarantee syntactic conformity \cite{geng2023grammar}.
+Such constraints do not, however, guarantee semantic correctness: a syntactically valid result may still contain unsupported values, incorrect relations, or omitted information.
+A workflow should therefore not just accept syntactically valid output, but also aim to build in a semantic validation loop.
+
+\subsection{Retrieval-Augmented Generation (RAG)}
 \label{subsec:retrieval-augmented-generation}
 
-Retrieval-Augmented Generation (RAG) extends a generative language model with an explicit retrieval step \cite{lewis2020retrieval,gao2023ragsurvey}. Instead of relying only on information stored implicitly in the model parameters during training, the system first searches an external collection for relevant documents, passages, database entries, schema descriptions, or examples. The retrieved material is then inserted into the model context, and the model generates an answer conditioned on both the user input and the supplied external evidence \cite{lewis2020retrieval}.
+The information encoded in a language model's parameters is determined during training and cannot be updated afterwards.
+At the same time, the finite context window prevents all potentially relevant knowledge from being supplied in every request.
+Retrieval-augmented generation (RAG) addresses these limitations by combining the model's parametric knowledge with an external, updateable information source \cite{lewis2020retrieval}.
 
-\input{figures/rag_architecture_placeholder}
+In a typical RAG workflow, documents are divided into passages and stored in a searchable index.
+For a given request, a retrieval component identifies a limited set of relevant passages using lexical matching, vector similarity, or a combination of both.
+The retrieved passages may be reranked and are then inserted into the model's prompt together with the task instructions and input data.
+The language model consequently generates its output using both its learned parameters and the information supplied at inference time.
 
-This separation is conceptually important because model parameters and external knowledge serve different roles \cite{lewis2020retrieval,gao2023ragsurvey}. Parameter knowledge is compressed into the weights during training and is difficult to inspect, update, or restrict after deployment. Retrieved context, by contrast, can be selected at inference time, can reflect a curated or current knowledge source, and can be shown together with the generated response. RAG therefore reduces the need for the LLM to answer purely from memory and gives the generation process access to explicit supporting information \cite{gao2023ragsurvey}.
+RAG does not increase the model's context window.
+Instead, it reduces the amount of information that must be included by selecting passages that are expected to be relevant.
+This allows ontology definitions, documentation, or domain-specific examples to be incorporated without retraining the language model.
+For metadata extraction, retrieval can provide definitions of target properties, valid terminology, representation examples, or documentation for an encountered file format.
 
-A common RAG pipeline consists of indexing, retrieval, context construction, and generation \cite{gao2023ragsurvey,zhao2026surveyllms}. During indexing, source documents are split into smaller units and represented for search, often by sparse lexical features, dense embeddings, or a combination of both. During retrieval, the system selects the most relevant units for the current query. These units are then placed into a prompt or context window together with the user's request. The LLM finally generates an output that is conditioned on this retrieved material \cite{lewis2020retrieval,gao2023ragsurvey}. The quality of such a system therefore depends not only on the language model, but also on the relevance, granularity, and ordering of the retrieved context \cite{gao2023ragsurvey,liu2024lostmiddle}.
-
-RAG does not remove all limitations of LLMs \cite{gao2023ragsurvey,asai2024selfrag}. A model may ignore relevant retrieved evidence, overinterpret ambiguous passages, or generate unsupported details if the prompt and validation procedure do not constrain the response sufficiently \cite{liu2024lostmiddle,asai2024selfrag}. Nevertheless, RAG changes the basic information source available to the model: the answer no longer has to be generated only from the statistical associations stored in the parameters, but can be grounded in information supplied at inference time \cite{lewis2020retrieval,gao2023ragsurvey}.
-
-\subsection{Structured Output}
-\label{subsec:structured-output}
-
-LLMs generate text token by token, but many downstream workflows require outputs that can be processed as structured data. Structured-output techniques address this by constraining the model interaction before, during, or after generation \cite{schilling2025text,dagdelen2024structured}.
-
-The simplest approach is to specify the desired format directly in the prompt, for example JSON, YAML, XML, Markdown tables, or subject--predicate--object triples \cite{dagdelen2024structured}. The prompt may define fields, allowed values, nesting rules, or examples. However, this only guides the model: the structure is still generated as ordinary text and may therefore be malformed, incomplete, or inconsistent with the requested schema \cite{dagdelen2024structured,caufield2024spires}.
-
-A stronger interface-level approach is tool or function calling \cite{schick2023toolformer,schilling2025text}. Here, the model is asked to select a predefined tool and fill its named parameters. This makes the boundary between natural-language reasoning and machine-readable action more explicit, because arguments can be checked against the tool specification before execution or acceptance \cite{schick2023toolformer,caufield2024spires}. Nevertheless, valid argument structure does not guarantee that the generated values are factually correct or grounded in the input \cite{caufield2024spires,yao2023react}.
-
-A third approach is output parsing and validation \cite{dreger2025knowledgegraph,schilling2025text}. The generated response is treated as a candidate structure and is accepted only if it can be parsed and validated against constraints such as schemas or SHACL shapes \cite{w3c2017shacl,dreger2025knowledgegraph}. This can reject malformed records, enforce required fields, and normalise datatypes. However, validation mainly checks processability; semantic errors can remain when a syntactically valid output contains unsupported or inappropriate content \cite{caufield2024spires,dreger2025knowledgegraph}.
-
-\input{tables/structured_output_approaches}
-
-Table~\ref{tab:structured-output-approaches} compares these three approaches according to where they constrain the workflow \cite{schilling2025text}. Prompt instructions guide the model before generation, tool or function calling constrains the interaction interface during generation, and parsing or validation checks the result after generation. The table also highlights their shared limitation: structured-output methods make LLM responses more predictable and machine-actionable, but they do not by themselves guarantee completeness, factual correctness, or grounding in the source material \cite{dreger2025knowledgegraph}.
+The quality of the final result remains dependent on the retrieval stage.
+Relevant information may be omitted because of imprecise queries or limitations of the retrieval system, while irrelevant passages may consume context capacity and misdirect generation.
+RAG-based systems should therefore evaluate retrieval quality separately from generation quality and retain references to the retrieved passages so that generated extraction results can be traced to their supporting context.
