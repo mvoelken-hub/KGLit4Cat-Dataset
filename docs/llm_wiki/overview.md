@@ -2,7 +2,7 @@
 type: concept
 title: "Overview: Catalysis, LLMs, Knowledge Graphs, and FAIR Data"
 created: 2025-06-23
-updated: 2025-06-23
+updated: 2026-06-26
 sources: [all]
 tags: [catalysis, llm, knowledge-graph, ontology, fair-data]
 ---
@@ -35,6 +35,9 @@ LLMs have entered catalysis research through multiple pathways:
 ### Knowledge Graphs as the Bridge
 KGs sit between raw literature and AI applications. [[knowledge-graphs-for-catalysis]] reviews the landscape: from ontology-guided text mining to LLM-driven graph generation ([[llm-kg-ontology-generation]]) to RAG-enhanced natural language queries. The vision is self-updating SciKGs co-evolving with LLMs ([[kg-survey-ai-for-science]]).
 
+### LLM Foundations and Reliability
+The fresh LLM foundations batch clarifies the technical substrate behind these applied systems. [[attention-is-all-you-need]] supplies the Transformer architecture; [[bert]], [[scibert]], and [[sentence-bert]] explain the encoder and embedding lineage for scientific NLP and retrieval; [[gpt3-few-shot-learners]] and [[instructgpt-rlhf]] explain prompt-based and instruction-following LLM use. The main operational lesson is that extraction quality depends on more than model capability: retrieval design ([[retrieval-augmented-generation]], [[self-rag]]), context placement ([[lost-in-the-middle]]), decoding choices ([[neural-text-degeneration]]), and structured-output controls ([[grammar-constrained-decoding]], [[structured-output-ie-go]]) all shape whether outputs are faithful and schema-valid.
+
 ### Ontology Development
 Ontology work ranges from foundational theory ([[guarino-fois98]], [[bfo-textbook]]) to catalysis-specific implementations ([[chemdcat-ap]], [[ontologies4cat]], [[ontology-reaction-classification]]). LLMs are now being used to automate ontology construction ([[llm-kg-ontology-generation]]) and matching ([[complex-ontology-matching-llm]], [[lakermap-ontology-matching]], [[hgnn-ontology-matching]]).
 
@@ -49,6 +52,10 @@ Ontology work ranges from foundational theory ([[guarino-fois98]], [[bfo-textboo
 4. **Open vs. proprietary**: The community strongly favors open-source (NFDI, SPIRES, CatMiner supports open models), but best LLM performance often comes from proprietary models (GPT-4o in Adsorb-Agent).
 
 5. **Data scarcity vs. data quality**: The community needs more data, but also better data. Mandatory FAIR depositing before publication ([[data-key-resource-catalysis]]) addresses both.
+
+6. **Long context vs. curated evidence**: More tokens do not guarantee better extraction. [[lost-in-the-middle]] suggests that SIMONE-like workflows should retrieve and order compact evidence windows rather than dumping full documents into prompts.
+
+7. **Free-form generation vs. schema validity**: [[grammar-constrained-decoding]] and [[structured-output-ie-go]] strengthen the case for separating evidence interpretation from schema serialization.
 
 ## Map of the Literature
 
@@ -90,6 +97,9 @@ Ontology work ranges from foundational theory ([[guarino-fois98]], [[bfo-textboo
 - [[mardiflow-voc4cat]] — MaRDIFlow + Voc4Cat (2025)
 
 ### Foundational / Background
+- [[llm-foundations]] - LLM architecture, tokenization, instruction tuning, serving
+- [[retrieval-augmented-generation]] - retrieval, source grounding, long-context limits
+- [[structured-output-reliability]] - constrained decoding and schema-valid extraction
 - [[guarino-fois98]] — Formal ontology (1998)
 - [[bfo-textbook]] — BFO textbook
 - [[ontocape]] — OntoCAPE (2010)

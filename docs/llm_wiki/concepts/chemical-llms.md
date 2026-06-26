@@ -2,8 +2,8 @@
 type: concept
 title: "Chemical LLMs and Domain-Specialized Models"
 created: 2025-06-23
-updated: 2025-06-23
-sources: [catalm-catalyst-design-llm, chemdfm-r, bo-icl-bayesian-optimization-catalysis, gollum-uncertainty-calibrated-llm, catminer-llm-catalysis-extraction, llama3-lora-qlora, monte-carlo-thought-search, adsorb-agent, schilling2025text, zhang2024chemicaltextmining, marconato2025reasoning]
+updated: 2026-06-26
+sources: [catalm-catalyst-design-llm, chemdfm-r, bo-icl-bayesian-optimization-catalysis, gollum-uncertainty-calibrated-llm, catminer-llm-catalysis-extraction, llama3-lora-qlora, monte-carlo-thought-search, adsorb-agent, schilling2025text, zhang2024chemicaltextmining, marconato2025reasoning, attention-is-all-you-need, bert, scibert, gpt3-few-shot-learners, instructgpt-rlhf, llm-survey-zhao2026]
 tags: [llm, chemical-reasoning, catalysis]
 ---
 
@@ -11,6 +11,12 @@ tags: [llm, chemical-reasoning, catalysis]
 
 ## Overview
 General-purpose LLMs lack deep domain knowledge in chemistry and catalysis. Multiple strategies exist for adapting LLMs to chemical domains: fine-tuning, in-context learning, agent architectures, and reasoning-augmented training.
+
+## General LLM Foundations
+- [[attention-is-all-you-need]] provides the Transformer architecture used by later chemical and scientific language models.
+- [[bert]] and [[scibert]] show the path from general bidirectional encoders to scientific-domain encoders.
+- [[gpt3-few-shot-learners]] and [[instructgpt-rlhf]] explain why modern extraction workflows can use prompted, instruction-following models rather than only task-specific NLP pipelines.
+- [[llm-survey-zhao2026]] provides a broad taxonomy of pre-training, post-training, utilization, and evaluation.
 
 ## Fine-Tuned Domain LLMs
 
@@ -56,3 +62,4 @@ General-purpose LLMs lack deep domain knowledge in chemistry and catalysis. Mult
 2. **General vs. specialized**: Domain-specific models (CataLM) vs. general LLMs with domain prompting (CatMiner)
 3. **Reasoning vs. retrieval**: ChemDFM-R builds reasoning; others rely on knowledge retrieval
 4. **Open vs. proprietary**: Adsorb-Agent tests both; ChemDFM-R uses open-source; BO-ICL uses GPT-3.5/Gemini
+5. **Domain knowledge vs. source grounding**: Domain-specialized weights help, but [[retrieval-augmented-generation]] and [[structured-output-reliability]] remain necessary for traceable extraction.

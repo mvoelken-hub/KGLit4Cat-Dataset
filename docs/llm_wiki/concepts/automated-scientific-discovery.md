@@ -2,8 +2,8 @@
 type: concept
 title: "Automated Scientific Discovery"
 created: 2025-06-23
-updated: 2025-06-23
-sources: [bo-icl-bayesian-optimization-catalysis, gollum-uncertainty-calibrated-llm, monte-carlo-thought-search, adsorb-agent, autonomous-protein-engineering, alchemybench, kg-survey-ai-for-science, catalyst-informatics]
+updated: 2026-06-26
+sources: [bo-icl-bayesian-optimization-catalysis, gollum-uncertainty-calibrated-llm, monte-carlo-thought-search, adsorb-agent, autonomous-protein-engineering, alchemybench, kg-survey-ai-for-science, catalyst-informatics, toolformer, self-rag, llm-survey-zhao2026]
 tags: [materials-discovery, llm, agent, catalysis]
 ---
 
@@ -47,6 +47,11 @@ Future: ontology-driven catalyst informatics
 - AI scientists as core infrastructure for autonomous discovery
 - SciKGs as knowledge infrastructure; LLMs as dynamic semantic engines
 - Self-evolving, auditable, interoperable knowledge graphs
+
+## Tool Use and Retrieval
+- [[toolformer]] provides an early general pattern for LMs learning when and how to call external tools.
+- [[self-rag]] adds adaptive retrieval and critique, an important pattern for agents that must decide when source evidence is required.
+- [[llm-survey-zhao2026]] frames agentic reasoning and tool use as part of modern LLM utilization.
 
 ## Key Enablers
 1. **FAIR data** (see [[catalysis-data-infrastructure]]) — without data, no learning

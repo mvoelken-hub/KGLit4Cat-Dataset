@@ -14,11 +14,14 @@ Content-oriented catalog of all pages in the LLM Wiki. Organized by category.
 - [[bayesian-optimization-for-catalysis|Bayesian Optimization for Catalysis]] — BO with LLM surrogates (BO-ICL, GOLLuM)
 - [[automated-scientific-discovery|Automated Scientific Discovery]] — Closed-loop optimization, autonomous labs, AI scientists
 - [[chemical-llms|Chemical LLMs]] — Domain-specialized LLMs for chemistry/catalysis
+- [[llm-foundations|LLM Foundations]] - Transformer architecture, tokenization, instruction tuning, scientific encoders, and serving
 
 ### Knowledge & Data
 - [[knowledge-graphs-for-catalysis|Knowledge Graphs for Catalysis]] — KG construction, population, and applications
 - [[text-mining-for-catalysis|Text Mining for Catalysis Literature]] — IE from catalysis papers using NLP/LLMs
 - [[catalysis-data-infrastructure|FAIR Data Infrastructure for Catalysis]] — NFDI, repositories, standards, workflows
+- [[retrieval-augmented-generation|Retrieval-Augmented Generation]] - Evidence retrieval, RAG design, long-context limits, and source grounding
+- [[structured-output-reliability|Structured Output Reliability]] - Schema-valid LLM extraction, constrained decoding, and evidence-aware validation
 
 ### Ontology
 - [[ontology-development|Ontology Development for Catalysis]] — Domain ontologies, vocabularies, application profiles
@@ -72,6 +75,29 @@ Content-oriented catalog of all pages in the LLM Wiki. Organized by category.
 | [[lin2024knnbioel]] | kNN-BioEL: Retrieval-Enhanced BioEL | 2024 | llm, text-mining |
 | [[zi2026shattering]] | ShatterMed-QA: Multi-hop Medical Reasoning | 2026 | llm, knowledge-graph |
 | [[marconato2025reasoning]] | Reasoning Shortcuts (PhD Thesis) | 2025 | llm, chemical-reasoning |
+| [[scibert]] | SciBERT: Scientific Language Model | 2019 | llm, text-mining |
+| [[grammar-constrained-decoding]] | Grammar-Constrained Decoding for Structured NLP | 2023 | llm, structured-output |
+| [[structured-output-ie-go]] | Generate-and-Organize for Structured IE Output | 2024 | llm, structured-output |
+| [[llm-kg-extraction-tables-materials]] | LLM KG Extraction from Materials Tables | 2025 | knowledge-graph, text-mining |
+
+### LLM Foundations, RAG & Structured Output
+| Page | Title | Year | Tags |
+|------|-------|------|------|
+| [[attention-is-all-you-need]] | Attention Is All You Need | 2017 | llm, transformer |
+| [[bm25-probabilistic-relevance]] | BM25 and Probabilistic Relevance | 2009 | information-retrieval, rag |
+| [[sentencepiece]] | SentencePiece Tokenizer | 2018 | llm, tokenization |
+| [[bert]] | BERT | 2019 | llm, transformer |
+| [[sentence-bert]] | Sentence-BERT | 2019 | embeddings, retrieval |
+| [[neural-text-degeneration]] | The Curious Case of Neural Text Degeneration | 2020 | llm, decoding |
+| [[gpt3-few-shot-learners]] | Language Models Are Few-Shot Learners | 2020 | llm, in-context learning |
+| [[retrieval-augmented-generation-knowledge-intensive-nlp]] | Retrieval-Augmented Generation for Knowledge-Intensive NLP | 2020 | llm, rag |
+| [[instructgpt-rlhf]] | Training Language Models to Follow Instructions with Human Feedback | 2022 | llm, alignment |
+| [[toolformer]] | Toolformer | 2023 | llm, tool-use |
+| [[pagedattention-vllm]] | PagedAttention / vLLM | 2023 | llm, serving |
+| [[rag-survey]] | RAG Survey | 2024 | rag, survey |
+| [[self-rag]] | Self-RAG | 2024 | rag, self-reflection |
+| [[lost-in-the-middle]] | Lost in the Middle | 2024 | llm, long-context |
+| [[llm-survey-zhao2026]] | A Survey of Large Language Models | 2026 | llm, survey |
 
 ### Knowledge Graphs & Ontologies
 | Page | Title | Year | Tags |
@@ -136,17 +162,19 @@ Content-oriented catalog of all pages in the LLM Wiki. Organized by category.
 
 ## Tag Index
 - **catalysis**: 20 pages
-- **llm**: 15 pages
+- **llm**: 34 pages
 - **ontology**: 16 pages
 - **fair-data**: 12 pages
-- **knowledge-graph**: 7 pages
+- **knowledge-graph**: 8 pages
 - **data-infrastructure**: 8 pages
 - **nfdi**: 10 pages
 - **bayesian-optimization**: 3 pages
-- **text-mining**: 4 pages
+- **text-mining**: 8 pages
 - **materials-discovery**: 6 pages
 - **ontology-matching**: 4 pages
 - **formal-ontology**: 2 pages
 - **agent**: 3 pages
 - **benchmark**: 2 pages
 - **chemical-reasoning**: 2 pages
+- **rag**: 5 pages
+- **structured-output**: 3 pages

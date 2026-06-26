@@ -4,6 +4,26 @@
 
 ## Recent Updates
 
+### [2026-06-26] ingest | LLM foundations, RAG, and structured-output batch
+Added source pages for fresh PDFs:
+- [[attention-is-all-you-need]] - Transformer architecture
+- [[bm25-probabilistic-relevance]] - BM25 and probabilistic relevance
+- [[gpt3-few-shot-learners]] - few-shot prompting / in-context learning
+- [[retrieval-augmented-generation-knowledge-intensive-nlp]] - original RAG formulation
+- [[sentencepiece]] - language-independent subword tokenization
+- [[bert]], [[scibert]], [[sentence-bert]] - encoder and embedding foundations
+- [[neural-text-degeneration]] - decoding failure modes and nucleus sampling
+- [[instructgpt-rlhf]] - instruction following with human feedback
+- [[toolformer]] - learned tool use
+- [[pagedattention-vllm]] - LLM serving infrastructure
+- [[grammar-constrained-decoding]], [[structured-output-ie-go]] - structured output reliability
+- [[rag-survey]], [[self-rag]], [[lost-in-the-middle]] - RAG and long-context evidence use
+- [[llm-kg-extraction-tables-materials]] - table-to-KG extraction in materials science
+- [[llm-survey-zhao2026]] - broad LLM survey
+
+Created concept pages: llm-foundations, retrieval-augmented-generation, structured-output-reliability
+Updated concept pages: chemical-llms, text-mining-for-catalysis, knowledge-graphs-for-catalysis, automated-scientific-discovery
+
 ### [2025-06-23] ingest | 16 new sources added
 Added source pages for newly acquired PDFs:
 - [[cattesthub]] — CatTestHub benchmarking database

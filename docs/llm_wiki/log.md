@@ -20,3 +20,14 @@ Papers span catalysis + LLMs, knowledge graphs, ontologies, FAIR data infrastruc
 
 ## [2025-06-23] ingest | 16 new sources added
 Added source pages for 16 newly acquired PDFs. Updated 5 concept pages and 3 entity pages with new cross-references. See AGENTS.md for details.
+
+## [2026-06-26] ingest | LLM foundations, RAG, and structured-output batch
+Added 19 source pages from fresh `docs/literature/` PDFs covering Transformer/BERT/SciBERT foundations, tokenization, few-shot and instruction-tuned LLMs, RAG, Self-RAG, long-context behavior, constrained decoding, structured IE prompting, LLM serving, tool use, and table-to-KG extraction. Skipped the duplicate `2025.findings-acl.558 (1).pdf` because [[kim2025angel]] already covers ANGEL.
+
+Created concept pages:
+- [[llm-foundations]]
+- [[retrieval-augmented-generation]]
+- [[structured-output-reliability]]
+
+Updated concept pages: [[chemical-llms]], [[text-mining-for-catalysis]], [[knowledge-graphs-for-catalysis]], [[automated-scientific-discovery]]
+Updated catalog: [[index]]

@@ -2,8 +2,8 @@
 type: concept
 title: "Text Mining and Knowledge Extraction from Catalysis Literature"
 created: 2025-06-23
-updated: 2025-06-23
-sources: [knowledge-extraction-catalysis-literature, catminer-llm-catalysis-extraction, spires-ontogpt, llm-kg-ontology-generation, kg-heterogeneous-catalysis-review, dagdelen2024structured, schilling2025text, zhang2024chemicaltextmining, swain2016chemdataextractor, gupta2022matscibert]
+updated: 2026-06-26
+sources: [knowledge-extraction-catalysis-literature, catminer-llm-catalysis-extraction, spires-ontogpt, llm-kg-ontology-generation, kg-heterogeneous-catalysis-review, dagdelen2024structured, schilling2025text, zhang2024chemicaltextmining, swain2016chemdataextractor, gupta2022matscibert, scibert, grammar-constrained-decoding, structured-output-ie-go, lost-in-the-middle, llm-kg-extraction-tables-materials]
 tags: [text-mining, catalysis, llm, knowledge-graph]
 ---
 
@@ -41,12 +41,20 @@ Most catalysis knowledge is locked in unstructured scientific literature. Extrac
 - Open-source LLMs only
 - First KG + ontology for Single Atom Catalysis
 
+### Structured Output and Evidence Reliability
+- [[grammar-constrained-decoding]]: uses formal grammars to guarantee valid output structures for IE, entity disambiguation, and parsing without fine-tuning.
+- [[structured-output-ie-go]]: separates content generation from formatting via Generate-and-Organize prompting, improving zero-shot NER and relation extraction.
+- [[lost-in-the-middle]]: warns that long-document extraction can fail when relevant evidence is buried in the middle of large contexts.
+- [[llm-kg-extraction-tables-materials]]: extends extraction beyond prose to non-standardized R&D tables, producing graph structures from tabular materials data.
+
 ## Key Challenges
 - Most catalysis data includes environmental/operating parameters that standard materials IE doesn't capture
 - Reporting standards vary widely across papers
 - LLM hallucination and inconsistency in extraction
 - Entity grounding to persistent identifiers
 - Scaling to hundreds of thousands of papers
+- Schema-valid serialization and source-grounded evidence selection
+- Table and spreadsheet extraction, not only article prose
 
 ## Synergy with Knowledge Graphs
 Text mining feeds [[knowledge-graphs-for-catalysis]]. Extracted triples populate KGs, which in turn enable RAG-based natural language queries (see [[kg-heterogeneous-catalysis-review]]).
