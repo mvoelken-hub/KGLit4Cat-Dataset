@@ -1,0 +1,75 @@
+\begin{figure}[H]
+    \centering
+    \resizebox{\textwidth}{!}{%
+    \begin{tikzpicture}[
+        font=\normalfont,
+        >=Stealth,
+        box/.style={
+            rounded corners=5pt,
+            draw=#1!70!black,
+            fill=#1!8,
+            line width=0.85pt,
+            minimum width=2.55cm,
+            minimum height=1.0cm,
+            align=center,
+            text width=2.35cm,
+            inner sep=5pt,
+            font=\normalfont\small
+        },
+        store/.style={
+            cylinder,
+            shape border rotate=90,
+            aspect=0.25,
+            draw=purple!65!black,
+            fill=purple!6,
+            line width=0.85pt,
+            minimum width=2.5cm,
+            minimum height=1.15cm,
+            align=center,
+            text width=2.25cm,
+            inner sep=5pt,
+            font=\normalfont\small
+        },
+        label/.style={
+            font=\normalfont\bfseries,
+            text=black!75,
+            anchor=west
+        },
+        flow/.style={->, line width=0.85pt, draw=black!65},
+        support/.style={->, dashed, line width=0.8pt, draw=black!48}
+    ]
+
+    \node[label] at (-7.35,-1.45) {Preparation};
+    \node[box=blue] (archive) at (-6.25,-2.45) {Uploaded\\dataset archive};
+    \node[box=green] (chunks) at (-3.35,-2.45) {Text extraction\\and chunks};
+    \node[box=green] (embed) at (-0.45,-2.45) {Embeddings\\and metadata};
+    \node[store] (index) at (2.55,-2.45) {Searchable\\evidence index};
+
+    \draw[flow] (archive) -- (chunks);
+    \draw[flow] (chunks) -- (embed);
+    \draw[flow] (embed) -- (index);
+
+    \node[label] at (-7.35,1.25) {Generation};
+    \node[box=orange] (task) at (-6.25,0.25) {Profile\\requirement};
+    \node[box=blue] (retriever) at (-3.35,0.25) {Retriever};
+    \node[box=teal] (context) at (-0.45,0.25) {Relevant\\source evidence};
+    \node[box=orange] (prompt) at (2.55,0.25) {Prompt with\\retrieved context};
+    \node[box=purple] (llm) at (5.1,0.25) {LLM};
+    \node[box=green] (result) at (7.65,0.25) {Grounded\\extraction result};
+
+    \draw[flow] (task) -- (retriever);
+    \draw[flow] (retriever) -- (context);
+    \draw[flow] (context) -- (prompt);
+    \draw[flow] (prompt) -- (llm);
+    \draw[flow] (llm) -- (result);
+
+    \draw[flow] (index.north) to[out=95,in=-70] (retriever.south);
+    \draw[support] (task.south east) to[out=-25,in=205] (prompt.west);
+    \draw[support] (context.south) -- ++(0,-0.55) -| (result.south)
+        node[pos=0.28, below, font=\normalfont\scriptsize, text=black!65] {source references};
+
+    \end{tikzpicture}%
+    }
+    \caption{Basic retrieval-augmented generation workflow adapted to SIMONE. Dataset files are prepared as searchable evidence; during extraction, a profile requirement retrieves relevant source context that is inserted into the prompt so the generated result can remain grounded in source references.}
+    \label{fig:simone-rag-workflow}
+\end{figure}
