@@ -224,7 +224,12 @@ For a given request, a retrieval component identifies a limited set of relevant 
 The retrieved passages may be reranked and are then inserted into the model's prompt together with the task instructions and input data \cite{gao2023ragsurvey,asai2024selfrag}.
 The language model consequently generates its output using both its learned parameters and the information supplied at inference time.
 
-\input{figures/simone_rag_workflow}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/rag.png}
+    \caption{Retrieval-Augmented Generation PLACEHOLDER}
+    \label{fig:rag}
+\end{figure}
 
 RAG does not increase the model's context window.
 Instead, it reduces the amount of information that must be included by selecting passages that are expected to be relevant.
