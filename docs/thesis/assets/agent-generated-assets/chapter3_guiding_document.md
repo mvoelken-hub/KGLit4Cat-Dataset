@@ -317,3 +317,25 @@ When writing the chapter, maintain these narrative threads that connect the lite
 4. **From automation to trust:** Fully automated extraction is the goal but not yet the reality. The literature converges on staged workflows with provenance, confidence handling, and human review. SIMONE's design reflects this consensus.
 
 5. **From big data to small data:** Large-scale literature mining (millions of papers) is one paradigm. But many catalysis research scenarios involve *small data* — a few dataset packages from a specific experiment. SIMONE addresses this scenario directly.
+
+---
+
+## 8. Implementation Tracker
+
+### 2026-06-26 Chapter 3 refactor
+
+**Done**
+- Rewrote `docs/thesis/sections/03_current_state_of_research.tex` into six sections: FAIR data practice, metadata standards/application profiles, taxonomies/vocabularies/ontologies, text mining and LLM extraction workflows, downstream use cases, and research gap.
+- Used the LLM wiki as the grounding source for this pass, per user instruction, instead of NotebookLM.
+- Kept SIMONE positioning light in the survey body and concentrated the explicit bridge in the research gap.
+- Kept LLM theory minimal and focused on applied extraction, RAG, structured output, and validation.
+- Added a dedicated use-case section for KG population, FAIR repository population, AI-guided optimization, benchmarking, and automated lab integration.
+
+**Verification**
+- Checked that all Chapter 3 citation keys exist in `docs/thesis/bibliography/references.bib`.
+- Checked that old Chapter 3 section labels are not referenced elsewhere in `docs/thesis`.
+- Built `docs/thesis/main.tex` successfully with `latexmk -xelatex -interaction=nonstopmode -halt-on-error main.tex`.
+
+**Revisit later**
+- Do a close reading for narrative flow once Chapter 4 is refactored, especially the transition from Chapter 3 research gap into the SIMONE workflow.
+- Decide whether figures previously used in stale Chapter 3 should be reintroduced after the prose stabilizes.
