@@ -1,8 +1,8 @@
 \label{chap:background}
 
 In order to develop a workflow that can extract metadata from arbitrary catalysis datasets and represent it in a standardised, machine-actionable form, it is necessary to understand the scientific context of the data to be extracted, as well as the technical foundations of the system that will execute the workflow.
-The first section introduces the landscape of data in catalytic experiments, motivating the need for application-specific schemas as a metadata standard.
-After that, a short section presents metadata standards on a conceptual level.
+The first section introduces the landscape of data in catalytic experiments, motivating the need for application-specific metadata standards.
+After that, a short section presents metadata standards conceptually and its implementation in practice.
 As these standards should align with common rules, the third section introduces semantic web technologies as a toolset for representing and connecting the data in a machine-actionable form, as well as providing a common language with which to formulate the standards.
 The fourth section provides background on large language models (LLMs), as this work aims to utilize their capabilities to extract information from an unstructured, human-readable form into any specified format.
 
@@ -13,104 +13,131 @@ Catalysis refers to the acceleration of a chemical reaction by a substance that 
 A catalyst can lower the effective activation barrier and allow a reaction to proceed under milder or more technically useful conditions, as schematically shown in Figure~\ref{fig:catalysis-activation-energy}.
 Consequently, catalysts are widely studied across application fields such as energy cost reduction, environmental recovery, chemical manufacturing, and materials science \cite{osman2024coordination}.
 Catalytic experiments investigate how catalysts are prepared, activated, characterized, and used to transform reactants under defined reaction conditions.
-The resulting data landscape is therefore not limited to final performance indicators, but spans the full experimental chain from catalyst synthesis to functional analysis \cite{marshall2023digital}.
+The resulting data landscape is therefore not limited to final performance indicators, but spans the full experimental chain from catalyst synthesis to functional analysis and can be evaluated from different perspectives \cite{marshall2023digital}.
 \input{figures/catalysis_activation_energy}
 
 \subsection{Catalytic Data and Metadata}
 \label{sec:catalytic-data-metadata}
 
-During the life cycle of a catalyst, a precursor may be transformed into an activated material and subsequently into a spent or deactivated sample. Each stage in this process can yield new characterisation and performance data, which must be linked to the corresponding material state \cite{mendes2025data}.
+During the life cycle of a catalyst, a precursor may be transformed into an activated material and subsequently into a spent or deactivated sample.
+Each stage in this process can yield new characterisation and performance data, which must be linked to the corresponding material state \cite{mendes2025data}.
 For this reason, a catalytic result such as a conversion, selectivity, yield, or reaction rate is only interpretable together with relevant metadata \cite{wulf2021unified}.
-Table~\ref{tab:catalytic-data-landscape} summarizes this landscape by grouping representative data and metadata into material, preparation, characterization, reactor, operating, and performance-related categories. These categories indicate which contextual links have to be preserved when heterogeneous datasets and kinetic measurements, are interpreted together \cite{mendes2025data,schumann2025nomad,stroemert2026chemdcat}.
+Table~\ref{tab:catalytic-data-landscape} summarizes this landscape by grouping representative data and metadata into material, preparation, characterization, reactor, operating, and performance-related categories.
+These categories indicate which contextual links have to be preserved when heterogeneous datasets and kinetic measurements, are interpreted together \cite{mendes2025data,schumann2025nomad,stroemert2026chemdcat}.
 
 \input{tables/catalytic_data_landscape}
 
-Experimental metadata describe the context in which primary data were generated, processed, and interpreted. In catalytic experiments, this includes sample provenance, instrument settings, calibration procedures, and processing choices. Such information is not just a secondary annotation layer, but rather an integral part of the scientific evidence, because the same numerical activity value can have a different meaning when the catalyst pretreatment or analytical calibration changes \cite{wulf2021unified}. Metadata therefore turn isolated measurements into documented experimental records and provide the basis for reproducing experiments or comparing evaluation studies across different catalysts, reactors, and laboratories \cite{wulf2021unified,salim2026methane}. In automated catalyst testing, they also keep raw data, evaluated data, standard operating procedures, and database entries connected throughout the experimental workflow \cite{moshantaf2024advancing}.
+Experimental metadata describe the context in which primary data were generated, processed, and interpreted.
+In catalytic experiments, this includes sample provenance, instrument settings, calibration procedures, and processing choices.
+Such information is not just a secondary annotation layer, but rather an integral part of the scientific evidence, because the same numerical activity value can have a different meaning when the catalyst pretreatment or analytical calibration changes \cite{wulf2021unified}.
+Metadata therefore turn isolated measurements into documented experimental records and provides the basis for reproducing experiments or comparing evaluation studies across different materials, reactors, and laboratories \cite{wulf2021unified,salim2026methane}.
+In automated catalyst testing, they also keep raw data, evaluated data, standard operating procedures, and database entries connected throughout the experimental workflow \cite{moshantaf2024advancing}.
 
 \subsection{NMR Spectroscopy Data}
 \label{subsec:nmr-spectroscopy-data}
 
-Nuclear magnetic resonance (NMR) spectroscopy is a common analytical method for characterising chemical samples and following transformations in reaction systems. In a catalytic experiment, NMR data may describe the identity of products, the presence of intermediates or impurities, changes in reactant concentration, or the state of catalyst-related molecular species \cite{marshall2023digital,mendes2025data}. Within the catalytic data landscape, NMR therefore belongs primarily to the characterization category, while quantitative reaction monitoring also links it to performance data \cite{mendes2025data}.
+Nuclear magnetic resonance (NMR) spectroscopy is a common analytical method for characterising chemical samples and following transformations in reaction systems.
+In a catalytic experiment, NMR data may provide evidence about product identity, the presence of intermediates or impurities, changes in reactant concentration, or the state of catalyst-related molecular species \cite{marshall2023digital,mendes2025data}.
+Within the catalytic data landscape, NMR therefore belongs primarily to the characterisation category, while its use for quantitative reaction monitoring also links it to performance-related data \cite{mendes2025data}.
 
-An NMR experiment typically produces raw time-domain data, commonly represented as a free induction decay, which are processed into a frequency-domain spectrum. The resulting spectrum distributes signal intensity over a chemical-shift axis, usually reported in parts per million \cite{nmrmlSpecification}. Rather than forming a single scalar measurement, the data contain peaks, peak groups, integrals, multiplicities, coupling patterns, and background components such as noise, baseline drift, solvent signals, or processing artefacts. Two-dimensional NMR experiments additionally record correlations across two frequency axes \cite{nmrmlSpecification}. In practice, NMR datasets are often distributed as instrument-specific directory structures containing the raw signal and acquisition parameters side by side. They may also include processed spectra, exchange formats such as JCAMP-DX, peak or integration tables, and graphical previews \cite{nmrmlSpecification,steinbeck2023nfdi4chem}. This makes NMR an instructive example for metadata extraction, because the relevant signals include the evaluated entities as well as the contextual information of the data generating experiment \cite{nmrmlSpecification,steinbeck2023nfdi4chem}.
+An NMR experiment typically produces a raw time-domain signal, commonly referred to as a free induction decay, which is processed into a frequency-domain spectrum.
+The resulting spectrum represents signal intensity as a function of chemical shift, usually reported in parts per million relative to a reference signal.
+Peak intensities are generally expressed in arbitrary units, whereas peak integrals may be normalised and interpreted as relative measures of the number or concentration of contributing nuclei under suitable acquisition conditions \cite{nmrmlSpecification}.
+Rather than forming a single scalar measurement, an NMR spectrum contains multiple local signal features, including peaks, peak groups, integrals, multiplicities, coupling patterns, and background components such as noise, baseline drift, solvent signals, or raw data processing artifacts \cite{nmrmlSpecification}.
 
-For semantic metadata extraction, NMR therefore illustrates why a dataset record has to preserve the link between measured arrays, derived peak tables, processing steps, instrument settings, sample state, and the catalytic experiment in which the measurement was taken \cite{stroemert2026chemdcat,chemdcatapDocumentation}.
-Profiles such as ChemDCAT-AP and vocabularies such as nmrCV provide a route for representing these links in a machine-actionable way instead of leaving them implicit in file names, figure captions, or supplementary text \cite{stroemert2026chemdcat,chemdcatapDocumentation,nmrmlSpecification}.
+In practice, NMR datasets are often distributed as instrument-specific directory structures in which the raw signal is stored together with acquisition parameters.
+They may additionally include processed spectra, exchange formats such as JCAMP-DX, peak or integration tables, and graphical previews \cite{nmrmlSpecification,steinbeck2023nfdi4chem}.
+The experimentally observed result is therefore not limited to the displayed spectrum, but may comprise the raw signal, the processed spectral representation, derived signal features, and their chemical interpretation.
+This makes NMR an instructive example for metadata extraction, because the relevant information includes both evaluated entities, such as peaks or assigned compounds, and the contextual information describing how the data were generated and processed \cite{nmrmlSpecification,steinbeck2023nfdi4chem}.
 
 \section{Metadata Standards}
 \label{sec:metadata-standards}
 
-As the previous section demonstrated, catalytic measurements only become scientifically useful when they are connected to their experimental context.
+As the previous section demonstrated, primary data only become scientifically useful when they are connected to their experimental context.
 Metadata standards address this need by defining how such context should be documented in a consistent, reusable way.
 Conceptually, a metadata standard specifies the expected information, how it should be structured and how values should be expressed, enabling records to be interpreted beyond the laboratory in which they were created \cite{wulf2021unified,mendes2025data}.
-
-Therefore, a metadata standard establishes a shared framework for reporting on the entities, activities, quantities, units, methods, instruments and provenance relations required to comprehend a dataset.
+In practice such a standard can be implemented as an application profile of a formal upper-level ontology such as the Data Catalogue Vocabulary (DCAT).
+Here, DCAT provides the universal structural blueprint, while the application profile provides the domain-specific rules, contraints, and terminologies required for actual data exchange \cite{w3c2022dcat,w3c2017shacl,stroemert2026chemdcat}.
+That way, an application profile establishes a shared framework for reporting on the entities, activities, quantities, units, methods, instruments and provenance relations required to comprehend a dataset inside a specific domain context.
 Some requirements describe the minimum information necessary for an experiment to be interpreted, compared, or reproduced.
 Other requirements concern consistency, stipulating that values use stable units, controlled terms, identifiers and data types instead of uncontrolled local wording.
 In this sense, a standard establishes an agreement between data producers and users regarding what constitutes sufficient context for reuse \cite{wulf2021unified,steinbeck2020nfdi4chem}.
 
 This agreement is particularly important for automated metadata extraction.
-While an extraction system can identify candidate values in files, tables, captions, or instrument exports, it still requires a target structure in which these values can be placed.
+While an extraction system can identify candidate values in files, tables, captions, or instrument exports, it still requires a target structure in which these values can be placed and validated.
 The standard provides this target structure, distinguishing, for instance, whether an extracted phrase refers to a sample, an instrument, a measured quantity, a processing step or a data-generating activity.
-The standard also enables validation, allowing generated metadata records to be checked for missing required fields, incompatible units, unsupported value types or relations that do not fit the expected model \cite{w3c2017shacl,stroemert2026chemdcat}.
 
 \section{Semantic Web Technologies}
 \label{sec:semantic-web-technologies}
 Semantic web technologies provide the representation languages, identifiers, vocabularies and validation mechanisms that enable standards to be implemented in a machine-actionable form.
 Their central idea is to move from a web of human-readable documents to a web of data whose meaning is explicitly described for computational processing \cite{jannidis2017digitalhumanities}.
 
+\subsection{Ontologies}
+\label{sec:ontologies}
 
-\subsection{Semantic Modelling of Domain Knowledge}
-\label{sec:semantic-modelling-domain-knowledge}
+Ontologies provide the abstract layer of data models in a domain.
+They describe the classes, relations and axioms that define the structural framework for representing domain knowledge.
+Classes are concepts or categories that group together things with the same characteristics.
+They define a specific type of objects, such as a \textit{\textsuperscript{1}H nuclear magnetic resonance spectroscopy} class, as a subclass of the \textit{pulsed nuclear magnetic resonance spectroscopy} class.
+Relations that are defined by an ontology describe how instances of different classes may be connected.
+For example, an \textit{NMR spectrum} instance can be \textit{generated} by an \textit{\textsuperscript{1}H NMR spectroscopy} instance.
+Axioms can further restrict the meaning of classes and relations by prescribing the type of entities that a relation can connect.
 
-A semantic model distinguishes between general concepts and concrete entities.
-General concepts are represented as classes, such as \textit{Catalyst}, \textit{Catalytic Reaction}, or \textit{Reaction Condition}, while individual objects or events are represented as instances of these classes.
-A specific iron-based catalyst can therefore be modelled as an instance of the class \textit{Catalyst}, and a particular methane conversion experiment as an instance of the class \textit{Catalytic Reaction}.
-Relations connect these instances and express domain-specific statements, for example that a reaction uses a certain catalyst, occurs under a defined temperature, or produces a specific product.
-Additional values, such as names, numerical measurements, or timestamps, can be attached as descriptive properties.
-Together, these elements form a graph-like representation in which domain entities are described not only by their individual attributes, but also by their semantic context \cite{stuckenschmidt2011ontologien,wulf2021unified}.
+Figure~\ref{fig:ontology-layer} illustrates the distinction between the ontology layer and the instance layer for a simplified NMR dataset example.
+Here, the dataset that is holding NMR data for a catalyst sample is generated by a particular \textit{\textsuperscript{1}H NMR run R1}, which has the specified type \textit{\textsuperscript{1}H NMR spectroscopy}.
+That run R1 generated a \textit{NMR spectrum} spectrum S1 and used deuterated chloroform (CDCl\textsubscript{3}) as a \textit{NMR solvent}.
+Because the run R1 is a \textit{\textsuperscript{1}H NMR spectroscopy}, it uses 1H nuclei as the \textit{aquisition nucleus} per definition.
+This \textsuperscript{1}H nucleus has a quantitative attribute \textit{chemical shift} with a defined value of 7.26 ppm, which locates the residual peak of chloroform (CHCl\textsubscript{3}) in the spectrum S1.
+By linking all the instances together as described, we get this graph-like structure, where one can see that the chemical shift is the attribute of the \textsuperscript{1}H nucleus, while the solvent CDCl\textsubscript{3} acts as context under which the chemical shift is measured.
 
-Ontologies provide a formal specification of such semantic models.
-They define the concepts that are relevant to a domain, organise them into class hierarchies, and describe the relations that may hold between them.
-In addition, ontologies can express axioms that restrict or clarify the meaning of these concepts and relations, for example by declaring that every \textit{Catalyst} is a type of \textit{Material}, that two classes are disjoint, or that a particular relation can only connect certain kinds of entities.
-Ontologies can be distinguished into upper ontologies, which provide general, domain-independent concepts to support interoperability across fields, and domain ontologies, which capture specialised knowledge for a particular area such as catalysis.
-In this way, an ontology represents an explicit and logically interpretable conceptualisation of a domain.
-Shared ontologies can therefore support consistent annotation, semantic interoperability, and automated reasoning across independently created datasets and software systems \cite{stuckenschmidt2011ontologien,arp2015building,w3c2012owl2primer}.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{figures/ontology_layer.png}
+    \caption{...}
+    \label{fig:ontology-layer}
+\end{figure}
 
-The Resource Description Framework (RDF) provides the graph representation model here to represent statements as subject--predicate--object triples \cite{w3c2014rdf11concepts}.
-Instance data in such a graph can be typed by linking a resource to an ontology class with \texttt{rdf:type}, while further predicates connect that resource to other instance resources or literal values. Figure~\ref{fig:ontology-grounding-layers} illustrates this schema-instance distinction for catalysis metadata.
-Furthermore, the resources and predicates can be identified with Uniform Resource Identifiers (URIs), which allows statements from different sources to refer to the same concept rather than only to local text labels \cite{w3c2014rdf11concepts,huskova2025improvement}.
+\subsection{Graph Models}
+\label{sec:graph-models}
 
-\input{figures/ontology_grounding_layers}
+Semantic-web data are commonly represented using the Resource Description Framework (RDF).
+RDF models information as directed statements consisting of a subject, predicate, and object \cite{w3c2014rdf11concepts}.
+The subject identifies the described resource, the predicate identifies the relation or attribute, and the object identifies either another resource or a literal value.
+Instance data can be assigned to an ontology class through the \texttt{rdf:type} predicate, as illustrated in Figure~\ref{fig:ontology-layer}, while further predicates connect the instance to related resources or descriptive values.
 
-The Shapes Constraint Language (SHACL) can be used to formalise validation rules for instance data in an RDF graph. A SHACL shape may, for example, require that every catalytic experiment has a catalyst, restrict a temperature value to a numerical datatype, or define how often a particular property may occur.
-SHACL therefore evaluates whether the available data conform structurally to the intended representation, whereas an ontology provides the logical vocabulary and axioms used for classification, inference, and semantic interpretation \cite{w3c2017shacl}.
+Resources, classes, and predicates in RDF are generally identified using Internationalized Resource Identifiers (IRIs).
+This allows statements originating from different systems to refer to the same concepts and relations rather than relying only on locally defined labels \cite{w3c2014rdf11concepts,huskova2025improvement}.
+For readability, RDF serializations frequently abbreviate IRIs using compact identifiers consisting of a namespace prefix and a local identifier.
+The examples in Figure~\ref{fig:ontology-layer} use concepts from the Chemical Methods Ontology (CHMO) and the Nuclear Magnetic Resonance Controlled Vocabulary (NMRCV) to classify the data-generating activity and describe its acquisition context.
 
-\subsection{Querying and Reasoning}
-\label{subsec:querying-reasoning}
+RDF is primarily intended for interoperable knowledge representation.
+Its uniform statement model, globally identifiable predicates, and compatibility with vocabularies such as RDF Schema (RDFS) and Web Ontology Language (OWL) allow data from different sources to be linked and interpreted against shared semantic definitions.
+RDF graphs are commonly queried using SPARQL Protocol and RDF Query Language (SPARQL), which matches patterns of subject--predicate--object statements.
+Their instance structure can additionally be validated using the Shapes Constraint Language (SHACL).
+A SHACL shape may, for example, require that an instance of \textit{\textsuperscript{1}H NMR spectroscopy} is connected to an \textit{NMR solvent}, restrict a chemical-shift value to a numerical datatype, or specify the maximum number of elements for a property.
+SHACL therefore evaluates whether an RDF graph conforms to an intended data structure, whereas an ontology provides the vocabulary and logical axioms used for classification, inference, and semantic interpretation \cite{w3c2017shacl}.
 
-Representing metadata as a graph enables information to be retrieved through its semantic structure rather than only through textual similarity.
-A graph query describes relations between entities and returns the parts of the graph that satisfy this pattern.
-In RDF-based knowledge graphs, such queries are commonly expressed in the SPARQL Protocol and RDF Query Language (SPARQL) as patterns over subject--predicate--object statements \cite{w3c2013sparql11query,w3c2013sparql11overview}.
-Property-graph databases use related declarative query languages such as Cypher or the standardised Graph Query Language (GQL) \cite{neo4jCypherManual,openCypherSpecification,iso2024gql}.
-Although their underlying graph models differ, both approaches allow data to be retrieved by following explicit connections between entities.
+A property graph, on the other hand, uses a different representation model.
+It consists of nodes connected by directed relationships, where nodes may have labels and both nodes and relationships may carry key--value properties.
+Information that would be represented uniformly through RDF statements can therefore be distributed across node labels, relationship types, node properties, and relationship properties.
+For example, an NMR run and a spectrum may be represented as labelled nodes connected by a \texttt{GENERATED} relationship, while a numerical acquisition value may be stored directly as a property of the corresponding node or relationship.
 
-This structural access is particularly relevant for semantic metadata processing.
-An extracted term does not have to be treated as an isolated label, but can be examined together with its position in a vocabulary or ontology.
-After a candidate concept has been identified, a graph query can retrieve its identifier, preferred and alternative labels, broader concepts, associated classes, or other directly connected semantic information.
-The graph therefore provides controlled context for deciding whether a candidate term corresponds to the meaning intended in the source data.
-Textual and embedding-based retrieval can support the initial identification of candidates, while graph queries expose the relations required for their subsequent interpretation.
+Property graphs are commonly used in graph database systems that focus on efficient traversal, operational querying, and indexed retrieval.
+An index is an additional data structure that enables selected nodes, relationships, or property values to be located without scanning the complete graph.
+Full-text indexes support lexical retrieval by tokenising textual properties and ranking matches based on words or phrases, whereas vector indexes store numerical vectors and retrieve entries according to their similarity in the embedding space.
+Database implementations may additionally provide uniqueness constraints, property-type constraints, and other mechanisms that are not defined by the abstract property-graph model itself but need to be implemented explicitly.
+Property graphs are queried using the ISO-standardised Graph Query Language (GQL).
 
-Querying operates primarily on statements that are explicitly present in the graph.
-Reasoning extends this access by deriving statements that follow from the semantic model.
-Axioms can, for example, propagate class membership through subclass relations or recognise that differently named resources represent equivalent concepts \cite{w3c2014rdfschema,w3c2012owl2primer}.
-A query for instances of a general class can consequently also return entities that were only asserted as instances of a more specialised subclass.
-Reasoning therefore separates the way knowledge was originally recorded from the level of abstraction at which it can later be retrieved.
+RDF data can be projected into a property graph by mapping RDF resources to nodes, selected RDF types to node labels, object-valued predicates to relationships, and literal-valued predicates to node or relationship properties.
+This transformation is not necessarily semantics-preserving by default.
+RDF predicates are globally identified resources, whereas relationship types and property keys in a property-graph database are often local schema elements.
+Information concerning ontology axioms, named graphs, blank nodes, multi-valued properties, or metadata about individual statements must therefore be retained through an explicit mapping strategy if it is required after import.
+Likewise, RDFS or OWL entailment is not automatically performed by a property-graph database unless corresponding inference rules are implemented separately.
 
-Within the workflow developed in this thesis, querying is primarily used to access and inspect the semantic context of vocabulary terms stored in the Neo4j-backed vocabulary layer.
-Candidate terms identified from dataset content can be connected to their surrounding graph neighbourhood before they are used for metadata generation.
-This allows the extraction process to rely not only on lexical similarity, but also on explicit semantic relations and stable identifiers.
-Querying and reasoning thus provide the connection between initially extracted expressions and the controlled domain knowledge against which the resulting metadata are grounded.
+The two graph models consequently serve overlapping but different purposes.
+RDF is particularly suited to interoperable data exchange, ontology alignment, semantic integration, and reasoning over globally identified statements.
+Property graphs are particularly suited to database-oriented traversal, application-specific graph analysis, and integration with operational indexing and retrieval mechanisms.
+
 
 \section{Large Language Models}
 \label{sec:large-language-models}
