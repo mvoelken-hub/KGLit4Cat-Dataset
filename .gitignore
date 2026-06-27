@@ -213,6 +213,7 @@ main.log
 main.pdf
 latexmkrc
 .backups/
+main.out
 
 # Graphify local cache and transient files
 graphify-out/
