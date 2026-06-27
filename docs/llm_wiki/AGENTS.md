@@ -4,6 +4,16 @@
 
 ## Recent Updates
 
+### [2026-06-27] ingest | FAIR implementation and materials infrastructure batch
+Added source pages for newly acquired PDFs:
+- [[fair-cookbook]] - practical FAIRification recipes, maturity indicators, metadata/provenance/licensing guidance
+- [[chemical-data-storage-architectures]] - chemical databases, schemas, ETL, APIs, and FAIR laboratory data
+- [[fair-biopharma-rd]] - FAIR implementation in industrial R&D, governance, stewardship, knowledge representation
+- [[fair-digital-twins]] - FAIR for digital twins, Semantic Web technologies, authentication/authorization, provenance
+- [[fairmat-materials-research]] - FAIRmat/NOMAD materials infrastructure, federated repositories, metadata and ontologies
+
+Updated concept page: catalysis-data-infrastructure. Updated overview, index, and log.
+
 ### [2026-06-26] ingest | LLM foundations, RAG, and structured-output batch
 Added source pages for fresh PDFs:
 - [[attention-is-all-you-need]] - Transformer architecture

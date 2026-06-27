@@ -134,6 +134,11 @@ Content-oriented catalog of all pages in the LLM Wiki. Organized by category.
 | [[mardiflow]] | MaRDIFlow: CSE Workflow Framework | 2024 | data-infrastructure, fair-data |
 | [[mardiflow-voc4cat]] | MaRDIFlow + Voc4Cat Integration | 2025 | ontology, data-infrastructure, nfdi |
 | [[methane-reforming-reporting-framework]] | Standardized Reporting for Methane Reforming | 2026 | catalysis, fair-data |
+| [[fair-cookbook]] | FAIR Cookbook: Practical FAIRification Recipes | 2023 | fair-data, training |
+| [[chemical-data-storage-architectures]] | Data Storage Architectures for Chemical Discovery | 2022 | chemistry, fair-data, databases |
+| [[fair-biopharma-rd]] | FAIR Data Principles in Biopharmaceutical R&D | 2019 | fair-data, industry |
+| [[fair-digital-twins]] | FAIR for Digital Twins | 2023 | fair-data, semantic-web, industry |
+| [[fairmat-materials-research]] | FAIR Data for Materials Research / FAIRmat | 2022 | fair-data, materials-science, nfdi |
 
 ### Foundational & Background
 | Page | Title | Year | Tags |
@@ -164,9 +169,9 @@ Content-oriented catalog of all pages in the LLM Wiki. Organized by category.
 - **catalysis**: 20 pages
 - **llm**: 34 pages
 - **ontology**: 16 pages
-- **fair-data**: 12 pages
+- **fair-data**: 17 pages
 - **knowledge-graph**: 8 pages
-- **data-infrastructure**: 8 pages
+- **data-infrastructure**: 11 pages
 - **nfdi**: 10 pages
 - **bayesian-optimization**: 3 pages
 - **text-mining**: 8 pages

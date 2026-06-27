@@ -31,3 +31,14 @@ Created concept pages:
 
 Updated concept pages: [[chemical-llms]], [[text-mining-for-catalysis]], [[knowledge-graphs-for-catalysis]], [[automated-scientific-discovery]]
 Updated catalog: [[index]]
+
+## [2026-06-27] ingest | FAIR implementation and materials data infrastructure batch
+Added 5 source pages from newly added `docs/literature/` PDFs:
+- [[fair-cookbook]] - practical FAIRification recipes and maturity guidance
+- [[chemical-data-storage-architectures]] - database schemas, ETL, APIs, and FAIR chemical lab data
+- [[fair-biopharma-rd]] - FAIR implementation, governance, stewardship, and knowledge representation in industrial R&D
+- [[fair-digital-twins]] - FAIR principles, Semantic Web technologies, access restrictions, and provenance for digital twins
+- [[fairmat-materials-research]] - FAIRmat/NOMAD-style federated materials infrastructure, metadata, ontologies, and AI-ready data
+
+Updated concept pages: [[catalysis-data-infrastructure]]
+Updated catalog and synthesis: [[index]], [[overview]]

@@ -25,6 +25,8 @@ The central thesis emerging from this literature: **AI-guided catalysis discover
 ### The Data Problem
 Catalysis has a dataset-to-article ratio of ~1/100 — data is simply not shared ([[data-key-resource-catalysis]]). Even when shared, it lacks standardization and metadata, making it unusable for machine learning. This is the fundamental bottleneck. Germany's NFDI initiative (NFDI4Cat, NFDI4Chem) is the most concerted effort to fix this, building repositories ([[repo4cat]]), vocabularies ([[voc4cat]]), metadata profiles ([[chemdcat-ap]]), and workflows ([[mardiflow]]).
 
+Adjacent FAIR implementation literature sharpens what "FAIR" operationally means: practical recipes and maturity guidance ([[fair-cookbook]]), database schemas/ETL/APIs for chemical laboratories ([[chemical-data-storage-architectures]]), governance and stewardship in industrial R&D ([[fair-biopharma-rd]]), access restrictions and Semantic Web grounding for digital twins ([[fair-digital-twins]]), and FAIRmat/NOMAD-style federated materials infrastructure ([[fairmat-materials-research]]).
+
 ### The LLM Revolution in Catalysis
 LLMs have entered catalysis research through multiple pathways:
 - **As optimizers**: BO-ICL ([[bo-icl-bayesian-optimization-catalysis]]) and GOLLuM ([[gollum-uncertainty-calibrated-llm]]) use LLMs as surrogate models in Bayesian optimization, eliminating the need for domain-specific feature engineering. GOLLuM's key insight is that uncertainty calibration — not raw capability — is what makes LLMs useful for real experimental campaigns.
@@ -95,6 +97,12 @@ Ontology work ranges from foundational theory ([[guarino-fois98]], [[bfo-textboo
 - [[orchestrating-catalysis-data]] — FAIR guide
 - [[mardiflow]] — MaRDIFlow (2024)
 - [[mardiflow-voc4cat]] — MaRDIFlow + Voc4Cat (2025)
+
+- [[fair-cookbook]] - FAIR implementation recipes (2023)
+- [[chemical-data-storage-architectures]] - chemistry databases and FAIR data (2022)
+- [[fair-biopharma-rd]] - industrial FAIR implementation (2019)
+- [[fair-digital-twins]] - FAIR and Semantic Web for digital twins (2023)
+- [[fairmat-materials-research]] - FAIRmat/NOMAD materials infrastructure (2022)
 
 ### Foundational / Background
 - [[llm-foundations]] - LLM architecture, tokenization, instruction tuning, serving
