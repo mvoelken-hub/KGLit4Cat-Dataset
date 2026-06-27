@@ -36,7 +36,7 @@ Reusable & Sufficient context, provenance, licence, quality, and domain-standard
 \label{sec:fair-findability}
 
 Findability begins with stable identification and descriptive metadata.
-DataCite is relevant here because its metadata schema supports the publication and citation of research data and other research outputs through globally unique persistent identifiers, especially \acp{DOI}, together with descriptive fields such as creators, titles, publishers, publication year, subjects, descriptions, related identifiers, and resource types \cite{datacite2026metadata}.
+DataCite is relevant here because its metadata schema supports the publication and citation of research data and other research outputs through globally unique persistent identifiers, especially DOIs, together with descriptive fields such as creators, titles, publishers, publication year, subjects, descriptions, related identifiers, and resource types \cite{datacite2026metadata}.
 This primarily improves resource-level findability.
 A dataset can be cited, resolved, indexed, and linked to related publications, software, or other research objects.
 For catalysis, however, this does not by itself make the scientific content of a dataset searchable at the level of catalyst composition, reaction conditions, pretreatment, analytical method, or kinetic property.
@@ -52,6 +52,8 @@ Accessibility concerns whether data and metadata can be retrieved through a clea
 In terms of FAIR data principles, this does not necessarily mean that all data must be openly downloadable.
 Restricted access, authentication, and permission-based workspaces can still be compatible with FAIR practice when the access conditions and protocols are explicit \cite{wilkinson2016fair}.
 This distinction matters for industrial collaborations, unpublished measurements, and sensitive laboratory data that may require controlled access before publication.
+In a commercial setting, such control can be desirable because certain data may encode intellectual property or commercially relevant know-how.
+It also motivates infrastructures in which data processing and metadata generation can run within local or institutionally controlled services, before selected records are exposed through external repositories or public catalogues \cite{kushnarenko2025repo4cat}.
 
 
 Repository infrastructures provide the main access layer.
@@ -64,34 +66,32 @@ Together, these examples show that accessibility is implemented through reposito
 \label{sec:fair-interoperability}
 
 Interoperability requires shared machine-readable representations and semantics.
-Controlled vocabularies and ontologies are necessary because they provide stable identifiers, labels, definitions, synonyms, and relations for concepts that would otherwise remain ambiguous strings.
-Voc4Cat provides catalysis-specific terminology in SKOS and is used in NFDI4Cat contexts, MaRDIFlow, and the \ac{NOMAD} catalysis plugin to align workflow or repository metadata with shared catalysis concepts \cite{nfdi4cat2024whitepaper,veluvali2024mardiflow,veluvali2025bridging,schumann2025nomad}.
+Controlled vocabularies and ontologies are necessary here because they provide stable identifiers, labels, definitions, synonyms, and relations for concepts that would otherwise remain ambiguous strings.
+The \ac{Voc4Cat} provides catalysis-specific terminology in \ac{SKOS} and is used in \ac{NFDI4Cat} contexts and the \ac{NOMAD} catalysis plugin to align workflow or repository metadata with shared catalysis concepts \cite{nfdi4cat2024whitepaper,schumann2025nomad}.
+A MaRDIFlow extension further demonstrates how Voc4Cat can be integrated into computational workflow metadata through API-based vocabulary lookup and validation \cite{veluvali2025bridging}.
 More specialized resources provide finer-grained semantics where a broad catalysis vocabulary is insufficient: CHMO supports chemical experimental and analytical method terminology, nmrCV supports NMR-specific descriptions associated with nmrML, and QUDT represents quantity kinds, units, dimensions, and datatypes \cite{chmoOboFoundry,nmrmlSpecification,qudt2022schema}.
 
 Vocabularies alone, however, do not define the complete structure of a dataset.
 A vocabulary can identify a concept such as reaction temperature, but a metadata or data schema must define where that temperature belongs, which entity or activity it describes, what datatype it has, and which unit is attached.
-ChemDCAT-AP therefore contributes strongly to interoperability because it combines DCAT-AP-compatible dataset description with chemistry- and catalysis-specific classes, provenance patterns, attributes, ontology references, and LinkML-based validation artifacts \cite{stroemert2026chemdcat,chemdcatapDocumentation,linkmlDocumentation}.
-Interoperability in catalysis is therefore a combined effect of vocabularies, identifiers, data schemas, units, representation languages, and mappings between models.
+\ac{ChemDCAT-AP} therefore contributes strongly to interoperability because it combines \ac{DCAT-AP}-compatible dataset description with chemistry- and catalysis-specific classes, provenance patterns, attributes, ontology references, and LinkML-based validation artifacts \cite{stroemert2026chemdcat,chemdcatapDocumentation,linkmlDocumentation}.
 
 \subsection{Reusability}
 \label{sec:fair-reusability}
 
 Reusability is the most context-dependent FAIR dimension.
 A dataset is reusable only when a later user or machine process can understand what the data represent, how they were generated, whether they may be used, and whether their quality is sufficient for the intended analysis.
-ChemDCAT-AP supports this by describing datasets, chemical entities, reactions, analytical methods, attributes, and provenance in a machine-actionable structure that can be validated through generated artifacts such as JSON Schema and SHACL shapes \cite{stroemert2026chemdcat,chemdcatapDocumentation}.
-Nevertheless, ChemDCAT-AP does not provide reusability alone.
-Reuse also depends on complete experimental metadata, clear licences, version information, processing descriptions, uncertainty or quality indicators, standardized units, and structured measurement data.
+\ac{ChemDCAT-AP} supports this by describing datasets, chemical entities, reactions, analytical methods, attributes, and provenance in a machine-actionable structure that can be validated through generated artifacts such as JSON Schema and SHACL shapes \cite{stroemert2026chemdcat,chemdcatapDocumentation}.
+Nevertheless, \ac{ChemDCAT-AP} does not provide reusability alone.
 
-Current catalysis infrastructure papers therefore point toward layered reusability.
-The \ac{NOMAD} catalysis plugin transforms catalysis uploads into a structured platform representation with domain search and vocabulary alignment, making the actual experimental content more computationally usable than opaque file attachment alone \cite{schumann2025nomad}.
+Latest efforts in catalysis infrastructure work therefore point toward layered reusability.
+The \ac{NOMAD} catalysis plugin transforms catalysis related data uploads into a structured platform representation with domain search and vocabulary alignment, making the actual experimental content more computationally usable than opaque file attachment alone \cite{schumann2025nomad}.
 Local FAIR infrastructure connects acquisition, analysis, database upload, relationships, and API exchange, so that data are reusable earlier in the laboratory workflow \cite{moshantaf2024advancing}.
-Data and metadata quality work in NFDI4Cat further emphasizes use-case-driven information collection, ontology mapping, semantic representation, and quality-oriented standardization \cite{huskova2025improvement}.
+Data and metadata quality work in \ac{NFDI4Cat} further emphasizes use-case-driven information collection and semantic representation \cite{huskova2025improvement}.
 Benchmark resources such as CatTestHub illustrate the downstream value of curated, comparable catalysis data for comparing catalysts across probe chemistries and performance metrics \cite{burte2025cattesthub}.
 The practical conclusion is that FAIR catalysis data practice requires a stack of resources: persistent identifiers for discovery, repositories for access, vocabularies and schemas for interpretation, and provenance, licensing, validation, and data quality controls for reuse.
 
 \section{Semantic Metadata Standards and Resources}
 \label{sec:semantic-metadata-standards-resources}
-
 
 \subsection{Application Profiles}
 \label{sec:application-profiles}
@@ -115,7 +115,7 @@ Semantic metadata also requires term-level grounding. SKOS provides a model for 
 
 QUDT is central for quantitative normalization. Catalysis records contain temperatures, pressures, flow rates, times, loadings, conversions, selectivities, yields, rates, and other measured or calculated quantities. These values are only reusable when the quantity kind and unit are made explicit and can be converted or compared across sources. ChemDCAT-AP's attribute patterns make this kind of normalization operational by allowing measured attributes to be associated with semantic identifiers rather than leaving them as isolated strings or numbers \cite{qudt2022schema,stroemert2026chemdcat}. In practice, QUDT therefore helps turn textual mentions such as temperatures or reaction times into comparable metadata.
 
-Voc4Cat addresses the qualitative terminology problem for catalysis. Developed in the NFDI4Cat context, this SKOS vocabulary provides shared catalysis concepts, labels, definitions, and persistent identifiers \cite{nfdi4cat2024whitepaper,veluvali2025bridging}. Its value is practical as well as terminological: resources such as MaRDIFlow and the NOMAD catalysis plugin show how vocabulary alignment can support semantic workflow metadata and structured repository submission \cite{veluvali2024mardiflow,schumann2025nomad}. Voc4Cat therefore functions as a community vocabulary that can reduce ambiguity in catalyst, reaction, method, and workflow descriptions.
+Voc4Cat addresses the qualitative terminology problem for catalysis. Developed in the NFDI4Cat context, this SKOS vocabulary provides shared catalysis concepts, labels, definitions, and persistent identifiers \cite{nfdi4cat2024whitepaper,veluvali2025bridging}. Its value is practical as well as terminological: the MaRDIFlow extension and the NOMAD catalysis plugin show how vocabulary alignment can support semantic workflow metadata and structured repository submission \cite{veluvali2025bridging,schumann2025nomad}. Voc4Cat therefore functions as a community vocabulary that can reduce ambiguity in catalyst, reaction, method, and workflow descriptions.
 
 More specialized vocabularies are needed when a broad catalysis vocabulary is not precise enough. The Chemical Methods Ontology provides controlled terms for chemical experimental and analytical methods, including many characterization and measurement techniques \cite{chmoOboFoundry}. nmrCV provides NMR-specific terminology associated with nmrML, supporting more precise descriptions of NMR acquisition and related concepts \cite{nmrmlSpecification}. These resources illustrate why semantic grounding cannot rely on one vocabulary alone: a catalysis dataset may need a catalysis term for the reaction context, a method ontology term for the characterization procedure, an NMR-specific term for an acquisition concept, and a QUDT identifier for the measured quantity and unit.
 
