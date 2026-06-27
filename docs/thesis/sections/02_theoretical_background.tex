@@ -4,7 +4,7 @@ In order to develop a workflow that can extract metadata from arbitrary catalysi
 The first section introduces the landscape of data in catalytic experiments, motivating the need for application-specific metadata standards.
 After that, a short section presents metadata standards conceptually and its implementation in practice.
 As these standards should align with common rules, the third section introduces semantic web technologies as a toolset for representing and connecting the data in a machine-actionable form, as well as providing a common language with which to formulate the standards.
-The fourth section provides background on large language models (LLMs), as this work aims to utilize their capabilities to extract information from an unstructured, human-readable form into any specified format.
+The fourth section provides background on \acp{LLM}, as this work aims to utilize their capabilities to extract information from an unstructured, human-readable form into any specified format.
 
 \section{Catalytic Experiments}
 \label{sec:catalytic-experiments}
@@ -36,7 +36,7 @@ In automated catalyst testing, they also keep raw data, evaluated data, standard
 \subsection{NMR Spectroscopy Data}
 \label{subsec:nmr-spectroscopy-data}
 
-Nuclear magnetic resonance (NMR) spectroscopy is a common analytical method for characterising chemical samples and following transformations in reaction systems.
+\ac{NMR} is a common analytical method for characterising chemical samples and following transformations in reaction systems.
 In a catalytic experiment, NMR data may provide evidence about product identity, the presence of intermediates or impurities, changes in reactant concentration, or the state of catalyst-related molecular species \cite{marshall2023digital,mendes2025data}.
 Within the catalytic data landscape, NMR therefore belongs primarily to the characterisation category, while its use for quantitative reaction monitoring also links it to performance-related data \cite{mendes2025data}.
 
@@ -56,7 +56,7 @@ This makes NMR an instructive example for metadata extraction, because the relev
 As the previous section demonstrated, primary data only become scientifically useful when they are connected to their experimental context.
 Metadata standards address this need by defining how such context should be documented in a consistent, reusable way.
 Conceptually, a metadata standard specifies the expected information, how it should be structured and how values should be expressed, enabling records to be interpreted beyond the laboratory in which they were created \cite{wulf2021unified,mendes2025data}.
-In practice such a standard can be implemented as an application profile of a formal upper-level ontology such as the Data Catalogue Vocabulary (DCAT).
+In practice such a standard can be implemented as an application profile of a formal upper-level ontology such as the \ac{DCAT}.
 Here, DCAT provides the universal structural blueprint, while the application profile provides the domain-specific rules, contraints, and terminologies required for actual data exchange \cite{w3c2022dcat,w3c2017shacl,stroemert2026chemdcat}.
 That way, an application profile establishes a shared framework for reporting on the entities, activities, quantities, units, methods, instruments and provenance relations required to comprehend a dataset inside a specific domain context.
 Some requirements describe the minimum information necessary for an experiment to be interpreted, compared, or reproduced.
@@ -100,20 +100,20 @@ By linking all the instances together as described, we get this graph-like struc
 \subsection{Graph Models}
 \label{sec:graph-models}
 
-Semantic-web data are commonly represented using the Resource Description Framework (RDF).
-RDF models information as directed statements consisting of a subject, predicate, and object \cite{w3c2014rdf11concepts}.
+Semantic-web data are commonly represented using the \ac{RDF}.
+\ac{RDF} models information as directed statements consisting of a subject, predicate, and object \cite{w3c2014rdf11concepts}.
 The subject identifies the described resource, the predicate identifies the relation or attribute, and the object identifies either another resource or a literal value.
 Instance data can be assigned to an ontology class through the \texttt{rdf:type} predicate, as illustrated in Figure~\ref{fig:ontology-layer}, while further predicates connect the instance to related resources or descriptive values.
 
-Resources, classes, and predicates in RDF are generally identified using Internationalized Resource Identifiers (IRIs).
+Resources, classes, and predicates in RDF are generally identified using \acp{IRI}.
 This allows statements originating from different systems to refer to the same concepts and relations rather than relying only on locally defined labels \cite{w3c2014rdf11concepts,huskova2025improvement}.
 For readability, RDF serializations frequently abbreviate IRIs using compact identifiers consisting of a namespace prefix and a local identifier.
-The examples in Figure~\ref{fig:ontology-layer} use concepts from the Chemical Methods Ontology (CHMO) and the Nuclear Magnetic Resonance Controlled Vocabulary (NMRCV) to classify the data-generating activity and describe its acquisition context.
+The examples in Figure~\ref{fig:ontology-layer} use concepts from the \ac{CHMO} and the \ac{NMRCV} to classify the data-generating activity and describe its acquisition context.
 
 RDF is primarily intended for interoperable knowledge representation.
-Its uniform statement model, globally identifiable predicates, and compatibility with vocabularies such as RDF Schema (RDFS) and Web Ontology Language (OWL) allow data from different sources to be linked and interpreted against shared semantic definitions.
-RDF graphs are commonly queried using SPARQL Protocol and RDF Query Language (SPARQL), which matches patterns of subject--predicate--object statements.
-Their instance structure can additionally be validated using the Shapes Constraint Language (SHACL).
+Its uniform statement model, globally identifiable predicates, and compatibility with vocabularies such as \ac{RDFS} and \ac{OWL} allow data from different sources to be linked and interpreted against shared semantic definitions.
+RDF graphs are commonly queried using \ac{SPARQL}, which matches patterns of subject--predicate--object statements.
+Their instance structure can additionally be validated using the \ac{SHACL}.
 A SHACL shape may, for example, require that an instance of \textit{\textsuperscript{1}H NMR spectroscopy} is connected to an \textit{NMR solvent}, restrict a chemical-shift value to a numerical datatype, or specify the maximum number of elements for a property.
 SHACL therefore evaluates whether an RDF graph conforms to an intended data structure, whereas an ontology provides the vocabulary and logical axioms used for classification, inference, and semantic interpretation \cite{w3c2017shacl}.
 
@@ -126,7 +126,7 @@ Property graphs are commonly used in graph database systems that focus on effici
 An index is an additional data structure that enables selected nodes, relationships, or property values to be located without scanning the complete graph.
 Full-text indexes support lexical retrieval by tokenising textual properties and ranking matches based on words or phrases, whereas vector indexes store numerical vectors and retrieve entries according to their similarity in the embedding space.
 Database implementations may additionally provide uniqueness constraints, property-type constraints, and other mechanisms that are not defined by the abstract property-graph model itself but need to be implemented explicitly.
-Property graphs are queried using the ISO-standardised Graph Query Language (GQL).
+Property graphs are queried using the ISO-standardised \ac{GQL}.
 
 RDF data can be projected into a property graph by mapping RDF resources to nodes, selected RDF types to node labels, object-valued predicates to relationships, and literal-valued predicates to node or relationship properties.
 This transformation is not necessarily semantics-preserving by default.
@@ -141,7 +141,7 @@ Property graphs are particularly suited to database-oriented traversal, applicat
 
 \section{Large Language Models}
 \label{sec:large-language-models}
-Large language models (LLMs) are systems based on layers of transformers and feed-forward neural networks that learn statistical patterns from large amounts of text \cite{zhao2026surveyllms,bommasani2021foundationmodels,vaswani2017attention}.
+\acp{LLM} are systems based on layers of transformers and feed-forward neural networks that learn statistical patterns from large amounts of text \cite{zhao2026surveyllms,bommasani2021foundationmodels,vaswani2017attention}.
 They use these patterns to predict the next piece of text in a sequence, and this capability can be used to generate arbitrary outputs, such as queries against a property graph or even structured RDF graphs \cite{brown2020language,dagdelen2024structured,zhang2024edc,oarga2026scientifickg}.
 The following sections introduce the technical principles most relevant to understanding LLM-based systems, including transformer architectures, retrieval-augmented generation and methods for generating structured outputs.
 
@@ -180,9 +180,9 @@ By repeatedly applying attention and feed-forward transformations, successive bl
     \label{fig:self-attention}
 \end{figure}
 
-These computations consist predominantly of large matrix operations and are therefore commonly executed on graphics processing units (GPUs), which can perform many numerical operations in parallel.
-For efficient execution, model weights, intermediate activations, and attention-related data must normally be available in the GPU's video random-access memory (VRAM).
-System random-access memory (RAM) can be used through offloading, but repeatedly transferring data between RAM and the GPU introduces substantial latency and generally reduces processing speed.
+These computations consist predominantly of large matrix operations and are therefore commonly executed on \acp{GPU}, which can perform many numerical operations in parallel.
+For efficient execution, model weights, intermediate activations, and attention-related data must normally be available in the GPU's \ac{VRAM}.
+System \ac{RAM} can be used through offloading, but repeatedly transferring data between RAM and the GPU introduces substantial latency and generally reduces processing speed.
 
 The context window specifies the maximum combined number of input tokens that the model can process.
 Its size is restricted by both the model architecture and computational resources.
@@ -203,7 +203,7 @@ A temperature parameter which is set to 0 selects the token with the highest pro
 The selected token is appended to the sequence, after which the model predicts the following token.
 This autoregressive procedure continues until an end token, a length limit, or another stopping condition is reached.
 The output is therefore generated as a sequence of individual token decisions rather than as a complete data structure.
-Even when the prompt requests JavaScript Object Notation (JSON), RDF, or another formal representation, ordinary decoding does not inherently guarantee valid syntax, the presence of required fields, or the correct assignment of extracted values.
+Even when the prompt requests \ac{JSON}, \ac{RDF}, or another formal representation, ordinary decoding does not inherently guarantee valid syntax, the presence of required fields, or the correct assignment of extracted values.
 
 A structured extraction workflow must consequently distinguish between generation, parsing, and validation.
 The generated text can first be passed to a strict parser and subsequently checked against a schema or constraint model.
@@ -212,12 +212,12 @@ When supported by the inference system, grammar-constrained decoding can prevent
 Such constraints do not, however, guarantee semantic correctness: a syntactically valid result may still contain unsupported values, incorrect relations, or omitted information \cite{li2024structuredoutput,dagdelen2024structured}.
 A workflow should therefore not just accept syntactically valid output, but also aim to build in a semantic validation loop.
 
-\subsection{Retrieval-Augmented Generation (RAG)}
+\subsection{Retrieval-Augmented Generation}
 \label{subsec:retrieval-augmented-generation}
 
 The information encoded in a language model's parameters is determined during training and cannot be updated afterwards.
 At the same time, the finite context window prevents all potentially relevant knowledge from being supplied in every request.
-Retrieval-augmented generation (RAG) addresses these limitations by combining the model's parametric knowledge with an external, updateable information source \cite{lewis2020retrieval,gao2023ragsurvey}.
+\ac{RAG} addresses these limitations by combining the model's parametric knowledge with an external, updateable information source \cite{lewis2020retrieval,gao2023ragsurvey}.
 
 In a typical RAG workflow, documents are divided into passages and stored in a searchable index.
 For a given request, a retrieval component identifies a limited set of relevant passages using lexical matching, vector similarity, or a combination of both.
