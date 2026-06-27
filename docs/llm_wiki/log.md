@@ -42,3 +42,14 @@ Added 5 source pages from newly added `docs/literature/` PDFs:
 
 Updated concept pages: [[catalysis-data-infrastructure]]
 Updated catalog and synthesis: [[index]], [[overview]]
+
+## [2026-06-27] ingest | Biocatalysis and catalysis data infrastructure batch
+Added 4 source pages from newly added `docs/literature/` PDFs:
+- [[enzymeml-fair-biocatalysis]] - EnzymeML for FAIR enzymology/biocatalysis data management
+- [[fair-biocatalytic-science]] - FAIR data and FAIR software for biocatalytic science
+- [[electrocatalysis-research-database]] - Catalysis-Hub Experimental database for electrocatalysis
+- [[catalysis-data-infrastructure-ukch]] - UK Catalysis Hub CDI catalogue/prototype
+
+Updated concept page: [[catalysis-data-infrastructure]]
+Updated catalog and synthesis: [[index]], [[overview]]
+Updated thesis bibliography: `docs/thesis/bibliography/references.bib`

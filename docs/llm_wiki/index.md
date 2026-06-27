@@ -139,6 +139,10 @@ Content-oriented catalog of all pages in the LLM Wiki. Organized by category.
 | [[fair-biopharma-rd]] | FAIR Data Principles in Biopharmaceutical R&D | 2019 | fair-data, industry |
 | [[fair-digital-twins]] | FAIR for Digital Twins | 2023 | fair-data, semantic-web, industry |
 | [[fairmat-materials-research]] | FAIR Data for Materials Research / FAIRmat | 2022 | fair-data, materials-science, nfdi |
+| [[enzymeml-fair-biocatalysis]] | EnzymeML as FAIR Data Management in Biocatalysis | 2021 | biocatalysis, fair-data |
+| [[fair-biocatalytic-science]] | FAIR Data and Software in Biocatalytic Science | 2024 | biocatalysis, fair-data, software |
+| [[electrocatalysis-research-database]] | Experimental Electrocatalysis Research Database | 2025 | catalysis, fair-data, database |
+| [[catalysis-data-infrastructure-ukch]] | UK Catalysis Data Infrastructure | 2022 | catalysis, fair-data, data-infrastructure |
 
 ### Foundational & Background
 | Page | Title | Year | Tags |
@@ -166,12 +170,12 @@ Content-oriented catalog of all pages in the LLM Wiki. Organized by category.
 ---
 
 ## Tag Index
-- **catalysis**: 20 pages
+- **catalysis**: 22 pages
 - **llm**: 34 pages
 - **ontology**: 16 pages
-- **fair-data**: 17 pages
+- **fair-data**: 21 pages
 - **knowledge-graph**: 8 pages
-- **data-infrastructure**: 11 pages
+- **data-infrastructure**: 13 pages
 - **nfdi**: 10 pages
 - **bayesian-optimization**: 3 pages
 - **text-mining**: 8 pages
@@ -183,3 +187,6 @@ Content-oriented catalog of all pages in the LLM Wiki. Organized by category.
 - **chemical-reasoning**: 2 pages
 - **rag**: 5 pages
 - **structured-output**: 3 pages
+- **biocatalysis**: 2 pages
+- **software**: 1 page
+- **database**: 1 page

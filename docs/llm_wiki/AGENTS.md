@@ -4,6 +4,15 @@
 
 ## Recent Updates
 
+### [2026-06-27] ingest | Biocatalysis and catalysis data infrastructure batch
+Added source pages for newly acquired PDFs:
+- [[enzymeml-fair-biocatalysis]] - EnzymeML exchange format, STRENDA-aligned metadata, APIs, ELNs, Dataverse micropublications
+- [[fair-biocatalytic-science]] - FAIR data/software, exchange formats, ontologies, ELNs/LIMSs, repositories, FAIR software for biocatalysis
+- [[electrocatalysis-research-database]] - Catalysis-Hub Experimental database with electrocatalysis metadata, spectra, curves, web/API access
+- [[catalysis-data-infrastructure-ukch]] - UKCH Catalysis Data Infrastructure catalogue linking publications, datasets, authors, institutions, and themes
+
+Updated concept page: catalysis-data-infrastructure. Updated overview, index, log, and thesis bibliography references.
+
 ### [2026-06-27] ingest | FAIR implementation and materials infrastructure batch
 Added source pages for newly acquired PDFs:
 - [[fair-cookbook]] - practical FAIRification recipes, maturity indicators, metadata/provenance/licensing guidance

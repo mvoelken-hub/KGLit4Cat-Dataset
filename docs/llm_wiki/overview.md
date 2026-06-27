@@ -27,6 +27,8 @@ Catalysis has a dataset-to-article ratio of ~1/100 — data is simply not shared
 
 Adjacent FAIR implementation literature sharpens what "FAIR" operationally means: practical recipes and maturity guidance ([[fair-cookbook]]), database schemas/ETL/APIs for chemical laboratories ([[chemical-data-storage-architectures]]), governance and stewardship in industrial R&D ([[fair-biopharma-rd]]), access restrictions and Semantic Web grounding for digital twins ([[fair-digital-twins]]), and FAIRmat/NOMAD-style federated materials infrastructure ([[fairmat-materials-research]]).
 
+New catalysis-specific infrastructure sources make that operational gap more concrete: UKCH's Catalysis Data Infrastructure treats publications, datasets, authors, institutions, and themes as linked catalogue entities rather than assuming all data live in one repository ([[catalysis-data-infrastructure-ukch]]); Catalysis-Hub Experimental structures electrocatalysis materials, matrices, testing conditions, spectra, curves, and metadata behind web and API access ([[electrocatalysis-research-database]]); and EnzymeML shows how biocatalysis can combine raw data, reaction conditions, models, APIs, ELNs, repositories, DOIs, and FAIR software into a reusable data flow ([[enzymeml-fair-biocatalysis]], [[fair-biocatalytic-science]]).
+
 ### The LLM Revolution in Catalysis
 LLMs have entered catalysis research through multiple pathways:
 - **As optimizers**: BO-ICL ([[bo-icl-bayesian-optimization-catalysis]]) and GOLLuM ([[gollum-uncertainty-calibrated-llm]]) use LLMs as surrogate models in Bayesian optimization, eliminating the need for domain-specific feature engineering. GOLLuM's key insight is that uncertainty calibration — not raw capability — is what makes LLMs useful for real experimental campaigns.
@@ -103,6 +105,10 @@ Ontology work ranges from foundational theory ([[guarino-fois98]], [[bfo-textboo
 - [[fair-biopharma-rd]] - industrial FAIR implementation (2019)
 - [[fair-digital-twins]] - FAIR and Semantic Web for digital twins (2023)
 - [[fairmat-materials-research]] - FAIRmat/NOMAD materials infrastructure (2022)
+- [[enzymeml-fair-biocatalysis]] - EnzymeML for FAIR biocatalysis data (2021)
+- [[fair-biocatalytic-science]] - FAIR data and software in biocatalysis (2024)
+- [[electrocatalysis-research-database]] - experimental electrocatalysis database (2025)
+- [[catalysis-data-infrastructure-ukch]] - UKCH Catalysis Data Infrastructure (2022)
 
 ### Foundational / Background
 - [[llm-foundations]] - LLM architecture, tokenization, instruction tuning, serving
