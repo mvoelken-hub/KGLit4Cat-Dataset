@@ -3,7 +3,7 @@
 The following chapter reviews the current state of research that motivates an LLM-supported workflow for semantic metadata extraction from catalytic experiments.
 First, it will be examined how catalysis research currently approaches FAIR data practice.
 After that, semantic metadata standards and resources are presented, including both application profiles and the vocabularies, taxonomies, and ontologies that provide term-level grounding.
-Furthermore, the chapter addresses and discusses how NLP and LLM workflows already extract structured knowledge from scientific sources.
+Furthermore, the chapter addresses and discusses how \ac{NLP} and \ac{LLM} workflows already extract structured knowledge from scientific sources.
 The final section then identifies the operational gap that leads into the goals for the workflow developed.
 
 \section{FAIR Data Practice in Catalysis}
@@ -12,7 +12,8 @@ The final section then identifies the operational gap that leads into the goals 
 Catalysis research produces heterogeneous data across publications, supplementary information, instrument exports, local folders, electronic laboratory systems, and repository deposits.
 Recent discussions of digital catalysis describe the \ac{FAIR} principles as a necessary response to this fragmentation, because available data often lacks the contextual metadata needed for discovery, interpretation, comparison, and later computational use \cite{wilkinson2016fair,marshall2023digital,mendes2021opendata,mendes2025data}.
 The four FAIR principles should not be read as four isolated technical layers.
-The same infrastructure component can support several of them: a repository can make a dataset findable and accessible, a vocabulary can improve interoperability and search, and a metadata profile can support both semantic exchange and later reuse.
+The same infrastructure component can support several of them.
+A repository can make a dataset findable and accessible, a vocabulary can improve interoperability and search, and a metadata profile can support both semantic exchange and later reuse.
 \cref{tab:fair-catalysis-resource-map} therefore gives an orientation map rather than a strict one-to-one assignment.
 
 \begin{table}[H]
@@ -35,22 +36,23 @@ Reusable & Sufficient context, provenance, licence, quality, and domain-standard
 \label{sec:fair-findability}
 
 Findability begins with stable identification and descriptive metadata.
-DataCite is relevant here because its metadata schema supports the publication and citation of research data and other research outputs through globally unique persistent identifiers, especially Digital Object Identifiers (DOIs), together with descriptive fields such as creators, titles, publishers, publication year, subjects, descriptions, related identifiers, and resource types \cite{datacite2026metadata}.
-This primarily improves resource-level findability: a dataset can be cited, resolved, indexed, and linked to related publications, software, or other research objects.
+DataCite is relevant here because its metadata schema supports the publication and citation of research data and other research outputs through globally unique persistent identifiers, especially \acp{DOI}, together with descriptive fields such as creators, titles, publishers, publication year, subjects, descriptions, related identifiers, and resource types \cite{datacite2026metadata}.
+This primarily improves resource-level findability.
+A dataset can be cited, resolved, indexed, and linked to related publications, software, or other research objects.
 For catalysis, however, this does not by itself make the scientific content of a dataset searchable at the level of catalyst composition, reaction conditions, pretreatment, analytical method, or kinetic property.
 
 Content-level findability requires domain metadata and repository-side search functions in addition to persistent identification.
-Repo4Cat is designed as a catalysis repository for publishing and discovering datasets with catalysis-specific requirements such as multiple file formats, versioning, publication workflows, graphical access, APIs, and protected working spaces \cite{kushnarenko2025repo4cat}.
+Repo4Cat is designed as a catalysis repository for publishing and discovering datasets with catalysis-specific requirements \cite{kushnarenko2025repo4cat}.
 The \ac{NOMAD} catalysis plugin goes further toward domain search by supporting structured upload and queries over reactions, catalyst materials, reaction conditions, and kinetic properties, while aligning metadata with catalysis vocabulary resources \cite{schumann2025nomad}.
-Thus, DataCite supports identification and broad discovery, while catalysis repositories and domain metadata are needed for scientific findability.
 
 \subsection{Accessibility}
 \label{sec:fair-accessibility}
 
 Accessibility concerns whether data and metadata can be retrieved through a clear and standardized procedure.
-In FAIR terms, this does not mean that all data must be openly downloadable.
+In terms of FAIR data principles, this does not necessarily mean that all data must be openly downloadable.
 Restricted access, authentication, and permission-based workspaces can still be compatible with FAIR practice when the access conditions and protocols are explicit \cite{wilkinson2016fair}.
-This distinction matters for catalysis because industrial collaborations, unpublished measurements, and sensitive laboratory data may require controlled access before publication.
+This distinction matters for industrial collaborations, unpublished measurements, and sensitive laboratory data that may require controlled access before publication.
+
 
 Repository infrastructures provide the main access layer.
 Repo4Cat contributes storage, landing pages, publication workflows, APIs, and private working spaces for collaborative or protected data handling \cite{kushnarenko2025repo4cat}.
