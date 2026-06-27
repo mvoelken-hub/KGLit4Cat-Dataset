@@ -1,49 +1,112 @@
 \label{chap:sota}
 
 The following chapter reviews the current state of research that motivates an LLM-supported workflow for semantic metadata extraction from catalytic experiments.
-First, it will be examined how catalysis research currently approaches FAIR data practice and which metadata standards define reusable target structures
-After that, available vocabularies and ontologies are presented, while highlighting the semantic grounding they can provide.
-Furthermore, the chapter adresses and discusses how NLP and LLM workflows already extract structured knowledge from scientific sources.
+First, it will be examined how catalysis research currently approaches FAIR data practice.
+After that, semantic metadata standards and resources are presented, including both application profiles and the vocabularies, taxonomies, and ontologies that provide term-level grounding.
+Furthermore, the chapter addresses and discusses how NLP and LLM workflows already extract structured knowledge from scientific sources.
 The final section then identifies the operational gap that leads into the goals for the workflow developed.
 
 \section{FAIR Data Practice in Catalysis}
 \label{sec:fair-data-practice-catalysis}
 
-Catalysis research produces heterogeneous data across various fields.
-The difficulty is therefore, that available data often lacks the contextual metadata needed for further usage.
-Recent discussions of digital catalysis describe \ac{FAIR} data principles as a necessary response to this situation, while also emphasizing that catalysis data remain fragmented across local laboratories, publications, supplementary information, instrument exports, and project-specific repositories \cite{marshall2023digital,mendes2021opendata,mendes2025data}.
+Catalysis research produces heterogeneous data across publications, supplementary information, instrument exports, local folders, electronic laboratory systems, and repository deposits.
+Recent discussions of digital catalysis describe the \ac{FAIR} principles as a necessary response to this fragmentation, because available data often lacks the contextual metadata needed for discovery, interpretation, comparison, and later computational use \cite{wilkinson2016fair,marshall2023digital,mendes2021opendata,mendes2025data}.
+The four FAIR principles should not be read as four isolated technical layers.
+The same infrastructure component can support several of them: a repository can make a dataset findable and accessible, a vocabulary can improve interoperability and search, and a metadata profile can support both semantic exchange and later reuse.
+\cref{tab:fair-catalysis-resource-map} therefore gives an orientation map rather than a strict one-to-one assignment.
 
-Community infrastructure efforts address this problem by turning FAIR principles into shared services, standards, and workflows.
-\ac{NFDI4Cat} frames catalysis research data management as an infrastructure problem along the catalysis value chain, from molecular and material descriptions to kinetic, reactor, and process-level data \cite{nfdi4cat2024whitepaper,nfdi4cat2025orchestrating}.
-\ac{NFDI4Chem} provides a parallel chemistry-focused infrastructure with electronic laboratory notebooks, repository integration, and the Smart Lab vision in which instrument data, analysis workflows, and repository submission are connected more directly \cite{steinbeck2020nfdi4chem,steinbeck2023nfdi4chem}.
-Together, these initiatives show that FAIR catalysis data require coordinated metadata models, controlled vocabularies, repository services, and community adoption rather than isolated data silos.
+\begin{table}[H]
+\centering
+\caption{Typical contribution of selected resources to FAIR catalysis data practice.}
+\label{tab:fair-catalysis-resource-map}
+\begin{tabularx}{\textwidth}{p{0.18\textwidth}p{0.31\textwidth}X}
+\toprule
+\textbf{FAIR principle} & \textbf{Primary requirement} & \textbf{Relevant examples} \\
+\midrule
+Findable & Persistent identification and searchable metadata & DataCite metadata, DOIs, repository indexes, catalysis-specific descriptive metadata \\
+Accessible & Retrieval through standardized protocols under explicit access conditions & Repo4Cat, NOMAD, HTTPS landing pages, APIs, authentication and authorization mechanisms \\
+Interoperable & Shared machine-readable representations and semantics & Voc4Cat, CHMO, nmrCV, QUDT, ChemDCAT-AP, identifiers, units, shared formats \\
+Reusable & Sufficient context, provenance, licence, quality, and domain-standard representation & ChemDCAT-AP, validation rules, structured domain schemas, provenance records, licences, benchmark and reporting practices \\
+\bottomrule
+\end{tabularx}
+\end{table}
 
-Repository and laboratory implementations make this infrastructure more concrete.
-Repo4Cat is designed as a catalysis repository service for publishing and discovering datasets with persistent identifiers and catalysis-specific metadata \cite{kushnarenko2025repo4cat}.
-The \ac{NOMAD} catalysis plugin provides a structured upload and search environment for catalysis data, including alignment with catalysis vocabulary resources and support for reactions, materials, conditions, and kinetic properties \cite{schumann2025nomad}.
-At the local laboratory level, Moshantaf et al. demonstrate a FAIR data infrastructure for catalytic testing in which automated data acquisition, standardized analysis, database upload, relationship generation, and API-based exchange are connected through open-source tools and machine-readable procedures \cite{moshantaf2024advancing}.
-These examples indicate that FAIR data practice is moving from abstract principle to operational infrastructure, although adoption remains uneven.
+\subsection{Findability}
+\label{sec:fair-findability}
 
-The practical value of such infrastructure lies in downstream reuse.
-Structured metadata can support repository deposit, dataset discovery, benchmarking, machine-learning workflows, and later integration into knowledge graphs.
-CatTestHub, for example, illustrates the role of curated benchmark data for comparing catalysts across probe chemistries and performance metrics \cite{burte2025cattesthub}.
-Catalyst informatics more broadly depends on data that is comparable across experimental contexts, which requires not only numerical values but also normalized descriptions of catalysts, conditions, methods, and provenance \cite{takahashi2023catalysts}.
-FAIR data practices therefore provide the setting for this work.
-The field increasingly knows what kinds of metadata is needed, but much of that metadata still has to be created from heterogeneous source material.
+Findability begins with stable identification and descriptive metadata.
+DataCite is relevant here because its metadata schema supports the publication and citation of research data and other research outputs through globally unique persistent identifiers, especially Digital Object Identifiers (DOIs), together with descriptive fields such as creators, titles, publishers, publication year, subjects, descriptions, related identifiers, and resource types \cite{datacite2026metadata}.
+This primarily improves resource-level findability: a dataset can be cited, resolved, indexed, and linked to related publications, software, or other research objects.
+For catalysis, however, this does not by itself make the scientific content of a dataset searchable at the level of catalyst composition, reaction conditions, pretreatment, analytical method, or kinetic property.
+
+Content-level findability requires domain metadata and repository-side search functions in addition to persistent identification.
+Repo4Cat is designed as a catalysis repository for publishing and discovering datasets with catalysis-specific requirements such as multiple file formats, versioning, publication workflows, graphical access, APIs, and protected working spaces \cite{kushnarenko2025repo4cat}.
+The \ac{NOMAD} catalysis plugin goes further toward domain search by supporting structured upload and queries over reactions, catalyst materials, reaction conditions, and kinetic properties, while aligning metadata with catalysis vocabulary resources \cite{schumann2025nomad}.
+Thus, DataCite supports identification and broad discovery, while catalysis repositories and domain metadata are needed for scientific findability.
+
+\subsection{Accessibility}
+\label{sec:fair-accessibility}
+
+Accessibility concerns whether data and metadata can be retrieved through a clear and standardized procedure.
+In FAIR terms, this does not mean that all data must be openly downloadable.
+Restricted access, authentication, and permission-based workspaces can still be compatible with FAIR practice when the access conditions and protocols are explicit \cite{wilkinson2016fair}.
+This distinction matters for catalysis because industrial collaborations, unpublished measurements, and sensitive laboratory data may require controlled access before publication.
+
+Repository infrastructures provide the main access layer.
+Repo4Cat contributes storage, landing pages, publication workflows, APIs, and private working spaces for collaborative or protected data handling \cite{kushnarenko2025repo4cat}.
+\ac{NOMAD} provides browser-based and machine-oriented access to structured catalysis entries and metadata, making uploaded experimental data available through a platform that can support later search, inspection, and reuse \cite{schumann2025nomad}.
+Local laboratory infrastructures address the same principle at an earlier stage of the data lifecycle: Moshantaf et al. connect automated acquisition, standardized analysis, database upload, relationship generation, and API-based exchange for catalytic testing data \cite{moshantaf2024advancing}.
+Together, these examples show that accessibility is implemented through repository, platform, and laboratory services rather than through metadata vocabulary alone.
+
+\subsection{Interoperability}
+\label{sec:fair-interoperability}
+
+Interoperability requires shared machine-readable representations and semantics.
+Controlled vocabularies and ontologies are necessary because they provide stable identifiers, labels, definitions, synonyms, and relations for concepts that would otherwise remain ambiguous strings.
+Voc4Cat provides catalysis-specific terminology in SKOS and is used in NFDI4Cat contexts, MaRDIFlow, and the \ac{NOMAD} catalysis plugin to align workflow or repository metadata with shared catalysis concepts \cite{nfdi4cat2024whitepaper,veluvali2024mardiflow,veluvali2025bridging,schumann2025nomad}.
+More specialized resources provide finer-grained semantics where a broad catalysis vocabulary is insufficient: CHMO supports chemical experimental and analytical method terminology, nmrCV supports NMR-specific descriptions associated with nmrML, and QUDT represents quantity kinds, units, dimensions, and datatypes \cite{chmoOboFoundry,nmrmlSpecification,qudt2022schema}.
+
+Vocabularies alone, however, do not define the complete structure of a dataset.
+A vocabulary can identify a concept such as reaction temperature, but a metadata or data schema must define where that temperature belongs, which entity or activity it describes, what datatype it has, and which unit is attached.
+ChemDCAT-AP therefore contributes strongly to interoperability because it combines DCAT-AP-compatible dataset description with chemistry- and catalysis-specific classes, provenance patterns, attributes, ontology references, and LinkML-based validation artifacts \cite{stroemert2026chemdcat,chemdcatapDocumentation,linkmlDocumentation}.
+Interoperability in catalysis is therefore a combined effect of vocabularies, identifiers, data schemas, units, representation languages, and mappings between models.
+
+\subsection{Reusability}
+\label{sec:fair-reusability}
+
+Reusability is the most context-dependent FAIR dimension.
+A dataset is reusable only when a later user or machine process can understand what the data represent, how they were generated, whether they may be used, and whether their quality is sufficient for the intended analysis.
+ChemDCAT-AP supports this by describing datasets, chemical entities, reactions, analytical methods, attributes, and provenance in a machine-actionable structure that can be validated through generated artifacts such as JSON Schema and SHACL shapes \cite{stroemert2026chemdcat,chemdcatapDocumentation}.
+Nevertheless, ChemDCAT-AP does not provide reusability alone.
+Reuse also depends on complete experimental metadata, clear licences, version information, processing descriptions, uncertainty or quality indicators, standardized units, and structured measurement data.
+
+Current catalysis infrastructure papers therefore point toward layered reusability.
+The \ac{NOMAD} catalysis plugin transforms catalysis uploads into a structured platform representation with domain search and vocabulary alignment, making the actual experimental content more computationally usable than opaque file attachment alone \cite{schumann2025nomad}.
+Local FAIR infrastructure connects acquisition, analysis, database upload, relationships, and API exchange, so that data are reusable earlier in the laboratory workflow \cite{moshantaf2024advancing}.
+Data and metadata quality work in NFDI4Cat further emphasizes use-case-driven information collection, ontology mapping, semantic representation, and quality-oriented standardization \cite{huskova2025improvement}.
+Benchmark resources such as CatTestHub illustrate the downstream value of curated, comparable catalysis data for comparing catalysts across probe chemistries and performance metrics \cite{burte2025cattesthub}.
+The practical conclusion is that FAIR catalysis data practice requires a stack of resources: persistent identifiers for discovery, repositories for access, vocabularies and schemas for interpretation, and provenance, licensing, validation, and data quality controls for reuse.
 
 \section{Semantic Metadata Standards and Resources}
 \label{sec:semantic-metadata-standards-resources}
 
-Metadata standards and application profiles define how data should be described so that records can be exchanged, validated, discovered, and reused, as mentioned in section~\ref{sec:metadata-standards}.
-They should not be confused with taxonomies or ontologies alone. A taxonomy may stabilize a set of terms, while an application profile specifies a machine-actionable structure for describing datasets, entities, activities, attributes, and provenance. In catalysis and chemistry, this distinction matters because reusable metadata must represent not only names of materials or methods, but also how data were generated, which activities produced which results, and which attributes belong to which experimental object \cite{dcatapplusDocumentation,stroemert2026chemdcat}.
 
-DCAT-AP belongs to the dataset-catalogue profile family and supports compatibility with data portals and repository descriptions. DCAT-AP+ extends this catalogue perspective with a provenance-oriented layer based on PROV-O, adding patterns for data-generating activities, entities, agents, and generic attributes \cite{dcatapplusDocumentation,w3c2013provo}. This is important for experimental data because the meaning of a dataset cannot be captured by a title, author, and distribution alone. A catalytic performance table, for example, needs to remain connected to the catalyst, reaction, method, reactor context, and data-generating activity that produced it.
+\subsection{Application Profiles}
+\label{sec:application-profiles}
+
+An application profile collects various elements from one or more taxonomies and ontologies to define their concrete use in a specific domain or context.
+That way, records can be exchanged, validated, discovered, and reused, as mentioned in \cref{sec:metadata-standards}.
+They should not be confused with taxonomies or ontologies alone.
+A taxonomy may stabilize a set of terms, while an application profile specifies a machine-actionable structure for describing datasets, entities, activities, attributes, and provenance.
+In catalysis and chemistry, this distinction matters because reusable metadata must represent not only names of materials or methods, but also how data were generated, which activities produced which results, and which attributes belong to which experimental object \cite{dcatapplusDocumentation,stroemert2026chemdcat}.
+
+\ac{DCAT-AP} belongs to the dataset-catalogue profile family and supports compatibility with data portals and repository descriptions. DCAT-AP+ extends this catalogue perspective with a provenance-oriented layer based on PROV-O, adding patterns for data-generating activities, entities, agents, and generic attributes \cite{dcatapplusDocumentation,w3c2013provo}. This is important for experimental data because the meaning of a dataset cannot be captured by a title, author, and distribution alone. A catalytic performance table, for example, needs to remain connected to the catalyst, reaction, method, reactor context, and data-generating activity that produced it.
 
 ChemDCAT-AP specializes this profile pattern for chemistry and catalysis. It builds on DCAT-AP+ and introduces domain-specific concepts for chemical entities, reactions, analytical methods, and attributes while remaining compatible with the broader DCAT ecosystem \cite{stroemert2026chemdcat,chemdcatapDocumentation}. Its use of LinkML is especially relevant for implementation because one semantic model can be compiled into JSON Schema, SHACL shapes, JSON-LD contexts, documentation, and Python or Pydantic classes \cite{linkmlDocumentation,stroemert2026chemdcat}. The profile therefore connects conceptual interoperability with practical validation and software integration.
 
 These standards solve an important target-structure problem. They define where metadata can be placed, how provenance can be represented, which constraints can be checked automatically, and how records can remain compatible with repository and catalogue ecosystems. However, they do not solve the acquisition problem by themselves. A profile does not extract missing catalyst descriptions from a PDF, recover reaction conditions from a supplementary table, or decide whether a local folder contains characterization data or processed performance results. Standards such as DCAT-AP+, ChemDCAT-AP, PROV-O, SHACL, and LinkML therefore define the target and validation layer for semantic metadata, while extraction workflows are still needed to populate that layer from real research material.
 
-\section{Taxonomies, Vocabularies, and Ontologies}
+\subsection{Semantic Metadata Resources}
 \label{sec:taxonomies-vocabularies-ontologies}
 
 Semantic metadata also requires term-level grounding. SKOS provides a model for controlled vocabularies and concept schemes, including preferred labels, alternative labels, definitions, and broader or narrower concept relations \cite{w3c2009skos}. OWL supports richer ontology modelling with class expressions and logical semantics \cite{w3c2012owl2primer}. Quantity and unit systems such as QUDT address a different part of the same problem by representing measurable quantities, quantity kinds, units, dimensions, and datatypes \cite{qudt2022schema}. For catalysis metadata, these resources play complementary roles: controlled vocabularies stabilize labels, ontologies add formal relations, and quantity vocabularies make numerical observations comparable.
