@@ -1,32 +1,120 @@
-\renewcommand{\arraystretch}{1.25}
-\begin{tabular}{@{}p{0.20\textwidth}p{0.72\textwidth}@{}}
+\begingroup
+
+% Breite und Abstand der beiden Spalten
+\newlength{\abbreviationlabelwidth}
+\newlength{\abbreviationcolumnsep}
+
+\setlength{\abbreviationlabelwidth}{0.20\textwidth}
+\setlength{\abbreviationcolumnsep}{1.5em}
+
+% Kürzel im Verzeichnis nicht fett ausgeben
+\renewcommand*{\aclabelfont}[1]{\normalfont #1}
+
+% Kein zusätzlicher Absatzabstand innerhalb des Verzeichnisses
+\setlength{\parskip}{0pt}
+
+% Entspricht dem Abstand zwischen Kürzel und Bedeutung
+\setlength{\labelsep}{\abbreviationcolumnsep}
+
+\begin{singlespace}
+
+% Tabellenkopf
+\noindent
+\begin{tabularx}{\textwidth}{
+    @{}
+    p{\dimexpr\abbreviationlabelwidth+\abbreviationcolumnsep\relax}
+    @{}
+    X
+    @{}
+}
     \toprule
     \textbf{Abbreviation} & \textbf{Meaning} \\
     \midrule
-    API & Application Programming Interface \\
-    ChemDCAT-AP & Chemistry Data Catalog Application Profile \\
-    CHMO & Chemical Methods Ontology \\
-    CURIE & Compact URI \\
-    DCAT & Data Catalog Vocabulary \\
-    DCAT-AP & Data Catalog Application Profile \\
-    ELN & Electronic Laboratory Notebook \\
-    FAIR & Findability, Accessibility, Interoperability, and Reuse \\
-    GPU & Graphics Processing Unit \\
-    IRI & Internationalized Resource Identifier \\
-    JSON & JavaScript Object Notation \\
-    KG & Knowledge Graph \\
-    LLM & Large Language Model \\
-    NFDI & Nationale Forschungsdateninfrastruktur \\
-    NFDI4Cat & NFDI for Catalysis-Related Sciences \\
-    NLP & Natural Language Processing \\
-    NMR & Nuclear Magnetic Resonance \\
-    NMRCV & Nuclear Magnetic Resonance Controlled Vocabulary \\
-    OCR & Optical Character Recognition \\
-    RAG & Retrieval-Augmented Generation \\
-    RDF & Resource Description Framework \\
-    SHACL & Shapes Constraint Language \\
-    SPARQL & SPARQL Protocol and RDF Query Language \\
-    URI & Uniform Resource Identifier \\
-    \bottomrule
-\end{tabular}
-\renewcommand{\arraystretch}{1.0}
+\end{tabularx}
+
+% Abstand zwischen Tabellenkopf und erstem Eintrag reduzieren
+\vspace{0.35\baselineskip}
+
+% Das leere makebox-Element legt die Breite der linken Spalte fest
+\begin{acronym}[\rule{\abbreviationlabelwidth}{0pt}]
+
+    % Abstand zwischen den einzelnen Einträgen
+    \setlength{\itemsep}{0.55\baselineskip}
+    \setlength{\parsep}{0pt}
+
+    \acro{api}[API]
+        {Application Programming Interface}
+
+    \acro{chemdcatap}[ChemDCAT-AP]
+        {Chemistry Data Catalog Application Profile}
+
+    \acro{chmo}[CHMO]
+        {Chemical Methods Ontology}
+
+    \acro{curie}[CURIE]
+        {Compact URI}
+
+    \acro{dcat}[DCAT]
+        {Data Catalog Vocabulary}
+
+    \acro{dcatap}[DCAT-AP]
+        {Data Catalog Application Profile}
+
+    \acro{eln}[ELN]
+        {Electronic Laboratory Notebook}
+
+    \acro{fair}[FAIR]
+        {Findability, Accessibility, Interoperability, and Reuse}
+
+    \acro{gpu}[GPU]
+        {Graphics Processing Unit}
+
+    \acro{iri}[IRI]
+        {Internationalized Resource Identifier}
+
+    \acro{json}[JSON]
+        {JavaScript Object Notation}
+
+    \acro{kg}[KG]
+        {Knowledge Graph}
+
+    \acro{llm}[LLM]
+        {Large Language Model}
+
+    \acro{nfdi}[NFDI]
+        {Nationale Forschungsdateninfrastruktur}
+
+    \acro{nfdi4cat}[NFDI4Cat]
+        {NFDI for Catalysis-Related Sciences}
+
+    \acro{nlp}[NLP]
+        {Natural Language Processing}
+
+    \acro{nmr}[NMR]
+        {Nuclear Magnetic Resonance}
+
+    \acro{nmrcv}[NMRCV]
+        {Nuclear Magnetic Resonance Controlled Vocabulary}
+
+    \acro{ocr}[OCR]
+        {Optical Character Recognition}
+
+    \acro{rag}[RAG]
+        {Retrieval-Augmented Generation}
+
+    \acro{rdf}[RDF]
+        {Resource Description Framework}
+
+    \acro{shacl}[SHACL]
+        {Shapes Constraint Language}
+
+    \acro{sparql}[SPARQL]
+        {SPARQL Protocol and RDF Query Language}
+
+    \acro{uri}[URI]
+        {Uniform Resource Identifier}
+
+\end{acronym}
+
+\end{singlespace}
+\endgroup

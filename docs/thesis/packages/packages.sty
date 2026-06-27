@@ -22,8 +22,6 @@
 \usepackage{textcomp}
 \usepackage{soul}
 \usepackage{pdfpages}
-\usepackage{glossaries}
-\usepackage[nohyperlinks, printonlyused]{acronym}
 \usepackage{csquotes}
 \usepackage{verbatim}
 \usepackage{placeins}
@@ -150,3 +148,8 @@
     \fancyfoot[CE,CO]{}
     \fancyfoot[LE,RO]{\thepage}
 }
+
+% Hyperlinks and cross-references
+\usepackage[hidelinks]{hyperref}
+\usepackage[printonlyused]{acronym}
+\usepackage[nameinlink,noabbrev]{cleveref}
