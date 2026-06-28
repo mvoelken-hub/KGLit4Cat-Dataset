@@ -96,17 +96,46 @@ The practical conclusion is that FAIR catalysis data practice requires a stack o
 \subsection{Application Profiles}
 \label{sec:application-profiles}
 
-An application profile collects various elements from one or more taxonomies and ontologies to define their concrete use in a specific domain or context.
-That way, records can be exchanged, validated, discovered, and reused, as mentioned in \cref{sec:metadata-standards}.
-They should not be confused with taxonomies or ontologies alone.
-A taxonomy may stabilize a set of terms, while an application profile specifies a machine-actionable structure for describing datasets, entities, activities, attributes, and provenance.
-In catalysis and chemistry, this distinction matters because reusable metadata must represent not only names of materials or methods, but also how data were generated, which activities produced which results, and which attributes belong to which experimental object \cite{dcatapplusDocumentation,stroemert2026chemdcat}.
+The most relevant current application-profile development for this work is \ac{DCAT-AP+}, a \ac{LinkML}-based extension of \ac{DCAT-AP} 3.0 that adds structured scientific context to catalogue-level dataset descriptions \cite{semic2024dcatap,dcatapplusDocumentation,stroemert2026chemdcat}.
+Its practical message is to keep the base profile domain-agnostic, extend DCAT-AP only with broadly reusable terms from \ac{PROV-O}, \ac{DCTERMS}, and \ac{QUDT}, and use \ac{LinkML} as the mediator between instance data, validation artifacts, and \ac{RDF} export \cite{w3c2013provo,qudt2022schema,dcatapplusDocumentation,linkmlDocumentation}.
+This puts \ac{DCAT-AP+} in a middle position between broader vocabularies
+two extremes that are both problematic for day-to-day catalysis data handling.
+Controlled vocabularies such as \ac{Voc4Cat} provide terminology but not enough relation structure on their own, while full ontologies can be too complex as direct reporting schemas.
+\ac{DCAT-AP+} therefore acts as a compact schema layer that can map data elements to terms and still remain simple enough for software integration and profile extension.
 
-\ac{DCAT-AP} belongs to the dataset-catalogue profile family and supports compatibility with data portals and repository descriptions. DCAT-AP+ extends this catalogue perspective with a provenance-oriented layer based on PROV-O, adding patterns for data-generating activities, entities, agents, and generic attributes \cite{dcatapplusDocumentation,w3c2013provo}. This is important for experimental data because the meaning of a dataset cannot be captured by a title, author, and distribution alone. A catalytic performance table, for example, needs to remain connected to the catalyst, reaction, method, reactor context, and data-generating activity that produced it.
+The documentation frames the model as a way to connect a dataset to use-case-specific context: which entity or activity the dataset is about, which activity generated it, which tools, surroundings, agents, and plans were involved, and which qualitative or quantitative attributes were observed \cite{dcatapplusDocumentation}.
+This makes \ac{DCAT-AP+} especially relevant for catalysis and chemistry data because the scientific value of a dataset often depends less on the catalogue title alone than on the experiment, sample, measurement, method, and measured quantities that produced the files.
 
-ChemDCAT-AP specializes this profile pattern for chemistry and catalysis. It builds on DCAT-AP+ and introduces domain-specific concepts for chemical entities, reactions, analytical methods, and attributes while remaining compatible with the broader DCAT ecosystem \cite{stroemert2026chemdcat,chemdcatapDocumentation}. Its use of LinkML is especially relevant for implementation because one semantic model can be compiled into JSON Schema, SHACL shapes, JSON-LD contexts, documentation, and Python or Pydantic classes \cite{linkmlDocumentation,stroemert2026chemdcat}. The profile therefore connects conceptual interoperability with practical validation and software integration.
+\begin{figure}[H]
+    \centering
+    \resizebox{\textwidth}{!}{%
+        \input{figures/dcat_ap_plus_schema}
+    }
+    \caption{Schema-facing view of DCAT-AP+ as a provenance and context layer on top of DCAT-AP. The dataset remains the catalogue resource, while the added pattern makes the generating activity, evaluated entities or activities, participating agents and instruments, plans, locations, classifications, and attributes explicit. This turns a dataset record from a discoverability object into a structured description of how scientific data were produced and what they describe \cite{semic2024dcatap,w3c2013provo,dcatapplusDocumentation,stroemert2026chemdcat}.}
+    \label{fig:dcat-ap-plus-schema}
+\end{figure}
 
-These standards solve an important target-structure problem. They define where metadata can be placed, how provenance can be represented, which constraints can be checked automatically, and how records can remain compatible with repository and catalogue ecosystems. However, they do not solve the acquisition problem by themselves. A profile does not extract missing catalyst descriptions from a PDF, recover reaction conditions from a supplementary table, or decide whether a local folder contains characterization data or processed performance results. Standards such as DCAT-AP+, ChemDCAT-AP, PROV-O, SHACL, and LinkML therefore define the target and validation layer for semantic metadata, while extraction workflows are still needed to populate that layer from real research material.
+The central design pattern is shown in \cref{fig:dcat-ap-plus-schema}.
+DCAT-AP already allows a dataset to be linked to a provenance activity, but DCAT-AP+ gives that link a concrete internal structure.
+A \texttt{Dataset} can be connected through \texttt{prov:wasGeneratedBy} to an \texttt{Activity}; this activity can be classified with an ontology class, associated with agents or instruments, linked to a plan or method, and connected to evaluated entities or activities.
+The evaluated objects and the generating activity can then carry attributes.
+Qualitative attributes provide controlled descriptions, while quantitative attributes connect literal values to quantity kinds and units, following the QUDT-oriented pattern used in the documentation \cite{w3c2013provo,qudt2022schema,dcatapplusDocumentation}.
+This pattern is the part of DCAT-AP+ that matters most for metadata extraction: it defines where extracted statements such as \enquote{sample}, \enquote{measurement}, \enquote{spectrometer}, \enquote{temperature}, \enquote{solvent}, or \enquote{reaction time} belong in a reusable graph-shaped record.
+
+DCAT-AP+ is also important because its schema is operational rather than only descriptive.
+The model is maintained as a LinkML schema and the documentation reports generated artifacts such as YAML, \ac{JSON} Schema, \ac{JSON}-LD context, \ac{SHACL} shapes, and merged schema documentation \cite{dcatapplusDocumentation,linkmlDocumentation,w3c2017shacl}.
+This matters for the state of research because it connects three layers that are often treated separately: a human-readable documentation model, a machine-readable validation schema, and an \ac{RDF}-compatible semantic representation.
+For an extraction workflow, this means that candidate metadata can be projected into an explicit target structure and then checked against profile-level constraints rather than remaining a collection of untyped fields.
+
+\ac{ChemDCAT-AP} is the chemistry and catalysis specialization built from this DCAT-AP+ foundation.
+The ChemDCAT-AP paper makes this layering explicit.
+DCAT-AP+ is the domain-agnostic layer.
+ChemDCAT-AP imports it and adds chemistry- and catalysis-specific concepts \cite{stroemert2026chemdcat,chemdcatapDocumentation}.
+These additions include chemical entities, substances, samples, reactions, reagents, solvents, catalysts, analytical methods, pressures, yields, and related attribute patterns.
+In the layered profile family, DCAT-AP+ carries the reusable provenance and attribute design; ChemDCAT-AP adds the restrictions and terminology mappings shared by chemistry-specific contexts; and more specific profiles, such as MIChI-oriented schemas or future catalysis extensions, can add subdomain requirements on top of that shared layer.
+For catalysis, this layered design is important because it leaves room for a profile that captures minimum catalysis information, synthesis and characterization metadata, reaction context, catalyst composition, support, solvent, storage conditions, preparation method, and measured catalyst properties while still inheriting the common DCAT-AP+ and ChemDCAT-AP patterns.
+ChemDCAT-AP is therefore both the origin and the practical application of the DCAT-AP+ idea for this thesis: it demonstrates that the generic base pattern can be specialized into a profile suitable for NFDI4Chem and NFDI4Cat data exchange \cite{stroemert2026chemdcat,steinbeck2023nfdi4chem,nfdi4cat2024whitepaper}.
+
 
 \subsection{Semantic Metadata Resources}
 \label{sec:taxonomies-vocabularies-ontologies}

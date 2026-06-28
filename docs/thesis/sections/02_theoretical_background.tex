@@ -22,15 +22,15 @@ The resulting data landscape is therefore not limited to final performance indic
 During the life cycle of a catalyst, a precursor may be transformed into an activated material and subsequently into a spent or deactivated sample.
 Each stage in this process can yield new characterisation and performance data, which must be linked to the corresponding material state \cite{mendes2025data}.
 For this reason, a catalytic result such as a conversion, selectivity, yield, or reaction rate is only interpretable together with relevant metadata \cite{wulf2021unified}.
-\Cref{tab:catalytic-data-landscape} summarizes this landscape by grouping representative data and metadata into material, preparation, characterization, reactor, operating, and performance-related categories.
+\Cref{tab:catalytic-data-landscape} summarizes this landscape by grouping representative primary- and metadata into material, preparation, characterization, reactor, operating, and performance-related categories.
 These categories indicate which contextual links have to be preserved when heterogeneous datasets and kinetic measurements, are interpreted together \cite{mendes2025data,schumann2025nomad,stroemert2026chemdcat}.
 
 \input{tables/catalytic_data_landscape}
 
-Experimental metadata describe the context in which primary data were generated, processed, and interpreted.
+Experimental metadata describes the context in which primary data was generated, processed, and interpreted.
 In catalytic experiments, this includes sample provenance, instrument settings, calibration procedures, and processing choices.
 Such information is not just a secondary annotation layer, but rather an integral part of the scientific evidence, because the same numerical activity value can have a different meaning when the catalyst pretreatment or analytical calibration changes \cite{wulf2021unified}.
-Metadata therefore turn isolated measurements into documented experimental records and provides the basis for reproducing experiments or comparing evaluation studies across different materials, reactors, and laboratories \cite{wulf2021unified,salim2026methane}.
+Metadata therefore turns isolated measurements into documented experimental records and provides the basis for reproducing experiments or comparing evaluation studies across different materials, reactors, and laboratories \cite{wulf2021unified,salim2026methane}.
 In automated catalyst testing, they also keep raw data, evaluated data, standard operating procedures, and database entries connected throughout the experimental workflow \cite{moshantaf2024advancing}.
 
 \subsection{NMR Spectroscopy Data}
@@ -50,6 +50,8 @@ They may additionally include processed spectra, exchange formats such as JCAMP-
 The experimentally observed result is therefore not limited to the displayed spectrum, but may comprise the raw signal, the processed spectral representation, derived signal features, and their chemical interpretation.
 This makes NMR an instructive example for metadata extraction, because the relevant information includes both evaluated entities, such as peaks or assigned compounds, and the contextual information describing how the data were generated and processed \cite{nmrmlSpecification,steinbeck2023nfdi4chem}.
 
+% here I need to show and describe an image of real nmr data, including a peak diagram and dx or jdx files
+
 \section{Metadata Standards}
 \label{sec:metadata-standards}
 
@@ -57,7 +59,7 @@ As the previous section demonstrated, primary data only become scientifically us
 Metadata standards address this need by defining how such context should be documented in a consistent, reusable way.
 Conceptually, a metadata standard specifies the expected information, how it should be structured and how values should be expressed, enabling records to be interpreted beyond the laboratory in which they were created \cite{wulf2021unified,mendes2025data}.
 In practice such a standard can be implemented as an application profile of a formal upper-level ontology such as the \ac{DCAT}.
-Here, DCAT provides the universal structural blueprint, while the application profile provides the domain-specific rules, contraints, and terminologies required for actual data exchange \cite{w3c2022dcat,w3c2017shacl,stroemert2026chemdcat}.
+Here, \ac{DCAT} provides the universal structural blueprint, while the application profile provides the domain-specific rules, contraints, and terminologies required for actual data exchange \cite{w3c2022dcat,w3c2017shacl,stroemert2026chemdcat}.
 That way, an application profile establishes a shared framework for reporting on the entities, activities, quantities, units, methods, instruments and provenance relations required to comprehend a dataset inside a specific domain context.
 Some requirements describe the minimum information necessary for an experiment to be interpreted, compared, or reproduced.
 Other requirements concern consistency, stipulating that values use stable units, controlled terms, identifiers and data types instead of uncontrolled local wording.
@@ -72,22 +74,80 @@ The standard provides this target structure, distinguishing, for instance, wheth
 Semantic web technologies provide the representation languages, identifiers, vocabularies and validation mechanisms that enable standards to be implemented in a machine-actionable form.
 Their central idea is to move from a web of human-readable documents to a web of data whose meaning is explicitly described for computational processing \cite{jannidis2017digitalhumanities}.
 
-\subsection{Ontologies}
-\label{sec:ontologies}
+\subsection{Knowledge Organisation Systems}
+\label{sec:knowledge-organisation-systems}
 
+\ac{KOS} is a broader term for structured semantic tools that organise domain knowledge and information resources through concepts, labels, identifiers, and relations.
+The term covers a spectrum ranging from term lists, authority files, classification schemes, taxonomies, and thesauri to formally axiomatized ontologies \cite{mazzocchi2018kos,niso2005z3919}.
+Across this spectrum, the common purpose is to make knowledge easier to describe, retrieve, compare, and reuse by reducing ambiguity in how terms and concepts are represented.
+For semantic-web applications, \acp{KOS} are especially important because they connect human disciplinary language with machine-actionable identifiers and relations.
+The main difference between individual \ac{KOS} types is their degree of formalization.
+Controlled vocabularies and thesauri primarily standardize terminology and concept relations for indexing and retrieval, whereas ontologies additionally define classes, relations, and axioms that support stronger semantic interpretation.
+This distinction is reflected in ISO 25964, which treats thesauri as controlled vocabularies for information retrieval and places particular emphasis on maintenance, exchange, and interoperability with other vocabularies \cite{iso25964niso,scheven2013iso25964}.
+The following subsections therefore distinguish two forms that are central for this thesis.
+Ontologies, which provide expressive domain models, and concept schemes, which provide lightweight controlled vocabularies for annotation and retrieval.
+
+\subsubsection{Ontologies and Web Ontology Language (OWL)}
 Ontologies provide the abstract layer of data models in a domain.
 They describe the classes, relations and axioms that define the structural framework for representing domain knowledge.
-Classes are concepts or categories that group together things with the same characteristics.
-They define a specific type of objects, such as a \textit{\textsuperscript{1}H nuclear magnetic resonance spectroscopy} class, as a subclass of the \textit{pulsed nuclear magnetic resonance spectroscopy} class.
+Classes are categories that group together things with the same characteristics.
+They define a specific type of objects, such as a \texttt{\textsuperscript{1}H nuclear magnetic resonance spectroscopy} class, as a subclass of the \texttt{pulsed nuclear magnetic resonance spectroscopy} class.  
 Relations that are defined by an ontology describe how instances of different classes may be connected.
-For example, an \textit{NMR spectrum} instance can be \textit{generated} by an \textit{\textsuperscript{1}H NMR spectroscopy} instance.
+For example, an \texttt{NMR spectrum} instance can be \texttt{generated} by an \texttt{\textsuperscript{1}H NMR spectroscopy} instance.
 Axioms can further restrict the meaning of classes and relations by prescribing the type of entities that a relation can connect.
 
+\ac{OWL} is a specification of the \ac{W3C} used to express domain models on top of the \ac{RDF} data model.
+It extends the basic class and property modelling available in \ac{RDFS} with constructors for equivalence, disjointness, property characteristics, cardinality restrictions, and class expressions \cite{w3c2012owl2primer,w3c2014rdfschema}.
+These constructs make it possible to state not only that a resource belongs to a class, but also which logical conditions follow from that classification.
+For example, an ontology can state that every \texttt{\textsuperscript{1}H NMR spectroscopy} activity is a kind of \texttt{pulsed nuclear magnetic resonance spectroscopy}, that it may generate an \texttt{NMR spectrum}, and that certain relations are only meaningful between specified classes.
+Reasoners can then use the ontology to infer implicit class memberships, detect inconsistent descriptions, or support semantic search over more general concepts than the labels used in a concrete dataset \cite{guarino1998formal,w3c2012owl2primer}.
+
+\subsubsection{Simple Knowledge Organization System (SKOS)}
+\label{sec:skos}
+While ontologies provide a formal framework for describing the structure and semantics of a domain, this level of expressivity is not always required for controlled vocabularies.
+\ac{SKOS} is a \ac{W3C} recommendation for representing concept schemes, thesauri, taxonomies, and other knowledge organisation systems in an \ac{RDF}-compatible form \cite{w3c2009skos}.
+Its central unit is the \texttt{skos:Concept}, which is identified by an \ac{IRI} and can be described with preferred labels, alternative labels, definitions, notes, and mappings to concepts in other vocabularies.
+This is useful when a workflow mainly needs stable terminology and discoverable concept identifiers rather than the full logical commitments of an \ac{OWL} ontology.
+For example, a concept can have one preferred label for display, several alternative labels for search and matching, and a definition that explains how the community intends the term to be used.
+
+\ac{SKOS} also provides a small set of semantic relations between concepts.
+Hierarchical relations such as \texttt{skos:broader} and \texttt{skos:narrower} organise terms from more general to more specific concepts, while \texttt{skos:related} can connect associated concepts that are not in a parent--child relation.
+Mapping properties such as \texttt{skos:exactMatch}, \texttt{skos:broadMatch}, and \texttt{skos:narrowMatch} can link concepts across independently maintained vocabularies.
+These relations are weaker than \ac{OWL} axioms.
+They support navigation, indexing, retrieval, and vocabulary alignment, but they do not by themselves impose class restrictions or enable the same kind of logical reasoning as an ontology.
+
+The \ac{Voc4Cat} illustrates this role in the catalysis domain.
+It is published as a \ac{SKOS} concept scheme for catalysis and related disciplines and provides persistent identifiers, labels, and definitions for community vocabulary terms \cite{david_linke_2023_8313340,veluvali2025bridging}.
+For instance, the concept \texttt{nuclear magnetic resonance spectroscopy} is identified by \url{https://w3id.org/nfdi4cat/voc4cat_0000073}.
+In the \ac{Voc4Cat} hierarchy, it is connected as a narrower concept of \texttt{characterization technique}, identified by \url{https://w3id.org/nfdi4cat/voc4cat_0000066}.
+This makes the term useful for both precise annotation and broader retrieval: a dataset can be annotated with the specific NMR spectroscopy concept, while a search for characterization techniques can still include it through the broader--narrower relation.
+
+
+\subsection{Graph Data Models}
+\label{sec:graph-data-models}
+
+Semantic-web data is commonly represented using the \acf{RDF}.
+\ac{RDF} formulates information as directed statements consisting of a subject, predicate, and object \cite{w3c2014rdf11concepts}.
+The subject identifies the described resource, the predicate identifies the relation or attribute, and the object identifies either another resource or a literal value.
+Instance data can be assigned to an ontology class through the \texttt{rdf:type} predicate, as illustrated in \cref{fig:ontology-layer}, while further predicates connect the instance to related resources or descriptive values.
+
+Resources, classes, and predicates in \ac{RDF} are generally identified using \acp{IRI}.
+This allows statements originating from different systems to refer to the same concepts and relations rather than relying only on locally defined labels \cite{w3c2014rdf11concepts,huskova2025improvement}.
+For readability, \ac{RDF} serializations frequently abbreviate \acp{IRI} using compact identifiers consisting of a namespace prefix and a local identifier.
+The example in \cref{fig:ontology-layer} uses concepts from the \ac{CHMO} and the \ac{NMRCV} to classify the data-generating activity and describe its acquisition context.
+
+\ac{RDF} is primarily intended for interoperable knowledge representation.
+Its uniform statement model, globally identifiable predicates, and compatibility with vocabularies such as \ac{RDFS} and \ac{OWL} allow data from different sources to be linked and interpreted against shared semantic definitions.
+\ac{RDF} graphs are commonly queried using \ac{SPARQL}, which matches patterns of subject--predicate--object statements.
+Their instance structure can additionally be validated using the \ac{SHACL}.
+A SHACL shape may, for example, require that an instance of \texttt{\textsuperscript{1}H NMR spectroscopy} is connected to an \texttt{NMR solvent}, restrict a chemical-shift value to a numerical datatype, or specify the maximum number of elements for a property.
+\ac{SHACL} therefore evaluates whether an \ac{RDF} graph conforms to an intended data structure, whereas an ontology provides the vocabulary and logical axioms used for classification, inference, and semantic interpretation \cite{w3c2017shacl}.
+
 \Cref{fig:ontology-layer} illustrates the distinction between the ontology layer and the instance layer for a simplified NMR dataset example.
-Here, the dataset that is holding NMR data for a catalyst sample is generated by a particular \textit{\textsuperscript{1}H NMR run R1}, which has the specified type \textit{\textsuperscript{1}H NMR spectroscopy}.
-That run R1 generated a \textit{NMR spectrum} spectrum S1 and used deuterated chloroform (CDCl\textsubscript{3}) as a \textit{NMR solvent}.
-Because the run R1 is a \textit{\textsuperscript{1}H NMR spectroscopy}, it uses 1H nuclei as the \textit{aquisition nucleus} per definition.
-This \textsuperscript{1}H nucleus has a quantitative attribute \textit{chemical shift} with a defined value of 7.26 ppm, which locates the residual peak of chloroform (CHCl\textsubscript{3}) in the spectrum S1.
+Here, the dataset that is holding NMR data for a catalyst sample is generated by a particular \texttt{\textsuperscript{1}H NMR spectroscopy} instance, which is locally specified as R1.
+That run R1 generated a \texttt{NMR spectrum} instance S1 and used deuterated chloroform (CDCl\textsubscript{3}) as a \texttt{NMR solvent}.
+Because R1 is an instance of \texttt{\textsuperscript{1}H NMR spectroscopy}, it uses 1H nuclei as the \texttt{acquisition nucleus} per definition.
+This \textsuperscript{1}H nucleus has a quantitative attribute \texttt{chemical shift} with a defined value of 7.26~ppm, which locates the residual peak of chloroform (CHCl\textsubscript{3}) in the spectrum S1.
 By linking all the instances together as described, we get this graph-like structure, where one can see that the chemical shift is the attribute of the \textsuperscript{1}H nucleus, while the solvent CDCl\textsubscript{3} acts as context under which the chemical shift is measured.
 
 \begin{figure}[H]
@@ -96,26 +156,6 @@ By linking all the instances together as described, we get this graph-like struc
     \caption{...}
     \label{fig:ontology-layer}
 \end{figure}
-
-\subsection{Graph Models}
-\label{sec:graph-models}
-
-Semantic-web data are commonly represented using the \ac{RDF}.
-\ac{RDF} models information as directed statements consisting of a subject, predicate, and object \cite{w3c2014rdf11concepts}.
-The subject identifies the described resource, the predicate identifies the relation or attribute, and the object identifies either another resource or a literal value.
-Instance data can be assigned to an ontology class through the \texttt{rdf:type} predicate, as illustrated in \cref{fig:ontology-layer}, while further predicates connect the instance to related resources or descriptive values.
-
-Resources, classes, and predicates in RDF are generally identified using \acp{IRI}.
-This allows statements originating from different systems to refer to the same concepts and relations rather than relying only on locally defined labels \cite{w3c2014rdf11concepts,huskova2025improvement}.
-For readability, RDF serializations frequently abbreviate IRIs using compact identifiers consisting of a namespace prefix and a local identifier.
-The examples in \cref{fig:ontology-layer} use concepts from the \ac{CHMO} and the \ac{NMRCV} to classify the data-generating activity and describe its acquisition context.
-
-RDF is primarily intended for interoperable knowledge representation.
-Its uniform statement model, globally identifiable predicates, and compatibility with vocabularies such as \ac{RDFS} and \ac{OWL} allow data from different sources to be linked and interpreted against shared semantic definitions.
-RDF graphs are commonly queried using \ac{SPARQL}, which matches patterns of subject--predicate--object statements.
-Their instance structure can additionally be validated using the \ac{SHACL}.
-A SHACL shape may, for example, require that an instance of \textit{\textsuperscript{1}H NMR spectroscopy} is connected to an \textit{NMR solvent}, restrict a chemical-shift value to a numerical datatype, or specify the maximum number of elements for a property.
-SHACL therefore evaluates whether an RDF graph conforms to an intended data structure, whereas an ontology provides the vocabulary and logical axioms used for classification, inference, and semantic interpretation \cite{w3c2017shacl}.
 
 A property graph, on the other hand, uses a different representation model.
 It consists of nodes connected by directed relationships, where nodes may have labels and both nodes and relationships may carry key--value properties.

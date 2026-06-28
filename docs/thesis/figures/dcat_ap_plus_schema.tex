@@ -1,0 +1,70 @@
+\begin{tikzpicture}[
+    font=\small,
+    >=Stealth,
+    nodebox/.style={
+        draw=#1!75!black,
+        fill=#1!8,
+        line width=0.9pt,
+        rounded corners=3pt,
+        minimum width=2.75cm,
+        minimum height=0.82cm,
+        align=center
+    },
+    widebox/.style={
+        draw=#1!75!black,
+        fill=#1!8,
+        line width=0.9pt,
+        rounded corners=3pt,
+        minimum width=3.25cm,
+        minimum height=0.82cm,
+        align=center
+    },
+    artifact/.style={
+        draw=green!45!black,
+        fill=green!8,
+        line width=0.8pt,
+        rounded corners=3pt,
+        minimum width=2.35cm,
+        minimum height=0.72cm,
+        align=center
+    },
+    arr/.style={->, thick, black!65},
+    darr/.style={->, thick, dashed, black!50},
+    band/.style={font=\small\bfseries, text=black!70}
+]
+
+\node[band] at (6.5,3.00) {DCAT-AP+ provenance and context pattern};
+
+\node[nodebox=TUgreen] (dataset) at (0,0) {\texttt{Dataset}\\{\scriptsize catalogue record}};
+\node[nodebox=blue] (activity) at (3.25,0) {\texttt{Activity}\\{\scriptsize data generation}};
+
+\node[widebox=blue] (evaluated) at (7.15,1.28) {Evaluated context\\{\scriptsize entity or activity described}};
+\node[widebox=black] (execution) at (7.15,-1.28) {Execution context\\{\scriptsize agent, instrument, tool}};
+\node[widebox=black] (method) at (11.90,1.28) {Method context\\{\scriptsize plan, surroundings, location}};
+\node[widebox=orange] (attributes) at (11.90,-1.28) {Attribute context\\{\scriptsize qualitative and quantitative attributes}};
+
+\draw[arr] (dataset) -- (activity);
+\draw[arr] (activity) -- (evaluated);
+\draw[arr] (activity) -- (execution);
+\draw[arr] (evaluated) -- (method);
+\draw[arr] (execution) -- (attributes);
+\draw[arr] (evaluated) -- (attributes);
+
+\node[widebox=purple] (classification) at (3.95,-3.10) {Classification pattern\\{\scriptsize \texttt{rdf:type}/OWL and \texttt{dcterms:type}/SKOS terms}};
+\node[widebox=purple] (quantity) at (10.45,-3.10) {Quantity pattern\\{\scriptsize QUDT quantity kinds and units}};
+\draw[darr] (classification) -- (evaluated);
+\draw[darr] (classification) -- (activity);
+\draw[darr] (quantity) -- (attributes);
+
+\node[band] at (6.5,-4.45) {LinkML-mediated implementation artifacts};
+\node[artifact] (linkml) at (0,-5.25) {LinkML schema\\{\scriptsize single source}};
+\node[artifact] (json) at (3.15,-5.25) {\ac{JSON} Schema};
+\node[artifact] (shacl) at (6.30,-5.25) {\ac{SHACL} shapes};
+\node[artifact] (rdf) at (9.45,-5.25) {\ac{RDF}/JSON-LD};
+
+\draw[arr] (linkml) -- (json);
+\draw[arr] (json) -- (shacl);
+\draw[arr] (shacl) -- (rdf);
+\draw[darr] (linkml.north) -- (dataset.south);
+
+\end{tikzpicture}
