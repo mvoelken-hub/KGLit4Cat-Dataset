@@ -189,18 +189,20 @@ The two graph models consequently serve overlapping but different purposes.
 RDF is particularly suited to interoperable data exchange, ontology alignment, semantic integration, and reasoning over globally identified statements.
 Property graphs are particularly suited to database-oriented traversal, application-specific graph analysis, and integration with operational indexing and retrieval mechanisms.
 
+% Missing: LinkML section
+
 
 \section{Large Language Models}
 \label{sec:large-language-models}
 \acp{LLM} are systems based on layers of transformers and feed-forward neural networks that learn statistical patterns from large amounts of text \cite{zhao2026surveyllms,bommasani2021foundationmodels,vaswani2017attention}.
-They use these patterns to predict the next piece of text in a sequence, and this capability can be used to generate arbitrary outputs, such as queries against a property graph or even structured RDF graphs \cite{brown2020language,dagdelen2024structured,zhang2024edc,oarga2026scientifickg}.
-The following sections introduce the technical principles most relevant to understanding LLM-based systems, including transformer architectures, retrieval-augmented generation and methods for generating structured outputs.
+They use these patterns to predict the next piece of text in a sequence, and this capability can be used to generate arbitrary outputs, such as queries against databases or data in various structured formats \cite{brown2020language,dagdelen2024structured,zhang2024edc,oarga2026scientifickg}.
+The following sections introduce the technical principles most relevant to understanding LLM-based systems, including tokenization, context processing in transformer based models, output generation, and inference-time knowledge injection via \ac{RAG}.
 
 \subsection{Tokenization}
 \label{subsec:tokenization}
 
 LLMs do not process raw text directly.
-Before text enters the transformer, a tokenizer divides it into a sequence of discrete units called tokens.
+Before text enters the transformer model, a tokenizer divides it into a sequence of discrete units called tokens.
 Depending on the tokenizer, a token may represent a complete word, a word fragment, punctuation, digits, whitespace, or a special control symbol.
 Subword tokenization allows a fixed vocabulary to represent both frequent terms as single tokens and uncommon expressions as combinations of smaller units \cite{kudo2018sentencepiece}.
 This is particularly relevant for scientific text, where chemical formulas, identifiers, units, and uncommon technical terms may each be divided into several tokens.
@@ -209,10 +211,12 @@ Each token is mapped to an integer identifier, which is then used to retrieve a 
 Because an embedding alone does not identify where a token occurs in the sequence, positional information is combined with the token representation before it is processed by the transformer \cite{vaswani2017attention}.
 The number of tokens produced by this process, rather than the number of words or characters in the original text, determines how much of the model's context window is occupied.
 
+% missing: visualization of tokenization process, showing how a text is split into tokens, including subword tokenization examples for scientific terms: Using the example of the term "nanoparticles" being split into "nano" and "particles" and/or an example with a specific syntax e.g. RDF
+
 \subsection{Context Processing}
 \label{subsec:context-processing}
 
-The embedded token sequence is processed by a stack of transformer blocks.
+The embedded token sequence is processed by a stack of transformer and feed-forward neural network blocks.
 Within each block, self-attention allows the representation of a token to incorporate information from other tokens in the sequence.
 For this purpose, the model derives query, key, and value vectors from each token representation.
 The query of one position is compared with the keys of other accessible positions, and the resulting attention weights determine how their value vectors are combined.
@@ -233,13 +237,13 @@ By repeatedly applying attention and feed-forward transformations, successive bl
 
 These computations consist predominantly of large matrix operations and are therefore commonly executed on \acp{GPU}, which can perform many numerical operations in parallel.
 For efficient execution, model weights, intermediate activations, and attention-related data must normally be available in the GPU's \ac{VRAM}.
-System \ac{RAM} can be used through offloading, but repeatedly transferring data between RAM and the GPU introduces substantial latency and generally reduces processing speed.
+System \ac{RAM} can be used through offloading, but repeatedly transferring data between \ac{RAM} and the \ac{GPU} introduces substantial latency and generally reduces processing speed.
 
 The context window specifies the maximum combined number of input tokens that the model can process.
 Its size is restricted by both the model architecture and computational resources.
 In the standard attention formulation, processing an input sequence requires comparisons between pairs of token positions, causing the computational cost to grow quadratically with the sequence length \cite{vaswani2017attention}.
 During autoregressive generation, previously calculated key and value vectors are commonly retained in a key--value cache so that they do not have to be recomputed for every new token.
-The size of this cache grows with the sequence length and can consume a substantial fraction of the available VRAM \cite{kwon2023pagedattention}.
+The size of this cache grows with the sequence length and can consume a substantial fraction of the available \ac{VRAM} \cite{kwon2023pagedattention}.
 Longer contexts therefore increase processing time and memory consumption even when memory-efficient attention implementations are used.
 
 \subsection{Output Generation}
@@ -263,17 +267,19 @@ When supported by the inference system, grammar-constrained decoding can prevent
 Such constraints do not, however, guarantee semantic correctness: a syntactically valid result may still contain unsupported values, incorrect relations, or omitted information \cite{li2024structuredoutput,dagdelen2024structured}.
 A workflow should therefore not just accept syntactically valid output, but also aim to build in a semantic validation loop.
 
+% missing: a section about training, its costs, efforts, limitations, practices, etc...
+
 \subsection{Retrieval-Augmented Generation}
 \label{subsec:retrieval-augmented-generation}
 
-The information encoded in a language model's parameters is determined during training and cannot be updated afterwards.
+The knowledge encoded in a language model's parameters is determined during training and cannot be updated afterwards.
 At the same time, the finite context window prevents all potentially relevant knowledge from being supplied in every request.
-\ac{RAG} addresses these limitations by combining the model's parametric knowledge with an external, updateable information source \cite{lewis2020retrieval,gao2023ragsurvey}.
+\acf{RAG} addresses these limitations by combining the model's parametric knowledge with an external, updateable information source \cite{lewis2020retrieval,gao2023ragsurvey}.
 
-In a typical RAG workflow, documents are divided into passages and stored in a searchable index.
+In a typical \ac{RAG} workflow, documents are divided into passages and stored in a searchable index.
 For a given request, a retrieval component identifies a limited set of relevant passages using lexical matching, vector similarity, or a combination of both.
-The retrieved passages may be reranked and are then inserted into the model's prompt together with the task instructions and input data \cite{gao2023ragsurvey,asai2024selfrag}.
-The language model consequently generates its output using both its learned parameters and the information supplied at inference time.
+The retrieved passages may be reranked and are then inserted into the model's prompt together with input data and output instructions \cite{gao2023ragsurvey,asai2024selfrag}.
+The language model consequently generates its output using the information supplied at inference time, which is interpreted by its own parameters.
 
 \begin{figure}[H]
     \centering
@@ -282,11 +288,9 @@ The language model consequently generates its output using both its learned para
     \label{fig:rag}
 \end{figure}
 
-RAG does not increase the model's context window.
-Instead, it reduces the amount of information that must be included by selecting passages that are expected to be relevant.
-This allows ontology definitions, documentation, or domain-specific examples to be incorporated without retraining the language model.
-For metadata extraction, retrieval can provide definitions of target properties, valid terminology, representation examples, or documentation for an encountered file format.
-
+Using \ac{RAG} can be a strategy to avoid the need to retrain an \ac{LLM} for every new domain or task by reducing the required knowledge and capabilities that must be included in the model parameters.
+It also allows existing taxonomies and those currently under development to serve as a basis for annotation tasks without retraining the language model with every change.
+For metadata extraction, retrieval can provide definitions of target properties, valid terminology, or representation examples.
 The quality of the final result remains dependent on the retrieval stage.
 Relevant information may be omitted because of imprecise queries or limitations of the retrieval system, while irrelevant passages may consume context capacity and misdirect generation.
 RAG-based systems should therefore evaluate retrieval quality separately from generation quality and retain references to the retrieved passages so that generated extraction results can be traced to their supporting context \cite{gao2023ragsurvey,asai2024selfrag}.
