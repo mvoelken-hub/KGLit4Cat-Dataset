@@ -8,7 +8,9 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -36,6 +38,7 @@ API_BASE = "http://127.0.0.1:8000/api/v1"
 HEALTH_URL = f"{API_BASE}/health"
 NEO4J_BROWSER_URL = "http://127.0.0.1:7474/browser/"
 NEO4J_DATA_DIR = REPO_ROOT / "data" / "docker" / "neo4j" / "data"
+DATASETS_DIR = REPO_ROOT / "data" / "datasets"
 NEO4J_BACKUP_DIR = REPO_ROOT / ".backups" / "neo4j"
 BOOTSTRAP_VOCABS_LOG = REPO_ROOT / ".runtime" / "bootstrap-vocabs.log"
 BOOTSTRAP_VOCABS_PID = REPO_ROOT / ".runtime" / "bootstrap-vocabs.pid"
@@ -504,11 +507,381 @@ def _post_json_url(url: str, data: dict[str, object] | None = None, method: str 
 def _api_is_reachable() -> bool:
     """Check if the SIMONE API is reachable."""
     try:
-        req = urllib.request.Request(HEALTH_URL, method="HEAD")
-        with urllib.request.urlopen(req, timeout=3):
+        req = urllib.request.Request(API_URL, headers={"Accept": "text/html"})
+        with urllib.request.urlopen(req, timeout=10):
             return True
     except Exception:
         return False
+
+
+def _extract_http_error_detail(payload: dict[str, object] | None, fallback: str | None) -> str:
+    if isinstance(payload, dict):
+        detail = payload.get("detail")
+        if isinstance(detail, str):
+            return detail
+        if detail is not None:
+            return json.dumps(detail, ensure_ascii=False)
+    return fallback or "unexpected HTTP response"
+
+
+def _url_with_query(url: str, params: dict[str, object | None]) -> str:
+    query_items: dict[str, object] = {key: value for key, value in params.items() if value is not None}
+    if not query_items:
+        return url
+    return f"{url}?{urllib.parse.urlencode(query_items, doseq=True)}"
+
+
+def _post_query_url(url: str, params: dict[str, object | None], timeout: int = 120) -> tuple[int | None, dict[str, object] | None, str | None]:
+    full_url = _url_with_query(url, params)
+    try:
+        req = urllib.request.Request(full_url, data=b"", method="POST", headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status, json.loads(resp.read().decode("utf-8")), None
+    except urllib.error.HTTPError as exc:
+        try:
+            payload = json.loads(exc.read().decode("utf-8"))
+        except Exception:
+            payload = None
+        return exc.code, payload, None
+    except Exception as exc:
+        return None, None, f"{type(exc).__name__}: {exc}"
+
+
+def _build_multipart_file_body(
+    field_name: str,
+    file_path: Path,
+    *,
+    boundary: str = "----SIMONEBoundary",
+) -> tuple[bytes, str]:
+    body = bytearray()
+    filename = file_path.name
+    content_type = "application/zip" if file_path.suffix.lower() == ".zip" else "application/octet-stream"
+    body.extend(f"--{boundary}\r\n".encode("utf-8"))
+    body.extend(
+        (
+            f'Content-Disposition: form-data; name="{field_name}"; filename="{filename}"\r\n'
+            f"Content-Type: {content_type}\r\n\r\n"
+        ).encode("utf-8")
+    )
+    body.extend(file_path.read_bytes())
+    body.extend(f"\r\n--{boundary}--\r\n".encode("utf-8"))
+    return bytes(body), f"multipart/form-data; boundary={boundary}"
+
+
+def _post_multipart_file_url(
+    url: str,
+    file_path: Path,
+    *,
+    field_name: str = "file",
+    timeout: int = 300,
+) -> tuple[int | None, dict[str, object] | None, str | None]:
+    try:
+        boundary = f"----SIMONEBoundary{int(time.time() * 1000)}"
+        body, content_type = _build_multipart_file_body(field_name, file_path, boundary=boundary)
+        req = urllib.request.Request(
+            url,
+            data=body,
+            method="POST",
+            headers={
+                "Accept": "application/json",
+                "Content-Type": content_type,
+                "Content-Length": str(len(body)),
+            },
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status, json.loads(resp.read().decode("utf-8")), None
+    except urllib.error.HTTPError as exc:
+        try:
+            payload = json.loads(exc.read().decode("utf-8"))
+        except Exception:
+            payload = None
+        return exc.code, payload, None
+    except Exception as exc:
+        return None, None, f"{type(exc).__name__}: {exc}"
+
+
+def _has_glob_magic(value: str) -> bool:
+    return any(ch in value for ch in "*?[")
+
+
+def _resolve_workflow_datasets(dataset_args: list[str], all_datasets: bool = False) -> list[Path]:
+    if all_datasets and dataset_args:
+        raise typer.BadParameter("Use either dataset arguments or --all, not both.")
+    if not all_datasets and not dataset_args:
+        raise typer.BadParameter("Provide at least one dataset or use --all.")
+    if not DATASETS_DIR.exists():
+        raise typer.BadParameter(f"Dataset directory not found: {DATASETS_DIR}")
+
+    candidates: list[Path] = []
+    missing: list[str] = []
+
+    if all_datasets:
+        candidates.extend(sorted(DATASETS_DIR.glob("*.zip")))
+    else:
+        for raw_arg in dataset_args:
+            arg = raw_arg.strip()
+            if not arg:
+                continue
+            direct = Path(arg)
+            if direct.exists():
+                candidates.append(direct)
+                continue
+            repo_relative = REPO_ROOT / arg
+            if repo_relative.exists():
+                candidates.append(repo_relative)
+                continue
+            dataset_relative = DATASETS_DIR / arg
+            if dataset_relative.exists():
+                candidates.append(dataset_relative)
+                continue
+            if _has_glob_magic(arg):
+                matches = sorted(DATASETS_DIR.glob(arg))
+                if matches:
+                    candidates.extend(matches)
+                    continue
+            missing.append(raw_arg)
+
+    resolved: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in candidates:
+        path = candidate.resolve()
+        if path in seen:
+            continue
+        seen.add(path)
+        if path.suffix.lower() != ".zip":
+            raise typer.BadParameter(f"Dataset is not a ZIP archive: {path}")
+        resolved.append(path)
+
+    if missing:
+        raise typer.BadParameter(f"Dataset not found: {', '.join(missing)}")
+    if not resolved:
+        raise typer.BadParameter("No ZIP datasets found.")
+    return resolved
+
+
+def _require_success(
+    action: str,
+    status: int | None,
+    payload: dict[str, object] | None,
+    error: str | None,
+) -> dict[str, object]:
+    if error:
+        raise RuntimeError(f"{action} failed: {error}")
+    if not status or status < 200 or status >= 300 or not isinstance(payload, dict):
+        raise RuntimeError(f"{action} failed: HTTP {status} - {_extract_http_error_detail(payload, error)}")
+    return payload
+
+
+def _terminal_or_raise(label: str, status_value: object) -> bool:
+    status_text = str(status_value or "unknown").lower()
+    if status_text in {"completed"}:
+        return True
+    if status_text in {"crashed", "cancelled"}:
+        raise RuntimeError(f"{label} ended with status {status_text}.")
+    return False
+
+
+def _poll_status(
+    url: str,
+    *,
+    label: str,
+    poll_interval: float,
+    timeout: float,
+    query_params: dict[str, object | None] | None = None,
+    completion_key: str = "status",
+    completion_predicate: Callable[[dict[str, object]], bool] | None = None,
+) -> dict[str, object]:
+    started = time.monotonic()
+    poll_url = _url_with_query(url, query_params or {})
+    while True:
+        status, payload, error = _get_json_url(poll_url, timeout=30)
+        data = _require_success(label, status, payload, error)
+        if callable(completion_predicate):
+            if completion_predicate(data):
+                return data
+        elif _terminal_or_raise(label, data.get(completion_key)):
+            return data
+
+        if timeout > 0 and time.monotonic() - started > timeout:
+            raise RuntimeError(f"{label} timed out after {timeout:.0f}s.")
+        time.sleep(poll_interval)
+
+
+def _write_workflow_run_summary(records: list[dict[str, object]]) -> Path:
+    output_dir = REPO_ROOT / ".runtime" / "workflow-runs"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / f"{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
+    output_path.write_text(json.dumps(records, indent=2, ensure_ascii=False), encoding="utf-8")
+    return output_path
+
+
+def _workflow_stage_payload(
+    *,
+    data_package_id: str,
+    profile: str,
+    qualitative_vocab: list[str] | None,
+    chunking_strategy: str,
+    chat_model: str | None,
+    resume: bool,
+    force_rerun: bool,
+    target_stage: str,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "data_package_id": data_package_id,
+        "profile_identifier": profile,
+        "resume": resume,
+        "chunking_strategy": chunking_strategy,
+        "target_stage": target_stage,
+    }
+    if qualitative_vocab:
+        payload["qualitative_vocab_identifiers"] = qualitative_vocab
+    if chat_model:
+        payload["chat_model"] = chat_model
+    if target_stage == "context":
+        payload["force_profile_rebuild"] = force_rerun
+    return payload
+
+
+def _run_workflow_dataset(
+    dataset_path: Path,
+    *,
+    profile: str,
+    qualitative_vocab: list[str] | None,
+    chunking_strategy: str,
+    buffer_window_size: int,
+    semantic_chunking_threshold: float,
+    fixed_tokens_per_chunk: int,
+    min_tokens_per_chunk: int,
+    max_tokens_per_chunk: int,
+    poll_interval: float,
+    timeout: float,
+    resume: bool,
+    force_rerun: bool,
+    chat_model: str | None,
+) -> dict[str, object]:
+    record: dict[str, object] = {
+        "dataset": str(dataset_path),
+        "status": "running",
+    }
+
+    typer.echo(f"Dataset: {dataset_path.name}")
+    status, upload_payload, error = _post_multipart_file_url(f"{API_BASE}/datasources", dataset_path)
+    data_package = _require_success("upload", status, upload_payload, error)
+    data_package_id = str(data_package["id"])
+    record["data_package_id"] = data_package_id
+    typer.echo(f"  uploaded: {data_package_id}")
+
+    status, payload, error = _post_json_url(
+        f"{API_BASE}/extraction/stages/orientation/{data_package_id}",
+        {"force_rerun": force_rerun},
+        timeout=120,
+    )
+    _require_success("orientation", status, payload, error)
+    _poll_status(
+        f"{API_BASE}/extraction/stages/orientation/{data_package_id}/progress",
+        label="orientation",
+        poll_interval=poll_interval,
+        timeout=timeout,
+    )
+    typer.echo("  orientation: completed")
+
+    chunk_params: dict[str, object | None] = {
+        "id": data_package_id,
+        "buffer_window_size": buffer_window_size,
+        "semantic_chunking_threshold": semantic_chunking_threshold,
+        "replace_existing_chunks": force_rerun,
+        "chunking_strategy": chunking_strategy,
+        "fixed_tokens_per_chunk": fixed_tokens_per_chunk,
+        "min_tokens_per_chunk": min_tokens_per_chunk,
+        "max_tokens_per_chunk": max_tokens_per_chunk,
+    }
+    status, payload, error = _post_query_url(f"{API_BASE}/datasources/chunk", chunk_params, timeout=120)
+    _require_success("chunking", status, payload, error)
+
+    def _chunks_done(data: dict[str, object]) -> bool:
+        _terminal_or_raise("chunking", data.get("status"))
+        return bool(data.get("has_chunks")) and str(data.get("status", "")).lower() == "completed"
+
+    _poll_status(
+        f"{API_BASE}/datasources/{data_package_id}/chunks/status",
+        label="chunking",
+        poll_interval=poll_interval,
+        timeout=timeout,
+        query_params={"chunking_strategy": chunking_strategy},
+        completion_predicate=_chunks_done,
+    )
+    typer.echo("  chunking: completed")
+
+    evidence_payload = _workflow_stage_payload(
+        data_package_id=data_package_id,
+        profile=profile,
+        qualitative_vocab=qualitative_vocab,
+        chunking_strategy=chunking_strategy,
+        chat_model=chat_model,
+        resume=resume,
+        force_rerun=force_rerun,
+        target_stage="context",
+    )
+    status, payload, error = _post_json_url(f"{API_BASE}/extraction/stages/evidence", evidence_payload, timeout=120)
+    _require_success("evidence", status, payload, error)
+    progress_query = {"chunking_strategy": chunking_strategy, "chat_model": chat_model}
+    _poll_status(
+        f"{API_BASE}/extraction/stages/evidence/{data_package_id}/progress",
+        label="evidence",
+        poll_interval=poll_interval,
+        timeout=timeout,
+        query_params=progress_query,
+    )
+    typer.echo("  evidence: completed")
+
+    profile_payload: dict[str, object] = {
+        "data_package_id": data_package_id,
+        "profile_identifier": profile,
+        "resume": resume,
+        "force_rebuild": force_rerun,
+        "chunking_strategy": chunking_strategy,
+    }
+    if qualitative_vocab:
+        profile_payload["qualitative_vocab_identifiers"] = qualitative_vocab
+    if chat_model:
+        profile_payload["chat_model"] = chat_model
+    status, payload, error = _post_json_url(f"{API_BASE}/extraction/stages/profile", profile_payload, timeout=120)
+    _require_success("profile", status, payload, error)
+    _poll_status(
+        f"{API_BASE}/extraction/stages/evidence/{data_package_id}/progress",
+        label="profile",
+        poll_interval=poll_interval,
+        timeout=timeout,
+        query_params=progress_query,
+    )
+    typer.echo("  profile: completed")
+
+    status, result_payload, error = _post_query_url(
+        f"{API_BASE}/extraction/stages/grounding/{data_package_id}/run",
+        progress_query,
+        timeout=120,
+    )
+    result = _require_success("grounding", status, result_payload, error)
+    typer.echo("  grounding: completed")
+
+    result_url = _url_with_query(f"{API_BASE}/extraction/results/{data_package_id}", progress_query)
+    status, result_payload, error = _get_json_url(result_url, timeout=120)
+    result = _require_success("result", status, result_payload, error)
+
+    token_status, token_payload, token_error = _get_json_url(
+        _url_with_query(f"{API_BASE}/extraction/workflows/{data_package_id}/token-usage", progress_query),
+        timeout=30,
+    )
+    if token_status and 200 <= token_status < 300 and isinstance(token_payload, dict):
+        record["token_usage"] = token_payload
+    elif token_error:
+        record["token_usage_error"] = token_error
+
+    record["result_url"] = result_url
+    record["result_status"] = result.get("validation", result.get("status"))
+    record["status"] = "completed"
+    typer.echo(f"  result: {result_url}")
+    return record
 
 
 def _api_get_ollama_config() -> tuple[dict[str, object] | None, str | None]:
@@ -901,6 +1274,98 @@ def main(ctx: typer.Context) -> None:
     if ctx.invoked_subcommand is None:
         typer.echo(ctx.get_help())
         raise typer.Exit(0)
+
+
+@app.command("workflow")
+def workflow(
+    datasets: list[str] = typer.Argument(None, help="Dataset ZIP names, paths, or glob patterns under data/datasets"),
+    all_datasets: bool = typer.Option(False, "--all", help="Run every ZIP dataset in data/datasets"),
+    profile: str = typer.Option("dcat-ap-plus", "--profile", help="Registered extraction profile identifier"),
+    chunking_strategy: str = typer.Option("fixed_tokens", "--chunking-strategy", help="Chunking strategy: fixed_tokens or semantic"),
+    fixed_tokens_per_chunk: int = typer.Option(1024, "--fixed-tokens-per-chunk", min=1, help="Target tokens per fixed-token chunk"),
+    min_tokens_per_chunk: int = typer.Option(128, "--min-tokens-per-chunk", min=1, help="Minimum chunk size after post-processing"),
+    max_tokens_per_chunk: int = typer.Option(1024, "--max-tokens-per-chunk", min=1, help="Maximum chunk size after post-processing"),
+    buffer_window_size: int = typer.Option(1, "--buffer-window-size", min=0, help="Line buffer around semantic chunks"),
+    semantic_chunking_threshold: float = typer.Option(95.0, "--semantic-chunking-threshold", min=0.0, max=100.0, help="Semantic chunking threshold"),
+    poll_interval: float = typer.Option(5.0, "--poll-interval", min=0.5, help="Seconds between progress polls"),
+    timeout: float = typer.Option(0.0, "--timeout", min=0.0, help="Per-stage timeout in seconds; 0 disables timeout"),
+    force_rerun: bool = typer.Option(False, "--force-rerun", help="Clear/rebuild persisted artifacts for deterministic package IDs"),
+    resume: bool = typer.Option(False, "--resume", help="Resume from persisted extraction context where stages support it"),
+    chat_model: str | None = typer.Option(None, "--chat-model", help="Chat model branch to run/read"),
+    qualitative_vocab: list[str] | None = typer.Option(None, "--qualitative-vocab", help="Vocabulary identifier for qualitative normalization; repeatable"),
+    fail_fast: bool = typer.Option(False, "--fail-fast", help="Stop the batch after the first failed dataset"),
+) -> None:
+    """Run dataset ZIPs through SIMONE stage endpoints."""
+    if min_tokens_per_chunk > max_tokens_per_chunk:
+        typer.echo("Error: min_tokens_per_chunk must be less than or equal to max_tokens_per_chunk.", err=True)
+        raise typer.Exit(1)
+    if chunking_strategy not in {"fixed_tokens", "semantic"}:
+        typer.echo("Error: chunking_strategy must be 'fixed_tokens' or 'semantic'.", err=True)
+        raise typer.Exit(1)
+    if not _api_is_reachable():
+        typer.echo(f"Error: SIMONE API is not reachable at {HEALTH_URL}. Start it with 'simone dev' or 'simone up'.", err=True)
+        raise typer.Exit(1)
+
+    try:
+        dataset_paths = _resolve_workflow_datasets(datasets or [], all_datasets=all_datasets)
+    except typer.BadParameter as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    typer.echo(f"Running workflow for {len(dataset_paths)} dataset(s).")
+    typer.echo(f"  profile: {profile}")
+    typer.echo(f"  chunking: {chunking_strategy}")
+    if chat_model:
+        typer.echo(f"  chat model: {chat_model}")
+    typer.echo("")
+
+    records: list[dict[str, object]] = []
+    failed = False
+    for dataset_path in dataset_paths:
+        try:
+            record = _run_workflow_dataset(
+                dataset_path,
+                profile=profile,
+                qualitative_vocab=qualitative_vocab,
+                chunking_strategy=chunking_strategy,
+                buffer_window_size=buffer_window_size,
+                semantic_chunking_threshold=semantic_chunking_threshold,
+                fixed_tokens_per_chunk=fixed_tokens_per_chunk,
+                min_tokens_per_chunk=min_tokens_per_chunk,
+                max_tokens_per_chunk=max_tokens_per_chunk,
+                poll_interval=poll_interval,
+                timeout=timeout,
+                resume=resume,
+                force_rerun=force_rerun,
+                chat_model=chat_model,
+            )
+            records.append(record)
+        except Exception as exc:
+            failed = True
+            record = {
+                "dataset": str(dataset_path),
+                "status": "failed",
+                "error": f"{type(exc).__name__}: {exc}",
+            }
+            records.append(record)
+            typer.echo(f"  failed: {record['error']}", err=True)
+            if fail_fast:
+                break
+        typer.echo("")
+
+    summary_path = _write_workflow_run_summary(records)
+    completed = sum(1 for record in records if record.get("status") == "completed")
+    typer.echo(f"Workflow batch complete: {completed}/{len(records)} succeeded.")
+    typer.echo(f"Summary: {summary_path.relative_to(REPO_ROOT)}")
+    for record in records:
+        status_text = record.get("status", "unknown")
+        name = Path(str(record.get("dataset", ""))).name
+        package = record.get("data_package_id", "")
+        result_url = record.get("result_url", "")
+        typer.echo(f"  {status_text}: {name} {package} {result_url}".rstrip())
+
+    if failed:
+        raise typer.Exit(1)
 
 
 @app.command()
