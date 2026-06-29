@@ -90,6 +90,10 @@ The practical conclusion is that FAIR catalysis data practice requires a stack o
 \section{Semantic Metadata Standards and Resources}
 \label{sec:semantic-metadata-standards-resources}
 
+Semantic metadata modelling requires both structural specifications and shared semantic resources.
+Application profiles define how metadata classes and properties are used in a particular context, including their relations, cardinalities, and value ranges.
+Vocabulary resources complement this structure by providing shared identifiers, definitions, and semantic relations for domain concepts such as analytical methods, material roles, quantity kinds, units, and spectroscopy-specific parameters.
+This section first introduces the application profiles used to organize chemistry- and catalysis-related metadata and then examines the vocabulary resources used to classify their central shapes.
 
 \subsection{DCAT-AP+ and ChemDCAT-AP}
 \label{sec:dcat-ap-plus-chemdcat-ap}
@@ -220,7 +224,7 @@ nmrCV can therefore identify not only how a spectrum was acquired, but also the 
 \section{Text Mining and LLM-Based Extraction Workflows}
 \label{sec:text-mining-llm-extraction-workflows}
 
-The standards and vocabularies discussed above define how catalysis metadata can be represented, but much of the required information remains embedded in scientific articles, supplementary information, tables, figures, reports, instrument exports, and local files.
+The application profiles and vocabularies discussed above define how catalysis metadata can be represented, but much of the required information remains embedded in scientific articles, supplementary information, tables, figures, reports, instrument exports, and local files.
 Chemical data extraction is therefore an acquisition problem as much as a modelling problem.
 Recent reviews of LLM-based chemical data extraction describe end-to-end workflows that move from document collection and parsing to structured output, quality assurance, and domain validation \cite{schilling2025text}.
 In catalysis, the extraction task is especially demanding because catalyst identity, pretreatment, reaction context, analytical method, and performance value may be distributed across several sections of a paper or across several files \cite{zhang2022knowledge,walls2025catminer}.
