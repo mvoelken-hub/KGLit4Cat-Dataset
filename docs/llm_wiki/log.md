@@ -61,3 +61,14 @@ Added source page for newly added `docs/literature/s13222-024-00476-3.pdf`:
 Updated concept/entity pages: [[ontology-development]], [[catalysis-ontologies]]
 Updated catalog and synthesis: [[index]], [[overview]]
 Updated thesis bibliography: `docs/thesis/bibliography/references.bib`
+
+## [2026-06-29] ingest | Chemistry IE and generative IE survey batch
+Added source pages for newly added `docs/literature/` PDFs:
+- [[openchemie]] - multimodal document-level reaction extraction from chemistry literature across text, tables, and figures
+- [[llm-generative-information-extraction-survey]] - survey of LLM-based generative information extraction, universal IE, low-resource techniques, retrieval, and reliability challenges
+
+Marked `docs/literature/2404.03868v2.pdf` as a duplicate/preprint file for existing source [[zhang2024edc]].
+
+Updated concept pages: [[text-mining-for-catalysis]], [[structured-output-reliability]]
+Updated catalog and synthesis: [[index]], [[overview]]
+Updated thesis bibliography: `docs/thesis/bibliography/references.bib`

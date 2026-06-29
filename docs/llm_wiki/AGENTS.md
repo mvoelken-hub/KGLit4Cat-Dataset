@@ -4,6 +4,13 @@
 
 ## Recent Updates
 
+### [2026-06-29] ingest | Chemistry IE and generative IE survey batch
+Added source pages for newly acquired PDFs:
+- [[openchemie]] - multimodal document-level reaction extraction from chemistry literature across text, tables, and figures
+- [[llm-generative-information-extraction-survey]] - LLM-based generative IE survey covering NER, relation extraction, event extraction, universal IE, low-resource techniques, retrieval, and reliability issues
+
+Marked [[zhang2024edc]] as already covered; `2404.03868v2.pdf` is a duplicate/preprint of the existing EDC source. Updated text-mining and structured-output concept pages, overview, index, log, and thesis bibliography references.
+
 ### [2026-06-28] ingest | Reac4Cat-Ontology
 Added source page for newly acquired PDF:
 - [[reac4cat-ontology]] - OWL description logic, General Class Axioms, reaction-role/catalyst inference, EnzymeML and DWSIM-linked process-simulation knowledge graph

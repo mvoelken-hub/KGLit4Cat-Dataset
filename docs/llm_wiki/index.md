@@ -70,6 +70,8 @@ Content-oriented catalog of all pages in the LLM Wiki. Organized by category.
 | [[dagdelen2024structured]] | Structured IE from Scientific Text | 2024 | llm, text-mining |
 | [[schilling2025text]] | From Text to Insight: LLMs for Chemical Extraction | 2025 | llm, text-mining |
 | [[zhang2024chemicaltextmining]] | Fine-Tuning LLMs for Chemical Text Mining | 2024 | llm, text-mining |
+| [[openchemie]] | OpenChemIE: Multimodal Reaction Extraction from Chemistry Literature | 2024 | text-mining, multimodal, reaction-extraction |
+| [[llm-generative-information-extraction-survey]] | Large Language Models for Generative Information Extraction: A Survey | 2024 | llm, text-mining, structured-output |
 | [[zhang2024edc]] | EDC: LLM-based KG Construction | 2024 | knowledge-graph, llm |
 | [[kim2025angel]] | ANGEL: Negative Sample Learning for BioEL | 2025 | llm, text-mining |
 | [[lin2024knnbioel]] | kNN-BioEL: Retrieval-Enhanced BioEL | 2024 | llm, text-mining |
@@ -172,14 +174,14 @@ Content-oriented catalog of all pages in the LLM Wiki. Organized by category.
 
 ## Tag Index
 - **catalysis**: 23 pages
-- **llm**: 34 pages
+- **llm**: 35 pages
 - **ontology**: 17 pages
 - **fair-data**: 21 pages
 - **knowledge-graph**: 9 pages
 - **data-infrastructure**: 13 pages
 - **nfdi**: 11 pages
 - **bayesian-optimization**: 3 pages
-- **text-mining**: 8 pages
+- **text-mining**: 10 pages
 - **materials-discovery**: 6 pages
 - **ontology-matching**: 4 pages
 - **formal-ontology**: 2 pages
@@ -187,7 +189,7 @@ Content-oriented catalog of all pages in the LLM Wiki. Organized by category.
 - **benchmark**: 2 pages
 - **chemical-reasoning**: 2 pages
 - **rag**: 5 pages
-- **structured-output**: 3 pages
+- **structured-output**: 4 pages
 - **biocatalysis**: 2 pages
 - **software**: 1 page
 - **database**: 1 page

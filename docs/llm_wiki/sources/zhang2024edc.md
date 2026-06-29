@@ -13,6 +13,7 @@ tags: [knowledge-graph, llm, text-mining]
 **Year:** 2024
 **Venue:** EMNLP 2024 (pp. 9820–9836)
 **File:** `docs/literature/2024.emnlp-main.548.pdf`
+**Duplicate/Preprint File:** `docs/literature/2404.03868v2.pdf`
 
 ## Abstract
 Three-phase framework for knowledge graph construction from text using LLMs: (1) open information extraction, (2) schema definition, (3) post-hoc canonicalization. Flexible: works with or without a pre-defined target schema. Introduces a trained retrieval component to improve extraction via RAG-like schema retrieval.

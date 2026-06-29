@@ -2,7 +2,7 @@
 type: concept
 title: "Overview: Catalysis, LLMs, Knowledge Graphs, and FAIR Data"
 created: 2025-06-23
-updated: 2026-06-28
+updated: 2026-06-29
 sources: [all]
 tags: [catalysis, llm, knowledge-graph, ontology, fair-data]
 ---
@@ -41,6 +41,8 @@ KGs sit between raw literature and AI applications. [[knowledge-graphs-for-catal
 
 ### LLM Foundations and Reliability
 The fresh LLM foundations batch clarifies the technical substrate behind these applied systems. [[attention-is-all-you-need]] supplies the Transformer architecture; [[bert]], [[scibert]], and [[sentence-bert]] explain the encoder and embedding lineage for scientific NLP and retrieval; [[gpt3-few-shot-learners]] and [[instructgpt-rlhf]] explain prompt-based and instruction-following LLM use. The main operational lesson is that extraction quality depends on more than model capability: retrieval design ([[retrieval-augmented-generation]], [[self-rag]]), context placement ([[lost-in-the-middle]]), decoding choices ([[neural-text-degeneration]]), and structured-output controls ([[grammar-constrained-decoding]], [[structured-output-ie-go]]) all shape whether outputs are faithful and schema-valid.
+
+Recent IE-specific additions reinforce this operational view. [[llm-generative-information-extraction-survey]] shows that LLM-based IE is moving toward generative, universal, low-resource, retrieval-assisted workflows while still struggling with hallucination and schema mismatch. [[openchemie]] adds the chemistry-specific reminder that document-level extraction often spans text, tables, figures, diagrams, OCR, and domain-specific integration logic.
 
 ### Ontology Development
 Ontology work ranges from foundational theory ([[guarino-fois98]], [[bfo-textbook]]) to catalysis-specific implementations ([[chemdcat-ap]], [[ontologies4cat]], [[reac4cat-ontology]], [[ontology-reaction-classification]]). Reac4Cat is especially important because it demonstrates how OWL description logic and GCAs can infer reaction roles and catalyst relations in process-linked catalysis knowledge graphs. LLMs are now being used to automate ontology construction ([[llm-kg-ontology-generation]]) and matching ([[complex-ontology-matching-llm]], [[lakermap-ontology-matching]], [[hgnn-ontology-matching]]).

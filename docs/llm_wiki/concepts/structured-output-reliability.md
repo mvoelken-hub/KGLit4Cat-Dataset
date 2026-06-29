@@ -2,8 +2,8 @@
 type: concept
 title: "Structured Output Reliability"
 created: 2026-06-26
-updated: 2026-06-26
-sources: [neural-text-degeneration, grammar-constrained-decoding, structured-output-ie-go, self-rag, lost-in-the-middle, instructgpt-rlhf, dagdelen2024structured, spires-ontogpt]
+updated: 2026-06-29
+sources: [neural-text-degeneration, grammar-constrained-decoding, structured-output-ie-go, llm-generative-information-extraction-survey, self-rag, lost-in-the-middle, instructgpt-rlhf, dagdelen2024structured, spires-ontogpt]
 tags: [llm, structured-output, text-mining]
 ---
 
@@ -19,6 +19,7 @@ Structured extraction asks an LLM to do two different jobs at once: understand t
 ## Reliability Patterns
 - [[grammar-constrained-decoding]] guarantees formal output validity using grammars, including input-dependent grammars for IE.
 - [[structured-output-ie-go]] separates content generation from formatting through Generate-and-Organize prompting.
+- [[llm-generative-information-extraction-survey]] frames LLM-based IE around generative schemas, universal IE, retrieval, low-resource adaptation, and self-improvement, while highlighting hallucination and structured-output mismatch as recurring problems.
 - [[self-rag]] retrieves and critiques evidence adaptively, helping outputs stay grounded.
 - [[dagdelen2024structured]] and [[spires-ontogpt]] show applied patterns for schema-oriented scientific extraction.
 
