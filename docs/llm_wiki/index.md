@@ -130,6 +130,7 @@ Content-oriented catalog of all pages in the LLM Wiki. Organized by category.
 | [[steinbeck2020nfdi4chem]] | NFDI4Chem Grant Proposal | 2020 | fair-data, nfdi |
 | [[chemdcat-ap]] | ChemDCAT-AP: Semantic Interoperability Profile | 2026 | ontology, fair-data, nfdi |
 | [[ontologies4cat]] | Ontologies4Cat: Ontology Landscape for Catalysis | 2024 | ontology, catalysis, nfdi |
+| [[reac4cat-ontology]] | Reac4Cat-Ontology: Description Logic for Catalysis Reaction KGs | 2024 | ontology, catalysis, knowledge-graph, nfdi |
 | [[ontology-reaction-classification]] | Ontology-Based Reaction Classification Pipeline | 2025 | ontology, catalysis, nfdi |
 | [[mardiflow]] | MaRDIFlow: CSE Workflow Framework | 2024 | data-infrastructure, fair-data |
 | [[mardiflow-voc4cat]] | MaRDIFlow + Voc4Cat Integration | 2025 | ontology, data-infrastructure, nfdi |
@@ -170,13 +171,13 @@ Content-oriented catalog of all pages in the LLM Wiki. Organized by category.
 ---
 
 ## Tag Index
-- **catalysis**: 22 pages
+- **catalysis**: 23 pages
 - **llm**: 34 pages
-- **ontology**: 16 pages
+- **ontology**: 17 pages
 - **fair-data**: 21 pages
-- **knowledge-graph**: 8 pages
+- **knowledge-graph**: 9 pages
 - **data-infrastructure**: 13 pages
-- **nfdi**: 10 pages
+- **nfdi**: 11 pages
 - **bayesian-optimization**: 3 pages
 - **text-mining**: 8 pages
 - **materials-discovery**: 6 pages

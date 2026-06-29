@@ -2,7 +2,7 @@
 type: concept
 title: "Overview: Catalysis, LLMs, Knowledge Graphs, and FAIR Data"
 created: 2025-06-23
-updated: 2026-06-26
+updated: 2026-06-28
 sources: [all]
 tags: [catalysis, llm, knowledge-graph, ontology, fair-data]
 ---
@@ -43,7 +43,7 @@ KGs sit between raw literature and AI applications. [[knowledge-graphs-for-catal
 The fresh LLM foundations batch clarifies the technical substrate behind these applied systems. [[attention-is-all-you-need]] supplies the Transformer architecture; [[bert]], [[scibert]], and [[sentence-bert]] explain the encoder and embedding lineage for scientific NLP and retrieval; [[gpt3-few-shot-learners]] and [[instructgpt-rlhf]] explain prompt-based and instruction-following LLM use. The main operational lesson is that extraction quality depends on more than model capability: retrieval design ([[retrieval-augmented-generation]], [[self-rag]]), context placement ([[lost-in-the-middle]]), decoding choices ([[neural-text-degeneration]]), and structured-output controls ([[grammar-constrained-decoding]], [[structured-output-ie-go]]) all shape whether outputs are faithful and schema-valid.
 
 ### Ontology Development
-Ontology work ranges from foundational theory ([[guarino-fois98]], [[bfo-textbook]]) to catalysis-specific implementations ([[chemdcat-ap]], [[ontologies4cat]], [[ontology-reaction-classification]]). LLMs are now being used to automate ontology construction ([[llm-kg-ontology-generation]]) and matching ([[complex-ontology-matching-llm]], [[lakermap-ontology-matching]], [[hgnn-ontology-matching]]).
+Ontology work ranges from foundational theory ([[guarino-fois98]], [[bfo-textbook]]) to catalysis-specific implementations ([[chemdcat-ap]], [[ontologies4cat]], [[reac4cat-ontology]], [[ontology-reaction-classification]]). Reac4Cat is especially important because it demonstrates how OWL description logic and GCAs can infer reaction roles and catalyst relations in process-linked catalysis knowledge graphs. LLMs are now being used to automate ontology construction ([[llm-kg-ontology-generation]]) and matching ([[complex-ontology-matching-llm]], [[lakermap-ontology-matching]], [[hgnn-ontology-matching]]).
 
 ## Key Tensions and Open Questions
 
@@ -83,6 +83,7 @@ Ontology work ranges from foundational theory ([[guarino-fois98]], [[bfo-textboo
 - [[spires-ontogpt]] — SPIRES (2024)
 - [[ols4]] — OLS4 (2025)
 - [[ontologies4cat]] — Ontologies4Cat (2024)
+- [[reac4cat-ontology]] - Reac4Cat-Ontology (2024)
 - [[chemdcat-ap]] — ChemDCAT-AP (2026)
 - [[ontology-reaction-classification]] — Reac4Cat extension (2025)
 - [[complex-ontology-matching-llm]] — LLM ontology matching (2025)

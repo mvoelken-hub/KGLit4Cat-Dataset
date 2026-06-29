@@ -4,6 +4,12 @@
 
 ## Recent Updates
 
+### [2026-06-28] ingest | Reac4Cat-Ontology
+Added source page for newly acquired PDF:
+- [[reac4cat-ontology]] - OWL description logic, General Class Axioms, reaction-role/catalyst inference, EnzymeML and DWSIM-linked process-simulation knowledge graph
+
+Updated concept/entity pages: ontology-development, catalysis-ontologies. Updated overview, index, log, and thesis bibliography references.
+
 ### [2026-06-27] ingest | Biocatalysis and catalysis data infrastructure batch
 Added source pages for newly acquired PDFs:
 - [[enzymeml-fair-biocatalysis]] - EnzymeML exchange format, STRENDA-aligned metadata, APIs, ELNs, Dataverse micropublications

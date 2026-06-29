@@ -2,8 +2,8 @@
 type: entity
 title: "Catalysis Ontologies and Vocabularies"
 created: 2025-06-23
-updated: 2025-06-23
-sources: [ontologies4cat, chemdcat-ap, ontology-reaction-classification, ontocape, nfdi4cat-whitepaper]
+updated: 2026-06-28
+sources: [ontologies4cat, chemdcat-ap, reac4cat-ontology, ontology-reaction-classification, ontocape, nfdi4cat-whitepaper]
 tags: [ontology, catalysis]
 ---
 
@@ -19,7 +19,8 @@ The catalysis ontology landscape includes domain-specific ontologies, vocabulari
 - Community-driven, open
 
 ### Reac4Cat
-- Ontology for reaction classification
+- Ontology for reaction and catalysis knowledge graphs ([[reac4cat-ontology]])
+- Uses OWL description logic and General Class Axioms to infer reaction roles and catalyst relations
 - Extended by [[ontology-reaction-classification]] with automatic functional group decomposition
 
 ### ChemDCAT-AP ([[chemdcat-ap]])

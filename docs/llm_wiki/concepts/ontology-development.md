@@ -2,8 +2,8 @@
 type: concept
 title: "Ontology Development for Catalysis"
 created: 2025-06-23
-updated: 2025-06-23
-sources: [bfo-textbook, guarino-fois98, ontocape, chemdcat-ap, ontologies4cat, ontology-reaction-classification, nfdi4cat-whitepaper, mardiflow-voc4cat, llm-kg-ontology-generation]
+updated: 2026-06-28
+sources: [bfo-textbook, guarino-fois98, ontocape, chemdcat-ap, ontologies4cat, reac4cat-ontology, ontology-reaction-classification, nfdi4cat-whitepaper, mardiflow-voc4cat, llm-kg-ontology-generation]
 tags: [ontology, catalysis, nfdi, formal-ontology]
 ---
 
@@ -32,11 +32,12 @@ Ontologies provide the formal vocabulary and logical structure for representing 
 - Automatic mapping of ontology classes for relatedness analysis
 - GitHub: https://github.com/nfdi4cat/Ontology-Overview-of-NFDI4Cat
 
-### Reac4Cat / Reaction Classification ([[ontology-reaction-classification]])
-- Extends Reac4Cat ontology with semantic reaction classification
-- Automatic functional group decomposition via chemical database APIs (KEGG, PubChem)
-- OWL + SHACL for reasoning and constraints
-- GUI for KG interaction
+### Reac4Cat / Reaction Classification ([[reac4cat-ontology]], [[ontology-reaction-classification]])
+- Reac4Cat models reaction experiments, mixtures, products, reaction roles, and catalyst relations using OWL description logic
+- General Class Axioms / left-hand-side logic infer reaction-role assignments and catalyst participation from component relations
+- Demonstrated on EnzymeML and DWSIM-linked biocatalytic process data, with Python-generated GCAs and HermiT reasoning
+- Later reaction-classification work extends Reac4Cat with functional group decomposition via chemical database APIs (KEGG, PubChem)
+- OWL + SHACL support reasoning, constraints, and KG interaction
 
 ### Voc4Cat
 - Domain-specific SKOS vocabulary for catalysis

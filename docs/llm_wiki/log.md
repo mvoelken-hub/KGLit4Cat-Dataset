@@ -53,3 +53,11 @@ Added 4 source pages from newly added `docs/literature/` PDFs:
 Updated concept page: [[catalysis-data-infrastructure]]
 Updated catalog and synthesis: [[index]], [[overview]]
 Updated thesis bibliography: `docs/thesis/bibliography/references.bib`
+
+## [2026-06-28] ingest | Reac4Cat-Ontology source added
+Added source page for newly added `docs/literature/s13222-024-00476-3.pdf`:
+- [[reac4cat-ontology]] - OWL description-logic / GCA-based reaction and catalysis knowledge graph for reaction-role and catalyst inference, demonstrated with EnzymeML and DWSIM-linked process data
+
+Updated concept/entity pages: [[ontology-development]], [[catalysis-ontologies]]
+Updated catalog and synthesis: [[index]], [[overview]]
+Updated thesis bibliography: `docs/thesis/bibliography/references.bib`
