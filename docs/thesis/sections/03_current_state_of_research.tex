@@ -1,8 +1,8 @@
 \label{chap:sota}
 
-The following chapter reviews the current state of research that motivates an LLM-supported workflow for semantic metadata extraction from catalytic experiments.
-First, it will be examined how catalysis research currently approaches FAIR data practice.
-After that, semantic metadata standards and resources are presented, including both application profiles and the vocabularies, taxonomies, and ontologies that provide term-level grounding.
+The following chapter reviews the current state of research that motivates an \ac{LLM}-supported workflow for semantic metadata extraction from catalytic experiments.
+First, the current approach of catalysis research to the \ac{FAIR} principles will be examined.
+After that, semantic metadata standards and resources are presented, including both application profiles and the vocabularies and ontologies that can provide term-level grounding.
 Furthermore, the chapter addresses and discusses how \ac{NLP} and \ac{LLM} workflows already extract structured knowledge from scientific sources.
 The final section then identifies the operational gap that leads into the goals for the workflow developed.
 
@@ -11,10 +11,7 @@ The final section then identifies the operational gap that leads into the goals 
 
 Catalysis research produces heterogeneous data across publications, supplementary information, instrument exports, local folders, electronic laboratory systems, and repository deposits.
 Recent discussions of digital catalysis describe the \ac{FAIR} principles as a necessary response to this fragmentation, because available data often lacks the contextual metadata needed for discovery, interpretation, comparison, and later computational use \cite{wilkinson2016fair,marshall2023digital,mendes2021opendata,mendes2025data}.
-The four FAIR principles should not be read as four isolated technical layers.
-The same infrastructure component can support several of them.
-A repository can make a dataset findable and accessible, a vocabulary can improve interoperability and search, and a metadata profile can support both semantic exchange and later reuse.
-\cref{tab:fair-catalysis-resource-map} therefore gives an orientation map rather than a strict one-to-one assignment.
+\Cref{tab:fair-catalysis-resource-map} summarizes the typical contribution of selected resources to \ac{FAIR} catalysis data practice, while it doesnt claim a strict one-to-one assignment.
 
 \begin{table}[H]
 \centering
@@ -26,7 +23,7 @@ A repository can make a dataset findable and accessible, a vocabulary can improv
 \midrule
 Findable & Persistent identification and searchable metadata & DataCite metadata, DOIs, repository indexes, catalysis-specific descriptive metadata \\
 Accessible & Retrieval through standardized protocols under explicit access conditions & Repo4Cat, NOMAD, HTTPS landing pages, APIs, authentication and authorization mechanisms \\
-Interoperable & Shared machine-readable representations and semantics & Voc4Cat, CHMO, nmrCV, QUDT, ChemDCAT-AP, identifiers, units, shared formats \\
+Interoperable & Shared machine-readable representations and semantics & Voc4Cat, nmrCV, QUDT, ChemDCAT-AP, identifiers, units, shared formats \\
 Reusable & Sufficient context, provenance, licence, quality, and domain-standard representation & ChemDCAT-AP, validation rules, structured domain schemas, provenance records, licences, benchmark and reporting practices \\
 \bottomrule
 \end{tabularx}
@@ -59,7 +56,8 @@ It also motivates infrastructures in which data processing and metadata generati
 Repository infrastructures provide the main access layer.
 Repo4Cat contributes storage, landing pages, publication workflows, APIs, and private working spaces for collaborative or protected data handling \cite{kushnarenko2025repo4cat}.
 \ac{NOMAD} provides browser-based and machine-oriented access to structured catalysis entries and metadata, making uploaded experimental data available through a platform that can support later search, inspection, and reuse \cite{schumann2025nomad}.
-Local laboratory infrastructures address the same principle at an earlier stage of the data lifecycle: Moshantaf et al. connect automated acquisition, standardized analysis, database upload, relationship generation, and API-based exchange for catalytic testing data \cite{moshantaf2024advancing}.
+Local laboratory infrastructures address the same principle at an earlier stage of the data lifecycle: Moshantaf et al.
+connect automated acquisition, standardized analysis, database upload, relationship generation, and API-based exchange for catalytic testing data \cite{moshantaf2024advancing}.
 Together, these examples show that accessibility is implemented through repository, platform, and laboratory services rather than through metadata vocabulary alone.
 
 \subsection{Interoperability}
@@ -67,9 +65,8 @@ Together, these examples show that accessibility is implemented through reposito
 
 Interoperability requires shared machine-readable representations and semantics.
 Controlled vocabularies and ontologies are necessary here because they provide stable identifiers, labels, definitions, synonyms, and relations for concepts that would otherwise remain ambiguous strings.
-The \ac{Voc4Cat} provides catalysis-specific terminology in \ac{SKOS} and is used in \ac{NFDI4Cat} contexts and the \ac{NOMAD} catalysis plugin to align workflow or repository metadata with shared catalysis concepts \cite{nfdi4cat2024whitepaper,schumann2025nomad}.
-A MaRDIFlow extension further demonstrates how Voc4Cat can be integrated into computational workflow metadata through API-based vocabulary lookup and validation \cite{veluvali2025bridging}.
-More specialized resources provide finer-grained semantics where a broad catalysis vocabulary is insufficient: CHMO supports chemical experimental and analytical method terminology, nmrCV supports NMR-specific descriptions associated with nmrML, and QUDT represents quantity kinds, units, dimensions, and datatypes \cite{chmoOboFoundry,nmrmlSpecification,qudt2022schema}.
+The \ac{Voc4Cat} provides catalysis-specific terminology in \ac{SKOS} and is used in \ac{NFDI4Cat} contexts to align catalysis metadata with shared community concepts \cite{nfdi4cat2024whitepaper,david_linke_2023_8313340}.
+More specialized resources provide finer-grained semantics where a broad catalysis vocabulary is insufficient: nmrCV supports NMR-specific descriptions associated with nmrML, and QUDT represents quantity kinds, units, dimensions, and datatypes \cite{nmrmlSpecification,qudt2022schema}.
 
 Vocabularies alone, however, do not define the complete structure of a dataset.
 A vocabulary can identify a concept such as reaction temperature, but a metadata or data schema must define where that temperature belongs, which entity or activity it describes, what datatype it has, and which unit is attached.
@@ -93,94 +90,211 @@ The practical conclusion is that FAIR catalysis data practice requires a stack o
 \section{Semantic Metadata Standards and Resources}
 \label{sec:semantic-metadata-standards-resources}
 
-\subsection{Application Profiles}
-\label{sec:application-profiles}
 
-The most relevant current application-profile development for this work is \ac{DCAT-AP+}, a \ac{LinkML}-based extension of \ac{DCAT-AP} 3.0 that adds structured scientific context to catalogue-level dataset descriptions \cite{semic2024dcatap,dcatapplusDocumentation,stroemert2026chemdcat}.
-Its practical message is to keep the base profile domain-agnostic, extend DCAT-AP only with broadly reusable terms from \ac{PROV-O}, \ac{DCTERMS}, and \ac{QUDT}, and use \ac{LinkML} as the mediator between instance data, validation artifacts, and \ac{RDF} export \cite{w3c2013provo,qudt2022schema,dcatapplusDocumentation,linkmlDocumentation}.
-This puts \ac{DCAT-AP+} in a middle position between broader vocabularies
-two extremes that are both problematic for day-to-day catalysis data handling.
-Controlled vocabularies such as \ac{Voc4Cat} provide terminology but not enough relation structure on their own, while full ontologies can be too complex as direct reporting schemas.
-\ac{DCAT-AP+} therefore acts as a compact schema layer that can map data elements to terms and still remain simple enough for software integration and profile extension.
+\subsection{DCAT-AP+ and ChemDCAT-AP}
+\label{sec:dcat-ap-plus-chemdcat-ap}
 
-The documentation frames the model as a way to connect a dataset to use-case-specific context: which entity or activity the dataset is about, which activity generated it, which tools, surroundings, agents, and plans were involved, and which qualitative or quantitative attributes were observed \cite{dcatapplusDocumentation}.
-This makes \ac{DCAT-AP+} especially relevant for catalysis and chemistry data because the scientific value of a dataset often depends less on the catalogue title alone than on the experiment, sample, measurement, method, and measured quantities that produced the files.
+The design of \ac{DCAT-AP+} is based on a separation between application-profile constraints and ontology semantics.
+Its \ac{LinkML} classes and slots define usage-specific node and property shapes, while their \texttt{class\_uri} and \texttt{slot\_uri} mappings refer to classes and properties from external vocabularies.
+Consequently, inheritance between LinkML elements specializes their structure and validation constraints but does not itself introduce \ac{OWL} subclass or subproperty axioms.
+Multiple shapes can therefore constrain different uses of the same ontology class, while derived domain profiles may retain the generic mappings or replace them with more specific domain terms \cite{dcatapplusDocumentation}.
+
+Within this framework, \ac{DCAT-AP+} defines four central design patterns, which are visualized in \cref{fig:dcat-ap-plus}.
+The first is a provenance core that extends the otherwise underspecified use of \ac{PROV-O} in \ac{DCAT-AP}.
+A \texttt{dcat:Dataset} is connected through \texttt{prov:wasGeneratedBy} to a \texttt{DataGeneratingActivity}, which is a usage-specific shape mapped to \texttt{prov:Activity}.
+The underlying activity pattern can describe entities that were used or generated, preceding activities that informed the activity, and agentic entities involved in carrying it out.
+The more specific \texttt{DataGeneratingActivity} additionally identifies an \texttt{EvaluatedEntity} or \texttt{EvaluatedActivity} representing what was examined during data generation.
+Physical instruments and software are represented through the \texttt{AgenticEntity} shapes \texttt{Device} and \texttt{Software}, respectively.
+Dataset-level relations to the evaluated subject matter are additionally represented through \texttt{dcterms:subject}, allowing both dataset-centric searches for data about an entity or activity and provenance-centric searches for activities that evaluated it \cite{dcatapplusDocumentation,stroemert2026chemdcat}.
+
+The provenance pattern also supports data-processing chains in which one dataset is derived from another.
+A \texttt{DataAnalysis} represents the analytical activity, an \texttt{AnalysisSourceData} represents the source data used by that activity, and an \texttt{AnalysisDataset} represents its resulting dataset.
+These elements preserve the connection between primary data generation and subsequent analysis without introducing separate ontology classes, because they remain specialized application-profile shapes mapped to \texttt{prov:Activity}, \texttt{prov:Entitiy}, and \texttt{dcat:Dataset} \cite{dcatapplusDocumentation}.
+
+The second pattern provides generic descriptions of quantitative and qualitative attributes.
+A \texttt{QuantitativeAttribute}, mapped to \texttt{qudt:Quantity}, combines a numerical value with a \texttt{qudt:QuantityKind} and, where applicable, a \texttt{qudt:Unit}.
+A \texttt{QualitativeAttribute}, mapped to \texttt{prov:Entity}, records a non-numerical value such as an instrument setting, identifier, or categorical observation.
+Both attribute types can be attached to entities, activities, devices, or software through a generic relation.
+They represent recorded metadata values rather than complete ontological models of the underlying physical qualities, thereby providing a compact structure that remains directly queryable and comparatively simple to populate.
+Domain profiles can specialize these generic attribute relations with narrower ranges and more precise predicates where suitable domain terms exist \cite{dcatapplusDocumentation}.
+
+The third pattern is flexible classification through the \texttt{ClassifierMixin}, which adds both \texttt{rdf\_type} and \texttt{type} to the central DCAT-AP+ shapes.
+The \texttt{rdf\_type} slot maps to \texttt{rdf:type} and expresses that an instance belongs to a class from a formal ontology, thereby enabling ontology-based querying and inference.
+In contrast, \texttt{type} maps to \texttt{dcterms:type} and provides lightweight categorization using a controlled-vocabulary term, such as a \ac{SKOS} concept, without asserting formal class membership.
+This distinction allows domain-specific semantics to be added directly to individual instances without requiring a separate \ac{OWL} subclass for every type of activity, entity, instrument, or attribute \cite{dcatapplusDocumentation}.
+
+The fourth pattern provides optional contextual metadata through the \texttt{Plan} and \texttt{Surrounding} shapes.
+A \texttt{Plan}, mapped to \texttt{prov:Plan}, represents directive information such as a method, protocol, or standard operating procedure and is linked to a \texttt{DataGeneratingActivity} through \texttt{realized\_plan}.
+A \texttt{Surrounding}, mapped to \texttt{prov:Location}, represents the spatial context in which data generation occurred, such as a laboratory, field site, or computational environment, and is linked through \texttt{occurred\_in}.
+These shapes are intentionally minimal and can be classified or extended by domain profiles.
+The location of data generation is thereby distinguished from the geographical coverage of the resulting dataset, which remains described through the corresponding \ac{DCAT-AP} spatial metadata \cite{dcatapplusDocumentation}.
 
 \begin{figure}[H]
     \centering
-    \resizebox{\textwidth}{!}{%
-        \input{figures/dcat_ap_plus_schema}
-    }
-    \caption{Schema-facing view of DCAT-AP+ as a provenance and context layer on top of DCAT-AP. The dataset remains the catalogue resource, while the added pattern makes the generating activity, evaluated entities or activities, participating agents and instruments, plans, locations, classifications, and attributes explicit. This turns a dataset record from a discoverability object into a structured description of how scientific data were produced and what they describe \cite{semic2024dcatap,w3c2013provo,dcatapplusDocumentation,stroemert2026chemdcat}.}
-    \label{fig:dcat-ap-plus-schema}
+    \includegraphics[width=0.74\textwidth]{figures/dcat_ap_plus.png}
+    \caption{....}
+    \label{fig:dcat-ap-plus}
 \end{figure}
 
-The central design pattern is shown in \cref{fig:dcat-ap-plus-schema}.
-DCAT-AP already allows a dataset to be linked to a provenance activity, but DCAT-AP+ gives that link a concrete internal structure.
-A \texttt{Dataset} can be connected through \texttt{prov:wasGeneratedBy} to an \texttt{Activity}; this activity can be classified with an ontology class, associated with agents or instruments, linked to a plan or method, and connected to evaluated entities or activities.
-The evaluated objects and the generating activity can then carry attributes.
-Qualitative attributes provide controlled descriptions, while quantitative attributes connect literal values to quantity kinds and units, following the QUDT-oriented pattern used in the documentation \cite{w3c2013provo,qudt2022schema,dcatapplusDocumentation}.
-This pattern is the part of DCAT-AP+ that matters most for metadata extraction: it defines where extracted statements such as \enquote{sample}, \enquote{measurement}, \enquote{spectrometer}, \enquote{temperature}, \enquote{solvent}, or \enquote{reaction time} belong in a reusable graph-shaped record.
+\ac{ChemDCAT-AP} is the first domain-specific application profile built on \ac{DCAT-AP+} and provides a shared metadata foundation for chemistry- and catalysis-related research data \cite{stroemert2026chemdcat,chemdcatapDocumentation}.
+It imports the generic provenance, attribute, classification, and contextual patterns of \ac{DCAT-AP+} and specializes them through \ac{LinkML} inheritance.
+ChemDCAT-AP classes extend the corresponding DCAT-AP+ shapes through \texttt{is\_a}, while domain-specific slots specialize generic relations in the same manner.
+Their mappings refer to established semantic resources including \ac{ChEBI}, \ac{CHEMINF}, the Semanticscience Integrated Ontology, and the Named Reaction Ontology.
+This preserves the structural compatibility of the generic profile while producing more precise \ac{RDF} and narrower validation constraints for chemical metadata.
 
-DCAT-AP+ is also important because its schema is operational rather than only descriptive.
-The model is maintained as a LinkML schema and the documentation reports generated artifacts such as YAML, \ac{JSON} Schema, \ac{JSON}-LD context, \ac{SHACL} shapes, and merged schema documentation \cite{dcatapplusDocumentation,linkmlDocumentation,w3c2017shacl}.
-This matters for the state of research because it connects three layers that are often treated separately: a human-readable documentation model, a machine-readable validation schema, and an \ac{RDF}-compatible semantic representation.
-For an extraction workflow, this means that candidate metadata can be projected into an explicit target structure and then checked against profile-level constraints rather than remaining a collection of untyped fields.
+The profile is organized into modules for material entities, chemical entities, chemical reactions, and their integration with the dataset and data-generation patterns of \ac{DCAT-AP+}.
+The generic \texttt{EvaluatedEntity} is specialized into shapes such as \texttt{MaterialSample} and \texttt{SubstanceSample}, whereas \texttt{ChemicalReaction} specializes \texttt{EvaluatedActivity}.
+Roles involved in a reaction are represented through shapes such as \texttt{StartingMaterial}, \texttt{Reagent}, \texttt{ChemicalProduct}, \texttt{Catalyst}, and \texttt{Reactor}.
+At the catalogue level, convenience shapes such as \texttt{SubstanceSampleCharacterizationDataset} and \texttt{ReactionMonitoringDataset} constrain a dataset and its generating activity to the corresponding chemical subject matter \cite{stroemert2026chemdcat,chemdcatapDocumentation}.
 
-\ac{ChemDCAT-AP} is the chemistry and catalysis specialization built from this DCAT-AP+ foundation.
-The ChemDCAT-AP paper makes this layering explicit.
-DCAT-AP+ is the domain-agnostic layer.
-ChemDCAT-AP imports it and adds chemistry- and catalysis-specific concepts \cite{stroemert2026chemdcat,chemdcatapDocumentation}.
-These additions include chemical entities, substances, samples, reactions, reagents, solvents, catalysts, analytical methods, pressures, yields, and related attribute patterns.
-In the layered profile family, DCAT-AP+ carries the reusable provenance and attribute design; ChemDCAT-AP adds the restrictions and terminology mappings shared by chemistry-specific contexts; and more specific profiles, such as MIChI-oriented schemas or future catalysis extensions, can add subdomain requirements on top of that shared layer.
-For catalysis, this layered design is important because it leaves room for a profile that captures minimum catalysis information, synthesis and characterization metadata, reaction context, catalyst composition, support, solvent, storage conditions, preparation method, and measured catalyst properties while still inheriting the common DCAT-AP+ and ChemDCAT-AP patterns.
-ChemDCAT-AP is therefore both the origin and the practical application of the DCAT-AP+ idea for this thesis: it demonstrates that the generic base pattern can be specialized into a profile suitable for NFDI4Chem and NFDI4Cat data exchange \cite{stroemert2026chemdcat,steinbeck2023nfdi4chem,nfdi4cat2024whitepaper}.
+ChemDCAT-AP also specializes the generic attribute and provenance relations of \ac{DCAT-AP+}.
+Instead of representing every chemical identifier through a generic \texttt{QualitativeAttribute} and an additional \texttt{rdf\_type}, dedicated slots such as \texttt{inchi}, \texttt{inchikey}, \texttt{smiles}, and \texttt{molecular\_formula} encode their meaning directly in the schema.
+Similarly, quantitative slots such as \texttt{has\_temperature}, \texttt{has\_mass}, \texttt{has\_concentration}, and \texttt{has\_yield} specialize the generic quantitative-attribute relation.
+Reaction-specific relations further distinguish the roles of inputs, outputs, and participating agents.
+For example, a catalyst or generated product can be described through a domain-specific slot while remaining interpretable as a specialization of the corresponding generic DCAT-AP+ provenance relation.
+ChemDCAT-AP thereby shifts recurring domain semantics from repeated instance-level classification into the application-profile schema, resulting in more concise instance data and more specific validation.
+
+ChemDCAT-AP remains a foundational rather than exhaustive reporting profile.
+Its generic chemical dataset and activity shapes are intended to be further constrained by use-case-specific profiles that define required properties, cardinalities, and controlled terms for particular experimental methods or subdomains.
+This extension mechanism has been demonstrated by formalizing the MARGARITAS minimum-information recommendations for \ac{NMR} spectroscopy and by applying the resulting model within the NFDI4Chem Search Service.
+For catalysis, ChemDCAT-AP therefore provides reusable representations of materials, samples, reactions, catalysts, reactors, conditions, and measured quantities upon which a dedicated catalysis minimum-information profile can impose more specific reporting requirements \cite{stroemert2026chemdcat,chemdcatapDocumentation}.
 
 
-\subsection{Semantic Metadata Resources}
-\label{sec:taxonomies-vocabularies-ontologies}
+% optionally missing: CoreMeta4Cat
 
-Semantic metadata also requires term-level grounding. SKOS provides a model for controlled vocabularies and concept schemes, including preferred labels, alternative labels, definitions, and broader or narrower concept relations \cite{w3c2009skos}. OWL supports richer ontology modelling with class expressions and logical semantics \cite{w3c2012owl2primer}. Quantity and unit systems such as QUDT address a different part of the same problem by representing measurable quantities, quantity kinds, units, dimensions, and datatypes \cite{qudt2022schema}. For catalysis metadata, these resources play complementary roles: controlled vocabularies stabilize labels, ontologies add formal relations, and quantity vocabularies make numerical observations comparable.
 
-QUDT is central for quantitative normalization. Catalysis records contain temperatures, pressures, flow rates, times, loadings, conversions, selectivities, yields, rates, and other measured or calculated quantities. These values are only reusable when the quantity kind and unit are made explicit and can be converted or compared across sources. ChemDCAT-AP's attribute patterns make this kind of normalization operational by allowing measured attributes to be associated with semantic identifiers rather than leaving them as isolated strings or numbers \cite{qudt2022schema,stroemert2026chemdcat}. In practice, QUDT therefore helps turn textual mentions such as temperatures or reaction times into comparable metadata.
+\subsection{Vocabulary Resources}
+\label{sec:vocabulary-resources}
 
-Voc4Cat addresses the qualitative terminology problem for catalysis. Developed in the NFDI4Cat context, this SKOS vocabulary provides shared catalysis concepts, labels, definitions, and persistent identifiers \cite{nfdi4cat2024whitepaper,veluvali2025bridging}. Its value is practical as well as terminological: the MaRDIFlow extension and the NOMAD catalysis plugin show how vocabulary alignment can support semantic workflow metadata and structured repository submission \cite{veluvali2025bridging,schumann2025nomad}. Voc4Cat therefore functions as a community vocabulary that can reduce ambiguity in catalyst, reaction, method, and workflow descriptions.
+Application profiles and vocabularies contribute different parts of semantic metadata modelling.
+The profile defines the structure of a record and vocabulary resources then provide stable identifiers for the terms used inside that structure, such as the analytical method, a quantity kind, an admissible unit, or a specific NMR acquisition parameter.
+The following resources therefore provide term-level semantics for the subsequent construction and semantic grounding of domain-specific metadata profiles.
 
-More specialized vocabularies are needed when a broad catalysis vocabulary is not precise enough. The Chemical Methods Ontology provides controlled terms for chemical experimental and analytical methods, including many characterization and measurement techniques \cite{chmoOboFoundry}. nmrCV provides NMR-specific terminology associated with nmrML, supporting more precise descriptions of NMR acquisition and related concepts \cite{nmrmlSpecification}. These resources illustrate why semantic grounding cannot rely on one vocabulary alone: a catalysis dataset may need a catalysis term for the reaction context, a method ontology term for the characterization procedure, an NMR-specific term for an acquisition concept, and a QUDT identifier for the measured quantity and unit.
+\subsubsection{Voc4Cat}
+\label{sec:voc4cat}
 
-The broader ontology landscape is similarly distributed. Ontologies4Cat surveys and classifies ontology resources relevant to the catalysis research data value chain, because useful concepts are spread across chemical, biological, materials, process-engineering, and catalysis-specific resources \cite{behr2024ontologies4cat}. Reac4Cat extends reaction modelling with semantic reaction classification and uses established chemical resources for functional group and reaction descriptions \cite{borgelt2025ontology}. OntoCAPE represents process-engineering concepts and remains relevant where catalyst data connect to reactor and process models \cite{marquardt2010ontocape}. The state of the art is therefore not a single universal ontology, but a modular landscape in which practical workflows must choose and align the vocabularies and ontologies needed for a specific metadata task.
+\ac{Voc4Cat} is a community-maintained \ac{SKOS} vocabulary developed within \ac{NFDI4Cat} for catalysis-related disciplines.
+It assigns stable, resolvable \acp{URI} to catalysis concepts and provides preferred labels, alternative labels, definitions, and hierarchical relations.
+These identifiers allow metadata schemas and annotations to reference shared concepts instead of representing the same terminology through independently defined local strings \cite{david_linke_2023_8313340,nfdi4cat2024whitepaper}.
+As a \ac{SKOS} resource, Voc4Cat is suited to lightweight classification, indexing, and terminology-based retrieval.
+A metadata record can reference a Voc4Cat concept as the value of an annotation or classification property without thereby asserting that the described resource is an instance of a corresponding \ac{OWL} class \cite{w3c2009skos}.
+
+A simple example is the representation of a characterization method.
+Voc4Cat identifies \texttt{nuclear magnetic resonance spectroscopy} through the concept \texttt{voc4cat\_0000073}, which is related as a narrower concept to \texttt{characterization technique} (\texttt{voc4cat\_0000066}).
+A metadata extraction workflow can therefore map lexical variants such as \texttt{NMR} and \texttt{nuclear magnetic resonance spectroscopy} to a shared concept identifier.
+More specific expressions such as \texttt{\textsuperscript{1}H NMR} should only be mapped to this generic concept when the metadata model does not preserve the more specific nucleus-dependent method.
+Within the NFDI4Cat framework for ontology-based research data management, domain-specific vocabularies and standardized metadata provide the semantic basis for constructing knowledge graphs.
+The white paper illustrates the use of this framework for literature search, experimental and simulation data entry, analysis, storage, and research planning \cite{nfdi4cat2024whitepaper}.
+
+\subsubsection{Quantities, Units, Dimensions and Types Ontology (QUDT)}
+\label{sec:qudt}
+
+The \acf{QUDT} provides a cross-domain semantic model for quantities, quantity kinds, units of measure, dimensions, numerical values, and their machine-readable representations.
+It complements domain vocabularies such as Voc4Cat by providing the identifiers and relations needed to express the quantitative semantics of a measurement that is associated with a characterization technique or an attribute.
+A literal value such as \texttt{400} becomes explicit and machine-actionable when it is linked, for example, to \texttt{quantitykind:Frequency} and \texttt{unit:MegaHZ} \cite{qudt2022schema}.
+
+The  \ac{QUDT} model makes these links explicit as an example shows.
+The \ac{QUDT} quantity-kind vocabulary defines \texttt{quantitykind:Frequency} as the number of occurrences of a repeating event per unit time and assigns it the dimension vector \(\mathrm{T}^{-1}\).
+Through \texttt{qudt:applicableUnit}, it is linked to compatible units from the \ac{QUDT} unit vocabulary, such as \texttt{unit:HZ} and \texttt{unit:MegaHZ}.
+The corresponding unit resources are, in turn, associated with the frequency quantity kind through \texttt{qudt:hasQuantityKind} \cite{qudt2022schema}.
+These relations can be used by validation and transformation software for unit--quantity-kind compatibility checks and conversions to a selected reference unit.
+For example, an NMR spectrometer frequency of \texttt{400 MHz} can be represented using \texttt{quantitykind:Frequency} and \texttt{unit:MegaHZ} and normalized to \texttt{400,000,000 Hz} without changing the quantity being described.
+Conversely, a linking of a value to a quantity kind and unit that are incompatible can be flagged as an error.
+\ac{QUDT} provides the semantic relations and conversion parameters required for these operations, while their execution requires corresponding validation or transformation rules \cite{qudt2022schema}.
+
+\subsubsection{NMR Controlled Vocabulary (nmrCV)}
+\label{sec:nmr-cv}
+
+The \ac{nmrCV} is the \ac{OWL}-based controlled vocabulary accompanying \ac{nmrML}, an open, vendor-neutral \ac{XML} format for exchanging and storing \ac{NMR} data.
+While the \ac{nmrML} schema defines the document structure, \ac{nmrCV} supplies standardized identifiers for spectroscopy-specific concepts concerning instrumentation and acquisition, spectral data processing, and the description or assignment of spectral results.
+It therefore provides a level of NMR-specific detail that complements broader domain vocabularies such as Voc4Cat \cite{nmrmlSpecification}.
+While \ac{nmrCV} technically is an \ac{OWL} ontology, it is intended to be used as a controlled vocabulary rather than as a formal ontology with axioms and reasoning.
+
+The scope of nmrCV extends across the NMR data lifecycle.
+Instrument and acquisition context can be described through terms such as \texttt{NMR probe}, \texttt{dwell time}, and \texttt{ninety degree pulse duration}.
+The vocabulary also distinguishes raw or processed data products and processing operations, including \texttt{FID data set}, \texttt{peak-picked spectrum}, and \texttt{baseline correction}.
+Terms for bin boundaries, bin areas, and compound concentrations further support the description of derived or quantified spectral results.
+nmrCV can therefore identify not only how a spectrum was acquired, but also the processing state and interpretation of the resulting data \cite{nmrmlSpecification}.
+
 
 \section{Text Mining and LLM-Based Extraction Workflows}
 \label{sec:text-mining-llm-extraction-workflows}
 
-The standards and vocabularies discussed above define how catalysis metadata can be represented, but much of the required information remains embedded in scientific articles, supplementary information, tables, figures, reports, instrument exports, and local files. Chemical data extraction is therefore an acquisition problem as much as a modelling problem. Recent reviews of LLM-based chemical data extraction describe end-to-end workflows that move from document collection and parsing to structured output, quality assurance, and domain validation \cite{schilling2025text}. In catalysis, the extraction task is especially demanding because catalyst identity, pretreatment, reaction context, analytical method, and performance value may be distributed across several sections of a paper or across several files \cite{zhang2022knowledge,walls2025catminer}.
+The standards and vocabularies discussed above define how catalysis metadata can be represented, but much of the required information remains embedded in scientific articles, supplementary information, tables, figures, reports, instrument exports, and local files.
+Chemical data extraction is therefore an acquisition problem as much as a modelling problem.
+Recent reviews of LLM-based chemical data extraction describe end-to-end workflows that move from document collection and parsing to structured output, quality assurance, and domain validation \cite{schilling2025text}.
+In catalysis, the extraction task is especially demanding because catalyst identity, pretreatment, reaction context, analytical method, and performance value may be distributed across several sections of a paper or across several files \cite{zhang2022knowledge,walls2025catminer}.
 
-Classical and domain-specific NLP systems provide the baseline for this task. ChemDataExtractor showed that chemistry-aware parsing, rule-based grammars, and document-level processing can extract chemical records before the current wave of generative LLMs \cite{swain2016chemdataextractor}. CatalysisIE applies a more catalysis-specific pipeline with article selection, named entity recognition, relation extraction, and an entity-aware search interface for classes such as catalysts, reactions, reactants, products, characterization, and treatment \cite{zhang2022knowledge}. Domain adaptation also matters at the language-model level: SciBERT and MatSciBERT show that scientific and materials-domain pretraining improves representation quality for specialized text, while CataLM demonstrates the same motivation for catalyst-domain LLMs \cite{beltagy2019scibert,gupta2022matscibert,wang2024catalm}. These systems show that chemical and catalysis language differ enough from general text to justify domain-aware models and resources.
+Classical and domain-specific NLP systems provide the baseline for this task.
+ChemDataExtractor showed that chemistry-aware parsing, rule-based grammars, and document-level processing can extract chemical records before the current wave of generative LLMs \cite{swain2016chemdataextractor}.
+CatalysisIE applies a more catalysis-specific pipeline with article selection, named entity recognition, relation extraction, and an entity-aware search interface for classes such as catalysts, reactions, reactants, products, characterization, and treatment \cite{zhang2022knowledge}.
+Domain adaptation also matters at the language-model level: SciBERT and MatSciBERT show that scientific and materials-domain pretraining improves representation quality for specialized text, while CataLM demonstrates the same motivation for catalyst-domain LLMs \cite{beltagy2019scibert,gupta2022matscibert,wang2024catalm}.
+These systems show that chemical and catalysis language differ enough from general text to justify domain-aware models and resources.
 
-Generative LLMs extend extraction by turning structured information extraction into a schema-guided generation problem. Dagdelen et al. show that LLMs can extract structured records from scientific text when the task is formulated carefully \cite{dagdelen2024structured}. SPIRES uses structured prompt interrogation and recursive extraction to populate LinkML-style schemas, connecting LLM output to explicit knowledge models rather than only to free-form summaries \cite{caufield2024spires}. CatMiner provides a catalysis-specific example in which LLMs extract user-specified structure--environment--property data from heterogeneous catalysis literature using iterative prompting, domain knowledge injection, and document-wide context handling \cite{walls2025catminer}. EDC adds a related knowledge-graph construction pattern by separating extraction, schema definition, and canonicalization \cite{zhang2024edc}. These approaches show that the field is moving from token-level extraction toward workflows that combine prompting, schema structure, normalization, and review.
+Generative LLMs extend extraction by turning structured information extraction into a schema-guided generation problem.
+Dagdelen et al.
+show that LLMs can extract structured records from scientific text when the task is formulated carefully \cite{dagdelen2024structured}.
+SPIRES uses structured prompt interrogation and recursive extraction to populate LinkML-style schemas, connecting LLM output to explicit knowledge models rather than only to free-form summaries \cite{caufield2024spires}.
+CatMiner provides a catalysis-specific example in which LLMs extract user-specified structure--environment--property data from heterogeneous catalysis literature using iterative prompting, domain knowledge injection, and document-wide context handling \cite{walls2025catminer}.
+EDC adds a related knowledge-graph construction pattern by separating extraction, schema definition, and canonicalization \cite{zhang2024edc}.
+These approaches show that the field is moving from token-level extraction toward workflows that combine prompting, schema structure, normalization, and review.
 
-Semantic Web technologies and knowledge graphs appear in this literature both as targets and as supports for extraction. Extracted entities and relations can populate knowledge graphs that connect catalysts, reactions, materials, conditions, and performance observations \cite{diaz2025knowledgegraphs}. SPIRES uses ontology grounding while populating knowledge bases, and open LLM pipelines for scientific knowledge graph and ontology generation show that vocabulary extraction, taxonomy construction, and graph population can be combined in one workflow \cite{caufield2024spires,oarga2026scientifickg}. KG-Hub illustrates the more general infrastructure pattern of modular knowledge graph construction and exchange \cite{caufield2023kghub}. The reviewed literature supports knowledge graphs and ontology-grounded extraction as important directions, but graph database technologies such as Neo4j should be treated as implementation choices unless a specific study reports them directly.
+Semantic Web technologies and knowledge graphs appear in this literature both as targets and as supports for extraction.
+Extracted entities and relations can populate knowledge graphs that connect catalysts, reactions, materials, conditions, and performance observations \cite{diaz2025knowledgegraphs}.
+SPIRES uses ontology grounding while populating knowledge bases, and open LLM pipelines for scientific knowledge graph and ontology generation show that vocabulary extraction, taxonomy construction, and graph population can be combined in one workflow \cite{caufield2024spires,oarga2026scientifickg}.
+KG-Hub illustrates the more general infrastructure pattern of modular knowledge graph construction and exchange \cite{caufield2023kghub}.
+The reviewed literature supports knowledge graphs and ontology-grounded extraction as important directions, but graph database technologies such as Neo4j should be treated as implementation choices unless a specific study reports them directly.
 
-Reliability remains the central limitation of LLM-based extraction. Retrieval-augmented generation connects model outputs to external evidence, and RAG surveys distinguish increasingly modular retrieval and generation architectures \cite{lewis2020retrieval,gao2023ragsurvey}. Long-context studies caution that simply placing more text in the prompt does not guarantee faithful use of evidence, especially when relevant passages appear in the middle of long contexts \cite{liu2024lostmiddle}. Structured-output methods address a different failure mode: grammar-constrained decoding can enforce formal output validity, while Generate-and-Organize prompting separates content generation from output formatting \cite{geng2023grammar,li2024structuredoutput}. For scientific extraction, these findings support a layered workflow: retrieve source evidence, generate candidate content, serialize it into a declared structure, ground terms against vocabularies, validate the result, and keep provenance available for human review \cite{schilling2025text}.
+Reliability remains the central limitation of LLM-based extraction.
+Retrieval-augmented generation connects model outputs to external evidence, and RAG surveys distinguish increasingly modular retrieval and generation architectures \cite{lewis2020retrieval,gao2023ragsurvey}.
+Long-context studies caution that simply placing more text in the prompt does not guarantee faithful use of evidence, especially when relevant passages appear in the middle of long contexts \cite{liu2024lostmiddle}.
+Structured-output methods address a different failure mode: grammar-constrained decoding can enforce formal output validity, while Generate-and-Organize prompting separates content generation from output formatting \cite{geng2023grammar,li2024structuredoutput}.
+For scientific extraction, these findings support a layered workflow: retrieve source evidence, generate candidate content, serialize it into a declared structure, ground terms against vocabularies, validate the result, and keep provenance available for human review \cite{schilling2025text}.
 
 \section{Use Cases for Extracted Metadata}
 \label{sec:use-cases-extracted-metadata}
 
-Extracted metadata is valuable because it enables downstream use, not because structured records are an end in themselves. One major use case is knowledge graph population for catalyst discovery. Knowledge graphs can connect catalysts, supports, synthesis procedures, reaction conditions, characterization methods, performance values, and literature provenance in a queryable structure \cite{diaz2025knowledgegraphs}. Broader surveys of scientific knowledge graphs describe a vision in which such graphs become infrastructure for AI systems and can co-evolve with LLM-based discovery workflows \cite{ding2026scikg}. For catalysis, this means that extraction workflows should produce records that can be traced, normalized, and inserted into graph or repository structures rather than only summarized for human reading.
+Extracted metadata is valuable because it enables downstream use, not because structured records are an end in themselves.
+One major use case is knowledge graph population for catalyst discovery.
+Knowledge graphs can connect catalysts, supports, synthesis procedures, reaction conditions, characterization methods, performance values, and literature provenance in a queryable structure \cite{diaz2025knowledgegraphs}.
+Broader surveys of scientific knowledge graphs describe a vision in which such graphs become infrastructure for AI systems and can co-evolve with LLM-based discovery workflows \cite{ding2026scikg}.
+For catalysis, this means that extraction workflows should produce records that can be traced, normalized, and inserted into graph or repository structures rather than only summarized for human reading.
 
-A second use case is FAIR repository population. Repository systems such as Repo4Cat and NOMAD need structured metadata to make datasets findable, interpretable, and reusable across projects and institutions \cite{kushnarenko2025repo4cat,schumann2025nomad}. Local FAIR data infrastructures show how laboratory acquisition, analysis, database storage, and repository-level exchange can be connected through APIs and standardized procedures \cite{moshantaf2024advancing}. Extraction workflows can support this ecosystem by helping researchers create repository-ready metadata from heterogeneous material before or during dataset deposit.
+A second use case is FAIR repository population.
+Repository systems such as Repo4Cat and NOMAD need structured metadata to make datasets findable, interpretable, and reusable across projects and institutions \cite{kushnarenko2025repo4cat,schumann2025nomad}.
+Local FAIR data infrastructures show how laboratory acquisition, analysis, database storage, and repository-level exchange can be connected through APIs and standardized procedures \cite{moshantaf2024advancing}.
+Extraction workflows can support this ecosystem by helping researchers create repository-ready metadata from heterogeneous material before or during dataset deposit.
 
-A third use case is AI-guided catalyst optimization and benchmarking. Bayesian optimization with in-context learning and uncertainty-calibrated LLM embeddings shows that natural-language or embedding-based descriptions can be used in optimization settings, but these approaches still depend on meaningful representations of experiments and outcomes \cite{ramos2025boicl,rankovic2025uncertainty}. Benchmark resources such as CatTestHub demonstrate the importance of curated, comparable catalyst data for evaluating and comparing performance across conditions and catalyst classes \cite{burte2025cattesthub}. Normalized metadata can improve such workflows because values, units, catalyst descriptions, and reaction contexts become comparable rather than remaining ad hoc strings.
+A third use case is AI-guided catalyst optimization and benchmarking.
+Bayesian optimization with in-context learning and uncertainty-calibrated LLM embeddings shows that natural-language or embedding-based descriptions can be used in optimization settings, but these approaches still depend on meaningful representations of experiments and outcomes \cite{ramos2025boicl,rankovic2025uncertainty}.
+Benchmark resources such as CatTestHub demonstrate the importance of curated, comparable catalyst data for evaluating and comparing performance across conditions and catalyst classes \cite{burte2025cattesthub}.
+Normalized metadata can improve such workflows because values, units, catalyst descriptions, and reaction contexts become comparable rather than remaining ad hoc strings.
 
-A fourth use case is integration with automated or closed-loop laboratories. Local catalysis data infrastructures already connect automated acquisition, standardized analysis, and database upload, while autonomous experimentation literature points toward design--build--test--learn cycles in which machine-readable data are essential \cite{moshantaf2024advancing,weigmann2026autonomous}. Catalyst informatics makes the same point from the data-driven design perspective: predictive and optimization workflows require structured descriptions of catalyst composition, preparation, operating conditions, and performance \cite{takahashi2023catalysts}. Metadata extraction does not itself implement a closed-loop laboratory, but it can provide one of the prerequisite layers: converting heterogeneous experimental documentation into structured, grounded, reusable records.
+A fourth use case is integration with automated or closed-loop laboratories.
+Local catalysis data infrastructures already connect automated acquisition, standardized analysis, and database upload, while autonomous experimentation literature points toward design--build--test--learn cycles in which machine-readable data are essential \cite{moshantaf2024advancing,weigmann2026autonomous}.
+Catalyst informatics makes the same point from the data-driven design perspective: predictive and optimization workflows require structured descriptions of catalyst composition, preparation, operating conditions, and performance \cite{takahashi2023catalysts}.
+Metadata extraction does not itself implement a closed-loop laboratory, but it can provide one of the prerequisite layers: converting heterogeneous experimental documentation into structured, grounded, reusable records.
 
 \section{Research Gap}
 \label{sec:research-gap}
 
-The literature reviewed in this chapter shows that the central gap is not a lack of individual building blocks. Catalysis research already has FAIR infrastructure initiatives, repository concepts, metadata profiles, vocabularies, ontology surveys, knowledge graph methods, and increasingly capable text-mining and LLM extraction systems. NFDI4Cat, NFDI4Chem, Repo4Cat, NOMAD, ChemDCAT-AP, Voc4Cat, Ontologies4Cat, CatalysisIE, SPIRES, CatMiner, and recent LLM-based knowledge graph approaches all address important parts of the problem \cite{nfdi4cat2024whitepaper,steinbeck2023nfdi4chem,kushnarenko2025repo4cat,schumann2025nomad,stroemert2026chemdcat,veluvali2025bridging,behr2024ontologies4cat,zhang2022knowledge,caufield2024spires,walls2025catminer,oarga2026scientifickg}. What remains less developed is an operational workflow that connects these parts for heterogeneous experimental packages.
+The literature reviewed in this chapter shows that the central gap is not a lack of individual building blocks.
+Catalysis research already has FAIR infrastructure initiatives, repository concepts, metadata profiles, vocabularies, ontology surveys, knowledge graph methods, and increasingly capable text-mining and LLM extraction systems.
+NFDI4Cat, NFDI4Chem, Repo4Cat, NOMAD, ChemDCAT-AP, Voc4Cat, Ontologies4Cat, CatalysisIE, SPIRES, CatMiner, and recent LLM-based knowledge graph approaches all address important parts of the problem \cite{nfdi4cat2024whitepaper,steinbeck2023nfdi4chem,kushnarenko2025repo4cat,schumann2025nomad,stroemert2026chemdcat,veluvali2025bridging,behr2024ontologies4cat,zhang2022knowledge,caufield2024spires,walls2025catminer,oarga2026scientifickg}.
+What remains less developed is an operational workflow that connects these parts for heterogeneous experimental packages.
 
-Existing extraction systems are strongest where the input is a scientific article or a controlled text corpus. CatalysisIE, ChemDataExtractor, CatMiner, SPIRES, and general structured extraction studies provide important patterns for article selection, entity extraction, schema population, normalization, and knowledge-base construction \cite{swain2016chemdataextractor,zhang2022knowledge,caufield2024spires,dagdelen2024structured,walls2025catminer}. Experimental data packages, however, can contain PDFs, spreadsheets, local metadata files, images, instrument exports, supplementary tables, and partially structured folders. The information needed for a metadata profile may therefore be distributed across document types and may not follow the rhetorical structure of a journal article.
+Existing extraction systems are strongest where the input is a scientific article or a controlled text corpus.
+CatalysisIE, ChemDataExtractor, CatMiner, SPIRES, and general structured extraction studies provide important patterns for article selection, entity extraction, schema population, normalization, and knowledge-base construction \cite{swain2016chemdataextractor,zhang2022knowledge,caufield2024spires,dagdelen2024structured,walls2025catminer}.
+Experimental data packages, however, can contain PDFs, spreadsheets, local metadata files, images, instrument exports, supplementary tables, and partially structured folders.
+The information needed for a metadata profile may therefore be distributed across document types and may not follow the rhetorical structure of a journal article.
 
-A second gap concerns trust. Schema-valid output is necessary but not sufficient for scientific metadata. A generated record can satisfy JSON Schema or SHACL while still assigning a value to the wrong catalyst, confusing experimental and computational results, losing unit context, or grounding a term to an inappropriate vocabulary concept. The reviewed literature therefore points toward evidence retrieval, provenance, term grounding, validation, and human review as complementary controls rather than optional additions \cite{schilling2025text,liu2024lostmiddle,geng2023grammar,li2024structuredoutput,diaz2025knowledgegraphs}. The challenge is to combine these controls into a workflow that remains inspectable and practical.
+A second gap concerns trust.
+Schema-valid output is necessary but not sufficient for scientific metadata.
+A generated record can satisfy JSON Schema or SHACL while still assigning a value to the wrong catalyst, confusing experimental and computational results, losing unit context, or grounding a term to an inappropriate vocabulary concept.
+The reviewed literature therefore points toward evidence retrieval, provenance, term grounding, validation, and human review as complementary controls rather than optional additions \cite{schilling2025text,liu2024lostmiddle,geng2023grammar,li2024structuredoutput,diaz2025knowledgegraphs}.
+The challenge is to combine these controls into a workflow that remains inspectable and practical.
 
-This thesis is positioned in that operational gap. It does not propose a new catalysis ontology, a new repository, or a fully automated literature database. Instead, the following chapter develops SIMONE as a workflow that connects heterogeneous source handling, evidence-oriented extraction, metadata profile projection, vocabulary grounding, validation, and human review. The contribution is therefore not the replacement of existing standards or vocabularies, but the investigation of how they can be made usable as constraints and grounding resources in an LLM-supported metadata extraction process.
+This thesis is positioned in that operational gap.
+It does not propose a new catalysis ontology, a new repository, or a fully automated literature database.
+Instead, the following chapter develops SIMONE as a workflow that connects heterogeneous source handling, evidence-oriented extraction, metadata profile projection, vocabulary grounding, validation, and human review.
+The contribution is therefore not the replacement of existing standards or vocabularies, but the investigation of how they can be made usable as constraints and grounding resources in an LLM-supported metadata extraction process.
