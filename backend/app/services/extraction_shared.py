@@ -4,7 +4,7 @@ import asyncio
 import json
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import field, dataclass
 
 import jsonpatch
 from pydantic import ValidationError
@@ -108,6 +108,7 @@ from app.domain.extraction import (
     EvidenceContext,
     EvidenceQueryLedgerEntry,
     FilteredEvidenceNote,
+    _filtered_record,
     FileInventoryItem,
     RoutedEvidenceContext,
     ExtractionChunkRef,
@@ -168,6 +169,14 @@ from app.domain.extraction import (
     build_evidence_system_prompt_components_with_overview,
     build_evidence_system_prompt_with_overview,
     dedupe_repeated_evidence_notes,
+            build_triage_prompt,
+    TriageSelection,
+    deterministic_triage,
+    _DEDUPE_TRIAGE_SYSTEM_PROMPT,
+            triage_parse_response,
+    _normalize_evidence_text,
+    SIMILARITY_GROUP_THRESHOLD,
+    SIMILARITY_DETERMINISTIC_THRESHOLD,
     build_candidate_selection_prompt,
     build_candidate_selection_prompt_components,
     build_extraction_file_summary_prompt,
@@ -428,6 +437,7 @@ class _ProfileFieldCandidateDiscovery:
     query_ids: list[str]
     formulated_query: str = ""
     role: str = ""
+    source_context: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -450,6 +460,7 @@ class _QuantitativeEvidenceGroup:
 
 def _resource_title(properties: dict[str, Any]) -> str | None:
     label_keys = (
+        "rdfs__label",
         "label",
         "prefLabel",
         "skos__prefLabel",

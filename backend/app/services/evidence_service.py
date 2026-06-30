@@ -268,18 +268,33 @@ class EvidenceService:
             cls._completed_chunk_evidence_contexts(state, file_path=file_path)
         )
 
-    def _filtered_completed_evidence_context(
+    async def _filtered_completed_evidence_context(
         self,
         state: ExtractionRunState,
         *,
+        data_package_id: str = "",
         file_path: str | None = None,
+        similarity_dedup: bool = False,
     ) -> tuple[RoutedEvidenceContext, list[FilteredEvidenceNote]]:
         context = self._merged_completed_evidence_context(state, file_path=file_path)
         rank_by_path = {ranked.file_path: ranked.rank for ranked in state.ranked_files}
-        return dedupe_repeated_evidence_notes(
+        # Phase 1: exact-text dedup (fast, no LLM)
+        context, exact_dups = dedupe_repeated_evidence_notes(
             context,
             file_rank_by_path=rank_by_path,
         )
+        # Phase 2: similarity-based dedup (embedding + LLM triage)
+        # Only run when explicitly requested (end of evidence extraction,
+        # not after every chunk).
+        if similarity_dedup:
+            context, sim_dups = await self._dedupe_by_similarity(
+                context,
+                file_rank_by_path=rank_by_path,
+                data_package_id=data_package_id,
+            )
+        else:
+            sim_dups = []
+        return context, [*exact_dups, *sim_dups]
 
     def _save_filtered_evidence_notes(
         self,
@@ -545,7 +560,7 @@ class EvidenceService:
         chunk_result.context_tokens = self._single_attempt_input_tokens(repair)
         self._save_run_state(data_package_id, state)
 
-        partial_context = self._save_current_evidence_artifacts(
+        partial_context = await self._save_current_evidence_artifacts(
             data_package_id=data_package_id,
             state=state,
         )
@@ -556,16 +571,20 @@ class EvidenceService:
         progress.warnings = list(warnings)
         self._update_progress(data_package_id, progress)
 
-    def _save_current_evidence_artifacts(
+    async def _save_current_evidence_artifacts(
         self,
         *,
         data_package_id: str,
         state: ExtractionRunState,
         evidence_context: RoutedEvidenceContext | None = None,
     ) -> RoutedEvidenceContext:
+        """Save evidence artifacts after a chunk. Only exact-text dedup here."""
         assert self.output_repository is not None
         if evidence_context is None:
-            evidence_context, duplicate_records = self._filtered_completed_evidence_context(state)
+            evidence_context, duplicate_records = await self._filtered_completed_evidence_context(
+                state, data_package_id=data_package_id,
+                similarity_dedup=False,
+            )
         else:
             rank_by_path = {ranked.file_path: ranked.rank for ranked in state.ranked_files}
             evidence_context, duplicate_records = dedupe_repeated_evidence_notes(
@@ -585,8 +604,166 @@ class EvidenceService:
         )
         return evidence_context
 
+    async def _dedupe_by_similarity(
+        self,
+        context: RoutedEvidenceContext,
+        *,
+        file_rank_by_path: dict[str, int],
+        data_package_id: str = "",
+    ) -> tuple[RoutedEvidenceContext, list[FilteredEvidenceNote]]:
+        """Phase-2 dedup: SequenceMatcher similarity grouping + LLM triage.
+
+        Uses difflib.SequenceMatcher (lexical, deterministic, no embeddings)
+        to compute pairwise similarity between evidence texts.
+        Only groups notes with DIFFERENT (category, role) pairs —
+        same-classification duplicates are already handled by exact-text dedup.
+        Also skips very short evidence texts (< 12 chars) as they produce
+        ambiguous ratios that group unrelated numbers together.
+        """
+        from difflib import SequenceMatcher
+
+        notes = context.portable_evidence
+        if len(notes) <= 1:
+            return context, []
+
+        MIN_TEXT_LEN = 12
+
+        def _sim(a: str, b: str) -> float:
+            """SequenceMatcher ratio on normalized text."""
+            na = _normalize_evidence_text(a)
+            nb = _normalize_evidence_text(b)
+            if len(na) < MIN_TEXT_LEN or len(nb) < MIN_TEXT_LEN:
+                return 0.0
+            return SequenceMatcher(None, na, nb).ratio()
+
+        def _class_key(note: EvidenceCandidate) -> str:
+            return f"{note.category}|{note.role}"
+
+        # Build valid list (skip notes with very short evidence text)
+        valid = [(i, notes[i]) for i in range(len(notes))
+                 if len(_normalize_evidence_text(notes[i].evidence_text)) >= MIN_TEXT_LEN]
+        if len(valid) <= 1:
+            return context, []
+
+        n = len(valid)
+        parent = list(range(n))
+
+        def find(x: int) -> int:
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        def union(a: int, b: int) -> None:
+            ra, rb = find(a), find(b)
+            if ra != rb:
+                parent[ra] = rb
+
+        # Group by similarity — only across DIFFERENT (category, role) pairs
+        for i in range(n):
+            for j in range(i + 1, n):
+                if _class_key(valid[i][1]) == _class_key(valid[j][1]):
+                    continue
+                sim = _sim(valid[i][1].evidence_text, valid[j][1].evidence_text)
+                if sim >= SIMILARITY_GROUP_THRESHOLD:
+                    union(i, j)
+
+        groups_map: dict[int, list[tuple[int, EvidenceCandidate]]] = {}
+        for idx in range(n):
+            root = find(idx)
+            orig_idx = valid[idx][0]
+            note = valid[idx][1]
+            groups_map.setdefault(root, []).append((orig_idx, note))
+
+        groups = list(groups_map.values())
+
+        kept_with_order: list[tuple[int, EvidenceCandidate]] = []
+        # Add notes with short evidence text as singletons (not similarity-compared)
+        for i in range(len(notes)):
+            if len(_normalize_evidence_text(notes[i].evidence_text)) < MIN_TEXT_LEN:
+                kept_with_order.append((i, notes[i]))
+
+        dropped: list[FilteredEvidenceNote] = []
+
+        for group in groups:
+            if len(group) <= 1:
+                if group:
+                    kept_with_order.append(group[0])
+                continue
+
+            max_sim = 0.0
+            for i in range(len(group)):
+                for j in range(i + 1, len(group)):
+                    s = _sim(group[i][1].evidence_text, group[j][1].evidence_text)
+                    if s > max_sim:
+                        max_sim = s
+
+            if max_sim >= SIMILARITY_DETERMINISTIC_THRESHOLD:
+                representative, group_dropped = deterministic_triage(
+                    group, file_rank_by_path=file_rank_by_path,
+                )
+            else:
+                representative, group_dropped = await self._llm_triage(
+                    group, file_rank_by_path=file_rank_by_path,
+                    data_package_id=data_package_id,
+                )
+
+            kept_with_order.append(representative)
+            for _, note in group_dropped:
+                dropped.append(
+                    _filtered_record(
+                        note,
+                        reason="similarity_merged",
+                        duplicate_representative_id=representative[1].candidate_id,
+                    )
+                )
+
+        kept = [note for _, note in sorted(kept_with_order, key=lambda item: item[0])]
+        return context.model_copy(update={"portable_evidence": kept}), dropped
+
+    async def _llm_triage(
+        self,
+        group: list[tuple[int, EvidenceCandidate]],
+        *,
+        file_rank_by_path: dict[str, int],
+        data_package_id: str = "",
+    ) -> tuple[tuple[int, EvidenceCandidate], list[tuple[int, EvidenceCandidate]]]:
+        """Use the LLM to pick the best representative from a similarity group."""
+        assert self.ollama_client is not None
+        prompt = build_triage_prompt(group, file_rank_by_path=file_rank_by_path)
+        try:
+            result = await generate_structured(
+                self.ollama_client,
+                model=self.ollama_client.chat_model,
+                system=_DEDUPE_TRIAGE_SYSTEM_PROMPT,
+                prompt=prompt,
+                system_components=[("dedupe_triage", _DEDUPE_TRIAGE_SYSTEM_PROMPT)],
+                prompt_components=[("dedupe_triage_prompt", prompt)],
+                token_budgeter=self._prompt_token_budgeter(),
+                operation_id=self._prompt_operation_id(
+                    "dedupe_triage",
+                    "similarity",
+                    str(len(group)),
+                ),
+                agent_name="dedupe_triage",
+                diagnostic_metadata={"group_size": len(group)},
+                output_type=TriageSelection,
+                retries=1,
+                think=None,
+                num_ctx=self.ollama_client.max_context_length,
+            )
+            self._record_llm_call_result(
+                data_package_id=data_package_id,
+                result=result,
+                agent_name="dedupe_triage",
+            )
+            return triage_parse_response(result.output, group)
+        except Exception:
+            return deterministic_triage(group, file_rank_by_path=file_rank_by_path)
+
     @staticmethod
     def _clear_chunk_evidence_contexts(state: ExtractionRunState) -> None:
+
         for chunk_result in state.chunk_results:
             chunk_result.evidence_context = None
 
