@@ -1,8 +1,8 @@
 \label{chap:background}
 
 In order to develop a workflow that can extract metadata from arbitrary catalysis datasets and represent it in a standardised, machine-actionable form, it is necessary to understand the scientific context of the data to be extracted, as well as the technical foundations of the system that will execute the workflow.
-The first section introduces the landscape of data in catalytic experiments, motivating the need for application-specific metadata standards.
-After that, a short section presents metadata standards conceptually and its implementation in practice.
+The first section begins by introducing the data landscape in catalysis and focuses in particular on NMR measurements, as these were used in this work to develop and test the metadata extraction workflow.
+After the importance of linked data has been demonstrated, the second part will address the implementation of such in a standardized manner.
 As these standards should align with common rules, the third section introduces semantic web technologies as a toolset for representing and connecting the data in a machine-actionable form, as well as providing a common language with which to formulate the standards.
 The fourth section provides background on \acp{LLM}, as this work aims to utilize their capabilities to extract information from an unstructured, human-readable form into any specified format.
 
@@ -37,8 +37,9 @@ In automated catalyst testing, they also keep raw data, evaluated data, standard
 \label{subsec:nmr-spectroscopy-data}
 
 \ac{NMR} is a common analytical method for characterising chemical samples and following transformations in reaction systems.
-In a catalytic experiment, NMR data may provide evidence about product identity, the presence of intermediates or impurities, changes in reactant concentration, or the state of catalyst-related molecular species \cite{marshall2023digital,mendes2025data}.
-Within the catalytic data landscape, NMR therefore belongs primarily to the characterisation category, while its use for quantitative reaction monitoring also links it to performance-related data \cite{mendes2025data}.
+Since we will take a closer look at \ac{NMR} measurements in this work, it is worth briefly summarizing their role in catalysis research.
+In a catalytic experiment, \ac{NMR} data may provide evidence about product identity, the presence of intermediates or impurities, changes in reactant concentration, or the state of catalyst-related molecular species \cite{marshall2023digital,mendes2025data}.
+Within the catalytic data landscape, \ac{NMR} therefore belongs primarily to the characterisation category, while its use for quantitative reaction monitoring also links it to performance-related data \cite{mendes2025data}.
 
 An NMR experiment typically produces a raw time-domain signal, commonly referred to as a free induction decay, which is processed into a frequency-domain spectrum.
 The resulting spectrum represents signal intensity as a function of chemical shift, usually reported in parts per million relative to a reference signal.
@@ -55,10 +56,10 @@ This makes NMR an instructive example for metadata extraction, because the relev
 \section{Metadata Standards}
 \label{sec:metadata-standards}
 
-As the previous section demonstrated, primary data only become scientifically useful when they are connected to their experimental context.
-Metadata standards address this need by defining how such context should be documented in a consistent, reusable way.
-Conceptually, a metadata standard specifies the expected information, how it should be structured and how values should be expressed, enabling records to be interpreted beyond the laboratory in which they were created \cite{wulf2021unified,mendes2025data}.
-In practice such a standard can be implemented as an application profile of a formal upper-level ontology such as the \ac{DCAT}.
+As the previous section demonstrated, primary data only become scientifically useful when they are linked to their experimental context.
+These linkages should be documented in a standardized and usable way.
+Conceptually, a metadata standard adopts terms from one or more existing taxonomy and specifies how those terms should be structured, enabling records to be interpreted beyond the laboratory in which they were created \cite{wulf2021unified,mendes2025data}.
+One example of this is the \ac{DCAT-AP}, which restricts and specialises the general \ac{DCAT} vocabulary for a particular data exchange context.
 Here, \ac{DCAT} provides the universal structural blueprint, while the application profile provides the domain-specific rules, contraints, and terminologies required for actual data exchange \cite{w3c2022dcat,w3c2017shacl,stroemert2026chemdcat}.
 That way, an application profile establishes a shared framework for reporting on the entities, activities, quantities, units, methods, instruments and provenance relations required to comprehend a dataset inside a specific domain context.
 Some requirements describe the minimum information necessary for an experiment to be interpreted, compared, or reproduced.
@@ -128,7 +129,7 @@ Resources, classes, and predicates in \ac{RDF} are generally identified using \a
 This allows statements originating from different systems to refer to the same concepts and relations rather than relying only on locally defined labels \cite{w3c2014rdf11concepts,huskova2025improvement}.
 For readability, \ac{RDF} serializations frequently abbreviate \acp{IRI} using compact identifiers consisting of a namespace prefix and a local identifier.
 
-The example in \cref{fig:rdf-instance-data} uses classes from the \ac{CHMO} and the \ac{NMRCV} to classify the data-generating activity and describe its acquisition context.
+The example in \cref{fig:rdf-instance-data} uses classes from the \ac{CHMO} and the \ac{nmrCV} to classify the data-generating activity and describe its acquisition context.
 It further illustrates the distinction between the ontology layer and the instance layer for a simplified NMR dataset example.
 Here, the dataset that is holding NMR data for a catalyst sample is generated by a particular \texttt{\textsuperscript{1}H NMR spectroscopy} instance, which is locally specified as R1.
 That run R1 generated a \texttt{NMR spectrum} instance S1 and used deuterated chloroform (CDCl\textsubscript{3}) as a \texttt{NMR solvent}.
