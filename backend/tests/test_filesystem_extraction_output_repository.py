@@ -203,7 +203,7 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
                         "field_name": "title",
                         "generated_value": "Generated",
                         "curated_value": "Curated",
-                        "status": "user_modified",
+                        "status": "auto_modified",
                     }
                 ],
                 chat_model=chat_model,
@@ -255,7 +255,7 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
                 repo.load_evidence_query_ledger(workflow_id, chat_model)[0].selected_evidence_ids,
                 ["ev:one"],
             )
-            self.assertEqual(repo.load_curation_ledger(workflow_id, chat_model)[0].status, "user_modified")
+            self.assertEqual(repo.load_curation_ledger(workflow_id, chat_model)[0].status, "auto_modified")
             generated_validation, curated_validation = repo.load_validation(workflow_id, chat_model)
             self.assertEqual(generated_validation.status, "invalid")
             self.assertEqual(curated_validation.status, "valid")

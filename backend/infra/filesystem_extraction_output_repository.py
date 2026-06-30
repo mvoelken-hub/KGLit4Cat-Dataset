@@ -141,7 +141,7 @@ class FileSystemExtractionOutputRepository:
             self.save_generated_patched_draft(workflow_id=workflow_id, document=result.generated_patched_draft, chat_model=chat_model, chunking_strategy=chunking_strategy)
         self.save_generated_final_draft(
             workflow_id=workflow_id,
-            document=result.generated_reconstructed_draft or result.generated_final_draft,
+            document=result.generated_final_draft,
             chat_model=chat_model,
             chunking_strategy=chunking_strategy,
         )
