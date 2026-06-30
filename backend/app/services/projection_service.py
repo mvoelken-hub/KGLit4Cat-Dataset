@@ -411,6 +411,12 @@ class ProjectionService:
                     requirement=requirement,
                     item=item,
                 )
+                document = self._apply_qualitative_evidence_notes(
+                    document=document,
+                    evidence_context=coverage_evidence_context,
+                    validation_schema=validation_schema,
+                    state=state,
+                )
             if self._requirement_target_path_exists(
                 document=document,
                 target_paths=item.target_paths or requirement.target_paths,
@@ -3424,6 +3430,57 @@ class ProjectionService:
         progress.generated_final_draft = document
         return document
 
+    def _apply_qualitative_evidence_notes(
+        self,
+        *,
+        document: dict[str, Any],
+        evidence_context: RoutedEvidenceContext,
+        validation_schema: dict[str, Any],
+        state: ExtractionRunState,
+    ) -> dict[str, Any]:
+        """Apply role=qualitative_attribute notes directly to evaluated_entity.
+
+        Unlike measurement notes, qualitative notes don't need LLM routing —
+        they go straight to has_qualitative_attribute on the first evaluated_entity.
+        """
+        qual_notes = [
+            note for note in evidence_context.portable_evidence
+            if note.role == "qualitative_attribute"
+        ]
+        if not qual_notes:
+            return document
+
+        attributes = self._qualitative_attributes_for_notes(qual_notes)
+        if not attributes:
+            return document
+
+        # Find the first evaluated_entity in was_generated_by
+        wgb_list = document.get("was_generated_by", [])
+        if not isinstance(wgb_list, list) or not wgb_list:
+            return document
+
+        applied = False
+        for wgb in wgb_list:
+            if not isinstance(wgb, dict):
+                continue
+            ee_list = wgb.get("evaluated_entity", [])
+            if not isinstance(ee_list, list) or not ee_list:
+                continue
+            for ee in ee_list:
+                if not isinstance(ee, dict):
+                    continue
+                existing = ee.get("has_qualitative_attribute", [])
+                merged = self._merge_unique_dicts(existing, attributes)
+                if merged != existing:
+                    ee["has_qualitative_attribute"] = merged
+                    applied = True
+            if applied:
+                break
+
+        if applied:
+            state.generated_final_draft = document
+        return document
+
     @staticmethod
     def _measurement_allowed_target_paths() -> list[str]:
         return [
@@ -3948,11 +4005,18 @@ class ProjectionService:
     def _quantitative_note_category_allowed(note: Any, claim: str) -> bool:
         category = str(getattr(note, "category", "") or "")
         role = str(getattr(note, "role", "") or "")
+        # If the evidence LLM explicitly classified a note as qualitative,
+        # respect that decision — do not route it to quantitative attributes.
+        if role == "qualitative_attribute":
+            return False
         if category == "measurement_signal":
             return True
         if role == "parameter":
             return True
-        if category in {"instrument_signal", "measurement_condition"}:
+        # Only accept instrument/measurement_condition as quantitative when
+        # the role is parameter — identity, descriptor, and other roles are
+        # not measurements.
+        if category in {"instrument_signal", "measurement_condition"} and role == "parameter":
             return True
         return False
 
@@ -6220,11 +6284,7 @@ class ProjectionService:
                 target_path="/description",
                 value=curated.get("description"),
             )
-        if "keyword" in curated:
-            curated["keyword"] = cls._curate_profile_target_value(
-                target_path="/keyword",
-                value=curated.get("keyword"),
-            )
+        # Keyword filtering removed — preserve all keywords from extraction
         return cls._curate_nested_profile_values(curated)
 
     @classmethod
@@ -6423,16 +6483,42 @@ class ProjectionService:
     @classmethod
     def _qualitative_attributes_for_notes(cls, notes: list[EvidenceCandidate]) -> list[dict[str, str]]:
         attributes: list[dict[str, str]] = []
-        allowed_keys = {"origin", "owner", "author", "creator", "instrument", "device", "sample", "method"}
         for note in notes:
+            if note.role != "qualitative_attribute":
+                continue
+            # Try key=value extraction first
             key, value = cls._assignment_from_note(note)
-            if not key or not value:
-                continue
-            normalized_key = key.lower().strip("$")
-            if normalized_key not in allowed_keys:
-                continue
-            attributes.append({"title": normalized_key, "value": value})
+            if key and value:
+                title = key.lower().strip("$")
+            else:
+                # No key=value pattern — derive title from evidence text
+                ev = (note.evidence_text or "").strip()
+                claim = (note.claim or "").strip()
+                value = claim or ev
+                if not value:
+                    continue
+                # Extract first significant word as title
+                title = cls._derive_qualitative_title(ev)
+                if not title:
+                    continue
+            attributes.append({"title": title, "value": value})
         return cls._merge_unique_dicts([], attributes)
+
+    @staticmethod
+    def _derive_qualitative_title(evidence_text: str) -> str:
+        """Extract a short title from evidence text for qualitative attributes."""
+        text = evidence_text.strip()
+        # Strip leading ## or ##$
+        text = re.sub(r"^#{1,2}\$?", "", text)
+        # Try key=value or key: value patterns
+        match = re.match(r"([A-Za-z][A-Za-z0-9_]{1,32})\s*[=:]]", text)
+        if match:
+            return match.group(1).lower().strip("$")
+        # Try first significant word
+        match = re.match(r"([A-Za-z][A-Za-z0-9_-]{2,32})", text)
+        if match:
+            return match.group(1).lower()
+        return ""
 
     @classmethod
     def _assignment_from_note(cls, note: EvidenceCandidate) -> tuple[str | None, str | None]:
@@ -6716,6 +6802,7 @@ class ProjectionService:
             initial_draft_scaffold=state.initial_draft_scaffold,
             projection_ledger=state.projection_ledger,
             field_completion_ledger=state.field_completion_ledger,
+            evidence_query_ledger=state.evidence_query_ledger,
             curation_ledger=state.curation_ledger,
             chat_model=self.ollama_client.chat_model if self.ollama_client else None,
             normalization=normalization,
@@ -7000,6 +7087,17 @@ class ProjectionService:
             if not edit_needed_reason and issue_categories:
                 edit_needed_reason = ", ".join(issue_categories)
 
+            # Determine selection_kind: vocab_selection, evidence_projection, both, none
+            has_vocab = enrichment_status == "grounded"
+            has_evidence = bool(source_evidence_by_path.get(path, []))
+            if has_vocab and has_evidence:
+                selection_kind = "both"
+            elif has_vocab:
+                selection_kind = "vocab_selection"
+            elif has_evidence:
+                selection_kind = "evidence_projection"
+            else:
+                selection_kind = "none"
             ledgers.append(
                 FieldCompletionLedgerRecord(
                     json_path=path,
@@ -7009,6 +7107,7 @@ class ProjectionService:
                     source_evidence=source_evidence_by_path.get(path, []),
                     validation_status=validation_status,
                     enrichment_status=enrichment_status,
+                    selection_kind=selection_kind,
                     issue_categories=issue_categories,
                     edit_needed_reason=edit_needed_reason,
                 )
@@ -7042,9 +7141,9 @@ class ProjectionService:
                 path,
             )
             if not curated_exists:
-                status = "user_removed"
+                status = "auto_removed"
             elif not generated_exists or generated_value != curated_value:
-                status = "user_modified"
+                status = "auto_modified"
             else:
                 status = "unchanged"
             ledger.append(
@@ -8319,6 +8418,14 @@ class ProjectionService:
                             if record not in seen:
                                 seen.add(record)
                                 sources.append(record)
+                    # When has_quantity_type is found but sibling unit key is absent,
+                    # emit a synthetic unit source so grounding can infer a unit.
+                    if key == "has_quantity_type" and "unit" in target_fields and "unit" not in value:
+                        unit_path = f"{item_path.rsplit('/', 1)[0]}/{cls._json_pointer_escape('unit')}"
+                        unit_record = (unit_path, "unit", "")
+                        if unit_record not in seen:
+                            seen.add(unit_record)
+                            sources.append(unit_record)
                     walk(item, item_path)
             elif isinstance(value, list):
                 for index, item in enumerate(value):

@@ -73,7 +73,7 @@ class ExtractionVocabQueryConfig(BaseModel):
     quantitative_vector_top_k: int = Field(default=12, ge=1)
     quantitative_fulltext_top_k: int = Field(default=12, ge=1)
     quantitative_seed_top_k: int = Field(default=10, ge=1)
-    quantitative_max_hops: int = Field(default=0, ge=0)
+    quantitative_max_hops: int = Field(default=1, ge=0)
     quantitative_max_statements_per_seed: int = Field(default=12, ge=1)
     quantitative_traversal_direction: str = "undirected"
     quantitative_vector_weight: float = Field(default=1.0, gt=0)
@@ -129,8 +129,8 @@ FieldEnrichmentStatus = Literal[
 ]
 CurationLedgerStatus = Literal[
     "unchanged",
-    "user_modified",
-    "user_removed",
+    "auto_modified",
+    "auto_removed",
     "user_selected_vocab_term",
     "intentionally_unresolved",
 ]
@@ -197,6 +197,13 @@ class ProjectionLedgerRecord(BaseModel):
 
 
 class FieldCompletionLedgerRecord(BaseModel):
+    """Records per-field completion status.
+
+    enrichment_status tracks vocabulary grounding (CV term selection).
+    source_evidence tracks evidence projection (evidence backing).
+    selection_kind disambiguates: "vocab_selection" = CV term selected,
+    "evidence_projection" = evidence-backed field, "both" = both, "none" = neither.
+    """
     json_path: str
     field_name: str
     generated_value: Any = None
@@ -204,6 +211,7 @@ class FieldCompletionLedgerRecord(BaseModel):
     source_evidence: list[str] = Field(default_factory=list)
     validation_status: FieldValidationStatus = "not_run"
     enrichment_status: FieldEnrichmentStatus = "not_grounded"
+    selection_kind: Literal["vocab_selection", "evidence_projection", "both", "none"] = "none"
     issue_categories: list[str] = Field(default_factory=list)
     edit_needed_reason: str = ""
 
