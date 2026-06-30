@@ -1,6 +1,32 @@
-\label{chap:requirements}
+\label{chap:methodical_approach}
 
-This chapter derives the requirements and evaluation design for the proposed workflow.
+The goal for the developed workflow is to identify several approaches and sub-steps for the automated extraction of semantically linked metadata and to test them by applying them to real \ac{NMR} datasets.
+As a first overview of the workflow, \cref{fig:workflow-concept} shows the steps on a conceptual level.
+It starts with the input of a dataset.
+Those datasets were not manually adjusted before being fed into the automated extraction process, so that the methodology imposes no specific requirements other than the presence of text-based, decodable files.
+After that, the files are preprocessed before they are split into smaller chunks.
+At the same time, a dataset-level context overview is generated based on the dataset structure and per-file summaries.
+With the help of the generated context, the individual chunks are processed by an \ac{LLM} to extract metadata signals.
+Those signals are not yet interpreted in the context of a specific metadata profile, but serve as an intermediate representation of the extracted information.
+This follows the \ac{GO} approach, where the extraction of information is separated from the organization of that information into a specific schema to reduce the cognitive load \cite{li2024structuredoutput}.
+As soon as the process finishes with the chunk iteration, the extracted signals are merged and deduplicated to form the evidence grounding set for the next steps.
+After the grounding set is in place, a \ac{DCAT-AP+} artifact is initialized to serve as the target schema for the extracted information.
+In order to fill the schema, the workflow follows a requirement-driven approach, where the schema is iteratively checked for missing information and the missing information is extracted from the evidence grounding set.
+If a requirement cannot be fulfilled, it is flagged for manual curation.
+Once that is done, the workflow continues with the final step of running queries against a property graph of controlled vocabularies.
+This allows a mapping of \texttt{DefinedTerms} shapes from the \ac{DCAT-AP+} artifacts to suitable concepts and classes via \texttt{dcterms:type} or \texttt{rdf:type}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.74\textwidth]{figures/workflow-concept.png}
+    \caption{Conceptual overview of the workflow}
+    \label{fig:workflow-concept}
+\end{figure}
+
+
+The following chapter begins by explaining how to feed the data sets into the program.
+It also explains why the program is generally accessible via an \ac{API} interface as well as a web-based user interface.
+After that, the individual stages of the workflow are explained in detail.
 
 \section{Workflow Architecture}
 \label{sec:workflow_architecture}
@@ -28,14 +54,14 @@ The merged evidence context is first projected into a selected application profi
 
 The last enrichment stage is controlled-vocabulary grounding over selected fields already placed in the finalized profile draft. Quantitative attributes are normalized against quantity-kind and unit vocabularies, while qualitative terms such as methods, materials, instrument parts, and domain concepts are matched against chemistry- and catalysis-related vocabularies. This stage retrieves a constrained candidate set through vector similarity, lexical full-text search, and local graph expansion; the LLM selects a suitable candidate or leaves the field unresolved. The application profile answers where information belongs, whereas vocabularies answer which concept or unit a placed value denotes. Candidate sets, selected URIs, and unresolved cases remain auditable workflow artifacts.
 
-Figure~\ref{fig:workflow-architecture} summarizes the complete workflow. The upper row represents source processing and chunk-wise extraction. The middle row represents profile draft construction. The lower row represents final semantic grounding of selected fields and persistence of the resulting metadata document. Dashed arrows show the transition between these staged representations.
+Figure~\ref{fig:workflow-architecture} summarizes the complete workflow on a conceptual level. The upper row represents source processing, context creation, and evidence-note extraction. The middle row represents profile draft initialization, semantic-requirement iteration, unresolved-requirement reporting, and possible manual curation. The lower row represents final vocabulary grounding: profile shapes that require classification trigger queries against a property graph populated with vocabulary resources, and the resulting matches enrich the placed profile values.
 
 \begin{figure}[H]
     \centering
     \resizebox{\textwidth}{!}{%
         \input{figures/method_workflow_architecture}
     }
-    \caption{Overall workflow architecture of the SIMONE prototype. Dataset packages are unpacked, ranked, chunked, and processed by chunk-wise extraction. The resulting evidence context is projected and semantically reconstructed in a selected application profile before final vocabulary grounding enriches placed profile fields.}
+    \caption{Conceptual workflow architecture of the SIMONE prototype. Dataset packages are ingested, chunked, summarized, and converted into deduplicated evidence notes. A DCAT-AP-oriented draft is then initialized and iteratively patched against semantic requirements, with unresolved requirements exposed for manual curation. In the final stage, applicable classifier-shaped fields query a vocabulary property graph, for example over Voc4Cat, QUDT, and nmrCV resources, before producing the grounded metadata draft.}
     \label{fig:workflow-architecture}
 \end{figure}
 

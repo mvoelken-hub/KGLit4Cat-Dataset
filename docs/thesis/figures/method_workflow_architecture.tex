@@ -1,14 +1,13 @@
-% Figure 4.2: Overall staged workflow architecture.
-% Place this file in Simon/figures/ and include it via \input{figures/method_workflow_architecture}.
+% Figure 4.2: Conceptual SIMONE workflow architecture.
 \begin{tikzpicture}[
     font=\small,
     >=Stealth,
-    stage/.style={
-        draw=TUgreen!85!black,
+    wfstep/.style={
+        draw=TUgreen!80!black,
         fill=TUgreen!8,
         very thick,
         rounded corners=3pt,
-        minimum width=2.55cm,
+        minimum width=2.85cm,
         minimum height=1.05cm,
         align=center
     },
@@ -17,7 +16,16 @@
         fill=black!4,
         thick,
         rounded corners=3pt,
-        minimum width=2.55cm,
+        minimum width=2.85cm,
+        minimum height=1.05cm,
+        align=center
+    },
+    decision/.style={
+        draw=orange!70!black,
+        fill=orange!8,
+        thick,
+        rounded corners=3pt,
+        minimum width=3.0cm,
         minimum height=1.05cm,
         align=center
     },
@@ -26,7 +34,7 @@
         fill=blue!5,
         thick,
         rounded corners=3pt,
-        minimum width=3.25cm,
+        minimum width=3.45cm,
         minimum height=1.05cm,
         align=center
     },
@@ -35,52 +43,66 @@
         fill=green!10,
         very thick,
         rounded corners=3pt,
-        minimum width=3.2cm,
+        minimum width=3.25cm,
         minimum height=1.10cm,
         align=center
     },
     arr/.style={->, very thick, black!65},
-    dashedarr/.style={->, thick, dashed, black!55}
+    softarr/.style={->, thick, dashed, black!55},
+    bandlabel/.style={font=\footnotesize\bfseries, text=black!65}
 ]
 
-% Main pipeline
-\node[data] (archive) {Dataset\\archive};
-\node[stage, right=0.50cm of archive] (ingest) {Ingestion +\\text extraction};
-\node[stage, right=0.50cm of ingest] (rank) {File\\ranking};
-\node[stage, right=0.50cm of rank] (chunk) {Semantic\\chunking};
-\node[stage, right=0.50cm of chunk] (extract) {Chunk-wise\\LLM extraction};
-\node[data, right=0.50cm of extract] (context) {Merged\\\texttt{ExtractionContext}};
+% Source processing and evidence creation
+\node[data] (dataset) {Dataset\\package};
+\node[wfstep, right=0.48cm of dataset] (ingest) {Ingestion +\\text extraction};
+\node[wfstep, right=0.48cm of ingest] (chunk) {File\\chunking};
+\node[wfstep, right=0.48cm of chunk] (overview) {Initial context\\overview};
+\node[wfstep, right=0.48cm of overview] (notes) {Evidence note\\extraction};
+\node[data, right=0.48cm of notes] (context) {Deduped + aggregated\\evidence context};
 
-\draw[arr] (archive) -- (ingest);
-\draw[arr] (ingest) -- (rank);
-\draw[arr] (rank) -- (chunk);
-\draw[arr] (chunk) -- (extract);
-\draw[arr] (extract) -- (context);
+\draw[arr] (dataset) -- (ingest);
+\draw[arr] (ingest) -- (chunk);
+\draw[arr] (chunk) -- (overview);
+\draw[arr] (overview) -- (notes);
+\draw[arr] (notes) -- (context);
 
-% Profile construction row
-\node[support, below=1.15cm of chunk] (profile) {Application profile\\{\footnotesize DCAT-AP+/LinkML schema}};
-\node[stage, right=0.58cm of profile] (projection) {Profile projection +\\semantic reconstruction};
-\node[data, right=0.58cm of projection] (draft) {Validated\\profile draft};
+\node[bandlabel, above=0.25cm of overview] {source processing and evidence creation};
 
-\draw[arr] (profile) -- (projection);
-\draw[arr] (projection) -- (draft);
-\draw[dashedarr] (context.south) |- (projection.north);
+% Profile draft construction
+\node[support, below=1.15cm of chunk] (profile) {Selected application profile\\{\footnotesize DCAT-AP+ schema}};
+\node[wfstep, right=0.55cm of profile] (draftinit) {DCAT-AP draft\\initialization};
+\node[wfstep, right=0.55cm of draftinit] (patching) {Semantic requirement\\iteration + patching};
+\node[decision, right=0.55cm of patching] (unresolved) {Unresolved requirements\\flagged};
+\node[data, right=0.55cm of unresolved] (curated) {Curated or accepted\\profile draft};
 
-% Final semantic grounding row
-\node[support, below=1.10cm of profile] (vocabs) {Controlled vocabularies\\{\footnotesize QUDT, Voc4Cat, CHMO, nmrCV}};
-\node[stage, right=0.58cm of vocabs] (retrieval) {Hybrid candidate\\retrieval + graph context};
-\node[stage, right=0.58cm of retrieval] (selection) {LLM candidate\\selection};
-\node[output, right=0.58cm of selection] (result) {Grounded semantic\\metadata result};
+\draw[arr] (profile) -- (draftinit);
+\draw[arr] (draftinit) -- (patching);
+\draw[arr] (patching) -- (unresolved);
+\draw[arr] (unresolved) -- node[above, font=\footnotesize, text=black!60] {curate or accept} (curated);
+\draw[softarr] (context.south) |- (draftinit.north);
+\draw[softarr] (context.south) |- (patching.north);
 
-\draw[arr] (vocabs) -- (retrieval);
-\draw[arr] (retrieval) -- (selection);
-\draw[arr] (selection) -- (result);
-\draw[dashedarr] (draft.south) |- (retrieval.north);
+\node[bandlabel, above=0.25cm of patching] {profile construction};
 
-% Boundary label
+% Vocabulary grounding
+\node[support, below=1.15cm of profile] (mixins) {\texttt{ClassifierMixin}\\profile shapes};
+\node[support, right=0.55cm of mixins] (graph) {Property graph with\\vocabulary resources};
+\node[wfstep, right=0.55cm of graph] (query) {Vocabulary query\\{\footnotesize Voc4Cat, QUDT, nmrCV}};
+\node[wfstep, right=0.55cm of query] (ground) {Ground applicable\\profile values};
+\node[output, right=0.55cm of ground] (result) {Grounded metadata\\draft};
+
+\draw[arr] (mixins) -- (graph);
+\draw[arr] (graph) -- (query);
+\draw[arr] (query) -- (ground);
+\draw[arr] (ground) -- (result);
+\draw[softarr] (curated.south) |- (ground.north);
+
+\node[bandlabel, above=0.25cm of query] {vocabulary grounding};
+
+% Boundary
 \draw[TUgreen!65!black, thick, rounded corners=6pt]
-    ($(archive.north west)+(-0.25,0.28)$) rectangle ($(result.south east)+(0.25,-0.32)$);
+    ($(dataset.north west)+(-0.28,0.55)$) rectangle ($(result.south east)+(0.28,-0.35)$);
 \node[fill=white, text=TUgreen!45!black, font=\small\bfseries]
-    at ($(ingest.north)!0.5!(chunk.north)+(0,0.31)$) {SIMONE extraction workflow};
+    at ($(dataset.north west)!0.5!(result.north east)+(0,0.55)$) {SIMONE conceptual workflow};
 
 \end{tikzpicture}
