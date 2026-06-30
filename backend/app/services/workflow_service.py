@@ -1046,6 +1046,7 @@ class WorkflowService(
         progress.initial_draft_scaffold = state.initial_draft_scaffold
         progress.projection_ledger = state.projection_ledger
         progress.field_completion_ledger = state.field_completion_ledger
+        progress.evidence_query_ledger = state.evidence_query_ledger
         progress.curation_ledger = state.curation_ledger
         progress.vocab_queries = state.vocab_queries
         progress.warnings = list(warnings)
@@ -1529,7 +1530,7 @@ class WorkflowService(
                 chunk_result.context_tokens = self._single_attempt_input_tokens(result)
                 self._save_run_state(data_package_id, state)
 
-                partial_context = self._save_current_evidence_artifacts(
+                partial_context = await self._save_current_evidence_artifacts(
                     data_package_id=data_package_id,
                     state=state,
                 )
@@ -1581,7 +1582,10 @@ class WorkflowService(
             self._save_run_state(data_package_id, state)
             self._update_progress(data_package_id, progress)
 
-        merged_context, duplicate_records = self._filtered_completed_evidence_context(state)
+        merged_context, duplicate_records = await self._filtered_completed_evidence_context(
+            state, data_package_id=data_package_id,
+            similarity_dedup=True,
+        )
         evidence_context = self._evidence_context_with_file_inventory(
             data_package=data_package,
             context=merged_context,
@@ -2764,9 +2768,161 @@ class WorkflowService(
     def _complete_workflow_task_name(data_package_id: str) -> str:
         return f"workflow:complete:{data_package_id}"
 
+    # ── Async grounding stage ──────────────────────────────────────
+
+    @staticmethod
+    def _grounding_task_name(
+        data_package_id: str,
+        chunking_strategy: str = "semantic",
+        chat_model: str | None = None,
+    ) -> str:
+        return f"extraction:grounding:{data_package_id}:{chunking_strategy}:{chat_model or 'default-model'}"
+
+    async def run_grounding_stage_async(
+        self,
+        *,
+        data_package_id: str,
+        chunking_strategy: str | None = None,
+        chat_model: str | None = None,
+    ) -> tuple[ExtractionRunResult | None, TaskStatus]:
+        """Start grounding as a background task and return immediately."""
+        self._require_runtime_dependencies()
+        assert self.task_registry is not None
+
+        # Auto-detect chunking strategy if not specified
+        effective_chunking = chunking_strategy
+        effective_model = chat_model or self._current_chat_model()
+        if effective_chunking is None:
+            for strategy in ("fixed_tokens", "semantic"):
+                probe = self._load_run_state_or_none(
+                    data_package_id,
+                    chunking_strategy=strategy,
+                    chat_model=effective_model,
+                )
+                if probe is not None and probe.generated_reconstructed_draft is not None:
+                    effective_chunking = strategy
+                    break
+            if effective_chunking is None:
+                effective_chunking = "semantic"
+
+        task_name = self._grounding_task_name(
+            data_package_id, effective_chunking, effective_model,
+        )
+        task_info = self.task_registry.get_task_info(task_name)
+        if task_info is not None and task_info.status == TaskStatus.RUNNING:
+            return None, TaskStatus.RUNNING
+        if task_info is not None and task_info.status == TaskStatus.COMPLETED:
+            result = self._load_result_or_none(
+                data_package_id,
+                chunking_strategy=effective_chunking,
+                chat_model=effective_model,
+            )
+            if result is not None:
+                return result, TaskStatus.COMPLETED
+
+        await self.task_registry.create_task(
+            coro=self._run_grounding_task(
+                data_package_id=data_package_id,
+                chunking_strategy=effective_chunking,
+                chat_model=effective_model,
+            ),
+            type=TaskType.WORKFLOW,
+            name=task_name,
+        )
+        return None, TaskStatus.RUNNING
+
+    async def _run_grounding_task(
+        self,
+        *,
+        data_package_id: str,
+        chunking_strategy: str,
+        chat_model: str,
+    ) -> ExtractionRunResult | None:
+        """Background coroutine that runs the actual grounding stage."""
+        return await self.run_grounding_stage(
+            data_package_id=data_package_id,
+            chunking_strategy=chunking_strategy,
+            chat_model=chat_model,
+        )
+
+    async def get_grounding_progress(
+        self,
+        *,
+        data_package_id: str,
+        chunking_strategy: str | None = None,
+        chat_model: str | None = None,
+    ) -> tuple[TaskStatus, ExtractionRunProgress | None]:
+        """Return grounding stage progress from task registry + persisted state."""
+        if self.task_registry is None:
+            return TaskStatus.UNKNOWN, None
+        branch_strategy = chunking_strategy or "semantic"
+        branch_model = chat_model or self._current_chat_model()
+        task_name = self._grounding_task_name(
+            data_package_id, branch_strategy, branch_model,
+        )
+        task_info = self.task_registry.get_task_info(task_name)
+
+        state = self._load_run_state_or_none(
+            data_package_id,
+            chunking_strategy=branch_strategy,
+            chat_model=branch_model,
+        )
+
+        if task_info is not None and task_info.status == TaskStatus.RUNNING:
+            # Build progress from current state
+            if state is not None:
+                vqs = state.vocab_queries or []
+                completed = sum(1 for q in vqs if q.status == "completed")
+                total = len(vqs)
+                stage = "vocab_query" if completed < total else "selection"
+                return TaskStatus.RUNNING, ExtractionRunProgress(
+                    stage=stage,
+                    processed_chunks=completed,
+                    total_chunks=total,
+                    normalized_quantities=0,
+                    normalized_qualitative_attributes=0,
+                    vocab_queries=vqs,
+                    warnings=list(state.warnings) if hasattr(state, "warnings") else [],
+                )
+            return TaskStatus.RUNNING, None
+
+        if task_info is not None and task_info.status == TaskStatus.COMPLETED:
+            result = self._load_result_or_none(
+                data_package_id,
+                chunking_strategy=branch_strategy,
+                chat_model=branch_model,
+            )
+            if result is not None:
+                return TaskStatus.COMPLETED, ExtractionRunProgress(
+                    stage="completed",
+                    processed_chunks=self._completed_chunk_count(state) if state else 0,
+                    total_chunks=len(state.chunk_results) if state else 0,
+                    normalized_quantities=len(result.normalization.quantities) if result.normalization else 0,
+                    normalized_qualitative_attributes=len(result.normalization.qualitative_attributes) if result.normalization else 0,
+                    vocab_queries=state.vocab_queries if state else [],
+                    generated_final_draft=result.generated_final_draft,
+                    curated_document=result.curated_document,
+                    validation=result.validation,
+                    curated_validation=result.curated_validation,
+                    document_quality_state=result.document_quality_state,
+                    warnings=list(result.warnings),
+                )
+            return TaskStatus.COMPLETED, None
+
+        # No task found — check if a result exists on disk
+        result = self._load_result_or_none(
+            data_package_id,
+            chunking_strategy=branch_strategy,
+            chat_model=branch_model,
+        )
+        if result is not None:
+            return TaskStatus.COMPLETED, None
+        return TaskStatus.UNKNOWN, None
+
 
 def _resource_title(properties: dict[str, Any]) -> str | None:
     label_keys = (
+        "rdfs__label",
         "label",
         "prefLabel",
         "skos__prefLabel",

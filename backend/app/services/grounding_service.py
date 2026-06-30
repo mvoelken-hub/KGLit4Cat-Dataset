@@ -124,9 +124,23 @@ class GroundingService:
         """
         self._require_runtime_dependencies()
         assert self.output_repository is not None
+        # Auto-detect chunking strategy from existing state if not specified
+        effective_chunking = chunking_strategy
+        if effective_chunking is None:
+            for strategy in ("fixed_tokens", "semantic"):
+                probe_state = self._load_run_state_or_none(
+                    data_package_id,
+                    chunking_strategy=strategy,
+                    chat_model=chat_model,
+                )
+                if probe_state is not None and probe_state.generated_reconstructed_draft is not None:
+                    effective_chunking = strategy
+                    break
+            if effective_chunking is None:
+                effective_chunking = "semantic"
         state = self._load_run_state_or_none(
             data_package_id,
-            chunking_strategy=chunking_strategy or "semantic",
+            chunking_strategy=effective_chunking,
             chat_model=chat_model,
         )
         if state is None:
@@ -228,6 +242,7 @@ class GroundingService:
                     initial_draft_scaffold=state.initial_draft_scaffold,
                     projection_ledger=result.projection_ledger,
                     field_completion_ledger=result.field_completion_ledger,
+                    evidence_query_ledger=state.evidence_query_ledger,
                     curation_ledger=result.curation_ledger,
                     warnings=warnings,
                 ).model_dump(mode="json"),
@@ -652,6 +667,18 @@ class GroundingService:
         semantic_context = self._grounding_semantic_context(document, json_path)
         brief_context = self._grounding_semantic_context(document, json_path, include_root=False, max_chars=160)
         source_context["semantic_context"] = semantic_context
+        # Enrich source_context with full sibling quantitative attribute fields
+        # so the LLM query formulation can see has_quantity_type, unit, value, identifier
+        # when grounding any single field of a QuantitativeAttribute.
+        if field_name in ("has_quantity_type", "unit"):
+            parent_path = "/".join(json_path.split("/")[:-1])
+            parent_node = self._grounding_resolve_json_pointer(document, parent_path)
+            if isinstance(parent_node, dict):
+                for sibling_key in ("has_quantity_type", "unit", "value", "identifier"):
+                    if sibling_key != field_name:
+                        sib_val = parent_node.get(sibling_key)
+                        if sib_val is not None and str(sib_val).strip() and str(sib_val).strip() != "?":
+                            source_context[f"sibling_{sibling_key}"] = str(sib_val)
         formulated_query = await self._formulate_vocab_query(
             data_package_id=data_package_id,
             agent_name="vocab_query_formulation",
@@ -675,7 +702,8 @@ class GroundingService:
                     vector_top_k=12,
                     fulltext_top_k=12,
                     seed_top_k=6,
-                    max_hops=0,
+                    max_hops=1,
+                    traversal_direction="undirected",
                 ),
                 state.vocab_query_config,
                 group="quantitative",
@@ -707,6 +735,7 @@ class GroundingService:
                 vocabulary_identifier=QUDT_QUANTITY_KIND_VOCAB,
                 query_ids=query_ids,
                 role=role,
+                source_context=source_context,
             )
         if field_name == "unit":
             query = self._configured_vocab_query(
@@ -717,7 +746,8 @@ class GroundingService:
                     vector_top_k=12,
                     fulltext_top_k=12,
                     seed_top_k=6,
-                    max_hops=0,
+                    max_hops=1,
+                    traversal_direction="undirected",
                 ),
                 state.vocab_query_config,
                 group="quantitative",
@@ -749,6 +779,7 @@ class GroundingService:
                 vocabulary_identifier=QUDT_UNIT_VOCAB,
                 query_ids=query_ids,
                 role=role,
+                source_context=source_context,
             )
 
         policy = self._grounding_policy_for_role(state.vocab_query_config, role)
@@ -766,6 +797,7 @@ class GroundingService:
                 vocabulary_identifier="",
                 query_ids=[],
                 role=role,
+                source_context=source_context,
             )
         for vocabulary_identifier in vocabulary_identifiers:
             query = self._configured_vocab_query(
@@ -808,6 +840,7 @@ class GroundingService:
             vocabulary_identifier=",".join(vocabulary_identifiers),
             query_ids=query_ids,
             role=role,
+            source_context=source_context,
         )
 
     async def _normalize_profile_field_candidate_tasks(
@@ -843,6 +876,9 @@ class GroundingService:
             field_name = str(record.source_context.get("field_name", ""))
             source_value = str(record.source_context.get("source_value", record.source_value))
             key = (json_path, field_name, source_value, record.vocabulary_identifier)
+            # Reconstruct source_context from the vocab query record so
+            # the selection LLM gets sibling + semantic context on reruns too.
+            record_context = dict(record.source_context) if record.source_context else {}
             discovery = groups.setdefault(
                 key,
                 _ProfileFieldCandidateDiscovery(
@@ -852,6 +888,7 @@ class GroundingService:
                     vocabulary_identifier=record.vocabulary_identifier,
                     query_ids=[],
                     role=str(record.source_context.get("role", field_name)),
+                    source_context=record_context,
                 ),
             )
             discovery.query_ids.append(record.query_id)
@@ -861,6 +898,42 @@ class GroundingService:
             discoveries=list(groups.values()),
             warnings=warnings,
         )
+
+    @staticmethod
+    def _parent_attribute_path(json_path: str) -> str:
+        """Return the parent QuantitativeAttribute path for a field.
+
+        For ``/.../has_quantitative_attribute/3/has_quantity_type`` this
+        returns ``/.../has_quantitative_attribute/3``.
+        Returns empty string if the path doesn't match the expected pattern.
+        """
+        parts = json_path.rstrip("/").split("/")
+        if len(parts) >= 2 and parts[-1] in ("has_quantity_type", "unit"):
+            return "/".join(parts[:-1])
+        return ""
+
+    @staticmethod
+    def _compatible_unit_uris_from_quantity_kind(
+        state: ExtractionRunState,
+        quantity_kind_uri: str,
+    ) -> set[str] | None:
+        """Find unit URIs linked to *quantity_kind_uri* via hasQuantityKind.
+
+        Scans the graph_statements of all completed quantityKind vocab queries
+        in *state* for ``qudt__hasQuantityKind`` predicates whose object is
+        *quantity_kind_uri*.  Returns the set of subject URIs (units), or
+        ``None`` if no statements were found (caller should skip filtering).
+        """
+        compatible: set[str] = set()
+        for record in state.vocab_queries:
+            if record.kind != "profile_has_quantity_type":
+                continue
+            if not record.result or not record.result.graph_statements:
+                continue
+            for stmt in record.result.graph_statements:
+                if stmt.predicate == "qudt__hasQuantityKind" and stmt.object_uri == quantity_kind_uri:
+                    compatible.add(stmt.subject_uri)
+        return compatible if compatible else None
 
     async def _normalize_profile_field_discoveries(
         self,
@@ -872,26 +945,56 @@ class GroundingService:
     ) -> ExtractionNormalization:
         selection_semaphore = asyncio.Semaphore(self._vocab_selection_llm_concurrency())
         profile_fields: list[ProfileFieldNormalization] = []
-        for discovery in discoveries:
+
+        # --- Cross-constraint: ground has_quantity_type before unit ---
+        # Group discoveries by parent QuantitativeAttribute path.
+        # Process has_quantity_type first; after selection, use the
+        # hasQuantityKind graph to filter unit candidates for the same attribute.
+        parent_to_quantity_kind_uri: dict[str, str] = {}
+
+        def _sort_key(d: _ProfileFieldCandidateDiscovery) -> tuple[int, str]:
+            # has_quantity_type before unit; everything else unchanged.
+            if d.field_name == "has_quantity_type":
+                return (0, d.json_path)
+            if d.field_name == "unit":
+                return (1, d.json_path)
+            return (2, d.json_path)
+
+        ordered = sorted(discoveries, key=_sort_key)
+
+        for discovery in ordered:
             candidates: list[dict[str, Any]] = []
             for query_id in discovery.query_ids:
                 record = self._find_vocab_query_record(state, query_id)
                 if record and record.result:
                     candidates.extend(self._candidate_records(record.result))
+            candidates = self._deduplicate_candidates(candidates)
+
+            # --- Cross-constraint filtering for unit fields ---
+            if discovery.field_name == "unit":
+                parent = self._parent_attribute_path(discovery.json_path)
+                qk_uri = parent_to_quantity_kind_uri.get(parent)
+                if qk_uri:
+                    compatible = self._compatible_unit_uris_from_quantity_kind(state, qk_uri)
+                    if compatible is not None:
+                        filtered = [c for c in candidates if c.get("uri") in compatible]
+                        if filtered:
+                            candidates = filtered
+                        # If filtering yields nothing, keep unfiltered (don't
+                        # starve the LLM — the graph may be incomplete).
+
             selection_source_value = (
                 discovery.formulated_query or discovery.source_value
-                if discovery.field_name == "unit"
-                else discovery.source_value
             )
+            selection_context = dict(discovery.source_context)
+            selection_context.setdefault("json_path", discovery.json_path)
+            selection_context.setdefault("field_name", discovery.field_name)
             mapping = await self._select_from_candidates_with_semaphore(
                 data_package_id=data_package_id,
                 agent_name="profile_field_vocab_selection",
                 source_value=selection_source_value,
-                source_context={
-                    "json_path": discovery.json_path,
-                    "field_name": discovery.field_name,
-                },
-                candidates=self._deduplicate_candidates(candidates),
+                source_context=selection_context,
+                candidates=candidates,
                 selection_semaphore=selection_semaphore,
                 warnings=warnings,
             )
@@ -899,6 +1002,12 @@ class GroundingService:
                 warnings.append(
                     f"Profile field '{discovery.json_path}' kept raw value '{discovery.source_value}'."
                 )
+            else:
+                # Record selected quantityKind URI for cross-constraining sibling unit.
+                if discovery.field_name == "has_quantity_type" and mapping.selected_uri:
+                    parent = self._parent_attribute_path(discovery.json_path)
+                    if parent:
+                        parent_to_quantity_kind_uri[parent] = mapping.selected_uri
             profile_fields.append(
                 ProfileFieldNormalization(
                     json_path=discovery.json_path,
@@ -1069,28 +1178,79 @@ class GroundingService:
         quantity = discovery.quantity
         kind_record = self._find_vocab_query_record(state, discovery.quantity_kind_query_id)
         unit_record = self._find_vocab_query_record(state, discovery.unit_query_id)
-        quantity_kind = await self._select_term_with_fallback_candidates(
-            data_package_id=data_package_id,
-            vocabulary_identifier=QUDT_QUANTITY_KIND_VOCAB,
-            source_value=quantity.quantity_kind,
-            source_context=quantity.model_dump(mode="json"),
-            query=kind_record.query if kind_record else build_quantity_kind_vocab_query(quantity),
-            initial_candidates=self._candidate_records(kind_record.result) if kind_record and kind_record.result else [],
-            agent_name="quantity_vocab_selection",
-            selection_semaphore=selection_semaphore,
-            warnings=warnings,
-        )
-        unit = await self._select_term_with_fallback_candidates(
+
+        # Step 1: Select BOTH unit and quantity_kind independently
+        all_unit_candidates = self._candidate_records(unit_record.result) if unit_record and unit_record.result else []
+        all_kind_candidates = self._candidate_records(kind_record.result) if kind_record and kind_record.result else []
+        unit_unconstrained = await self._select_term_with_fallback_candidates(
             data_package_id=data_package_id,
             vocabulary_identifier=QUDT_UNIT_VOCAB,
             source_value=quantity.unit,
             source_context=quantity.model_dump(mode="json"),
             query=unit_record.query if unit_record else build_unit_vocab_query(quantity),
-            initial_candidates=self._candidate_records(unit_record.result) if unit_record and unit_record.result else [],
+            initial_candidates=all_unit_candidates,
             agent_name="quantity_vocab_selection",
             selection_semaphore=selection_semaphore,
             warnings=warnings,
         )
+        quantity_kind_unconstrained = await self._select_term_with_fallback_candidates(
+            data_package_id=data_package_id,
+            vocabulary_identifier=QUDT_QUANTITY_KIND_VOCAB,
+            source_value=quantity.quantity_kind,
+            source_context=quantity.model_dump(mode="json"),
+            query=kind_record.query if kind_record else build_quantity_kind_vocab_query(quantity),
+            initial_candidates=all_kind_candidates,
+            agent_name="quantity_vocab_selection",
+            selection_semaphore=selection_semaphore,
+            warnings=warnings,
+        )
+        # Step 2: Cross-constrain both directions via qudt__hasQuantityKind
+        compatible_kind_uris: set[str] = set()
+        if unit_unconstrained is not None and unit_unconstrained.selected_uri:
+            if unit_record and unit_record.result:
+                for stmt in unit_record.result.graph_statements:
+                    if stmt.subject_uri == unit_unconstrained.selected_uri and "hasQuantityKind" in stmt.predicate:
+                        compatible_kind_uris.add(stmt.object_uri)
+        compatible_unit_uris: set[str] = set()
+        if quantity_kind_unconstrained is not None and quantity_kind_unconstrained.selected_uri:
+            if kind_record and kind_record.result:
+                for stmt in kind_record.result.graph_statements:
+                    if stmt.object_uri == quantity_kind_unconstrained.selected_uri and "hasQuantityKind" in stmt.predicate:
+                        compatible_unit_uris.add(stmt.subject_uri)
+        # Step 3: Re-select with constraints if incompatible
+        quantity_kind = quantity_kind_unconstrained
+        unit = unit_unconstrained
+        if compatible_kind_uris:
+            filtered_kind_candidates = [c for c in all_kind_candidates if c.get("uri") in compatible_kind_uris]
+            if filtered_kind_candidates:
+                if not (quantity_kind_unconstrained and quantity_kind_unconstrained.selected_uri in compatible_kind_uris):
+                    quantity_kind = await self._select_from_candidates(
+                        data_package_id=data_package_id,
+                        agent_name="quantity_vocab_selection",
+                        source_value=quantity.quantity_kind,
+                        source_context={**quantity.model_dump(mode="json"), "unit_constraint": "Unit restricts to compatible kinds only"},
+                        candidates=filtered_kind_candidates,
+                        selection_semaphore=selection_semaphore,
+                        warnings=warnings,
+                    )
+            else:
+                quantity_kind = None
+        if compatible_unit_uris:
+            filtered_unit_candidates = [c for c in all_unit_candidates if c.get("uri") in compatible_unit_uris]
+            if filtered_unit_candidates:
+                if not (unit_unconstrained and unit_unconstrained.selected_uri in compatible_unit_uris):
+                    unit = await self._select_from_candidates(
+                        data_package_id=data_package_id,
+                        agent_name="quantity_vocab_selection",
+                        source_value=quantity.unit,
+                        source_context={**quantity.model_dump(mode="json"), "kind_constraint": "QuantityKind restricts to compatible units only"},
+                        candidates=filtered_unit_candidates,
+                        selection_semaphore=selection_semaphore,
+                        warnings=warnings,
+                    )
+        # Step 4: Cross-validation
+        if quantity_kind is not None and quantity_kind.selected_uri and unit is not None and unit.selected_uri and compatible_kind_uris and quantity_kind.selected_uri not in compatible_kind_uris:
+            warnings.append("Quantity " + quantity.identifier + ": CROSS-VALIDATION MISMATCH")
         if quantity_kind is None and quantity.quantity_kind:
             warnings.append(
                 f"Quantity '{quantity.identifier}' kept raw quantity kind '{quantity.quantity_kind}'."
@@ -1525,18 +1685,47 @@ class GroundingService:
 
     @staticmethod
     def _candidate_records(result: VocabQueryResult) -> list[dict[str, Any]]:
+        """Build slim candidate dicts from a VocabQueryResult.
+
+        Filters out blank nodes (genid URIs) that appear in ``resources``
+        as intermediate graph-traversal artifacts (e.g. ``qudt__FactorUnit``
+        blank nodes from ``qudt__hasQuantityKind`` edge expansion).  These
+        carry no label or useful properties and only pollute the candidate
+        list presented to the selection LLM.
+        Cross-vocabulary resources (e.g. QuantityKind URIs discovered while
+        querying for Units) are kept — they may be valid matches.
+
+        Only essential fields are included (uri, label, description, symbol)
+        to keep the candidate payload small enough for the selection LLM to
+        produce valid structured output.  Full property dicts (with
+        conversionMultiplier, ucumCode, etc.) are omitted — the LLM only needs
+        label + definition per the system prompt.
+        """
         records: list[dict[str, Any]] = []
         for uri, resource in result.resources.items():
-            records.append(
-                {
-                    "uri": uri,
-                    "vocabulary_identifier": result.identifier,
-                    "rdf_type": result.rdf_type,
-                    "title": _resource_title(resource.properties),
-                    "rdf_types": resource.rdf_types,
-                    "properties": resource.properties,
-                }
-            )
+            # Skip blank nodes generated by graph traversal expansion.
+            # They use synthetic URIs like http://example.org/.well-known/genid/<hex>
+            # and have no label or meaningful properties.
+            if "/.well-known/genid/" in uri:
+                continue
+            props = resource.properties
+            slim: dict[str, Any] = {
+                "uri": uri,
+                "vocabulary_identifier": result.identifier,
+                "rdf_type": result.rdf_type,
+                # Use 'title' key for backward compat with selection code
+                # (which reads candidate.get("title"))
+                "title": _resource_title(props),
+            }
+            # Add description if available (dcterms__description or rdfs__comment)
+            desc = props.get("dcterms__description") or props.get("rdfs__comment")
+            if desc:
+                slim["description"] = str(desc)[:300]
+            # Add symbol if available (useful for unit matching)
+            symbol = props.get("qudt__symbol") or props.get("qudt__abbreviation")
+            if symbol:
+                slim["symbol"] = str(symbol)
+            records.append(slim)
         return records
 
     async def _select_from_candidates(

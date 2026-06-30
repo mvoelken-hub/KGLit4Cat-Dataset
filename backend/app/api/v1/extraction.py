@@ -415,21 +415,46 @@ async def run_grounding_stage(
     chat_model: str | None = None,
     workflow_service: WorkflowService = Depends(get_workflow_service),
 ):
-    """Run the vocabulary grounding stage as a standalone step.
+    """Run the vocabulary grounding stage as an async background task.
 
     Grounds the persisted profile draft without rebuilding the projection or
-    requirement-enrichment stages.
+    requirement-enrichment stages.  Returns immediately with ``status=running``.
+    Poll ``GET /stages/grounding/{data_package_id}/progress`` for completion.
     """
     try:
-        return _extraction_result_response(
-            await workflow_service.run_grounding_stage(
-                data_package_id=data_package_id,
-                chunking_strategy=chunking_strategy,
-                chat_model=chat_model,
-            )
+        result, task_status = await workflow_service.run_grounding_stage_async(
+            data_package_id=data_package_id,
+            chunking_strategy=chunking_strategy,
+            chat_model=chat_model,
+        )
+        if result is not None:
+            return _extraction_result_response(result)
+        return ExtractionRunResponse(
+            status=task_status,
+            result=None,
+            progress=None,
         )
     except Exception as exc:
         _raise_extraction_error(exc)
+
+
+@router.get(
+    "/stages/grounding/{data_package_id}/progress",
+    response_model=ExtractionProgressResponse,
+)
+async def get_grounding_stage_progress(
+    data_package_id: str,
+    chunking_strategy: Literal["semantic", "fixed_tokens"] | None = None,
+    chat_model: str | None = None,
+    workflow_service: WorkflowService = Depends(get_workflow_service),
+) -> ExtractionProgressResponse:
+    """Poll the progress of an async grounding stage run."""
+    status_value, progress = await workflow_service.get_grounding_progress(
+        data_package_id=data_package_id,
+        chunking_strategy=chunking_strategy,
+        chat_model=chat_model,
+    )
+    return ExtractionProgressResponse(status=status_value, progress=progress)
 
 
 @router.post("/stages/grounding/{data_package_id}/rerun")
