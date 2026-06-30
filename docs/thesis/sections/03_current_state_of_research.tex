@@ -1,7 +1,7 @@
 \label{chap:sota}
 
 The following chapter reviews the current state of research that motivates an \ac{LLM}-supported workflow for semantic metadata extraction from catalytic experiments.
-First, the current approach of catalysis research to the \ac{FAIR} principles will be examined \cite{roccaserra2023faircookbook}.
+First, the current approach of catalysis research to the \ac{FAIR} principles will be examined \cite{wilkinson2016fair,roccaserra2023faircookbook}.
 After that, semantic metadata standards and resources are presented, including both application profiles and the vocabularies and ontologies that can provide term-level grounding.
 Furthermore, the chapter addresses and discusses how \ac{NLP} and \ac{LLM} workflows already extract structured knowledge from scientific sources.
 The final section then identifies the operational gap that leads into the goals for the workflow developed.
@@ -9,13 +9,17 @@ The final section then identifies the operational gap that leads into the goals 
 \section{FAIR Data Practice in Catalysis}
 \label{sec:fair-data-practice-catalysis}
 
-Catalysis research produces heterogeneous data across publications, supplementary information, instrument exports, local folders, electronic laboratory systems, and repository deposits.
+
+Catalysis research produces heterogeneous experimental and computational data that differ both in structure and in the context in which they are used.
+Currently, this data and its associated metadata are often fragmented across local research environments and publication channels, which limits machine-readable exchange and later reuse \cite{wulf2021unified,mendes2025data}.
+Catalysis research produces heterogeneous data across publications, instrument exports, local folders, electronic laboratory systems, and repository deposits.
+Related work in chemistry and materials science similarly calls for a transition from spreadsheet-based data handling toward database-backed FAIR infrastructures in which research data are comprehensively described and made available for analysis and reuse \cite{duke2022datastorage,scheffler2022fair}.
 Recent discussions of digital catalysis describe the \ac{FAIR} principles as a necessary response to this fragmentation, because available data often lacks the contextual metadata needed for discovery, interpretation, comparison, and later computational use \cite{wilkinson2016fair,marshall2023digital,mendes2021opendata,mendes2025data}.
-\Cref{tab:fair-catalysis-resource-map} summarizes the typical contribution of selected resources to \ac{FAIR} catalysis data practice, while it doesnt claim a strict one-to-one assignment.
+\Cref{tab:fair-catalysis-resource-map} provides an illustrative, non-exclusive mapping of selected resources to the \ac{FAIR} dimensions they most directly support.
 
 \begin{table}[H]
 \centering
-\caption{Typical contribution of selected resources to FAIR catalysis data practice.}
+\caption{Illustrative, non-exclusive contributions of selected resources to FAIR catalysis data practice.}
 \label{tab:fair-catalysis-resource-map}
 \begin{tabularx}{\textwidth}{p{0.18\textwidth}p{0.31\textwidth}X}
 \toprule
@@ -32,8 +36,9 @@ Reusable & Sufficient context, provenance, licence, quality, and domain-standard
 \subsection{Findability}
 \label{sec:fair-findability}
 
-Findability begins with stable identification and descriptive metadata.
-DataCite is relevant here because its metadata schema supports the publication and citation of research data and other research outputs through globally unique persistent identifiers, especially DOIs, together with descriptive fields such as creators, titles, publishers, publication year, subjects, descriptions, related identifiers, and resource types \cite{datacite2026metadata}.
+Under the \ac{FAIR} principles, findability depends on globally unique and persistent identifiers and registration in searchable resources \cite{wilkinson2016fair}.
+DataCite contributes to resource-level findability by associating research data and other research outputs with a DOI and a standardized metadata record.
+Its mandatory properties identify the resource, its creators, title, publisher, publication year, and type, while recommended properties such as subjects, descriptions, and related identifiers improve discovery and linking \cite{datacite2026metadata}.
 This primarily improves resource-level findability.
 A dataset can be cited, resolved, indexed, and linked to related publications, software, or other research objects.
 For catalysis, however, this does not by itself make the scientific content of a dataset searchable at the level of catalyst composition, reaction conditions, pretreatment, analytical method, or kinetic property.
@@ -47,17 +52,17 @@ The \ac{NOMAD} catalysis plugin goes further toward domain search by supporting 
 
 Accessibility concerns whether data and metadata can be retrieved through a clear and standardized procedure.
 In terms of FAIR data principles, this does not necessarily mean that all data must be openly downloadable.
-Restricted access, authentication, and permission-based workspaces can still be compatible with FAIR practice when the access conditions and protocols are explicit \cite{wilkinson2016fair}.
+Restricted access, authentication, and permission-based workspaces can still be compatible with FAIR practice when the access conditions and protocols are explicit and machine-actionable \cite{wilkinson2016fair,peters2023fair}.
 This distinction matters for industrial collaborations, unpublished measurements, and sensitive laboratory data that may require controlled access before publication.
-In a commercial setting, such control can be desirable because certain data may encode intellectual property or commercially relevant know-how.
-It also motivates infrastructures in which data processing and metadata generation can run within local or institutionally controlled services, before selected records are exposed through external repositories or public catalogues \cite{kushnarenko2025repo4cat}.
+In a commercial setting, such control can be desirable because certain data may encode intellectual property or commercially relevant know-how, and adjacent industrial FAIR work treats governance, stewardship, culture, and technology as part of implementation rather than as external concerns \cite{wise2019fair,peters2023fair}.
+It also motivates infrastructures in which data processing and metadata generation can run within local or institutionally controlled services, before selected records are exposed through external repositories or public catalogues \cite{kushnarenko2025repo4cat,scheffler2022fair}.
 
 
 Repository infrastructures provide the main access layer.
 Repo4Cat contributes storage, landing pages, publication workflows, APIs, and private working spaces for collaborative or protected data handling \cite{kushnarenko2025repo4cat}.
-\ac{NOMAD} provides browser-based and machine-oriented access to structured catalysis entries and metadata, making uploaded experimental data available through a platform that can support later search, inspection, and reuse \cite{schumann2025nomad}.
+\ac{NOMAD} provides browser-based and machine-oriented access to structured catalysis entries and metadata, making uploaded experimental data available through a platform that can support later search, inspection, and reuse \cite{scheffler2022fair,schumann2025nomad}.
 Local laboratory infrastructures address the same principle at an earlier stage of the data lifecycle: Moshantaf et al.
-connect automated acquisition, standardized analysis, database upload, relationship generation, and API-based exchange for catalytic testing data \cite{moshantaf2024advancing}.
+connect automated acquisition, standardized analysis, database upload, relationship generation, and API-based exchange for catalytic testing data \cite{duke2022datastorage,moshantaf2024advancing}.
 Together, these examples show that accessibility is implemented through repository, platform, and laboratory services rather than through metadata vocabulary alone.
 
 \subsection{Interoperability}
@@ -66,7 +71,7 @@ Together, these examples show that accessibility is implemented through reposito
 Interoperability requires shared machine-readable representations and semantics.
 Controlled vocabularies and ontologies are necessary here because they provide stable identifiers, labels, definitions, synonyms, and relations for concepts that would otherwise remain ambiguous strings.
 The \ac{Voc4Cat} provides catalysis-specific terminology in \ac{SKOS} and is used in \ac{NFDI4Cat} contexts to align catalysis metadata with shared community concepts \cite{nfdi4cat2024whitepaper,david_linke_2023_8313340}.
-More specialized resources provide finer-grained semantics where a broad catalysis vocabulary is insufficient: nmrCV supports NMR-specific descriptions associated with nmrML, and QUDT represents quantity kinds, units, dimensions, and datatypes \cite{nmrmlSpecification,qudt2022schema}.
+More specialized resources provide finer-grained semantics where a broad catalysis vocabulary is insufficient: nmrCV supports NMR-specific descriptions associated with nmrML, and QUDT represents quantity kinds, units, dimensions, and datatypes \cite{peters2023fair,nmrmlSpecification,qudt2022schema}.
 
 Vocabularies alone, however, do not define the complete structure of a dataset.
 A vocabulary can identify a concept such as reaction temperature, but a metadata or data schema must define where that temperature belongs, which entity or activity it describes, what datatype it has, and which unit is attached.
@@ -76,7 +81,7 @@ A vocabulary can identify a concept such as reaction temperature, but a metadata
 \label{sec:fair-reusability}
 
 Reusability is the most context-dependent FAIR dimension.
-A dataset is reusable only when a later user or machine process can understand what the data represent, how they were generated, whether they may be used, and whether their quality is sufficient for the intended analysis.
+A dataset is reusable only when a later user or machine process can understand what the data represent, how they were generated, whether they may be used, and whether their quality is sufficient for the intended analysis \cite{roccaserra2023faircookbook,peters2023fair}.
 \ac{ChemDCAT-AP} supports this by describing datasets, chemical entities, reactions, analytical methods, attributes, and provenance in a machine-actionable structure that can be validated through generated artifacts such as JSON Schema and SHACL shapes \cite{stroemert2026chemdcat,chemdcatapDocumentation}.
 Nevertheless, \ac{ChemDCAT-AP} does not provide reusability alone.
 
@@ -85,14 +90,14 @@ The \ac{NOMAD} catalysis plugin transforms catalysis related data uploads into a
 Local FAIR infrastructure connects acquisition, analysis, database upload, relationships, and API exchange, so that data are reusable earlier in the laboratory workflow \cite{moshantaf2024advancing}.
 Data and metadata quality work in \ac{NFDI4Cat} further emphasizes use-case-driven information collection and semantic representation \cite{huskova2025improvement}.
 Benchmark resources such as CatTestHub illustrate the downstream value of curated, comparable catalysis data for comparing catalysts across probe chemistries and performance metrics \cite{burte2025cattesthub}.
-The practical conclusion is that FAIR catalysis data practice requires a stack of resources: persistent identifiers for discovery, repositories for access, vocabularies and schemas for interpretation, and provenance, licensing, validation, and data quality controls for reuse.
+The practical conclusion is that FAIR catalysis data practice requires a stack of resources: persistent identifiers for discovery, repositories for access, vocabularies and schemas for interpretation, and provenance, licensing, validation, and data quality controls for reuse \cite{roccaserra2023faircookbook,duke2022datastorage,scheffler2022fair}.
 
 \section{Semantic Metadata Standards and Resources}
 \label{sec:semantic-metadata-standards-resources}
 
 Semantic metadata modelling requires both structural specifications and shared semantic resources.
 Application profiles define how metadata classes and properties are used in a particular context, including their relations, cardinalities, and value ranges.
-Vocabulary resources complement this structure by providing shared identifiers, definitions, and semantic relations for domain concepts such as analytical methods, material roles, quantity kinds, units, and spectroscopy-specific parameters.
+Vocabulary resources complement this structure by providing shared identifiers, definitions, and semantic relations for domain concepts such as analytical methods, material roles, quantity kinds, units, and spectroscopy-specific parameters \cite{scheffler2022fair,peters2023fair}.
 This section first introduces the application profiles used to organize chemistry- and catalysis-related metadata and then examines the vocabulary resources used to classify their central shapes.
 
 \subsection{DCAT-AP+ and ChemDCAT-AP}
@@ -227,7 +232,7 @@ nmrCV can therefore identify not only how a spectrum was acquired, but also the 
 
 The application profiles and vocabularies discussed above define how catalysis metadata can be represented, but much of the information required to populate these structures remains available only in unstructured or semi-structured form.
 Within scientific publications, relevant information may be distributed across prose, tables, and figures and must be integrated at the document level \cite{schilling2025text,Fan2024OpenChemIE}.
-The experimental data packages addressed in this thesis additionally include supplementary files, reports, instrument exports, and locally maintained files.
+The experimental data packages addressed in this work additionally include supplementary files, reports, instrument exports, and locally maintained files.
 Constructing semantic metadata is therefore not only a modelling task but also an acquisition and information-integration task.
 Reviews of \ac{LLM}-based chemical data extraction describe workflows that span source collection, document parsing, structured extraction, and quality assurance \cite{schilling2025text}.
 
@@ -267,8 +272,8 @@ Broader surveys of scientific knowledge graphs describe a vision in which such g
 For catalysis, this means that extraction workflows should produce records that can be traced, normalized, and inserted into graph or repository structures rather than only summarized for human reading.
 
 A second use case is FAIR repository population.
-Repository systems such as Repo4Cat and NOMAD need structured metadata to make datasets findable, interpretable, and reusable across projects and institutions \cite{kushnarenko2025repo4cat,schumann2025nomad}.
-Local FAIR data infrastructures show how laboratory acquisition, analysis, database storage, and repository-level exchange can be connected through APIs and standardized procedures \cite{moshantaf2024advancing}.
+Repository systems such as Repo4Cat and NOMAD need structured metadata to make datasets findable, interpretable, and reusable across projects and institutions \cite{kushnarenko2025repo4cat,scheffler2022fair,schumann2025nomad}.
+Local FAIR data infrastructures show how laboratory acquisition, analysis, database storage, and repository-level exchange can be connected through APIs and standardized procedures \cite{duke2022datastorage,moshantaf2024advancing}.
 Extraction workflows can support this ecosystem by helping researchers create repository-ready metadata from heterogeneous material before or during dataset deposit.
 
 A third use case is AI-guided catalyst optimization and benchmarking.
@@ -277,7 +282,7 @@ Benchmark resources such as CatTestHub demonstrate the importance of curated, co
 Normalized metadata can improve such workflows because values, units, catalyst descriptions, and reaction contexts become comparable rather than remaining ad hoc strings.
 
 A fourth use case is integration with automated or closed-loop laboratories.
-Local catalysis data infrastructures already connect automated acquisition, standardized analysis, and database upload, while autonomous experimentation literature points toward design--build--test--learn cycles in which machine-readable data are essential \cite{moshantaf2024advancing,weigmann2026autonomous}.
+Local catalysis data infrastructures already connect automated acquisition, standardized analysis, and database upload, while autonomous experimentation literature points toward design--build--test--learn cycles in which machine-readable data are essential \cite{duke2022datastorage,moshantaf2024advancing,weigmann2026autonomous}.
 Catalyst informatics makes the same point from the data-driven design perspective: predictive and optimization workflows require structured descriptions of catalyst composition, preparation, operating conditions, and performance \cite{takahashi2023catalysts}.
 Metadata extraction does not itself implement a closed-loop laboratory, but it can provide one of the prerequisite layers: converting heterogeneous experimental documentation into structured, grounded, reusable records.
 
