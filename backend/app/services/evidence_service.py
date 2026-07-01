@@ -626,7 +626,9 @@ class EvidenceService:
         if len(notes) <= 1:
             return context, []
 
-        MIN_TEXT_LEN = 12
+        # Allow short but still semantically stable labels like "Version 3.2"
+        # or "BF1= 500.13" to participate in similarity grouping.
+        MIN_TEXT_LEN = 10
 
         def _sim(a: str, b: str) -> float:
             """SequenceMatcher ratio on normalized text."""
@@ -659,12 +661,15 @@ class EvidenceService:
             if ra != rb:
                 parent[ra] = rb
 
-        # Group by similarity — only across DIFFERENT (category, role) pairs
+        # Group by similarity. Same-class notes stay protected unless their
+        # normalized evidence text is exactly identical, which is a safe
+        # duplicate-collapse case for repeated labels like "Version 3.2".
         for i in range(n):
             for j in range(i + 1, n):
-                if _class_key(valid[i][1]) == _class_key(valid[j][1]):
-                    continue
+                same_class = _class_key(valid[i][1]) == _class_key(valid[j][1])
                 sim = _sim(valid[i][1].evidence_text, valid[j][1].evidence_text)
+                if same_class and sim < 1.0:
+                    continue
                 if sim >= SIMILARITY_GROUP_THRESHOLD:
                     union(i, j)
 
