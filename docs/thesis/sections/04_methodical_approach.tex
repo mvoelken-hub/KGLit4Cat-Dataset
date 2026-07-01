@@ -3,7 +3,7 @@
 The goal for the developed workflow is to identify several approaches and sub-steps for the automated extraction of semantically linked metadata.
 As a first overview of the workflow, \cref{fig:workflow-concept} shows the steps on a conceptual level.
 It starts with the input of a dataset.
-Those datasets were not manually adjusted before being fed into the automated extraction process, so that the methodology imposes no specific requirements other than the presence of text-based, decodable files.
+Those datasets are not manually adjusted before being fed into the automated extraction process, so that the methodology imposes no specific requirements other than the presence of text-based, decodable files.
 After that, the files are preprocessed before they are split into smaller chunks.
 At the same time, a dataset-level context overview is generated based on the dataset structure and per-file summaries.
 
@@ -35,7 +35,7 @@ One sample is first presented below to provide an overview of the resources thes
 
 The sample dataset consists of a single one-dimensional \textsuperscript{1}H NMR measurement stored in several complementary representations.
 \Cref{fig:1H-NMR-dataset} shows the dataset structure and its contents.
-The file \texttt{dataset_description.txt} provides a minimal package-level description and identifies the instrument as a Bruker Avance 500 MHz.
+The file \texttt{dataset\_description.txt} provides a minimal package-level description and identifies the instrument as a Bruker Avance 500 MHz.
 The nested \texttt{10.zip} archive preserves the native Bruker experiment directory, including the raw free-induction-decay signal, acquisition and processing parameters, the pulse program, audit information, and hardware settings.
 As this dataset is 
 In parallel, \texttt{10.edit.jdx} contains a standardized JCAMP-DX representation of the processed spectrum with 32,768 spectral points, recorded for \textsuperscript{1}H at 500.133~MHz in CDCl\textsubscript{3} using the \texttt{zg30} pulse sequence. The file \texttt{10.edit.png} provides a directly inspectable spectrum preview, whereas \texttt{10.infer.json} represents a machine-readable analysis output that is empty in this example. The package therefore illustrates the heterogeneous inputs expected by the workflow: descriptive text, vendor-specific binary and parameter files, a standardized spectral exchange format, an image, and JSON.
