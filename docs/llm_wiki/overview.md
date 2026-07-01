@@ -2,7 +2,7 @@
 type: concept
 title: "Overview: Catalysis, LLMs, Knowledge Graphs, and FAIR Data"
 created: 2025-06-23
-updated: 2026-06-29
+updated: 2026-07-01
 sources: [all]
 tags: [catalysis, llm, knowledge-graph, ontology, fair-data]
 ---
@@ -26,6 +26,8 @@ The central thesis emerging from this literature: **AI-guided catalysis discover
 Catalysis has a dataset-to-article ratio of ~1/100 — data is simply not shared ([[data-key-resource-catalysis]]). Even when shared, it lacks standardization and metadata, making it unusable for machine learning. This is the fundamental bottleneck. Germany's NFDI initiative (NFDI4Cat, NFDI4Chem) is the most concerted effort to fix this, building repositories ([[repo4cat]]), vocabularies ([[voc4cat]]), metadata profiles ([[chemdcat-ap]]), and workflows ([[mardiflow]]).
 
 Adjacent FAIR implementation literature sharpens what "FAIR" operationally means: practical recipes and maturity guidance ([[fair-cookbook]]), database schemas/ETL/APIs for chemical laboratories ([[chemical-data-storage-architectures]]), governance and stewardship in industrial R&D ([[fair-biopharma-rd]]), access restrictions and Semantic Web grounding for digital twins ([[fair-digital-twins]]), and FAIRmat/NOMAD-style federated materials infrastructure ([[fairmat-materials-research]]).
+
+ChemSpectra adds a useful analytical-data perspective to that FAIR stack: interoperable chemistry workflows depend not only on repositories and metadata models, but also on browser-based tools that can parse open spectral formats, preserve edited and original spectra, and hand selected signals back into ELN/repository records ([[chemspectra]]).
 
 New catalysis-specific infrastructure sources make that operational gap more concrete: UKCH's Catalysis Data Infrastructure treats publications, datasets, authors, institutions, and themes as linked catalogue entities rather than assuming all data live in one repository ([[catalysis-data-infrastructure-ukch]]); Catalysis-Hub Experimental structures electrocatalysis materials, matrices, testing conditions, spectra, curves, and metadata behind web and API access ([[electrocatalysis-research-database]]); and EnzymeML shows how biocatalysis can combine raw data, reaction conditions, models, APIs, ELNs, repositories, DOIs, and FAIR software into a reusable data flow ([[enzymeml-fair-biocatalysis]], [[fair-biocatalytic-science]]).
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.domain.extraction import compact_file_summaries_for_shallow_projection
 from app.services.extraction_shared import *
 
 
@@ -2157,12 +2158,16 @@ class OrientationService:
             data_package_id=data_package_id,
             fallback_title=(skeleton.get("title") or [data_package_id])[0],
         )
+        file_summaries = compact_file_summaries_for_shallow_projection(
+            initial_file_summaries=state.initial_file_summaries,
+            ranked_files=state.ranked_files,
+        )
         dataset_summary = await self._generate_initial_dataset_summary(
             data_package_id=data_package_id,
             state=state,
             warnings=warnings,
         )
-        if not dataset_summary:
+        if not dataset_summary and not file_summaries:
             return (
                 fallback_document,
                 [
@@ -2174,6 +2179,7 @@ class OrientationService:
             data_package_id=data_package_id,
             dataset_summary=dataset_summary,
             skeleton=skeleton,
+            file_summaries=file_summaries,
         )
         try:
             result = await generate_structured(
@@ -2188,7 +2194,7 @@ class OrientationService:
                 token_budgeter=self._prompt_token_budgeter(),
                 operation_id=self._prompt_operation_id("dataset_level_projection"),
                 agent_name="dataset_level_projection",
-                output_type=ShallowDatasetLevelProjection,
+                output_type=ShallowDatasetLevelProjectionForPrompt,
                 num_ctx=self.ollama_client.max_context_length,
             )
             self._record_llm_call_result(
@@ -2196,10 +2202,10 @@ class OrientationService:
                 result=result,
                 agent_name="dataset_level_projection",
             )
-            level_projection = (
-                result.output
-                if isinstance(result.output, ShallowDatasetLevelProjection)
-                else ShallowDatasetLevelProjection.model_validate(result.output)
+            level_projection = ShallowDatasetLevelProjection.model_validate(
+                result.output.model_dump(mode="json")
+                if isinstance(result.output, ShallowDatasetLevelProjectionForPrompt)
+                else result.output
             )
         except (CompletionError, ValidationError) as exc:
             self._record_llm_call_exception(
@@ -2307,7 +2313,7 @@ class OrientationService:
                 model=self.ollama_client.chat_model,
                 failed_response=json.dumps(failed_value, ensure_ascii=False),
                 error=error,
-                output_type=ShallowDatasetLevelProjection,
+                output_type=ShallowDatasetLevelProjectionForPrompt,
                 token_budgeter=self._prompt_token_budgeter(),
                 operation_id=self._prompt_operation_id("dataset_level_projection_repair"),
                 agent_name="dataset_level_projection_repair",
@@ -2319,10 +2325,10 @@ class OrientationService:
                 result=result,
                 agent_name="dataset_level_projection_repair",
             )
-            level_projection = (
-                result.output
-                if isinstance(result.output, ShallowDatasetLevelProjection)
-                else ShallowDatasetLevelProjection.model_validate(result.output)
+            level_projection = ShallowDatasetLevelProjection.model_validate(
+                result.output.model_dump(mode="json")
+                if isinstance(result.output, ShallowDatasetLevelProjectionForPrompt)
+                else result.output
             )
         except (CompletionError, ValidationError) as exc:
             self._record_llm_call_exception(

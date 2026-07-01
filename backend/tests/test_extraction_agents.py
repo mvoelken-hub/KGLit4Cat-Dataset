@@ -1036,16 +1036,12 @@ classes:
         self.assertEqual(document["id"], "package-id")
         self.assertIn("creator", document)
         self.assertNotIn("dataset_distribution", document)
-        self.assertIn("is_about_entity", document)
-        self.assertIn("is_about_activity", document)
-        self.assertIn("was_generated_by", document)
-        self.assertIn("description", document["was_generated_by"][0])
-        self.assertIn("has_qualitative_attribute", document["was_generated_by"][0])
-        self.assertIn("has_quantitative_attribute", document["is_about_activity"][0])
+        self.assertNotIn("is_about_entity", document)
+        self.assertNotIn("is_about_activity", document)
+        self.assertEqual(document.get("was_generated_by", []), [])
         paths = {entry["path"] for entry in scaffold["entries"]}
         self.assertIn("/creator/0", paths)
-        self.assertIn("/is_about_entity/0", paths)
-        self.assertIn("/was_generated_by/0/description", paths)
+        self.assertNotIn("/is_about_entity/0", paths)
 
     def test_initial_draft_prunes_only_untouched_optional_scaffold(self):
         document, scaffold = WorkflowService._initial_profile_document(
@@ -1060,8 +1056,7 @@ classes:
         self.assertIn("creator", pruned)
         self.assertNotIn("dataset_distribution", pruned)
         self.assertNotIn("is_about_entity", pruned)
-        self.assertIn("was_generated_by", pruned)
-        self.assertNotIn("description", pruned["was_generated_by"][0])
+        self.assertEqual(pruned.get("was_generated_by", []), [])
         Draft202012Validator(self.INITIAL_DRAFT_SCHEMA).validate(pruned)
 
     def test_target_catalog_marks_description_as_last_resort_and_scaffold_status(self):
@@ -1131,6 +1126,7 @@ classes:
             evidence_context=EvidenceContext(candidates=[]),
             validation_schema=self.INITIAL_DRAFT_SCHEMA,
         )
+        document["was_generated_by"] = [{"id": "package-id:activity:0", "evaluated_entity": [{"title": ""}]}]
         replacement = {
             "id": "package-id:entity:primary",
             "title": "Primary entity",
@@ -1142,12 +1138,12 @@ classes:
 
         updated = WorkflowService._replace_json_pointer(
             document,
-            "/is_about_entity/0",
+            "/was_generated_by/0/evaluated_entity/0",
             replacement,
         )
 
-        self.assertEqual(updated["is_about_entity"][0]["title"], "Primary entity")
-        self.assertEqual(document["is_about_entity"][0]["title"], "")
+        self.assertEqual(updated["was_generated_by"][0]["evaluated_entity"][0]["title"], "Primary entity")
+        self.assertEqual(document["was_generated_by"][0]["evaluated_entity"][0]["title"], "")
         Draft202012Validator(self.INITIAL_DRAFT_SCHEMA).validate(updated)
 
     def test_profile_target_write_document_carries_complete_target_value(self):
@@ -1335,6 +1331,9 @@ classes:
             evidence_context=EvidenceContext(candidates=[]),
             validation_schema=self.INITIAL_DRAFT_SCHEMA,
         )
+        document["was_generated_by"] = [
+            {"id": "package-id:activity:0", "carried_out_by": [], "has_qualitative_attribute": []}
+        ]
         device = {
             "id": "device:bruker-avance-500-mhz",
             "title": "Bruker Avance 500 MHz",
@@ -1363,7 +1362,7 @@ classes:
         self.assertEqual(updated_again["was_generated_by"][0]["has_qualitative_attribute"], [])
         Draft202012Validator(self.INITIAL_DRAFT_SCHEMA).validate(updated_again)
 
-    def test_final_profile_cleanup_removes_parameter_noise_but_keeps_generic_metadata(self):
+    def test_final_profile_cleanup_preserves_keywords_and_removes_description_noise(self):
         document = {
             "id": "package-id",
             "title": ["Catalyst measurements"],
@@ -1402,7 +1401,15 @@ classes:
         curated = WorkflowService._curate_generated_profile_document(document)
 
         self.assertEqual(curated["description"], ["SIMONE metadata draft for catalyst measurements."])
-        self.assertEqual(curated["keyword"], ["measurement", "dataset"])
+        self.assertEqual(
+            curated["keyword"],
+            [
+                "measurement",
+                "TD parameter set to 65536",
+                "Bla01Eth parameter is set to '<149.236.99.254>'",
+                "dataset",
+            ],
+        )
         self.assertEqual(
             curated["was_generated_by"][0]["has_qualitative_attribute"],
             [{"value": "Calibration method", "description": "Calibration method"}],
@@ -1656,6 +1663,7 @@ classes:
             for _, text in build_dataset_level_projection_prompt_components(
                 data_package_id="package-id",
                 dataset_summary="NMR acquisition dataset.",
+                file_summaries="r1|README.md|fmt=text|pur=NMR acquisition summary",
                 skeleton=shallow_required_skeleton("package-id"),
             )
         )
@@ -1663,7 +1671,9 @@ classes:
         self.assertNotIn("dataset_distribution", ShallowDatasetLevelProjection.model_fields)
         self.assertNotIn("dataset_distribution", level_projection.model_dump(mode="json"))
         self.assertNotIn("dataset_distribution", prompt)
-        self.assertIn("Never mirror these", DATASET_LEVEL_PROJECTION_SYSTEM_PROMPT)
+        self.assertIn("file_summaries", prompt)
+        self.assertIn("NMR acquisition summary", prompt)
+        self.assertIn("Do not populate Dataset is_about_entity/is_about_activity", DATASET_LEVEL_PROJECTION_SYSTEM_PROMPT)
         self.assertIn("merely generated output", DATASET_LEVEL_PROJECTION_SYSTEM_PROMPT)
 
     def test_shallow_projection_fills_missing_ids_and_replaces_description_fallback(self):
@@ -1685,7 +1695,7 @@ classes:
         self.assertTrue(document["was_generated_by"][0]["id"].startswith("package-id:activity"))
         self.assertTrue(any(record.object_kind == "ScaffoldFact" for record in ledger))
 
-    def test_shallow_projection_preserves_dataset_subject_and_activity_targets_separately(self):
+    def test_shallow_projection_ignores_dataset_subject_and_preserves_activity_targets(self):
         projection = ShallowDatasetProjection.model_validate(
             {
                 "title": ["Process study"],
@@ -1709,13 +1719,12 @@ classes:
         )
 
         activity = document["was_generated_by"][0]
-        self.assertEqual(document["is_about_entity"][0]["id"], "sample:1")
+        self.assertNotIn("is_about_entity", document)
+        self.assertNotIn("is_about_activity", document)
         self.assertEqual(activity["evaluated_entity"][0]["id"], "sample:1")
-        self.assertEqual(document["is_about_activity"][0]["id"], "reaction:1")
         self.assertEqual(activity["evaluated_activity"][0]["id"], "reaction:1")
-        self.assertNotIn("evaluated_entity", document["is_about_activity"][0])
 
-    def test_shallow_projection_does_not_merge_relation_objects_by_label(self):
+    def test_shallow_projection_does_not_materialize_dataset_subjects_by_label(self):
         projection = ShallowDatasetProjection.model_validate(
             {
                 "title": ["Two samples"],
@@ -1735,10 +1744,8 @@ classes:
             data_package_id="package-id",
         )
 
-        self.assertNotEqual(
-            document["is_about_entity"][0]["id"],
-            document["was_generated_by"][0]["evaluated_entity"][0]["id"],
-        )
+        self.assertNotIn("is_about_entity", document)
+        self.assertIn("id", document["was_generated_by"][0]["evaluated_entity"][0])
 
     def test_shallow_projection_outputs_schema_valid_dcat_ap_plus_dataset(self):
         schema_path = Path(".runtime/profiles/dcat-ap-plus/json_schema.json")

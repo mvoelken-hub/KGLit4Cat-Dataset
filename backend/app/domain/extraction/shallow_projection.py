@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, field_validator
 from app.domain.extraction.overview import ExtractionFileSummary
 from app.domain.extraction.overview import ExtractionOverview
 from app.domain.extraction.file_ranking import RankedFile
-from app.domain.extraction.workflow import ProjectionLedgerRecord
+from app.domain.extraction.workflow import ProjectionLedgerRecord, ProjectionLedgerStatus
 
 
 DATASET_SUMMARY_SYSTEM_PROMPT = """
@@ -18,9 +18,9 @@ You write compact natural-language dataset accounts for DCAT Dataset metadata.
 Return only JSON matching the supplied schema.
 Use dense, sectioned fragments like caveman mode: high information, low filler.
 Stay domain-agnostic: name generic roles/classes, keep concrete terms only as evidence labels.
-Cover exactly: Dataset subject entity/activity, each data-generating activity and its directly
-evaluated entity/activity, instruments, setting/plan, qualitative/quantitative characteristics.
-Keep Dataset subject and activity evaluation target as separate claims. Omit unsupported facts.
+Cover exactly: dataset catalog basics, one data-generating activity, its directly evaluated
+entity/activity, inputs, outputs, instruments/software, method/plan, and compact characteristics.
+Do not create Dataset is_about_entity/is_about_activity claims. Omit unsupported facts.
 Treat SIMONE metadata extraction, profile projection, and this LLM workflow as out of scope:
 they are not dataset-generating activities and must not appear in the summary.
 """
@@ -29,17 +29,16 @@ they are not dataset-generating activities and must not appear in the summary.
 DATASET_LEVEL_PROJECTION_SYSTEM_PROMPT = """
 You create dataset-level shallow DCAT-AP-plus Dataset metadata from a compact dataset account.
 Return only JSON matching the supplied schema.
-Use concise dataset-level metadata. Populate dataset title, description, keywords,
-types, activities, entities, creators, and instruments only when supported.
+Use concise dataset-level metadata. Use the dataset summary as the dataset description when it is present.
+Infer dataset title, keywords, and one type at most from the dataset summary and ranked file summaries.
+The title should name the dataset content or data product, not copy a single instrument/software sentence.
+Populate creators only when supported.
 Do not model SIMONE metadata extraction, profile projection, or this LLM workflow as a dataset
 activity. was_generated_by is only for the scientific or data production activity that created
 the source dataset content.
-Keep Dataset is_about_entity/is_about_activity separate from DataGeneratingActivity
-evaluated_entity/evaluated_activity. Dataset aboutness states subject matter; evaluated targets
-state what one generating activity directly measured, observed, or analysed. Never mirror these
-relations automatically. One source span may support both claims only when it independently
-entails both. Reuse one id only for an unambiguously shared referent. A merely generated output
-is not an evaluated target; an input file may be one when the activity directly analyses it.
+Do not populate Dataset is_about_entity/is_about_activity. DataGeneratingActivity evaluated targets
+state what the activity directly measured, observed, or analysed. A merely generated output
+belongs in had_output_entity, not evaluated_entity; inputs belong in had_input_entity/activity.
 Prefer omission over invention for optional fields.
 """
 
@@ -148,6 +147,18 @@ class ShallowDataGeneratingActivityProjection(BaseModel):
         default_factory=list,
         description="Other activities or processes directly evaluated or studied by this activity; never the activity itself.",
     )
+    had_input_entity: list[ShallowEvaluatedEntityProjection] = Field(
+        default_factory=list,
+        description="Input entities used by this activity, such as raw files, sample material, or source data.",
+    )
+    had_input_activity: list[ShallowEvaluatedActivityProjection] = Field(
+        default_factory=list,
+        description="Prior activities used as input, such as preparation, synthesis, or preprocessing.",
+    )
+    had_output_entity: list[ShallowEvaluatedEntityProjection] = Field(
+        default_factory=list,
+        description="Entities produced by this activity, such as generated files, spectra, processed results, or datasets.",
+    )
 
 
 class ShallowDatasetProjection(BaseModel):
@@ -160,19 +171,11 @@ class ShallowDatasetProjection(BaseModel):
     identifier: list[str] = Field(default_factory=list, description="Dataset identifiers explicitly supported by package metadata.")
     keyword: list[str] = Field(default_factory=list, description="Broad search keywords: method, instrument, software, data type, domain.")
     creator: list[ShallowAgentProjection] = Field(default_factory=list, description="Creators or responsible agents explicitly supported.")
-    type: list[ShallowConceptProjection] = Field(default_factory=list, description="Dataset type/topic concepts such as experiment, assay, or measurement dataset.")
+    type: list[ShallowConceptProjection] = Field(default_factory=list, description="At most one dataset type/topic concept.")
     modification_date: str | None = Field(default=None, description="Dataset-level modification date when explicitly supported.")
     was_generated_by: list[ShallowDataGeneratingActivityProjection] = Field(
         default_factory=list,
         description="Scientific/data-production activities that generated the source dataset content. Do not use for SIMONE metadata extraction or profile projection.",
-    )
-    is_about_activity: list[ShallowEvaluatedActivityProjection] = Field(
-        default_factory=list,
-        description="Scientific/data-generating activities the dataset is about, when explicitly supported.",
-    )
-    is_about_entity: list[ShallowEvaluatedEntityProjection] = Field(
-        default_factory=list,
-        description="Entities the dataset is about, such as sample, raw data, instrument, or file collection.",
     )
 
 
@@ -186,19 +189,37 @@ class ShallowDatasetLevelProjection(BaseModel):
     identifier: list[str] = Field(default_factory=list, description="Dataset identifiers explicitly supported by package metadata.")
     keyword: list[str] = Field(default_factory=list, description="Broad search keywords: method, instrument, software, data type, domain.")
     creator: list[ShallowAgentProjection] = Field(default_factory=list, description="Creators or responsible agents explicitly supported.")
-    type: list[ShallowConceptProjection] = Field(default_factory=list, description="Dataset type/topic concepts.")
+    type: list[ShallowConceptProjection] = Field(default_factory=list, description="At most one dataset type/topic concept.")
     modification_date: str | None = Field(default=None, description="Dataset-level modification date when explicitly supported.")
     was_generated_by: list[ShallowDataGeneratingActivityProjection] = Field(
         default_factory=list,
         description="Scientific/data-production activities that generated the source dataset content. Do not use for SIMONE metadata extraction or profile projection.",
     )
-    is_about_activity: list[ShallowEvaluatedActivityProjection] = Field(
+
+
+class ShallowDatasetLevelProjectionForPrompt(BaseModel):
+    """Slimmed schema for LLM prompts: drops nested provenance defs.
+
+    The dataset-level projection should always return was_generated_by: [] .
+    Including the full ShallowDataGeneratingActivityProjection schema in the
+    prompt wastes ~62% of the schema tokens on a field the model is told to
+    leave empty. This model uses list[dict[str, Any]] instead, which keeps the
+    field in the schema without pulling in 5 nested $defs.
+    """
+    id: str | None = Field(default=None, description="Dataset identifier. Use package id if no better identifier is supported.")
+    title: list[str] = Field(default_factory=list, description="Concise dataset title inferred from dataset summary.")
+    description: list[str] = Field(
         default_factory=list,
-        description="Scientific/data-generating activities the dataset is about.",
+        description="Meaningful 1-3 sentence dataset description. Never copy SIMONE scaffold placeholder text.",
     )
-    is_about_entity: list[ShallowEvaluatedEntityProjection] = Field(
+    identifier: list[str] = Field(default_factory=list, description="Dataset identifiers explicitly supported by package metadata.")
+    keyword: list[str] = Field(default_factory=list, description="Broad search keywords: method, instrument, software, data type, domain.")
+    creator: list[ShallowAgentProjection] = Field(default_factory=list, description="Creators or responsible agents explicitly supported.")
+    type: list[ShallowConceptProjection] = Field(default_factory=list, description="At most one dataset type/topic concept.")
+    modification_date: str | None = Field(default=None, description="Dataset-level modification date when explicitly supported.")
+    was_generated_by: list[dict[str, Any]] = Field(
         default_factory=list,
-        description="Entities the dataset is about.",
+        description="Always return an empty array. Provenance is filled by a later stage.",
     )
 
 
@@ -234,18 +255,24 @@ def build_dataset_level_projection_prompt_components(
     data_package_id: str,
     dataset_summary: str,
     skeleton: dict[str, Any],
+    file_summaries: str | None = None,
 ) -> list[tuple[str, str]]:
     payload = {
         "data_package_id": data_package_id,
         "dataset_summary": dataset_summary,
         "required_skeleton": skeleton,
     }
+    if file_summaries:
+        payload["file_summaries"] = file_summaries
     return [
         (
             "task",
-            "Infer dataset-level shallow DCAT-AP-plus metadata from dataset_summary. "
-            "Use required_skeleton for mandatory fields, but replace placeholder title and description. "
+            "Infer dataset-level shallow DCAT-AP-plus metadata from dataset_summary and file_summaries. "
+            "Use dataset_summary as description when non-empty. "
+            "Infer title, keywords, and one dataset type from the combined context. "
+            "Use required_skeleton only for mandatory shape; replace placeholder title and description. "
             "Do not treat SIMONE extraction/projection as a dataset-generating activity. "
+            "Create at most one was_generated_by activity. Do not create Dataset is_about_* relations. "
             "Nested resource/entity title and description are scalar strings. "
             "Prefer omission over unsupported invention.\n\n",
         ),
@@ -270,6 +297,7 @@ def build_overview_shallow_projection_prompt_components(
         data_package_id=data_package_id,
         dataset_summary=dataset_summary,
         skeleton=skeleton,
+        file_summaries=dataset_summary,
     )
 
 
@@ -324,12 +352,8 @@ def shallow_required_skeleton(data_package_id: str, fallback_title: str | None =
     return {
         "id": data_package_id,
         "title": [title],
-        "description": [f"SIMONE metadata draft for {title}."],
-        "was_generated_by": [
-            {
-                "id": f"{data_package_id}:activity:dataset-generation",
-            }
-        ],
+        "description": [],
+        "was_generated_by": [],
     }
 
 
@@ -342,9 +366,14 @@ def shallow_projection_to_dcat_document(
 ) -> tuple[dict[str, Any], list[ProjectionLedgerRecord]]:
     records: list[ProjectionLedgerRecord] = []
     title = _first_nonempty(projection.title) or fallback_title or data_package_id
-    description = _clean_string_list(projection.description)
+    projection_description = [
+        item
+        for item in _clean_string_list(projection.description)
+        if not _is_scaffold_description(item)
+    ]
+    description = _clean_string_list([fallback_description]) or projection_description
     if not description or all(_is_scaffold_description(item) for item in description):
-        description = _clean_string_list([fallback_description]) or [f"SIMONE metadata draft for {title}."]
+        description = projection_description or [title]
     document: dict[str, Any] = {
         "id": _clean_string(projection.id)
         or _scaffold_id(data_package_id, "dataset", title, records, "/id"),
@@ -358,7 +387,7 @@ def shallow_projection_to_dcat_document(
                 index=index,
                 base_path="/was_generated_by",
             )
-            for index, item in enumerate(projection.was_generated_by)
+            for index, item in enumerate(projection.was_generated_by[:1])
         ],
     }
     if not document["was_generated_by"]:
@@ -370,27 +399,7 @@ def shallow_projection_to_dcat_document(
         "identifier": _clean_string_list(projection.identifier) or [data_package_id],
         "keyword": _clean_string_list(projection.keyword),
         "creator": [_agent_to_document(item) for item in projection.creator],
-        "type": [_concept_to_document(item) for item in projection.type],
-        "is_about_activity": [
-            _evaluated_activity_to_document(
-                item,
-                data_package_id=data_package_id,
-                records=records,
-                index=index,
-                base_path="/is_about_activity",
-            )
-            for index, item in enumerate(projection.is_about_activity)
-        ],
-        "is_about_entity": [
-            _entity_to_document(
-                item,
-                data_package_id=data_package_id,
-                records=records,
-                index=index,
-                base_path="/is_about_entity",
-            )
-            for index, item in enumerate(projection.is_about_entity)
-        ],
+        "type": [_concept_to_document(item) for item in projection.type[:1]],
     }
     if _clean_string(projection.modification_date):
         optional_values["modification_date"] = _clean_string(projection.modification_date)
@@ -404,7 +413,7 @@ def shallow_projection_to_dcat_document(
 
 def overview_projection_record(
     *,
-    status: str,
+    status: ProjectionLedgerStatus,
     reason: str,
     error: str | None = None,
     projected_paths: list[str] | None = None,
@@ -423,7 +432,7 @@ def projection_stage_record(
     *,
     stage: str,
     object_kind: str,
-    status: str,
+    status: ProjectionLedgerStatus,
     reason: str,
     error: str | None = None,
     projected_paths: list[str] | None = None,
@@ -443,7 +452,7 @@ def projection_stage_record(
 
 def overview_projection_repair_record(
     *,
-    status: str,
+    status: ProjectionLedgerStatus,
     reason: str,
     error: str | None = None,
     projected_paths: list[str] | None = None,
@@ -481,7 +490,7 @@ def _activity_to_document(
         ),
         "carried_out_by": [
             _agentic_entity_to_document(entity, data_package_id=data_package_id, records=records, index=i)
-            for i, entity in enumerate(item.carried_out_by)
+            for i, entity in enumerate(item.carried_out_by[:3])
         ],
         "evaluated_entity": [
             _entity_to_document(
@@ -491,7 +500,7 @@ def _activity_to_document(
                 index=i,
                 base_path=f"{item_path}/evaluated_entity",
             )
-            for i, entity in enumerate(item.evaluated_entity)
+            for i, entity in enumerate(item.evaluated_entity[:3])
         ],
         "evaluated_activity": [
             _evaluated_activity_to_document(
@@ -501,7 +510,37 @@ def _activity_to_document(
                 index=i,
                 base_path=f"{item_path}/evaluated_activity",
             )
-            for i, activity in enumerate(item.evaluated_activity)
+            for i, activity in enumerate(item.evaluated_activity[: max(0, 3 - len(item.evaluated_entity[:3]))])
+        ],
+        "had_input_entity": [
+            _entity_to_document(
+                entity,
+                data_package_id=data_package_id,
+                records=records,
+                index=i,
+                base_path=f"{item_path}/had_input_entity",
+            )
+            for i, entity in enumerate(item.had_input_entity[:3])
+        ],
+        "had_input_activity": [
+            _evaluated_activity_to_document(
+                activity,
+                data_package_id=data_package_id,
+                records=records,
+                index=i,
+                base_path=f"{item_path}/had_input_activity",
+            )
+            for i, activity in enumerate(item.had_input_activity[:3])
+        ],
+        "had_output_entity": [
+            _entity_to_document(
+                entity,
+                data_package_id=data_package_id,
+                records=records,
+                index=i,
+                base_path=f"{item_path}/had_output_entity",
+            )
+            for i, entity in enumerate(item.had_output_entity[:3])
         ],
     }
     return _remove_empty_values(doc)

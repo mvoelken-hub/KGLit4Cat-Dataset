@@ -16,6 +16,16 @@ Each decision should include:
 
 ## Decisions
 
+### 2026-07-01: Flip Profile Draft Construction To Requirement-Scoped Parents
+
+Decision: Replace note-driven measurement projection with a staged profile-draft flow: `generated_initial_draft.json`, `generated_core_draft.json`, `generated_attribute_draft.json`, and `generated_reconstructed_draft.json`. The initial draft is a dataset shell. The core draft creates one generic DataGeneratingActivity with evaluated targets, agents, plan/context, inputs, and outputs. Attribute construction iterates existing parents and asks narrow structured LLM questions; the backend owns the schema path. Dataset `is_about_entity` and `is_about_activity` are not actively constructed.
+
+Reason: Evidence extraction is intentionally broad and noisy. Letting evidence notes materialize directly into the draft made low-level parameters dominate and confused Dataset subject matter with DataGeneratingActivity evaluation targets. Requirement-scoped questions reduce organizing overhead for the model and make provenance easy to record as "created by requirement X from packet Y" without forcing the LLM to reason about patch paths.
+
+Tradeoff: Some valid facts may remain in evidence/context until a suitable parent exists and a scoped requirement asks for them. Final semantic reconstruction is still needed to triage duplicates, misplaced attributes, invalid ranges, and relation defects.
+
+Revisit trigger: Revisit if parent-scoped questions consistently miss important attributes, or if evaluation shows Dataset aboutness is needed as a separate active construction target.
+
 ### 2026-06-21: Run Vocabulary Grounding As A Separate Stage
 
 Decision: Vocabulary grounding is invoked through a dedicated POST /extraction/stages/grounding/{id}/run endpoint that grounds the persisted curated or reconstructed profile draft in place, instead of driving the full evidence-resume pipeline up to the grounding stage.
@@ -118,9 +128,9 @@ Revisit trigger: Integrate it after evidence patching and before semantic evalua
 
 ### 2026-06-20: Integrate Dataset-Description Facts Through Evidence Patching
 
-Decision: Supersede the observation-only probe. Mine atomic facts only from top-level dataset descriptions after initial draft creation, validate each fact against its exact source text, and add valid facts to a local portable evidence context used by coverage patching. Remove the independent schema-routing pass. Keep semantic evaluation and deterministic source-trace scoring on original source evidence.
+Decision: Supersede the observation-only probe. Mine atomic facts only from top-level dataset descriptions after initial draft creation, validate each fact against its exact source text, and add valid facts to a local portable evidence context used by later requirement-scoped construction. Remove the independent schema-routing pass. Keep semantic evaluation and deterministic source-trace scoring on original source evidence.
 
-Reason: The first mining pass produced compact useful facts, while independent schema routing produced weak targets and invalid value shapes. Existing evidence selection, quantitative grouping, schema validation, collision handling, and rollback already provide the required controlled write path.
+Reason: The first mining pass produced compact useful facts, while independent schema routing produced weak targets and invalid value shapes. Later construction stages provide the controlled write path through scoped evidence selection, schema validation, collision handling, and rollback.
 
 Tradeoff: Description-derived facts can fill profile fields but are generated secondary evidence, not direct source-file evidence. They are marked with `draft-description:` provenance and retained in `description_facts.json`, while source-trace scoring excludes them.
 
@@ -138,9 +148,9 @@ Revisit trigger: Revisit if semantic reconstruction needs validated remove/move 
 
 ### 2026-06-20: Simplify Write Envelopes And Separate Attribute Parent Semantics
 
-Decision: Schema-constrained write envelopes use `{writes, reason}`; empty `writes` means no-op. Append writes use canonical array paths instead of `/-`. Semantic requirements now include separate attribute parent semantics, aboutness is fulfilled by either a concrete entity or activity, and aboutness reconstruction uses lean `id`, `title`, and `description` objects.
+Decision: Schema-constrained write envelopes use `{writes, reason}`; empty `writes` means no-op. Append writes use canonical array paths instead of `/-`. Semantic requirements include separate attribute parent semantics. The earlier active aboutness reconstruction behavior in this decision was superseded on 2026-07-01.
 
-Reason: `should_apply` duplicated the meaning of empty writes, recursive aboutness schemas caused structured-output failures, and attribute presence needed to be separated from correct parent placement.
+Reason: `should_apply` duplicated the meaning of empty writes, recursive relation schemas caused structured-output failures, and attribute presence needed to be separated from correct parent placement.
 
 Tradeoff: Range splitting remains prompt-led, so a schema-valid collapsed range can still pass if the model emits one.
 
@@ -148,7 +158,7 @@ Revisit trigger: Revisit if evaluation shows prompt-led range handling remains u
 
 ### 2026-06-22: Separate Dataset Subject From Activity Evaluation Target
 
-Decision: Dataset `is_about_entity`/`is_about_activity` and DataGeneratingActivity `evaluated_entity`/`evaluated_activity` are projected, scored, and repaired as distinct claims. Every generation activity must name at least one directly examined target. The same unambiguous referent may reuse one `id`, but neither edge family is mirrored automatically and each needs independent semantic justification.
+Decision: Dataset `is_about_entity`/`is_about_activity` and DataGeneratingActivity `evaluated_entity`/`evaluated_activity` were treated as distinct claims. This active Dataset-aboutness construction was superseded on 2026-07-01; the current flow focuses on DataGeneratingActivity evaluated/input/output relations and does not create Dataset aboutness by default.
 
 Implementation guard: Either evaluation-target family independently fulfills the activity requirement. Reconstruction may remove invalid or self-referential edges but must not synthesize a missing evaluation-target relation. Forced profile rebuilds clear stale curated/report artifacts, and the requirement report is deterministically revalidated against the delivered grounded document.
 
@@ -170,7 +180,7 @@ Revisit trigger: Revisit if source_context is still too broad/noisy for generic 
 
 ### 2026-06-21: Run Vocabulary Grounding After Profile Finalization
 
-Decision: Vocabulary grounding is the final workflow enrichment step. It runs after initial profile projection, evidence-backed coverage patching, semantic reconstruction, validation, and optional curation, using fields already placed in the profile draft.
+Decision: Vocabulary grounding is the final workflow enrichment step. It runs after profile construction, semantic reconstruction, validation, and optional curation, using fields already placed in the profile draft.
 
 Reason: Vocabulary grounding should normalize the meaning of selected profile values after profile construction has established their semantic owners and schema paths. It must not influence or precede parent placement.
 

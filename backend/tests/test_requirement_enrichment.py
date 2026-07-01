@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -13,7 +14,6 @@ from app.domain.extraction import (
     CurationLedgerRecord,
     DcatRequirement,
     EvidenceCandidate,
-    MeasurementSemanticRouteDecision,
     RequirementEvaluation,
     RequirementAssessment,
     RequirementPatchAttempt,
@@ -47,14 +47,17 @@ from app.domain.extraction.description_mining import RawDescriptionFacts
 from app.domain.extraction.workflow import ExtractionRunProgress, ExtractionRunState
 from app.domain.profiles import ProfileValidationIssue, ProfileValidationResult
 from app.ollama.errors import CompletionError
+from app.services.projection_service import (
+    _CoreObjectIntent,
+    _ProvenanceCoreIntentResponse,
+)
 from app.services.workflow_service import WorkflowService
 
 
 class RequirementScoringTests(unittest.TestCase):
-    def test_requirement_prompt_distinguishes_dataset_subject_from_activity_target(self):
-        self.assertIn("is_about_entity/is_about_activity answer what the Dataset is about", REQUIREMENT_EVALUATOR_SYSTEM_PROMPT)
+    def test_requirement_prompt_defines_activity_target_semantics(self):
         self.assertIn("evaluated_entity/evaluated_activity answer what that specific", REQUIREMENT_EVALUATOR_SYSTEM_PROMPT)
-        self.assertIn("Never infer is_about_* from evaluated_*", REQUIREMENT_EVALUATOR_SYSTEM_PROMPT)
+        self.assertIn("A merely generated output is not an evaluated target", REQUIREMENT_EVALUATOR_SYSTEM_PROMPT)
 
     def test_semantic_score_excludes_not_applicable(self):
         items = [
@@ -503,125 +506,6 @@ class RequirementEvidencePacketTests(unittest.TestCase):
         self.assertEqual(window, [])
         self.assertNotIn("x1", {entry.candidate_id for entry in selected})
 
-    def test_quantitative_packet_prefers_observe_frequency(self):
-        requirement = next(
-            req
-            for req in DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS
-            if req.requirement_id == "instrument_settings_attributes"
-        )
-        observe = EvidenceCandidate(
-            candidate_id="observe",
-            category="instrument_signal",
-            role="identity",
-            claim="The NMR spectrum was recorded at an observe frequency of 500.133088507478 MHz.",
-            evidence_text="##.OBSERVE FREQUENCY=500.133088507478",
-            file_path="10.edit.jdx",
-            start_idx=0,
-            end_idx=58,
-        )
-        max_y = EvidenceCandidate(
-            candidate_id="max_y",
-            category="measurement_signal",
-            role="parameter",
-            claim="The maximum y-value in the NMR peak table is 6786105183.528301 arbitrary units.",
-            evidence_text="##MAXY=6786105183.528301",
-            file_path="10.edit.jdx",
-            start_idx=952,
-            end_idx=1010,
-        )
-        context = RoutedEvidenceContext(portable_evidence=[max_y, observe])
-        item = RequirementReportItem(
-            requirement_id=requirement.requirement_id,
-            label=requirement.label,
-            weight=requirement.weight,
-            status="missing",
-            applicable=True,
-            quality=0.0,
-            weighted_score=0.0,
-            evidence_search_hints=requirement.evidence_hints,
-        )
-
-        selected, _ = select_requirement_evidence_packet(
-            requirement=requirement,
-            assessment=item,
-            evidence_context=context,
-        )
-
-        self.assertEqual({entry.candidate_id for entry in selected}, {"observe", "max_y"})
-
-    def test_quantitative_packet_accepts_measurement_condition_and_raw_measurement(self):
-        requirement = next(
-            req
-            for req in DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS
-            if req.requirement_id == "instrument_settings_attributes"
-        )
-        points = EvidenceCandidate(
-            candidate_id="points",
-            category="measurement_condition",
-            role="parameter",
-            claim="The spectrum contains 2559 data points.",
-            evidence_text="NPOINTS=2559",
-        )
-        raw = EvidenceCandidate(
-            candidate_id="raw",
-            category="measurement_signal",
-            role="parameter",
-            claim="A row-like transmittance value is 0.42.",
-            evidence_text="1234.5 0.42",
-        )
-        context = RoutedEvidenceContext(portable_evidence=[raw, points])
-        item = RequirementReportItem(
-            requirement_id=requirement.requirement_id,
-            label=requirement.label,
-            weight=requirement.weight,
-            status="missing",
-            applicable=True,
-            quality=0.0,
-            weighted_score=0.0,
-            evidence_search_hints=["points"],
-        )
-
-        selected, _ = select_requirement_evidence_packet(
-            requirement=requirement,
-            assessment=item,
-            evidence_context=context,
-        )
-
-        self.assertEqual({entry.candidate_id for entry in selected}, {"points", "raw"})
-
-    def test_quantitative_packet_accepts_parameter_role_from_resource_signal(self):
-        requirement = next(
-            req
-            for req in DCAT_AP_PLUS_SCIENTIFIC_REQUIREMENTS
-            if req.requirement_id == "instrument_settings_attributes"
-        )
-        threshold = EvidenceCandidate(
-            candidate_id="threshold",
-            category="resource_signal",
-            role="parameter",
-            claim="The threshold value is 0.93.",
-            evidence_text="##$CSTHRESHOLD=0.93",
-        )
-        context = RoutedEvidenceContext(portable_evidence=[threshold])
-        item = RequirementReportItem(
-            requirement_id=requirement.requirement_id,
-            label=requirement.label,
-            weight=requirement.weight,
-            status="missing",
-            applicable=True,
-            quality=0.0,
-            weighted_score=0.0,
-            evidence_search_hints=["threshold"],
-        )
-
-        selected, _ = select_requirement_evidence_packet(
-            requirement=requirement,
-            assessment=item,
-            evidence_context=context,
-        )
-
-        self.assertEqual([entry.candidate_id for entry in selected], ["threshold"])
-
     def test_method_plan_packet_accepts_explicit_procedure_cue_from_instrument_signal(self):
         requirement = next(
             req
@@ -882,6 +766,83 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.description_mining_patcher.start()
         self.addAsyncCleanup(self.description_mining_patcher.stop)
 
+    def test_provenance_core_intents_are_backend_shaped_and_capped(self):
+        service = WorkflowService(profile_service=FakeProfileService(), settings=Settings())
+        document = {
+            "id": "pkg",
+            "title": ["Dataset"],
+            "description": ["Dataset description."],
+            "was_generated_by": [{"id": "pkg:activity:dataset-generation"}],
+        }
+        response = _ProvenanceCoreIntentResponse(
+            answer="Core provenance reconstructed.",
+            activity_title="NMR acquisition and processing",
+            activity_description="1H NMR acquisition and processing workflow.",
+            plan=_CoreObjectIntent(title="zg30 pulse program", description="1D sequence pulse program."),
+            agents=[
+                _CoreObjectIntent(title="Avance III NMR spectrometer", description="NMR spectrometer."),
+                _CoreObjectIntent(title="TopSpin 3.2", description="Processing software."),
+            ],
+            evaluated_entities=[
+                _CoreObjectIntent(title="1H NMR measurement", description="The measured NMR signal."),
+                _CoreObjectIntent(title="NMR sample", description="Sample measured by NMR."),
+            ],
+            evaluated_activities=[
+                _CoreObjectIntent(title="Acquisition", description="NMR acquisition."),
+                _CoreObjectIntent(title="Processing", description="NMR processing."),
+            ],
+            input_entities=[_CoreObjectIntent(title="FID", description="Raw NMR FID data.")],
+            output_entities=[_CoreObjectIntent(title="Processed NMR spectrum", description="Processed spectrum data.")],
+        )
+
+        updated, changed_paths = service._apply_provenance_core_intents(
+            data_package_id="pkg",
+            document=document,
+            response=response,
+        )
+
+        activity = updated["was_generated_by"][0]
+        self.assertEqual(activity["title"], ["NMR acquisition and processing"])
+        self.assertEqual(activity["realized_plan"]["title"], "zg30 pulse program")
+        self.assertEqual(activity["carried_out_by"][0]["title"], "Avance III NMR spectrometer")
+        self.assertEqual(activity["evaluated_entity"][0]["title"], "1H NMR measurement")
+        self.assertEqual(len(activity["evaluated_entity"]) + len(activity["evaluated_activity"]), 3)
+        self.assertEqual(activity["had_input_entity"][0]["title"], "FID")
+        self.assertEqual(activity["had_output_entity"][0]["title"], "Processed NMR spectrum")
+        self.assertIn("/was_generated_by/0/carried_out_by/0", changed_paths)
+        self.assertIn("/was_generated_by/0/evaluated_entity/0", changed_paths)
+
+    def test_provenance_core_prompt_uses_orientation_context_only(self):
+        prompt = WorkflowService._provenance_core_prompt(
+            document={"id": "pkg", "title": ["Dataset"]},
+            orientation_context={"dataset_summary": "Dataset-level orientation."},
+        )
+        payload = json.loads(prompt)
+
+        self.assertEqual(payload["orientation_context"], {"dataset_summary": "Dataset-level orientation."})
+        self.assertNotIn("selected_evidence", payload)
+        self.assertNotIn("context_window", payload)
+
+    def test_initial_draft_keeps_dataset_fields_and_clears_provenance_core(self):
+        initial = WorkflowService._dataset_only_initial_draft(
+            {
+                "id": "pkg",
+                "title": ["NMR dataset"],
+                "description": ["Dataset summary."],
+                "keyword": ["NMR"],
+                "type": [{"preferred_label": ["spectroscopy dataset"]}],
+                "was_generated_by": [{"id": "activity"}],
+                "is_about_entity": [{"id": "subject"}],
+            }
+        )
+
+        self.assertEqual(initial["title"], ["NMR dataset"])
+        self.assertEqual(initial["description"], ["Dataset summary."])
+        self.assertEqual(initial["keyword"], ["NMR"])
+        self.assertEqual(initial["type"][0]["preferred_label"], ["spectroscopy dataset"])
+        self.assertEqual(initial["was_generated_by"], [])
+        self.assertNotIn("is_about_entity", initial)
+
     async def test_requirement_enrichment_persists_report_and_initial_draft(self):
         repo = Mock()
         service = WorkflowService(
@@ -926,6 +887,9 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             )
         )
         service._evaluate_semantic_requirements = AsyncMock(return_value=[])
+        service._apply_provenance_core_construction = AsyncMock(
+            side_effect=lambda **kwargs: kwargs["document"]
+        )
         state = ExtractionRunState(
             generated_final_draft={
                 "id": "pkg",
@@ -1137,6 +1101,9 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             )
         )
         service._evaluate_semantic_requirements = AsyncMock(return_value=[])
+        service._apply_provenance_core_construction = AsyncMock(
+            side_effect=lambda **kwargs: kwargs["document"]
+        )
         state = ExtractionRunState(
             generated_final_draft={
                 "id": "pkg",
@@ -1232,6 +1199,9 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             )
         )
         service._evaluate_semantic_requirements = AsyncMock(return_value=[])
+        service._apply_provenance_core_construction = AsyncMock(
+            side_effect=lambda **kwargs: kwargs["document"]
+        )
         state = ExtractionRunState(
             generated_final_draft={
                 "id": "pkg",
@@ -1331,204 +1301,6 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("source", sanitized)
         self.assertNotIn("type", sanitized)
         self.assertNotIn("rdf_type", sanitized)
-
-    async def test_measurement_router_merges_stable_key_and_calls_once_per_note(self):
-        service = WorkflowService(
-            profile_service=FakeProfileService(),
-            settings=Settings(),
-            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
-        )
-        notes = [
-            EvidenceCandidate(
-                candidate_id=f"temperature-{index}",
-                category="measurement_signal",
-                role="parameter",
-                claim="Temperature is 298 K.",
-                evidence_text="TEMP=298 K",
-                file_path="run.txt",
-                start_idx=index * 20,
-                end_idx=index * 20 + 10,
-            )
-            for index in range(2)
-        ]
-        decisions = [
-            Mock(
-                output=MeasurementSemanticRouteDecision(
-                    target_path="/was_generated_by/0/has_quantitative_attribute/-",
-                    merge_key="activity.temperature.kelvin",
-                    confidence=0.95,
-                    reason="Activity setting.",
-                ),
-                usage=None,
-            )
-            for _ in notes
-        ]
-
-        with patch(
-            "app.services.projection_service.generate_structured",
-            AsyncMock(side_effect=decisions),
-        ) as generate:
-            groups = await service._quantitative_evidence_groups(
-                data_package_id="pkg",
-                profile_identifier="dcat-ap-plus",
-                document={"was_generated_by": [{"id": "activity"}]},
-                evidence_context=RoutedEvidenceContext(portable_evidence=notes),
-                validation_schema={
-                    "$schema": "https://json-schema.org/draft/2019-09/schema",
-                    "type": "object",
-                    "properties": {
-                        "description": {"type": "array", "items": {"type": "string"}},
-                        "dataset_distribution": {"type": "array", "items": {"type": "object"}},
-                    },
-                },
-            )
-
-        self.assertEqual(generate.await_count, 2)
-        self.assertEqual(len(groups), 1)
-        self.assertEqual(groups[0].merge_key, "activity.temperature.kelvin")
-        self.assertEqual(len(groups[0].notes), 2)
-
-    async def test_measurement_router_skips_low_confidence_and_records_reason(self):
-        service = WorkflowService(
-            profile_service=FakeProfileService(),
-            settings=Settings(),
-            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
-        )
-        note = EvidenceCandidate(
-            candidate_id="ambiguous",
-            category="measurement_signal",
-            role="parameter",
-            claim="Value is 12.",
-            evidence_text="VALUE=12",
-        )
-        state = ExtractionRunState(chat_model="test-model")
-        progress = ExtractionRunProgress()
-        result = Mock(
-            output=MeasurementSemanticRouteDecision(
-                target_path="/is_about_entity/0/has_quantitative_attribute/-",
-                merge_key="entity.value",
-                confidence=0.4,
-                reason="Owner is ambiguous.",
-            ),
-            usage=None,
-        )
-
-        with patch(
-            "app.services.projection_service.generate_structured",
-            AsyncMock(return_value=result),
-        ):
-            groups = await service._quantitative_evidence_groups(
-                data_package_id="pkg",
-                profile_identifier="dcat-ap-plus",
-                document={"is_about_entity": [{"id": "entity"}]},
-                evidence_context=RoutedEvidenceContext(portable_evidence=[note]),
-                validation_schema=quantitative_schema("EvaluatedEntity"),
-                state=state,
-                progress=progress,
-            )
-
-        self.assertEqual(groups, [])
-        self.assertEqual(len(state.projection_ledger), 1)
-        self.assertEqual(state.projection_ledger[0].merge_status, "skipped")
-        self.assertIn("ambiguous", state.projection_ledger[0].reason.lower())
-
-    async def test_measurement_router_accepts_activity_and_entity_attribute_paths(self):
-        service = WorkflowService(
-            profile_service=FakeProfileService(),
-            settings=Settings(),
-            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
-        )
-        notes = [
-            EvidenceCandidate(
-                candidate_id="activity-rate",
-                category="measurement_condition",
-                role="parameter",
-                claim="Sampling rate is 10 Hz.",
-                evidence_text="RATE=10 Hz",
-            ),
-            EvidenceCandidate(
-                candidate_id="entity-state",
-                category="measurement_signal",
-                role="qualitative_attribute",
-                claim="Sample state is solid.",
-                evidence_text="STATE=solid",
-            ),
-        ]
-        results = [
-            Mock(
-                output=MeasurementSemanticRouteDecision(
-                    target_path="/is_about_activity/0/has_quantitative_attribute/-",
-                    merge_key="activity.sampling-rate",
-                    confidence=0.9,
-                    reason="Activity measurement condition.",
-                ),
-                usage=None,
-            ),
-            Mock(
-                output=MeasurementSemanticRouteDecision(
-                    target_path="/is_about_entity/0/has_qualitative_attribute/-",
-                    merge_key="entity.sample-state",
-                    confidence=0.9,
-                    reason="Entity characteristic.",
-                ),
-                usage=None,
-            ),
-        ]
-
-        with patch(
-            "app.services.projection_service.generate_structured",
-            AsyncMock(side_effect=results),
-        ):
-            groups = await service._quantitative_evidence_groups(
-                data_package_id="pkg",
-                profile_identifier="dcat-ap-plus",
-                document={
-                    "is_about_activity": [{"id": "activity"}],
-                    "is_about_entity": [{"id": "entity"}],
-                },
-                evidence_context=RoutedEvidenceContext(portable_evidence=notes),
-                validation_schema=quantitative_schema("EvaluatedActivity", "EvaluatedEntity"),
-            )
-
-        self.assertEqual(
-            {(group.target_path, group.attribute_kind) for group in groups},
-            {
-                ("/is_about_activity/0/has_quantitative_attribute/-", "quantitative"),
-                ("/is_about_entity/0/has_qualitative_attribute/-", "qualitative"),
-            },
-        )
-
-    async def test_measurement_router_unavailable_has_no_heuristic_fallback(self):
-        service = WorkflowService(
-            profile_service=FakeProfileService(),
-            settings=Settings(),
-            ollama_client=None,
-        )
-        state = ExtractionRunState()
-        progress = ExtractionRunProgress()
-        groups = await service._quantitative_evidence_groups(
-            data_package_id="pkg",
-            profile_identifier="dcat-ap-plus",
-            document={"was_generated_by": [{"id": "activity"}]},
-            evidence_context=RoutedEvidenceContext(
-                portable_evidence=[
-                    EvidenceCandidate(
-                        candidate_id="frequency",
-                        category="measurement_signal",
-                        role="parameter",
-                        claim="Frequency is 500 MHz.",
-                        evidence_text="FREQ=500 MHz",
-                    )
-                ]
-            ),
-            validation_schema=quantitative_schema("DataGeneratingActivity"),
-            state=state,
-            progress=progress,
-        )
-
-        self.assertEqual(groups, [])
-        self.assertEqual(state.projection_ledger[0].merge_status, "skipped")
-        self.assertIn("failed or was unavailable", state.projection_ledger[0].reason)
 
     async def test_semantic_reconstruction_uses_diagnosis_schema(self):
         service = WorkflowService(
@@ -1890,9 +1662,9 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("must not request synthesis", rejected[0])
         self.assertEqual(mocked.await_count, 1)
 
-    def test_aboutness_sanitizer_preserves_nested_attribute_payload(self):
+    def test_sanitizer_preserves_nested_attribute_payload(self):
         write = SchemaConstrainedWrite(
-            target_path="/is_about_entity/0/has_quantitative_attribute",
+            target_path="/was_generated_by/0/evaluated_entity/0/has_quantitative_attribute",
             mode="append",
             items=[
                 {
@@ -2185,48 +1957,6 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         plan = updated["was_generated_by"][0]["realized_plan"]
         self.assertNotIn("id", plan)
         Draft201909Validator(schema).validate(updated)
-
-    def test_aboutness_reconstruction_schema_is_lean(self):
-        service = WorkflowService(
-            profile_service=FakeProfileService(),
-            settings=Settings(),
-            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
-        )
-        output_schema = service._semantic_reconstruction_output_schema(
-            validation_schema=quantitative_schema("EvaluatedEntity", "EvaluatedActivity"),
-            allowed_target_paths=["/is_about_entity", "/is_about_activity"],
-            requirement_id="aboutness_semantics",
-        )
-
-        branches = output_schema["properties"]["writes"]["items"]["oneOf"]
-        entity_branch = next(branch for branch in branches if branch["properties"]["target_path"]["const"] == "/is_about_entity")
-        item_props = entity_branch["properties"]["items"]["items"]["properties"]
-        self.assertEqual(set(item_props), {"id", "title", "description"})
-
-    def test_aboutness_sanitizer_strips_nested_fields(self):
-        cleaned = WorkflowService._sanitize_schema_constrained_writes(
-            writes=[
-                SchemaConstrainedWrite(
-                    target_path="/is_about_entity",
-                    mode="append",
-                    items=[
-                        {
-                            "id": "entity:1",
-                            "title": "sample",
-                            "description": "evaluated sample",
-                            "has_quantitative_attribute": [{"value": 1.0, "has_quantity_type": "bad"}],
-                        }
-                    ],
-                    reason="aboutness",
-                )
-            ],
-            requirement_id="aboutness_semantics",
-        )
-
-        self.assertEqual(
-            cleaned[0].items,
-            [{"id": "entity:1", "title": "sample", "description": "evaluated sample"}],
-        )
 
     def test_semantic_action_compiler_skips_duplicate_quantitative_write(self):
         service = WorkflowService(
@@ -3139,33 +2869,6 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("was_generated_by", document["was_generated_by"][0]["realized_plan"])
         self.assertNotIn("id", document["was_generated_by"][0]["has_quantitative_attribute"][0])
 
-    def test_file_like_about_entities_are_removed(self):
-        service = WorkflowService(
-            profile_service=FakeProfileService(),
-            settings=Settings(),
-            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
-        )
-        document = {
-            "is_about_entity": [
-                {
-                    "id": "pkg:entity:acqus",
-                    "title": "acqus file",
-                    "description": "NMR acquisition parameters file",
-                },
-                {
-                    "id": "pkg:entity:sample",
-                    "title": "CDCl3 solvent",
-                    "description": "Solvent used in NMR experiment",
-                },
-            ]
-        }
-
-        cleaned = service._remove_file_like_about_entities(document)
-
-        self.assertEqual(len(cleaned["is_about_entity"]), 1)
-        self.assertEqual(cleaned["is_about_entity"][0]["title"], "CDCl3 solvent")
-
-
     def test_activity_evaluation_target_expands_paths_for_every_activity(self):
         configured = next(
             requirement
@@ -3258,40 +2961,6 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(item.status, "missing")
         self.assertIn("no evaluation target", item.rationale)
-
-    def test_subject_target_distinction_not_applicable_without_both_levels(self):
-        configured = next(
-            requirement
-            for requirement in DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS
-            if requirement.requirement_id == "dataset_subject_evaluation_distinction"
-        )
-        document = {
-            "is_about_entity": [{"id": "sample:1"}],
-            "was_generated_by": [{"id": "activity:1"}],
-        }
-        requirement = WorkflowService._runtime_semantic_requirement(
-            requirement=configured,
-            document=document,
-        )
-        item = RequirementReportItem(
-            requirement_id=requirement.requirement_id,
-            label=requirement.label,
-            weight=requirement.weight,
-            status="fulfilled",
-            applicable=True,
-            quality=1.0,
-            weighted_score=requirement.weight,
-            target_paths=requirement.target_paths,
-        )
-
-        WorkflowService._guard_semantic_requirement_assessment(
-            requirement=requirement,
-            document=document,
-            item=item,
-        )
-
-        self.assertEqual(item.status, "not_applicable")
-        self.assertFalse(item.applicable)
 
     async def test_activity_evaluation_target_compiler_removes_self_reference(self):
         service = WorkflowService(
@@ -3396,7 +3065,8 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         state = ExtractionRunState(
             generated_initial_draft={"id": "old-initial"},
             generated_final_draft={"id": "old-final"},
-            generated_patched_draft={"id": "old-patched"},
+            generated_core_draft={"id": "old-core"},
+            generated_attribute_draft={"id": "old-attribute"},
             generated_reconstructed_draft={"id": "old-reconstructed"},
             curated_document={"id": "old-curated"},
             requirement_report=build_requirement_report(
@@ -3411,7 +3081,8 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         progress = ExtractionRunProgress(
             generated_initial_draft={"id": "old-initial"},
             generated_final_draft={"id": "old-final"},
-            generated_patched_draft={"id": "old-patched"},
+            generated_core_draft={"id": "old-core"},
+            generated_attribute_draft={"id": "old-attribute"},
             generated_reconstructed_draft={"id": "old-reconstructed"},
             curated_document={"id": "old-curated"},
             requirement_report=state.requirement_report,
@@ -3423,13 +3094,15 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         for artifact in (
             state.generated_initial_draft,
             state.generated_final_draft,
-            state.generated_patched_draft,
+            state.generated_core_draft,
+            state.generated_attribute_draft,
             state.generated_reconstructed_draft,
             state.curated_document,
             state.requirement_report,
             progress.generated_initial_draft,
             progress.generated_final_draft,
-            progress.generated_patched_draft,
+            progress.generated_core_draft,
+            progress.generated_attribute_draft,
             progress.generated_reconstructed_draft,
             progress.curated_document,
             progress.requirement_report,
@@ -3517,114 +3190,6 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(compiled.writes, [])
         rejected_reasons = compiled.rejected_reasons or []
         self.assertIn("refusing synthesized relation", rejected_reasons[0])
-
-    async def test_aboutness_reconstruction_refuses_synthesized_relation(self):
-        service = WorkflowService(
-            profile_service=FakeProfileService(),
-            settings=Settings(),
-            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
-        )
-        requirement = next(
-            requirement
-            for requirement in DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS
-            if requirement.requirement_id == "aboutness_concreteness"
-        )
-        item = RequirementReportItem(
-            requirement_id=requirement.requirement_id,
-            label=requirement.label,
-            weight=requirement.weight,
-            status="missing",
-            applicable=True,
-            quality=0.0,
-            weighted_score=0.0,
-            target_paths=requirement.target_paths,
-        )
-        diagnosis = SemanticReconstructionDiagnosis(
-            defects=[
-                SemanticReconstructionDefect(
-                    defect_type="bad_aboutness",
-                    target_path="/is_about_entity",
-                    recommended_action="append",
-                    needs_synthesis=True,
-                    reason="No concrete subject evidence is available.",
-                )
-            ]
-        )
-
-        compiled = await service._compile_semantic_diagnosis_actions(
-            data_package_id="pkg",
-            document={"id": "pkg"},
-            item=item,
-            requirement=requirement,
-            diagnosis=diagnosis,
-            validation_schema={},
-        )
-
-        self.assertEqual(compiled.writes, [])
-        self.assertIn("refusing synthesized relation", (compiled.rejected_reasons or [""])[0])
-
-    def test_relation_projection_completes_subject_and_target_from_resource_type_evidence(self):
-        document = {"id": "pkg", "was_generated_by": [{"id": "activity:1"}]}
-        context = RoutedEvidenceContext(
-            portable_evidence=[
-                EvidenceCandidate(
-                    candidate_id="identity",
-                    category="resource_signal",
-                    role="identity",
-                    claim="The resource title is 'R-1'.",
-                    evidence_text="TITLE=R-1",
-                    file_path="resource.txt",
-                ),
-                EvidenceCandidate(
-                    candidate_id="type",
-                    category="resource_signal",
-                    role="descriptor",
-                    claim="The data type is 'measurement table'.",
-                    evidence_text="DATA TYPE=measurement table",
-                    file_path="resource.txt",
-                ),
-            ]
-        )
-
-        updated = WorkflowService._complete_relation_targets_from_resource_evidence(
-            document=document,
-            evidence_context=context,
-            data_package_id="pkg",
-        )
-
-        self.assertEqual(updated["is_about_entity"][0]["title"], "Measurement table")
-        self.assertEqual(updated["was_generated_by"][0]["evaluated_entity"][0]["id"], updated["is_about_entity"][0]["id"])
-
-    def test_distinction_no_defect_trace_resolves_revalidation_contradiction(self):
-        item = RequirementReportItem(
-            requirement_id="dataset_subject_evaluation_distinction",
-            label="Distinction",
-            weight=1.0,
-            status="partial",
-            applicable=True,
-            quality=0.5,
-            weighted_score=0.5,
-        )
-        record = SemanticReconstructionRecord(
-            requirement_id=item.requirement_id,
-            status="skipped",
-            reason="No defect.",
-            diagnosed_defects=[
-                {
-                    "defect_type": "no_defect",
-                    "recommended_action": "no_action",
-                    "reason": "Both edges have independent support.",
-                }
-            ],
-        )
-
-        WorkflowService._carry_semantic_reconstruction_trace(
-            semantic_items=[item],
-            records=[record],
-        )
-
-        self.assertEqual(item.status, "fulfilled")
-        self.assertEqual(item.rationale, "Both edges have independent support.")
 
     def test_absence_placeholder_is_not_a_method_plan(self):
         self.assertTrue(
@@ -3811,6 +3376,6 @@ class DescriptionMiningIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(events, ["mine", "semantic", "semantic"])
         self.assertEqual(state.generated_initial_draft["description"], ["Description fact."])
-        self.assertEqual(state.generated_patched_draft["description"], ["Description fact."])
+        self.assertEqual(state.generated_attribute_draft["description"], ["Description fact."])
 
 

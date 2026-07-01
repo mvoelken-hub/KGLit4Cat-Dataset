@@ -44,6 +44,7 @@ from app.domain.extraction import (
     ShallowDatasetLevelProjection,
     TracedExtractionObject,
     VocabularyCandidateSelection,
+    VocabularyQueryFormulation,
     VocabularyTermMapping,
     build_extraction_overview_prompt,
     build_extraction_overview_prompt_components,
@@ -169,7 +170,8 @@ class FakeOutputRepository:
         self.generated_final_draft: dict | None = None
         self.generated_initial_draft: dict | None = None
         self.description_facts = None
-        self.generated_patched_draft: dict | None = None
+        self.generated_core_draft: dict | None = None
+        self.generated_attribute_draft: dict | None = None
         self.generated_reconstructed_draft: dict | None = None
         self.requirement_report = None
         self.dataset_summary: str | None = None
@@ -212,7 +214,8 @@ class FakeOutputRepository:
         self.initial_extraction_overview_status = result.initial_extraction_overview_status
         self.generated_final_draft = result.generated_final_draft
         self.generated_initial_draft = result.generated_initial_draft
-        self.generated_patched_draft = result.generated_patched_draft
+        self.generated_core_draft = result.generated_core_draft
+        self.generated_attribute_draft = result.generated_attribute_draft
         self.generated_reconstructed_draft = result.generated_reconstructed_draft
         self.requirement_report = result.requirement_report
         self.curated_document = result.curated_document
@@ -300,8 +303,11 @@ class FakeOutputRepository:
     def save_description_facts(self, *, workflow_id: str, artifact, chat_model: str | None = None, **_kwargs):
         self.description_facts = artifact
 
-    def save_generated_patched_draft(self, *, workflow_id: str, document: dict, chat_model: str | None = None, **_kwargs):
-        self.generated_patched_draft = document
+    def save_generated_core_draft(self, *, workflow_id: str, document: dict, chat_model: str | None = None, **_kwargs):
+        self.generated_core_draft = document
+
+    def save_generated_attribute_draft(self, *, workflow_id: str, document: dict, chat_model: str | None = None, **_kwargs):
+        self.generated_attribute_draft = document
 
     def load_generated_initial_draft(self, workflow_id: str, chat_model: str | None = None) -> dict:
         if self.generated_initial_draft is None:
@@ -884,13 +890,15 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         state = ExtractionRunState(
             generated_final_draft={"id": "final"},
             generated_initial_draft={"id": "initial"},
-            generated_patched_draft={"id": "patched"},
+            generated_core_draft={"id": "core"},
+            generated_attribute_draft={"id": "attribute"},
             generated_reconstructed_draft={"id": "reconstructed"},
         )
         progress = ExtractionRunProgress(
             generated_final_draft={"id": "final"},
             generated_initial_draft={"id": "initial"},
-            generated_patched_draft={"id": "patched"},
+            generated_core_draft={"id": "core"},
+            generated_attribute_draft={"id": "attribute"},
             generated_reconstructed_draft={"id": "reconstructed"},
         )
 
@@ -899,11 +907,13 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(state.generated_final_draft)
         self.assertIsNone(state.generated_initial_draft)
-        self.assertIsNone(state.generated_patched_draft)
+        self.assertIsNone(state.generated_core_draft)
+        self.assertIsNone(state.generated_attribute_draft)
         self.assertIsNone(state.generated_reconstructed_draft)
         self.assertIsNone(progress.generated_final_draft)
         self.assertIsNone(progress.generated_initial_draft)
-        self.assertIsNone(progress.generated_patched_draft)
+        self.assertIsNone(progress.generated_core_draft)
+        self.assertIsNone(progress.generated_attribute_draft)
         self.assertIsNone(progress.generated_reconstructed_draft)
 
     async def test_profile_projection_task_uses_persisted_evidence_without_chunk_extraction(self):
@@ -2949,6 +2959,8 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     ),
                     usage=RunUsage(requests=1),
                 )
+            if getattr(kwargs["output_type"], "__name__", "") == "_ProvenanceCoreIntentResponse":
+                return CompletionResult(output=kwargs["output_type"](), usage=RunUsage(requests=1))
             if isinstance(kwargs["output_type"], dict):
                 return CompletionResult(
                     output={"writes": [], "reason": "No write in this test."},
@@ -2972,7 +2984,8 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(output_repository.run_state.generated_final_draft["id"], "package-id")
         for artifact in (
             output_repository.run_state.generated_initial_draft,
-            output_repository.run_state.generated_patched_draft,
+            output_repository.run_state.generated_core_draft,
+            output_repository.run_state.generated_attribute_draft,
             output_repository.run_state.generated_reconstructed_draft,
         ):
             self.assertIsNotNone(artifact)
@@ -3047,6 +3060,8 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     output=SemanticReconstructionPatchResult(reason="No reconstruction in this test."),
                     usage=RunUsage(requests=1),
                 )
+            if getattr(kwargs["output_type"], "__name__", "") == "_ProvenanceCoreIntentResponse":
+                return CompletionResult(output=kwargs["output_type"](), usage=RunUsage(requests=1))
             if isinstance(kwargs["output_type"], dict):
                 return CompletionResult(
                     output={"writes": [], "reason": "No write in this test."},
@@ -3150,6 +3165,11 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             output_type = kwargs["output_type"]
             if output_type is ProfilePatchDocument:
                 return empty_profile_patch()
+            if output_type is VocabularyQueryFormulation:
+                return CompletionResult(
+                    output=VocabularyQueryFormulation(query=""),
+                    usage=RunUsage(requests=1),
+                )
             return CompletionResult(
                 output=VocabularyCandidateSelection(
                     selected_uri=None,

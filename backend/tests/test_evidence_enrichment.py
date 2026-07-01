@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import unittest
@@ -306,56 +306,6 @@ class EvidenceEnrichmentIntegrationTests(unittest.IsolatedAsyncioTestCase):
         service.ollama_client = object()
         return service
 
-    async def test_enrichment_appends_novel_instances_and_ledgers_them(self):
-        service = self._service()
-        service._persist_state_artifacts = Mock()
-        service._evaluate_evidence_novelty = AsyncMock(
-            return_value=EvidenceNoveltyDecision(is_novel=True, reason="new")
-        )
-        service._build_evidence_instance = AsyncMock(
-            side_effect=lambda **kwargs: {
-                "title": kwargs["target_class"],
-                "description": "enriched",
-            }
-        )
-        state = ExtractionRunState(
-            data_package_id="pkg",
-            generated_final_draft={
-                "id": "pkg",
-                "was_generated_by": [],
-            },
-        )
-        progress = ExtractionRunProgress(stage="profile_projection")
-        note = EvidenceCandidate(
-            candidate_id="n1",
-            category="activity_signal",
-            role="descriptor",
-            claim="new activity",
-            evidence_text="ACTIVITY= x",
-            file_path="f.txt",
-            start_idx=0,
-            end_idx=10,
-        )
-        context = RoutedEvidenceContext(portable_evidence=[note])
-        result = await service._enrich_draft_with_evidence(
-            data_package_id="pkg",
-            profile_identifier="dcat-ap-plus",
-            evidence_context=context,
-            validation_schema={},
-            state=state,
-            progress=progress,
-            warnings=[],
-        )
-        self.assertEqual(len(result["was_generated_by"]), 1)
-        service._persist_state_artifacts.assert_called_once()
-        self.assertTrue(
-            any(
-                record.planner_status == "evidence_enrichment" and record.status == "projected"
-                for record in state.projection_ledger
-            )
-        )
-        self.assertEqual(state.generated_initial_draft, {"id": "pkg", "was_generated_by": []})
-
     async def test_evidence_instance_builder_uses_schema_constrained_output(self):
         service = WorkflowService(
             profile_service=FakeProfileService(),
@@ -402,43 +352,6 @@ class EvidenceEnrichmentIntegrationTests(unittest.IsolatedAsyncioTestCase):
         append_branch = next(item for item in branch["oneOf"] if item["properties"]["mode"]["const"] == "append")
         self.assertEqual(append_branch["properties"]["target_path"]["const"], "/was_generated_by")
 
-    async def test_enrichment_skips_non_novel_notes(self):
-        service = self._service()
-        service._evaluate_evidence_novelty = AsyncMock(
-            return_value=EvidenceNoveltyDecision(is_novel=False, reason="already present")
-        )
-        state = ExtractionRunState(
-            data_package_id="pkg",
-            generated_final_draft={"id": "pkg", "was_generated_by": []},
-        )
-        progress = ExtractionRunProgress(stage="profile_projection")
-        note = EvidenceCandidate(
-            candidate_id="n1",
-            category="activity_signal",
-            role="descriptor",
-            claim="same activity",
-            evidence_text="ACTIVITY= x",
-            file_path="f.txt",
-            start_idx=0,
-            end_idx=10,
-        )
-        context = RoutedEvidenceContext(portable_evidence=[note])
-        result = await service._enrich_draft_with_evidence(
-            data_package_id="pkg",
-            profile_identifier="dcat-ap-plus",
-            evidence_context=context,
-            validation_schema={},
-            state=state,
-            progress=progress,
-            warnings=[],
-        )
-        self.assertEqual(result["was_generated_by"], [])
-        self.assertTrue(
-            any(
-                record.status == "not_projected" and "Not novel" in (record.reason or "")
-                for record in state.projection_ledger
-            )
-        )
 
 
 

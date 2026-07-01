@@ -138,20 +138,19 @@ Thesis claim supported: SIMONE constrains LLM output with explicit profile valid
 
 ### Requirement Reporting Separates Coverage, Semantics, And Trace
 
-After generic DCAT-AP+ draft creation, SIMONE mines grounded atomic facts from the dataset-level description, adds them to a local evidence context, computes deterministic filled-field coverage, applies coverage-only patches, re-computes coverage, runs smaller LLM semantic requirement checks, applies semantics-driven draft-field iteration, re-runs semantic checks, and then computes deterministic source trace scoring.
+After initializing a dataset-level DCAT-AP+ draft shell, SIMONE mines grounded atomic facts from the dataset-level description, adds them to a local evidence context, builds a generic provenance core, constructs attributes through parent-scoped semantic questions, runs semantic reconstruction triage, and then computes deterministic source trace scoring.
 
 Reasoning:
 
 - Coverage lists filled profile fields, including nested fields, as an inventory count rather than a quality percentage.
 - Description mining reads only top-level dataset descriptions, leaves them unchanged, and reuses normal evidence selection and patch validation rather than routing directly to schema paths.
-- Semantic requirements judge small, traceable semantic concerns such as title identity, description identity, real generation activity, technical-agent kind, method-plan presence, Dataset-subject concreteness, per-activity evaluation-target presence, Dataset-subject/activity-target independence, duplicate attribute coherence, range decomposition, attribute label quality, attribute parent placement, and provenance-context placement.
+- Semantic requirements judge small, traceable semantic concerns such as title identity, description identity, real generation activity, technical-agent kind, method-plan presence, per-activity evaluation-target presence, duplicate attribute coherence, range decomposition, attribute label quality, attribute parent placement, and provenance-context placement.
 - Semantic reconstruction reorganizes the current draft using requirement artifacts; it is not another evidence-search patching pass. Diagnosis and synthesis use separate structured-output contracts. Synthesis schemas are derived from the exact target path, while deterministic code compiles actions, creates containers, applies append/replace/remove/merge actions, validates each accepted action, and salvages independently valid actions. Mechanical merge/remove/move diagnoses cannot request synthesis, and attribute synthesis cannot replace a whole collection when only indexed entries were diagnosed.
 - Duplicate attribute coherence and range decomposition run early as backend-compiled semantic repairs so later LLM diagnosis can focus on semantic placement instead of obvious cleanup. Same-parent numeric duplicates require the same canonical quantity and unit and tolerate harmless source-rounding differences; materially different values remain separate. Range repair can recover explicit bounds from the dataset description or compatible sibling boundary attributes, and parent placement removes verified cross-parent measurement duplicates from the less suitable owner.
 - Evidence establishes whether a semantic requirement is applicable, but only values placed at its draft target paths can establish fulfillment. Mechanical draft-only checks omit evidence packets, while placement checks receive small requirement-specific packets.
-- Dataset `is_about_entity`/`is_about_activity` state subject matter. DataGeneratingActivity `evaluated_entity`/`evaluated_activity` state what that specific activity directly measured, observed, analysed, or studied. Every generation activity must have at least one target; generated output alone is insufficient. The same unambiguous referent may reuse one `id`, but neither relation family is inferred from the other and each edge needs independent semantic justification.
-- Either evaluated relation family is sufficient; reconstruction never manufactures the other family. Forced profile rebuilds discard stale curated and requirement-report state, and final deterministic guards rescore the report against the delivered grounded document.
-- Attribute parent placement is evaluated separately from attribute presence: measurement conditions and instrument settings default to the data-generating activity, device/software cues can attach to agent parents, and evaluated entity/activity parents require explicit subject ownership evidence.
-- The profile draft artifacts expose the stage boundary explicitly: `generated_initial_draft.json`, `description_facts.json`, `generated_patched_draft.json`, and `generated_reconstructed_draft.json`.
+- DataGeneratingActivity `evaluated_entity`/`evaluated_activity` state what that activity directly measured, observed, analysed, or studied. Generated outputs belong in `had_output_entity`; inputs belong in `had_input_entity` or `had_input_activity`. The active draft flow does not create Dataset `is_about_entity`/`is_about_activity` claims because they are easy to confuse with activity evaluation targets.
+- Attribute parent placement is evaluated separately from attribute presence: each existing parent receives a narrow attribute question, the backend owns the schema path, and the LLM returns only structured quantitative/qualitative attribute intents. Forced profile rebuilds discard stale curated and requirement-report state, and final deterministic guards rescore the report against the delivered grounded document.
+- The profile draft artifacts expose the stage boundary explicitly: `generated_initial_draft.json`, `description_facts.json`, `generated_core_draft.json`, `generated_attribute_draft.json`, and `generated_reconstructed_draft.json`.
 - Source trace scoring summarizes source-file evidence quality for evidence that actually supports projected draft content; description-derived facts remain explicitly marked and do not inflate it.
 - Dataset distribution material is no longer part of the profile-draft flow; profile construction now focuses on the draft itself and semantic attribute placement.
 - Requirement and patch filters must stay domain-agnostic: no field names, vendor names, file names, instrument names, or benchmark examples may be hardcoded to improve a sample run.
@@ -168,8 +167,9 @@ Dataset package
   -> grounded evidence candidates
   -> routed and accumulated evidence context
   -> initialized profile draft
-  -> evidence-backed coverage patching
-  -> semantic reconstruction and validation
+  -> generic provenance core construction
+  -> parent-scoped attribute construction
+  -> semantic reconstruction triage and validation
   -> completed raw reconstructed profile draft
   -> optional curation
   -> final vocabulary grounding of placed profile fields

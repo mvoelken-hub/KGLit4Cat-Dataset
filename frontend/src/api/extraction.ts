@@ -93,7 +93,8 @@ export type ExtractionRunProgress = {
   generated_final_draft?: Record<string, unknown> | null;
   curated_document?: Record<string, unknown> | null;
   generated_initial_draft?: Record<string, unknown> | null;
-  generated_patched_draft?: Record<string, unknown> | null;
+  generated_core_draft?: Record<string, unknown> | null;
+  generated_attribute_draft?: Record<string, unknown> | null;
   generated_reconstructed_draft?: Record<string, unknown> | null;
   requirement_report?: RequirementReport | null;
   document_quality_state?: DocumentQualityState | null;
@@ -531,7 +532,8 @@ export type ExtractionRunResult = {
   generated_final_draft: Record<string, unknown>;
   machine_evidence_context: RoutedEvidenceContext;
   generated_initial_draft?: Record<string, unknown> | null;
-  generated_patched_draft?: Record<string, unknown> | null;
+  generated_core_draft?: Record<string, unknown> | null;
+  generated_attribute_draft?: Record<string, unknown> | null;
   generated_reconstructed_draft?: Record<string, unknown> | null;
   requirement_report?: RequirementReport | null;
   initial_file_summaries?: ExtractionFileSummary[];
@@ -834,4 +836,3 @@ function stringArray(value: unknown): string[] {
     ? value.filter((item): item is string => typeof item === 'string' && Boolean(item.trim()))
     : [];
 }
-

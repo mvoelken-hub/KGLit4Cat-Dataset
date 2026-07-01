@@ -188,7 +188,8 @@ class EvidenceService:
     def _clear_profile_projection_state(state: ExtractionRunState) -> None:
         state.generated_initial_draft = None
         state.generated_final_draft = None
-        state.generated_patched_draft = None
+        state.generated_core_draft = None
+        state.generated_attribute_draft = None
         state.generated_reconstructed_draft = None
         state.requirement_report = None
         state.curated_document = None
@@ -207,7 +208,8 @@ class EvidenceService:
     def _clear_profile_projection_progress(progress: ExtractionRunProgress) -> None:
         progress.generated_initial_draft = None
         progress.generated_final_draft = None
-        progress.generated_patched_draft = None
+        progress.generated_core_draft = None
+        progress.generated_attribute_draft = None
         progress.generated_reconstructed_draft = None
         progress.requirement_report = None
         progress.curated_document = None

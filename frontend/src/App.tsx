@@ -226,7 +226,8 @@ function progressWithResult(progress: WorkflowProgress | null, result: Extractio
     generated_final_draft: result.generated_final_draft,
     curated_document: result.curated_document ?? result.generated_final_draft,
     generated_initial_draft: result.generated_initial_draft ?? progress?.generated_initial_draft ?? null,
-    generated_patched_draft: result.generated_patched_draft ?? progress?.generated_patched_draft ?? null,
+    generated_core_draft: result.generated_core_draft ?? progress?.generated_core_draft ?? null,
+    generated_attribute_draft: result.generated_attribute_draft ?? progress?.generated_attribute_draft ?? null,
     generated_reconstructed_draft: result.generated_reconstructed_draft ?? progress?.generated_reconstructed_draft ?? null,
     requirement_report: result.requirement_report ?? progress?.requirement_report ?? null,
     dataset_summary: result.dataset_summary ?? progress?.dataset_summary ?? '',
@@ -1708,4 +1709,3 @@ export function App() {
     </main>
   );
 }
-

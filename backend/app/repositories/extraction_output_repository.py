@@ -146,7 +146,16 @@ class ExtractionOutputRepository(Protocol):
         chunking_strategy: str = "semantic",
     ) -> None: ...
 
-    def save_generated_patched_draft(
+    def save_generated_core_draft(
+        self,
+        *,
+        workflow_id: str,
+        document: dict[str, Any],
+        chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
+    ) -> None: ...
+
+    def save_generated_attribute_draft(
         self,
         *,
         workflow_id: str,

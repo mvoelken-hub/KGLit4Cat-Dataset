@@ -122,6 +122,7 @@ Content-oriented catalog of all pages in the LLM Wiki. Organized by category.
 | [[nfdi4cat-whitepaper]] | NFDI4Cat White Paper: Ontology-based Data Management | 2024 | ontology, nfdi |
 | [[repo4cat]] | Repo4Cat: Data Repository for Catalysis | 2025 | data-infrastructure, nfdi |
 | [[nfdi4chem]] | NFDI4Chem: Research Data Network for Chemistry | 2023 | fair-data, nfdi |
+| [[chemspectra]] | ChemSpectra: a Web-Based Spectra Editor for Analytical Data | 2021 | fair-data, data-infrastructure |
 | [[nomad-catalysis-plugin]] | NOMAD Catalysis Plugin | 2025 | fair-data, catalysis |
 | [[orchestrating-catalysis-data]] | Orchestrating Catalysis Data for FAIR | N/A | fair-data, nfdi |
 | [[marshall2023digital]] | Achieving Digital Catalysis | 2023 | catalysis, fair-data |
@@ -176,9 +177,9 @@ Content-oriented catalog of all pages in the LLM Wiki. Organized by category.
 - **catalysis**: 23 pages
 - **llm**: 35 pages
 - **ontology**: 17 pages
-- **fair-data**: 21 pages
+- **fair-data**: 22 pages
 - **knowledge-graph**: 9 pages
-- **data-infrastructure**: 13 pages
+- **data-infrastructure**: 14 pages
 - **nfdi**: 11 pages
 - **bayesian-optimization**: 3 pages
 - **text-mining**: 10 pages

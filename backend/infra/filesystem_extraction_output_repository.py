@@ -49,7 +49,8 @@ INITIAL_EXTRACTION_OVERVIEW_FILE = "initial_extraction_overview.json"
 INITIAL_EXTRACTION_OVERVIEW_DIAGNOSTIC_FILE = "initial_extraction_overview_diagnostic.json"
 GENERATED_INITIAL_DRAFT_FILE = "generated_initial_draft.json"
 DESCRIPTION_FACTS_FILE = "description_facts.json"
-GENERATED_PATCHED_DRAFT_FILE = "generated_patched_draft.json"
+GENERATED_CORE_DRAFT_FILE = "generated_core_draft.json"
+GENERATED_ATTRIBUTE_DRAFT_FILE = "generated_attribute_draft.json"
 GENERATED_FINAL_DRAFT_FILE = "generated_reconstructed_draft.json"
 REQUIREMENT_REPORT_FILE = "requirement_report.json"
 DATASET_SUMMARY_FILE = "dataset_summary.txt"
@@ -137,8 +138,10 @@ class FileSystemExtractionOutputRepository:
         self.save_initial_extraction_overview(workflow_id=workflow_id, overview=result.initial_extraction_overview, status=result.initial_extraction_overview_status, chat_model=chat_model)
         if result.generated_initial_draft is not None:
             self.save_generated_initial_draft(workflow_id=workflow_id, document=result.generated_initial_draft, chat_model=chat_model, chunking_strategy=chunking_strategy)
-        if result.generated_patched_draft is not None:
-            self.save_generated_patched_draft(workflow_id=workflow_id, document=result.generated_patched_draft, chat_model=chat_model, chunking_strategy=chunking_strategy)
+        if result.generated_core_draft is not None:
+            self.save_generated_core_draft(workflow_id=workflow_id, document=result.generated_core_draft, chat_model=chat_model, chunking_strategy=chunking_strategy)
+        if result.generated_attribute_draft is not None:
+            self.save_generated_attribute_draft(workflow_id=workflow_id, document=result.generated_attribute_draft, chat_model=chat_model, chunking_strategy=chunking_strategy)
         self.save_generated_final_draft(
             workflow_id=workflow_id,
             document=result.generated_final_draft,
@@ -305,7 +308,7 @@ class FileSystemExtractionOutputRepository:
             document,
         )
 
-    def save_generated_patched_draft(
+    def save_generated_core_draft(
         self,
         *,
         workflow_id: str,
@@ -315,7 +318,21 @@ class FileSystemExtractionOutputRepository:
     ) -> None:
         self._write_json_artifact(
             self._branch_dir(workflow_id, "profile_draft", chunking_strategy, chat_model)
-            / GENERATED_PATCHED_DRAFT_FILE,
+            / GENERATED_CORE_DRAFT_FILE,
+            document,
+        )
+
+    def save_generated_attribute_draft(
+        self,
+        *,
+        workflow_id: str,
+        document: dict[str, Any],
+        chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
+    ) -> None:
+        self._write_json_artifact(
+            self._branch_dir(workflow_id, "profile_draft", chunking_strategy, chat_model)
+            / GENERATED_ATTRIBUTE_DRAFT_FILE,
             document,
         )
 

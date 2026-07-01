@@ -4,6 +4,12 @@
 
 ## Recent Updates
 
+### [2026-07-01] ingest | ChemSpectra analytical-data tooling
+Added source page for newly acquired PDF:
+- [[chemspectra]] - web-based spectra editor for IR/MS/NMR, open JCAMP-DX/mzML formats, Chemotion ELN/repository integration, and FAIR analytical-data workflows
+
+Updated concept/entity pages: catalysis-data-infrastructure, nfdi4chem. Updated overview, index, log, and thesis bibliography references.
+
 ### [2026-06-29] ingest | Chemistry IE and generative IE survey batch
 Added source pages for newly acquired PDFs:
 - [[openchemie]] - multimodal document-level reaction extraction from chemistry literature across text, tables, and figures

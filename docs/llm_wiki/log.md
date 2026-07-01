@@ -72,3 +72,11 @@ Marked `docs/literature/2404.03868v2.pdf` as a duplicate/preprint file for exist
 Updated concept pages: [[text-mining-for-catalysis]], [[structured-output-reliability]]
 Updated catalog and synthesis: [[index]], [[overview]]
 Updated thesis bibliography: `docs/thesis/bibliography/references.bib`
+
+## [2026-07-01] ingest | ChemSpectra analytical-data tooling source added
+Added source page for newly added `docs/literature/s13321-020-00481-0.pdf`:
+- [[chemspectra]] - web-based spectra editor for IR/MS/NMR with open formats, Chemotion integration, and FAIR analytical-data workflows
+
+Updated concept/entity pages: [[catalysis-data-infrastructure]], [[nfdi4chem]]
+Updated catalog and synthesis: [[index]], [[overview]]
+Updated thesis bibliography: `docs/thesis/bibliography/references.bib`

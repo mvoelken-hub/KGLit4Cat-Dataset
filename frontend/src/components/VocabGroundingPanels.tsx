@@ -1441,31 +1441,39 @@ function profileDraftSteps(
   const stage = progress?.stage ?? '';
   const initialComplete = Boolean(
     progress?.generated_initial_draft
-    || progress?.generated_patched_draft
+    || progress?.generated_core_draft
+    || progress?.generated_attribute_draft
     || progress?.generated_reconstructed_draft
     || (stage === 'profile_draft' && progress?.generated_final_draft),
   );
-  const patchingComplete = Boolean(progress?.generated_patched_draft || progress?.generated_reconstructed_draft);
+  const coreComplete = Boolean(progress?.generated_core_draft || progress?.generated_attribute_draft || progress?.generated_reconstructed_draft);
+  const attributeComplete = Boolean(progress?.generated_attribute_draft || progress?.generated_reconstructed_draft);
   const reconstructionComplete = Boolean(progress?.generated_reconstructed_draft);
   const activeIndex = stage === 'profile_projection'
     ? 0
     : ['evidence_patching', 'description_mining', 'coverage_scoring'].includes(stage)
       ? 1
-      : ['semantic_evaluation', 'semantic_reconstruction', 'semantic_revalidation'].includes(stage)
+      : stage === 'attribute_construction'
         ? 2
+        : ['semantic_evaluation', 'semantic_reconstruction', 'semantic_revalidation'].includes(stage)
+          ? 3
         : -1;
   const runEnded = stage === 'profile_draft' || status === 'completed';
   const runFailed = status === 'crashed';
   const runCancelled = status === 'cancelled';
-  const completed = [initialComplete, patchingComplete, reconstructionComplete];
+  const completed = [initialComplete, coreComplete, attributeComplete, reconstructionComplete];
   const definitions = [
     {
       title: 'Initial draft creation',
-      description: 'Create the profile structure and initial DCAT-AP+ class instances.',
+      description: 'Create dataset catalog basics.',
     },
     {
-      title: 'Evidence patching',
-      description: 'Mine grounded facts, score coverage, and patch missing profile fields.',
+      title: 'Core draft construction',
+      description: 'Create provenance core objects and relations.',
+    },
+    {
+      title: 'Attribute construction',
+      description: 'Add parent-scoped quantitative and qualitative attributes.',
     },
     {
       title: 'Semantic reconstruction',
@@ -1491,15 +1499,16 @@ function profileDraftSteps(
 function profileDraftActivity(stage: string | undefined, activeTitle: string | undefined, steps: DraftStageItem[]): string {
   if (stage === 'profile_draft') {
     const completedCount = steps.filter((step) => step.status === 'completed').length;
-    return completedCount === 3
-      ? 'Draft creation finished. The initial, patched, and reconstructed artifacts are available for inspection.'
-      : `Draft creation ended with ${completedCount}/3 substeps complete. Skipped substeps did not produce boundary artifacts.`;
+    return completedCount === 4
+      ? 'Draft creation finished. The initial, core, attribute, and reconstructed artifacts are available for inspection.'
+      : `Draft creation ended with ${completedCount}/4 substeps complete. Skipped substeps did not produce boundary artifacts.`;
   }
   const detailByStage: Record<string, string> = {
-    profile_projection: 'Building the initial profile structure and class instances from accumulated evidence.',
-    evidence_patching: 'Initial draft saved. Preparing the evidence-backed coverage pass.',
+    profile_projection: 'Building dataset catalog basics and the provenance core.',
+    evidence_patching: 'Initial draft saved. Preparing the core coverage pass.',
     description_mining: 'Mining dataset descriptions for additional grounded facts.',
-    coverage_scoring: 'Checking profile coverage and applying evidence-backed patches to missing fields.',
+    coverage_scoring: 'Checking core profile coverage and applying evidence-backed patches to missing fields.',
+    attribute_construction: 'Adding parent-scoped quantitative and qualitative attributes.',
     semantic_evaluation: 'Evaluating semantic requirements before reconstructing the draft.',
     semantic_reconstruction: 'Applying semantic placement, range, and coherence repairs.',
     semantic_revalidation: 'Re-evaluating the reconstructed draft and compiling the final requirement report.',

@@ -658,7 +658,8 @@ class WorkflowService(
                     chunk_results=state_for_branch.chunk_results if state_for_branch else [],
                     vocab_queries=state_for_branch.vocab_queries if state_for_branch else [],
                     generated_final_draft=result.generated_final_draft,
-                    generated_patched_draft=result.generated_patched_draft,
+                    generated_core_draft=result.generated_core_draft,
+                    generated_attribute_draft=result.generated_attribute_draft,
                     generated_reconstructed_draft=result.generated_reconstructed_draft,
                     curated_document=result.curated_document,
                     document_quality_state=result.document_quality_state,
@@ -709,7 +710,8 @@ class WorkflowService(
                     chunk_results=state.chunk_results if state else [],
                     vocab_queries=state.vocab_queries if state else [],
                     generated_final_draft=state.generated_final_draft if state else None,
-                    generated_patched_draft=state.generated_patched_draft if state else None,
+                    generated_core_draft=state.generated_core_draft if state else None,
+                    generated_attribute_draft=state.generated_attribute_draft if state else None,
                     generated_reconstructed_draft=state.generated_reconstructed_draft if state else None,
                     curated_document=state.curated_document if state else None,
                     document_quality_state=state.document_quality_state if state else None,
@@ -764,7 +766,8 @@ class WorkflowService(
                     chunk_results=state.chunk_results,
                     vocab_queries=state.vocab_queries,
                     generated_final_draft=state.generated_final_draft,
-                    generated_patched_draft=state.generated_patched_draft,
+                    generated_core_draft=state.generated_core_draft,
+                    generated_attribute_draft=state.generated_attribute_draft,
                     generated_reconstructed_draft=state.generated_reconstructed_draft,
                     curated_document=state.curated_document,
                     document_quality_state=state.document_quality_state,
@@ -855,7 +858,8 @@ class WorkflowService(
             chunk_results=state.chunk_results,
             vocab_queries=state.vocab_queries,
             generated_final_draft=state.generated_final_draft,
-            generated_patched_draft=state.generated_patched_draft,
+            generated_core_draft=state.generated_core_draft,
+            generated_attribute_draft=state.generated_attribute_draft,
             generated_reconstructed_draft=state.generated_reconstructed_draft,
             curated_document=state.curated_document,
             document_quality_state=state.document_quality_state,
@@ -993,7 +997,8 @@ class WorkflowService(
             chunk_results=state.chunk_results,
             vocab_queries=state.vocab_queries,
             generated_final_draft=state.generated_final_draft,
-            generated_patched_draft=state.generated_patched_draft,
+            generated_core_draft=state.generated_core_draft,
+            generated_attribute_draft=state.generated_attribute_draft,
             generated_reconstructed_draft=state.generated_reconstructed_draft,
             curated_document=state.curated_document,
             document_quality_state=state.document_quality_state,
@@ -1036,7 +1041,8 @@ class WorkflowService(
         progress.stage = "profile_draft"
         progress.interim_evidence_context = evidence_context
         progress.generated_final_draft = profile_document
-        progress.generated_patched_draft = state.generated_patched_draft
+        progress.generated_core_draft = state.generated_core_draft
+        progress.generated_attribute_draft = state.generated_attribute_draft
         progress.generated_reconstructed_draft = state.generated_reconstructed_draft
         progress.curated_document = state.curated_document
         progress.draft_quality_state = state.draft_quality_state
@@ -1141,8 +1147,11 @@ class WorkflowService(
             generated_final_draft=(
                 persisted_state.generated_final_draft if persisted_state else None
             ),
-            generated_patched_draft=(
-                persisted_state.generated_patched_draft if persisted_state else None
+            generated_core_draft=(
+                persisted_state.generated_core_draft if persisted_state else None
+            ),
+            generated_attribute_draft=(
+                persisted_state.generated_attribute_draft if persisted_state else None
             ),
             generated_reconstructed_draft=(
                 persisted_state.generated_reconstructed_draft if persisted_state else None
@@ -1771,7 +1780,8 @@ class WorkflowService(
         progress.stage = "completed"
         progress.interim_evidence_context = evidence_context
         progress.generated_final_draft = result.generated_final_draft
-        progress.generated_patched_draft = result.generated_patched_draft
+        progress.generated_core_draft = result.generated_core_draft
+        progress.generated_attribute_draft = result.generated_attribute_draft
         progress.generated_reconstructed_draft = result.generated_reconstructed_draft
         progress.curated_document = result.curated_document
         progress.draft_quality_state = result.draft_quality_state
@@ -2034,7 +2044,8 @@ class WorkflowService(
                 chunk_results=state.chunk_results if state else [],
                 vocab_queries=state.vocab_queries if state else [],
                 generated_final_draft=result.generated_final_draft,
-                generated_patched_draft=result.generated_patched_draft,
+                generated_core_draft=result.generated_core_draft,
+                generated_attribute_draft=result.generated_attribute_draft,
                 generated_reconstructed_draft=result.generated_reconstructed_draft,
                 curated_document=result.curated_document,
                 document_quality_state=result.document_quality_state,
@@ -2126,7 +2137,8 @@ class WorkflowService(
                 chunk_results=state.chunk_results if state else [],
                 vocab_queries=state.vocab_queries if state else [],
                 generated_final_draft=result.generated_final_draft,
-                generated_patched_draft=result.generated_patched_draft,
+                generated_core_draft=result.generated_core_draft,
+                generated_attribute_draft=result.generated_attribute_draft,
                 generated_reconstructed_draft=result.generated_reconstructed_draft,
                 curated_document=result.curated_document,
                 document_quality_state=result.document_quality_state,
@@ -2170,7 +2182,8 @@ class WorkflowService(
                 chunk_results=state.chunk_results,
                 vocab_queries=state.vocab_queries,
                 generated_final_draft=state.generated_final_draft,
-                generated_patched_draft=state.generated_patched_draft,
+                generated_core_draft=state.generated_core_draft,
+                generated_attribute_draft=state.generated_attribute_draft,
                 generated_reconstructed_draft=state.generated_reconstructed_draft,
                 curated_document=state.curated_document,
                 document_quality_state=state.document_quality_state,
