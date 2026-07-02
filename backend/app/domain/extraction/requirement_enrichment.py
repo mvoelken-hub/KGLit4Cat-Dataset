@@ -442,17 +442,23 @@ DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS: tuple[DcatRequirement, ...] = (
         evidence_hints=["dataset title", "dataset identifier", "dataset name"],
     ),
     DcatRequirement(
-        requirement_id="dataset_description_identity",
-        label="Dataset description identity",
-        description="Description summarizes dataset content and visible source-backed facts.",
+        requirement_id="dataset_description_scope",
+        label="Dataset description scope",
+        description=(
+            "Description remains a compact dataset-level summary and does not repeat facts "
+            "that are already represented as structured activity, agent, plan, target, or attribute fields."
+        ),
         weight=1.0,
         target_paths=["/description"],
-        evidence_hints=["dataset description", "summary", "content"],
+        evidence_hints=["dataset description", "summary", "content", "scope"],
     ),
     DcatRequirement(
         requirement_id="generation_activity_reality",
         label="Generation activity reality",
-        description="was_generated_by represents a real acquisition, measurement, processing, or generation activity.",
+        description=(
+            "was_generated_by represents a real acquisition, measurement, processing, or generation activity. "
+            "Unsupported activity title, description, or type fields are streamlined or flagged."
+        ),
         weight=1.0,
         target_paths=["/was_generated_by"],
         evidence_hints=["activity", "acquisition", "processing", "generated", "method", "procedure", "instrument", "software", "setting"],
@@ -479,7 +485,10 @@ DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS: tuple[DcatRequirement, ...] = (
     DcatRequirement(
         requirement_id="activity_evaluation_target",
         label="Activity evaluation target",
-        description="Every data-generating activity identifies at least one concrete entity or other activity it directly measured, observed, analysed, or studied.",
+        description=(
+            "Evaluated targets identify the concrete entity or activity that was measured, "
+            "observed, analysed, or studied, not a generic placeholder, generated output, tool, or file inventory."
+        ),
         weight=1.25,
         target_paths=[
             "/was_generated_by/0/evaluated_entity",
@@ -502,23 +511,12 @@ DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS: tuple[DcatRequirement, ...] = (
         ],
     ),
     DcatRequirement(
-        requirement_id="attribute_duplicate_coherence",
-        label="Attribute duplicate coherence",
-        description="Duplicate quantitative or qualitative attributes under the same parent or across parents are merged or removed.",
-        weight=1.0,
-        target_paths=[
-            "/was_generated_by/0/has_quantitative_attribute",
-            "/was_generated_by/0/carried_out_by/0/has_quantitative_attribute",
-            "/was_generated_by/0/evaluated_entity/0/has_quantitative_attribute",
-            "/was_generated_by/0/evaluated_activity/0/has_quantitative_attribute",
-        ],
-        evidence_hints=["duplicate", "same value", "same quantity", "attribute"],
-        allowed_categories=["instrument_signal", "measurement_condition", "measurement_signal", "software_signal", "activity_signal"],
-    ),
-    DcatRequirement(
         requirement_id="attribute_range_decomposition",
         label="Attribute range decomposition",
-        description="Ranges are represented as separate minimum and maximum attributes, not string fragments or invalid units.",
+        description=(
+            "Ranges are represented as separate minimum and maximum attributes "
+            "when the draft contains a collapsed range and evidence supports both bounds."
+        ),
         weight=1.0,
         target_paths=[
             "/was_generated_by/0/has_quantitative_attribute",
@@ -529,23 +527,12 @@ DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS: tuple[DcatRequirement, ...] = (
         allowed_categories=["measurement_condition", "measurement_signal", "instrument_signal"],
     ),
     DcatRequirement(
-        requirement_id="attribute_label_quality",
-        label="Attribute label quality",
-        description="Attribute labels are concise semantic quantities rather than copied sentence fragments.",
-        weight=0.75,
-        target_paths=[
-            "/was_generated_by/0/has_quantitative_attribute",
-            "/was_generated_by/0/carried_out_by/0/has_quantitative_attribute",
-            "/was_generated_by/0/evaluated_entity/0/has_quantitative_attribute",
-            "/was_generated_by/0/evaluated_activity/0/has_quantitative_attribute",
-        ],
-        evidence_hints=["quantity", "attribute", "label", "unit"],
-        allowed_categories=["instrument_signal", "measurement_condition", "measurement_signal", "software_signal", "activity_signal"],
-    ),
-    DcatRequirement(
         requirement_id="attribute_parent_placement",
         label="Attribute parent placement",
-        description="Attributes attach to activity, entity, or agent parents according to generic evidence ownership cues.",
+        description=(
+            "Attributes attach to the activity, evaluated entity, evaluated activity, or technical agent "
+            "that is characterized by the supporting evidence."
+        ),
         weight=1.25,
         target_paths=[
             "/was_generated_by/0/has_quantitative_attribute",
@@ -555,15 +542,6 @@ DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS: tuple[DcatRequirement, ...] = (
         ],
         evidence_hints=["attribute parent", "instrument setting", "measurement condition", "device", "software", "evaluated entity", "evaluated activity"],
         allowed_categories=["instrument_signal", "measurement_condition", "measurement_signal", "software_signal", "activity_signal"],
-    ),
-    DcatRequirement(
-        requirement_id="provenance_context_placement",
-        label="Provenance context placement",
-        description="Dates, people, labs, teams, and origins from surrounding evidence are placed in suitable generic provenance/context fields when present.",
-        weight=0.75,
-        target_paths=["/creator", "/modification_date"],
-        evidence_hints=["date", "creator", "owner", "origin", "laboratory", "team"],
-        allowed_categories=["surrounding_signal"],
     ),
 )
 
@@ -583,6 +561,9 @@ quality must be 1 for fulfilled, 0.5 for partial, 0 for missing/not_applicable.
 Prefer not_applicable only when the supplied evidence categories make the semantic requirement irrelevant.
 For activity targets, evaluated_entity/evaluated_activity answer what that specific DataGeneratingActivity directly measured, observed, analysed, or studied. Every data-generating activity needs at least one concrete target. A merely generated output is not an evaluated target; an input file is valid only when evidence says it was directly analysed.
 Forbid a DataGeneratingActivity from referencing its own id through evaluated_activity.
+For dataset descriptions, prefer a compact scope summary. A description is partial when it repeats structured activity, agent, plan, target, or attribute facts that are already present in the supplied draft excerpt.
+For dataset description scope, do not remove the only description entry. Use replace with synthesis when streamlining is possible, or no_action when it is not.
+For generation activities, evaluate only the activity title, description, and type. Unsupported fields that cannot be streamlined should remain unresolved rather than deleting the activity.
 For method plans, explicit method/procedure/protocol/plan evidence is required for fulfilled; prefer method_signal, but accept another category when the claim/evidence explicitly says method, procedure, protocol, plan, sampling, or acquisition.
 For attribute parent semantics, device/software configuration belongs to agent parents; acquisition/processing settings and thresholds belong to activities; axis bounds, point counts, transmittance/intensity extents, resolution, and data scaling belong to the evaluated data entity unless evidence explicitly says otherwise.
 For technical agents, instruments, software, and devices are all valid carried_out_by entries; people and provenance-only origins are not.
@@ -611,6 +592,7 @@ Do not turn source-record metadata, creator/owner/origin fields, file paths, pro
 provenance bookkeeping, or identifiers for other objects into generic attributes by default.
 For attribute parents, device/software configuration belongs to agent parents; acquisition/processing settings and thresholds belong to activities; axis bounds, point counts, transmittance/intensity extents, resolution, and data scaling belong to the evaluated data entity unless evidence explicitly says otherwise.
 Represent numeric ranges as separate schema-valid minimum and maximum quantitative attributes with numeric values and source units when present; never put a range string in a quantitative value.
+For range decomposition, diagnose the collapsed range entry for removal and request synthesis for separate minimum and maximum attributes only when both bounds are supported by evidence or the current target value.
 For activity evaluation targets, write a lean evaluated_entity or evaluated_activity only when evidence directly identifies what that activity measured, observed, analysed, or studied. Never use a generated output merely because it was generated.
 Do not use new evidence search.
 Return an empty writes array when no safe semantic reconstruction is available.
@@ -629,7 +611,10 @@ audit/hash details, provenance bookkeeping, and identifiers for other objects ar
 Use no_action when the defect is real but the supplied context cannot justify a safe repair.
 When a missing target is directly supported by selected evidence, recommend append or replace and set needs_synthesis true.
 Any append or replace that needs a new value must set needs_synthesis true.
+For dataset description scope, do not remove the only description entry. Recommend replace with synthesis for a streamlined description, or no_action.
 For activity evaluation targets, diagnose every generating activity independently and forbid evaluated_activity self-reference.
+For range decomposition, diagnose one remove action for the collapsed range entry and append actions with synthesis for separate minimum and maximum attributes.
+For attribute parent placement, express a move as an append diagnosis at the correct parent path plus a remove diagnosis at the current parent path.
 """
 
 
@@ -813,6 +798,8 @@ def build_semantic_diagnosis_prompt(
             "Do not recommend appending creator/publisher/provenance fields from generic origin/owner/source metadata unless evidence explicitly identifies dataset-level responsibility.",
             "Instruments, software, and devices are all valid technical agents; do not diagnose software as invalid merely because it is not a physical instrument.",
             "Use no_action when the requirement is unresolved but no safe repair can be identified.",
+            "For dataset description scope, do not remove the only description entry. Use replace with synthesis for a streamlined description, or no_action.",
+            "For attribute parent placement, express a move as append at the correct parent path and remove at the current parent path.",
         ],
     }
     return "Diagnose semantic draft defects for this one requirement. Do not write the profile.\n\n" + json.dumps(
@@ -1100,17 +1087,14 @@ def select_requirement_evidence_packet(
     context_candidates: list[EvidenceCandidate] = []
     if context_limit:
         compact_semantic_packet = requirement.requirement_id in {
-            "attribute_duplicate_coherence",
-            "attribute_label_quality",
             "attribute_range_decomposition",
             "attribute_parent_placement",
             "dataset_title_identity",
-            "dataset_description_identity",
+            "dataset_description_scope",
             "generation_activity_reality",
             "technical_agent_kind",
             "method_plan_presence",
             "activity_evaluation_target",
-            "provenance_context_placement",
         }
         selected_keys = {
             f"{candidate.candidate_id}|{candidate.file_path}|{candidate.start_idx}|{candidate.end_idx}"
@@ -1291,17 +1275,14 @@ def _requirement_evidence_limits(
     max_context: int,
 ) -> tuple[int, int]:
     limits = {
-        "attribute_duplicate_coherence": (0, 0),
-        "attribute_label_quality": (0, 0),
         "attribute_range_decomposition": (3, 0),
         "attribute_parent_placement": (4, 2),
         "dataset_title_identity": (3, 1),
-        "dataset_description_identity": (3, 1),
+        "dataset_description_scope": (3, 1),
         "generation_activity_reality": (3, 2),
         "technical_agent_kind": (3, 2),
         "method_plan_presence": (3, 2),
         "activity_evaluation_target": (4, 2),
-        "provenance_context_placement": (3, 2),
     }
     selected_limit, context_limit = limits.get(requirement_id, (max_selected, max_context))
     return min(max_selected, selected_limit), min(max_context, context_limit)

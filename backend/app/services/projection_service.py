@@ -312,6 +312,12 @@ class ProjectionService:
             state=state,
             progress=progress,
         )
+        document = self._cleanup_parent_attributes_after_construction(
+            data_package_id=data_package_id,
+            profile_identifier=profile_identifier,
+            document=document,
+            validation_schema=validation_schema,
+        )
         validation = self.profile_service.validate_document(
             identifier=profile_identifier,
             document=document,
@@ -432,17 +438,14 @@ class ProjectionService:
         progress: ExtractionRunProgress,
     ) -> tuple[dict[str, Any], list[SemanticReconstructionRecord]]:
         order = [
-            "attribute_duplicate_coherence",
             "attribute_range_decomposition",
-            "attribute_label_quality",
             "attribute_parent_placement",
             "technical_agent_kind",
             "method_plan_presence",
             "generation_activity_reality",
             "dataset_title_identity",
-            "dataset_description_identity",
+            "dataset_description_scope",
             "activity_evaluation_target",
-            "provenance_context_placement",
         ]
         by_id = {item.requirement_id: item for item in semantic_items}
         order = order + [requirement_id for requirement_id in by_id if requirement_id not in order]
@@ -566,61 +569,6 @@ class ProjectionService:
         progress.projection_ledger = state.projection_ledger
         progress.field_completion_ledger = state.field_completion_ledger
 
-        # Post-reconstruction deterministic cleanup: merge same-parent duplicates,
-        # remove cross-parent duplicates / misplaced attributes, and clean labels
-        # that LLM reconstructions may have introduced or left behind.
-        dup_writes, dup_count = self._attribute_duplicate_coherence_writes(current)
-        cross_writes, cross_count = self._attribute_parent_placement_writes(current)
-        label_writes, label_count = self._attribute_label_quality_writes(current)
-        cleanup_writes = dup_writes + cross_writes + label_writes
-        if cleanup_writes:
-            cleanup_reason = (
-                f"Post-reconstruction deterministic cleanup: {dup_count} same-parent merge(s), "
-                f"{cross_count} cross-parent/placement removal(s), {label_count} label clean(s)."
-            )
-            current, cleanup_changed, _, cleanup_errors, _, _ = self._apply_semantic_reconstruction_writes(
-                data_package_id=data_package_id,
-                profile_identifier=profile_identifier,
-                document=current,
-                writes=cleanup_writes,
-                reason=cleanup_reason,
-                validation_schema=validation_schema,
-                rejected_reasons=[],
-            )
-            if cleanup_changed:
-                validation = self.profile_service.validate_document(
-                    identifier=profile_identifier,
-                    document=current,
-                )
-                if not validation.valid:
-                    current = self._clone_json_object(document)
-                    records.append(
-                        SemanticReconstructionRecord(
-                            requirement_id="attribute_duplicate_coherence",
-                            status="rolled_back",
-                            target_paths=[],
-                            changed_paths=cleanup_changed,
-                            reason=cleanup_reason,
-                            validation_errors=[issue.message for issue in validation.errors],
-                            applied_actions_count=0,
-                            rejected_actions_count=len(cleanup_errors),
-                            rejected_reasons=cleanup_errors,
-                        )
-                    )
-                else:
-                    records.append(
-                        SemanticReconstructionRecord(
-                            requirement_id="attribute_duplicate_coherence",
-                            status="applied",
-                            target_paths=[],
-                            changed_paths=cleanup_changed,
-                            reason=cleanup_reason,
-                            applied_actions_count=len(cleanup_changed),
-                            rejected_actions_count=len(cleanup_errors),
-                            rejected_reasons=cleanup_errors,
-                        )
-                    )
-
         return current, records
 
     async def _semantic_reconstruction_update(
@@ -661,7 +609,11 @@ class ProjectionService:
             item.synthesis_calls_count = deterministic.synthesis_calls_count
             return updated, changed_paths, reason, errors, applied, rejected
 
-        draft_excerpt = {path: self._value_at_json_pointer(document, path) for path in allowed_paths}
+        draft_excerpt = self._semantic_reconstruction_draft_excerpt(
+            document=document,
+            requirement=requirement,
+            allowed_paths=allowed_paths,
+        )
         prompt = build_semantic_diagnosis_prompt(
             requirement=requirement,
             item=item,
@@ -841,10 +793,20 @@ class ProjectionService:
         requirement: DcatRequirement,
     ) -> list[str]:
         paths = list(item.target_paths or requirement.target_paths)
+        if requirement.requirement_id == "generation_activity_reality":
+            activities = document.get("was_generated_by")
+            indices = [
+                index
+                for index, activity in enumerate(activities if isinstance(activities, list) else [])
+                if isinstance(activity, dict)
+            ] or [0]
+            return [
+                f"/was_generated_by/{index}/{field}"
+                for index in indices
+                for field in ("title", "description", "type")
+            ]
         if requirement.requirement_id not in {
-            "attribute_duplicate_coherence",
             "attribute_range_decomposition",
-            "attribute_label_quality",
             "attribute_parent_placement",
         }:
             return paths
@@ -854,6 +816,18 @@ class ProjectionService:
             fallback_paths=paths,
         )
         return parent_paths or paths
+
+    @classmethod
+    def _semantic_reconstruction_draft_excerpt(
+        cls,
+        *,
+        document: dict[str, Any],
+        requirement: DcatRequirement,
+        allowed_paths: list[str],
+    ) -> dict[str, Any]:
+        if requirement.requirement_id == "attribute_parent_placement":
+            return cls._attribute_parent_placement_excerpt(document)
+        return {path: cls._value_at_json_pointer(document, path) for path in allowed_paths}
 
     @classmethod
     def _attribute_parent_candidate_paths(
@@ -909,82 +883,6 @@ class ProjectionService:
         requirement: DcatRequirement,
         validation_schema: dict[str, Any],
     ) -> _CompiledSemanticActions:
-        if requirement.requirement_id == "attribute_duplicate_coherence":
-            writes, count = self._attribute_duplicate_coherence_writes(document)
-            return _CompiledSemanticActions(
-                writes=writes,
-                reason="Deterministic duplicate attribute coherence cleanup.",
-                diagnosed_defects_count=count,
-                diagnosed_defects=[
-                    {
-                        "defect_type": "duplicate_attribute",
-                        "target_path": write.target_path,
-                        "entry_indices": [write.survivor_index, *write.merged_indices],
-                        "recommended_action": "merge",
-                        "needs_synthesis": False,
-                        "reason": write.reason,
-                    }
-                    for write in writes
-                ],
-                compiled_actions=[write.model_dump(mode="json") for write in writes],
-            )
-        if requirement.requirement_id == "attribute_range_decomposition":
-            writes, count = self._attribute_range_decomposition_writes(document=document, item=item)
-            return _CompiledSemanticActions(
-                writes=writes,
-                reason="Deterministic range decomposition cleanup.",
-                diagnosed_defects_count=count,
-                diagnosed_defects=[
-                    {
-                        "defect_type": "bad_range",
-                        "target_path": write.target_path,
-                        "entry_indices": [],
-                        "recommended_action": write.mode,
-                        "needs_synthesis": False,
-                        "reason": write.reason,
-                    }
-                    for write in writes
-                ],
-                compiled_actions=[write.model_dump(mode="json") for write in writes],
-            )
-        if requirement.requirement_id == "attribute_label_quality":
-            writes, count = self._attribute_label_quality_writes(document)
-            return _CompiledSemanticActions(
-                writes=writes,
-                reason="Deterministic attribute label cleaning: stripped parent entity title fragments and file-index suffixes.",
-                diagnosed_defects_count=count,
-                diagnosed_defects=[
-                    {
-                        "defect_type": "bad_label",
-                        "target_path": write.target_path,
-                        "entry_indices": [],
-                        "recommended_action": "replace",
-                        "needs_synthesis": False,
-                        "reason": write.reason,
-                    }
-                    for write in writes
-                ],
-                compiled_actions=[write.model_dump(mode="json") for write in writes],
-            )
-        if requirement.requirement_id == "attribute_parent_placement":
-            writes, count = self._attribute_parent_placement_writes(document)
-            return _CompiledSemanticActions(
-                writes=writes,
-                reason="Deterministic cross-parent attribute placement cleanup.",
-                diagnosed_defects_count=count,
-                diagnosed_defects=[
-                    {
-                        "defect_type": "cross_parent_duplicate",
-                        "target_path": write.target_path,
-                        "entry_indices": [],
-                        "recommended_action": "remove",
-                        "needs_synthesis": False,
-                        "reason": write.reason,
-                    }
-                    for write in writes
-                ],
-                compiled_actions=[write.model_dump(mode="json") for write in writes],
-            )
         if requirement.requirement_id == "activity_evaluation_target":
             paths = self._evaluated_activity_self_reference_paths(document)
             writes = [
@@ -1039,16 +937,19 @@ class ProjectionService:
             if not self._semantic_path_allowed(defect.target_path, allowed_paths):
                 rejected.append(f"Diagnosis target outside allowed semantic reconstruction paths: {defect.target_path}")
                 continue
+            if (
+                requirement.requirement_id == "dataset_description_scope"
+                and defect.recommended_action == "remove"
+                and self._description_removal_would_empty_document(document, defect)
+            ):
+                rejected.append(
+                    "Dataset description scope may streamline the description but must not remove the only description entry."
+                )
+                continue
             if defect.needs_synthesis:
                 if defect.recommended_action in {"merge", "remove", "move", "no_action"}:
                     rejected.append(
                         f"Mechanical action {defect.recommended_action} must not request synthesis at "
-                        f"{defect.target_path}."
-                    )
-                    continue
-                if requirement.requirement_id == "attribute_range_decomposition":
-                    rejected.append(
-                        "Range decomposition requires backend-recoverable bounds; refusing single-value synthesis at "
                         f"{defect.target_path}."
                     )
                     continue
@@ -1147,6 +1048,31 @@ class ProjectionService:
             compiled_actions=[write.model_dump(mode="json") for write in writes],
         )
 
+    @classmethod
+    def _description_removal_would_empty_document(
+        cls,
+        document: dict[str, Any],
+        defect: SemanticReconstructionDefect,
+    ) -> bool:
+        descriptions = document.get("description")
+        if isinstance(descriptions, str):
+            descriptions = [descriptions]
+        if not isinstance(descriptions, list):
+            return True
+        present_indices = [
+            index
+            for index, value in enumerate(descriptions)
+            if cls._semantic_value_present(value)
+        ]
+        if not present_indices:
+            return True
+        if defect.target_path.rstrip("/") == "/description":
+            removal_indices = set(defect.entry_indices or present_indices)
+        else:
+            match = re.fullmatch(r"/description/(\d+)", defect.target_path.rstrip("/"))
+            removal_indices = {int(match.group(1))} if match else set()
+        return bool(present_indices) and set(present_indices).issubset(removal_indices)
+
     async def _synthesize_semantic_reconstruction_write(
         self,
         *,
@@ -1205,9 +1131,12 @@ class ProjectionService:
             schema_for_json_pointer(validation_schema, defect.target_path),
             validation_schema,
         )
+        current_target = self._value_at_json_pointer(document, defect.target_path)
         target_type = target_schema.get("type") if isinstance(target_schema, dict) else None
         target_is_array = target_type == "array" or (
             isinstance(target_type, list) and "array" in target_type
+        ) or isinstance(current_target, list) or defect.target_path.rstrip("/").endswith(
+            ("/has_quantitative_attribute", "/has_qualitative_attribute")
         )
         if defect.recommended_action == "append" and target_is_array:
             return (
@@ -1248,20 +1177,9 @@ class ProjectionService:
         allowed_properties = {
             "method_plan_presence": {"id", "title", "description", "type"},
             "technical_agent_kind": {"id", "title", "description", "type"},
-            "attribute_label_quality": {"title", "description", "value", "has_quantity_type", "has_attribute_type", "unit"},
             "attribute_parent_placement": {"title", "description", "value", "has_quantity_type", "has_attribute_type", "unit"},
             "attribute_range_decomposition": {"title", "description", "value", "has_quantity_type", "unit"},
-            "generation_activity_reality": {
-                "id",
-                "title",
-                "description",
-                "type",
-                "carried_out_by",
-                "realized_plan",
-                "has_quantitative_attribute",
-                "has_qualitative_attribute",
-            },
-            "provenance_context_placement": {"id", "title", "description", "type"},
+            "generation_activity_reality": {"title", "description", "type"},
         }.get(requirement.requirement_id)
         compact = cls._compact_synthesis_schema_node(
             target_schema,
@@ -1358,7 +1276,7 @@ class ProjectionService:
                 "items": {"type": "string"},
                 "minItems": 1,
             }
-        if requirement.requirement_id in {"attribute_label_quality", "attribute_parent_placement", "attribute_range_decomposition"}:
+        if requirement.requirement_id in {"attribute_parent_placement", "attribute_range_decomposition"}:
             return {
                 "$schema": "https://json-schema.org/draft/2019-09/schema",
                 "type": "object",
@@ -2354,25 +2272,14 @@ class ProjectionService:
                 assessment=seed_item,
                 evidence_context=evidence_context,
             )
-            if requirement.requirement_id in {
-                "attribute_duplicate_coherence",
-                "attribute_label_quality",
-                "attribute_parent_placement",
-                "attribute_range_decomposition",
-            }:
-                seed_item.selected_evidence = selected_evidence
-                seed_item.context_window = context_window
-                self._guard_semantic_requirement_assessment(
-                    requirement=requirement,
-                    document=document,
-                    item=seed_item,
-                )
-                items.append(seed_item)
-                continue
-            draft_excerpt = {
-                path: self._value_at_json_pointer(document, path)
-                for path in requirement.target_paths
-            }
+            draft_excerpt = (
+                self._attribute_parent_placement_excerpt(document)
+                if requirement.requirement_id == "attribute_parent_placement"
+                else {
+                    path: self._value_at_json_pointer(document, path)
+                    for path in requirement.target_paths
+                }
+            )
             evaluation = await self._evaluate_dcat_requirements(
                 data_package_id=data_package_id,
                 document=draft_excerpt,
@@ -2405,8 +2312,6 @@ class ProjectionService:
     ) -> DcatRequirement:
         attribute_requirement_ids = {
             "attribute_parent_placement",
-            "attribute_duplicate_coherence",
-            "attribute_label_quality",
             "attribute_range_decomposition",
         }
         if requirement.requirement_id not in (
@@ -2479,23 +2384,6 @@ class ProjectionService:
                 "Evidence establishes applicability, but none of the requirement target paths "
                 "contains a placed draft value."
             )
-        if requirement.requirement_id == "attribute_duplicate_coherence":
-            duplicate_writes, _ = cls._attribute_duplicate_coherence_writes(document)
-            cross_writes, _ = cls._attribute_parent_placement_writes(document)
-            total_duplicates = len(duplicate_writes) + len(cross_writes)
-            if total_duplicates:
-                item.status = "partial"
-                item.quality = 0.5
-                item.applicable = True
-                item.rationale = (
-                    f"Backend inspection found {len(duplicate_writes)} same-parent "
-                    f"and {len(cross_writes)} cross-parent duplicate semantic attribute slots."
-                )
-            else:
-                item.status = "fulfilled"
-                item.quality = 1.0
-                item.applicable = True
-                item.rationale = "Backend inspection found no duplicate semantic attribute slots."
         if requirement.requirement_id == "attribute_range_decomposition":
             if cls._document_has_bad_range_attribute(document):
                 item.status = "partial"
@@ -2507,36 +2395,6 @@ class ProjectionService:
                 item.quality = 1.0
                 item.applicable = True
                 item.rationale = "Backend inspection found no collapsed or malformed range attributes."
-        if requirement.requirement_id == "attribute_parent_placement":
-            cross_writes, cross_count = cls._attribute_parent_placement_writes(document)
-            if cross_count:
-                item.status = "partial"
-                item.quality = 0.5
-                item.applicable = True
-                item.rationale = (
-                    f"Backend inspection found {cross_count} attribute placement "
-                    "issues (cross-parent duplicates or misplaced measurement attributes)."
-                )
-            else:
-                item.status = "fulfilled"
-                item.quality = 1.0
-                item.applicable = True
-                item.rationale = "Backend inspection found no attribute placement issues."
-        if requirement.requirement_id == "attribute_label_quality":
-            label_writes, label_count = cls._attribute_label_quality_writes(document)
-            if label_count:
-                item.status = "partial"
-                item.quality = 0.5
-                item.applicable = True
-                item.rationale = (
-                    f"Backend inspection found {label_count} attribute labels "
-                    "containing parent entity title fragments or file-index suffixes."
-                )
-            else:
-                item.status = "fulfilled"
-                item.quality = 1.0
-                item.applicable = True
-                item.rationale = "Backend inspection found no label quality issues."
         if requirement.requirement_id == "technical_agent_kind":
             agents = [
                 agent
@@ -3353,6 +3211,47 @@ class ProjectionService:
             self._save_run_state(data_package_id, state)
             self._update_progress(data_package_id, progress)
         return current
+
+    def _cleanup_parent_attributes_after_construction(
+        self,
+        *,
+        data_package_id: str,
+        profile_identifier: str,
+        document: dict[str, Any],
+        validation_schema: dict[str, Any],
+    ) -> dict[str, Any]:
+        writes, count = self._attribute_duplicate_coherence_writes(document)
+        if not writes:
+            return document
+        updated, changed_paths, _, _, _, _ = self._apply_semantic_reconstruction_writes(
+            data_package_id=data_package_id,
+            profile_identifier=profile_identifier,
+            document=document,
+            writes=writes,
+            reason=f"Post-attribute-construction duplicate cleanup: {count} duplicate attribute(s).",
+            validation_schema=validation_schema,
+            rejected_reasons=[],
+        )
+        return updated if changed_paths else document
+
+    @classmethod
+    def _attribute_parent_placement_excerpt(cls, document: dict[str, Any]) -> dict[str, Any]:
+        parents: list[dict[str, Any]] = []
+        for parent in cls._attribute_parent_targets(document):
+            value = cls._value_at_json_pointer(document, parent["path"])
+            if not isinstance(value, dict):
+                continue
+            parents.append(
+                {
+                    "path": parent["path"],
+                    "class": parent.get("class", ""),
+                    "title": value.get("title"),
+                    "description": value.get("description"),
+                    "has_quantitative_attribute": value.get("has_quantitative_attribute") or [],
+                    "has_qualitative_attribute": value.get("has_qualitative_attribute") or [],
+                }
+            )
+        return {"attribute_parents": parents}
 
     async def _generate_parent_attribute_intents(
         self,
@@ -8069,4 +7968,3 @@ class ProjectionService:
     @staticmethod
     def _json_pointer_unescape(value: str) -> str:
         return value.replace("~1", "/").replace("~0", "~")
-

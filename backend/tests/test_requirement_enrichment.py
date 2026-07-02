@@ -55,6 +55,16 @@ from app.services.workflow_service import WorkflowService
 
 
 class RequirementScoringTests(unittest.TestCase):
+    def test_semantic_requirement_set_uses_revised_scope(self):
+        requirement_ids = [req.requirement_id for req in DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS]
+
+        self.assertEqual(len(requirement_ids), 8)
+        self.assertIn("dataset_description_scope", requirement_ids)
+        self.assertNotIn("dataset_description_identity", requirement_ids)
+        self.assertNotIn("attribute_duplicate_coherence", requirement_ids)
+        self.assertNotIn("attribute_label_quality", requirement_ids)
+        self.assertNotIn("provenance_context_placement", requirement_ids)
+
     def test_requirement_prompt_defines_activity_target_semantics(self):
         self.assertIn("evaluated_entity/evaluated_activity answer what that specific", REQUIREMENT_EVALUATOR_SYSTEM_PROMPT)
         self.assertIn("A merely generated output is not an evaluated target", REQUIREMENT_EVALUATOR_SYSTEM_PROMPT)
@@ -472,39 +482,10 @@ class RequirementEvidencePacketTests(unittest.TestCase):
         self.assertEqual(selected[0].candidate_id, "m1")
         self.assertIn("m2", {entry.candidate_id for entry in window})
 
-    def test_mechanical_duplicate_requirement_uses_draft_only(self):
-        requirement = next(
-            req
-            for req in DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS
-            if req.requirement_id == "attribute_duplicate_coherence"
-        )
-        evidence = EvidenceCandidate(
-            candidate_id="point-count",
-            category="measurement_condition",
-            role="parameter",
-            claim="The point count is 2559.",
-            evidence_text="NPOINTS=2559",
-        )
-        item = RequirementReportItem(
-            requirement_id=requirement.requirement_id,
-            label=requirement.label,
-            weight=requirement.weight,
-            status="missing",
-            applicable=True,
-            quality=0.0,
-            weighted_score=0.0,
-            evidence_search_hints=requirement.evidence_hints,
-        )
+    def test_duplicate_attribute_cleanup_is_not_a_semantic_requirement(self):
+        requirement_ids = {req.requirement_id for req in DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS}
 
-        selected, window = select_requirement_evidence_packet(
-            requirement=requirement,
-            assessment=item,
-            evidence_context=RoutedEvidenceContext(portable_evidence=[evidence]),
-        )
-
-        self.assertEqual(selected, [])
-        self.assertEqual(window, [])
-        self.assertNotIn("x1", {entry.candidate_id for entry in selected})
+        self.assertNotIn("attribute_duplicate_coherence", requirement_ids)
 
     def test_method_plan_packet_accepts_explicit_procedure_cue_from_instrument_signal(self):
         requirement = next(
@@ -691,7 +672,7 @@ class RequirementEvidencePacketTests(unittest.TestCase):
         requirement = next(
             req
             for req in DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS
-            if req.requirement_id == "provenance_context_placement"
+            if req.requirement_id == "attribute_parent_placement"
         )
         item = RequirementReportItem(
             requirement_id=requirement.requirement_id,
@@ -712,7 +693,7 @@ class RequirementEvidencePacketTests(unittest.TestCase):
 
         self.assertIn("characterizes the exact target parent", prompt)
         self.assertIn("source-record metadata", prompt)
-        self.assertIn("explicitly identifies dataset-level responsibility", prompt)
+        self.assertIn("characterizes the exact target parent", prompt)
 
     def test_semantic_synthesis_prompt_rejects_placeholder_attributes(self):
         self.assertIn("directly characterizes the target parent", SEMANTIC_SYNTHESIS_SYSTEM_PROMPT)
@@ -1338,7 +1319,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             ollama_client=Mock(chat_model="test-model", max_context_length=4096),
         )
         item = RequirementReportItem(
-            requirement_id="dataset_description_identity",
+            requirement_id="dataset_description_scope",
             label="Description",
             weight=1.0,
             status="partial",
@@ -1377,7 +1358,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
                 },
                 item=item,
                 requirement=DcatRequirement(
-                    requirement_id="dataset_description_identity",
+                    requirement_id="dataset_description_scope",
                     label="Description",
                     description="Description identity",
                     target_paths=["/description"],
@@ -1472,6 +1453,65 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(synthesis_call["output_type"]["items"]["type"], "string")
         self.assertEqual(item.compiled_actions[0]["value"], ["SG-V4050"])
 
+    async def test_dataset_description_scope_does_not_remove_only_description(self):
+        service = WorkflowService(
+            profile_service=FakeProfileService(),
+            settings=Settings(),
+            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
+        )
+        item = RequirementReportItem(
+            requirement_id="dataset_description_scope",
+            label="Description scope",
+            weight=1.0,
+            status="partial",
+            applicable=True,
+            quality=0.5,
+            weighted_score=0.5,
+            target_paths=["/description"],
+        )
+        diagnosis = Mock(
+            output={
+                "defects": [
+                    {
+                        "defect_type": "bad_identity",
+                        "target_path": "/description",
+                        "entry_indices": [0],
+                        "recommended_action": "remove",
+                        "needs_synthesis": False,
+                        "reason": "Description is overloaded.",
+                    }
+                ],
+                "reason": "Remove overloaded description.",
+            },
+            usage=None,
+        )
+
+        with patch("app.services.projection_service.generate_structured", AsyncMock(return_value=diagnosis)):
+            updated, paths, reason, errors, applied, rejected = await service._semantic_reconstruction_update(
+                data_package_id="pkg",
+                profile_identifier="profile",
+                document={"description": ["Dataset-level summary with some repeated facts."]},
+                item=item,
+                requirement=DcatRequirement(
+                    requirement_id="dataset_description_scope",
+                    label="Description scope",
+                    description="Description scope",
+                    target_paths=["/description"],
+                ),
+                validation_schema={
+                    "type": "object",
+                    "properties": {
+                        "description": {"type": "array", "items": {"type": "string"}}
+                    },
+                },
+            )
+
+        self.assertEqual(updated["description"], ["Dataset-level summary with some repeated facts."])
+        self.assertEqual(paths, [])
+        self.assertEqual(errors, [])
+        self.assertEqual(applied, 0)
+        self.assertIn("must not remove the only description", rejected[0])
+
     async def test_semantic_synthesis_replaces_missing_object_when_model_requests_append(self):
         service = WorkflowService(
             profile_service=FakeProfileService(),
@@ -1561,7 +1601,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             ollama_client=Mock(chat_model="test-model", max_context_length=4096),
         )
         item = RequirementReportItem(
-            requirement_id="attribute_label_quality",
+            requirement_id="attribute_parent_placement",
             label="Attribute labels",
             weight=1.0,
             status="partial",
@@ -1608,7 +1648,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
                 document=document,
                 item=item,
                 requirement=DcatRequirement(
-                    requirement_id="attribute_label_quality",
+                    requirement_id="attribute_parent_placement",
                     label="Attribute labels",
                     description="Concise labels",
                     target_paths=item.target_paths,
@@ -1715,7 +1755,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         requirement = next(
             req
             for req in DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS
-            if req.requirement_id == "provenance_context_placement"
+            if req.requirement_id == "technical_agent_kind"
         )
         item = RequirementReportItem(
             requirement_id=requirement.requirement_id,
@@ -1880,7 +1920,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             ollama_client=Mock(chat_model="test-model", max_context_length=4096),
         )
         item = RequirementReportItem(
-            requirement_id="dataset_description_identity",
+            requirement_id="dataset_description_scope",
             label="Description",
             weight=1.0,
             status="partial",
@@ -1898,7 +1938,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
                 document={"description": ["Original."], "dataset_distribution": [{"title": ["D"]}]},
                 item=item,
                 requirement=DcatRequirement(
-                    requirement_id="dataset_description_identity",
+                    requirement_id="dataset_description_scope",
                     label="Description",
                     description="Description identity",
                     target_paths=["/description"],
@@ -2123,13 +2163,13 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rejected, [])
         self.assertEqual(reason, "Remove duplicate threshold.")
 
-    async def test_semantic_duplicate_coherence_merges_point_count_variants(self):
+    async def test_attribute_construction_cleanup_merges_point_count_variants(self):
         service = WorkflowService(
             profile_service=FakeProfileService(),
             settings=Settings(),
             ollama_client=Mock(chat_model="test-model", max_context_length=4096),
         )
-        updated, paths, reason, errors, applied, rejected = await service._semantic_reconstruction_update(
+        updated = service._cleanup_parent_attributes_after_construction(
             data_package_id="pkg",
             profile_identifier="profile",
             document={
@@ -2142,51 +2182,20 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
                     }
                 ]
             },
-            item=RequirementReportItem(
-                requirement_id="attribute_duplicate_coherence",
-                label="Duplicate coherence",
-                weight=1.0,
-                status="partial",
-                applicable=True,
-                quality=0.5,
-                weighted_score=0.5,
-                target_paths=["/was_generated_by/0/has_quantitative_attribute"],
-            ),
-            requirement=DcatRequirement(
-                requirement_id="attribute_duplicate_coherence",
-                label="Duplicate coherence",
-                description="Duplicate attributes",
-                target_paths=["/was_generated_by/0/has_quantitative_attribute"],
-            ),
             validation_schema={},
         )
 
         attributes = updated["was_generated_by"][0]["has_quantitative_attribute"]
         self.assertEqual(len(attributes), 1)
         self.assertEqual(attributes[0]["has_quantity_type"], "number data points")
-        self.assertIn("/was_generated_by/0/has_quantitative_attribute/1", paths)
-        self.assertEqual(errors, [])
-        self.assertEqual(applied, 1)
-        self.assertEqual(rejected, [])
 
-    async def test_semantic_duplicate_coherence_merges_max_transmittance_variants(self):
+    async def test_attribute_construction_cleanup_merges_max_transmittance_variants(self):
         service = WorkflowService(
             profile_service=FakeProfileService(),
             settings=Settings(),
             ollama_client=Mock(chat_model="test-model", max_context_length=4096),
         )
-        item = RequirementReportItem(
-            requirement_id="attribute_duplicate_coherence",
-            label="Duplicate coherence",
-            weight=1.0,
-            status="partial",
-            applicable=True,
-            quality=0.5,
-            weighted_score=0.5,
-            target_paths=["/is_about_entity/0/has_quantitative_attribute"],
-        )
-
-        updated, paths, reason, errors, applied, rejected = await service._semantic_reconstruction_update(
+        updated = service._cleanup_parent_attributes_after_construction(
             data_package_id="pkg",
             profile_identifier="profile",
             document={
@@ -2199,74 +2208,36 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
                     }
                 ]
             },
-            item=item,
-            requirement=DcatRequirement(
-                requirement_id="attribute_duplicate_coherence",
-                label="Duplicate coherence",
-                description="Duplicate attributes",
-                target_paths=["/is_about_entity/0/has_quantitative_attribute"],
-            ),
             validation_schema={},
         )
 
         attributes = updated["is_about_entity"][0]["has_quantitative_attribute"]
         self.assertEqual(len(attributes), 1)
         self.assertEqual(attributes[0]["value"], 0.9801868804981199)
-        self.assertIn("/is_about_entity/0/has_quantitative_attribute/0", paths)
-        self.assertEqual(errors, [])
-        self.assertEqual(applied, 1)
-        self.assertEqual(item.defect_type, "duplicate_attribute")
-        self.assertEqual(item.compiled_actions[0]["mode"], "remove")
 
-    async def test_semantic_duplicate_coherence_keeps_materially_different_values(self):
+    async def test_attribute_construction_cleanup_keeps_materially_different_values(self):
         service = WorkflowService(
             profile_service=FakeProfileService(),
             settings=Settings(),
             ollama_client=Mock(chat_model="test-model", max_context_length=4096),
         )
-        item = RequirementReportItem(
-            requirement_id="attribute_duplicate_coherence",
-            label="Duplicate coherence",
-            weight=1.0,
-            status="partial",
-            applicable=True,
-            quality=0.5,
-            weighted_score=0.5,
-            target_paths=["/is_about_entity/0/has_quantitative_attribute"],
+        updated = service._cleanup_parent_attributes_after_construction(
+            data_package_id="pkg",
+            profile_identifier="profile",
+            document={
+                "is_about_entity": [
+                    {
+                        "has_quantitative_attribute": [
+                            {"value": 0.98, "has_quantity_type": "maximum Y"},
+                            {"value": 0.91, "has_quantity_type": "maximum transmittance"},
+                        ]
+                    }
+                ]
+            },
+            validation_schema={},
         )
-        diagnosis = Mock(
-            output={"defects": [], "reason": "No duplicate."},
-            usage=None,
-        )
-
-        with patch("app.services.projection_service.generate_structured", AsyncMock(return_value=diagnosis)):
-            updated, paths, _, errors, applied, _ = await service._semantic_reconstruction_update(
-                data_package_id="pkg",
-                profile_identifier="profile",
-                document={
-                    "is_about_entity": [
-                        {
-                            "has_quantitative_attribute": [
-                                {"value": 0.98, "has_quantity_type": "maximum Y"},
-                                {"value": 0.91, "has_quantity_type": "maximum transmittance"},
-                            ]
-                        }
-                    ]
-                },
-                item=item,
-                requirement=DcatRequirement(
-                    requirement_id="attribute_duplicate_coherence",
-                    label="Duplicate coherence",
-                    description="Duplicate attributes",
-                    target_paths=["/is_about_entity/0/has_quantitative_attribute"],
-                ),
-                validation_schema={},
-            )
 
         self.assertEqual(len(updated["is_about_entity"][0]["has_quantitative_attribute"]), 2)
-        self.assertEqual(paths, [])
-        self.assertEqual(errors, [])
-        self.assertEqual(applied, 0)
 
     async def test_semantic_range_decomposition_splits_bad_range_attribute(self):
         service = WorkflowService(
@@ -2294,33 +2265,69 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
-        updated, paths, reason, errors, applied, rejected = await service._semantic_reconstruction_update(
-            data_package_id="pkg",
-            profile_identifier="profile",
-            document={
-                "was_generated_by": [
+        diagnosis = Mock(
+            output={
+                "defects": [
                     {
-                        "has_quantitative_attribute": [
-                            {
-                                "title": "Wavenumber range",
-                                "description": "Wavenumber range: 373.96 to",
-                                "value": 373.96,
-                                "has_quantity_type": "Wavenumber range",
-                                "unit": "to",
-                            }
-                        ]
-                    }
-                ]
+                        "defect_type": "bad_range",
+                        "target_path": "/was_generated_by/0/has_quantitative_attribute",
+                        "entry_indices": [],
+                        "recommended_action": "append",
+                        "needs_synthesis": True,
+                        "reason": "Add minimum wavenumber.",
+                    },
+                    {
+                        "defect_type": "bad_range",
+                        "target_path": "/was_generated_by/0/has_quantitative_attribute",
+                        "entry_indices": [],
+                        "recommended_action": "append",
+                        "needs_synthesis": True,
+                        "reason": "Add maximum wavenumber.",
+                    },
+                    {
+                        "defect_type": "bad_range",
+                        "target_path": "/was_generated_by/0/has_quantitative_attribute",
+                        "entry_indices": [0],
+                        "recommended_action": "remove",
+                        "needs_synthesis": False,
+                        "reason": "Remove collapsed range.",
+                    },
+                ],
+                "reason": "Decompose range.",
             },
-            item=item,
-            requirement=DcatRequirement(
-                requirement_id="attribute_range_decomposition",
-                label="Range decomposition",
-                description="Range decomposition",
-                target_paths=["/was_generated_by/0/has_quantitative_attribute"],
-            ),
-            validation_schema={},
+            usage=None,
         )
+        minimum = Mock(output={"title": "Minimum wavenumber", "value": 373.96, "has_quantity_type": "minimum wavenumber"}, usage=None)
+        maximum = Mock(output={"title": "Maximum wavenumber", "value": 3997.45, "has_quantity_type": "maximum wavenumber"}, usage=None)
+
+        with patch("app.services.projection_service.generate_structured", AsyncMock(side_effect=[diagnosis, minimum, maximum])):
+            updated, paths, reason, errors, applied, rejected = await service._semantic_reconstruction_update(
+                data_package_id="pkg",
+                profile_identifier="profile",
+                document={
+                    "was_generated_by": [
+                        {
+                            "has_quantitative_attribute": [
+                                {
+                                    "title": "Wavenumber range",
+                                    "description": "Wavenumber range: 373.96 to",
+                                    "value": 373.96,
+                                    "has_quantity_type": "Wavenumber range",
+                                    "unit": "to",
+                                }
+                            ]
+                        }
+                    ]
+                },
+                item=item,
+                requirement=DcatRequirement(
+                    requirement_id="attribute_range_decomposition",
+                    label="Range decomposition",
+                    description="Range decomposition",
+                    target_paths=["/was_generated_by/0/has_quantitative_attribute"],
+                ),
+                validation_schema={},
+            )
 
         attributes = updated["was_generated_by"][0]["has_quantitative_attribute"]
         self.assertEqual([attribute["has_quantity_type"] for attribute in attributes], ["minimum wavenumber", "maximum wavenumber"])
@@ -2362,35 +2369,53 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
-        updated, paths, _, errors, applied, rejected = await service._semantic_reconstruction_update(
-            data_package_id="pkg",
-            profile_identifier="profile",
-            document={
-                "is_about_entity": [
+        diagnosis = Mock(
+            output={
+                "defects": [
                     {
-                        "has_quantitative_attribute": [
-                            {"title": "First X 1 CM", "value": 3997.453, "has_quantity_type": "first X 1 CM"},
-                            {"title": "Last X 1 CM", "value": 373.96442, "has_quantity_type": "last X 1 CM"},
-                            {
-                                "title": "Wavenumber range from 3997 45 1 CM",
-                                "description": "Wavenumber range from 3997 45 1 CM: 373.96 to",
-                                "value": 373.96,
-                                "has_quantity_type": "Wavenumber range from 3997 45 1 CM",
-                                "unit": "to",
-                            },
-                        ]
+                        "defect_type": "bad_range",
+                        "target_path": "/is_about_entity/0/has_quantitative_attribute",
+                        "entry_indices": [2],
+                        "recommended_action": "remove",
+                        "needs_synthesis": False,
+                        "reason": "Precise bounds already exist.",
                     }
-                ]
+                ],
+                "reason": "Remove collapsed range.",
             },
-            item=item,
-            requirement=DcatRequirement(
-                requirement_id="attribute_range_decomposition",
-                label="Range decomposition",
-                description="Range decomposition",
-                target_paths=["/is_about_entity/0/has_quantitative_attribute"],
-            ),
-            validation_schema={},
+            usage=None,
         )
+
+        with patch("app.services.projection_service.generate_structured", AsyncMock(return_value=diagnosis)):
+            updated, paths, _, errors, applied, rejected = await service._semantic_reconstruction_update(
+                data_package_id="pkg",
+                profile_identifier="profile",
+                document={
+                    "is_about_entity": [
+                        {
+                            "has_quantitative_attribute": [
+                                {"title": "First X 1 CM", "value": 3997.453, "has_quantity_type": "first X 1 CM"},
+                                {"title": "Last X 1 CM", "value": 373.96442, "has_quantity_type": "last X 1 CM"},
+                                {
+                                    "title": "Wavenumber range from 3997 45 1 CM",
+                                    "description": "Wavenumber range from 3997 45 1 CM: 373.96 to",
+                                    "value": 373.96,
+                                    "has_quantity_type": "Wavenumber range from 3997 45 1 CM",
+                                    "unit": "to",
+                                },
+                            ]
+                        }
+                    ]
+                },
+                item=item,
+                requirement=DcatRequirement(
+                    requirement_id="attribute_range_decomposition",
+                    label="Range decomposition",
+                    description="Range decomposition",
+                    target_paths=["/is_about_entity/0/has_quantitative_attribute"],
+                ),
+                validation_schema={},
+            )
 
         attributes = updated["is_about_entity"][0]["has_quantitative_attribute"]
         self.assertEqual(len(attributes), 2)
@@ -2439,19 +2464,37 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             },
         ]
 
-        updated, paths, _, errors, applied, rejected = await service._semantic_reconstruction_update(
-            data_package_id="pkg",
-            profile_identifier="profile",
-            document={"is_about_entity": [{"has_quantitative_attribute": attributes}]},
-            item=item,
-            requirement=DcatRequirement(
-                requirement_id="attribute_range_decomposition",
-                label="Range decomposition",
-                description="Range decomposition",
-                target_paths=item.target_paths,
-            ),
-            validation_schema={},
+        diagnosis = Mock(
+            output={
+                "defects": [
+                    {
+                        "defect_type": "bad_range",
+                        "target_path": "/is_about_entity/0/has_quantitative_attribute",
+                        "entry_indices": [4],
+                        "recommended_action": "remove",
+                        "needs_synthesis": False,
+                        "reason": "Sibling bounds already represent the range.",
+                    }
+                ],
+                "reason": "Remove collapsed range.",
+            },
+            usage=None,
         )
+
+        with patch("app.services.projection_service.generate_structured", AsyncMock(return_value=diagnosis)):
+            updated, paths, _, errors, applied, rejected = await service._semantic_reconstruction_update(
+                data_package_id="pkg",
+                profile_identifier="profile",
+                document={"is_about_entity": [{"has_quantitative_attribute": attributes}]},
+                item=item,
+                requirement=DcatRequirement(
+                    requirement_id="attribute_range_decomposition",
+                    label="Range decomposition",
+                    description="Range decomposition",
+                    target_paths=item.target_paths,
+                ),
+                validation_schema={},
+            )
 
         repaired = updated["is_about_entity"][0]["has_quantitative_attribute"]
         self.assertEqual(len(repaired), 4)
@@ -2494,19 +2537,55 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             ],
         }
 
-        updated, _, _, errors, applied, rejected = await service._semantic_reconstruction_update(
-            data_package_id="pkg",
-            profile_identifier="profile",
-            document=document,
-            item=item,
-            requirement=DcatRequirement(
-                requirement_id="attribute_range_decomposition",
-                label="Range decomposition",
-                description="Range decomposition",
-                target_paths=item.target_paths,
-            ),
-            validation_schema={},
+        diagnosis = Mock(
+            output={
+                "defects": [
+                    {
+                        "defect_type": "bad_range",
+                        "target_path": "/was_generated_by/0/has_quantitative_attribute",
+                        "entry_indices": [],
+                        "recommended_action": "append",
+                        "needs_synthesis": True,
+                        "reason": "Add minimum wavenumber.",
+                    },
+                    {
+                        "defect_type": "bad_range",
+                        "target_path": "/was_generated_by/0/has_quantitative_attribute",
+                        "entry_indices": [],
+                        "recommended_action": "append",
+                        "needs_synthesis": True,
+                        "reason": "Add maximum wavenumber.",
+                    },
+                    {
+                        "defect_type": "bad_range",
+                        "target_path": "/was_generated_by/0/has_quantitative_attribute",
+                        "entry_indices": [0],
+                        "recommended_action": "remove",
+                        "needs_synthesis": False,
+                        "reason": "Remove collapsed range.",
+                    },
+                ],
+                "reason": "Decompose range.",
+            },
+            usage=None,
         )
+        minimum = Mock(output={"title": "Minimum wavenumber", "value": 373.96, "has_quantity_type": "minimum wavenumber", "unit": "1/cm"}, usage=None)
+        maximum = Mock(output={"title": "Maximum wavenumber", "value": 3997.45, "has_quantity_type": "maximum wavenumber", "unit": "1/cm"}, usage=None)
+
+        with patch("app.services.projection_service.generate_structured", AsyncMock(side_effect=[diagnosis, minimum, maximum])):
+            updated, _, _, errors, applied, rejected = await service._semantic_reconstruction_update(
+                data_package_id="pkg",
+                profile_identifier="profile",
+                document=document,
+                item=item,
+                requirement=DcatRequirement(
+                    requirement_id="attribute_range_decomposition",
+                    label="Range decomposition",
+                    description="Range decomposition",
+                    target_paths=item.target_paths,
+                ),
+                validation_schema={},
+            )
 
         repaired = updated["was_generated_by"][0]["has_quantitative_attribute"]
         self.assertEqual([entry["has_quantity_type"] for entry in repaired], ["minimum wavenumber", "maximum wavenumber"])
@@ -2555,19 +2634,37 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             ],
         }
 
-        updated, paths, _, errors, applied, rejected = await service._semantic_reconstruction_update(
-            data_package_id="pkg",
-            profile_identifier="profile",
-            document=document,
-            item=item,
-            requirement=DcatRequirement(
-                requirement_id="attribute_parent_placement",
-                label="Attribute parent placement",
-                description="Place attributes on their semantic owner",
-                target_paths=item.target_paths,
-            ),
-            validation_schema={},
+        diagnosis = Mock(
+            output={
+                "defects": [
+                    {
+                        "defect_type": "wrong_parent",
+                        "target_path": "/was_generated_by/0/has_quantitative_attribute",
+                        "entry_indices": [0, 1],
+                        "recommended_action": "remove",
+                        "needs_synthesis": False,
+                        "reason": "Measurement attributes are already represented on the evaluated entity.",
+                    }
+                ],
+                "reason": "Remove wrongly placed activity attributes.",
+            },
+            usage=None,
         )
+
+        with patch("app.services.projection_service.generate_structured", AsyncMock(return_value=diagnosis)) as mocked:
+            updated, paths, _, errors, applied, rejected = await service._semantic_reconstruction_update(
+                data_package_id="pkg",
+                profile_identifier="profile",
+                document=document,
+                item=item,
+                requirement=DcatRequirement(
+                    requirement_id="attribute_parent_placement",
+                    label="Attribute parent placement",
+                    description="Place attributes on their semantic owner",
+                    target_paths=item.target_paths,
+                ),
+                validation_schema={},
+            )
 
         self.assertEqual(updated["was_generated_by"][0]["has_quantitative_attribute"], [])
         self.assertEqual(len(updated["is_about_entity"][0]["has_quantitative_attribute"]), 3)
@@ -2581,6 +2678,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(errors, [])
         self.assertEqual(rejected, [])
         self.assertEqual(applied, 2)
+        self.assertIn("attribute_parents", mocked.call_args.kwargs["prompt"])
 
     def test_semantic_action_compiler_invalid_merge_is_rejected(self):
         service = WorkflowService(
@@ -2839,7 +2937,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         state = ExtractionRunState(generated_final_draft={"description": ["Original."]})
         progress = ExtractionRunProgress(warnings=[])
         item = RequirementReportItem(
-            requirement_id="dataset_description_identity",
+            requirement_id="dataset_description_scope",
             label="Description",
             weight=1.0,
             status="partial",
@@ -3512,5 +3610,3 @@ class DescriptionMiningIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(updated, document)
         self.assertEqual(state.parent_attribute_ledger[0].status, "skipped_semantic_placement")
-
-
