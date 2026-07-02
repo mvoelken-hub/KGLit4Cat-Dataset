@@ -167,6 +167,12 @@ class WorkflowService(
             return None, TaskStatus.COMPLETED
 
         if force_rebuild:
+            self._clear_prompt_diagnostics(
+                data_package_id,
+                stage="profile_draft",
+                chunking_strategy=chunking_strategy,
+                chat_model=chat_model,
+            )
             self._clear_profile_projection_token_usage(
                 data_package_id,
                 chunking_strategy=chunking_strategy,
@@ -1191,7 +1197,17 @@ class WorkflowService(
         )
         if force_profile_rebuild and target_stage in {"profile", "grounding", "complete"}:
             self._clear_profile_projection_progress(progress)
-            self._clear_profile_projection_token_usage(data_package_id)
+            self._clear_prompt_diagnostics(
+                data_package_id,
+                stage="profile_draft",
+                chunking_strategy=chunking_strategy,
+                chat_model=chat_model,
+            )
+            self._clear_profile_projection_token_usage(
+                data_package_id,
+                chunking_strategy=chunking_strategy,
+                chat_model=chat_model,
+            )
         self._update_progress(data_package_id, progress)
 
         if persisted_state and persisted_state.ranked_files:
@@ -2458,6 +2474,7 @@ class WorkflowService(
         prefixes = (
             f"extraction:evidence:{data_package_id}:",
             f"extraction:profile:{data_package_id}:",
+            f"extraction:grounding:{data_package_id}:",
             f"extraction:run:{data_package_id}:",
         )
         prefix = next((candidate for candidate in prefixes if name.startswith(candidate)), None)
@@ -2573,12 +2590,22 @@ class WorkflowService(
             status="failed",
         )
 
-    def _clear_prompt_diagnostics(self, data_package_id: str) -> None:
+    def _clear_prompt_diagnostics(
+        self,
+        data_package_id: str,
+        *,
+        stage: str | None = None,
+        chunking_strategy: str | None = None,
+        chat_model: str | None = None,
+    ) -> None:
         if self.output_repository is None:
             return
         self.output_repository.clear_prompt_diagnostics(
             data_package_id,
-            chat_model=self.ollama_client.chat_model if self.ollama_client else None,
+            chat_model=chat_model
+            or (self.ollama_client.chat_model if self.ollama_client else None),
+            chunking_strategy=chunking_strategy,
+            stage=stage,
         )
 
     def _prompt_token_budgeter(self) -> PromptTokenBudgeter:
@@ -2829,6 +2856,12 @@ class WorkflowService(
             if result is not None:
                 return result, TaskStatus.COMPLETED
 
+        self._clear_prompt_diagnostics(
+            data_package_id,
+            stage="grounding",
+            chunking_strategy=effective_chunking,
+            chat_model=effective_model,
+        )
         await self.task_registry.create_task(
             coro=self._run_grounding_task(
                 data_package_id=data_package_id,

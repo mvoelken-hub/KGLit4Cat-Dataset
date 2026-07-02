@@ -408,7 +408,13 @@ class FakeOutputRepository:
     def save_grounding_artifacts(self, **_kwargs):
         pass
 
-    def clear_prompt_diagnostics(self, workflow_id: str, chat_model: str | None = None):
+    def clear_prompt_diagnostics(
+        self,
+        workflow_id: str,
+        chat_model: str | None = None,
+        chunking_strategy: str | None = None,
+        stage: str | None = None,
+    ):
         self.prompt_diagnostics = []
 
     def clear_initial_context(self, workflow_id: str):
@@ -845,7 +851,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         task = asyncio.current_task()
         self.assertIsNotNone(task)
         old_name = task.get_name()
-        task.set_name("extraction:evidence:package-id:fixed_tokens:rnj-1:8b-cloud")
+        task.set_name("extraction:grounding:package-id:fixed_tokens:rnj-1:8b-cloud")
         try:
             service._record_workflow_token_usage(
                 data_package_id="package-id",
@@ -1054,7 +1060,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         task = asyncio.current_task()
         self.assertIsNotNone(task)
         old_name = task.get_name()
-        task.set_name("extraction:evidence:package-id:fixed_tokens:rnj-1:8b-cloud")
+        task.set_name("extraction:grounding:package-id:fixed_tokens:rnj-1:8b-cloud")
         try:
             service._persist_prompt_diagnostics(
                 data_package_id="package-id",

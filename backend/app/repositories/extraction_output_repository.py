@@ -361,7 +361,13 @@ class ExtractionOutputRepository(Protocol):
         chunking_strategy: str = "semantic",
     ) -> None: ...
 
-    def clear_prompt_diagnostics(self, workflow_id: str, chat_model: str | None = None) -> None: ...
+    def clear_prompt_diagnostics(
+        self,
+        workflow_id: str,
+        chat_model: str | None = None,
+        chunking_strategy: str | None = None,
+        stage: str | None = None,
+    ) -> None: ...
 
     def clear_initial_context(self, workflow_id: str) -> None: ...
 

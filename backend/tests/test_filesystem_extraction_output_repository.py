@@ -139,6 +139,55 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
             index = json.loads((repo._workflow_dir(workflow_id) / "artifact_index.json").read_text(encoding="utf-8"))
             self.assertNotIn("evidence_notes", index["by_stage"])
 
+    def test_prompt_diagnostics_clear_can_target_branch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = FileSystemExtractionOutputRepository(Path(directory))
+            workflow_id = "test_workflow"
+            chat_model = "model:tag"
+
+            repo.append_prompt_diagnostic(
+                workflow_id=workflow_id,
+                chat_model=chat_model,
+                chunking_strategy="fixed_tokens",
+                diagnostic={
+                    "operation_id": "provenance_core_constructor",
+                    "agent_name": "profile_projection",
+                    "attempts": [],
+                },
+            )
+            repo.append_prompt_diagnostic(
+                workflow_id=workflow_id,
+                chat_model=chat_model,
+                chunking_strategy="fixed_tokens",
+                diagnostic={
+                    "operation_id": "chunk/a",
+                    "agent_name": "chunk_extraction",
+                    "attempts": [],
+                },
+            )
+
+            profile_prompts = repo._branch_dir(
+                workflow_id, "profile_draft", "fixed_tokens", chat_model
+            ) / "prompts"
+            evidence_prompts = repo._branch_dir(
+                workflow_id, "evidence_notes", "fixed_tokens", chat_model
+            ) / "prompts"
+            self.assertTrue(profile_prompts.exists())
+            self.assertTrue(evidence_prompts.exists())
+
+            repo.clear_prompt_diagnostics(
+                workflow_id,
+                chat_model=chat_model,
+                chunking_strategy="fixed_tokens",
+                stage="profile_draft",
+            )
+
+            self.assertFalse(profile_prompts.exists())
+            self.assertTrue(evidence_prompts.exists())
+            index = json.loads((repo._workflow_dir(workflow_id) / "artifact_index.json").read_text(encoding="utf-8"))
+            self.assertNotIn("profile_draft", index["by_stage"])
+            self.assertIn("evidence_notes", index["by_stage"])
+
     def test_extraction_result_writes_and_clears_new_artifacts(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = FileSystemExtractionOutputRepository(Path(directory))

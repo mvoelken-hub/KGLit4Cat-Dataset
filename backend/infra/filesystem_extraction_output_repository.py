@@ -690,13 +690,23 @@ class FileSystemExtractionOutputRepository:
         self,
         workflow_id: str,
         chat_model: str | None = None,
+        chunking_strategy: str | None = None,
+        stage: str | None = None,
     ) -> None:
         workflow_dir = self._workflow_dir(workflow_id)
         if not workflow_dir.exists():
             return
-        for prompts_dir in workflow_dir.rglob(PROMPTS_DIR):
+        if stage is not None and chunking_strategy is not None:
+            prompts_dir = (
+                self._branch_dir(workflow_id, stage, chunking_strategy, chat_model)
+                / PROMPTS_DIR
+            )
             if prompts_dir.is_dir():
                 _remove_tree(prompts_dir)
+        else:
+            for prompts_dir in workflow_dir.rglob(PROMPTS_DIR):
+                if prompts_dir.is_dir():
+                    _remove_tree(prompts_dir)
         self._write_artifact_index(workflow_dir)
 
     def clear_extraction_run(self, workflow_id: str) -> None:
