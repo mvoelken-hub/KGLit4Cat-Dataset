@@ -941,14 +941,9 @@ class GroundingService:
         selection_semaphore = asyncio.Semaphore(self._vocab_selection_llm_concurrency())
         profile_fields: list[ProfileFieldNormalization] = []
 
-        # --- Cross-constraint: ground has_quantity_type before unit ---
-        # Group discoveries by parent QuantitativeAttribute path.
-        # Process has_quantity_type first; after selection, use the
-        # hasQuantityKind graph to filter unit candidates for the same attribute.
-        parent_to_quantity_kind_uri: dict[str, str] = {}
+        candidates_by_path: dict[str, list[dict[str, Any]]] = {}
 
         def _sort_key(d: _ProfileFieldCandidateDiscovery) -> tuple[int, str]:
-            # has_quantity_type before unit; everything else unchanged.
             if d.field_name == "has_quantity_type":
                 return (0, d.json_path)
             if d.field_name == "unit":
@@ -964,19 +959,7 @@ class GroundingService:
                 if record and record.result:
                     candidates.extend(self._candidate_records(record.result))
             candidates = self._deduplicate_candidates(candidates)
-
-            # --- Cross-constraint filtering for unit fields ---
-            if discovery.field_name == "unit":
-                parent = self._parent_attribute_path(discovery.json_path)
-                qk_uri = parent_to_quantity_kind_uri.get(parent)
-                if qk_uri:
-                    compatible = self._compatible_unit_uris_from_quantity_kind(state, qk_uri)
-                    if compatible is not None:
-                        filtered = [c for c in candidates if c.get("uri") in compatible]
-                        if filtered:
-                            candidates = filtered
-                        # If filtering yields nothing, keep unfiltered (don't
-                        # starve the LLM — the graph may be incomplete).
+            candidates_by_path[discovery.json_path] = candidates
 
             selection_source_value = (
                 discovery.formulated_query or discovery.source_value
@@ -997,12 +980,6 @@ class GroundingService:
                 warnings.append(
                     f"Profile field '{discovery.json_path}' kept raw value '{discovery.source_value}'."
                 )
-            else:
-                # Record selected quantityKind URI for cross-constraining sibling unit.
-                if discovery.field_name == "has_quantity_type" and mapping.selected_uri:
-                    parent = self._parent_attribute_path(discovery.json_path)
-                    if parent:
-                        parent_to_quantity_kind_uri[parent] = mapping.selected_uri
             profile_fields.append(
                 ProfileFieldNormalization(
                     json_path=discovery.json_path,
@@ -1011,7 +988,355 @@ class GroundingService:
                     term=mapping,
                 )
             )
+        profile_fields = await self._resolve_profile_quantity_field_pairs(
+            data_package_id=data_package_id,
+            state=state,
+            profile_fields=profile_fields,
+            candidates_by_path=candidates_by_path,
+            selection_semaphore=selection_semaphore,
+            warnings=warnings,
+        )
         return ExtractionNormalization(profile_fields=profile_fields)
+
+    async def _resolve_profile_quantity_field_pairs(
+        self,
+        *,
+        data_package_id: str,
+        state: ExtractionRunState,
+        profile_fields: list[ProfileFieldNormalization],
+        candidates_by_path: dict[str, list[dict[str, Any]]],
+        selection_semaphore: asyncio.Semaphore,
+        warnings: list[str],
+    ) -> list[ProfileFieldNormalization]:
+        by_parent: dict[str, dict[str, int]] = {}
+        for index, item in enumerate(profile_fields):
+            if item.field_name not in {"has_quantity_type", "unit"}:
+                continue
+            parent = self._parent_attribute_path(item.json_path)
+            if not parent:
+                continue
+            by_parent.setdefault(parent, {})[item.field_name] = index
+
+        resolved = list(profile_fields)
+        for parent_path, indices in by_parent.items():
+            kind_index = indices.get("has_quantity_type")
+            unit_index = indices.get("unit")
+            if kind_index is None or unit_index is None:
+                continue
+            kind_field = resolved[kind_index]
+            unit_field = resolved[unit_index]
+            kind_uri = kind_field.term.selected_uri if kind_field.term else None
+            unit_uri = unit_field.term.selected_uri if unit_field.term else None
+            if not kind_uri or not unit_uri:
+                continue
+            if self._qudt_quantity_pair_status(
+                state=state,
+                quantity_kind_uri=kind_uri,
+                unit_uri=unit_uri,
+            ) == "compatible":
+                continue
+
+            kind_candidates = self._qudt_candidates_for_role(
+                candidates_by_path.get(kind_field.json_path, []),
+                "quantity_kind",
+            )
+            unit_candidates = self._qudt_candidates_for_role(
+                candidates_by_path.get(unit_field.json_path, []),
+                "unit",
+            )
+            selection = await self._select_profile_quantity_pair(
+                data_package_id=data_package_id,
+                state=state,
+                parent_path=parent_path,
+                quantity_kind_field=kind_field,
+                unit_field=unit_field,
+                quantity_kind_candidates=kind_candidates,
+                unit_candidates=unit_candidates,
+                selection_semaphore=selection_semaphore,
+                warnings=warnings,
+            )
+            reason = (
+                f"QUDT quantity-kind/unit pair for '{parent_path}' was not cross-validated "
+                f"via qudt:hasQuantityKind: {kind_uri} with {unit_uri}."
+            )
+            if selection is None:
+                resolved[kind_index] = self._unselected_profile_field(kind_field, reason)
+                resolved[unit_index] = self._unselected_profile_field(unit_field, reason)
+                warnings.append(f"{reason} Rejected both fields.")
+                continue
+
+            selected_kind = selection.selected_quantity_kind_uri
+            selected_unit = selection.selected_unit_uri
+            if not selected_kind or not selected_unit:
+                resolved[kind_index] = self._unselected_profile_field(kind_field, selection.reason or reason)
+                resolved[unit_index] = self._unselected_profile_field(unit_field, selection.reason or reason)
+                warnings.append(f"{reason} Pair resolver rejected both fields.")
+                continue
+            if self._qudt_quantity_pair_status(
+                state=state,
+                quantity_kind_uri=selected_kind,
+                unit_uri=selected_unit,
+            ) != "compatible":
+                resolved[kind_index] = self._unselected_profile_field(kind_field, selection.reason or reason)
+                resolved[unit_index] = self._unselected_profile_field(unit_field, selection.reason or reason)
+                warnings.append(f"{reason} Pair resolver returned a non-compatible pair; rejected both fields.")
+                continue
+
+            kind_candidate = self._candidate_by_uri(kind_candidates, selected_kind)
+            unit_candidate = self._candidate_by_uri(unit_candidates, selected_unit)
+            if kind_candidate is None or unit_candidate is None:
+                resolved[kind_index] = self._unselected_profile_field(kind_field, selection.reason or reason)
+                resolved[unit_index] = self._unselected_profile_field(unit_field, selection.reason or reason)
+                warnings.append(f"{reason} Pair resolver returned a URI outside the candidate sets; rejected both fields.")
+                continue
+
+            resolved[kind_index] = kind_field.model_copy(
+                update={
+                    "term": self._mapping_from_profile_candidate(
+                        field=kind_field,
+                        candidate=kind_candidate,
+                        confidence=selection.confidence,
+                        reason=selection.reason,
+                    )
+                }
+            )
+            resolved[unit_index] = unit_field.model_copy(
+                update={
+                    "term": self._mapping_from_profile_candidate(
+                        field=unit_field,
+                        candidate=unit_candidate,
+                        confidence=selection.confidence,
+                        reason=selection.reason,
+                    )
+                }
+            )
+            warnings.append(f"{reason} Pair resolver selected a compatible replacement pair.")
+        return resolved
+
+    async def _select_profile_quantity_pair(
+        self,
+        *,
+        data_package_id: str,
+        state: ExtractionRunState,
+        parent_path: str,
+        quantity_kind_field: ProfileFieldNormalization,
+        unit_field: ProfileFieldNormalization,
+        quantity_kind_candidates: list[dict[str, Any]],
+        unit_candidates: list[dict[str, Any]],
+        selection_semaphore: asyncio.Semaphore,
+        warnings: list[str],
+    ) -> VocabularyQuantityPairSelection | None:
+        if not quantity_kind_candidates or not unit_candidates:
+            return None
+        async with selection_semaphore:
+            assert self.ollama_client is not None
+            compatible_pairs = self._compatible_qudt_candidate_pairs(
+                state=state,
+                quantity_kind_candidates=quantity_kind_candidates,
+                unit_candidates=unit_candidates,
+            )
+            prompt_components = [
+                (
+                    "pair_selection_instruction",
+                    "Select a compatible QUDT QuantityKind and Unit pair for one quantitative attribute.\n"
+                    "Use only the candidate URIs in the prompt.\n"
+                    "The selected pair must appear in compatible_pairs.\n"
+                    "If no compatible pair fits the source attribute, return null for both URIs.\n",
+                ),
+                (
+                    "source_fields",
+                    "Source fields JSON:\n"
+                    + json.dumps(
+                        {
+                            "parent_path": parent_path,
+                            "quantity_kind": quantity_kind_field.model_dump(mode="json"),
+                            "unit": unit_field.model_dump(mode="json"),
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n\n",
+                ),
+                (
+                    "quantity_kind_candidates",
+                    "QuantityKind candidates JSON:\n"
+                    + json.dumps(quantity_kind_candidates, ensure_ascii=False)
+                    + "\n\n",
+                ),
+                (
+                    "unit_candidates",
+                    "Unit candidates JSON:\n"
+                    + json.dumps(unit_candidates, ensure_ascii=False)
+                    + "\n\n",
+                ),
+                (
+                    "compatible_pairs",
+                    "Compatible candidate pairs JSON:\n"
+                    + json.dumps(compatible_pairs, ensure_ascii=False)
+                    + "\n\n",
+                ),
+            ]
+            try:
+                result = await generate_structured(
+                    self.ollama_client,
+                    model=self.ollama_client.chat_model,
+                    system=(
+                        "You repair incompatible QUDT quantity grounding pairs. "
+                        "Return one compatible QuantityKind and Unit pair, or nulls for both."
+                    ),
+                    prompt="".join(text for _, text in prompt_components),
+                    system_components=[
+                        (
+                            "profile_quantity_pair_selection_system_prompt",
+                            "You repair incompatible QUDT quantity grounding pairs. Return only JSON.",
+                        ),
+                    ],
+                    prompt_components=prompt_components,
+                    token_budgeter=self._prompt_token_budgeter(),
+                    operation_id=self._prompt_operation_id(
+                        "profile_quantity_pair_selection",
+                        parent_path,
+                    ),
+                    agent_name="profile_quantity_pair_selection",
+                    diagnostic_metadata={"parent_path": parent_path},
+                    output_type=VocabularyQuantityPairSelection,
+                    num_ctx=self.ollama_client.max_context_length,
+                )
+            except CompletionError as exc:
+                self._record_llm_call_exception(
+                    data_package_id=data_package_id,
+                    exc=exc,
+                    agent_name="profile_quantity_pair_selection",
+                )
+                warnings.append(f"QUDT pair resolver failed for '{parent_path}': {exc}")
+                return None
+        self._record_llm_call_result(
+            data_package_id=data_package_id,
+            result=result,
+            agent_name="profile_quantity_pair_selection",
+        )
+        return (
+            result.output
+            if isinstance(result.output, VocabularyQuantityPairSelection)
+            else VocabularyQuantityPairSelection.model_validate(result.output)
+        )
+
+    @staticmethod
+    def _qudt_candidates_for_role(
+        candidates: list[dict[str, Any]],
+        role: Literal["quantity_kind", "unit"],
+    ) -> list[dict[str, Any]]:
+        prefix = (
+            "http://qudt.org/vocab/quantitykind/"
+            if role == "quantity_kind"
+            else "http://qudt.org/vocab/unit/"
+        )
+        return [candidate for candidate in candidates if str(candidate.get("uri", "")).startswith(prefix)]
+
+    @staticmethod
+    def _candidate_by_uri(
+        candidates: list[dict[str, Any]],
+        uri: str,
+    ) -> dict[str, Any] | None:
+        return next((candidate for candidate in candidates if candidate.get("uri") == uri), None)
+
+    @staticmethod
+    def _mapping_from_profile_candidate(
+        *,
+        field: ProfileFieldNormalization,
+        candidate: dict[str, Any],
+        confidence: float,
+        reason: str,
+    ) -> VocabularyTermMapping:
+        return VocabularyTermMapping(
+            source_value=field.source_value,
+            vocabulary_identifier=candidate.get("vocabulary_identifier"),
+            rdf_type=candidate.get("rdf_type"),
+            selected_uri=candidate.get("uri"),
+            selected_title=candidate.get("title"),
+            confidence=confidence,
+            reason=reason,
+        )
+
+    @staticmethod
+    def _unselected_profile_field(
+        field: ProfileFieldNormalization,
+        reason: str,
+    ) -> ProfileFieldNormalization:
+        term = field.term or VocabularyTermMapping(source_value=field.source_value)
+        return field.model_copy(
+            update={
+                "term": term.model_copy(
+                    update={
+                        "selected_uri": None,
+                        "selected_title": None,
+                        "reason": reason,
+                    }
+                )
+            }
+        )
+
+    @staticmethod
+    def _qudt_quantity_pair_status(
+        *,
+        state: ExtractionRunState,
+        quantity_kind_uri: str,
+        unit_uri: str,
+    ) -> Literal["compatible", "incompatible", "unknown"]:
+        compatible_kinds_for_unit: set[str] = set()
+        compatible_units_for_kind: set[str] = set()
+        for record in state.vocab_queries:
+            if not record.result or not record.result.graph_statements:
+                continue
+            for stmt in record.result.graph_statements:
+                if stmt.predicate != "qudt__hasQuantityKind":
+                    continue
+                if stmt.subject_uri == unit_uri:
+                    compatible_kinds_for_unit.add(stmt.object_uri)
+                if stmt.object_uri == quantity_kind_uri:
+                    compatible_units_for_kind.add(stmt.subject_uri)
+        if quantity_kind_uri in compatible_kinds_for_unit or unit_uri in compatible_units_for_kind:
+            return "compatible"
+        if compatible_kinds_for_unit or compatible_units_for_kind:
+            return "incompatible"
+        return "unknown"
+
+    @classmethod
+    def _compatible_qudt_candidate_pairs(
+        cls,
+        *,
+        state: ExtractionRunState,
+        quantity_kind_candidates: list[dict[str, Any]],
+        unit_candidates: list[dict[str, Any]],
+    ) -> list[dict[str, str]]:
+        quantity_kind_uris = {str(candidate.get("uri", "")) for candidate in quantity_kind_candidates}
+        unit_uris = {str(candidate.get("uri", "")) for candidate in unit_candidates}
+        pairs: list[dict[str, str]] = []
+        for record in state.vocab_queries:
+            if not record.result or not record.result.graph_statements:
+                continue
+            for stmt in record.result.graph_statements:
+                if stmt.predicate != "qudt__hasQuantityKind":
+                    continue
+                if stmt.subject_uri in unit_uris and stmt.object_uri in quantity_kind_uris:
+                    pairs.append(
+                        {
+                            "quantity_kind_uri": stmt.object_uri,
+                            "unit_uri": stmt.subject_uri,
+                        }
+                    )
+        return cls._deduplicate_compatible_pairs(pairs)
+
+    @staticmethod
+    def _deduplicate_compatible_pairs(pairs: list[dict[str, str]]) -> list[dict[str, str]]:
+        seen: set[tuple[str, str]] = set()
+        deduped: list[dict[str, str]] = []
+        for pair in pairs:
+            key = (pair["quantity_kind_uri"], pair["unit_uri"])
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(pair)
+        return deduped
 
     async def _discover_quantity_candidates(
         self,

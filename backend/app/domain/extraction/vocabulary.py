@@ -30,6 +30,19 @@ class VocabularyCandidateSelection(BaseModel):
     reason: str = ""
 
 
+class VocabularyQuantityPairSelection(BaseModel):
+    selected_quantity_kind_uri: str | None = Field(
+        default=None,
+        description="URI of the selected QUDT QuantityKind, or null when no compatible pair fits.",
+    )
+    selected_unit_uri: str | None = Field(
+        default=None,
+        description="URI of the selected QUDT Unit, or null when no compatible pair fits.",
+    )
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    reason: str = ""
+
+
 class VocabularyFallbackQuery(BaseModel):
     vector_query: str | None = None
     fulltext_query: str | None = None

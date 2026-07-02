@@ -44,12 +44,13 @@ from app.domain.extraction import (
     ShallowDatasetLevelProjectionForPrompt,
     TracedExtractionObject,
     VocabularyCandidateSelection,
+    VocabularyQuantityPairSelection,
     VocabularyQueryFormulation,
     VocabularyTermMapping,
     build_extraction_overview_prompt,
     build_extraction_overview_prompt_components,
 )
-from app.domain.semantics import CompactVocabResource, VocabQuery, VocabQueryResult, VocabSchemeInfo, VocabTermScheme
+from app.domain.semantics import CompactVocabResource, VocabGraphStatement, VocabQuery, VocabQueryResult, VocabSchemeInfo, VocabTermScheme
 from app.domain.extraction.evidence_context import validate_evidence_candidates
 from app.ollama.completion import CompletionResult
 from app.ollama.errors import MaxRetriesExceeded, OutputParsingError
@@ -2693,6 +2694,158 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(attribute["rdf_type"]["id"], "https://qudt.org/schema/qudt/Quantity")
         self.assertEqual(attribute["has_quantity_type"]["id"], "http://qudt.org/vocab/quantitykind/Temperature")
         self.assertEqual(attribute["has_quantity_type"]["rdf_type"]["id"], "https://qudt.org/schema/qudt/QuantityKind")
+
+    async def test_profile_quantity_pair_cross_validation_keeps_compatible_pair(self):
+        service, _, _ = make_service([[make_chunk()]])
+        state = ExtractionRunState(
+            vocab_queries=[
+                ExtractionVocabQueryRecord(
+                    query_id="q",
+                    kind="profile_has_quantity_type",
+                    source_value="frequency",
+                    source_context={},
+                    vocabulary_identifier="http://qudt.org/vocab/quantitykind",
+                    rdf_type="qudt__QuantityKind",
+                    query=VocabQuery(rdf_type="qudt__QuantityKind", fulltext_query="frequency"),
+                    status="completed",
+                    result=VocabQueryResult(
+                        identifier="http://qudt.org/vocab/quantitykind",
+                        rdf_type="qudt__QuantityKind",
+                        graph_statements=[
+                            VocabGraphStatement(
+                                subject_uri="http://qudt.org/vocab/unit/HZ",
+                                predicate="qudt__hasQuantityKind",
+                                object_uri="http://qudt.org/vocab/quantitykind/Frequency",
+                            )
+                        ],
+                    ),
+                )
+            ]
+        )
+        fields = [
+            ProfileFieldNormalization(
+                json_path="/has_quantitative_attribute/0/has_quantity_type",
+                field_name="has_quantity_type",
+                source_value="frequency",
+                term=VocabularyTermMapping(
+                    source_value="frequency",
+                    selected_uri="http://qudt.org/vocab/quantitykind/Frequency",
+                ),
+            ),
+            ProfileFieldNormalization(
+                json_path="/has_quantitative_attribute/0/unit",
+                field_name="unit",
+                source_value="Hz",
+                term=VocabularyTermMapping(
+                    source_value="Hz",
+                    selected_uri="http://qudt.org/vocab/unit/HZ",
+                ),
+            ),
+        ]
+
+        with patch("app.services.grounding_service.generate_structured") as generate:
+            resolved = await service._resolve_profile_quantity_field_pairs(
+                data_package_id="package-id",
+                state=state,
+                profile_fields=fields,
+                candidates_by_path={},
+                selection_semaphore=asyncio.Semaphore(1),
+                warnings=[],
+            )
+
+        generate.assert_not_called()
+        self.assertEqual(resolved[0].term.selected_uri, "http://qudt.org/vocab/quantitykind/Frequency")
+        self.assertEqual(resolved[1].term.selected_uri, "http://qudt.org/vocab/unit/HZ")
+
+    async def test_profile_quantity_pair_resolver_repairs_incompatible_pair(self):
+        service, _, _ = make_service([[make_chunk()]])
+        state = ExtractionRunState(
+            vocab_queries=[
+                ExtractionVocabQueryRecord(
+                    query_id="q",
+                    kind="profile_has_quantity_type",
+                    source_value="spectral width",
+                    source_context={},
+                    vocabulary_identifier="http://qudt.org/vocab/quantitykind",
+                    rdf_type="qudt__QuantityKind",
+                    query=VocabQuery(rdf_type="qudt__QuantityKind", fulltext_query="spectral width"),
+                    status="completed",
+                    result=VocabQueryResult(
+                        identifier="http://qudt.org/vocab/quantitykind",
+                        rdf_type="qudt__QuantityKind",
+                        graph_statements=[
+                            VocabGraphStatement(
+                                subject_uri="http://qudt.org/vocab/unit/HZ",
+                                predicate="qudt__hasQuantityKind",
+                                object_uri="http://qudt.org/vocab/quantitykind/Frequency",
+                            ),
+                            VocabGraphStatement(
+                                subject_uri="http://qudt.org/vocab/unit/J-PER-M4",
+                                predicate="qudt__hasQuantityKind",
+                                object_uri="http://qudt.org/vocab/quantitykind/SpectralRadiantEnergyDensity",
+                            ),
+                        ],
+                    ),
+                )
+            ]
+        )
+        fields = [
+            ProfileFieldNormalization(
+                json_path="/has_quantitative_attribute/0/has_quantity_type",
+                field_name="has_quantity_type",
+                source_value="spectral width",
+                term=VocabularyTermMapping(
+                    source_value="spectral width",
+                    selected_uri="http://qudt.org/vocab/quantitykind/SpectralRadiantEnergyDensity",
+                ),
+            ),
+            ProfileFieldNormalization(
+                json_path="/has_quantitative_attribute/0/unit",
+                field_name="unit",
+                source_value="Hz",
+                term=VocabularyTermMapping(
+                    source_value="Hz",
+                    selected_uri="http://qudt.org/vocab/unit/HZ",
+                ),
+            ),
+        ]
+        candidates_by_path = {
+            "/has_quantitative_attribute/0/has_quantity_type": [
+                {"uri": "http://qudt.org/vocab/quantitykind/Frequency", "title": "Frequency", "vocabulary_identifier": "http://qudt.org/vocab/quantitykind", "rdf_type": "qudt__QuantityKind"},
+                {"uri": "http://qudt.org/vocab/quantitykind/SpectralRadiantEnergyDensity", "title": "Spectral Radiant Energy Density", "vocabulary_identifier": "http://qudt.org/vocab/quantitykind", "rdf_type": "qudt__QuantityKind"},
+            ],
+            "/has_quantitative_attribute/0/unit": [
+                {"uri": "http://qudt.org/vocab/unit/HZ", "title": "Hertz", "vocabulary_identifier": "http://qudt.org/vocab/unit", "rdf_type": "qudt__Unit"},
+                {"uri": "http://qudt.org/vocab/unit/J-PER-M4", "title": "Joule per Quartic Metre", "vocabulary_identifier": "http://qudt.org/vocab/unit", "rdf_type": "qudt__Unit"},
+            ],
+        }
+
+        async def fake_generate(*_args, **_kwargs):
+            return CompletionResult(
+                output=VocabularyQuantityPairSelection(
+                    selected_quantity_kind_uri="http://qudt.org/vocab/quantitykind/Frequency",
+                    selected_unit_uri="http://qudt.org/vocab/unit/HZ",
+                    confidence=0.9,
+                    reason="Hz is a frequency unit.",
+                ),
+                usage=RunUsage(requests=1),
+            )
+
+        warnings: list[str] = []
+        with patch("app.services.grounding_service.generate_structured", side_effect=fake_generate) as generate:
+            resolved = await service._resolve_profile_quantity_field_pairs(
+                data_package_id="package-id",
+                state=state,
+                profile_fields=fields,
+                candidates_by_path=candidates_by_path,
+                selection_semaphore=asyncio.Semaphore(1),
+                warnings=warnings,
+            )
+
+        generate.assert_called_once()
+        self.assertEqual(resolved[0].term.selected_uri, "http://qudt.org/vocab/quantitykind/Frequency")
+        self.assertEqual(resolved[1].term.selected_uri, "http://qudt.org/vocab/unit/HZ")
+        self.assertTrue(any("Pair resolver selected a compatible replacement pair" in warning for warning in warnings))
 
     async def test_run_extraction_requires_completed_chunks(self):
         service, _, _ = make_service([])

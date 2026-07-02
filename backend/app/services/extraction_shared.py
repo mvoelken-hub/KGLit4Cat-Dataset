@@ -158,6 +158,7 @@ from app.domain.extraction import (
     TracedExtractionObject,
     VocabularyCandidateSelection,
     VocabularyFallbackQuery,
+    VocabularyQuantityPairSelection,
     VocabularyQueryFormulation,
     VocabularyTermMapping,
     build_dataset_level_projection_prompt_components,
