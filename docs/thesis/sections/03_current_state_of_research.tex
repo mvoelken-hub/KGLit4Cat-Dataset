@@ -153,9 +153,11 @@ Their mappings refer to established semantic resources including \ac{ChEBI}, \ac
 This preserves the structural compatibility of the generic profile while producing more precise \ac{RDF} and narrower validation constraints for chemical metadata.
 
 The profile is organized into modules for material entities, chemical entities, chemical reactions, and their integration with the dataset and data-generation patterns of \ac{DCAT-AP+}.
-The generic \texttt{EvaluatedEntity} is specialized into shapes such as \texttt{MaterialSample} and \texttt{SubstanceSample}, whereas \texttt{ChemicalReaction} specializes \texttt{EvaluatedActivity}.
+ChemDCAT-AP specializes the generic evaluated entity and evaluated activity shapes.
+Material samples and substance samples are modeled as entity specializations.
+Chemical reactions are modeled as activity specializations.
 Roles involved in a reaction are represented through shapes such as \texttt{StartingMaterial}, \texttt{Reagent}, \texttt{ChemicalProduct}, \texttt{Catalyst}, and \texttt{Reactor}.
-At the catalogue level, convenience shapes such as \texttt{SubstanceSampleCharacterizationDataset} and \texttt{ReactionMonitoringDataset} constrain a dataset and its generating activity to the corresponding chemical subject matter \cite{stroemert2026chemdcat,chemdcatapDocumentation}.
+At the catalogue level, convenience dataset shapes constrain a dataset and its generating activity to the corresponding chemical subject matter \cite{stroemert2026chemdcat,chemdcatapDocumentation}.
 
 ChemDCAT-AP also specializes the generic attribute and provenance relations of \ac{DCAT-AP+}.
 Instead of representing every chemical identifier through a generic \texttt{QualitativeAttribute} and an additional \texttt{rdf\_type}, dedicated slots such as \texttt{inchi}, \texttt{inchikey}, \texttt{smiles}, and \texttt{molecular\_formula} encode their meaning directly in the schema.
@@ -201,14 +203,14 @@ The white paper illustrates the use of this framework for literature search, exp
 
 The \acf{QUDT} provides a cross-domain semantic model for quantities, quantity kinds, units of measure, dimensions, numerical values, and their machine-readable representations.
 It complements domain vocabularies such as Voc4Cat by providing the identifiers and relations needed to express the quantitative semantics of a measurement that is associated with a characterization technique or an attribute.
-A literal value such as \texttt{400} becomes explicit and machine-actionable when it is linked, for example, to \texttt{quantitykind:Frequency} and \texttt{unit:MegaHZ} \cite{qudt2022schema}.
+A literal value such as \texttt{400} becomes explicit and machine-actionable when it is linked, for example, to \texttt{quantitykind:\allowbreak Frequency} and \texttt{unit:\allowbreak MegaHZ} \cite{qudt2022schema}.
 
 The  \ac{QUDT} model makes these links explicit as an example shows.
-The \ac{QUDT} quantity-kind vocabulary defines \texttt{quantitykind:Frequency} as the number of occurrences of a repeating event per unit time and assigns it the dimension vector \(\mathrm{T}^{-1}\).
-Through \texttt{qudt:applicableUnit}, it is linked to compatible units from the \ac{QUDT} unit vocabulary, such as \texttt{unit:HZ} and \texttt{unit:MegaHZ}.
-The corresponding unit resources are, in turn, associated with the frequency quantity kind through \texttt{qudt:hasQuantityKind} \cite{qudt2022schema}.
+The \ac{QUDT} quantity-kind vocabulary defines \texttt{quantitykind:\allowbreak Frequency} as the number of occurrences of a repeating event per unit time and assigns it the dimension vector \(\mathrm{T}^{-1}\).
+Through \texttt{qudt:\allowbreak applicableUnit}, it is linked to compatible units from the \ac{QUDT} unit vocabulary, such as \texttt{unit:\allowbreak HZ} and \texttt{unit:\allowbreak MegaHZ}.
+The corresponding unit resources are, in turn, associated with the frequency quantity kind through \texttt{qudt:\allowbreak hasQuantityKind} \cite{qudt2022schema}.
 These relations can be used by validation and transformation software for unit--quantity-kind compatibility checks and conversions to a selected reference unit.
-For example, an NMR spectrometer frequency of \texttt{400 MHz} can be represented using \texttt{quantitykind:Frequency} and \texttt{unit:MegaHZ} and normalized to \texttt{400,000,000 Hz} without changing the quantity being described.
+For example, an NMR spectrometer frequency of \texttt{400 MHz} can be represented using \texttt{quantitykind:\allowbreak Frequency} and \texttt{unit:\allowbreak MegaHZ} and normalized to \texttt{400,000,000 Hz} without changing the quantity being described.
 Conversely, a linking of a value to a quantity kind and unit that are incompatible can be flagged as an error.
 \ac{QUDT} provides the semantic relations and conversion parameters required for these operations, while their execution requires corresponding validation or transformation rules \cite{qudt2022schema}.
 

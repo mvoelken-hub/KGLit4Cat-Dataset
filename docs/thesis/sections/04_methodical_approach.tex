@@ -245,10 +245,10 @@ Filtered candidates are not discarded silently.
 They are written to a ledger together with the reason for filtering and the identifier of the retained representative where applicable.
 The resulting evidence grounding set forms the input for profile construction.
 
-\section{Profile Construction and Requirement Checking}
-\label{sec:profile_construction_requirement_checking}
+\section{DCAT-AP+ Artifact Construction}
+\label{sec:dcat-ap-artifact_construction}
 
-The profile construction stage turns the evidence grounding set into a \ac{DCAT-AP+} dataset artifact.
+The \ac{DCAT-AP+} artifact construction stage turns the evidence grounding set into a schema valid \texttt{Dataset} resource.
 It is split into smaller steps.
 The workflow first creates a schema-constrained dataset draft.
 It then fills and repairs this draft stepwise through profile requirements rather than through one free-form generation step.
@@ -296,27 +296,37 @@ This activity represents the analytical process that produced the dataset and is
 The step is executed as a constrained \ac{LLM} task followed by backend construction.
 The model receives the current draft and an orientation context.
 The dataset-level summary is available through the draft description.
-The separate orientation context is therefore limited to the ranked file summaries.
+The separate orientation context consists of the ranked file summaries.
 It does not receive the full evidence context at this point.
 The prompt asks the model to classify possible objects by their role in the data-generating activity.
 It returns structured intents rather than profile patches.
 The returned fields describe an activity title, an activity description, a possible plan, agents, evaluated targets, input entities, input activities, and output entities.
-
 The backend then turns these intents into profile objects.
-It creates \texttt{was\_generated\_by/0} if no activity exists yet.
 It assigns generated local identifiers to the activity-related objects.
-It also limits the number of inserted objects for each relation.
-The realized plan is used for methods, workflows, protocols, pulse programs, or other instructions.
-The \texttt{carried\_out\_by} relation is reserved for entities that perform or control the activity.
-Input relations are used for files, configurations, materials, or prior activities consumed by the activity.
-Output relations are used for generated data products.
-Evaluated relations are reserved for entities or activities that are measured, observed, analysed, or studied.
 
-This separation is important because generated output data and evaluated targets are easy to confuse.
-For example, a spectrum can be the output of an acquisition process.
-The measured or analysed target may instead be the signal, sample, material, or process that the acquisition concerns.
-The backend validates the modified draft after the intents have been applied.
-If validation fails, the previous draft is retained.
+The prompt declares small maximum counts for the core structure.
+At most one data-generating activity is created, and it receives at most one \texttt{realized\_\allowbreak plan} relation.
+Up to three agents, three input entities, three input activities, and three output entities may be inserted.
+Evaluated entities and evaluated activities share a combined limit of three.
+The backend enforces these limits after the model response has been parsed.
+It inserts only the first non-empty and non-duplicate intents in the returned order.
+These limits are not profile cardinalities.
+They are workflow constraints for the initial core draft.
+The core step should identify the main production activity and the most important role-bearing objects.
+This follows the broader reliability concern that \ac{LLM}-based information extraction becomes less stable when prompts invite weakly constrained, context-dependent, or overly broad structured outputs \cite{xu2024generativeie,liu2024lostmiddle}.
+In this workflow, the limits reduce the risk that file inventories or low-level parameter records are copied into the profile as activity objects.
+They also reduce duplicate parent objects and support more stable later attribute placement.
+Further details are handled later through parent-scoped attribute construction and requirement checks.
+
+The placement rules follow the \ac{DCAT-AP+} design patterns described in \cref{sec:dcat-ap-plus-chemdcat-ap}, which act as construction guidance here \cite{dcatapplusDocumentation}.
+The \texttt{realized\_\allowbreak plan} relation is used for the procedure or instruction set followed by the activity.
+The \texttt{carried\_out\_\allowbreak by} relation is used for \texttt{Agentic\allowbreak Entity} objects that bear responsibility for or influence the activity.
+The \texttt{had\_input\_\allowbreak entity} and \texttt{had\_input\_\allowbreak activity} relations are used for entities or prior activities used by the data generating activity.
+The \texttt{had\_output\_\allowbreak entity} relation is used for entities generated by the activity.
+The \texttt{evaluated\_\allowbreak entity} and \texttt{evaluated\_\allowbreak activity} relations are narrower input roles and mark the entity being measured or observed and the process being studied.
+For example, a spectrum can be the output of an acquisition process or the target of an evaluation.
+After all intents have been placed, the backend checks the draft for schema validity.
+The provenance core step is only complete when the constructed draft satisfies the target schema.
 The resulting core draft provides the parent structure for later attribute construction and requirement checks.
 
 \subsection{Requirement-Based Enrichment}
