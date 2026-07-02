@@ -18,7 +18,7 @@ Each decision should include:
 
 ### 2026-07-02: Keep Initial Dataset Description Backend-Owned
 
-Decision: The initial dataset-level projection prompt no longer asks the LLM to generate a Dataset `description`. The model still receives the dataset-level summary as orientation context, but the backend inserts that summary as the default Dataset description.
+Decision: The initial dataset-level projection prompt no longer asks the LLM to generate a Dataset `description`. The backend inserts the dataset-level summary as the default Dataset description. Later provenance-core prompts reuse that description through the current draft and do not duplicate it in the separate orientation context.
 
 Reason: The dataset-level summary is already generated in the initial overview stage. Reusing it gives the draft one description source of truth and avoids asking a later LLM step to restate or drift from it.
 

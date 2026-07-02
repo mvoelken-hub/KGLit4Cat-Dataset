@@ -285,6 +285,40 @@ The activity relation \texttt{was\_generated\_by} remains empty at this point.
 It is populated later by the provenance core construction step.
 This initialized draft finally becomes the working document for subsequent semantic requirement checking.
 
+\subsection{Provenance Core Construction}
+\label{sec:provenance_core_construction}
+
+The provenance core step introduces the first activity structure into the draft.
+Its purpose is to create a stable parent object for later provenance and attribute enrichment.
+The step focuses on one generic \texttt{DataGeneratingActivity}.
+This activity represents the analytical process that produced the dataset and is written to the \texttt{was\_generated\_by} field of the dataset artifact.
+
+The step is executed as a constrained \ac{LLM} task followed by backend construction.
+The model receives the current draft and an orientation context.
+The dataset-level summary is available through the draft description.
+The separate orientation context is therefore limited to the ranked file summaries.
+It does not receive the full evidence context at this point.
+The prompt asks the model to classify possible objects by their role in the data-generating activity.
+It returns structured intents rather than profile patches.
+The returned fields describe an activity title, an activity description, a possible plan, agents, evaluated targets, input entities, input activities, and output entities.
+
+The backend then turns these intents into profile objects.
+It creates \texttt{was\_generated\_by/0} if no activity exists yet.
+It assigns generated local identifiers to the activity-related objects.
+It also limits the number of inserted objects for each relation.
+The realized plan is used for methods, workflows, protocols, pulse programs, or other instructions.
+The \texttt{carried\_out\_by} relation is reserved for entities that perform or control the activity.
+Input relations are used for files, configurations, materials, or prior activities consumed by the activity.
+Output relations are used for generated data products.
+Evaluated relations are reserved for entities or activities that are measured, observed, analysed, or studied.
+
+This separation is important because generated output data and evaluated targets are easy to confuse.
+For example, a spectrum can be the output of an acquisition process.
+The measured or analysed target may instead be the signal, sample, material, or process that the acquisition concerns.
+The backend validates the modified draft after the intents have been applied.
+If validation fails, the previous draft is retained.
+The resulting core draft provides the parent structure for later attribute construction and requirement checks.
+
 \subsection{Requirement-Based Enrichment}
 \label{sec:requirement_based_enrichment}
 

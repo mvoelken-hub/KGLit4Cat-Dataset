@@ -845,14 +845,16 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("/was_generated_by/0/carried_out_by/0", changed_paths)
         self.assertIn("/was_generated_by/0/evaluated_entity/0", changed_paths)
 
-    def test_provenance_core_prompt_uses_orientation_context_only(self):
+    def test_provenance_core_prompt_uses_draft_description_and_file_orientation(self):
         prompt = WorkflowService._provenance_core_prompt(
-            document={"id": "pkg", "title": ["Dataset"]},
-            orientation_context={"dataset_summary": "Dataset-level orientation."},
+            document={"id": "pkg", "title": ["Dataset"], "description": ["Dataset-level orientation."]},
+            orientation_context={"file_summaries": "ranked file context"},
         )
         payload = json.loads(prompt)
 
-        self.assertEqual(payload["orientation_context"], {"dataset_summary": "Dataset-level orientation."})
+        self.assertEqual(payload["current_draft"]["description"], ["Dataset-level orientation."])
+        self.assertEqual(payload["orientation_context"], {"file_summaries": "ranked file context"})
+        self.assertNotIn("dataset_summary", payload["orientation_context"])
         self.assertNotIn("selected_evidence", payload)
         self.assertNotIn("context_window", payload)
         rules = "\n".join(payload["rules"])
@@ -1041,6 +1043,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
             weighted_score=1.0,
         )
         service._evaluate_semantic_requirements = AsyncMock(side_effect=[[first_item], [second_item]])
+        service._apply_provenance_core_construction = AsyncMock(side_effect=lambda **kwargs: kwargs["document"])
         service._semantic_reconstruction_update = AsyncMock(
             return_value=(
                 {
@@ -3395,6 +3398,7 @@ class DescriptionMiningIntegrationTests(unittest.IsolatedAsyncioTestCase):
             return kwargs["document"], []
 
         service._mine_dataset_description = AsyncMock(side_effect=mine)
+        service._apply_provenance_core_construction = AsyncMock(side_effect=lambda **kwargs: kwargs["document"])
         service._evaluate_semantic_requirements = AsyncMock(side_effect=evaluate)
         service._reconstruct_semantic_defects = AsyncMock(side_effect=reconstruct)
         initial = {"id": "pkg", "title": ["Dataset"], "description": ["Description fact."]}

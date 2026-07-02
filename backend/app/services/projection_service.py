@@ -3077,7 +3077,10 @@ class ProjectionService:
         if self.ollama_client is None:
             return document
         orientation_context = self._provenance_core_orientation_context(state)
-        if not self._semantic_value_present(orientation_context):
+        if not self._semantic_value_present(orientation_context) and not (
+            self._semantic_value_present(document.get("description"))
+            or self._semantic_value_present(document.get("title"))
+        ):
             return document
         progress.stage = "core_construction"
         self._update_progress(data_package_id, progress)
@@ -3341,9 +3344,6 @@ class ProjectionService:
     @staticmethod
     def _provenance_core_orientation_context(state: ExtractionRunState) -> dict[str, Any]:
         context: dict[str, Any] = {}
-        dataset_summary = state.dataset_summary.strip()
-        if dataset_summary:
-            context["dataset_summary"] = dataset_summary
 
         file_summaries = compact_file_summaries_for_shallow_projection(
             initial_file_summaries=state.initial_file_summaries,
