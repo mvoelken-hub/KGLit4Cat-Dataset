@@ -1027,37 +1027,49 @@ class GroundingService:
             unit_field = resolved[unit_index]
             kind_uri = kind_field.term.selected_uri if kind_field.term else None
             unit_uri = unit_field.term.selected_uri if unit_field.term else None
-            if not kind_uri or not unit_uri:
-                continue
-            if self._qudt_quantity_pair_status(
-                state=state,
-                quantity_kind_uri=kind_uri,
-                unit_uri=unit_uri,
-            ) == "compatible":
+            if (
+                kind_uri
+                and unit_uri
+                and await self._qudt_quantity_pair_status(
+                    state=state,
+                    quantity_kind_uri=kind_uri,
+                    unit_uri=unit_uri,
+                )
+                == "compatible"
+            ):
                 continue
 
-            kind_candidates = self._qudt_candidates_for_role(
-                candidates_by_path.get(kind_field.json_path, []),
-                "quantity_kind",
+            pair_candidates = (
+                candidates_by_path.get(kind_field.json_path, [])
+                + candidates_by_path.get(unit_field.json_path, [])
             )
-            unit_candidates = self._qudt_candidates_for_role(
-                candidates_by_path.get(unit_field.json_path, []),
-                "unit",
-            )
-            selection = await self._select_profile_quantity_pair(
-                data_package_id=data_package_id,
+            kind_candidates = self._qudt_candidates_for_role(pair_candidates, "quantity_kind")
+            unit_candidates = self._qudt_candidates_for_role(pair_candidates, "unit")
+            compatible_pairs = await self._compatible_qudt_candidate_pairs(
                 state=state,
-                parent_path=parent_path,
-                quantity_kind_field=kind_field,
-                unit_field=unit_field,
                 quantity_kind_candidates=kind_candidates,
                 unit_candidates=unit_candidates,
-                selection_semaphore=selection_semaphore,
-                warnings=warnings,
             )
+            selection = self._deterministic_profile_quantity_pair(
+                selected_quantity_kind_uri=kind_uri,
+                selected_unit_uri=unit_uri,
+                compatible_pairs=compatible_pairs,
+            )
+            if selection is None:
+                selection = await self._select_profile_quantity_pair(
+                    data_package_id=data_package_id,
+                    parent_path=parent_path,
+                    quantity_kind_field=kind_field,
+                    unit_field=unit_field,
+                    quantity_kind_candidates=kind_candidates,
+                    unit_candidates=unit_candidates,
+                    compatible_pairs=compatible_pairs,
+                    selection_semaphore=selection_semaphore,
+                    warnings=warnings,
+                )
             reason = (
                 f"QUDT quantity-kind/unit pair for '{parent_path}' was not cross-validated "
-                f"via qudt:hasQuantityKind: {kind_uri} with {unit_uri}."
+                f"via qudt:hasQuantityKind: {kind_uri or '<unselected>'} with {unit_uri or '<unselected>'}."
             )
             if selection is None:
                 resolved[kind_index] = self._unselected_profile_field(kind_field, reason)
@@ -1072,7 +1084,7 @@ class GroundingService:
                 resolved[unit_index] = self._unselected_profile_field(unit_field, selection.reason or reason)
                 warnings.append(f"{reason} Pair resolver rejected both fields.")
                 continue
-            if self._qudt_quantity_pair_status(
+            if await self._qudt_quantity_pair_status(
                 state=state,
                 quantity_kind_uri=selected_kind,
                 unit_uri=selected_unit,
@@ -1110,19 +1122,19 @@ class GroundingService:
                     )
                 }
             )
-            warnings.append(f"{reason} Pair resolver selected a compatible replacement pair.")
+            warnings.append(f"{reason} Selected a compatible replacement pair.")
         return resolved
 
     async def _select_profile_quantity_pair(
         self,
         *,
         data_package_id: str,
-        state: ExtractionRunState,
         parent_path: str,
         quantity_kind_field: ProfileFieldNormalization,
         unit_field: ProfileFieldNormalization,
         quantity_kind_candidates: list[dict[str, Any]],
         unit_candidates: list[dict[str, Any]],
+        compatible_pairs: list[dict[str, str]],
         selection_semaphore: asyncio.Semaphore,
         warnings: list[str],
     ) -> VocabularyQuantityPairSelection | None:
@@ -1130,11 +1142,6 @@ class GroundingService:
             return None
         async with selection_semaphore:
             assert self.ollama_client is not None
-            compatible_pairs = self._compatible_qudt_candidate_pairs(
-                state=state,
-                quantity_kind_candidates=quantity_kind_candidates,
-                unit_candidates=unit_candidates,
-            )
             prompt_components = [
                 (
                     "pair_selection_instruction",
@@ -1221,16 +1228,83 @@ class GroundingService:
         )
 
     @staticmethod
+    def _deterministic_profile_quantity_pair(
+        *,
+        selected_quantity_kind_uri: str | None,
+        selected_unit_uri: str | None,
+        compatible_pairs: list[dict[str, str]],
+    ) -> VocabularyQuantityPairSelection | None:
+        if selected_unit_uri:
+            matching_kinds = sorted(
+                {
+                    pair["quantity_kind_uri"]
+                    for pair in compatible_pairs
+                    if pair["unit_uri"] == selected_unit_uri
+                }
+            )
+            if len(matching_kinds) == 1:
+                return VocabularyQuantityPairSelection(
+                    selected_quantity_kind_uri=matching_kinds[0],
+                    selected_unit_uri=selected_unit_uri,
+                    confidence=1.0,
+                    reason="The selected unit has exactly one compatible QUDT QuantityKind candidate.",
+                )
+
+        if selected_quantity_kind_uri:
+            matching_units = sorted(
+                {
+                    pair["unit_uri"]
+                    for pair in compatible_pairs
+                    if pair["quantity_kind_uri"] == selected_quantity_kind_uri
+                }
+            )
+            if len(matching_units) == 1:
+                return VocabularyQuantityPairSelection(
+                    selected_quantity_kind_uri=selected_quantity_kind_uri,
+                    selected_unit_uri=matching_units[0],
+                    confidence=1.0,
+                    reason="The selected QuantityKind has exactly one compatible QUDT Unit candidate.",
+                )
+
+        if not selected_quantity_kind_uri and not selected_unit_uri and len(compatible_pairs) == 1:
+            pair = compatible_pairs[0]
+            return VocabularyQuantityPairSelection(
+                selected_quantity_kind_uri=pair["quantity_kind_uri"],
+                selected_unit_uri=pair["unit_uri"],
+                confidence=1.0,
+                reason="The candidate set contains exactly one compatible QUDT quantity pair.",
+            )
+        return None
+
+    @staticmethod
     def _qudt_candidates_for_role(
         candidates: list[dict[str, Any]],
         role: Literal["quantity_kind", "unit"],
     ) -> list[dict[str, Any]]:
-        prefix = (
-            "http://qudt.org/vocab/quantitykind/"
-            if role == "quantity_kind"
-            else "http://qudt.org/vocab/unit/"
-        )
-        return [candidate for candidate in candidates if str(candidate.get("uri", "")).startswith(prefix)]
+        if role == "quantity_kind":
+            prefix = "http://qudt.org/vocab/quantitykind/"
+            vocabulary_identifier = QUDT_QUANTITY_KIND_VOCAB
+            rdf_type = "qudt__QuantityKind"
+        else:
+            prefix = "http://qudt.org/vocab/unit/"
+            vocabulary_identifier = QUDT_UNIT_VOCAB
+            rdf_type = "qudt__Unit"
+        normalized: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for candidate in candidates:
+            uri = str(candidate.get("uri", ""))
+            if not uri.startswith(prefix) or uri in seen:
+                continue
+            seen.add(uri)
+            normalized.append(
+                {
+                    **candidate,
+                    "uri": uri,
+                    "vocabulary_identifier": vocabulary_identifier,
+                    "rdf_type": rdf_type,
+                }
+            )
+        return normalized
 
     @staticmethod
     def _candidate_by_uri(
@@ -1275,8 +1349,59 @@ class GroundingService:
             }
         )
 
+    async def _qudt_quantity_pair_status(
+        self,
+        *,
+        state: ExtractionRunState,
+        quantity_kind_uri: str,
+        unit_uri: str,
+    ) -> Literal["compatible", "incompatible", "unknown"]:
+        exact_status = await self._exact_qudt_quantity_pair_status(
+            quantity_kind_uri=quantity_kind_uri,
+            unit_uri=unit_uri,
+        )
+        if exact_status != "unknown":
+            return exact_status
+        return self._qudt_quantity_pair_status_from_state(
+            state=state,
+            quantity_kind_uri=quantity_kind_uri,
+            unit_uri=unit_uri,
+        )
+
+    async def _exact_qudt_quantity_pair_status(
+        self,
+        *,
+        quantity_kind_uri: str,
+        unit_uri: str,
+    ) -> Literal["compatible", "incompatible", "unknown"]:
+        if self.semantic_service is None:
+            return "unknown"
+        try:
+            statements = await self.semantic_service.expand_vocab_graph(
+                identifier=QUDT_UNIT_VOCAB,
+                seed_uris=[unit_uri],
+                allowed_rel_types=["qudt__hasQuantityKind"],
+                traversal_direction="outgoing",
+                max_hops=1,
+                max_statements_per_seed=100,
+            )
+        except Exception as exc:
+            logger.warning("QUDT exact quantity pair lookup failed: %s", exc)
+            return "unknown"
+        quantity_kinds = {
+            statement.object_uri
+            for statement in statements
+            if statement.subject_uri == unit_uri
+            and statement.predicate == "qudt__hasQuantityKind"
+        }
+        if quantity_kind_uri in quantity_kinds:
+            return "compatible"
+        if quantity_kinds:
+            return "incompatible"
+        return "unknown"
+
     @staticmethod
-    def _qudt_quantity_pair_status(
+    def _qudt_quantity_pair_status_from_state(
         *,
         state: ExtractionRunState,
         quantity_kind_uri: str,
@@ -1300,9 +1425,8 @@ class GroundingService:
             return "incompatible"
         return "unknown"
 
-    @classmethod
-    def _compatible_qudt_candidate_pairs(
-        cls,
+    async def _compatible_qudt_candidate_pairs(
+        self,
         *,
         state: ExtractionRunState,
         quantity_kind_candidates: list[dict[str, Any]],
@@ -1324,7 +1448,44 @@ class GroundingService:
                             "unit_uri": stmt.subject_uri,
                         }
                     )
-        return cls._deduplicate_compatible_pairs(pairs)
+        pairs.extend(
+            await self._exact_compatible_qudt_candidate_pairs(
+                quantity_kind_uris=quantity_kind_uris,
+                unit_uris=unit_uris,
+            )
+        )
+        return self._deduplicate_compatible_pairs(pairs)
+
+    async def _exact_compatible_qudt_candidate_pairs(
+        self,
+        *,
+        quantity_kind_uris: set[str],
+        unit_uris: set[str],
+    ) -> list[dict[str, str]]:
+        if self.semantic_service is None or not quantity_kind_uris or not unit_uris:
+            return []
+        try:
+            statements = await self.semantic_service.expand_vocab_graph(
+                identifier=QUDT_UNIT_VOCAB,
+                seed_uris=sorted(unit_uris),
+                allowed_rel_types=["qudt__hasQuantityKind"],
+                traversal_direction="outgoing",
+                max_hops=1,
+                max_statements_per_seed=100,
+            )
+        except Exception as exc:
+            logger.warning("QUDT exact candidate pair lookup failed: %s", exc)
+            return []
+        return [
+            {
+                "quantity_kind_uri": statement.object_uri,
+                "unit_uri": statement.subject_uri,
+            }
+            for statement in statements
+            if statement.predicate == "qudt__hasQuantityKind"
+            and statement.subject_uri in unit_uris
+            and statement.object_uri in quantity_kind_uris
+        ]
 
     @staticmethod
     def _deduplicate_compatible_pairs(pairs: list[dict[str, str]]) -> list[dict[str, str]]:

@@ -437,18 +437,6 @@ The workflow then assembles a requirement report that combines three scores: a c
 The report distinguishes requirements that were patched, requirements that were reconstructed, and requirements that remain unresolved.
 This report is the basis for the manual curation step that follows.
 
-\section{Manual Curation and Vocabulary Grounding}
-\label{sec:manual_curation_vocabulary_grounding}
+\section{Vocabulary Grounding}
+\label{sec:vocabulary_grounding}
 
-Manual curation is placed after profile construction.
-At this point, the user reviews a structured draft rather than raw source files.
-The curation step can correct unresolved or uncertain fields before semantic vocabulary grounding is performed.
-This ordering is important because vocabulary grounding should operate on values that have already been placed in the profile.
-
-The grounding stage searches controlled vocabularies through a property graph.
-It is applied to selected fields that are represented as \texttt{DefinedTerm} values in the active profile.
-The workflow distinguishes concept assignments from ontology class assignments.
-Conceptual classifications are written through \texttt{dcterms:type}.
-Class assignments are written through \texttt{rdf:type}.
-If no suitable term can be selected, the raw value is preserved and the unresolved mapping is recorded.
-The final result is exported as an \ac{RDF} compatible metadata artifact.

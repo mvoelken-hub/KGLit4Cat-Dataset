@@ -233,6 +233,25 @@ class SemanticServiceVocabQueryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(repository.resource_uris, {"urn:seed"})
         self.assertEqual(result.graph_statements, [])
 
+    async def test_expand_vocab_graph_delegates_exact_expansion(self):
+        repository = FakeSemanticGraphRepository(make_vocab())
+        service = make_service(repository, FakeOllamaClient())
+
+        statements = await service.expand_vocab_graph(
+            identifier="urn:vocab",
+            seed_uris=["urn:unit"],
+            allowed_rel_types=["qudt__hasQuantityKind"],
+            traversal_direction="outgoing",
+            max_hops=1,
+            max_statements_per_seed=5,
+        )
+
+        self.assertEqual(repository.expand_call["identifier"], "urn:vocab")
+        self.assertEqual(repository.expand_call["seed_uris"], ["urn:unit"])
+        self.assertEqual(repository.expand_call["allowed_rel_types"], ["qudt__hasQuantityKind"])
+        self.assertEqual(repository.expand_call["traversal_direction"], "outgoing")
+        self.assertEqual(len(statements), 1)
+
     async def test_invalid_rdf_type_is_rejected(self):
         repository = FakeSemanticGraphRepository(make_vocab())
         service = make_service(repository, FakeOllamaClient())

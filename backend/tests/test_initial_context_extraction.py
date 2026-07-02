@@ -2757,6 +2757,56 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resolved[0].term.selected_uri, "http://qudt.org/vocab/quantitykind/Frequency")
         self.assertEqual(resolved[1].term.selected_uri, "http://qudt.org/vocab/unit/HZ")
 
+    async def test_profile_quantity_pair_uses_exact_qudt_lookup_when_query_slice_misses_edge(self):
+        service, _, _ = make_service([[make_chunk()]])
+
+        class ExactQudtService:
+            async def expand_vocab_graph(self, **_kwargs):
+                return [
+                    VocabGraphStatement(
+                        subject_uri="http://qudt.org/vocab/unit/HZ",
+                        predicate="qudt__hasQuantityKind",
+                        object_uri="http://qudt.org/vocab/quantitykind/Frequency",
+                    )
+                ]
+
+        service.semantic_service = ExactQudtService()  # type: ignore[assignment]
+        state = ExtractionRunState(vocab_queries=[])
+        fields = [
+            ProfileFieldNormalization(
+                json_path="/has_quantitative_attribute/0/has_quantity_type",
+                field_name="has_quantity_type",
+                source_value="frequency",
+                term=VocabularyTermMapping(
+                    source_value="frequency",
+                    selected_uri="http://qudt.org/vocab/quantitykind/Frequency",
+                ),
+            ),
+            ProfileFieldNormalization(
+                json_path="/has_quantitative_attribute/0/unit",
+                field_name="unit",
+                source_value="Hz",
+                term=VocabularyTermMapping(
+                    source_value="Hz",
+                    selected_uri="http://qudt.org/vocab/unit/HZ",
+                ),
+            ),
+        ]
+
+        with patch("app.services.grounding_service.generate_structured") as generate:
+            resolved = await service._resolve_profile_quantity_field_pairs(
+                data_package_id="package-id",
+                state=state,
+                profile_fields=fields,
+                candidates_by_path={},
+                selection_semaphore=asyncio.Semaphore(1),
+                warnings=[],
+            )
+
+        generate.assert_not_called()
+        self.assertEqual(resolved[0].term.selected_uri, "http://qudt.org/vocab/quantitykind/Frequency")
+        self.assertEqual(resolved[1].term.selected_uri, "http://qudt.org/vocab/unit/HZ")
+
     async def test_profile_quantity_pair_resolver_repairs_incompatible_pair(self):
         service, _, _ = make_service([[make_chunk()]])
         state = ExtractionRunState(
@@ -2820,19 +2870,8 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             ],
         }
 
-        async def fake_generate(*_args, **_kwargs):
-            return CompletionResult(
-                output=VocabularyQuantityPairSelection(
-                    selected_quantity_kind_uri="http://qudt.org/vocab/quantitykind/Frequency",
-                    selected_unit_uri="http://qudt.org/vocab/unit/HZ",
-                    confidence=0.9,
-                    reason="Hz is a frequency unit.",
-                ),
-                usage=RunUsage(requests=1),
-            )
-
         warnings: list[str] = []
-        with patch("app.services.grounding_service.generate_structured", side_effect=fake_generate) as generate:
+        with patch("app.services.grounding_service.generate_structured") as generate:
             resolved = await service._resolve_profile_quantity_field_pairs(
                 data_package_id="package-id",
                 state=state,
@@ -2842,10 +2881,202 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 warnings=warnings,
             )
 
-        generate.assert_called_once()
+        generate.assert_not_called()
         self.assertEqual(resolved[0].term.selected_uri, "http://qudt.org/vocab/quantitykind/Frequency")
         self.assertEqual(resolved[1].term.selected_uri, "http://qudt.org/vocab/unit/HZ")
-        self.assertTrue(any("Pair resolver selected a compatible replacement pair" in warning for warning in warnings))
+        self.assertTrue(any("Selected a compatible replacement pair" in warning for warning in warnings))
+
+    async def test_profile_quantity_pair_resolver_can_use_quantity_kind_from_unit_query(self):
+        service, _, _ = make_service([[make_chunk()]])
+
+        class ExactQudtService:
+            async def expand_vocab_graph(self, **_kwargs):
+                return [
+                    VocabGraphStatement(
+                        subject_uri="http://qudt.org/vocab/unit/HZ",
+                        predicate="qudt__hasQuantityKind",
+                        object_uri="http://qudt.org/vocab/quantitykind/Frequency",
+                    )
+                ]
+
+        service.semantic_service = ExactQudtService()  # type: ignore[assignment]
+        state = ExtractionRunState(vocab_queries=[])
+        fields = [
+            ProfileFieldNormalization(
+                json_path="/has_quantitative_attribute/0/has_quantity_type",
+                field_name="has_quantity_type",
+                source_value="spectral width",
+                term=VocabularyTermMapping(
+                    source_value="spectral width",
+                    selected_uri="http://qudt.org/vocab/quantitykind/SpectralRadiantEnergyDensity",
+                ),
+            ),
+            ProfileFieldNormalization(
+                json_path="/has_quantitative_attribute/0/unit",
+                field_name="unit",
+                source_value="Hz",
+                term=VocabularyTermMapping(
+                    source_value="Hz",
+                    selected_uri="http://qudt.org/vocab/unit/HZ",
+                ),
+            ),
+        ]
+        candidates_by_path = {
+            "/has_quantitative_attribute/0/has_quantity_type": [
+                {"uri": "http://qudt.org/vocab/quantitykind/SpectralRadiantEnergyDensity", "title": "Spectral Radiant Energy Density"},
+            ],
+            "/has_quantitative_attribute/0/unit": [
+                {"uri": "http://qudt.org/vocab/unit/HZ", "title": "Hertz"},
+                {"uri": "http://qudt.org/vocab/quantitykind/Frequency", "title": "Frequency"},
+            ],
+        }
+
+        async def fake_generate(*_args, **_kwargs):
+            return CompletionResult(
+                output=VocabularyQuantityPairSelection(
+                    selected_quantity_kind_uri="http://qudt.org/vocab/quantitykind/Frequency",
+                    selected_unit_uri="http://qudt.org/vocab/unit/HZ",
+                    confidence=0.9,
+                    reason="Hz cross-validates with frequency.",
+                ),
+                usage=RunUsage(requests=1),
+            )
+
+        with patch("app.services.grounding_service.generate_structured", side_effect=fake_generate):
+            resolved = await service._resolve_profile_quantity_field_pairs(
+                data_package_id="package-id",
+                state=state,
+                profile_fields=fields,
+                candidates_by_path=candidates_by_path,
+                selection_semaphore=asyncio.Semaphore(1),
+                warnings=[],
+            )
+
+        self.assertEqual(resolved[0].term.selected_uri, "http://qudt.org/vocab/quantitykind/Frequency")
+        self.assertEqual(resolved[0].term.vocabulary_identifier, "http://qudt.org/vocab/quantitykind")
+        self.assertEqual(resolved[1].term.selected_uri, "http://qudt.org/vocab/unit/HZ")
+
+    async def test_profile_quantity_pair_resolver_repairs_when_only_unit_selected(self):
+        service, _, _ = make_service([[make_chunk()]])
+
+        class ExactQudtService:
+            async def expand_vocab_graph(self, **_kwargs):
+                return [
+                    VocabGraphStatement(
+                        subject_uri="http://qudt.org/vocab/unit/HZ",
+                        predicate="qudt__hasQuantityKind",
+                        object_uri="http://qudt.org/vocab/quantitykind/Frequency",
+                    )
+                ]
+
+        service.semantic_service = ExactQudtService()  # type: ignore[assignment]
+        state = ExtractionRunState(vocab_queries=[])
+        fields = [
+            ProfileFieldNormalization(
+                json_path="/has_quantitative_attribute/0/has_quantity_type",
+                field_name="has_quantity_type",
+                source_value="spectral width",
+                term=None,
+            ),
+            ProfileFieldNormalization(
+                json_path="/has_quantitative_attribute/0/unit",
+                field_name="unit",
+                source_value="Hz",
+                term=VocabularyTermMapping(
+                    source_value="Hz",
+                    selected_uri="http://qudt.org/vocab/unit/HZ",
+                ),
+            ),
+        ]
+        candidates_by_path = {
+            "/has_quantitative_attribute/0/unit": [
+                {"uri": "http://qudt.org/vocab/unit/HZ", "title": "Hertz"},
+                {"uri": "http://qudt.org/vocab/quantitykind/Frequency", "title": "Frequency"},
+            ],
+        }
+
+        async def fake_generate(*_args, **_kwargs):
+            return CompletionResult(
+                output=VocabularyQuantityPairSelection(
+                    selected_quantity_kind_uri="http://qudt.org/vocab/quantitykind/Frequency",
+                    selected_unit_uri="http://qudt.org/vocab/unit/HZ",
+                    confidence=0.9,
+                    reason="Hz requires frequency.",
+                ),
+                usage=RunUsage(requests=1),
+            )
+
+        with patch("app.services.grounding_service.generate_structured", side_effect=fake_generate):
+            resolved = await service._resolve_profile_quantity_field_pairs(
+                data_package_id="package-id",
+                state=state,
+                profile_fields=fields,
+                candidates_by_path=candidates_by_path,
+                selection_semaphore=asyncio.Semaphore(1),
+                warnings=[],
+            )
+
+        self.assertEqual(resolved[0].term.selected_uri, "http://qudt.org/vocab/quantitykind/Frequency")
+        self.assertEqual(resolved[1].term.selected_uri, "http://qudt.org/vocab/unit/HZ")
+
+    async def test_profile_quantity_pair_resolver_repairs_when_both_individual_selectors_abstain(self):
+        service, _, _ = make_service([[make_chunk()]])
+
+        class ExactQudtService:
+            async def expand_vocab_graph(self, **_kwargs):
+                return [
+                    VocabGraphStatement(
+                        subject_uri="http://qudt.org/vocab/unit/HZ",
+                        predicate="qudt__hasQuantityKind",
+                        object_uri="http://qudt.org/vocab/quantitykind/Frequency",
+                    )
+                ]
+
+        service.semantic_service = ExactQudtService()  # type: ignore[assignment]
+        fields = [
+            ProfileFieldNormalization(
+                json_path="/has_quantitative_attribute/0/has_quantity_type",
+                field_name="has_quantity_type",
+                source_value="spectral width",
+                term=None,
+            ),
+            ProfileFieldNormalization(
+                json_path="/has_quantitative_attribute/0/unit",
+                field_name="unit",
+                source_value="Hz",
+                term=None,
+            ),
+        ]
+        candidates_by_path = {
+            "/has_quantitative_attribute/0/unit": [
+                {"uri": "http://qudt.org/vocab/unit/HZ", "title": "Hertz"},
+                {"uri": "http://qudt.org/vocab/quantitykind/Frequency", "title": "Frequency"},
+            ],
+        }
+
+        async def fake_generate(*_args, **_kwargs):
+            return CompletionResult(
+                output=VocabularyQuantityPairSelection(
+                    selected_quantity_kind_uri="http://qudt.org/vocab/quantitykind/Frequency",
+                    selected_unit_uri="http://qudt.org/vocab/unit/HZ",
+                    confidence=0.9,
+                    reason="The compatible pair is frequency and hertz.",
+                ),
+                usage=RunUsage(requests=1),
+            )
+
+        with patch("app.services.grounding_service.generate_structured", side_effect=fake_generate):
+            resolved = await service._resolve_profile_quantity_field_pairs(
+                data_package_id="package-id",
+                state=ExtractionRunState(vocab_queries=[]),
+                profile_fields=fields,
+                candidates_by_path=candidates_by_path,
+                selection_semaphore=asyncio.Semaphore(1),
+                warnings=[],
+            )
+
+        self.assertEqual(resolved[0].term.selected_uri, "http://qudt.org/vocab/quantitykind/Frequency")
+        self.assertEqual(resolved[1].term.selected_uri, "http://qudt.org/vocab/unit/HZ")
 
     async def test_run_extraction_requires_completed_chunks(self):
         service, _, _ = make_service([])

@@ -7,6 +7,7 @@ from app.ollama.client import OllamaClientWrapper
 from app.core.task_registry import TaskRegistry, TaskInfo, TaskType, TaskStatus
 
 from app.domain.semantics import (
+    TraversalDirection,
     VocabGraphStatement,
     VocabSchemeInfo,
     SerializedRdfGraph,
@@ -151,6 +152,25 @@ class SemanticService:
             seeds=seeds,
             graph_statements=graph_statements,
             resources=resources,
+        )
+
+    async def expand_vocab_graph(
+        self,
+        *,
+        identifier: str,
+        seed_uris: list[str],
+        allowed_rel_types: list[str],
+        traversal_direction: TraversalDirection,
+        max_hops: int,
+        max_statements_per_seed: int,
+    ) -> list[VocabGraphStatement]:
+        return await self.semantic_graph_repository.expand_vocab_graph(
+            identifier=identifier,
+            seed_uris=seed_uris,
+            allowed_rel_types=allowed_rel_types,
+            traversal_direction=traversal_direction,
+            max_hops=max_hops,
+            max_statements_per_seed=max_statements_per_seed,
         )
     
     async def delete_vocabulary(self, identifier: str) -> None:
