@@ -606,6 +606,9 @@ Return schema-constrained write envelopes only for allowed_target_paths.
 Keep edits minimal: replace or append fields only when the semantic requirement justifies it.
 Preserve valid numeric instrument/configuration settings. Remove only obvious qualitative/default/placeholders from quantitative attributes.
 Do not satisfy missing role=parameter evidence by generalizing one existing quantitative attribute; add separate schema-valid attributes or return empty writes.
+For DCAT-AP+ generic attributes, write only recorded characterizations of the exact parent object.
+Do not turn source-record metadata, creator/owner/origin fields, file paths, process paths, audit/hash details,
+provenance bookkeeping, or identifiers for other objects into generic attributes by default.
 For attribute parents, device/software configuration belongs to agent parents; acquisition/processing settings and thresholds belong to activities; axis bounds, point counts, transmittance/intensity extents, resolution, and data scaling belong to the evaluated data entity unless evidence explicitly says otherwise.
 Represent numeric ranges as separate schema-valid minimum and maximum quantitative attributes with numeric values and source units when present; never put a range string in a quantitative value.
 For activity evaluation targets, write a lean evaluated_entity or evaluated_activity only when evidence directly identifies what that activity measured, observed, analysed, or studied. Never use a generated output merely because it was generated.
@@ -620,6 +623,9 @@ Return only JSON matching the supplied diagnosis schema with top-level keys defe
 Each defect must use exactly: defect_type, target_path, entry_indices, recommended_action, needs_synthesis, and reason.
 Do not return writes, operations, JSON Patch, action envelopes, replacement values, or profile objects.
 Use only the supplied draft excerpt and evidence. Do not invent facts.
+For DCAT-AP+ generic attributes, diagnose append/replace only when evidence directly supports a recorded characterization
+of the exact parent object. Source-record metadata, creator/owner/origin fields, file paths, process paths,
+audit/hash details, provenance bookkeeping, and identifiers for other objects are not parent attributes by default.
 Use no_action when the defect is real but the supplied context cannot justify a safe repair.
 When a missing target is directly supported by selected evidence, recommend append or replace and set needs_synthesis true.
 Any append or replace that needs a new value must set needs_synthesis true.
@@ -633,6 +639,10 @@ Return only JSON matching the supplied target schema.
 Do not return writes, operations, JSON Patch, action envelopes, target paths, or commentary.
 Use only the supplied current target value and evidence. Preserve schema-required value shapes such as arrays.
 Do not invent facts. Return the smallest value that resolves the diagnosed defect.
+For DCAT-AP+ generic attributes, synthesize a value only when the evidence directly characterizes the target parent itself.
+Do not synthesize attributes from source-record metadata, creator/owner/origin fields, file paths, process paths,
+audit/hash details, provenance bookkeeping, identifiers for other objects, placeholder labels, or generic values such as
+measured/unknown/present without a clear parent-specific characterization.
 """
 
 
@@ -721,6 +731,8 @@ def build_semantic_reconstruction_prompt(
             "Use remove only for exact target paths that are semantically unsupported or duplicate after merge/cleanup.",
             "Use merge for duplicate entries in the same array: target_path is the array path, survivor_index is the entry to keep, merged_indices are duplicate entries to remove.",
             "Do not satisfy missing role=parameter evidence by generalizing one existing quantitative attribute; add separate schema-valid attributes or return empty writes.",
+            "For generic attributes, write only recorded characterizations of the exact parent object, not source-record metadata or provenance context.",
+            "Do not write creator, owner, origin, vendor/manufacturer, file path, process path, audit/hash, or bookkeeping facts as generic attributes unless evidence says they characterize the target parent itself.",
             "Device/software cues belong to agent parents; role=parameter evidence with instrument_signal, measurement_condition, resource_signal, or activity_signal belongs to data-generating activity by default unless explicit evidence says it belongs to an agent or evaluated subject/activity.",
             "Represent numeric ranges as separate schema-valid minimum and maximum quantitative attributes with numeric values and source units when present; never put a range string in a quantitative value.",
             "A merely generated output is not an evaluated target. A file may be evaluated_entity only when evidence states that the activity directly analysed it.",
@@ -796,6 +808,9 @@ def build_semantic_diagnosis_prompt(
             "Set needs_synthesis true only when a new value or object must be generated from evidence.",
             "For append or replace of a missing/incorrect value, set needs_synthesis true unless the value already exists visibly in the draft excerpt.",
             "When selected evidence directly supports a missing required target, prefer append or replace with needs_synthesis true over no_action.",
+            "Before recommending an attribute append/replace, silently check that the value characterizes the exact target parent, has clear attribute intent, and is not source-record metadata or provenance context.",
+            "Do not recommend creator, owner, origin, vendor/manufacturer, file path, process path, audit/hash, or bookkeeping facts as generic attributes unless evidence says they characterize the target parent itself.",
+            "Do not recommend appending creator/publisher/provenance fields from generic origin/owner/source metadata unless evidence explicitly identifies dataset-level responsibility.",
             "Instruments, software, and devices are all valid technical agents; do not diagnose software as invalid merely because it is not a physical instrument.",
             "Use no_action when the requirement is unresolved but no safe repair can be identified.",
         ],

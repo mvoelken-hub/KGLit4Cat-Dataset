@@ -118,6 +118,19 @@ ProjectionLedgerStatus = Literal[
     "ambiguous",
     "user_edit_required",
 ]
+ParentAttributeLedgerStatus = Literal[
+    "applied",
+    "skipped_no_evidence",
+    "skipped_no_parent_evidence",
+    "skipped_llm_failed",
+    "skipped_empty_response",
+    "skipped_invalid_intent",
+    "skipped_schema_missing",
+    "skipped_semantic_placement",
+    "skipped_duplicate",
+    "skipped_apply_failed",
+    "skipped_profile_invalid",
+]
 FieldValidationStatus = Literal["valid", "invalid", "missing", "not_run"]
 FieldEnrichmentStatus = Literal[
     "grounded",
@@ -196,6 +209,23 @@ class ProjectionLedgerRecord(BaseModel):
     error: str | None = None
 
 
+class ParentAttributeLedgerRecord(BaseModel):
+    parent_path: str
+    parent_class: str
+    status: ParentAttributeLedgerStatus = "skipped_empty_response"
+    reason: str = ""
+    answer: str = ""
+    attribute_kind: Literal["quantitative", "qualitative"] | None = None
+    intent_index: int | None = None
+    target_field: str | None = None
+    target_path: str | None = None
+    actual_path: str | None = None
+    evidence_note_identifiers: list[str] = Field(default_factory=list)
+    candidate_attribute: dict[str, Any] | None = None
+    raw_intent: dict[str, Any] | None = None
+    error: str | None = None
+
+
 class FieldCompletionLedgerRecord(BaseModel):
     """Records per-field completion status.
 
@@ -258,6 +288,7 @@ class ExtractionRunState(BaseModel):
     curated_validation: DraftValidationResult | None = None
     initial_draft_scaffold: dict[str, Any] = Field(default_factory=dict)
     projection_ledger: list[ProjectionLedgerRecord] = Field(default_factory=list)
+    parent_attribute_ledger: list[ParentAttributeLedgerRecord] = Field(default_factory=list)
     field_completion_ledger: list[FieldCompletionLedgerRecord] = Field(default_factory=list)
     evidence_query_ledger: list[EvidenceQueryLedgerEntry] = Field(default_factory=list)
     curation_ledger: list[CurationLedgerRecord] = Field(default_factory=list)
@@ -299,6 +330,7 @@ class ExtractionRunProgress(BaseModel):
     curated_validation: DraftValidationResult | None = None
     initial_draft_scaffold: dict[str, Any] = Field(default_factory=dict)
     projection_ledger: list[ProjectionLedgerRecord] = Field(default_factory=list)
+    parent_attribute_ledger: list[ParentAttributeLedgerRecord] = Field(default_factory=list)
     field_completion_ledger: list[FieldCompletionLedgerRecord] = Field(default_factory=list)
     evidence_query_ledger: list[EvidenceQueryLedgerEntry] = Field(default_factory=list)
     curation_ledger: list[CurationLedgerRecord] = Field(default_factory=list)
@@ -343,6 +375,7 @@ class ExtractionRunResult(BaseModel):
     curated_validation: DraftValidationResult | None = None
     initial_draft_scaffold: dict[str, Any] = Field(default_factory=dict)
     projection_ledger: list[ProjectionLedgerRecord] = Field(default_factory=list)
+    parent_attribute_ledger: list[ParentAttributeLedgerRecord] = Field(default_factory=list)
     field_completion_ledger: list[FieldCompletionLedgerRecord] = Field(default_factory=list)
     evidence_query_ledger: list[EvidenceQueryLedgerEntry] = Field(default_factory=list)
     curation_ledger: list[CurationLedgerRecord] = Field(default_factory=list)

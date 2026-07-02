@@ -26,6 +26,7 @@ from app.domain.extraction import (
     InitialFileSummaryStatus,
     InitialOverviewFailureDiagnostic,
     InitialOverviewPromptDiagnostic,
+    ParentAttributeLedgerRecord,
     ProjectionLedgerRecord,
     RequirementReport,
     RoutedEvidenceContext,
@@ -56,6 +57,7 @@ REQUIREMENT_REPORT_FILE = "requirement_report.json"
 DATASET_SUMMARY_FILE = "dataset_summary.txt"
 CURATED_DOCUMENT_FILE = "curated_document.json"
 PROJECTION_LEDGER_FILE = "projection_ledger.json"
+PARENT_ATTRIBUTE_LEDGER_FILE = "parent_attribute_ledger.json"
 FIELD_COMPLETION_LEDGER_FILE = "field_completion_ledger.json"
 EVIDENCE_QUERY_LEDGER_FILE = "evidence_query_ledger.json"
 CURATION_LEDGER_FILE = "curation_ledger.json"
@@ -153,6 +155,7 @@ class FileSystemExtractionOutputRepository:
         if result.curated_document is not None:
             self.save_curated_document(workflow_id=workflow_id, document=result.curated_document, chat_model=chat_model, chunking_strategy=chunking_strategy)
         self.save_projection_ledger(workflow_id=workflow_id, ledger=result.projection_ledger, chat_model=chat_model, chunking_strategy=chunking_strategy)
+        self.save_parent_attribute_ledger(workflow_id=workflow_id, ledger=result.parent_attribute_ledger, chat_model=chat_model, chunking_strategy=chunking_strategy)
         self.save_field_completion_ledger(workflow_id=workflow_id, ledger=result.field_completion_ledger, chat_model=chat_model, chunking_strategy=chunking_strategy)
         self.save_evidence_query_ledger(workflow_id=workflow_id, ledger=result.evidence_query_ledger, chat_model=chat_model, chunking_strategy=chunking_strategy)
         self.save_curation_ledger(workflow_id=workflow_id, ledger=result.curation_ledger, chat_model=chat_model, chunking_strategy=chunking_strategy)
@@ -427,6 +430,31 @@ class FileSystemExtractionOutputRepository:
             return []
         payload = self._read_json_file(path)
         return [ProjectionLedgerRecord.model_validate(item) for item in payload] if isinstance(payload, list) else []
+
+    def save_parent_attribute_ledger(
+        self,
+        *,
+        workflow_id: str,
+        ledger: list[ParentAttributeLedgerRecord],
+        chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
+    ) -> None:
+        self._write_json_artifact(
+            self._branch_dir(workflow_id, "profile_draft", chunking_strategy, chat_model) / PARENT_ATTRIBUTE_LEDGER_FILE,
+            [item.model_dump(mode="json") for item in ledger],
+        )
+
+    def load_parent_attribute_ledger(
+        self,
+        workflow_id: str,
+        chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
+    ) -> list[ParentAttributeLedgerRecord]:
+        path = self._branch_dir(workflow_id, "profile_draft", chunking_strategy, chat_model) / PARENT_ATTRIBUTE_LEDGER_FILE
+        if not path.exists():
+            return []
+        payload = self._read_json_file(path)
+        return [ParentAttributeLedgerRecord.model_validate(item) for item in payload] if isinstance(payload, list) else []
 
     def save_field_completion_ledger(
         self,

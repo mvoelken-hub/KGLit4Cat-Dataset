@@ -198,6 +198,7 @@ class EvidenceService:
         state.validation = DraftValidationResult()
         state.curated_validation = None
         state.projection_ledger = []
+        state.parent_attribute_ledger = []
         state.initial_draft_scaffold = {}
         state.field_completion_ledger = []
         state.evidence_query_ledger = []
@@ -218,6 +219,7 @@ class EvidenceService:
         progress.validation = DraftValidationResult()
         progress.curated_validation = None
         progress.projection_ledger = []
+        progress.parent_attribute_ledger = []
         progress.initial_draft_scaffold = {}
         progress.field_completion_ledger = []
         progress.evidence_query_ledger = []

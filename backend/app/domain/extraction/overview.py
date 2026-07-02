@@ -95,8 +95,22 @@ class ExtractionFileSummary(BaseModel):
         default_factory=list,
         description="Short snippets from this file supporting explicit_purpose.",
     )
-    metadata_signals: list[str] = Field(default_factory=list)
-    instrument_or_software_terms_and_settings: list[str] = Field(default_factory=list)
+    metadata_signals: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Concise file-local metadata and vendor/manufacturer/origin cues. "
+            "Do not treat vendors, manufacturers, publishers, or creators as actors unless "
+            "the file explicitly says they performed, controlled, operated, or executed an activity."
+        ),
+    )
+    instrument_or_software_terms_and_settings: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Visible instrument, software, method, executable, protocol, or setting terms. "
+            "Exclude vendor/manufacturer/organization names unless they are part of a specific "
+            "instrument/software product name or are explicitly described as active operators."
+        ),
+    )
     quantitative_signals: list[str] = Field(default_factory=list)
 
 
@@ -285,8 +299,10 @@ Your output is guidance only. It is not extraction evidence for later chunk call
 Summarize only facts visible in this file's sampled content, filename, or obvious syntax.
 The explicit_purpose field is strict: fill it only when the sampled content or filename directly states the file's purpose. Otherwise leave it empty.
 Keep the response small: prefer 3-6 high-level, non-repetitive signals per list.
-metadata_signals should absorb useful observable characteristics and coarse file-local metadata cues without inventing dataset-level identity.
-instrument_or_software_terms_and_settings should list only the most important visible instrument, software, method, and setting terms when supported.
+metadata_signals should absorb useful observable characteristics, vendor/manufacturer/origin cues, and coarse file-local metadata cues without inventing dataset-level identity.
+instrument_or_software_terms_and_settings should list only the most important visible instrument, software, method, executable, protocol, and setting terms when supported.
+Do not put vendors, manufacturers, publishers, creators, or organization names in instrument_or_software_terms_and_settings unless the file explicitly says they performed, controlled, operated, or executed an activity, or unless the organization name is inseparable from a specific product/instrument/software name.
+Differentiate actual actors from vendor metadata: a visible origin/manufacturer line is metadata, not evidence that the organization carried out the dataset activity.
 quantitative_signals should be coarse orientation only, such as a few representative explicit numeric settings, quantity labels, or visible units. Do not dump exhaustive parameter labels, repeated timestamps, full numeric tables, or structured quantity facts.
 Evidence fields must quote short snippets from this file only.
 Do not output known traps, detected identifiers, uncertainty notes, exhaustive parameter terms, or structured quantitative attributes.
@@ -509,8 +525,12 @@ def build_extraction_file_summary_prompt(
         "software settings, acquisition settings, processing settings, calibration or reference settings, "
         "sample conditions, identifiers, units, and quantity labels. "
         "These categories are examples only: do not copy them into the output and do not enumerate every parameter. "
-        "Use metadata_signals for concise file-local orientation, instrument_or_software_terms_and_settings for visible "
-        "instrument/software/method/setting terms, and quantitative_signals only for coarse quantitative orientation. "
+        "Use metadata_signals for concise file-local orientation, including vendor/manufacturer/origin cues. "
+        "Use instrument_or_software_terms_and_settings for visible instrument/software/method/executable/protocol/setting terms, "
+        "but exclude vendor, manufacturer, publisher, creator, and organization names unless the file explicitly "
+        "describes them as active performers/controllers/operators/executors or the organization name is inseparable "
+        "from a specific product/instrument/software name. "
+        "Use quantitative_signals only for coarse quantitative orientation. "
         "Do not repeat identical timestamps, labels, units, or values."
     )
 

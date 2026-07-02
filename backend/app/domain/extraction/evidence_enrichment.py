@@ -425,7 +425,10 @@ def apply_evidence_instance(
         if not isinstance(array_value, list):
             raise ValueError(f"Schema branch target is not an array: {array_path}")
         index = len(array_value)
-        instance = _normalize_instance_ids(instance, data_package_id, target_path, index, target_schema)
+        item_schema = target_schema
+        if isinstance(target_schema, dict) and isinstance(target_schema.get("items"), dict):
+            item_schema = target_schema["items"]
+        instance = _normalize_instance_ids(instance, data_package_id, target_path, index, item_schema)
         array_value.append(_clone_json_object(instance))
         return document
     instance = _normalize_instance_ids(instance, data_package_id, target_path, 0, target_schema)

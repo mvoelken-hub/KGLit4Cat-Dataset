@@ -136,6 +136,7 @@ from app.domain.extraction import (
     FileContext,
     FileRankingResult,
     FieldCompletionLedgerRecord,
+    ParentAttributeLedgerRecord,
     GroundedExtractionObject,
     GroundingRolePolicy,
     ProfileFieldNormalization,

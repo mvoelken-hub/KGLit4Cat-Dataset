@@ -1,21 +1,35 @@
 \label{chap:methodical_approach}
 
-The goal for the developed workflow is to identify several approaches and sub-steps for the automated extraction of semantically linked metadata.
-As a first overview of the workflow, \cref{fig:workflow-concept} shows the steps on a conceptual level.
-It starts with the input of a dataset.
-Those datasets are not manually adjusted before being fed into the automated extraction process, so that the methodology imposes no specific requirements other than the presence of text-based, decodable files.
-After that, the files are preprocessed before they are split into smaller chunks.
-At the same time, a dataset-level context overview is generated based on the dataset structure and per-file summaries.
+This chapter describes the methodical approach used to construct semantic metadata from heterogeneous dataset packages.
+The workflow is designed as a staged extraction process.
+It does not treat the uploaded dataset as one large prompt.
+Instead, it separates source access, preprocessing, evidence extraction, profile construction, curation, and vocabulary grounding.
+\Cref{fig:workflow-concept} shows this process on a conceptual level.
 
-With the help of the generated context, the individual chunks are processed by an \ac{LLM} to extract metadata signals.
-Those signals are not yet interpreted in the context of a specific metadata profile, but serve as an intermediate representation of the extracted information.
-This follows the \ac{GO} approach, where the extraction of information is separated from the organization of that information into a specific schema to reduce the cognitive load \cite{li2024structuredoutput}.
-As soon as the process finishes with the chunk iteration, the extracted signals are merged and deduplicated to form the evidence grounding set for the next steps.
-After the grounding set is in place, a \ac{DCAT-AP+} artifact is initialized to serve as the target schema for the extracted information.
-In order to fill the schema, the workflow follows a requirement-driven approach, where the schema is iteratively checked for missing information and the missing information is extracted from the evidence grounding set.
-If a requirement cannot be fulfilled, it is flagged for manual curation.
-Once that is done, the workflow continues with the final step of running queries against a property graph of controlled vocabularies.
-This allows a mapping of \texttt{DefinedTerms} shapes from the \ac{DCAT-AP+} artifacts to suitable concepts and classes via \texttt{dcterms:type} or \texttt{rdf:type}.
+The workflow starts with the ingestion of a dataset package.
+The package is not manually rewritten before processing.
+This keeps the input close to the form in which it would appear in a repository or laboratory export.
+The only practical requirement is that relevant information must be available in files that can be decoded or converted into text.
+The text-accessible files are preprocessed and denoised before they are split into smaller chunks.
+In parallel, the workflow creates a dataset-level overview from the package structure and from compact per-file summaries.
+
+The individual chunks are then processed by an \ac{LLM}.
+The model extracts metadata signals that are grounded in the source text.
+These signals are not yet placed into a specific metadata profile.
+They form an intermediate evidence representation.
+This design follows the \ac{GO} approach, in which information extraction is separated from the organization of this information into a target schema \cite{li2024structuredoutput}.
+After the chunk iteration, the extracted signals are merged and deduplicated.
+The result is an evidence grounding set for the profile construction stage.
+
+The workflow then initializes a dataset-level \ac{DCAT-AP+} artifact.
+This artifact provides the target structure for the extracted metadata.
+The schema is filled through a requirement-driven procedure.
+The workflow checks which requirements are already supported by the evidence and which requirements remain unresolved.
+Resolvable gaps are patched from the evidence grounding set.
+Unresolved requirements are flagged for manual curation.
+After curation, the workflow queries a property graph of controlled vocabularies.
+This maps selected \texttt{DefinedTerm} shapes in the \ac{DCAT-AP+} artifact to suitable concepts and classes through \texttt{dcterms:type} or \texttt{rdf:type}.
+The final artifact is exported in an \ac{RDF} compatible form.
 
 \begin{figure}[H]
     \centering
@@ -25,19 +39,24 @@ This allows a mapping of \texttt{DefinedTerms} shapes from the \ac{DCAT-AP+} art
 \end{figure}
 
 
-\section{Datasets}
-\label{sec:datasets}
+\section{Dataset}
+\label{sec:dataset}
 
-The workflow has been designed to be applicable to any type of dataset that contains text-based files.
-Therefore, it is not limited to a specific field or file format.
-This study used a number of \ac{NMR} datasets as test datasets.
-One sample is first presented below to provide an overview of the resources these datasets contain.
+The workflow is intended for heterogeneous dataset packages that contain text-accessible files.
+It is therefore not tied to one file extension or one instrument format.
+At the same time, it does not claim semantic access to every binary or visual resource.
+Binary files and images can be retained as package resources, but they only contribute to extraction when their relevant content can be represented as text.
+This boundary is important for instrument exports, because they often combine raw signals with textual parameter files.
 
+This study used \ac{NMR} datasets as test datasets.
+One sample is presented below to show the type of resources these packages contain.
 The sample dataset consists of a single one-dimensional \textsuperscript{1}H NMR dataset exported from ChemSpectra, a web-based spectra editor for analytical data \cite{Huang2021}.
 \Cref{fig:1H-NMR-dataset} shows the dataset structure and its contents.
-Within this export, the nested archive \texttt{10.zip} preserves the native Bruker instrument output and is therefore treated as an example for a raw instrument generated input for the metadata-extraction workflow.
-The archive contains the acquired \ac{FID} signal together with the associated acquisition parameters.
-In contrast, the accompanying files generated by ChemSpectra represent a standardized spectral representation.
+Within this export, the nested archive \texttt{10.zip} preserves the native output from a Bruker \ac{NMR} system.
+Bruker is the instrument and software environment from which the raw export originates in this example \cite{brukerTopSpin}.
+The archive is therefore treated as an example for a raw instrument generated input for the metadata-extraction workflow.
+It contains the acquired \ac{FID} signal together with the associated acquisition parameters.
+In contrast, the accompanying files generated by ChemSpectra represent a standardized spectral representation in the \ac{JCAMP-DX} format.
 Using both the raw and standardized files as input allows the workflow to be evaluated on both types of data, which are expected to be present in real-world datasets.
 
 \begin{figure}[H]
@@ -47,3 +66,240 @@ Using both the raw and standardized files as input allows the workflow to be eva
     \label{fig:1H-NMR-dataset}
 \end{figure}
 
+The contents of \texttt{10.zip} are mostly text-accessible files.
+The archive also contains the binary file \texttt{fid}, which stores the acquired time-domain signal.
+This file is important as a research object, but it contains primary data rather than textual metadata.
+The surrounding Bruker files carry the metadata that make this signal interpretable.
+Most of these files are plain \ac{ASCII} text.
+They can therefore be read after the character encoding has been identified.
+
+The textual files describe the acquisition and processing context of the spectrum.
+They contain JCAMP-style parameter records, Bruker-specific acquisition settings, processing settings for the derived spectrum, and the selected pulse sequence.
+Other records document the processing history produced by Bruker TopSpin, the software environment used to acquire and process Bruker \ac{NMR} data \cite{brukerTopSpin}.
+They also describe instrument configuration, spectrometer settings, shim values, and a short human-readable sample title.
+Some files mainly contain numeric frequency values.
+These values can be relevant for signal processing, but they provide little natural-language metadata for the extraction task.
+
+This structure makes the archive a useful test case for the ingestion stage.
+It contains one large binary signal file and several small text files with instrument metadata.
+The text files are not prose documents.
+They are structured technical records.
+The workflow must therefore preserve key-value lines and short parameter statements.
+At the same time, it must reduce dense numeric arrays and low-information lines before the text is sent to the model.
+
+\section{Preprocessing}
+\label{sec:preprocessing}
+
+The ingestion stage expands the uploaded archive and records the contained files as package resources.
+Nested archives are expanded recursively.
+This preserves the original package structure while making individual files addressable by the later workflow stages.
+Each file is then handled according to its accessible content type.
+Plain files are decoded after character-set detection with \texttt{charset-normalizer} \cite{charsetNormalizerDocs}.
+Tables are converted into textual rows.
+PDF files are converted by text extraction.
+Images and unsupported binary files are kept as resources, but they are not treated as textual evidence.
+
+After text extraction, the workflow applies a text-quality gate at line level.
+This gate removes lines that are empty, too short, dominated by control characters, repeated characters, numeric arrays, dense hexadecimal-like values, base64-like strings, or high-entropy text without spacing.
+It keeps lines that contain words, sufficient alphabetic content, spacing, or recognizable structured text.
+Structured metadata lines are important for instrument exports and must not be removed only because they contain many symbols.
+\Cref{fig:text-quality-gate} shows the corresponding preview in the workflow interface for an acquisition-parameter file.
+The preview displays the selected file, the number of source lines, and the number of lines removed by the gate.
+Lines kept for downstream chunking are highlighted as readable parameter records.
+Numeric array lines are marked as dropped.
+The gate therefore denoises the file without reducing the archive to ordinary prose.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/text-quality-gate.png}
+    \caption{Workflow preview of the text-quality gate for a Bruker acquisition-parameter file.}
+    \label{fig:text-quality-gate}
+\end{figure}
+
+\section{Dataset-Level Overview}
+\label{sec:dataset_level_overview}
+
+The workflow creates a dataset-level overview before chunk evidence is extracted.
+This stage consists of several smaller orientation steps.
+First, the program creates bounded previews from text-accessible files.
+Small files are represented as complete text.
+Larger files are represented by sampled windows from the beginning, middle, and end.
+The previews keep the prompt size controlled and are used by the \ac{LLM} to produce compact file-local summaries.
+The summaries describe the likely role of a file and the coarse metadata signals it contains.
+They do not enumerate all parameters and do not replace the source text.
+After that, the files are ranked according to their expected relevance for metadata extraction.
+The ranking is a deterministic heuristic.
+It scores \ac{LLM}-generated file summaries for fixed metadata-relevant terms and signal counts, and combines this with simple file-path, extension, and size indicators.
+
+The workflow then builds a dataset graph from the ranked file context.
+The graph is first seeded programmatically.
+Directory and file nodes are derived from archive paths, and deterministic containment relations are added.
+Additional group nodes indicate recurring dataset roles based on the validated file summaries.
+These roles include acquisition settings, processing settings, audit information, instrument configuration, or raw data.
+The \ac{LLM} then proposes a structured overview from the seeded graph and the ranked summaries.
+The result is sanitized programmatically so that it only refers to files present in the package.
+The resulting graph overview is stored as orientation context for later workflow stages.
+
+\Cref{fig:initial-overview-graph} shows this graph in the workflow interface.
+The graph focuses on relationships between files, directories, and coarse file roles.
+It is not meant to provide comprehensive summaries of every file.
+Its purpose is to add dataset-scope context to file-level and chunk-level extraction tasks.
+This context helps the model avoid overinterpreting local resources.
+For example, a parameter file can be read as part of a raw instrument export rather than as a standalone dataset description.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/initial-overview-graph.png}
+    \caption{Workflow preview of the dataset-level overview graph for the \textsuperscript{1}H NMR sample dataset.}
+    \label{fig:initial-overview-graph}
+\end{figure}
+
+\section{Chunking}
+\label{sec:chunking}
+
+Chunking has a special role in the workflow.
+Its purpose is to compensate for the limited context window of \acp{LLM}, as described in \cref{sec:large-language-models}.
+Reducing the context size is beneficial for two reasons.
+First, it supports the use of locally deployed models, where memory, compute, and energy constraints make smaller inputs more practical \cite{xu2024ondevice}.
+Second, it reduces the need to let the \ac{LLM} solve cognitively demanding extraction tasks over very long inputs.
+Long-context studies show that models do not use long prompts uniformly and that realistic long-context reasoning remains difficult even for capable systems \cite{liu2024lostmiddle,bai2025longbenchv2}.
+Chunking also keeps source provenance local.
+Each chunk retains its file path and the line span from which it was produced.
+This allows later evidence claims to be traced back to the source location.
+
+Two chunking strategies are used in the prototype.
+The semantic strategy was tested to avoid splitting related details only because a fixed token limit has been reached.
+This matters for files in which several neighboring lines are only interpretable together.
+The strategy uses an embedding model to create vector representations of sliding line windows.
+It then calculates the cosine distance between consecutive windows.
+Large distances indicate stronger changes between neighboring text groups.
+The highest distances are therefore treated as likely thematic jumps.
+They define candidate breakpoints at the end of related content spans.
+
+The fixed-token strategy follows a simpler rule.
+It chooses a target number of tokens per chunk and fills each chunk until this target would be exceeded.
+The split is independent of content similarity.
+This makes the strategy less sensitive to related lines that cross the chunk boundary.
+Its advantage is runtime.
+Fixed-token chunking finishes in a few seconds for the test dataset, while semantic chunking can take substantially longer because it requires embedding requests for many line windows.
+Both strategies apply minimum and maximum token limits after the initial split.
+The method therefore treats chunking as context management rather than as a semantic conclusion.
+
+
+\section{Evidence Extraction}
+\label{sec:evidence_extraction}
+
+The evidence extraction stage iterates over the prepared chunks.
+Its purpose is to turn local source text into explicit evidence signals before any effort is made to organize them into a target structure.
+This explicitly follows the \ac{GO} principle of separating content generation from content organization \cite{li2024structuredoutput}.
+The stage captures observations that may later support dataset identity, resources, methods, instruments, software, activities, measured values, conditions, or surrounding provenance.
+For each chunk, the \ac{LLM} receives a system instruction that asks it to detect broadly reusable metadata signals.
+The instruction uses a basic categorization scheme for signal affiliation and routing role.
+It also requires every supporting text span to be copied from the current chunk.
+The initial dataset overview and the current file summary are supplied only as orientation.
+They must not be cited as evidence.
+
+Chunk specific input for a model is constructed with the current chunk text and chunk metadata, as well as the orientation context.
+The chunk metadata contains the package name, file path, and line span, while the orientation context contains the dataset-level overview and the current file summary.
+Additionally, the model receives a short instruction to extract evidence candidates from the current chunk.
+These candidates are returned in a basic structured format.
+
+Its central output is a list of evidence candidates.
+The model-facing schema is intentionally small.
+It asks for a broad \texttt{category}, a routing \texttt{role}, a concise \texttt{claim}, and copied \texttt{evidence\_text}.
+The \texttt{category} field describes what kind of source signal was found.
+The \texttt{role} field describes how the signal may later be used by the profile construction stage.
+The \texttt{claim} field states the observation in a compact and checkable form.
+The \texttt{evidence\_text} field contains the copied source span that supports the claim.
+The categories distinguish resource, method, measurement, condition, software, instrument, activity, surrounding, and other signals.
+The roles distinguish identity, descriptor, context, parameter, qualitative attribute, and other reusable metadata.
+These categories and roles are not meant to be final or exhaustive.
+Their purpose is to provide a coarse classification that helps the workflow to route the extracted signals into the profile construction stage later.
+
+Several fields are added deterministically after generation.
+The backend assigns stable candidate identifiers, file paths, line spans, source-context windows, and evidence-match scores.
+It validates that the copied \texttt{evidence\_text} is supported by the current chunk.
+Unsupported candidates are filtered out.
+A reviewing step then evaluates the remaining candidates.
+This review is performed by an \ac{LLM}-based critic.
+The critic receives the validated candidates as structured input together with the same chunk metadata and the local chunk text.
+Then, it evaluates whether each candidate is supported by its copied source span.
+It also judges whether the claim can be understood without hidden context, whether its file or dataset scope is clear, and whether the signal remains meaningful outside the local runtime environment.
+The critic returns one assessment record for each candidate.
+This record contains categorical judgements for groundedness, self-containedness, scope clarity, portability, semantic interpretability, environment dependence, specificity, novelty, and ambiguity.
+The routing is performed programmatically from these assessment records.
+Well-supported, specific and reusable candidates are routed as portable evidence.
+Those that are supported but depend on local context are retained as contextual evidence.
+Those with unsupported text, unclear scope, high ambiguity or duplicate content are rejected.
+
+After all chunks have been processed, the workflow merges the routed evidence contexts from the individual chunks.
+This merge preserves the distinction between portable evidence, contextual evidence, rejected evidence, critic assessments, and file inventory entries.
+During this step, exact duplicates are removed first.
+The duplicate key combines the source file, line span, category, role, claim, and normalized copied evidence text.
+If several candidates share this key, the workflow keeps one representative.
+Candidates from higher-ranked files are preferred, and richer claims are preferred when the file rank is equal.
+A second duplicate pass compares the normalized evidence text of portable candidates.
+Highly similar candidates are grouped, and one representative is kept for each group.
+Clear near-duplicates are resolved deterministically, while less clear similarity groups can be triaged by an \ac{LLM}.
+Filtered candidates are not discarded silently.
+They are written to a ledger together with the reason for filtering and the identifier of the retained representative where applicable.
+The resulting evidence grounding set forms the input for profile construction.
+
+\section{Profile Construction and Requirement Checking}
+\label{sec:profile_construction_requirement_checking}
+
+The profile construction stage turns the evidence grounding set into a \ac{DCAT-AP+} dataset artifact.
+It is split into smaller steps.
+The workflow first creates a schema-constrained dataset draft.
+It then fills and repairs this draft through profile requirements rather than through a single free-form generation step.
+This keeps the construction process tied to the selected metadata profile.
+
+\subsection{Draft Initialization}
+\label{sec:draft_initialization}
+
+Draft initialization creates the first \ac{DCAT-AP+} Dataset artifact draft.
+The backend starts with the validation schema of the selected profile.
+It resolves the target Dataset shape and creates a minimal schema shell from the required fields.
+This first shell is produced programmatically.
+It gives the draft a valid structural starting point before evidence is applied.
+
+The shell receives conservative fallback values for central dataset fields.
+The title, description, identifier, and internal identifier are derived from the package identifier and the available evidence context when the profile allows these fields.
+The workflow also records an initialization scaffold.
+This scaffold tracks placeholder entries such as empty creator, keyword, type, or modification date fields.
+These placeholders mark fields that can later be replaced, enriched, or pruned if no evidence supports them.
+
+After this schema shell has been prepared, an overview-level projection is performed.
+This projection is an \ac{LLM} step.
+The model receives the required skeleton together with the compact dataset summary and the ranked file summaries from the initial overview stage.
+It proposes shallow dataset-level values such as title, description, keywords, and one dataset type.
+The prompt instructs the model to prefer omission over unsupported invention.
+It also prevents the workflow itself from being treated as part of the described dataset.
+The resulting document is reduced to the Dataset level.
+Entity and activity relations are left for later enrichment steps.
+This initialized draft becomes the working document for requirement checking.
+
+\subsection{Requirement-Based Enrichment}
+\label{sec:requirement_based_enrichment}
+
+The requirement checks identify which profile fields are already supported and which semantic requirements remain open.
+Resolvable requirements are patched with evidence-grounded values.
+The workflow validates accepted changes against the target schema.
+Requirements that cannot be resolved are recorded for manual curation.
+This makes absence and uncertainty explicit instead of hiding them in the generated document.
+
+\section{Manual Curation and Vocabulary Grounding}
+\label{sec:manual_curation_vocabulary_grounding}
+
+Manual curation is placed after profile construction.
+At this point, the user reviews a structured draft rather than raw source files.
+The curation step can correct unresolved or uncertain fields before semantic vocabulary grounding is performed.
+This ordering is important because vocabulary grounding should operate on values that have already been placed in the profile.
+
+The grounding stage searches controlled vocabularies through a property graph.
+It is applied to selected fields that are represented as \texttt{DefinedTerm} values in the active profile.
+The workflow distinguishes concept assignments from ontology class assignments.
+Conceptual classifications are written through \texttt{dcterms:type}.
+Class assignments are written through \texttt{rdf:type}.
+If no suitable term can be selected, the raw value is preserved and the unresolved mapping is recorded.
+The final result is exported as an \ac{RDF} compatible metadata artifact.

@@ -177,6 +177,7 @@ class FakeOutputRepository:
         self.dataset_summary: str | None = None
         self.curated_document: dict | None = None
         self.projection_ledger: list = []
+        self.parent_attribute_ledger: list = []
         self.field_completion_ledger: list = []
         self.evidence_query_ledger: list = []
         self.curation_ledger: list = []
@@ -220,6 +221,7 @@ class FakeOutputRepository:
         self.requirement_report = result.requirement_report
         self.curated_document = result.curated_document
         self.projection_ledger = result.projection_ledger
+        self.parent_attribute_ledger = result.parent_attribute_ledger
         self.field_completion_ledger = result.field_completion_ledger
         self.evidence_query_ledger = result.evidence_query_ledger
         self.curation_ledger = result.curation_ledger
@@ -344,6 +346,12 @@ class FakeOutputRepository:
     def load_projection_ledger(self, workflow_id: str, chat_model: str | None = None, **_kwargs) -> list:
         return self.projection_ledger
 
+    def save_parent_attribute_ledger(self, *, workflow_id: str, ledger: list, chat_model: str | None = None, **_kwargs):
+        self.parent_attribute_ledger = ledger
+
+    def load_parent_attribute_ledger(self, workflow_id: str, chat_model: str | None = None, **_kwargs) -> list:
+        return self.parent_attribute_ledger
+
     def save_field_completion_ledger(self, *, workflow_id: str, ledger: list, chat_model: str | None = None, **_kwargs):
         self.field_completion_ledger = ledger
 
@@ -424,6 +432,7 @@ class FakeOutputRepository:
         self.dataset_summary = None
         self.curated_document = None
         self.projection_ledger = []
+        self.parent_attribute_ledger = []
         self.field_completion_ledger = []
         self.curation_ledger = []
         self.validation = None
@@ -446,6 +455,7 @@ class FakeOutputRepository:
                     "curated_document": None,
                     "draft_quality_state": None,
                     "projection_ledger": [],
+                    "parent_attribute_ledger": [],
                     "field_completion_ledger": [],
                     "curation_ledger": [],
                 }
@@ -454,6 +464,7 @@ class FakeOutputRepository:
         self.dataset_summary = None
         self.curated_document = None
         self.projection_ledger = []
+        self.parent_attribute_ledger = []
         self.field_completion_ledger = []
         self.curation_ledger = []
         self.validation = None
@@ -1229,6 +1240,8 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("quantitative_signals", kwargs["prompt"])
             self.assertIn("Keep the summary compact", kwargs["prompt"])
             self.assertIn("Do not repeat identical timestamps", kwargs["prompt"])
+            self.assertIn("vendor/manufacturer/origin cues", kwargs["prompt"])
+            self.assertIn("active performers/controllers/operators/executors", kwargs["prompt"])
             self.assertNotIn("parameter_terms", kwargs["prompt"])
             return CompletionResult(
                 output=ExtractionFileSummary(

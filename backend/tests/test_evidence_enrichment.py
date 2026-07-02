@@ -212,6 +212,27 @@ class EvidenceEnrichmentApplyTests(unittest.TestCase):
         )
         self.assertEqual(updated["creator"][0], {"name": ["NMR lab"]})
 
+    def test_append_uses_array_item_schema_for_id_policy(self):
+        doc = {"id": "pkg", "creator": []}
+        instance = {"name": ["NMR lab"]}
+        updated = apply_evidence_instance(
+            doc,
+            "/creator/-",
+            instance,
+            data_package_id="pkg",
+            target_schema={
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "name": {"type": "array", "items": {"type": "string"}},
+                    },
+                },
+            },
+        )
+        self.assertEqual(updated["creator"][0], {"name": ["NMR lab"]})
+
 
 class EvidenceEnrichmentBuilderModelTests(unittest.TestCase):
     def test_evaluated_entity_model_accepts_valid_instance(self):

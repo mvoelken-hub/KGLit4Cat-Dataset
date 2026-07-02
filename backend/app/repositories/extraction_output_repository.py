@@ -19,6 +19,7 @@ from app.domain.extraction import (
     InitialFileSummaryStatus,
     InitialOverviewFailureDiagnostic,
     InitialOverviewPromptDiagnostic,
+    ParentAttributeLedgerRecord,
     ProjectionLedgerRecord,
     RequirementReport,
     RoutedEvidenceContext,
@@ -220,6 +221,22 @@ class ExtractionOutputRepository(Protocol):
         chat_model: str | None = None,
         chunking_strategy: str = "semantic",
     ) -> list[ProjectionLedgerRecord]: ...
+
+    def save_parent_attribute_ledger(
+        self,
+        *,
+        workflow_id: str,
+        ledger: list[ParentAttributeLedgerRecord],
+        chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
+    ) -> None: ...
+
+    def load_parent_attribute_ledger(
+        self,
+        workflow_id: str,
+        chat_model: str | None = None,
+        chunking_strategy: str = "semantic",
+    ) -> list[ParentAttributeLedgerRecord]: ...
 
     def save_field_completion_ledger(
         self,

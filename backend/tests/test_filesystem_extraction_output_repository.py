@@ -176,6 +176,15 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
                         "reason": "projected",
                     }
                 ],
+                parent_attribute_ledger=[
+                    {
+                        "parent_path": "/was_generated_by/0",
+                        "parent_class": "DataGeneratingActivity",
+                        "status": "skipped_schema_missing",
+                        "reason": "No schema branch was available.",
+                        "target_path": "/was_generated_by/0/has_quantitative_attribute/-",
+                    }
+                ],
                 field_completion_ledger=[
                     {
                         "json_path": "/title",
@@ -229,6 +238,7 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
                 profile_dir / "dataset_summary.txt",
                 result_dir / "curated_document.json",
                 profile_dir / "projection_ledger.json",
+                profile_dir / "parent_attribute_ledger.json",
                 profile_dir / "field_completion_ledger.json",
                 profile_dir / "evidence_query_ledger.json",
                 result_dir / "curation_ledger.json",
@@ -253,6 +263,7 @@ class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
             self.assertEqual(repo.load_generated_final_draft(workflow_id, chat_model)["id"], "generated")
             self.assertEqual(repo.load_curated_document(workflow_id, chat_model)["id"], "curated")
             self.assertEqual(repo.load_projection_ledger(workflow_id, chat_model)[0].status, "projected")
+            self.assertEqual(repo.load_parent_attribute_ledger(workflow_id, chat_model)[0].status, "skipped_schema_missing")
             self.assertEqual(repo.load_field_completion_ledger(workflow_id, chat_model)[0].json_path, "/title")
             self.assertEqual(
                 repo.load_evidence_query_ledger(workflow_id, chat_model)[0].selected_evidence_ids,

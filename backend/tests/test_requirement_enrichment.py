@@ -50,6 +50,7 @@ from app.ollama.errors import CompletionError
 from app.services.projection_service import (
     _CoreObjectIntent,
     _ProvenanceCoreIntentResponse,
+    ProjectionService,
 )
 from app.services.workflow_service import WorkflowService
 
@@ -687,6 +688,38 @@ class RequirementEvidencePacketTests(unittest.TestCase):
         self.assertIn("Do not write the profile", prompt)
         self.assertIn("Ranges are represented as separate minimum and maximum", prompt)
 
+    def test_semantic_diagnosis_prompt_guards_generic_attribute_intent(self):
+        requirement = next(
+            req
+            for req in DCAT_AP_PLUS_SEMANTIC_REQUIREMENTS
+            if req.requirement_id == "provenance_context_placement"
+        )
+        item = RequirementReportItem(
+            requirement_id=requirement.requirement_id,
+            label=requirement.label,
+            weight=requirement.weight,
+            status="partial",
+            applicable=True,
+            quality=0.5,
+            weighted_score=0.5,
+            target_paths=list(requirement.target_paths),
+        )
+
+        prompt = build_semantic_diagnosis_prompt(
+            requirement=requirement,
+            item=item,
+            draft_excerpt={},
+        )
+
+        self.assertIn("characterizes the exact target parent", prompt)
+        self.assertIn("source-record metadata", prompt)
+        self.assertIn("explicitly identifies dataset-level responsibility", prompt)
+
+    def test_semantic_synthesis_prompt_rejects_placeholder_attributes(self):
+        self.assertIn("directly characterizes the target parent", SEMANTIC_SYNTHESIS_SYSTEM_PROMPT)
+        self.assertIn("placeholder labels", SEMANTIC_SYNTHESIS_SYSTEM_PROMPT)
+        self.assertIn("measured/unknown/present", SEMANTIC_SYNTHESIS_SYSTEM_PROMPT)
+
 
 class FakeProfileService:
     def validate_document(self, *, identifier: str, document: dict) -> ProfileValidationResult:
@@ -822,6 +855,9 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["orientation_context"], {"dataset_summary": "Dataset-level orientation."})
         self.assertNotIn("selected_evidence", payload)
         self.assertNotIn("context_window", payload)
+        rules = "\n".join(payload["rules"])
+        self.assertIn("Do not put vendors or manufacturers in agents unless the context says they performed", rules)
+        self.assertIn("Do not put methods, protocols, scripts, recipes, program definitions", rules)
 
     def test_initial_draft_keeps_dataset_fields_and_clears_provenance_core(self):
         initial = WorkflowService._dataset_only_initial_draft(
@@ -3377,5 +3413,226 @@ class DescriptionMiningIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(events, ["mine", "semantic", "semantic"])
         self.assertEqual(state.generated_initial_draft["description"], ["Description fact."])
         self.assertEqual(state.generated_attribute_draft["description"], ["Description fact."])
+
+    def test_parent_attribute_ledger_records_schema_skip_reason(self):
+        service = self.service()
+        state = ExtractionRunState(chat_model="test-model")
+        progress = ExtractionRunProgress()
+        document = {"was_generated_by": [{"title": ["Acquisition"]}]}
+
+        updated = service._append_parent_attribute(
+            data_package_id="pkg",
+            profile_identifier="dcat-ap-plus",
+            document=document,
+            parent={"path": "/was_generated_by/0", "class": "DataGeneratingActivity"},
+            attribute_kind="quantitative",
+            intent_index=0,
+            instance={
+                "title": "Temperature",
+                "description": "Temperature: 298 K",
+                "value": 298.0,
+                "has_quantity_type": "Temperature",
+                "unit": "K",
+            },
+            raw_intent={"title": "Temperature", "value": 298.0, "unit": "K"},
+            evidence_ids=["ev:temp"],
+            answer="Temperature is a useful attribute.",
+            validation_schema={},
+            state=state,
+            progress=progress,
+        )
+
+        self.assertEqual(updated, document)
+        self.assertEqual(len(state.parent_attribute_ledger), 1)
+        self.assertEqual(state.parent_attribute_ledger[0].status, "skipped_schema_missing")
+        self.assertEqual(state.parent_attribute_ledger[0].parent_path, "/was_generated_by/0")
+        self.assertEqual(state.parent_attribute_ledger[0].evidence_note_identifiers, ["ev:temp"])
+
+    def test_parent_attribute_ledger_records_successful_append(self):
+        service = self.service()
+        state = ExtractionRunState(chat_model="test-model")
+        progress = ExtractionRunProgress()
+        document = {"was_generated_by": [{"title": ["Acquisition"]}]}
+
+        updated = service._append_parent_attribute(
+            data_package_id="pkg",
+            profile_identifier="dcat-ap-plus",
+            document=document,
+            parent={"path": "/was_generated_by/0", "class": "DataGeneratingActivity"},
+            attribute_kind="quantitative",
+            intent_index=0,
+            instance={
+                "title": "Temperature",
+                "description": "Temperature: 298 K",
+                "value": 298.0,
+                "has_quantity_type": "Temperature",
+                "unit": "K",
+            },
+            raw_intent={"title": "Temperature", "value": 298.0, "unit": "K"},
+            evidence_ids=["ev:temp"],
+            answer="Temperature is a useful attribute.",
+            validation_schema=quantitative_schema("DataGeneratingActivity"),
+            state=state,
+            progress=progress,
+        )
+
+        self.assertEqual(updated["was_generated_by"][0]["has_quantitative_attribute"][0]["title"], "Temperature")
+        self.assertNotIn("id", updated["was_generated_by"][0]["has_quantitative_attribute"][0])
+        self.assertEqual(len(state.parent_attribute_ledger), 1)
+        self.assertEqual(state.parent_attribute_ledger[0].status, "applied")
+        self.assertEqual(state.parent_attribute_ledger[0].actual_path, "/was_generated_by/0/has_quantitative_attribute/0")
+        self.assertEqual(state.projection_ledger[-1].status, "projected")
+
+    def test_parent_attribute_evidence_is_filtered_to_parent_scope(self):
+        service = self.service()
+        context = RoutedEvidenceContext(
+            portable_evidence=[
+                EvidenceCandidate(
+                    candidate_id="frequency",
+                    category="instrument_signal",
+                    role="parameter",
+                    claim="Spectrometer frequency was 500 MHz.",
+                    evidence_text="SFO1=500 MHz",
+                    source_context="Acquisition frequency was 500 MHz in CDCl3 using zg30.",
+                ),
+                EvidenceCandidate(
+                    candidate_id="target",
+                    category="activity_signal",
+                    role="descriptor",
+                    claim="The observed target was the proton nucleus 1H.",
+                    evidence_text="NUC1=<1H>",
+                    source_context="The activity target was the proton nucleus 1H.",
+                ),
+                EvidenceCandidate(
+                    candidate_id="solvent",
+                    category="measurement_condition",
+                    role="qualitative_attribute",
+                    claim="The solvent was CDCl3.",
+                    evidence_text="SOLVENT=CDCl3",
+                    source_context="The solvent was CDCl3.",
+                ),
+            ]
+        )
+
+        selected, context_window = service._parent_attribute_evidence_packet(
+            parent={
+                "path": "/was_generated_by/0/evaluated_entity/0",
+                "class": "EvaluatedEntity",
+                "value": {"title": "Proton Nucleus (1H)", "description": "The target nucleus being observed."},
+            },
+            evidence_context=context,
+        )
+
+        self.assertEqual([item.candidate_id for item in selected], ["target"])
+        self.assertEqual(context_window, [])
+
+    def test_parent_attribute_evidence_allows_parameter_file_settings(self):
+        service = self.service()
+        context = RoutedEvidenceContext(
+            portable_evidence=[
+                EvidenceCandidate(
+                    candidate_id="sw",
+                    category="measurement_condition",
+                    role="parameter",
+                    claim="The acquisition parameter SW was 19.9946778763279.",
+                    evidence_text="##$SW= 19.9946778763279",
+                    source_context="Parameter file acqus contains ##$SW= 19.9946778763279.",
+                ),
+                EvidenceCandidate(
+                    candidate_id="solvent",
+                    category="measurement_condition",
+                    role="qualitative_attribute",
+                    claim="The solvent was CDCl3.",
+                    evidence_text="SOLVENT=CDCl3",
+                    source_context="The solvent was CDCl3.",
+                ),
+            ]
+        )
+
+        selected, _ = service._parent_attribute_evidence_packet(
+            parent={
+                "path": "/was_generated_by/0/had_input_entity/0",
+                "class": "EvaluatedEntity",
+                "value": {"title": "Parameter File (r1)", "description": "Parameter file for TOPSPIN Version 3.2."},
+            },
+            evidence_context=context,
+        )
+
+        self.assertEqual([item.candidate_id for item in selected], ["sw"])
+
+    def test_parent_attribute_prompt_guards_attribute_intent(self):
+        prompt = ProjectionService._parent_attribute_prompt(
+            parent={
+                "path": "/was_generated_by/0/carried_out_by/0",
+                "class": "AgenticEntity",
+                "value": {
+                    "title": "Example Instrument",
+                    "description": "Instrument mentioned by the source.",
+                },
+            },
+            selected_evidence=[
+                RequirementEvidenceItem(
+                    evidence_id="ev:origin",
+                    candidate_id="origin",
+                    category="surrounding_signal",
+                    role="context",
+                    claim="Origin field names an organization.",
+                    evidence_text="ORIGIN=Example Org",
+                )
+            ],
+            context_window=[],
+            dataset_context={"title": "dataset"},
+        )
+
+        self.assertIn("recorded characterization of the parent object itself", prompt)
+        self.assertIn("silent_decision_checklist", prompt)
+        self.assertIn("source-record metadata", prompt)
+        self.assertIn("creator, owner, origin", prompt)
+
+    def test_parent_attribute_append_rejects_nonlocal_attribute_family(self):
+        service = self.service()
+        state = ExtractionRunState(chat_model="test-model")
+        progress = ExtractionRunProgress()
+        document = {"was_generated_by": [{"evaluated_entity": [{"title": "Proton Nucleus (1H)"}]}]}
+        evidence = [
+            RequirementEvidenceItem(
+                evidence_id="ev:freq",
+                candidate_id="frequency",
+                category="instrument_signal",
+                role="parameter",
+                claim="Spectrometer frequency was 500 MHz.",
+                evidence_text="SFO1=500 MHz",
+            )
+        ]
+
+        updated = service._append_parent_attribute(
+            data_package_id="pkg",
+            profile_identifier="dcat-ap-plus",
+            document=document,
+            parent={
+                "path": "/was_generated_by/0/evaluated_entity/0",
+                "class": "EvaluatedEntity",
+                "value": {"title": "Proton Nucleus (1H)"},
+            },
+            attribute_kind="quantitative",
+            intent_index=0,
+            instance={
+                "title": "Spectrometer Frequency",
+                "description": "Spectrometer frequency: 500 MHz",
+                "value": 500.0,
+                "has_quantity_type": "Spectrometer Frequency",
+                "unit": "MHz",
+            },
+            raw_intent={"title": "Spectrometer Frequency", "value": 500.0, "unit": "MHz"},
+            evidence_ids=["ev:freq"],
+            answer="Frequency is present.",
+            selected_evidence=evidence,
+            validation_schema=quantitative_schema("EvaluatedEntity"),
+            state=state,
+            progress=progress,
+        )
+
+        self.assertEqual(updated, document)
+        self.assertEqual(state.parent_attribute_ledger[0].status, "skipped_semantic_placement")
 
 

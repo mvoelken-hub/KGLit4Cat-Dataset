@@ -88,15 +88,22 @@ class _ProvenanceCoreIntentResponse(BaseModel):
 PROVENANCE_CORE_SYSTEM_PROMPT = (
     "Answer one narrow generic provenance-core question for a DCAT-AP+ dataset draft. "
     "Focus on the scientific or technical DataGeneratingActivity that produced the dataset. "
+    "Classify each candidate by its role in that activity before placing it in exactly one relation. "
     "Use only the supplied orientation context. Use concise labels and descriptions only; "
     "do not emit JSON paths, schema patches, provenance bookkeeping, or nested profile objects. "
-    "Return empty arrays when the orientation context does not support a relation."
+    "Return empty arrays when the orientation context does not support a relation. "
+    "When unsure between agent and plan/input, prefer plan/input or omit."
 )
 
 
 PARENT_ATTRIBUTE_SYSTEM_PROMPT = (
     "Answer one narrow DCAT-AP+ parent-attribute question. "
+    "A DCAT-AP+ attribute is a recorded characterization of the parent object itself. "
     "First decide which facts, if any, are useful profile-level attributes for the given parent. "
+    "Silently check that each attribute characterizes this exact parent, is directly supported by selected evidence, "
+    "has a clear attribute intent, and is not merely source-record metadata, provenance bookkeeping, "
+    "creator/owner/origin information, a file path, a process path, an identifier for another object, "
+    "or a fact better represented by a dedicated relation. "
     "Then organize only those selected facts into quantitative_attributes and qualitative_attributes. "
     "Return empty arrays when no useful parent-level attributes are supported."
 )
@@ -1517,6 +1524,9 @@ class ProjectionService:
                 "Return one small schema-valid object or value for the defect target.",
                 "Use only selected evidence and context window.",
                 "Do not include profile patch operations.",
+                "For generic attributes, the value must characterize the exact target parent and have clear parent-specific intent.",
+                "Do not synthesize source-record metadata, creator/owner/origin fields, file paths, process paths, audit/hash details, provenance bookkeeping, identifiers for other objects, placeholders, or generic measured/unknown/present values as attributes.",
+                "For creator/publisher/provenance targets, do not infer dataset-level responsibility from generic origin/owner/source metadata alone.",
             ],
         }
         return "Synthesize one semantic reconstruction value for backend compilation.\n\n" + json.dumps(
@@ -1904,15 +1914,38 @@ class ProjectionService:
         parent_path: str,
         instance: dict[str, Any],
     ) -> tuple[int, int, int, int]:
-        # Generic preference: measured properties belong to the evaluated entity,
-        # not the generating activity or dataset subject. The evaluated entity is
-        # the most specific semantic owner; the dataset subject is more general.
+        family = cls._parent_attribute_family(instance)
         preferred = 0
-        if "/evaluated_entity/" in parent_path:
-            preferred = 3
-        elif "/is_about_entity/" in parent_path:
+        if family == "spectrometer_frequency":
+            if re.fullmatch(r"/was_generated_by/\d+/has_quantitative_attribute", parent_path):
+                preferred = 4
+            elif "/carried_out_by/" in parent_path or "/had_input_entity/" in parent_path:
+                preferred = 3
+            elif "/evaluated_entity/" in parent_path or "/had_output_entity/" in parent_path:
+                preferred = 0
+        elif family in {"software_version", "acquisition_parameter", "instrument_parameter", "experiment_type"}:
+            if "/had_input_entity/" in parent_path:
+                preferred = 4
+            elif "/carried_out_by/" in parent_path:
+                preferred = 3
+            elif re.fullmatch(r"/was_generated_by/\d+/has_quantitative_attribute", parent_path):
+                preferred = 2
+        elif family in {"solvent", "activity_target"}:
+            if "/evaluated_entity/" in parent_path or "/is_about_entity/" in parent_path:
+                preferred = 4
+            elif re.fullmatch(r"/was_generated_by/\d+/(has_quantitative_attribute|has_qualitative_attribute)", parent_path):
+                preferred = 2
+        elif family == "pulse_program":
+            if "/had_input_entity/" in parent_path or "/carried_out_by/" in parent_path:
+                preferred = 4
+            elif re.fullmatch(r"/was_generated_by/\d+/has_qualitative_attribute", parent_path):
+                preferred = 3
+        elif family == "file_format":
+            if "/had_input_entity/" in parent_path or "/had_output_entity/" in parent_path:
+                preferred = 4
+        elif "/evaluated_entity/" in parent_path:
             preferred = 2
-        elif "/evaluated_activity/" in parent_path or "/is_about_activity/" in parent_path:
+        elif "/is_about_entity/" in parent_path:
             preferred = 1
         precision, populated, label_score = cls._attribute_survivor_score(instance)
         return preferred, precision, populated, label_score
@@ -3342,7 +3375,8 @@ class ProjectionService:
                 "Construct the generic provenance core. Return one combined acquisition/processing "
                 "DataGeneratingActivity with supported agents, evaluated targets, inputs, outputs, and plan. "
                 "Put generated data products in output_entities, not evaluated_entities. Keep only profile-level "
-                "objects, not low-level internal parameters."
+                "objects, not low-level internal parameters. Silently classify every candidate by relation role "
+                "before emitting it, and place each object in at most one relation."
             ),
             "limits": {
                 "data_generating_activity": 1,
@@ -3360,6 +3394,12 @@ class ProjectionService:
                 "Do not invent low-level file parameters as profile entities.",
                 "Use output_entities for generated dataset products.",
                 "Use evaluated_entities or evaluated_activities for the thing being measured, observed, or analyzed.",
+                "Use agents only for participants that perform, control, execute, operate, or are responsible for the activity.",
+                "Do not put vendors or manufacturers in agents unless the context says they performed, controlled, operated, or were responsible for the activity.",
+                "Do not put methods, protocols, scripts, recipes, program definitions, parameter files, settings, or instruction sets in agents.",
+                "Use plan for the method, protocol, workflow, recipe, program definition, or instruction set that specifies how the activity is done.",
+                "Use input_entities for files, configurations, materials, or other entities consumed, read, transformed, or used by the activity.",
+                "If an object could be either an agent or a plan/input, choose plan/input or omit it.",
             ],
         }
         return json.dumps(payload, ensure_ascii=False, indent=2)
@@ -3385,16 +3425,31 @@ class ProjectionService:
                 parent=parent,
                 evidence_context=evidence_context,
             )
-            if not selected_evidence and not state.dataset_summary.strip():
+            if not selected_evidence:
+                self._record_parent_attribute_observation(
+                    state=state,
+                    progress=progress,
+                    parent=parent,
+                    status="skipped_no_parent_evidence",
+                    reason="No evidence note was semantically local to this parent.",
+                )
                 continue
             response = await self._generate_parent_attribute_intents(
                 data_package_id=data_package_id,
                 parent=parent,
                 selected_evidence=selected_evidence,
                 context_window=context_window,
-                dataset_summary=state.dataset_summary,
+                dataset_context=self._parent_attribute_dataset_context(current),
             )
             if response is None:
+                self._record_parent_attribute_observation(
+                    state=state,
+                    progress=progress,
+                    parent=parent,
+                    status="skipped_llm_failed",
+                    reason="Parent attribute constructor failed or returned invalid structured output.",
+                    evidence_ids=[item.evidence_id for item in selected_evidence if item.evidence_id],
+                )
                 continue
             current = self._apply_parent_attribute_intents(
                 data_package_id=data_package_id,
@@ -3420,13 +3475,13 @@ class ProjectionService:
         parent: dict[str, Any],
         selected_evidence: list[RequirementEvidenceItem],
         context_window: list[RequirementEvidenceItem],
-        dataset_summary: str,
+        dataset_context: dict[str, Any],
     ) -> _ParentAttributeIntentResponse | None:
         prompt = self._parent_attribute_prompt(
             parent=parent,
             selected_evidence=selected_evidence,
             context_window=context_window,
-            dataset_summary=dataset_summary,
+            dataset_context=dataset_context,
         )
         try:
             result = await generate_structured(
@@ -3475,42 +3530,87 @@ class ProjectionService:
     ) -> dict[str, Any]:
         current = document
         evidence_ids = [item.evidence_id for item in selected_evidence if item.evidence_id]
-        for kind, intent in (
+        if not response.quantitative_attributes and not response.qualitative_attributes:
+            self._record_parent_attribute_observation(
+                state=state,
+                progress=progress,
+                parent=parent,
+                status="skipped_empty_response",
+                reason="Parent attribute constructor returned no parent-scoped attributes.",
+                answer=response.answer,
+                evidence_ids=evidence_ids,
+            )
+            return current
+        for intent_index, (kind, intent) in enumerate(
             ("quantitative", item) for item in response.quantitative_attributes
         ):
+            raw_intent = intent.model_dump(mode="json")
             instance = self._quantitative_attribute_instance_from_intent(intent)
-            if instance is not None:
-                current = self._append_parent_attribute(
-                    data_package_id=data_package_id,
-                    profile_identifier=profile_identifier,
-                    document=current,
-                    parent=parent,
-                    attribute_kind=kind,
-                    instance=instance,
-                    evidence_ids=evidence_ids,
-                    answer=response.answer,
-                    validation_schema=validation_schema,
+            if instance is None:
+                self._record_parent_attribute_observation(
                     state=state,
                     progress=progress,
+                    parent=parent,
+                    status="skipped_invalid_intent",
+                    reason="Quantitative attribute intent was missing a required title or value.",
+                    answer=response.answer,
+                    attribute_kind=kind,
+                    intent_index=intent_index,
+                    evidence_ids=evidence_ids,
+                    raw_intent=raw_intent,
                 )
-        for kind, intent in (
+                continue
+            current = self._append_parent_attribute(
+                data_package_id=data_package_id,
+                profile_identifier=profile_identifier,
+                document=current,
+                parent=parent,
+                attribute_kind=kind,
+                intent_index=intent_index,
+                instance=instance,
+                raw_intent=raw_intent,
+                evidence_ids=evidence_ids,
+                selected_evidence=selected_evidence,
+                answer=response.answer,
+                validation_schema=validation_schema,
+                state=state,
+                progress=progress,
+            )
+        for intent_index, (kind, intent) in enumerate(
             ("qualitative", item) for item in response.qualitative_attributes
         ):
+            raw_intent = intent.model_dump(mode="json")
             instance = self._qualitative_attribute_instance_from_intent(intent)
-            if instance is not None:
-                current = self._append_parent_attribute(
-                    data_package_id=data_package_id,
-                    profile_identifier=profile_identifier,
-                    document=current,
-                    parent=parent,
-                    attribute_kind=kind,
-                    instance=instance,
-                    evidence_ids=evidence_ids,
-                    answer=response.answer,
-                    validation_schema=validation_schema,
+            if instance is None:
+                self._record_parent_attribute_observation(
                     state=state,
                     progress=progress,
+                    parent=parent,
+                    status="skipped_invalid_intent",
+                    reason="Qualitative attribute intent was missing a required title or value.",
+                    answer=response.answer,
+                    attribute_kind=kind,
+                    intent_index=intent_index,
+                    evidence_ids=evidence_ids,
+                    raw_intent=raw_intent,
                 )
+                continue
+            current = self._append_parent_attribute(
+                data_package_id=data_package_id,
+                profile_identifier=profile_identifier,
+                document=current,
+                parent=parent,
+                attribute_kind=kind,
+                intent_index=intent_index,
+                instance=instance,
+                raw_intent=raw_intent,
+                evidence_ids=evidence_ids,
+                selected_evidence=selected_evidence,
+                answer=response.answer,
+                validation_schema=validation_schema,
+                state=state,
+                progress=progress,
+            )
         return current
 
     def _append_parent_attribute(
@@ -3521,45 +3621,138 @@ class ProjectionService:
         document: dict[str, Any],
         parent: dict[str, Any],
         attribute_kind: str,
+        intent_index: int,
         instance: dict[str, Any],
+        raw_intent: dict[str, Any],
         evidence_ids: list[str],
         answer: str,
         validation_schema: dict[str, Any],
         state: ExtractionRunState,
         progress: ExtractionRunProgress,
+        selected_evidence: list[RequirementEvidenceItem] | None = None,
     ) -> dict[str, Any]:
         field_name = "has_quantitative_attribute" if attribute_kind == "quantitative" else "has_qualitative_attribute"
         target_path = f"{parent['path']}/{field_name}/-"
-        schema_path = target_path[:-2]
-        if not self._schema_for_json_pointer(validation_schema, schema_path):
+        placement_reason = self._parent_attribute_semantic_placement_reason(
+            parent=parent,
+            instance=instance,
+            selected_evidence=selected_evidence or [],
+        )
+        if placement_reason:
+            self._record_parent_attribute_observation(
+                state=state,
+                progress=progress,
+                parent=parent,
+                status="skipped_semantic_placement",
+                reason=placement_reason,
+                answer=answer,
+                attribute_kind=attribute_kind,
+                intent_index=intent_index,
+                target_field=field_name,
+                target_path=target_path,
+                evidence_ids=evidence_ids,
+                candidate_attribute=instance,
+                raw_intent=raw_intent,
+            )
             return document
+        schema_path = target_path[:-2]
+        schema_branch = self._schema_for_json_pointer(validation_schema, schema_path)
+        if not schema_branch:
+            self._record_parent_attribute_observation(
+                state=state,
+                progress=progress,
+                parent=parent,
+                status="skipped_schema_missing",
+                reason=f"No schema branch was available for {schema_path}.",
+                answer=answer,
+                attribute_kind=attribute_kind,
+                intent_index=intent_index,
+                target_field=field_name,
+                target_path=target_path,
+                evidence_ids=evidence_ids,
+                candidate_attribute=instance,
+                raw_intent=raw_intent,
+            )
+            return document
+        target_schema = (
+            self._resolve_schema_node(schema_branch["items"], validation_schema)
+            if isinstance(schema_branch.get("items"), dict)
+            else schema_branch
+        )
         duplicate_reason = self._duplicate_requirement_patch_reason(
             document=document,
             target_path=target_path,
             instance=instance,
         )
         if duplicate_reason:
+            self._record_parent_attribute_observation(
+                state=state,
+                progress=progress,
+                parent=parent,
+                status="skipped_duplicate",
+                reason=duplicate_reason,
+                answer=answer,
+                attribute_kind=attribute_kind,
+                intent_index=intent_index,
+                target_field=field_name,
+                target_path=target_path,
+                evidence_ids=evidence_ids,
+                candidate_attribute=instance,
+                raw_intent=raw_intent,
+            )
             return document
         original = self._clone_json_object(document)
-        schema_branch = self._compact_schema_branch_for_target(
-            validation_schema=validation_schema,
-            target_path=target_path,
-        )
         try:
             updated = apply_evidence_instance(
                 document=document,
                 target_path=target_path,
                 instance=instance,
                 data_package_id=data_package_id,
-                target_schema=schema_branch,
+                target_schema=target_schema,
             )
-        except (ValueError, TypeError):
+        except (ValueError, TypeError) as exc:
+            self._record_parent_attribute_observation(
+                state=state,
+                progress=progress,
+                parent=parent,
+                status="skipped_apply_failed",
+                reason="apply_evidence_instance failed for the parent-scoped attribute candidate.",
+                answer=answer,
+                attribute_kind=attribute_kind,
+                intent_index=intent_index,
+                target_field=field_name,
+                target_path=target_path,
+                evidence_ids=evidence_ids,
+                candidate_attribute=instance,
+                raw_intent=raw_intent,
+                error=str(exc),
+            )
             return original
         validation = self.profile_service.validate_document(
             identifier=profile_identifier,
             document=updated,
         )
         if not validation.valid:
+            validation_reason = (
+                validation.errors[0].message
+                if getattr(validation, "errors", None)
+                else "Profile validation failed after appending the parent-scoped attribute."
+            )
+            self._record_parent_attribute_observation(
+                state=state,
+                progress=progress,
+                parent=parent,
+                status="skipped_profile_invalid",
+                reason=validation_reason,
+                answer=answer,
+                attribute_kind=attribute_kind,
+                intent_index=intent_index,
+                target_field=field_name,
+                target_path=target_path,
+                evidence_ids=evidence_ids,
+                candidate_attribute=instance,
+                raw_intent=raw_intent,
+            )
             return original
         actual_path = self._actual_requirement_patch_path(document=updated, target_path=target_path)
         self._record_parent_attribute_projection(
@@ -3567,8 +3760,10 @@ class ProjectionService:
             progress=progress,
             parent=parent,
             attribute_kind=attribute_kind,
+            intent_index=intent_index,
             actual_path=actual_path,
             instance=instance,
+            raw_intent=raw_intent,
             evidence_ids=evidence_ids,
             answer=answer,
         )
@@ -3582,8 +3777,10 @@ class ProjectionService:
         progress: ExtractionRunProgress,
         parent: dict[str, Any],
         attribute_kind: str,
+        intent_index: int,
         actual_path: str,
         instance: dict[str, Any],
+        raw_intent: dict[str, Any],
         evidence_ids: list[str],
         answer: str,
     ) -> None:
@@ -3622,6 +3819,64 @@ class ProjectionService:
                 reason="Projected schema-valid parent-scoped attribute.",
             )
         )
+        cls._record_parent_attribute_observation(
+            state=state,
+            progress=progress,
+            parent=parent,
+            status="applied",
+            reason="Projected schema-valid parent-scoped attribute.",
+            answer=answer,
+            attribute_kind=attribute_kind,
+            intent_index=intent_index,
+            target_field=field_name,
+            target_path=f"{parent['path']}/{field_name}/-",
+            actual_path=actual_path,
+            evidence_ids=evidence_ids,
+            candidate_attribute=instance,
+            raw_intent=raw_intent,
+        )
+        progress.field_completion_ledger = state.field_completion_ledger
+        progress.projection_ledger = state.projection_ledger
+
+    @classmethod
+    def _record_parent_attribute_observation(
+        cls,
+        *,
+        state: ExtractionRunState,
+        progress: ExtractionRunProgress,
+        parent: dict[str, Any],
+        status: str,
+        reason: str,
+        answer: str = "",
+        attribute_kind: str | None = None,
+        intent_index: int | None = None,
+        target_field: str | None = None,
+        target_path: str | None = None,
+        actual_path: str | None = None,
+        evidence_ids: list[str] | None = None,
+        candidate_attribute: dict[str, Any] | None = None,
+        raw_intent: dict[str, Any] | None = None,
+        error: str | None = None,
+    ) -> None:
+        state.parent_attribute_ledger.append(
+            ParentAttributeLedgerRecord(
+                parent_path=parent["path"],
+                parent_class=parent["class"],
+                status=status,
+                reason=reason,
+                answer=answer,
+                attribute_kind=attribute_kind,
+                intent_index=intent_index,
+                target_field=target_field,
+                target_path=target_path,
+                actual_path=actual_path,
+                evidence_note_identifiers=list(evidence_ids or []),
+                candidate_attribute=candidate_attribute,
+                raw_intent=raw_intent,
+                error=error,
+            )
+        )
+        progress.parent_attribute_ledger = state.parent_attribute_ledger
         progress.field_completion_ledger = state.field_completion_ledger
         progress.projection_ledger = state.projection_ledger
 
@@ -3700,27 +3955,283 @@ class ProjectionService:
             return
         parents.append({"path": path, "class": target_class, "value": cls._clone_json_object(value)})
 
+    @classmethod
+    def _parent_attribute_dataset_context(cls, document: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "title": document.get("title") or [],
+            "type": document.get("type") or [],
+            "note": "Dataset context is orientation only; selected_evidence is the only support for attributes.",
+        }
+
+    @classmethod
+    def _parent_attribute_role(cls, parent: dict[str, Any]) -> str:
+        path = str(parent.get("path") or "")
+        value = parent.get("value") if isinstance(parent.get("value"), dict) else {}
+        text = cls._normalized_text(
+            " ".join(str(value.get(key) or "") for key in ("title", "description", "name", "preferred_label"))
+        )
+        if path.endswith("/was_generated_by/0") or re.fullmatch(r"/was_generated_by/\d+", path):
+            return "activity"
+        if "/carried_out_by/" in path:
+            if any(term in text for term in ("topspin", "software", "dirdata")):
+                return "software"
+            if any(term in text for term in ("pulse", "zg30", "program")):
+                return "pulse_program"
+            if any(term in text for term in ("bruker", "biospin", "manufacturer", "gmbh")):
+                return "manufacturer"
+            if any(term in text for term in ("spectrometer", "instrument", "avance")):
+                return "instrument"
+            return "agent"
+        if "/evaluated_entity/" in path:
+            if any(term in text for term in ("cdcl", "solvent", "chloroform")):
+                return "solvent"
+            if any(term in text for term in ("nucleus", "proton", "1h", "target")):
+                return "target_nucleus"
+            return "evaluated_entity"
+        if "/had_input_entity/" in path:
+            if any(term in text for term in ("pulse", "zg30", "program")):
+                return "pulse_program"
+            if any(term in text for term in ("parameter", "jcamp", "file", "acqu", "proc")):
+                return "parameter_file"
+            return "input_entity"
+        if "/had_output_entity/" in path:
+            if any(term in text for term in ("audit", "trail", "log")):
+                return "audit_trail"
+            if any(term in text for term in ("spectrum", "spectra", "processed")):
+                return "output_spectrum"
+            return "output_entity"
+        return str(parent.get("class") or "unknown").lower()
+
+    @classmethod
+    def _parent_attribute_family(cls, instance: dict[str, Any]) -> str:
+        text = cls._normalized_text(
+            " ".join(
+                str(instance.get(key) or "")
+                for key in ("title", "description", "has_quantity_type", "has_attribute_type", "unit", "value")
+            )
+        )
+        if "mhz" in text or "frequency" in text or "spectrometer" in text:
+            return "spectrometer_frequency"
+        if "software" in text or "topspin version" in text or re.search(r"\bversion\b", text):
+            return "software_version"
+        if "pulse" in text or "zg30" in text:
+            return "pulse_program"
+        if "cdcl" in text or "solvent" in text:
+            return "solvent"
+        if "proton" in text or "nucleus" in text or "activity target" in text:
+            return "activity_target"
+        if "experiment type" in text:
+            return "experiment_type"
+        if "format" in text or "proprietary" in text:
+            return "file_format"
+        if "hash" in text or "md5" in text:
+            return "data_hash"
+        tokens = set(text.split())
+        if any(term in text for term in ("jcamp", "data span", "relaxation", "flip", "mcwrk")) or tokens & {"fov", "sw"}:
+            return "acquisition_parameter"
+        if any(term in text for term in ("amplifier", "blanking", "current limit", "gab")):
+            return "instrument_parameter"
+        return "generic"
+
+    @staticmethod
+    def _parent_attribute_family_allowed(parent_role: str, family: str) -> bool:
+        allowed = {
+            "activity": {
+                "spectrometer_frequency",
+                "software_version",
+                "pulse_program",
+                "solvent",
+                "activity_target",
+                "experiment_type",
+                "acquisition_parameter",
+                "instrument_parameter",
+                "generic",
+            },
+            "instrument": {"spectrometer_frequency", "instrument_parameter", "generic"},
+            "manufacturer": {"generic"},
+            "software": {"software_version", "acquisition_parameter", "instrument_parameter", "generic"},
+            "pulse_program": {"pulse_program", "activity_target", "acquisition_parameter", "generic"},
+            "target_nucleus": {"activity_target", "generic"},
+            "solvent": {"solvent", "generic"},
+            "parameter_file": {"software_version", "experiment_type", "acquisition_parameter", "file_format", "generic"},
+            "output_spectrum": {"file_format", "generic"},
+            "audit_trail": {"file_format", "generic"},
+        }
+        return family in allowed.get(parent_role, {"generic"})
+
+    @classmethod
+    def _parent_attribute_significant_tokens(cls, text: str) -> set[str]:
+        stop = {
+            "the", "and", "for", "with", "from", "that", "this", "data", "file",
+            "entity", "activity", "used", "using", "parameter", "processed",
+        }
+        return {token for token in cls._normalized_text(text).split() if len(token) >= 3 and token not in stop}
+
+    @classmethod
+    def _evidence_item_from_candidate(cls, candidate: EvidenceCandidate) -> RequirementEvidenceItem:
+        return RequirementEvidenceItem(
+            evidence_id=stable_evidence_id(candidate),
+            candidate_id=candidate.candidate_id,
+            category=str(candidate.category),
+            role=str(candidate.role),
+            claim=candidate.claim,
+            evidence_text=candidate.evidence_text,
+            source_context=candidate.source_context,
+            file_path=candidate.file_path,
+            start_idx=candidate.start_idx,
+            end_idx=candidate.end_idx,
+            evidence_match_score=float(getattr(candidate, "evidence_match_score", 0.0) or 0.0),
+        )
+
+    @classmethod
+    def _parent_scoped_evidence_score(cls, *, parent: dict[str, Any], candidate: EvidenceCandidate) -> int:
+        role = cls._parent_attribute_role(parent)
+        value = parent.get("value") if isinstance(parent.get("value"), dict) else {}
+        parent_title = cls._normalized_text(value.get("title") or value.get("name") or value.get("preferred_label"))
+        parent_text = cls._normalized_text(
+            " ".join(str(value.get(key) or "") for key in ("title", "description", "name", "preferred_label"))
+        )
+        candidate_text = cls._normalized_text(
+            " ".join(
+                str(part or "")
+                for part in (
+                    candidate.category,
+                    candidate.role,
+                    candidate.claim,
+                    candidate.evidence_text,
+                    candidate.source_context,
+                    candidate.file_path,
+                )
+            )
+        )
+        title_tokens = cls._parent_attribute_significant_tokens(parent_title)
+        parent_tokens = cls._parent_attribute_significant_tokens(parent_text)
+        title_hits = len(title_tokens & set(candidate_text.split()))
+        parent_hits = len(parent_tokens & set(candidate_text.split()))
+        category = str(candidate.category)
+        evidence_role = str(candidate.role)
+        score = title_hits * 4 + min(parent_hits, 3)
+
+        if role == "manufacturer":
+            if not title_hits:
+                return 0
+            if any(term in candidate_text for term in ("frequency", "mhz", "version", "topspin", "pulse", "solvent")):
+                return 0
+            return score + 2
+        if role == "software":
+            if category == "software_signal" or "software" in candidate_text or "topspin" in candidate_text:
+                score += 5
+            if any(term in candidate_text for term in ("version", "parameter", "config", "topspin")):
+                score += 2
+        elif role == "pulse_program":
+            if category == "method_signal" or any(term in candidate_text for term in ("pulse", "zg30", "program")):
+                score += 5
+            if any(term in candidate_text for term in ("software version", "solvent", "frequency", "mhz")):
+                score -= 4
+        elif role == "target_nucleus":
+            if any(term in candidate_text for term in ("nucleus", "proton", "1h", "target")):
+                score += 5
+            if any(term in candidate_text for term in ("solvent", "cdcl", "pulse", "zg30", "frequency", "mhz")):
+                score -= 4
+        elif role == "solvent":
+            if any(term in candidate_text for term in ("solvent", "cdcl", "chloroform")):
+                score += 6
+            if any(term in candidate_text for term in ("pulse", "frequency", "mhz")):
+                score -= 3
+        elif role == "parameter_file":
+            if evidence_role == "parameter" or category in {"software_signal", "instrument_signal", "measurement_condition", "resource_signal"}:
+                score += 4
+            if any(term in candidate_text for term in ("jcamp", "parameter", "acqu", "proc", "sw", "fov", "experiment type")):
+                score += 4
+            if any(term in candidate_text for term in ("frequency", "mhz", "bf1", "bf2", "bf3")):
+                score -= 8
+            if any(term in candidate_text for term in ("solvent", "pulse program")):
+                score -= 3
+        elif role == "output_spectrum":
+            if category == "resource_signal" and any(term in candidate_text for term in ("spectrum", "spectra", "output", "format")):
+                score += 5
+            if any(term in candidate_text for term in ("frequency", "mhz", "solvent", "pulse", "zg30")):
+                score -= 5
+        elif role == "audit_trail":
+            if category in {"resource_signal", "surrounding_signal"} and any(term in candidate_text for term in ("audit", "trail", "log")):
+                score += 5
+            if any(term in candidate_text for term in ("frequency", "mhz", "solvent", "pulse", "zg30")):
+                score -= 5
+        elif role == "activity":
+            if category in {"activity_signal", "method_signal", "instrument_signal", "software_signal", "measurement_condition"}:
+                score += 4
+            if any(term in candidate_text for term in ("acquisition", "processing", "experiment")):
+                score += 2
+
+        return score if score >= 5 else 0
+
+    @classmethod
+    def _parent_attribute_semantic_placement_reason(
+        cls,
+        *,
+        parent: dict[str, Any],
+        instance: dict[str, Any],
+        selected_evidence: list[RequirementEvidenceItem],
+    ) -> str:
+        if not selected_evidence:
+            return ""
+        parent_role = cls._parent_attribute_role(parent)
+        family = cls._parent_attribute_family(instance)
+        quantitative = "has_quantity_type" in instance or cls._first_number(instance.get("value")) is not None
+        if quantitative and parent_role in {"manufacturer", "output_spectrum", "audit_trail"} and family == "generic":
+            return f"Generic numeric attributes are not semantically local to parent role '{parent_role}'."
+        if not cls._parent_attribute_family_allowed(parent_role, family):
+            return f"Attribute family '{family}' is not semantically local to parent role '{parent_role}'."
+        evidence_text = cls._normalized_text(
+            " ".join(
+                " ".join(str(getattr(item, key, "") or "") for key in ("claim", "evidence_text"))
+                for item in selected_evidence
+            )
+        )
+        label_tokens = cls._parent_attribute_significant_tokens(
+            " ".join(str(instance.get(key) or "") for key in ("title", "has_quantity_type", "has_attribute_type"))
+        )
+        value_text = cls._normalized_text(instance.get("value"))
+        has_label_support = bool(label_tokens and label_tokens & set(evidence_text.split()))
+        has_value_support = bool(value_text and value_text in evidence_text)
+        if not (has_label_support or has_value_support):
+            return "Attribute label/value is not supported by the selected parent-local evidence."
+        return ""
+
     @staticmethod
     def _parent_attribute_prompt(
         *,
         parent: dict[str, Any],
         selected_evidence: list[RequirementEvidenceItem],
         context_window: list[RequirementEvidenceItem],
-        dataset_summary: str,
+        dataset_context: dict[str, Any],
     ) -> str:
         payload = {
             "question": (
                 "Which profile-level quantitative or qualitative attributes, if any, should be added "
                 f"to this {parent['class']} parent? Return empty arrays for low-level/internal parameters "
-                "or facts better represented by title, description, method, agent, input, output, or evaluated target relations."
+                "or facts better represented by title, description, method, agent, input, output, or evaluated target relations. "
+                "Use selected_evidence only as attribute support; dataset_context is orientation only. "
+                "Apply DCAT-AP+ generic attribute semantics: an attribute must be a recorded characterization "
+                "of the parent object itself, not of the source record that mentioned it."
             ),
+            "silent_decision_checklist": [
+                "Name the parent object being characterized.",
+                "Identify the selected evidence phrase that directly states the characterization.",
+                "Decide whether the fact describes the parent itself rather than source-record metadata or provenance context.",
+                "Reject creator, owner, origin, vendor, manufacturer, file path, process path, audit/hash, or bookkeeping facts unless they directly characterize this parent.",
+                "Reject facts better represented by title, description, method, agent, input, output, evaluated target, creator, publisher, provenance, or source trace.",
+                "Reject attributes with unclear intent, placeholder labels, or generic values such as measured/unknown/present without a parent-specific characterization.",
+                "Do not include this checklist in the response; return only quantitative_attributes and qualitative_attributes.",
+            ],
             "parent_path": parent["path"],
             "parent_class": parent["class"],
+            "parent_role": ProjectionService._parent_attribute_role(parent),
             "parent": parent["value"],
-            "dataset_summary": dataset_summary,
+            "dataset_context": dataset_context,
             "selected_evidence": compact_requirement_evidence(
                 selected_evidence,
-                include_source_context=True,
+                include_source_context=False,
             ),
             "context_window": compact_requirement_evidence(
                 context_window,
@@ -3735,39 +4246,20 @@ class ProjectionService:
         parent: dict[str, Any],
         evidence_context: RoutedEvidenceContext,
     ) -> tuple[list[RequirementEvidenceItem], list[RequirementEvidenceItem]]:
-        text = self._normalized_text(
-            " ".join(str(part) for part in (parent["value"].get("title"), parent["value"].get("description")) if part)
-        )
-        hints = ["attribute", "setting", "condition", "parameter", "measurement", "descriptor", *text.split()[:8]]
-        requirement = DcatRequirement(
-            requirement_id=f"parent_attribute_{parent['class'].lower()}",
-            label=f"{parent['class']} attributes",
-            description=f"Useful profile-level attributes for {parent['class']} at {parent['path']}.",
-            target_paths=[
-                f"{parent['path']}/has_quantitative_attribute/-",
-                f"{parent['path']}/has_qualitative_attribute/-",
-            ],
-            evidence_hints=hints,
-            allowed_categories=self._parent_attribute_allowed_categories(parent["class"]),
-        )
-        item = RequirementReportItem(
-            requirement_id=requirement.requirement_id,
-            label=requirement.label,
-            weight=1.0,
-            status="missing",
-            applicable=True,
-            quality=0.0,
-            weighted_score=0.0,
-            target_paths=requirement.target_paths,
-            evidence_search_hints=requirement.evidence_hints,
-        )
-        return select_requirement_evidence_packet(
-            requirement=requirement,
-            assessment=item,
-            evidence_context=evidence_context,
-            max_selected=8,
-            max_context=8,
-        )
+        candidates = list(evidence_context.portable_evidence) + list(evidence_context.contextual_evidence)
+        scored = [
+            (self._parent_scoped_evidence_score(parent=parent, candidate=candidate), candidate)
+            for candidate in candidates
+        ]
+        selected = [
+            candidate
+            for score, candidate in sorted(
+                scored,
+                key=lambda item: (-item[0], item[1].file_path, item[1].start_idx, item[1].candidate_id),
+            )
+            if score > 0
+        ][:4]
+        return ([self._evidence_item_from_candidate(candidate) for candidate in selected], [])
 
     @staticmethod
     def _parent_attribute_allowed_categories(target_class: str) -> list[str]:
@@ -6240,6 +6732,7 @@ class ProjectionService:
             curated_validation=state.curated_validation,
             initial_draft_scaffold=state.initial_draft_scaffold,
             projection_ledger=state.projection_ledger,
+            parent_attribute_ledger=state.parent_attribute_ledger,
             field_completion_ledger=state.field_completion_ledger,
             evidence_query_ledger=state.evidence_query_ledger,
             curation_ledger=state.curation_ledger,
@@ -6671,6 +7164,12 @@ class ProjectionService:
             chat_model=chat_model,
             chunking_strategy=chunking_strategy,
         )
+        self.output_repository.save_parent_attribute_ledger(
+            workflow_id=data_package_id,
+            ledger=state.parent_attribute_ledger,
+            chat_model=chat_model,
+            chunking_strategy=chunking_strategy,
+        )
         self.output_repository.save_field_completion_ledger(
             workflow_id=data_package_id,
             ledger=state.field_completion_ledger,
@@ -6715,6 +7214,7 @@ class ProjectionService:
                 "curated_validation": None,
                 "initial_draft_scaffold": {},
                 "projection_ledger": [],
+                "parent_attribute_ledger": [],
                 "field_completion_ledger": [],
                 "curation_ledger": [],
             }
