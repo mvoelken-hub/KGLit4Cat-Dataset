@@ -125,11 +125,13 @@ First, the program creates bounded previews from text-accessible files.
 Small files are represented as complete text.
 Larger files are represented by sampled windows from the beginning, middle, and end.
 The previews keep the prompt size controlled and are used by the \ac{LLM} to produce compact file-local summaries.
-The summaries describe the likely role of a file and the coarse metadata signals it contains.
+The summaries describe the explicit file purpose when it is visible.
+They also describe the nature of the information in the file in short natural-language form.
+They do not split the content into provenance, software, setting, or numeric signal fields.
 They do not enumerate all parameters and do not replace the source text.
 After that, the files are ranked according to their expected relevance for metadata extraction.
 The ranking is a deterministic heuristic.
-It scores \ac{LLM}-generated file summaries for fixed metadata-relevant terms and signal counts, and combines this with simple file-path, extension, and size indicators.
+It scores the natural-language summaries for broad metadata-relevant terms and combines this with simple file-path, extension, and size indicators.
 
 The workflow then builds a dataset graph from the ranked file context.
 The graph is first seeded programmatically.
@@ -332,11 +334,25 @@ The resulting core draft provides the parent structure for later attribute const
 \subsection{Requirement-Based Enrichment}
 \label{sec:requirement_based_enrichment}
 
-The requirement checks identify which profile fields are already supported and which semantic requirements remain open.
-Resolvable requirements are patched with evidence-grounded values.
-The workflow validates accepted changes against the target schema.
-Requirements that cannot be resolved are recorded for manual curation.
-This makes absence and uncertainty explicit instead of hiding them in the generated document.
+Requirement-based enrichment starts from the provenance core draft.
+The first substep is parent-scoped attribute construction.
+The backend freezes the core draft as context and iterates over the parent objects that already exist in it.
+These parents include the data-generating activity, technical agents, evaluated targets, inputs, and outputs.
+
+For each focused parent, the \ac{LLM} receives the core draft, the target path, the target class, selected evidence, task instructions, and a compact output schema.
+The selected evidence is limited to signals that match the target relation and evidence category.
+The model does not receive an inferred parent role.
+This avoids making the backend interpretation dominate the semantic reading of the draft context.
+The model emits only structured quantitative and qualitative attribute intents.
+It does not emit profile paths or profile patches.
+
+The backend owns the concrete schema path.
+It transforms accepted intents into attribute objects, rejects duplicates, and validates each accepted change against the target schema.
+The result of this substep is stored as \texttt{generated\_\allowbreak attribute\_\allowbreak draft.json}.
+Semantic requirement checks are then run on this attribute-enriched draft.
+They identify remaining semantic defects such as misplaced attributes, missing evaluation targets, duplicate attributes, unsuitable labels, or unresolved provenance context.
+Resolvable defects are reconstructed through backend-validated actions.
+Defects that cannot be resolved are recorded in the requirement report for manual curation.
 
 \section{Manual Curation and Vocabulary Grounding}
 \label{sec:manual_curation_vocabulary_grounding}

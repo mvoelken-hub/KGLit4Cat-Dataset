@@ -79,15 +79,14 @@ class OrientationService:
                             message="Image files are not text-extractable.",
                         )
                     )
-            state.initial_file_summaries = [
-                self._failed_initial_file_summary(
-                    file_path=file_entry.file_path,
-                    reason="No Ollama client is available for file summary generation.",
-                    diagnostics=diagnostics,
-                )
-                for file_entry in candidate_files
-                if not self._should_skip_initial_file_summary(file_entry)
-            ]
+            for file_entry in candidate_files:
+                if not self._should_skip_initial_file_summary(file_entry):
+                    self._record_failed_initial_file_summary(
+                        file_path=file_entry.file_path,
+                        reason="No Ollama client is available for file summary generation.",
+                        diagnostics=diagnostics,
+                    )
+            state.initial_file_summaries = []
             state.initial_file_summary_progress = InitialFileSummaryProgress(
                 total_files=len(candidate_files),
                 processed_files=len(candidate_files),
@@ -97,7 +96,11 @@ class OrientationService:
                     for file_entry in candidate_files
                     if self._should_skip_initial_file_summary(file_entry)
                 ),
-                failed_files=len(state.initial_file_summaries),
+                failed_files=len(candidate_files) - sum(
+                    1
+                    for file_entry in candidate_files
+                    if self._should_skip_initial_file_summary(file_entry)
+                ),
             )
             state.initial_file_summary_status = "failed"
             self._save_run_state(data_package_id, state)
@@ -126,9 +129,7 @@ class OrientationService:
             state.initial_file_summary_progress = InitialFileSummaryProgress(
                 total_files=len(candidate_files),
                 processed_files=len(summaries) + skipped_count,
-                summarized_files=sum(
-                    1 for summary in summaries if summary.status == "summarized"
-                ),
+                summarized_files=len(summaries),
                 skipped_files=skipped_count,
                 failed_files=failed_count,
                 current_file_path=current_file_path,
@@ -217,14 +218,10 @@ class OrientationService:
                             (
                                 "return_instruction",
                                 "Return an ExtractionFileSummary for this file. "
-                                "Keep the summary compact: prefer 3-6 high-level, non-repetitive signals per list. "
-                                "Use common metadata categories as orientation only, such as instrument settings, "
-                                "software settings, acquisition settings, processing settings, calibration or reference settings, "
-                                "sample conditions, identifiers, units, and quantity labels. "
-                                "These categories are examples only: do not copy them into the output and do not enumerate every parameter. "
-                                "Use metadata_signals for concise file-local orientation, instrument_or_software_terms_and_settings for visible "
-                                "instrument/software/method/setting terms, and quantitative_signals only for coarse quantitative orientation. "
-                                "Do not repeat identical timestamps, labels, units, or values.",
+                                "Keep the summary compact. "
+                                "Use information_summary for one or two natural-language sentences about the purpose and nature of the file content. "
+                                "Do not emit separate metadata, tool, setting, provenance, or numeric signal lists. "
+                                "Do not enumerate identifiers, paths, timestamps, owners, origins, repeated parameter terms, or numeric tables.",
                             ),
                         ],
                         token_budgeter=self._prompt_token_budgeter(),
@@ -238,7 +235,7 @@ class OrientationService:
                         },
                         output_type=ExtractionFileSummary,
                         omitted_fields={
-                            "ExtractionFileSummary": ["file_path", "status"],
+                            "ExtractionFileSummary": ["file_path"],
                         },
                         retries=1,
                         temperature=0.0,
@@ -274,13 +271,11 @@ class OrientationService:
                     f"Initial file summary failed for {file_entry.file_path}: {exc}"
                 )
                 failed_count += 1
-                summaries.append(
-                    self._failed_initial_file_summary(
-                        file_path=file_entry.file_path,
-                        reason=str(exc),
-                        details=self._structured_completion_debug_details(exc),
-                        diagnostics=diagnostics,
-                    )
+                self._record_failed_initial_file_summary(
+                    file_path=file_entry.file_path,
+                    reason=str(exc),
+                    details=self._structured_completion_debug_details(exc),
+                    diagnostics=diagnostics,
                 )
                 publish_summary_progress()
             except Exception as exc:
@@ -296,17 +291,15 @@ class OrientationService:
                     },
                 )
                 failed_count += 1
-                summaries.append(
-                    self._failed_initial_file_summary(
-                        file_path=file_entry.file_path,
-                        reason=str(exc),
-                        diagnostics=diagnostics,
-                    )
+                self._record_failed_initial_file_summary(
+                    file_path=file_entry.file_path,
+                    reason=str(exc),
+                    diagnostics=diagnostics,
                 )
                 publish_summary_progress()
 
         state.initial_file_summaries = summaries
-        summarized_count = sum(1 for summary in summaries if summary.status == "summarized")
+        summarized_count = len(summaries)
         if summarized_count == len(summaries) and summaries:
             state.initial_file_summary_status = "completed"
         elif summarized_count > 0:
@@ -1183,38 +1176,23 @@ class OrientationService:
                 token_budgeter=token_budgeter,
                 max_tokens=28,
             ),
-        }
-        for field_name, max_items in OVERVIEW_SUMMARY_LIST_LIMITS.items():
-            updates[field_name] = cls._compact_overview_text_list(
-                getattr(summary, field_name),
+            "information_summary": cls._compact_overview_text(
+                summary.information_summary,
                 token_budgeter=token_budgeter,
-                max_items=max_items,
-                max_item_tokens=22,
-            )
-
+                max_tokens=56,
+            ),
+        }
         compact = summary.model_copy(update=updates)
         while token_budgeter.count(compact.model_dump_json()) > INITIAL_OVERVIEW_SUMMARY_TOKEN_BUDGET:
             changed = False
             for field_name in OVERVIEW_SUMMARY_REDUCTION_ORDER:
-                values = list(getattr(compact, field_name))
-                if not values:
+                value = getattr(compact, field_name)
+                if not value:
                     continue
-                if len(values) > 1:
-                    values = values[: max(1, len(values) // 2)]
-                else:
-                    values = []
-                compact = compact.model_copy(update={field_name: values})
+                compact = compact.model_copy(update={field_name: ""})
                 changed = True
                 break
             if not changed:
-                compact = compact.model_copy(
-                    update={
-                        "purpose_evidence": [],
-                        "metadata_signals": [],
-                        "instrument_or_software_terms_and_settings": [],
-                        "quantitative_signals": [],
-                    }
-                )
                 break
         return compact
 
@@ -1431,62 +1409,22 @@ class OrientationService:
     ) -> ExtractionFileSummary:
         update: dict[str, Any] = {
             "file_path": file_path,
-            "status": "summarized",
         }
         if summary.file_path and summary.file_path != file_path:
             warnings.append(
                 "Initial file summary returned a mismatched file_path; "
                 f"expected {file_path}, got {summary.file_path}."
             )
-        verified_purpose_evidence = [
-            evidence
-            for evidence in summary.purpose_evidence
-            if evidence and evidence in sampled_text
-        ]
-        if len(verified_purpose_evidence) != len(summary.purpose_evidence):
-            warnings.append(
-                f"Initial file summary for {file_path} included purpose evidence not found in the sampled file text; dropping unsupported evidence."
-            )
-            if diagnostics is not None:
-                diagnostics.records.append(
-                    InitialFileSummaryDiagnosticRecord(
-                        file_path=file_path,
-                        reason="unsupported_purpose_evidence",
-                        message="Purpose evidence was not found in the sampled file text.",
-                        details={
-                            "dropped": [
-                                evidence
-                                for evidence in summary.purpose_evidence
-                                if evidence and evidence not in sampled_text
-                            ]
-                        },
-                    )
-                )
-            update["purpose_evidence"] = verified_purpose_evidence
-        if summary.explicit_purpose and not verified_purpose_evidence:
-            warnings.append(
-                f"Initial file summary for {file_path} included an explicit purpose without evidence; clearing it."
-            )
-            update["explicit_purpose"] = ""
-            if diagnostics is not None:
-                diagnostics.records.append(
-                    InitialFileSummaryDiagnosticRecord(
-                        file_path=file_path,
-                        reason="unsupported_explicit_purpose",
-                        message="Explicit purpose was cleared because no direct purpose evidence was provided.",
-                        details={"explicit_purpose": summary.explicit_purpose},
-                    )
-                )
         return summary.model_copy(update=update)
 
     @staticmethod
-    def _failed_initial_file_summary(
+    def _record_failed_initial_file_summary(
         *,
         file_path: str,
         reason: str,
         details: dict[str, Any] | None = None,
         diagnostics: InitialFileSummaryDiagnostics | None = None,
-    ) -> ExtractionFileSummary:
+    ) -> None:
         if diagnostics is not None:
             diagnostics.records.append(
                 InitialFileSummaryDiagnosticRecord(
@@ -1496,10 +1434,6 @@ class OrientationService:
                     details=details or {},
                 )
             )
-        return ExtractionFileSummary(
-            file_path=file_path,
-            status="failed",
-        )
 
     @staticmethod
     def _structured_completion_debug_details(exc: CompletionError) -> dict[str, Any]:
@@ -1532,11 +1466,7 @@ class OrientationService:
     def _summarized_initial_file_summaries(
         state: ExtractionRunState,
     ) -> list[ExtractionFileSummary]:
-        return [
-            summary
-            for summary in state.initial_file_summaries
-            if summary.status == "summarized"
-        ]
+        return list(state.initial_file_summaries)
 
     @staticmethod
     def _rank_ordered_initial_file_summaries(
@@ -1751,9 +1681,8 @@ class OrientationService:
             values.append(summary.explicit_purpose)
         if summary.data_format:
             values.append(summary.data_format)
-        values.extend(summary.metadata_signals[:3])
-        values.extend(summary.instrument_or_software_terms_and_settings[:2])
-        values.extend(summary.quantitative_signals[:2])
+        if summary.information_summary:
+            values.append(summary.information_summary)
         seen: set[str] = set()
         compacted: list[str] = []
         for value in values:
@@ -1769,11 +1698,8 @@ class OrientationService:
         values: list[str] = [
             summary.data_format,
             summary.explicit_purpose,
+            summary.information_summary,
         ]
-        values.extend(summary.purpose_evidence)
-        values.extend(summary.metadata_signals)
-        values.extend(summary.instrument_or_software_terms_and_settings)
-        values.extend(summary.quantitative_signals)
         return [" ".join(value.split()) for value in values if value and value.strip()]
 
     @classmethod
@@ -2066,7 +1992,6 @@ class OrientationService:
         summary_paths = {
             summary.file_path
             for summary in summaries
-            if summary.status == "summarized"
         }
         if summary_paths != ranked_paths:
             return False

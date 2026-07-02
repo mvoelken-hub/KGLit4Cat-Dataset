@@ -3419,8 +3419,9 @@ class ProjectionService:
             return document
         progress.stage = "attribute_construction"
         self._update_progress(data_package_id, progress)
+        core_draft = self._clone_json_object(document)
         current = document
-        for parent in self._attribute_parent_targets(current):
+        for parent in self._attribute_parent_targets(core_draft):
             selected_evidence, context_window = self._parent_attribute_evidence_packet(
                 parent=parent,
                 evidence_context=evidence_context,
@@ -3439,7 +3440,7 @@ class ProjectionService:
                 parent=parent,
                 selected_evidence=selected_evidence,
                 context_window=context_window,
-                dataset_context=self._parent_attribute_dataset_context(current),
+                core_draft=core_draft,
             )
             if response is None:
                 self._record_parent_attribute_observation(
@@ -3475,13 +3476,13 @@ class ProjectionService:
         parent: dict[str, Any],
         selected_evidence: list[RequirementEvidenceItem],
         context_window: list[RequirementEvidenceItem],
-        dataset_context: dict[str, Any],
+        core_draft: dict[str, Any],
     ) -> _ParentAttributeIntentResponse | None:
         prompt = self._parent_attribute_prompt(
             parent=parent,
             selected_evidence=selected_evidence,
             context_window=context_window,
-            dataset_context=dataset_context,
+            core_draft=core_draft,
         )
         try:
             result = await generate_structured(
@@ -3956,14 +3957,6 @@ class ProjectionService:
         parents.append({"path": path, "class": target_class, "value": cls._clone_json_object(value)})
 
     @classmethod
-    def _parent_attribute_dataset_context(cls, document: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "title": document.get("title") or [],
-            "type": document.get("type") or [],
-            "note": "Dataset context is orientation only; selected_evidence is the only support for attributes.",
-        }
-
-    @classmethod
     def _parent_attribute_role(cls, parent: dict[str, Any]) -> str:
         path = str(parent.get("path") or "")
         value = parent.get("value") if isinstance(parent.get("value"), dict) else {}
@@ -4204,31 +4197,34 @@ class ProjectionService:
         parent: dict[str, Any],
         selected_evidence: list[RequirementEvidenceItem],
         context_window: list[RequirementEvidenceItem],
-        dataset_context: dict[str, Any],
+        core_draft: dict[str, Any],
     ) -> str:
         payload = {
             "question": (
                 "Which profile-level quantitative or qualitative attributes, if any, should be added "
-                f"to this {parent['class']} parent? Return empty arrays for low-level/internal parameters "
+                f"to the focused {parent['class']} object at the supplied target path? "
+                "Return empty arrays for low-level/internal parameters "
                 "or facts better represented by title, description, method, agent, input, output, or evaluated target relations. "
-                "Use selected_evidence only as attribute support; dataset_context is orientation only. "
+                "Use the core draft to understand the focused object in its profile context. "
+                "Use selected_evidence only as attribute support. "
                 "Apply DCAT-AP+ generic attribute semantics: an attribute must be a recorded characterization "
-                "of the parent object itself, not of the source record that mentioned it."
+                "of the focused object itself, not of the source record that mentioned it."
             ),
-            "silent_decision_checklist": [
-                "Name the parent object being characterized.",
+            "task_instructions": [
+                "Focus only on the object at target_path with target_class.",
+                "Use core_draft for structural context, not as evidence support.",
+                "Use selected_evidence as the only support for emitted attributes.",
+                "Name the focused object being characterized.",
                 "Identify the selected evidence phrase that directly states the characterization.",
-                "Decide whether the fact describes the parent itself rather than source-record metadata or provenance context.",
-                "Reject creator, owner, origin, vendor, manufacturer, file path, process path, audit/hash, or bookkeeping facts unless they directly characterize this parent.",
+                "Decide whether the fact describes the focused object itself rather than source-record metadata or provenance context.",
+                "Reject creator, owner, origin, vendor, manufacturer, file path, process path, audit/hash, or bookkeeping facts unless they directly characterize the focused object.",
                 "Reject facts better represented by title, description, method, agent, input, output, evaluated target, creator, publisher, provenance, or source trace.",
                 "Reject attributes with unclear intent, placeholder labels, or generic values such as measured/unknown/present without a parent-specific characterization.",
                 "Do not include this checklist in the response; return only quantitative_attributes and qualitative_attributes.",
             ],
-            "parent_path": parent["path"],
-            "parent_class": parent["class"],
-            "parent_role": ProjectionService._parent_attribute_role(parent),
-            "parent": parent["value"],
-            "dataset_context": dataset_context,
+            "target_path": parent["path"],
+            "target_class": parent["class"],
+            "core_draft": core_draft,
             "selected_evidence": compact_requirement_evidence(
                 selected_evidence,
                 include_source_context=False,
@@ -4237,6 +4233,11 @@ class ProjectionService:
                 context_window,
                 include_source_context=False,
             ),
+            "output_schema": {
+                "answer": "string",
+                "quantitative_attributes": [{"title": "string", "value": "number", "unit": "string|null", "description": "string"}],
+                "qualitative_attributes": [{"title": "string", "value": "string", "description": "string"}],
+            },
         }
         return json.dumps(payload, ensure_ascii=False, indent=2)
 
@@ -6201,128 +6202,6 @@ class ProjectionService:
             return True
         return False
 
-    @classmethod
-    def _curate_generated_profile_document(cls, document: dict[str, Any]) -> dict[str, Any]:
-        curated = cls._clone_json_object(document)
-        if "title" in curated:
-            curated["title"] = cls._curate_profile_target_value(
-                target_path="/title",
-                value=curated.get("title"),
-            )
-        if "description" in curated:
-            curated["description"] = cls._curate_profile_target_value(
-                target_path="/description",
-                value=curated.get("description"),
-            )
-        # Keyword filtering removed — preserve all keywords from extraction
-        return cls._curate_nested_profile_values(curated)
-
-    @classmethod
-    def _curate_nested_profile_values(cls, value: Any) -> Any:
-        if isinstance(value, list):
-            return [
-                cls._curate_nested_profile_values(item)
-                for item in value
-                if not cls._is_low_level_profile_attribute(item)
-            ]
-        if isinstance(value, dict):
-            return {
-                key: cls._curate_nested_profile_values(item)
-                for key, item in value.items()
-            }
-        return value
-
-    @classmethod
-    def _is_low_level_profile_attribute(cls, value: Any) -> bool:
-        if not isinstance(value, dict):
-            return False
-        if not ({"value", "description"} & set(value)):
-            return False
-        text = " ".join(
-            str(value.get(key) or "")
-            for key in ("value", "description")
-        )
-        lower = text.lower()
-        return cls._is_low_level_profile_text(text) or "parameter structure" in lower
-
-    @classmethod
-    def _curate_profile_target_value(
-        cls,
-        *,
-        target_path: str,
-        value: Any,
-    ) -> Any:
-        if target_path == "/title":
-            return cls._dedupe_strings(
-                [
-                    cleaned
-                    for item in cls._string_list(value)
-                    if (cleaned := cls._clean_profile_title_text(item)) is not None
-                ]
-            )
-        if target_path == "/keyword":
-            return [
-                item
-                for item in cls._string_list(value)
-                if cls._is_profile_keyword_text(item)
-            ]
-        if target_path == "/description":
-            return [
-                item
-                for item in cls._string_list(value)
-                if cls._is_profile_description_text(item)
-            ]
-        if target_path.endswith("/title") or target_path.endswith("/description"):
-            if isinstance(value, list):
-                filtered = [
-                    item
-                    for item in cls._string_list(value)
-                    if not cls._is_low_level_profile_text(item)
-                ]
-                return filtered
-            if isinstance(value, str):
-                return "" if cls._is_low_level_profile_text(value) else value
-        return value
-
-    @classmethod
-    def _is_profile_keyword_text(cls, text: str) -> bool:
-        normalized = re.sub(r"\s+", " ", text).strip()
-        if not normalized or cls._is_low_level_profile_text(normalized):
-            return False
-        lower = normalized.lower()
-        return any(
-            term in lower
-            for term in (
-                "dataset",
-                "experiment",
-                "method",
-                "sample",
-                "measurement",
-                "analysis",
-                "workflow",
-            )
-        )
-
-    @classmethod
-    def _is_profile_description_text(cls, text: str) -> bool:
-        normalized = re.sub(r"\s+", " ", text).strip()
-        if not normalized or cls._is_low_level_profile_text(normalized):
-            return False
-        lower = normalized.lower()
-        return any(
-            term in lower
-            for term in (
-                "dataset",
-                "instrument",
-                "sample",
-                "method",
-                "metadata",
-                "measurement",
-                "experiment",
-                "file",
-            )
-        )
-
     @staticmethod
     def _is_low_level_profile_text(text: str) -> bool:
         lower = text.lower()
@@ -6638,9 +6517,7 @@ class ProjectionService:
             grounded_document,
             state.initial_draft_scaffold,
         )
-        clean_document = remove_null_values(
-            self._curate_generated_profile_document(pruned_document)
-        )
+        clean_document = remove_null_values(pruned_document)
         validation = self._validate_profile_document(
             profile_identifier=profile_identifier,
             document=clean_document,
@@ -6651,24 +6528,11 @@ class ProjectionService:
             validation_schema=validation_schema,
             schema_valid=validation.status == "valid",
         )
-        had_reconstructed_draft = state.generated_reconstructed_draft is not None
         state.generated_final_draft = clean_document
         if state.generated_reconstructed_draft is None:
             state.generated_reconstructed_draft = self._clone_json_object(source_document)
         state.validation = validation
-        if state.curated_document is None:
-            default_curated_document = (
-                source_document
-                if normalization.profile_fields or had_reconstructed_draft
-                else clean_document
-            )
-            curated_document = self._clone_json_object(default_curated_document)
-            state.curated_document = curated_document
-            state.curated_validation = self._validate_profile_document(
-                profile_identifier=profile_identifier,
-                document=curated_document,
-            )
-        elif state.curated_validation is None:
+        if state.curated_document is not None and state.curated_validation is None:
             state.curated_validation = self._validate_profile_document(
                 profile_identifier=profile_identifier,
                 document=state.curated_document,
@@ -6682,10 +6546,14 @@ class ProjectionService:
             enrichable_fields=getattr(profile_manifest, "enrichable_fields", []),
             projection_ledger=state.projection_ledger,
         )
-        state.curation_ledger = self._build_curation_ledger(
-            generated_document=clean_document,
-            curated_document=state.curated_document or clean_document,
-            existing_field_ledger=state.field_completion_ledger,
+        state.curation_ledger = (
+            self._build_curation_ledger(
+                generated_document=clean_document,
+                curated_document=state.curated_document,
+                existing_field_ledger=state.field_completion_ledger,
+            )
+            if state.curated_document is not None
+            else []
         )
         state.draft_quality_state = self._classify_draft_quality(
             validation=validation,

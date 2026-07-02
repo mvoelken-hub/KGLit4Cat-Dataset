@@ -248,16 +248,11 @@ INITIAL_OVERVIEW_FAILURE_EXCERPT_TOKENS = 300
 INITIAL_FILE_SUMMARY_CONTEXT_RATIO = 0.35
 ESTIMATED_CHARS_PER_TOKEN = 4
 OVERVIEW_SUMMARY_LIST_LIMITS = {
-    "purpose_evidence": 2,
-    "metadata_signals": 3,
-    "instrument_or_software_terms_and_settings": 4,
-    "quantitative_signals": 4,
 }
 OVERVIEW_SUMMARY_REDUCTION_ORDER = (
-    "quantitative_signals",
-    "metadata_signals",
-    "purpose_evidence",
-    "instrument_or_software_terms_and_settings",
+    "information_summary",
+    "explicit_purpose",
+    "data_format",
 )
 INITIAL_OVERVIEW_WEAK_EDGE_EVIDENCE = {
     "",

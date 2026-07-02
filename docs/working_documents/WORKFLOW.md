@@ -17,7 +17,7 @@ The intended contribution is a traceable extraction architecture:
 5. Extract grounded evidence from chunks.
 6. Accumulate and route extracted evidence.
 7. Project the accumulated evidence context into a metadata profile draft.
-8. Improve coverage, reconstruct semantic placement, validate, and optionally curate the draft. This completes the profile-draft stage.
+8. Improve coverage, reconstruct semantic placement, and validate the draft. This completes the profile-draft stage.
 9. Ground selected fields of the profile draft against semantic vocabularies into a separate final draft.
 10. Validate and persist the grounded final document.
 
@@ -44,6 +44,7 @@ Reasoning:
 
 - Chunk prompts need enough context to avoid local misinterpretation.
 - Large packages need a compact overview to manage attention.
+- Per-file summaries describe file purpose and information nature in natural language instead of pre-sorting content into provenance, tool, setting, or numeric signal buckets.
 - Evidence claims should still be grounded in source chunks, not in summary text.
 
 Thesis claim supported: SIMONE separates orientation context from grounded source evidence.
@@ -105,21 +106,21 @@ Thesis claim supported: SIMONE separates extraction from profile-specific metada
 
 ### Vocabulary Grounding Is Final Enrichment
 
-After profile draft construction, semantic reconstruction, validation, and optional curation, selected fields already placed in the profile are normalized against semantic vocabularies. Vocabulary grounding is the final workflow enrichment step before final validation and persistence. It reads the curated document when present, otherwise the raw reconstructed draft, and writes a grounded final draft as a separate document.
+After profile draft construction, semantic reconstruction, and validation, selected fields already placed in the profile are normalized against semantic vocabularies. Vocabulary grounding is the final workflow enrichment step before final validation and persistence. It reads the raw reconstructed draft and writes a grounded final draft as a separate document.
 
 Reasoning:
 
 - Evidence extraction identifies candidate meaning in source text.
 - Profile construction determines where that evidence belongs in the target schema.
 - `generated_reconstructed_draft.json` is the completed profile-draft artifact and remains raw enough to inspect reconstruction output before grounding.
-- `generated_final_draft` is the grounded final document produced from the curated document when available, otherwise from the reconstructed draft.
+- `generated_final_draft` is the grounded final document produced from the reconstructed draft.
 - Vocabulary grounding then links selected placed values to reusable identifiers.
 - Fields typed as `DefinedTerm` are discovered from the active profile schema, not only from hardcoded field names.
 - `type` fields represent vocabulary concepts, usually SKOS concepts. `rdf_type` fields represent ontology classes.
 - Quantitative attributes receive deterministic QUDT class terms: the attribute itself is a QUDT `Quantity`, `has_quantity_type` terms are QUDT `QuantityKind`, and `unit` terms are QUDT `Unit`.
 - Vector search, full-text search, graph context, and candidate selection provide a controlled grounding process.
 - Failed grounding preserves raw values and warnings instead of fabricating semantic links.
-- Grounding runs as its own stage (POST /extraction/stages/grounding/{id}/run) and never rebuilds the profile draft: it grounds the persisted curated or reconstructed draft in place. Rerun all queries only refreshes existing query records without re-discovering fields.
+- Grounding runs as its own stage (POST /extraction/stages/grounding/{id}/run) and never rebuilds the profile draft. It grounds the persisted reconstructed draft in place. Rerun all queries only refreshes existing query records without re-discovering fields.
 
 Thesis claim supported: SIMONE combines evidence-backed profile construction with final ontology- or vocabulary-backed semantic normalization.
 
@@ -149,7 +150,7 @@ Reasoning:
 - Duplicate attribute coherence and range decomposition run early as backend-compiled semantic repairs so later LLM diagnosis can focus on semantic placement instead of obvious cleanup. Same-parent numeric duplicates require the same canonical quantity and unit and tolerate harmless source-rounding differences; materially different values remain separate. Range repair can recover explicit bounds from the dataset description or compatible sibling boundary attributes, and parent placement removes verified cross-parent measurement duplicates from the less suitable owner.
 - Evidence establishes whether a semantic requirement is applicable, but only values placed at its draft target paths can establish fulfillment. Mechanical draft-only checks omit evidence packets, while placement checks receive small requirement-specific packets.
 - DataGeneratingActivity `evaluated_entity`/`evaluated_activity` state what that activity directly measured, observed, analysed, or studied. Generated outputs belong in `had_output_entity`; inputs belong in `had_input_entity` or `had_input_activity`. The active draft flow does not create Dataset `is_about_entity`/`is_about_activity` claims because they are easy to confuse with activity evaluation targets.
-- Attribute parent placement is evaluated separately from attribute presence: each existing parent receives a narrow attribute question, the backend owns the schema path, and the LLM returns only structured quantitative/qualitative attribute intents. Forced profile rebuilds discard stale curated and requirement-report state, and final deterministic guards rescore the report against the delivered grounded document.
+- Attribute parent placement is evaluated separately from attribute presence: each existing parent receives a narrow attribute question with the whole core draft as context, a focus target path/class, and parent-local evidence. The backend owns the schema path and does not expose its inferred parent-role label to the LLM. The LLM returns only structured quantitative/qualitative attribute intents. Forced profile rebuilds discard stale grounded and requirement-report state, and final deterministic guards rescore the report against the delivered grounded document.
 - The profile draft artifacts expose the stage boundary explicitly: `generated_initial_draft.json`, `description_facts.json`, `generated_core_draft.json`, `generated_attribute_draft.json`, and `generated_reconstructed_draft.json`.
 - Source trace scoring summarizes source-file evidence quality for evidence that actually supports projected draft content; description-derived facts remain explicitly marked and do not inflate it.
 - Dataset distribution material is no longer part of the profile-draft flow; profile construction now focuses on the draft itself and semantic attribute placement.
@@ -171,7 +172,6 @@ Dataset package
   -> parent-scoped attribute construction
   -> semantic reconstruction triage and validation
   -> completed raw reconstructed profile draft
-  -> optional curation
   -> final vocabulary grounding of placed profile fields
   -> grounded final draft
   -> validated and persisted result

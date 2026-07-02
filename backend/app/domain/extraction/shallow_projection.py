@@ -338,7 +338,6 @@ def compact_file_summaries_for_shallow_projection(
     return "\n".join(
         _compact_summary_line(summary, rank=rank_by_path.get(summary.file_path))
         for summary in ranked[:10]
-        if summary.status == "summarized"
     )
 
 
@@ -790,15 +789,8 @@ def _compact_summary_line(summary: ExtractionFileSummary, *, rank: int | None) -
         parts.append(f"fmt={_compact_signal(summary.data_format, 50)}")
     if summary.explicit_purpose:
         parts.append(f"pur={_compact_signal(summary.explicit_purpose, 70)}")
-    for label, values in (
-        ("ev", summary.purpose_evidence),
-        ("meta", summary.metadata_signals),
-        ("tool", summary.instrument_or_software_terms_and_settings),
-        ("num", summary.quantitative_signals),
-    ):
-        compacted = [_compact_signal(item, 72) for item in values if _clean_string(item)]
-        if compacted:
-            parts.append(f"{label}={';'.join(compacted)}")
+    if summary.information_summary:
+        parts.append(f"summary={_compact_signal(summary.information_summary, 180)}")
     return "|".join(parts)
 
 

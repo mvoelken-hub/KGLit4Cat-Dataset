@@ -664,7 +664,7 @@ class GenerateStructuredRetryTests(IsolatedAsyncioTestCase):
             "```python\n"
             "{\n"
             '  "answer": "started",\n'
-            '  "metadata_signals": [\n'
+            '  "information_summary": [\n'
             + "\n".join('    "1632482437 timestamp",' for _ in range(300))
             + "\n  ]\n"
             "}\n"

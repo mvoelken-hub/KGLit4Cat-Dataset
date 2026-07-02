@@ -116,8 +116,7 @@ class GroundingService:
     ) -> ExtractionRunResult:
         """Run the vocabulary grounding stage as a standalone step.
 
-        Grounds the persisted profile draft (curated_document or
-        generated_reconstructed_draft) without rebuilding the projection or
+        Grounds the persisted reconstructed profile draft without rebuilding the projection or
         requirement-enrichment stages. Discovers DefinedTerm fields, runs
         vocabulary queries, normalizes, and persists the grounded
         generated_final_draft.
@@ -152,7 +151,7 @@ class GroundingService:
             raise ValueError(
                 "Cannot run the grounding stage because this extraction run has no profile identifier."
             )
-        grounding_document = state.curated_document or state.generated_reconstructed_draft
+        grounding_document = state.generated_reconstructed_draft
         if grounding_document is None:
             raise ValueError(
                 "Cannot run the grounding stage because no profile draft is available. Build the profile draft first."
@@ -264,14 +263,10 @@ class GroundingService:
             target_class=profile_manifest.target_class,
         )
         evidence_context = self._merged_completed_evidence_context(state)
-        profile_document = (
-            state.curated_document
-            or state.generated_reconstructed_draft
-            or self._fallback_profile_document(
+        profile_document = state.generated_reconstructed_draft or self._fallback_profile_document(
             data_package_id=data_package_id,
             evidence_context=evidence_context,
             validation_schema=validation_schema,
-            )
         )
         normalization = await self._normalize_profile_fields_from_state_vocab_queries(
             data_package_id=data_package_id,

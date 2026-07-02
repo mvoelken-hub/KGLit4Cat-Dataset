@@ -580,15 +580,8 @@ classes:
         )
         summary = ExtractionFileSummary(
             file_path="metadata.txt",
-            status="summarized",
             data_format="text",
-            metadata_signals=[
-                "metadata",
-                "file-local labels",
-                "local title",
-                "generic owner",
-                "timestamp",
-            ],
+            information_summary="The file contains metadata, file-local labels, a local title, owner text, and timestamp information.",
         )
 
         prompt = build_evidence_system_prompt_with_overview(
@@ -1362,59 +1355,6 @@ classes:
         self.assertEqual(updated_again["was_generated_by"][0]["has_qualitative_attribute"], [])
         Draft202012Validator(self.INITIAL_DRAFT_SCHEMA).validate(updated_again)
 
-    def test_final_profile_cleanup_preserves_keywords_and_removes_description_noise(self):
-        document = {
-            "id": "package-id",
-            "title": ["Catalyst measurements"],
-            "description": [
-                "Catalyst measurement dataset summary.",
-                "TD parameter set to 65536.",
-                "Transmitter routing uses TCP/IP 149.236.99.254.",
-            ],
-            "keyword": [
-                "measurement",
-                "TD parameter set to 65536",
-                "Bla01Eth parameter is set to '<149.236.99.254>'",
-                "dataset",
-            ],
-            "was_generated_by": [
-                {
-                    "id": "package-id:activity:metadata-extraction",
-                    "has_qualitative_attribute": [
-                        {
-                            "value": "Calibration method",
-                            "description": "Calibration method",
-                        },
-                        {
-                            "value": "SOLVENT OFF setting",
-                            "description": "##$SOLVOLD= <off>",
-                        },
-                        {
-                            "value": "Instrument parameter structure",
-                            "description": "NAME\tINSTRUM\n\tFORMAT\t\"\"",
-                        },
-                    ],
-                }
-            ],
-        }
-
-        curated = WorkflowService._curate_generated_profile_document(document)
-
-        self.assertEqual(curated["description"], ["Catalyst measurement dataset summary."])
-        self.assertEqual(
-            curated["keyword"],
-            [
-                "measurement",
-                "TD parameter set to 65536",
-                "Bla01Eth parameter is set to '<149.236.99.254>'",
-                "dataset",
-            ],
-        )
-        self.assertEqual(
-            curated["was_generated_by"][0]["has_qualitative_attribute"],
-            [{"value": "Calibration method", "description": "Calibration method"}],
-        )
-
     def test_fallback_title_prefers_explicit_dataset_name_over_audit_noise(self):
         evidence = EvidenceContext(
             candidates=[
@@ -1482,14 +1422,6 @@ classes:
 
         self.assertEqual(len(groups), 1)
         self.assertEqual(groups[0].target_hint, "/title")
-
-    def test_title_cleanup_removes_spectrum_local_numeric_title(self):
-        value = WorkflowService._curate_profile_target_value(
-            target_path="/title",
-            value=["Dataset name is 1H NMR", "10", "spectrum title"],
-        )
-
-        self.assertEqual(value, ["1H NMR"])
 
     def test_projection_grouping_collapses_repeated_note_families(self):
         evidence = EvidenceContext(
@@ -1607,10 +1539,7 @@ classes:
                 file_path="README.md",
                 data_format="plain text",
                 explicit_purpose="dataset description",
-                purpose_evidence=["Dataset description"],
-                metadata_signals=["1H NMR archive"],
-                instrument_or_software_terms_and_settings=["Bruker Avance"],
-                quantitative_signals=["500 MHz"],
+                information_summary="The file describes a 1H NMR archive and mentions instrument context.",
             )
         ]
 

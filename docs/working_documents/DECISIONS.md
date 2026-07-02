@@ -16,6 +16,26 @@ Each decision should include:
 
 ## Decisions
 
+### 2026-07-02: Use Natural-Language Initial File Summaries
+
+Decision: Initial file summaries now use a lean schema with file path, data format, explicit purpose, and a short natural-language information summary. The previous status field and structured purpose evidence, metadata-signal, instrument/software/setting, and quantitative-signal buckets were removed.
+
+Reason: The bucketed summary shape introduced provenance and settings labels too early in the workflow. Later prompts could treat origin, owner, vendor, host, tool, or numeric orientation fragments as stronger semantic hints than they were. Natural-language summaries keep the overview stage useful for scope and file-role orientation without pre-classifying claims before chunk evidence extraction.
+
+Tradeoff: Deterministic ranking now relies on broad terms in purpose and summary text plus file-path, extension, and size heuristics. It has less pre-counted signal detail, but it also leaks fewer unguided role hints into profile construction.
+
+Revisit trigger: Revisit if multi-dataset evaluation shows that natural-language file summaries are too vague for overview graph construction or file prioritization.
+
+### 2026-07-02: Give Parent Attribute Prompts Core-Draft Context
+
+Decision: Parent-scoped attribute construction now sends the whole core draft, the focus target path and class, selected parent-local evidence, task instructions, and the small attribute output schema to the LLM. The prompt no longer includes the backend's inferred parent-role label.
+
+Reason: The LLM should judge the focused object in its draft context rather than inherit a deterministic role interpretation from the backend. This reduces over-attachment of attributes to unrelated parents while preserving backend ownership of target paths, evidence selection, validation, and duplicate checks.
+
+Tradeoff: The prompt is slightly larger because it includes the core draft. This is acceptable because the core draft is compact and the selected evidence packet remains small.
+
+Revisit trigger: Revisit if larger core drafts cause context pressure or if evaluation shows that removing the role label reduces attribute placement accuracy.
+
 ### 2026-07-02: Keep Initial Dataset Description Backend-Owned
 
 Decision: The initial dataset-level projection prompt no longer asks the LLM to generate a Dataset `description`. The backend inserts the dataset-level summary as the default Dataset description. Later provenance-core prompts reuse that description through the current draft and do not duplicate it in the separate orientation context.
@@ -38,11 +58,11 @@ Revisit trigger: Revisit if parent-scoped questions consistently miss important 
 
 ### 2026-06-21: Run Vocabulary Grounding As A Separate Stage
 
-Decision: Vocabulary grounding is invoked through a dedicated POST /extraction/stages/grounding/{id}/run endpoint that grounds the persisted curated or reconstructed profile draft in place, instead of driving the full evidence-resume pipeline up to the grounding stage.
+Decision: Vocabulary grounding is invoked through a dedicated POST /extraction/stages/grounding/{id}/run endpoint that grounds the persisted reconstructed profile draft in place, instead of driving the full evidence-resume pipeline up to the grounding stage.
 
 Reason: Resuming the whole workflow to reach grounding re-ran profile projection and requirement enrichment every time, rebuilding the draft the user only wanted to ground. Grounding is the final enrichment step and should be runnable independently once a profile draft exists.
 
-Tradeoff: The dedicated run cannot build a profile draft from scratch; it requires a prior profile draft (curated_document or generated_reconstructed_draft) and completed evidence context. The general resume path remains available for end-to-end runs.
+Tradeoff: The dedicated run cannot build a profile draft from scratch; it requires a prior reconstructed profile draft and completed evidence context. The general resume path remains available for end-to-end runs.
 
 Revisit trigger: Revisit if grounding needs inputs only produced by re-running an earlier stage, or if first-time grounding should also discover fields incrementally.
 
@@ -170,7 +190,7 @@ Revisit trigger: Revisit if evaluation shows prompt-led range handling remains u
 
 Decision: Dataset `is_about_entity`/`is_about_activity` and DataGeneratingActivity `evaluated_entity`/`evaluated_activity` were treated as distinct claims. This active Dataset-aboutness construction was superseded on 2026-07-01; the current flow focuses on DataGeneratingActivity evaluated/input/output relations and does not create Dataset aboutness by default.
 
-Implementation guard: Either evaluation-target family independently fulfills the activity requirement. Reconstruction may remove invalid or self-referential edges but must not synthesize a missing evaluation-target relation. Forced profile rebuilds clear stale curated/report artifacts, and the requirement report is deterministically revalidated against the delivered grounded document.
+Implementation guard: Either evaluation-target family independently fulfills the activity requirement. Reconstruction may remove invalid or self-referential edges but must not synthesize a missing evaluation-target relation. Forced profile rebuilds clear stale grounded/report artifacts, and the requirement report is deterministically revalidated against the delivered grounded document.
 
 Reason: Dataset aboutness answers what the Dataset is about; activity evaluation targets answer what one data-generating activity measured, observed, analysed, or studied. Conflating them loses the claim expressed by the owning relation and can turn generated outputs or central Dataset subjects into unsupported experiment targets.
 
@@ -190,7 +210,7 @@ Revisit trigger: Revisit if source_context is still too broad/noisy for generic 
 
 ### 2026-06-21: Run Vocabulary Grounding After Profile Finalization
 
-Decision: Vocabulary grounding is the final workflow enrichment step. It runs after profile construction, semantic reconstruction, validation, and optional curation, using fields already placed in the profile draft.
+Decision: Vocabulary grounding is the final workflow enrichment step. It runs after profile construction, semantic reconstruction, and validation, using fields already placed in the profile draft.
 
 Reason: Vocabulary grounding should normalize the meaning of selected profile values after profile construction has established their semantic owners and schema paths. It must not influence or precede parent placement.
 
@@ -200,7 +220,7 @@ Revisit trigger: Revisit only if a future profile explicitly requires grounded i
 
 ### 2026-06-21: Treat Reconstructed Draft As Completed Profile Stage
 
-Decision: The profile-draft stage is completed at `generated_reconstructed_draft.json`. Vocabulary grounding reads `curated_document` when present, otherwise that reconstructed draft, and writes a separate grounded `generated_final_draft`.
+Decision: The profile-draft stage is completed at `generated_reconstructed_draft.json`. Vocabulary grounding reads that reconstructed draft and writes a separate grounded `generated_final_draft`.
 
 Reason: Semantic reconstruction and grounding answer different questions. Reconstruction decides whether values are in the right profile objects and fields; grounding assigns controlled identifiers to already placed values. Keeping the documents separate makes stage review possible and avoids hiding raw reconstruction behavior behind vocabulary normalization.
 

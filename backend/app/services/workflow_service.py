@@ -1689,11 +1689,7 @@ class WorkflowService(
 
         progress.stage = "vocabulary_normalization"
         progress.interim_evidence_context = evidence_context
-        grounding_document = (
-            state.curated_document
-            or state.generated_reconstructed_draft
-            or profile_document
-        )
+        grounding_document = state.generated_reconstructed_draft or profile_document
         progress.generated_final_draft = state.generated_final_draft
         progress.curated_document = state.curated_document
         progress.draft_quality_state = state.draft_quality_state

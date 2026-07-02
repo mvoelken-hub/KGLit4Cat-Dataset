@@ -1079,7 +1079,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             ExtractionFileSummary(
                 file_path="metadata.txt",
                 data_format="plain text",
-                metadata_signals=["dataset description"],
+                information_summary="The file contains a dataset description.",
             )
         ]
         seeded_overview = ExtractionOverview()
@@ -1138,7 +1138,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(progress.stage, "initial_context_completed")
         self.assertEqual(output_repository.initial_file_summary_status, "failed")
         self.assertEqual(output_repository.initial_extraction_overview_status, "failed")
-        self.assertEqual(len(output_repository.initial_file_summaries), 1)
+        self.assertEqual(len(output_repository.initial_file_summaries), 0)
 
     async def test_run_extraction_requires_initial_context_artifacts(self):
         service, task_registry, _ = make_service(
@@ -1230,26 +1230,21 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             self.assertIs(kwargs["output_type"], ExtractionFileSummary)
             self.assertEqual(
                 kwargs["omitted_fields"],
-                {"ExtractionFileSummary": ["file_path", "status"]},
+                {"ExtractionFileSummary": ["file_path"]},
             )
             self.assertIn('"label":"beginning"', kwargs["prompt"])
             self.assertIn('"label":"middle"', kwargs["prompt"])
             self.assertIn('"label":"end"', kwargs["prompt"])
-            self.assertIn("common metadata categories", kwargs["prompt"])
-            self.assertIn("These categories are examples only", kwargs["prompt"])
-            self.assertIn("quantitative_signals", kwargs["prompt"])
+            self.assertIn("information_summary", kwargs["prompt"])
             self.assertIn("Keep the summary compact", kwargs["prompt"])
-            self.assertIn("Do not repeat identical timestamps", kwargs["prompt"])
-            self.assertIn("vendor/manufacturer/origin cues", kwargs["prompt"])
-            self.assertIn("active performers/controllers/operators/executors", kwargs["prompt"])
+            self.assertIn("Do not emit separate metadata, tool, setting, provenance, or numeric signal lists", kwargs["prompt"])
             self.assertNotIn("parameter_terms", kwargs["prompt"])
             return CompletionResult(
                 output=ExtractionFileSummary(
                     file_path="made-up.py",
                     data_format="JCAMP-DX spectroscopy export",
                     explicit_purpose="Stores final NMR evidence.",
-                    instrument_or_software_terms_and_settings=["PULPROG=zg30"],
-                    quantitative_signals=["explicit numeric settings"],
+                    information_summary="The file contains spectroscopy export text with acquisition-related configuration and final data values.",
                 ),
                 usage=RunUsage(requests=1),
             )
@@ -1267,10 +1262,9 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(state.initial_file_summaries), 1)
         summary = state.initial_file_summaries[0]
         self.assertEqual(summary.file_path, "HMS-Q11-p_10.dx")
-        self.assertEqual(summary.explicit_purpose, "")
-        self.assertIn("PULPROG=zg30", summary.instrument_or_software_terms_and_settings)
-        self.assertIn("explicit numeric settings", summary.quantitative_signals)
-        self.assertIsNotNone(output_repository.initial_file_summary_diagnostics)
+        self.assertEqual(summary.explicit_purpose, "Stores final NMR evidence.")
+        self.assertIn("spectroscopy export text", summary.information_summary)
+        self.assertIsNone(output_repository.initial_file_summary_diagnostics)
         self.assertEqual(output_repository.initial_file_summaries, state.initial_file_summaries)
         self.assertIsNotNone(state.initial_file_summary_progress)
         self.assertEqual(state.initial_file_summary_progress.total_files, 1)
@@ -1278,7 +1272,6 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state.initial_file_summary_progress.summarized_files, 1)
         self.assertIsNone(state.initial_file_summary_progress.current_file_path)
         self.assertTrue(any("mismatched file_path" in warning for warning in warnings))
-        self.assertTrue(any("without evidence" in warning for warning in warnings))
 
     async def test_initial_file_summaries_skip_images(self):
         service, _, output_repository = make_service([[make_chunk()]])
@@ -1309,7 +1302,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 output=ExtractionFileSummary(
                     file_path="notes.txt",
                     data_format="text",
-                    metadata_signals=["instrument: Bruker Alpha-P ATR"],
+                    information_summary="The file contains instrument context in natural language form.",
                 ),
                 usage=RunUsage(requests=1),
             )
@@ -1582,7 +1575,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 ExtractionFileSummary(
                     file_path="raw/run1/data.txt",
                     data_format="text",
-                    metadata_signals=["raw measurements"],
+                    information_summary="Raw measurements.",
                 )
             ],
             file_previews=[
@@ -1620,41 +1613,37 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 ExtractionFileSummary(
                     file_path="dataset_description.txt",
                     explicit_purpose="dataset description",
-                    metadata_signals=["human-readable"],
+                    information_summary="Human-readable dataset documentation.",
                 ),
                 ExtractionFileSummary(
                     file_path="audit/log.txt",
-                    metadata_signals=["audit trail", "hash values"],
+                    information_summary="Audit trail with hash values.",
                 ),
                 ExtractionFileSummary(
                     file_path="method/program.txt",
-                    instrument_or_software_terms_and_settings=["protocol"],
+                    information_summary="Protocol and method program information.",
                 ),
                 ExtractionFileSummary(
                     file_path="settings/acquisition.txt",
                     explicit_purpose="acquisition parameter configuration",
-                    metadata_signals=["settings"],
-                    quantitative_signals=["explicit numeric settings"],
+                    information_summary="Acquisition settings and explicit numeric configuration values.",
                 ),
                 ExtractionFileSummary(
                     file_path="settings/processing.txt",
                     explicit_purpose="processing parameter file",
-                    metadata_signals=["parameter file"],
+                    information_summary="Processing parameter file.",
                 ),
                 ExtractionFileSummary(
                     file_path="settings/instrument.txt",
-                    instrument_or_software_terms_and_settings=[
-                        "instrument settings",
-                        "calibration",
-                    ],
+                    information_summary="Instrument settings and calibration information.",
                 ),
                 ExtractionFileSummary(
                     file_path="data/raw.txt",
-                    metadata_signals=["raw measurements"],
+                    information_summary="Raw measurements.",
                 ),
                 ExtractionFileSummary(
                     file_path="data/processed.txt",
-                    metadata_signals=["processed data"],
+                    information_summary="Processed data.",
                 ),
             ],
             file_previews=[
@@ -1716,11 +1705,11 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             file_summaries=[
                 ExtractionFileSummary(
                     file_path="not-raw.txt",
-                    metadata_signals=["support file format, not raw data"],
+                    information_summary="Support file format, not raw data.",
                 ),
                 ExtractionFileSummary(
                     file_path="minimal.txt",
-                    metadata_signals=["minimal content, no detailed parameters"],
+                    information_summary="Minimal content with no detailed parameters.",
                 ),
             ],
             file_previews=[
@@ -1842,7 +1831,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 ExtractionFileSummary(
                     file_path="settings.txt",
                     data_format="text",
-                    metadata_signals=["settings"],
+                    information_summary="Settings.",
                 )
             ],
             file_previews=[
@@ -1950,10 +1939,9 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 ExtractionFileSummary(
                     file_path="parameters.txt",
                     data_format="plain text",
-                    metadata_signals=[f"metadata signal {index}" for index in range(40)],
-                    quantitative_signals=[
-                        f"quantitative signal {index}" for index in range(120)
-                    ],
+                    information_summary=" ".join(
+                        f"summary-token-{index}" for index in range(120)
+                    ),
                 )
             ],
             initial_file_summary_status="completed",
@@ -1961,8 +1949,8 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
         async def fake_generate(*_args, **kwargs):
             prompt = kwargs["prompt"]
-            self.assertIn("quantitative signal 0", prompt)
-            self.assertNotIn("quantitative signal 119", prompt)
+            self.assertIn("summary-token-0", prompt)
+            self.assertNotIn("summary-token-119", prompt)
             self.assertLessEqual(
                 budgeter.count(EXTRACTION_OVERVIEW_SYSTEM_PROMPT + prompt),
                 service._initial_overview_input_token_budget(
@@ -2043,7 +2031,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             ),
             ExtractionFileSummary(
                 file_path="method/program.txt",
-                instrument_or_software_terms_and_settings=["pulse sequence"],
+                information_summary="Pulse sequence information.",
             ),
         ]
         seed = WorkflowService._seed_initial_overview_graph(
@@ -2082,8 +2070,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             ExtractionFileSummary(
                 file_path=f"file-{index}.txt",
                 data_format="plain text",
-                metadata_signals=[f"metadata signal {index}"],
-                quantitative_signals=[f"quantitative signal {index}"],
+                information_summary=f"natural language summary {index}",
             )
             for index in range(12)
         ]
@@ -2112,7 +2099,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertIn("Validated per-file summaries JSON", prompt)
-        self.assertIn("metadata signal 0", prompt)
+        self.assertIn("natural language summary 0", prompt)
         self.assertIn("Later extracted objects must still be supported", prompt)
         self.assertGreater(len(report["included_summary_paths"]), 0)
         self.assertLessEqual(
@@ -2537,8 +2524,48 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             warnings=warnings,
         )
 
-        self.assertEqual(result.generated_final_draft, {"title": ["SG-V4050"], "identifier": "package-id"})
-        self.assertEqual(result.curated_document, result.generated_final_draft)
+        self.assertEqual(result.generated_final_draft, {"title": "SG-V4050", "identifier": "package-id"})
+        self.assertIsNone(result.curated_document)
+        self.assertEqual(result.curation_ledger, [])
+        self.assertEqual(output_repository.result, result)
+
+    async def test_save_profile_result_preserves_generated_activity_without_auto_curation(self):
+        service, _, output_repository = make_service([[make_chunk()]])
+        service.profile_service = TitleProfileService()  # type: ignore[assignment]
+        context = evidence_context(
+            "activity",
+            "NMR acquisition.",
+            "acquisition",
+            category="activity_signal",
+            role="identity",
+        )
+        document = {
+            "title": "NMR spectral data",
+            "identifier": "package-id",
+            "was_generated_by": [
+                {
+                    "id": "package-id:activity:dataset-generation",
+                    "description": [
+                        "Automated acquisition and processing using parameter files."
+                    ],
+                }
+            ],
+        }
+
+        result = await service._save_profile_result(
+            data_package_id="package-id",
+            profile_identifier="profile",
+            evidence_context=context,
+            normalization=ExtractionNormalization(),
+            document=document,
+            profile_manifest=SimpleNamespace(enrichable_fields=[]),
+            validation_schema=TitleProfileService.schema,
+            state=ExtractionRunState(profile_identifier="profile"),
+            warnings=[],
+        )
+
+        self.assertEqual(result.generated_final_draft["was_generated_by"], document["was_generated_by"])
+        self.assertIsNone(result.curated_document)
         self.assertEqual(output_repository.result, result)
 
     def test_profile_vocab_sources_use_only_quantity_unit_and_enrichable_fields(self):
@@ -2723,18 +2750,16 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 ExtractionFileSummary(
                     file_path="numbers.txt",
                     data_format="plain text",
-                    quantitative_signals=["single column numeric values"],
+                    information_summary="Single column numeric values with little context.",
                 ),
                 ExtractionFileSummary(
                     file_path="dataset_description.txt",
                     explicit_purpose="dataset description",
-                    purpose_evidence=["dataset description"],
-                    metadata_signals=["instrument: Raman microscope"],
+                    information_summary="Dataset description with instrument context.",
                 ),
                 ExtractionFileSummary(
                     file_path="acquisition.txt",
-                    metadata_signals=["acquisition settings"],
-                    instrument_or_software_terms_and_settings=["instrument settings"],
+                    information_summary="Acquisition settings and instrument settings.",
                 ),
             ],
         )
@@ -3175,7 +3200,8 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                         evidence_context=evidence_context("grounding-resource", "Grounding resource."),
                     ),
                 ],
-                generated_final_draft={"id": "manual-id", "type": "dataset"},
+                generated_final_draft={"id": "stale-grounded-id", "type": "dataset"},
+                generated_reconstructed_draft={"id": "reconstructed-id", "type": "dataset"},
                 curated_document={"id": "manual-id", "type": "dataset"},
             ),
         )
@@ -3214,7 +3240,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             await task_registry.wait_for_task("extraction:evidence:package-id:semantic:chat", timeout=2)
 
         self.assertIsNotNone(output_repository.result)
-        self.assertEqual(output_repository.result.generated_final_draft["id"], "manual-id")
+        self.assertEqual(output_repository.result.generated_final_draft["id"], "reconstructed-id")
         self.assertEqual(output_repository.result.curated_document["id"], "manual-id")
         self.assertGreaterEqual(len(output_repository.run_state.vocab_queries), 1)
 

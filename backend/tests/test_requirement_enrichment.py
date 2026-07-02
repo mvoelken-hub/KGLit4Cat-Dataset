@@ -3565,6 +3565,20 @@ class DescriptionMiningIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([item.candidate_id for item in selected], ["sw"])
 
     def test_parent_attribute_prompt_guards_attribute_intent(self):
+        core_draft = {
+            "title": "dataset",
+            "was_generated_by": [
+                {
+                    "title": "Acquisition",
+                    "carried_out_by": [
+                        {
+                            "title": "Example Instrument",
+                            "description": "Instrument mentioned by the source.",
+                        }
+                    ],
+                }
+            ],
+        }
         prompt = ProjectionService._parent_attribute_prompt(
             parent={
                 "path": "/was_generated_by/0/carried_out_by/0",
@@ -3585,11 +3599,15 @@ class DescriptionMiningIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 )
             ],
             context_window=[],
-            dataset_context={"title": "dataset"},
+            core_draft=core_draft,
         )
 
-        self.assertIn("recorded characterization of the parent object itself", prompt)
-        self.assertIn("silent_decision_checklist", prompt)
+        self.assertIn("recorded characterization of the focused object itself", prompt)
+        self.assertIn("core_draft", prompt)
+        self.assertIn("target_path", prompt)
+        self.assertIn("target_class", prompt)
+        self.assertIn("task_instructions", prompt)
+        self.assertNotIn("parent_role", prompt)
         self.assertIn("source-record metadata", prompt)
         self.assertIn("creator, owner, origin", prompt)
 

@@ -150,6 +150,21 @@ class EvidenceService:
             generated_final_draft=(
                 persisted_state.generated_final_draft if persisted_state else None
             ),
+            generated_initial_draft=(
+                persisted_state.generated_initial_draft if persisted_state else None
+            ),
+            generated_core_draft=(
+                persisted_state.generated_core_draft if persisted_state else None
+            ),
+            generated_attribute_draft=(
+                persisted_state.generated_attribute_draft if persisted_state else None
+            ),
+            generated_reconstructed_draft=(
+                persisted_state.generated_reconstructed_draft if persisted_state else None
+            ),
+            requirement_report=(
+                persisted_state.requirement_report if persisted_state else None
+            ),
             curated_document=(
                 persisted_state.curated_document if persisted_state else None
             ),
@@ -812,7 +827,6 @@ class EvidenceService:
         summary_by_path = {
             summary.file_path: summary
             for summary in state.initial_file_summaries
-            if summary.status == "summarized"
         }
         inventory_by_path = {item.file_path: item for item in context.file_inventory}
         for file in data_package.files:
@@ -824,7 +838,7 @@ class EvidenceService:
                     for part in (
                         summary.data_format,
                         summary.explicit_purpose,
-                        "; ".join(summary.metadata_signals[:3]),
+                        summary.information_summary,
                     )
                     if part
                 ]
@@ -868,7 +882,7 @@ class EvidenceService:
         file_path: str,
     ) -> ExtractionFileSummary | None:
         for summary in state.initial_file_summaries:
-            if summary.file_path == file_path and summary.status == "summarized":
+            if summary.file_path == file_path:
                 return summary
         return None
 

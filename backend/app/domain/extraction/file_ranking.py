@@ -98,7 +98,7 @@ def rank_summarized_files(
     scored = [
         (summary, *_summary_score(summary, file_contexts.get(summary.file_path) if file_contexts else None))
         for summary in summaries
-        if getattr(summary, "status", None) == "summarized"
+        if getattr(summary, "file_path", "")
     ]
     scored.sort(key=lambda item: (-item[1], getattr(item[0], "file_path", "")))
     return FileRankingResult(
@@ -162,20 +162,6 @@ def _summary_score(summary: Any, file: FileContext | None) -> tuple[float, list[
         score += 0.1
         reasons.append("audit/provenance context")
 
-    metadata_count = len(getattr(summary, "metadata_signals", []) or [])
-    instrument_count = len(getattr(summary, "instrument_or_software_terms_and_settings", []) or [])
-    quantitative_count = len(getattr(summary, "quantitative_signals", []) or [])
-    if metadata_count:
-        score += min(0.12, metadata_count * 0.025)
-        reasons.append("metadata signals")
-    if instrument_count:
-        score += min(0.12, instrument_count * 0.03)
-    if quantitative_count and (metadata_count or instrument_count):
-        score += min(0.06, quantitative_count * 0.01)
-        reasons.append("quantitative orientation")
-    if quantitative_count > 8 and metadata_count <= 2 and instrument_count <= 2:
-        score -= 0.18
-        reasons.append("mostly low-context quantitative values")
     if not any(values):
         score -= 0.12
         reasons.append("empty or low-signal summary")
@@ -198,14 +184,8 @@ def _summary_values(summary: Any) -> list[str]:
         getattr(summary, "file_path", ""),
         getattr(summary, "data_format", ""),
         getattr(summary, "explicit_purpose", ""),
+        getattr(summary, "information_summary", ""),
     ]
-    for field in (
-        "purpose_evidence",
-        "metadata_signals",
-        "instrument_or_software_terms_and_settings",
-        "quantitative_signals",
-    ):
-        values.extend(str(value) for value in (getattr(summary, field, []) or []))
     return [value for value in values if value]
 
 

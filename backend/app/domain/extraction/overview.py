@@ -8,7 +8,6 @@ from app.domain.extraction.file_ranking import RankedFile
 
 
 ExtractionOverviewStatus = Literal["structured", "unstructured_fallback", "failed"]
-ExtractionFileSummaryStatus = Literal["summarized", "failed"]
 InitialFileSummaryStatus = Literal["completed", "partial", "failed"]
 ExtractionOverviewNodeKind = Literal["package", "directory", "file", "group"]
 ExtractionOverviewRelation = Literal[
@@ -82,7 +81,6 @@ class ExtractionFileContentWindow(BaseModel):
 
 class ExtractionFileSummary(BaseModel):
     file_path: str = ""
-    status: ExtractionFileSummaryStatus = "summarized"
     data_format: str = Field(
         "",
         description="Obvious file format or syntax visible in the sampled content.",
@@ -91,27 +89,10 @@ class ExtractionFileSummary(BaseModel):
         "",
         description="Purpose only when explicitly stated by file content or filename.",
     )
-    purpose_evidence: list[str] = Field(
-        default_factory=list,
-        description="Short snippets from this file supporting explicit_purpose.",
+    information_summary: str = Field(
+        "",
+        description="Compact natural-language description of the nature of the information in this file.",
     )
-    metadata_signals: list[str] = Field(
-        default_factory=list,
-        description=(
-            "Concise file-local metadata and vendor/manufacturer/origin cues. "
-            "Do not treat vendors, manufacturers, publishers, or creators as actors unless "
-            "the file explicitly says they performed, controlled, operated, or executed an activity."
-        ),
-    )
-    instrument_or_software_terms_and_settings: list[str] = Field(
-        default_factory=list,
-        description=(
-            "Visible instrument, software, method, executable, protocol, or setting terms. "
-            "Exclude vendor/manufacturer/organization names unless they are part of a specific "
-            "instrument/software product name or are explicitly described as active operators."
-        ),
-    )
-    quantitative_signals: list[str] = Field(default_factory=list)
 
 
 class InitialFileSummaryDiagnosticRecord(BaseModel):
@@ -298,15 +279,10 @@ Your output is guidance only. It is not extraction evidence for later chunk call
 
 Summarize only facts visible in this file's sampled content, filename, or obvious syntax.
 The explicit_purpose field is strict: fill it only when the sampled content or filename directly states the file's purpose. Otherwise leave it empty.
-Keep the response small: prefer 3-6 high-level, non-repetitive signals per list.
-metadata_signals should absorb useful observable characteristics, vendor/manufacturer/origin cues, and coarse file-local metadata cues without inventing dataset-level identity.
-instrument_or_software_terms_and_settings should list only the most important visible instrument, software, method, executable, protocol, and setting terms when supported.
-Do not put vendors, manufacturers, publishers, creators, or organization names in instrument_or_software_terms_and_settings unless the file explicitly says they performed, controlled, operated, or executed an activity, or unless the organization name is inseparable from a specific product/instrument/software name.
-Differentiate actual actors from vendor metadata: a visible origin/manufacturer line is metadata, not evidence that the organization carried out the dataset activity.
-quantitative_signals should be coarse orientation only, such as a few representative explicit numeric settings, quantity labels, or visible units. Do not dump exhaustive parameter labels, repeated timestamps, full numeric tables, or structured quantity facts.
-Evidence fields must quote short snippets from this file only.
-Do not output known traps, detected identifiers, uncertainty notes, exhaustive parameter terms, or structured quantitative attributes.
-Do not invent dataset purpose, instrument names, file roles, sample identities, or software-project files.
+Use information_summary for one or two short natural-language sentences about the kind of information the file contains.
+Do not split the file into metadata, tool, setting, provenance, or numeric signal buckets.
+Do not enumerate identifiers, paths, timestamps, owners, origin lines, exhaustive parameter terms, or structured quantitative attributes.
+Do not invent dataset purpose, file roles, sample identities, actors, instruments, or software-project files.
 """
 
 
@@ -520,18 +496,10 @@ def build_extraction_file_summary_prompt(
         "Sampled content windows JSON:\n"
         f"[{windows_json}]\n\n"
         "Return an ExtractionFileSummary for this exact file_path. "
-        "Keep the summary compact: prefer 3-6 high-level, non-repetitive signals per list. "
-        "Use common metadata categories as orientation only, such as instrument settings, "
-        "software settings, acquisition settings, processing settings, calibration or reference settings, "
-        "sample conditions, identifiers, units, and quantity labels. "
-        "These categories are examples only: do not copy them into the output and do not enumerate every parameter. "
-        "Use metadata_signals for concise file-local orientation, including vendor/manufacturer/origin cues. "
-        "Use instrument_or_software_terms_and_settings for visible instrument/software/method/executable/protocol/setting terms, "
-        "but exclude vendor, manufacturer, publisher, creator, and organization names unless the file explicitly "
-        "describes them as active performers/controllers/operators/executors or the organization name is inseparable "
-        "from a specific product/instrument/software name. "
-        "Use quantitative_signals only for coarse quantitative orientation. "
-        "Do not repeat identical timestamps, labels, units, or values."
+        "Keep the summary compact. "
+        "Use information_summary for one or two natural-language sentences about the purpose and nature of the information in the file. "
+        "Do not emit separate metadata, tool, setting, provenance, or numeric signal lists. "
+        "Do not enumerate identifiers, paths, timestamps, owners, origins, repeated parameter terms, or numeric tables."
     )
 
 
@@ -603,21 +571,11 @@ def file_summary_to_prompt_text(summary: ExtractionFileSummary | None) -> str:
         return ""
     parts = [
         f"File path: {summary.file_path}",
-        f"Summary status: {summary.status}",
     ]
     if summary.data_format:
         parts.append(f"Data format: {summary.data_format}")
     if summary.explicit_purpose:
         parts.append(f"Explicit purpose: {summary.explicit_purpose}")
-    for label, values in (
-        ("Purpose evidence", summary.purpose_evidence),
-        ("Metadata signals", summary.metadata_signals),
-        (
-            "Instrument/software terms and settings",
-            summary.instrument_or_software_terms_and_settings,
-        ),
-        ("Quantitative signals", summary.quantitative_signals),
-    ):
-        if values:
-            parts.append(label + ":\n" + "\n".join(f"- {value}" for value in values))
+    if summary.information_summary:
+        parts.append(f"Information summary: {summary.information_summary}")
     return "\n".join(parts)

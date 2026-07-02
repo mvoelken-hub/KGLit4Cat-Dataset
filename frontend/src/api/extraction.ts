@@ -368,18 +368,13 @@ export type InitialDraftScaffold = {
 };
 
 export type ExtractionOverviewStatus = 'structured' | 'unstructured_fallback' | 'failed' | string;
-export type ExtractionFileSummaryStatus = 'summarized' | 'failed' | string;
 export type InitialFileSummaryStatus = 'completed' | 'partial' | 'failed' | string;
 
 export type ExtractionFileSummary = {
   file_path: string;
-  status: ExtractionFileSummaryStatus;
   data_format: string;
   explicit_purpose: string;
-  purpose_evidence: string[];
-  metadata_signals: string[];
-  instrument_or_software_terms_and_settings: string[];
-  quantitative_signals: string[];
+  information_summary: string;
 };
 
 export type ExtractionOverviewNodeKind = 'package' | 'directory' | 'file' | 'group' | string;
