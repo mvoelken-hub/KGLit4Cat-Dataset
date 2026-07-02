@@ -251,33 +251,39 @@ The resulting evidence grounding set forms the input for profile construction.
 The profile construction stage turns the evidence grounding set into a \ac{DCAT-AP+} dataset artifact.
 It is split into smaller steps.
 The workflow first creates a schema-constrained dataset draft.
-It then fills and repairs this draft through profile requirements rather than through a single free-form generation step.
-This keeps the construction process tied to the selected metadata profile.
+It then fills and repairs this draft stepwise through profile requirements rather than through one free-form generation step.
 
 \subsection{Draft Initialization}
 \label{sec:draft_initialization}
 
-Draft initialization creates the first \ac{DCAT-AP+} Dataset artifact draft.
-The backend starts with the validation schema of the selected profile.
-It resolves the target Dataset shape and creates a minimal schema shell from the required fields.
-This first shell is produced programmatically.
-It gives the draft a valid structural starting point before evidence is applied.
+Draft initialization creates the first \ac{DCAT-AP+} \texttt{Dataset} artifact draft.
+It resolves the target shape and creates a minimal schema shell in \ac{JSON} format from the required fields.
+A \ac{LinkML} generated \ac{JSON} schema artifact is used to determine the required fields for the \texttt{Dataset} shape.
+The required fields are then resolved based on their data type and become empty placeholders in the draft.
+It gives the draft a valid structural starting point before evidence is applied and the placeholders mark fields that can later be enriched or pruned if no evidence supports them.
+After that, the fields \texttt{title}, \texttt{description}, \texttt{identifier}, and \texttt{id} are mapped to sensible default values.
 
-The shell receives conservative fallback values for central dataset fields.
-The title, description, identifier, and internal identifier are derived from the package identifier and the available evidence context when the profile allows these fields.
-The workflow also records an initialization scaffold.
-This scaffold tracks placeholder entries such as empty creator, keyword, type, or modification date fields.
-These placeholders mark fields that can later be replaced, enriched, or pruned if no evidence supports them.
+For the \texttt{title} field, the evidence notes are queried for candidates with a \texttt{descriptor} role and a title-like claim formulation by matching the pattern \enquote{the dataset title is ...} or \enquote{the dataset is named ...}.
+If no such signal is found, the field is not part of the initialization.
+The \texttt{description} field defaults to the dataset-level summary from the earlier initial overview stage.
+The \texttt{identifier} field is initialized with the data package identifier.
+This identifier is generated during dataset upload and consists of an eight-character prefix of a \ac{SHA256} hash of the package name and the contained file names.
+It is used as a stable local package identifier within an extraction run.
+The \texttt{id} field has a different role.
+In the \ac{DCAT-AP+} design, it denotes the public identifier of the dataset as an instance node and is usually expected to be a \ac{URI} or \ac{CURIE}.
+The implementation initializes this field from the same package identifier as a local dataset node reference.
 
 After this schema shell has been prepared, an overview-level projection is performed.
 This projection is an \ac{LLM} step.
-The model receives the required skeleton together with the compact dataset summary and the ranked file summaries from the initial overview stage.
-It proposes shallow dataset-level values such as title, description, keywords, and one dataset type.
-The prompt instructs the model to prefer omission over unsupported invention.
-It also prevents the workflow itself from being treated as part of the described dataset.
-The resulting document is reduced to the Dataset level.
-Entity and activity relations are left for later enrichment steps.
-This initialized draft becomes the working document for requirement checking.
+The model receives the schema shell, the dataset-level summary, and the ranked file summaries from the initial overview stage.
+Its task is limited to shallow dataset fields.
+It can propose a title, keywords, and one dataset type.
+The prompt instructs the model to omit unsupported values rather than invent them.
+It also instructs the model to ignore the workflow itself as dataset content.
+After projection, the initial draft contains dataset-level values such as identifiers, title, description, keywords, creators, and type.
+The activity relation \texttt{was\_generated\_by} remains empty at this point.
+It is populated later by the provenance core construction step.
+This initialized draft finally becomes the working document for subsequent semantic requirement checking.
 
 \subsection{Requirement-Based Enrichment}
 \label{sec:requirement_based_enrichment}

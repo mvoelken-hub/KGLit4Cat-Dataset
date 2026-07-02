@@ -16,6 +16,16 @@ Each decision should include:
 
 ## Decisions
 
+### 2026-07-02: Keep Initial Dataset Description Backend-Owned
+
+Decision: The initial dataset-level projection prompt no longer asks the LLM to generate a Dataset `description`. The model still receives the dataset-level summary as orientation context, but the backend inserts that summary as the default Dataset description.
+
+Reason: The dataset-level summary is already generated in the initial overview stage. Reusing it gives the draft one description source of truth and avoids asking a later LLM step to restate or drift from it.
+
+Tradeoff: The initial draft cannot refine the description during shallow projection. Later requirement checks and manual curation remain the place to correct an insufficient summary.
+
+Revisit trigger: Revisit if evaluation shows that the initial dataset summary is consistently too broad or too sparse for the Dataset description field.
+
 ### 2026-07-01: Flip Profile Draft Construction To Requirement-Scoped Parents
 
 Decision: Replace note-driven measurement projection with a staged profile-draft flow: `generated_initial_draft.json`, `generated_core_draft.json`, `generated_attribute_draft.json`, and `generated_reconstructed_draft.json`. The initial draft is a dataset shell. The core draft creates one generic DataGeneratingActivity with evaluated targets, agents, plan/context, inputs, and outputs. Attribute construction iterates existing parents and asks narrow structured LLM questions; the backend owns the schema path. Dataset `is_about_entity` and `is_about_activity` are not actively constructed.

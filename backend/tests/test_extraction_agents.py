@@ -1367,7 +1367,7 @@ classes:
             "id": "package-id",
             "title": ["Catalyst measurements"],
             "description": [
-                "SIMONE metadata draft for catalyst measurements.",
+                "Catalyst measurement dataset summary.",
                 "TD parameter set to 65536.",
                 "Transmitter routing uses TCP/IP 149.236.99.254.",
             ],
@@ -1400,7 +1400,7 @@ classes:
 
         curated = WorkflowService._curate_generated_profile_document(document)
 
-        self.assertEqual(curated["description"], ["SIMONE metadata draft for catalyst measurements."])
+        self.assertEqual(curated["description"], ["Catalyst measurement dataset summary."])
         self.assertEqual(
             curated["keyword"],
             [
@@ -1438,6 +1438,15 @@ classes:
         title = WorkflowService._fallback_title("package-id", evidence)
 
         self.assertEqual(title, "1H NMR")
+
+    def test_fallback_title_returns_none_when_no_dataset_title_is_supported(self):
+        evidence = EvidenceContext(candidates=[])
+
+        title = WorkflowService._fallback_title("package-id", evidence)
+        skeleton = shallow_required_skeleton("package-id", title)
+
+        self.assertIsNone(title)
+        self.assertEqual(skeleton["title"], [])
 
     def test_projection_groups_skip_non_curatable_parameter_notes(self):
         evidence = EvidenceContext(
@@ -1654,7 +1663,6 @@ classes:
             {
                 "id": "package-id",
                 "title": ["1H NMR dataset"],
-                "description": ["A compact dataset-level account of a proton NMR acquisition."],
                 "keyword": ["NMR"],
             }
         )
@@ -1670,7 +1678,10 @@ classes:
 
         self.assertNotIn("dataset_distribution", ShallowDatasetLevelProjection.model_fields)
         self.assertNotIn("dataset_distribution", level_projection.model_dump(mode="json"))
+        self.assertNotIn("description", ShallowDatasetLevelProjection.model_fields)
+        self.assertNotIn("description", level_projection.model_dump(mode="json"))
         self.assertNotIn("dataset_distribution", prompt)
+        self.assertIn("Do not return a description", prompt)
         self.assertIn("file_summaries", prompt)
         self.assertIn("NMR acquisition summary", prompt)
         self.assertIn("Do not populate Dataset is_about_entity/is_about_activity", DATASET_LEVEL_PROJECTION_SYSTEM_PROMPT)

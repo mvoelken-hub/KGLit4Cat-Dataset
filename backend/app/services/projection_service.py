@@ -7708,13 +7708,8 @@ class ProjectionService:
         properties = cls._target_schema_properties(validation_schema)
         title = cls._fallback_title(data_package_id, evidence_context)
         scaffold_entries: list[dict[str, Any]] = []
-        if "title" in properties or "title" in document:
+        if title and ("title" in properties or "title" in document):
             document["title"] = cls._fallback_property_value(properties.get("title"), title)
-        if "description" in properties:
-            document["description"] = cls._fallback_property_value(
-                properties.get("description"),
-                f"SIMONE metadata draft for {title}.",
-            )
         if "identifier" in properties:
             document["identifier"] = cls._fallback_property_value(
                 properties.get("identifier"),
@@ -8207,7 +8202,7 @@ class ProjectionService:
     def _fallback_title(
         data_package_id: str,
         evidence_context: RoutedEvidenceContext | EvidenceContext,
-    ) -> str:
+    ) -> str | None:
         candidates = (
             evidence_context.portable_evidence
             if isinstance(evidence_context, RoutedEvidenceContext)
@@ -8225,7 +8220,7 @@ class ProjectionService:
                     and not ProjectionService._is_low_level_parameter_note(note)
                 ):
                     return note.claim.strip()
-        return f"SIMONE extraction result for {data_package_id}"
+        return None
 
     @classmethod
     def _profile_vocab_sources(

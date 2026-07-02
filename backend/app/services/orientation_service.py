@@ -2153,10 +2153,18 @@ class OrientationService:
             data_package_id=data_package_id,
             fallback_title=self._fallback_title(data_package_id, self._merged_completed_evidence_context(state)),
         )
+        skeleton_title = next(
+            (
+                item.strip()
+                for item in skeleton.get("title", [])
+                if isinstance(item, str) and item.strip()
+            ),
+            None,
+        )
         fallback_document, fallback_records = shallow_projection_to_dcat_document(
             ShallowDatasetProjection.model_validate(skeleton),
             data_package_id=data_package_id,
-            fallback_title=(skeleton.get("title") or [data_package_id])[0],
+            fallback_title=skeleton_title,
         )
         file_summaries = compact_file_summaries_for_shallow_projection(
             initial_file_summaries=state.initial_file_summaries,
@@ -2217,7 +2225,7 @@ class OrientationService:
             fallback_document_with_summary, fallback_records_with_summary = shallow_projection_to_dcat_document(
                 ShallowDatasetProjection.model_validate(skeleton),
                 data_package_id=data_package_id,
-                fallback_title=(skeleton.get("title") or [data_package_id])[0],
+                fallback_title=skeleton_title,
                 fallback_description=dataset_summary,
             )
             return (
@@ -2263,7 +2271,7 @@ class OrientationService:
             fallback_document_with_summary, fallback_records_with_summary = shallow_projection_to_dcat_document(
                 ShallowDatasetProjection.model_validate(skeleton),
                 data_package_id=data_package_id,
-                fallback_title=(skeleton.get("title") or [data_package_id])[0],
+                fallback_title=skeleton_title,
                 fallback_description=dataset_summary,
             )
             return (
@@ -2436,4 +2444,3 @@ class OrientationService:
             status=state.initial_file_summary_status,
             chat_model=state.chat_model,
         )
-

@@ -42,6 +42,7 @@ from app.domain.extraction import (
     DatasetSummaryProjection,
     ShallowDatasetProjection,
     ShallowDatasetLevelProjection,
+    ShallowDatasetLevelProjectionForPrompt,
     TracedExtractionObject,
     VocabularyCandidateSelection,
     VocabularyQueryFormulation,
@@ -747,7 +748,6 @@ def dataset_level_projection_result() -> CompletionResult[ShallowDatasetLevelPro
             {
                 "id": "package-id",
                 "title": ["Dataset"],
-                "description": ["Dataset metadata from summary."],
                 "keyword": ["metadata"],
                 "was_generated_by": [{"id": "package-id:activity:generated"}],
             }
@@ -2791,7 +2791,10 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 return target_write("measurement file.")
             if _kwargs["output_type"] is DatasetSummaryProjection:
                 return dataset_summary_result()
-            if _kwargs["output_type"] is ShallowDatasetLevelProjection:
+            if (
+                _kwargs["output_type"] is ShallowDatasetLevelProjection
+                or _kwargs["output_type"] is ShallowDatasetLevelProjectionForPrompt
+            ):
                 return dataset_level_projection_result()
             return CompletionResult(
                 output={"id": "dataset"},
@@ -2951,7 +2954,10 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 return target_write([{"preferred_label": ["dataset"]}])
             if kwargs["output_type"] is DatasetSummaryProjection:
                 return dataset_summary_result()
-            if kwargs["output_type"] is ShallowDatasetLevelProjection:
+            if (
+                kwargs["output_type"] is ShallowDatasetLevelProjection
+                or kwargs["output_type"] is ShallowDatasetLevelProjectionForPrompt
+            ):
                 return dataset_level_projection_result()
             if kwargs["output_type"] is RawDescriptionFacts:
                 return CompletionResult(output=RawDescriptionFacts(), usage=RunUsage(requests=1))
@@ -3057,7 +3063,10 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 return target_write([{"preferred_label": ["dataset"]}])
             if kwargs["output_type"] is DatasetSummaryProjection:
                 return dataset_summary_result()
-            if kwargs["output_type"] is ShallowDatasetLevelProjection:
+            if (
+                kwargs["output_type"] is ShallowDatasetLevelProjection
+                or kwargs["output_type"] is ShallowDatasetLevelProjectionForPrompt
+            ):
                 return dataset_level_projection_result()
             if kwargs["output_type"] is RawDescriptionFacts:
                 return CompletionResult(output=RawDescriptionFacts(), usage=RunUsage(requests=1))
@@ -3128,11 +3137,12 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 validation_schema=FakeProfileService.schema,
                 warnings=[],
                 state=state,
+                fallback_description=dataset_summary_result().output.summary,
             )
 
         self.assertNotIn("dataset_distribution", document)
 
-        self.assertEqual(document["description"], ["Dataset metadata from summary."])
+        self.assertEqual(document["description"], [dataset_summary_result().output.summary])
         self.assertTrue(any(record.planner_status == "dataset_level_projection_repair" for record in ledger))
 
     async def test_grounding_target_uses_manual_interim_profile_and_writes_result(self):
@@ -3380,7 +3390,10 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             if output_type is DatasetSummaryProjection:
                 call_order.append("profile")
                 return dataset_summary_result()
-            if output_type is ShallowDatasetLevelProjection:
+            if (
+                output_type is ShallowDatasetLevelProjection
+                or output_type is ShallowDatasetLevelProjectionForPrompt
+            ):
                 call_order.append("profile")
                 return dataset_level_projection_result()
             call_order.append("profile")
@@ -3475,7 +3488,10 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 return empty_profile_patch()
             if output_type is DatasetSummaryProjection:
                 return dataset_summary_result()
-            if output_type is ShallowDatasetLevelProjection:
+            if (
+                output_type is ShallowDatasetLevelProjection
+                or output_type is ShallowDatasetLevelProjectionForPrompt
+            ):
                 return dataset_level_projection_result()
             return CompletionResult(
                 output={"id": "dataset"},

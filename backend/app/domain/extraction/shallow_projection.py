@@ -29,13 +29,15 @@ they are not dataset-generating activities and must not appear in the summary.
 DATASET_LEVEL_PROJECTION_SYSTEM_PROMPT = """
 You create dataset-level shallow DCAT-AP-plus Dataset metadata from a compact dataset account.
 Return only JSON matching the supplied schema.
-Use concise dataset-level metadata. Use the dataset summary as the dataset description when it is present.
+Use concise dataset-level metadata. Do not generate a Dataset description.
+The backend uses the dataset summary as the Dataset description.
 Infer dataset title, keywords, and one type at most from the dataset summary and ranked file summaries.
 The title should name the dataset content or data product, not copy a single instrument/software sentence.
 Populate creators only when supported.
 Do not model SIMONE metadata extraction, profile projection, or this LLM workflow as a dataset
 activity. was_generated_by is only for the scientific or data production activity that created
 the source dataset content.
+For this dataset-level projection, return was_generated_by as an empty list.
 Do not populate Dataset is_about_entity/is_about_activity. DataGeneratingActivity evaluated targets
 state what the activity directly measured, observed, or analysed. A merely generated output
 belongs in had_output_entity, not evaluated_entity; inputs belong in had_input_entity/activity.
@@ -182,10 +184,6 @@ class ShallowDatasetProjection(BaseModel):
 class ShallowDatasetLevelProjection(BaseModel):
     id: str | None = Field(default=None, description="Dataset identifier. Use package id if no better identifier is supported.")
     title: list[str] = Field(default_factory=list, description="Concise dataset title inferred from dataset summary.")
-    description: list[str] = Field(
-        default_factory=list,
-        description="Meaningful 1-3 sentence dataset description. Never copy SIMONE scaffold placeholder text.",
-    )
     identifier: list[str] = Field(default_factory=list, description="Dataset identifiers explicitly supported by package metadata.")
     keyword: list[str] = Field(default_factory=list, description="Broad search keywords: method, instrument, software, data type, domain.")
     creator: list[ShallowAgentProjection] = Field(default_factory=list, description="Creators or responsible agents explicitly supported.")
@@ -208,10 +206,6 @@ class ShallowDatasetLevelProjectionForPrompt(BaseModel):
     """
     id: str | None = Field(default=None, description="Dataset identifier. Use package id if no better identifier is supported.")
     title: list[str] = Field(default_factory=list, description="Concise dataset title inferred from dataset summary.")
-    description: list[str] = Field(
-        default_factory=list,
-        description="Meaningful 1-3 sentence dataset description. Never copy SIMONE scaffold placeholder text.",
-    )
     identifier: list[str] = Field(default_factory=list, description="Dataset identifiers explicitly supported by package metadata.")
     keyword: list[str] = Field(default_factory=list, description="Broad search keywords: method, instrument, software, data type, domain.")
     creator: list[ShallowAgentProjection] = Field(default_factory=list, description="Creators or responsible agents explicitly supported.")
@@ -268,11 +262,12 @@ def build_dataset_level_projection_prompt_components(
         (
             "task",
             "Infer dataset-level shallow DCAT-AP-plus metadata from dataset_summary and file_summaries. "
-            "Use dataset_summary as description when non-empty. "
+            "Do not return a description; the backend uses dataset_summary as the Dataset description. "
             "Infer title, keywords, and one dataset type from the combined context. "
-            "Use required_skeleton only for mandatory shape; replace placeholder title and description. "
+            "Use required_skeleton only for mandatory shape; replace placeholder title. "
             "Do not treat SIMONE extraction/projection as a dataset-generating activity. "
-            "Create at most one was_generated_by activity. Do not create Dataset is_about_* relations. "
+            "Return was_generated_by as an empty list; provenance is filled by a later construction step. "
+            "Do not create Dataset is_about_* relations. "
             "Nested resource/entity title and description are scalar strings. "
             "Prefer omission over unsupported invention.\n\n",
         ),
@@ -348,10 +343,9 @@ def compact_file_summaries_for_shallow_projection(
 
 
 def shallow_required_skeleton(data_package_id: str, fallback_title: str | None = None) -> dict[str, Any]:
-    title = fallback_title or data_package_id
     return {
         "id": data_package_id,
-        "title": [title],
+        "title": _clean_string_list([fallback_title]),
         "description": [],
         "was_generated_by": [],
     }
@@ -365,7 +359,7 @@ def shallow_projection_to_dcat_document(
     fallback_description: str | None = None,
 ) -> tuple[dict[str, Any], list[ProjectionLedgerRecord]]:
     records: list[ProjectionLedgerRecord] = []
-    title = _first_nonempty(projection.title) or fallback_title or data_package_id
+    title = _first_nonempty(projection.title) or fallback_title or ""
     projection_description = [
         item
         for item in _clean_string_list(projection.description)
@@ -373,11 +367,11 @@ def shallow_projection_to_dcat_document(
     ]
     description = _clean_string_list([fallback_description]) or projection_description
     if not description or all(_is_scaffold_description(item) for item in description):
-        description = projection_description or [title]
+        description = projection_description or ([title] if title else [])
     document: dict[str, Any] = {
         "id": _clean_string(projection.id)
-        or _scaffold_id(data_package_id, "dataset", title, records, "/id"),
-        "title": _clean_string_list(projection.title) or [title],
+        or _scaffold_id(data_package_id, "dataset", title or "dataset", records, "/id"),
+        "title": _clean_string_list(projection.title) or ([title] if title else []),
         "description": description,
         "was_generated_by": [
             _activity_to_document(
