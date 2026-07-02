@@ -7190,8 +7190,11 @@ class ProjectionService:
                     for option in options
                     if isinstance(option, dict)
                 )
+        schema_title = schema.get("title")
+        if schema_title == "DefinedTerm":
+            return True
         properties = schema.get("properties", {})
-        return isinstance(properties, dict) and "id" in properties
+        return False
 
     @classmethod
     def _term_object_for_schema(
@@ -7876,7 +7879,7 @@ class ProjectionService:
         enrichable_fields: list[str],
         validation_schema: dict[str, Any] | None = None,
     ) -> list[tuple[str, str, str]]:
-        target_fields = {"has_quantity_type", "unit"} | set(enrichable_fields)
+        target_fields = ({"has_quantity_type", "unit"} | set(enrichable_fields)) - {"rdf_type"}
         sources: list[tuple[str, str, str]] = []
         seen: set[tuple[str, str, str]] = set()
 
@@ -7894,6 +7897,40 @@ class ProjectionService:
             if isinstance(value, (int, float)) and not isinstance(value, bool):
                 return str(value)
             return ""
+
+        def object_source_text(value: Any) -> str:
+            if not isinstance(value, dict):
+                return ""
+            parts: list[str] = []
+            for key in ("title", "description", "preferred_label", "label", "name", "id"):
+                item = value.get(key)
+                if isinstance(item, list):
+                    item = next((entry for entry in item if isinstance(entry, str) and entry.strip()), None)
+                if isinstance(item, str) and item.strip() and item.strip() not in parts:
+                    parts.append(item.strip())
+            return " ".join(parts)
+
+        def schema_accepts_term_value(field_schema: dict[str, Any]) -> bool:
+            if cls._schema_accepts_term_object(field_schema, validation_schema or {}):
+                return True
+            if validation_schema is None:
+                return False
+            field_schema = cls._resolve_schema_node(field_schema, validation_schema)
+            if cls._schema_is_array(field_schema, validation_schema):
+                item_schema = cls._resolve_schema_node(
+                    field_schema.get("items", {}),
+                    validation_schema,
+                )
+                return cls._schema_accepts_term_object(item_schema, validation_schema)
+            return False
+
+        def term_write_path(field_path: str, field_schema: dict[str, Any]) -> str:
+            if validation_schema is None:
+                return field_path
+            field_schema = cls._resolve_schema_node(field_schema, validation_schema)
+            if cls._schema_is_array(field_schema, validation_schema):
+                return f"{field_path}/0"
+            return field_path
 
         def collect_term_values(value: Any, path: str) -> list[tuple[str, str]]:
             if isinstance(value, list):
@@ -7926,7 +7963,22 @@ class ProjectionService:
 
         def walk(value: Any, path: str) -> None:
             if isinstance(value, dict):
+                if "type" in target_fields and "type" not in value and validation_schema is not None:
+                    type_path = f"{path}/{cls._json_pointer_escape('type')}"
+                    type_schema = cls._schema_for_json_pointer(
+                        validation_schema,
+                        type_path,
+                    )
+                    if schema_accepts_term_value(type_schema):
+                        source_text = object_source_text(value)
+                        if source_text:
+                            record = (term_write_path(type_path, type_schema), "type", source_text)
+                            if record not in seen:
+                                seen.add(record)
+                                sources.append(record)
                 for key, item in value.items():
+                    if key == "rdf_type":
+                        continue
                     item_path = f"{path}/{cls._json_pointer_escape(key)}"
                     schema_accepts_term = False
                     if validation_schema is not None:
@@ -7934,11 +7986,13 @@ class ProjectionService:
                             validation_schema,
                             item_path,
                         )
-                        schema_accepts_term = cls._schema_accepts_term_object(
-                            field_schema,
-                            validation_schema,
-                        )
-                    if key in target_fields or schema_accepts_term:
+                        schema_accepts_term = schema_accepts_term_value(field_schema)
+                    include_named_field = key in target_fields and (
+                        validation_schema is None
+                        or key in {"has_quantity_type", "unit"}
+                        or schema_accepts_term
+                    )
+                    if include_named_field or schema_accepts_term:
                         collector = collect_term_values if schema_accepts_term else collect_scalar_values
                         for scalar_path, scalar in collector(item, item_path):
                             record = (scalar_path, key, scalar)

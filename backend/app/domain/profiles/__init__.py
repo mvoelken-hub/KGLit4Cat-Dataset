@@ -19,7 +19,7 @@ from rdflib import Graph
 
 PROFILE_IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 DEFAULT_ENRICHABLE_FIELD_CANDIDATES = frozenset(
-    {"type", "rdf_type", "has_quantity_type", "unit"}
+    {"type", "has_quantity_type", "unit"}
 )
 
 

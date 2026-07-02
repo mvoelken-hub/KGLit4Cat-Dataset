@@ -156,6 +156,12 @@ class GroundingService:
             raise ValueError(
                 "Cannot run the grounding stage because no profile draft is available. Build the profile draft first."
             )
+        state.vocab_queries = [
+            record
+            for record in state.vocab_queries
+            if not record.kind.startswith("profile_") and record.kind != "object_grounding"
+        ]
+        state.generated_final_draft = None
         profile_manifest = self.profile_service.get_profile(profile_identifier)
         profile_json_schema = self.profile_service.load_json_schema(profile_identifier)
         validation_schema = validation_schema_for_target_class(
@@ -674,14 +680,21 @@ class GroundingService:
                         sib_val = parent_node.get(sibling_key)
                         if sib_val is not None and str(sib_val).strip() and str(sib_val).strip() != "?":
                             source_context[f"sibling_{sibling_key}"] = str(sib_val)
-        formulated_query = await self._formulate_vocab_query(
+        route_options = (
+            await self._type_vocab_route_options(state)
+            if field_name == "type"
+            else []
+        )
+        formulated = await self._formulate_vocab_query(
             data_package_id=data_package_id,
             agent_name="vocab_query_formulation",
             source_value=source_value,
             source_context=source_context,
+            route_options=route_options,
             query_semaphore=query_semaphore,
             warnings=warnings,
         )
+        formulated_query = formulated.query
         if formulated_query:
             vector_query_text = formulated_query
             fulltext_query_text = formulated_query
@@ -772,6 +785,68 @@ class GroundingService:
                 source_value=source_value,
                 formulated_query=formulated_query,
                 vocabulary_identifier=QUDT_UNIT_VOCAB,
+                query_ids=query_ids,
+                role=role,
+                source_context=source_context,
+            )
+
+        if field_name == "type":
+            routes = self._selected_type_vocab_routes(
+                route_options=route_options,
+                selected_routes=formulated.routes,
+                config=state.vocab_query_config,
+            )
+            if not routes:
+                warnings.append(f"Profile field '{json_path}' skipped because no type vocabulary route was selected.")
+                return _ProfileFieldCandidateDiscovery(
+                    json_path=json_path,
+                    field_name=field_name,
+                    source_value=source_value,
+                    formulated_query=formulated_query,
+                    vocabulary_identifier="",
+                    query_ids=[],
+                    role=role,
+                    source_context=source_context,
+                )
+            for route in routes:
+                query = self._configured_vocab_query(
+                    VocabQuery(
+                        rdf_type=route.rdf_type,
+                        vector_query=vector_query_text,
+                        fulltext_query=fulltext_query_text,
+                        vector_top_k=6,
+                        fulltext_top_k=6,
+                        seed_top_k=3,
+                        max_hops=1,
+                        max_statements_per_seed=20,
+                    ),
+                    state.vocab_query_config,
+                )
+                record = self._ensure_run_vocab_query_record(
+                    state=state,
+                    kind="profile_type",
+                    source_value=source_value,
+                    source_context=source_context,
+                    vocabulary_identifier=route.vocabulary_identifier,
+                    query=query,
+                )
+                query_ids.append(record.query_id)
+                on_progress()
+                async with query_semaphore:
+                    await self._run_vocab_query_record(
+                        data_package_id=data_package_id,
+                        record=record,
+                        vocabulary_identifier=route.vocabulary_identifier,
+                        query=query,
+                        on_progress=on_progress,
+                        warnings=warnings,
+                    )
+            return _ProfileFieldCandidateDiscovery(
+                json_path=json_path,
+                field_name=field_name,
+                source_value=source_value,
+                formulated_query=formulated_query,
+                vocabulary_identifier=",".join(route.vocabulary_identifier for route in routes),
                 query_ids=query_ids,
                 role=role,
                 source_context=source_context,
@@ -2323,22 +2398,44 @@ class GroundingService:
         agent_name: str,
         source_value: str,
         source_context: dict[str, Any],
+        route_options: list[dict[str, Any]] | None = None,
         query_semaphore: asyncio.Semaphore,
         warnings: list[str],
-    ) -> str:
+    ) -> VocabularyRoutedQueryFormulation:
         """Distill source_value + semantic context into a concise vocabulary search phrase.
 
         Returns the phrase, or an empty string when formulation fails so callers fall back
         to the context-based query text.
         """
         if self.ollama_client is None:
-            return ""
+            return VocabularyRoutedQueryFormulation()
         async with query_semaphore:
             try:
-                prompt_components = build_query_formulation_prompt_components(
-                    source_value=source_value,
-                    source_context=source_context,
-                )
+                if route_options:
+                    prompt_components = [
+                        ("source_value", "Source value:\n" f"{source_value}\n\n"),
+                        ("source_context", "Source context JSON:\n" f"{source_context}\n\n"),
+                        (
+                            "vocabulary_route_options",
+                            "Available vocabulary routes JSON:\n"
+                            + json.dumps(route_options, ensure_ascii=False)
+                            + "\n\n",
+                        ),
+                        (
+                            "formulation_instruction",
+                            "Return a short vocabulary search phrase and the vocabulary routes that should be queried. "
+                            "Use only route vocabulary_identifier/rdf_type pairs from the available options. "
+                            "Select every route that is plausibly relevant for this type field. "
+                            "Return an empty routes list only if none of the vocabularies fit.",
+                        ),
+                    ]
+                    output_type: type[Any] = VocabularyRoutedQueryFormulation
+                else:
+                    prompt_components = build_query_formulation_prompt_components(
+                        source_value=source_value,
+                        source_context=source_context,
+                    )
+                    output_type = VocabularyQueryFormulation
                 prompt_budgeter = self._prompt_token_budgeter()
                 result = await generate_structured(
                     self.ollama_client,
@@ -2357,7 +2454,7 @@ class GroundingService:
                     ),
                     agent_name=agent_name,
                     diagnostic_metadata={"source_value": source_value},
-                    output_type=VocabularyQueryFormulation,
+                    output_type=output_type,
                     num_ctx=self.ollama_client.max_context_length,
                 )
             except CompletionError as exc:
@@ -2367,13 +2464,131 @@ class GroundingService:
                     agent_name=agent_name,
                 )
                 warnings.append(f"Vocabulary query formulation failed for '{source_value}': {exc}")
-                return ""
+                return VocabularyRoutedQueryFormulation()
         self._record_llm_call_result(
             data_package_id=data_package_id,
             result=result,
             agent_name=agent_name,
         )
-        return (result.output.query or "").strip()
+        if route_options:
+            output = (
+                result.output
+                if isinstance(result.output, VocabularyRoutedQueryFormulation)
+                else VocabularyRoutedQueryFormulation.model_validate(result.output)
+            )
+            return output.model_copy(update={"query": (output.query or "").strip()})
+        output = (
+            result.output
+            if isinstance(result.output, VocabularyQueryFormulation)
+            else VocabularyQueryFormulation.model_validate(result.output)
+        )
+        return VocabularyRoutedQueryFormulation(query=(output.query or "").strip())
+
+    async def _type_vocab_route_options(
+        self,
+        state: ExtractionRunState,
+    ) -> list[dict[str, Any]]:
+        if self.semantic_service is None or not (
+            hasattr(self.semantic_service, "list_vocabularies")
+            or hasattr(self.semantic_service, "list_vocabulary_identifiers")
+        ):
+            return [
+                {
+                    "vocabulary_identifier": route.vocabulary_identifier,
+                    "rdf_type": route.rdf_type,
+                    "description": "",
+                    "term_count": None,
+                }
+                for route in self._fallback_type_vocab_routes(state.vocab_query_config)
+            ]
+        try:
+            if hasattr(self.semantic_service, "list_vocabularies"):
+                identifiers = await self.semantic_service.list_vocabularies()
+            else:
+                identifiers = await self.semantic_service.list_vocabulary_identifiers()
+        except Exception as exc:
+            logger.warning("Vocabulary route discovery failed: %s", exc)
+            return [
+                {
+                    "vocabulary_identifier": route.vocabulary_identifier,
+                    "rdf_type": route.rdf_type,
+                    "description": "",
+                    "term_count": None,
+                }
+                for route in self._fallback_type_vocab_routes(state.vocab_query_config)
+            ]
+        options: list[dict[str, Any]] = []
+        for identifier in sorted(identifiers):
+            if identifier.startswith("http://qudt.org/") or identifier.startswith("https://qudt.org/"):
+                continue
+            try:
+                vocab = await self.semantic_service.get_vocabulary(identifier)
+            except Exception as exc:
+                logger.warning("Vocabulary route metadata lookup failed for '%s': %s", identifier, exc)
+                continue
+            if vocab is None:
+                continue
+            description = (vocab.description or "").strip().replace("\n", " ")
+            if len(description) > 1000:
+                description = description[:1000].rstrip()
+            for term_scheme in vocab.vocab_term_schemes:
+                if term_scheme.count <= 0:
+                    continue
+                options.append(
+                    {
+                        "vocabulary_identifier": vocab.identifier,
+                        "source": vocab.source,
+                        "description": description,
+                        "rdf_type": term_scheme.rdf_type,
+                        "term_count": term_scheme.count,
+                        "properties": term_scheme.properties[:8],
+                    }
+                )
+        return options or [
+            {
+                "vocabulary_identifier": route.vocabulary_identifier,
+                "rdf_type": route.rdf_type,
+                "description": "",
+                "term_count": None,
+            }
+            for route in self._fallback_type_vocab_routes(state.vocab_query_config)
+        ]
+
+    @staticmethod
+    def _selected_type_vocab_routes(
+        *,
+        route_options: list[dict[str, Any]],
+        selected_routes: list[VocabularyQueryRoute],
+        config: ExtractionVocabQueryConfig,
+    ) -> list[VocabularyQueryRoute]:
+        allowed = {
+            (str(option.get("vocabulary_identifier")), str(option.get("rdf_type")))
+            for option in route_options
+        }
+        routes: list[VocabularyQueryRoute] = []
+        seen: set[tuple[str, str]] = set()
+        for route in selected_routes:
+            key = (route.vocabulary_identifier, route.rdf_type)
+            if allowed and key not in allowed:
+                continue
+            if key in seen:
+                continue
+            seen.add(key)
+            routes.append(route)
+        if routes:
+            return routes
+        return GroundingService._fallback_type_vocab_routes(config)
+
+    @staticmethod
+    def _fallback_type_vocab_routes(config: ExtractionVocabQueryConfig) -> list[VocabularyQueryRoute]:
+        policy = config.type_policy
+        if not policy.enabled or not policy.rdf_type:
+            return []
+        vocabularies = GroundingService._policy_vocabularies(policy, config)
+        return [
+            VocabularyQueryRoute(vocabulary_identifier=vocabulary, rdf_type=policy.rdf_type)
+            for vocabulary in vocabularies
+        ]
 
 
     async def _build_fallback_query(

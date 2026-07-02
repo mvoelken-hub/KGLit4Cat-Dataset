@@ -45,7 +45,9 @@ from app.domain.extraction import (
     TracedExtractionObject,
     VocabularyCandidateSelection,
     VocabularyQuantityPairSelection,
+    VocabularyQueryRoute,
     VocabularyQueryFormulation,
+    VocabularyRoutedQueryFormulation,
     VocabularyTermMapping,
     build_extraction_overview_prompt,
     build_extraction_overview_prompt_components,
@@ -2605,6 +2607,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     },
                 },
                 "DefinedTerm": {
+                    "title": "DefinedTerm",
                     "type": "object",
                     "properties": {"id": {"type": "string"}, "title": {"type": "string"}},
                 },
@@ -2620,11 +2623,154 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(sources, [("/sample/type", "type", "catalyst sample")])
 
+    def test_profile_vocab_sources_discover_schema_type_from_parent_context_without_placeholder(self):
+        schema = {
+            "$defs": {
+                "Dataset": {
+                    "type": "object",
+                    "properties": {
+                        "instrument": {
+                            "type": "object",
+                            "properties": {
+                                "title": {"type": "string"},
+                                "description": {"type": "string"},
+                                "type": {"$ref": "#/$defs/DefinedTerm"},
+                            },
+                        }
+                    },
+                },
+                "DefinedTerm": {
+                    "title": "DefinedTerm",
+                    "type": "object",
+                    "properties": {"id": {"type": "string"}, "title": {"type": "string"}},
+                },
+            },
+            "$ref": "#/$defs/Dataset",
+        }
+
+        sources = WorkflowService._profile_vocab_sources(
+            {
+                "instrument": {
+                    "title": "Bruker NMR Spectrometer",
+                    "description": "Instrument used for data acquisition.",
+                }
+            },
+            enrichable_fields=["type"],
+            validation_schema=schema,
+        )
+
+        self.assertEqual(
+            sources,
+            [
+                (
+                    "/instrument/type",
+                    "type",
+                    "Bruker NMR Spectrometer Instrument used for data acquisition.",
+                )
+            ],
+        )
+
+    def test_profile_vocab_sources_discover_array_type_without_placeholder(self):
+        schema = {
+            "$defs": {
+                "Dataset": {
+                    "type": "object",
+                    "properties": {
+                        "agent": {
+                            "type": "object",
+                            "properties": {
+                                "title": {"type": "string"},
+                                "type": {
+                                    "type": "array",
+                                    "items": {"$ref": "#/$defs/DefinedTerm"},
+                                },
+                            },
+                        }
+                    },
+                },
+                "DefinedTerm": {
+                    "title": "DefinedTerm",
+                    "type": "object",
+                    "properties": {"id": {"type": "string"}, "title": {"type": "string"}},
+                },
+            },
+            "$ref": "#/$defs/Dataset",
+        }
+
+        sources = WorkflowService._profile_vocab_sources(
+            {"agent": {"title": "TOPSPIN Software"}},
+            enrichable_fields=["type"],
+            validation_schema=schema,
+        )
+
+        self.assertEqual(sources, [("/agent/type/0", "type", "TOPSPIN Software")])
+
+    def test_profile_vocab_sources_skip_rdf_type_even_when_present_or_requested(self):
+        schema = {
+            "$defs": {
+                "Dataset": {
+                    "type": "object",
+                    "properties": {
+                        "rdf_type": {"$ref": "#/$defs/DefinedTerm"},
+                        "type": {"$ref": "#/$defs/DefinedTerm"},
+                    },
+                },
+                "DefinedTerm": {
+                    "title": "DefinedTerm",
+                    "type": "object",
+                    "properties": {"id": {"type": "string"}, "title": {"type": "string"}},
+                },
+            },
+            "$ref": "#/$defs/Dataset",
+        }
+
+        sources = WorkflowService._profile_vocab_sources(
+            {"type": "dataset", "rdf_type": "Dataset"},
+            enrichable_fields=["type", "rdf_type"],
+            validation_schema=schema,
+        )
+
+        self.assertEqual(sources, [("/type", "type", "dataset")])
+
+    def test_profile_vocab_sources_skip_concept_type_fields(self):
+        schema = {
+            "$defs": {
+                "Dataset": {
+                    "type": "object",
+                    "properties": {
+                        "type": {
+                            "type": "array",
+                            "items": {"$ref": "#/$defs/Concept"},
+                        }
+                    },
+                },
+                "Concept": {
+                    "title": "Concept",
+                    "type": "object",
+                    "required": ["preferred_label"],
+                    "properties": {
+                        "preferred_label": {"type": "array", "items": {"type": "string"}},
+                        "title": {"type": "string"},
+                    },
+                },
+            },
+            "$ref": "#/$defs/Dataset",
+        }
+
+        sources = WorkflowService._profile_vocab_sources(
+            {"type": [{"preferred_label": ["NMR Spectroscopy"]}]},
+            enrichable_fields=["type"],
+            validation_schema=schema,
+        )
+
+        self.assertEqual(sources, [])
+
     def test_grounded_profile_document_writes_selected_terms_and_qudt_classes(self):
         schema = {
             "type": "object",
             "properties": {
                 "type": {
+                    "title": "DefinedTerm",
                     "type": "object",
                     "properties": {
                         "id": {"type": "string"},
@@ -2640,6 +2786,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                             "value": {"type": "number"},
                             "rdf_type": {"type": "object", "properties": {"id": {"type": "string"}, "from_CV": {"type": "string"}}},
                             "has_quantity_type": {
+                                "title": "DefinedTerm",
                                 "type": "object",
                                 "properties": {
                                     "id": {"type": "string"},
@@ -3581,9 +3728,21 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                         evidence_context=evidence_context("grounding-resource", "Grounding resource."),
                     ),
                 ],
-                generated_final_draft={"id": "stale-grounded-id", "type": "dataset"},
-                generated_reconstructed_draft={"id": "reconstructed-id", "type": "dataset"},
-                curated_document={"id": "manual-id", "type": "dataset"},
+                generated_final_draft={
+                    "id": "stale-grounded-id",
+                    "has_quantity_type": "temperature",
+                    "unit": "K",
+                },
+                generated_reconstructed_draft={
+                    "id": "reconstructed-id",
+                    "has_quantity_type": "temperature",
+                    "unit": "K",
+                },
+                curated_document={
+                    "id": "manual-id",
+                    "has_quantity_type": "temperature",
+                    "unit": "K",
+                },
             ),
         )
         output_repository.save_evidence_context(
@@ -4312,6 +4471,87 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(quantitative_query.vector_weight, 1.5)
         self.assertEqual(quantitative_query.fulltext_weight, 0.5)
         self.assertEqual(quantitative_query.rrf_k, 80)
+
+    async def test_type_query_formulation_selects_vocabulary_route(self):
+        service, _, _ = make_service([[make_chunk()]])
+
+        class RoutedSemanticService:
+            def __init__(self):
+                self.query_calls: list[tuple[str, str, str]] = []
+
+            async def list_vocabularies(self):
+                return ["https://w3id.org/nfdi4cat/voc4cat", "nmrCV"]
+
+            async def get_vocabulary(self, identifier: str):
+                if identifier == "nmrCV":
+                    return VocabSchemeInfo(
+                        identifier="nmrCV",
+                        source="https://nmrml.org/cv/v1.1.0/nmrCV.owl",
+                        rdf_format="xml",
+                        num_triples=10,
+                        description="Controlled vocabulary for nuclear magnetic resonance metadata.",
+                        vocab_term_schemes=[
+                            VocabTermScheme(rdf_type="owl__Class", properties=["rdfs__label"], count=10)
+                        ],
+                    )
+                return VocabSchemeInfo(
+                    identifier="https://w3id.org/nfdi4cat/voc4cat",
+                    source="https://nfdi4cat.github.io/voc4cat/voc4cat.ttl",
+                    rdf_format="turtle",
+                    num_triples=10,
+                    description="Catalysis vocabulary.",
+                    vocab_term_schemes=[
+                        VocabTermScheme(rdf_type="skos__Concept", properties=["skos__prefLabel"], count=10)
+                    ],
+                )
+
+            async def query_vocabulary(self, identifier: str, query):
+                self.query_calls.append((identifier, query.rdf_type, query.fulltext_query or ""))
+                return VocabQueryResult(identifier=identifier, rdf_type=query.rdf_type, resources={})
+
+        routed_semantic_service = RoutedSemanticService()
+        service.semantic_service = routed_semantic_service  # type: ignore[assignment]
+        state = ExtractionRunState()
+
+        async def fake_generate(*_args, **kwargs):
+            if kwargs["output_type"] is VocabularyRoutedQueryFormulation:
+                return CompletionResult(
+                    output=VocabularyRoutedQueryFormulation(
+                        query="NMR spectroscopy",
+                        routes=[
+                            VocabularyQueryRoute(
+                                vocabulary_identifier="nmrCV",
+                                rdf_type="owl__Class",
+                                reason="The field describes an NMR-specific type.",
+                            )
+                        ],
+                    ),
+                    usage=RunUsage(requests=1),
+                )
+            return CompletionResult(
+                output=VocabularyCandidateSelection(selected_uri=None),
+                usage=RunUsage(requests=1),
+            )
+
+        with patch("app.services.grounding_service.generate_structured", side_effect=fake_generate):
+            discovery = await service._discover_profile_field_candidates(
+                json_path="/was_generated_by/0/type",
+                field_name="type",
+                source_value="NMR spectroscopy",
+                document={"was_generated_by": [{"title": ["NMR acquisition"]}]},
+                state=state,
+                data_package_id="package-id",
+                query_semaphore=asyncio.Semaphore(1),
+                on_progress=lambda: None,
+                warnings=[],
+            )
+
+        self.assertEqual(discovery.query_ids, [state.vocab_queries[0].query_id])
+        self.assertEqual(
+            routed_semantic_service.query_calls,
+            [("nmrCV", "owl__Class", "NMR spectroscopy")],
+        )
+        self.assertEqual(state.vocab_queries[0].vocabulary_identifier, "nmrCV")
 
     async def test_vocab_selection_is_serial_in_conservative_mode(self):
         service, _, _ = make_service([[make_chunk()]])

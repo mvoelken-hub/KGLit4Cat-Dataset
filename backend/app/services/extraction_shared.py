@@ -159,6 +159,8 @@ from app.domain.extraction import (
     VocabularyCandidateSelection,
     VocabularyFallbackQuery,
     VocabularyQuantityPairSelection,
+    VocabularyQueryRoute,
+    VocabularyRoutedQueryFormulation,
     VocabularyQueryFormulation,
     VocabularyTermMapping,
     build_dataset_level_projection_prompt_components,

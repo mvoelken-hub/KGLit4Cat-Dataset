@@ -60,6 +60,21 @@ class VocabularyQueryFormulation(BaseModel):
     reason: str = ""
 
 
+class VocabularyQueryRoute(BaseModel):
+    vocabulary_identifier: str = Field(..., description="Identifier of the vocabulary to query.")
+    rdf_type: str = Field(..., description="RDF type to query inside that vocabulary.")
+    reason: str = ""
+
+
+class VocabularyRoutedQueryFormulation(BaseModel):
+    query: str = Field(default="", description="A concise vocabulary search phrase distilled from the source value and its semantic context.")
+    routes: list[VocabularyQueryRoute] = Field(
+        default_factory=list,
+        description="Vocabulary/rdf_type routes that should be queried for this field.",
+    )
+    reason: str = ""
+
+
 class VocabularyTermMapping(BaseModel):
     source_value: str
     vocabulary_identifier: str | None = None
