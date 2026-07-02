@@ -16,6 +16,16 @@ Each decision should include:
 
 ## Decisions
 
+### 2026-07-03: Remove Dataset-Description Mining
+
+Decision: Remove the description-mining step that extracted atomic facts from the top-level dataset description and added them to the evidence context before provenance core construction. The `description_mining.py` module, `_mine_dataset_description` method, `save_description_facts` repository method, `description_facts.json` artifact, and related tests were deleted.
+
+Reason: The dataset-level description is already available to later LLM calls through the draft `description` field and the orientation context. Mining facts from that same description and injecting them as additional evidence notes introduced redundancy and noise — later stages would encounter the same information twice, once as source-file evidence and once as description-derived evidence. Removing the step simplifies the evidence context without losing information.
+
+Tradeoff: Some facts that were only mentioned in the description (and not in source files) may no longer reach coverage patching or attribute construction. This is acceptable because the description itself remains available as context in later prompts.
+
+Revisit trigger: Revisit if evaluation shows that description-only facts are consistently needed for profile construction and cannot be recovered from the description context in later prompts.
+
 ### 2026-07-02: Use Natural-Language Initial File Summaries
 
 Decision: Initial file summaries now use a lean schema with file path, data format, explicit purpose, and a short natural-language information summary. The previous status field and structured purpose evidence, metadata-signal, instrument/software/setting, and quantitative-signal buckets were removed.
@@ -146,6 +156,8 @@ Tradeoff: Reconstruction quality depends on the chat model, but deterministic co
 
 Revisit trigger: Revisit when profile-declared reconstruction rules can replace part of the LLM edit workload. Final vocabulary grounding normalizes placed values and does not replace semantic reconstruction.
 
+> **Superseded 2026-07-03:** Description mining was removed entirely. See the 2026-07-03 decision above.
+
 ### 2026-06-20: Observe Description Mining Before Pipeline Integration
 
 Decision: Keep description mining outside the extraction pipeline as a manual, observation-only two-pass probe. Pass one extracts atomic facts from non-distribution description texts only. Deterministic schema search retrieves candidate branches for each fact, and pass two returns concrete JSON Pointer target/value proposals from those candidates without applying them.
@@ -155,6 +167,8 @@ Reason: Description fields may contain structured facts that belong in dedicated
 Tradeoff: The probe produces inspectable artifacts but does not improve generated drafts. Routing quality now depends strongly on schema-branch retrieval, and proposed values may still violate candidate object shapes.
 
 Revisit trigger: Integrate it after evidence patching and before semantic evaluation only after observed proposals support clear per-proposal acceptance and validation rules.
+
+> **Superseded 2026-07-03:** Description mining was removed entirely. See the 2026-07-03 decision above.
 
 ### 2026-06-20: Integrate Dataset-Description Facts Through Evidence Patching
 

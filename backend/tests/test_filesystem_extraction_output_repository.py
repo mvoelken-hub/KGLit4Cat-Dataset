@@ -5,7 +5,6 @@ from pathlib import Path
 from unittest.mock import patch, call
 
 from app.domain.extraction import (
-    DescriptionMiningArtifact,
     EvidenceContext,
     EvidenceCandidate,
     ExtractionFileSummary,
@@ -43,30 +42,6 @@ def overview_for_file(file_path: str, summary: str, uncertainty: str) -> Extract
 
 
 class FileSystemExtractionOutputRepositoryTests(unittest.TestCase):
-    def test_description_facts_artifact_is_saved_and_indexed(self):
-        with tempfile.TemporaryDirectory() as directory:
-            repo = FileSystemExtractionOutputRepository(Path(directory))
-            repo.save_description_facts(
-                workflow_id="workflow",
-                artifact=DescriptionMiningArtifact(
-                    status="skipped",
-                    reason="Dataset-level description is absent or empty.",
-                ),
-                chat_model="model:tag",
-            )
-
-            artifact_path = (
-                repo._branch_dir("workflow", "profile_draft", "semantic", "model:tag")
-                / "description_facts.json"
-            )
-            self.assertEqual(json.loads(artifact_path.read_text(encoding="utf-8"))["status"], "skipped")
-            index = json.loads(
-                (repo._workflow_dir("workflow") / "artifact_index.json").read_text(encoding="utf-8")
-            )
-            self.assertTrue(
-                any(path.endswith("description_facts.json") for path in index["by_stage"]["profile_draft"])
-            )
-
     def test_write_json_replaces_existing_file_atomically(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "payload.json"

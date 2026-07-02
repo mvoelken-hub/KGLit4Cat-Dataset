@@ -5,16 +5,6 @@ import math
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.domain.extraction.description_mining import (
-    DESCRIPTION_FACT_MINING_SYSTEM_PROMPT,
-    DescriptionMiningArtifact,
-    RawDescriptionFacts,
-    augment_evidence_context_with_description_facts,
-    build_description_mining_prompt,
-    collect_dataset_description_sources,
-    is_description_derived_path,
-    validate_description_facts,
-)
 from app.domain.extraction import (
     compact_file_summaries_for_shallow_projection,
 )
@@ -187,103 +177,6 @@ class ProjectionService:
         self._update_progress(data_package_id, progress)
         return document
 
-    async def _mine_dataset_description(
-        self,
-        *,
-        data_package_id: str,
-        document: dict[str, Any],
-        evidence_context: RoutedEvidenceContext,
-        state: ExtractionRunState,
-        progress: ExtractionRunProgress,
-        warnings: list[str],
-    ) -> RoutedEvidenceContext:
-        sources = collect_dataset_description_sources(document)
-        source_paths = [source.path for source in sources]
-        if not sources:
-            self.output_repository.save_description_facts(
-                workflow_id=data_package_id,
-                artifact=DescriptionMiningArtifact(
-                    status="skipped",
-                    source_description_paths=[],
-                    reason="Dataset-level description is absent or empty.",
-                ),
-                chat_model=state.chat_model,
-                chunking_strategy=state.chunking_strategy,
-            )
-            return evidence_context
-
-        progress.stage = "description_mining"
-        progress.warnings = list(warnings)
-        self._update_progress(data_package_id, progress)
-        prompt = build_description_mining_prompt(sources)
-        try:
-            result = await generate_structured(
-                self.ollama_client,
-                model=self.ollama_client.chat_model,
-                system=DESCRIPTION_FACT_MINING_SYSTEM_PROMPT,
-                prompt=prompt,
-                output_type=RawDescriptionFacts,
-                system_components=[
-                    ("description_fact_mining_system_prompt", DESCRIPTION_FACT_MINING_SYSTEM_PROMPT),
-                ],
-                prompt_components=[("dataset_description_sources_json", prompt)],
-                token_budgeter=self._prompt_token_budgeter(),
-                operation_id=self._prompt_operation_id("description_fact_miner"),
-                agent_name="description_fact_miner",
-                num_ctx=self.ollama_client.max_context_length,
-            )
-            self._record_llm_call_result(
-                data_package_id=data_package_id,
-                result=result,
-                agent_name="description_fact_miner",
-            )
-            raw_facts = (
-                result.output
-                if isinstance(result.output, RawDescriptionFacts)
-                else RawDescriptionFacts.model_validate(result.output)
-            )
-            facts, rejections = validate_description_facts(raw_facts, sources)
-            artifact = DescriptionMiningArtifact(
-                status="completed",
-                source_description_paths=source_paths,
-                facts=facts,
-                rejected_count=len(rejections),
-                rejection_reasons=rejections,
-                reason=f"Validated {len(facts)} description fact(s).",
-            )
-            self.output_repository.save_description_facts(
-                workflow_id=data_package_id,
-                artifact=artifact,
-                chat_model=state.chat_model,
-                chunking_strategy=state.chunking_strategy,
-            )
-            if rejections:
-                warnings.append(
-                    f"Description mining dropped {len(rejections)} invalid or duplicate fact(s)."
-                )
-            progress.warnings = list(warnings)
-            return augment_evidence_context_with_description_facts(evidence_context, facts)
-        except (CompletionError, ValidationError) as exc:
-            self._record_llm_call_exception(
-                data_package_id=data_package_id,
-                exc=exc,
-                agent_name="description_fact_miner",
-            )
-            warning = f"Description mining failed; continuing with source evidence only: {exc}"
-            warnings.append(warning)
-            progress.warnings = list(warnings)
-            self.output_repository.save_description_facts(
-                workflow_id=data_package_id,
-                artifact=DescriptionMiningArtifact(
-                    status="failed",
-                    source_description_paths=source_paths,
-                    reason=str(exc),
-                ),
-                chat_model=state.chat_model,
-                chunking_strategy=state.chunking_strategy,
-            )
-            return evidence_context
-
     async def _enrich_draft_with_requirements(
         self,
         *,
@@ -305,19 +198,11 @@ class ProjectionService:
         self._save_run_state(data_package_id, state)
         self._persist_state_artifacts(data_package_id, state)
         self._update_progress(data_package_id, progress)
-        coverage_evidence_context = await self._mine_dataset_description(
-            data_package_id=data_package_id,
-            document=document,
-            evidence_context=evidence_context,
-            state=state,
-            progress=progress,
-            warnings=warnings,
-        )
         document = await self._apply_provenance_core_construction(
             data_package_id=data_package_id,
             profile_identifier=profile_identifier,
             document=document,
-            evidence_context=coverage_evidence_context,
+            evidence_context=evidence_context,
             validation_schema=validation_schema,
             state=state,
             progress=progress,
@@ -340,7 +225,7 @@ class ProjectionService:
             selected_evidence, context_window = select_requirement_evidence_packet(
                 requirement=requirement,
                 assessment=item,
-                evidence_context=coverage_evidence_context,
+                evidence_context=evidence_context,
             )
             item.selected_evidence = selected_evidence
             item.context_window = context_window
@@ -422,7 +307,7 @@ class ProjectionService:
             data_package_id=data_package_id,
             profile_identifier=profile_identifier,
             document=document,
-            evidence_context=coverage_evidence_context,
+            evidence_context=evidence_context,
             validation_schema=validation_schema,
             state=state,
             progress=progress,
@@ -4272,13 +4157,7 @@ class ProjectionService:
 
     @staticmethod
     def _evidence_origins(evidence_items: list[Any]) -> list[str]:
-        origins = [
-            "draft_description"
-            if is_description_derived_path(str(getattr(item, "file_path", "") or ""))
-            else "source_file"
-            for item in evidence_items
-        ]
-        return list(dict.fromkeys(origins)) or ["unknown"]
+        return ["source_file"]
 
     @classmethod
     def _actual_requirement_patch_path(cls, *, document: dict[str, Any], target_path: str) -> str:

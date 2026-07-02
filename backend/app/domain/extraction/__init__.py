@@ -104,21 +104,6 @@ from app.domain.extraction.evidence_context import (
     SIMILARITY_DETERMINISTIC_THRESHOLD,
 )
 
-from app.domain.extraction.description_mining import (
-    DESCRIPTION_EVIDENCE_PREFIX,
-    DESCRIPTION_FACT_MINING_SYSTEM_PROMPT,
-    DescriptionFact,
-    DescriptionFactRejection,
-    DescriptionMiningArtifact,
-    DescriptionSource,
-    RawDescriptionFact,
-    RawDescriptionFacts,
-    augment_evidence_context_with_description_facts,
-    build_description_mining_prompt,
-    collect_dataset_description_sources,
-    is_description_derived_path,
-    validate_description_facts,
-)
 
 from app.domain.extraction.evidence_enrichment import (
     EVIDENCE_INSTANCE_BUILDER_SYSTEM_PROMPT,

@@ -1451,7 +1451,7 @@ function profileDraftSteps(
   const reconstructionComplete = Boolean(progress?.generated_reconstructed_draft);
   const activeIndex = stage === 'profile_projection'
     ? 0
-    : ['evidence_patching', 'description_mining', 'coverage_scoring'].includes(stage)
+    : ['evidence_patching', 'coverage_scoring'].includes(stage)
       ? 1
       : stage === 'attribute_construction'
         ? 2
@@ -1506,7 +1506,6 @@ function profileDraftActivity(stage: string | undefined, activeTitle: string | u
   const detailByStage: Record<string, string> = {
     profile_projection: 'Building dataset catalog basics and the provenance core.',
     evidence_patching: 'Initial draft saved. Preparing the core coverage pass.',
-    description_mining: 'Mining dataset descriptions for additional grounded facts.',
     coverage_scoring: 'Checking core profile coverage and applying evidence-backed patches to missing fields.',
     attribute_construction: 'Adding parent-scoped quantitative and qualitative attributes.',
     semantic_evaluation: 'Evaluating semantic requirements before reconstructing the draft.',

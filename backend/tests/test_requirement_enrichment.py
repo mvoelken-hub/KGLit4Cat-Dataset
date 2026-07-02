@@ -43,7 +43,6 @@ from app.domain.extraction import (
     select_requirement_evidence_packet,
     stable_evidence_id,
 )
-from app.domain.extraction.description_mining import RawDescriptionFacts
 from app.domain.extraction.workflow import ExtractionRunProgress, ExtractionRunState
 from app.domain.profiles import ProfileValidationIssue, ProfileValidationResult
 from app.ollama.errors import CompletionError
@@ -788,16 +787,7 @@ def quantitative_schema(*owner_classes: str) -> dict:
 
 class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        async def passthrough_mining(*args, **kwargs):
-            return kwargs["evidence_context"]
-
-        self.description_mining_patcher = patch.object(
-            WorkflowService,
-            "_mine_dataset_description",
-            side_effect=passthrough_mining,
-        )
-        self.description_mining_patcher.start()
-        self.addAsyncCleanup(self.description_mining_patcher.stop)
+        pass
 
     def test_provenance_core_intents_are_backend_shaped_and_capped(self):
         service = WorkflowService(profile_service=FakeProfileService(), settings=Settings())
@@ -3283,140 +3273,6 @@ class DescriptionMiningIntegrationTests(unittest.IsolatedAsyncioTestCase):
         service._record_llm_call_exception = Mock()
         service._update_progress = Mock()
         return service
-
-    async def test_miner_augments_portable_context_and_persists_validated_facts(self):
-        repo = Mock()
-        service = self.service(repo)
-        result = Mock(
-            output=RawDescriptionFacts.model_validate(
-                {
-                    "facts": [
-                        {
-                            "source_description_path": "/description/0",
-                            "category": "instrument_signal",
-                            "role": "identity",
-                            "claim": "Acquisition frequency was 500 MHz.",
-                            "evidence_text": "frequency was 500 MHz",
-                        }
-                    ]
-                }
-            )
-        )
-        original = RoutedEvidenceContext()
-        state = ExtractionRunState(chat_model="test-model")
-        progress = ExtractionRunProgress()
-
-        with patch(
-            "app.services.projection_service.generate_structured",
-            AsyncMock(return_value=result),
-        ):
-            augmented = await service._mine_dataset_description(
-                data_package_id="pkg",
-                document={"description": ["Acquisition frequency was 500 MHz."]},
-                evidence_context=original,
-                state=state,
-                progress=progress,
-                warnings=[],
-            )
-
-        self.assertEqual(original.portable_evidence, [])
-        self.assertEqual(len(augmented.portable_evidence), 1)
-        self.assertEqual(augmented.portable_evidence[0].category, "instrument_signal")
-        artifact = repo.save_description_facts.call_args.kwargs["artifact"]
-        self.assertEqual(artifact.status, "completed")
-        self.assertEqual(len(artifact.facts), 1)
-
-    async def test_miner_failure_writes_artifact_warns_and_continues(self):
-        repo = Mock()
-        service = self.service(repo)
-        original = RoutedEvidenceContext()
-        warnings: list[str] = []
-
-        with patch(
-            "app.services.projection_service.generate_structured",
-            AsyncMock(side_effect=CompletionError("bad structured output")),
-        ):
-            result = await service._mine_dataset_description(
-                data_package_id="pkg",
-                document={"description": ["Dataset description."]},
-                evidence_context=original,
-                state=ExtractionRunState(chat_model="test-model"),
-                progress=ExtractionRunProgress(),
-                warnings=warnings,
-            )
-
-        self.assertIs(result, original)
-        self.assertIn("continuing with source evidence only", warnings[0])
-        artifact = repo.save_description_facts.call_args.kwargs["artifact"]
-        self.assertEqual(artifact.status, "failed")
-
-    async def test_missing_description_writes_skipped_artifact(self):
-        repo = Mock()
-        service = self.service(repo)
-        original = RoutedEvidenceContext()
-
-        result = await service._mine_dataset_description(
-            data_package_id="pkg",
-            document={"title": ["Dataset"]},
-            evidence_context=original,
-            state=ExtractionRunState(chat_model="test-model"),
-            progress=ExtractionRunProgress(),
-            warnings=[],
-        )
-
-        self.assertIs(result, original)
-        artifact = repo.save_description_facts.call_args.kwargs["artifact"]
-        self.assertEqual(artifact.status, "skipped")
-
-    async def test_mining_precedes_coverage_and_semantics_keep_original_context(self):
-        service = self.service()
-        original = RoutedEvidenceContext()
-        augmented = RoutedEvidenceContext(
-            portable_evidence=[
-                EvidenceCandidate(
-                    candidate_id="description:1",
-                    category="other",
-                    role="other_metadata",
-                    claim="Description fact.",
-                    evidence_text="Description fact.",
-                    file_path="draft-description:/description/0",
-                )
-            ]
-        )
-        events: list[str] = []
-
-        async def mine(**kwargs):
-            events.append("mine")
-            return augmented
-
-        async def evaluate(**kwargs):
-            events.append("semantic")
-            self.assertIs(kwargs["evidence_context"], original)
-            return []
-
-        async def reconstruct(**kwargs):
-            return kwargs["document"], []
-
-        service._mine_dataset_description = AsyncMock(side_effect=mine)
-        service._apply_provenance_core_construction = AsyncMock(side_effect=lambda **kwargs: kwargs["document"])
-        service._evaluate_semantic_requirements = AsyncMock(side_effect=evaluate)
-        service._reconstruct_semantic_defects = AsyncMock(side_effect=reconstruct)
-        initial = {"id": "pkg", "title": ["Dataset"], "description": ["Description fact."]}
-        state = ExtractionRunState(generated_final_draft=initial, chat_model="test-model")
-
-        await service._enrich_draft_with_requirements(
-            data_package_id="pkg",
-            profile_identifier="dcat-ap-plus",
-            evidence_context=original,
-            validation_schema={},
-            state=state,
-            progress=ExtractionRunProgress(),
-            warnings=[],
-        )
-
-        self.assertEqual(events, ["mine", "semantic", "semantic"])
-        self.assertEqual(state.generated_initial_draft["description"], ["Description fact."])
-        self.assertEqual(state.generated_attribute_draft["description"], ["Description fact."])
 
     def test_parent_attribute_ledger_records_schema_skip_reason(self):
         service = self.service()

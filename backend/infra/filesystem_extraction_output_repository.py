@@ -9,7 +9,6 @@ from typing import Any
 
 from app.domain.extraction import (
     CurationLedgerRecord,
-    DescriptionMiningArtifact,
     DraftValidationResult,
     EvidenceQueryLedgerEntry,
     ExtractionFileSummary,
@@ -49,7 +48,6 @@ INITIAL_FILE_SUMMARY_DIAGNOSTICS_FILE = "initial_file_summary_diagnostics.json"
 INITIAL_EXTRACTION_OVERVIEW_FILE = "initial_extraction_overview.json"
 INITIAL_EXTRACTION_OVERVIEW_DIAGNOSTIC_FILE = "initial_extraction_overview_diagnostic.json"
 GENERATED_INITIAL_DRAFT_FILE = "generated_initial_draft.json"
-DESCRIPTION_FACTS_FILE = "description_facts.json"
 GENERATED_CORE_DRAFT_FILE = "generated_core_draft.json"
 GENERATED_ATTRIBUTE_DRAFT_FILE = "generated_attribute_draft.json"
 GENERATED_FINAL_DRAFT_FILE = "generated_reconstructed_draft.json"
@@ -269,20 +267,6 @@ class FileSystemExtractionOutputRepository:
             self._refresh_artifact_index(workflow_id)
             return
         self._write_json_artifact(path, diagnostic.model_dump(mode="json"))
-
-    def save_description_facts(
-        self,
-        *,
-        workflow_id: str,
-        artifact: DescriptionMiningArtifact,
-        chat_model: str | None = None,
-        chunking_strategy: str = "semantic",
-    ) -> None:
-        self._write_json_artifact(
-            self._branch_dir(workflow_id, "profile_draft", chunking_strategy, chat_model)
-            / DESCRIPTION_FACTS_FILE,
-            artifact.model_dump(mode="json"),
-        )
 
     def save_generated_initial_draft(
         self,
