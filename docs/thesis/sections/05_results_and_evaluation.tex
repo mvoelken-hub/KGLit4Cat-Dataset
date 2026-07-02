@@ -1,87 +1,13 @@
-\label{chap:evaluation}
+\label{chap:results}
 
-This chapter is a placeholder for the later evaluation write-up.
+\section{Preliminary Observations}
+\label{sec:preliminary-observations}
 
-\section{Evaluation Setup}
-\label{sec:evaluation-setup}
-The earlier in-repo offline scoring harness has been removed. This chapter will later document the evaluation setup, metrics, and findings once end-to-end result generation is stable enough to score directly from completed workflow runs.
-
-\section{Dataset or Experimental Sample}
-\label{sec:dataset-experimental-sample}
-The current reference set contains five packages from \texttt{data/datasets}: an IR package, a 1H NMR package, two 13C Gel-NMR packages, and one \texttt{new-SCR252\_A.zip} package. The annotations are focused references rather than exhaustive gold standards. They cover 20 relevant files, 25 expected objects, 10 expected attributes, 5 expected vocabulary mappings, and 5 required profile fields.
-
-\section{Metrics and Assessment Procedure}
-\label{sec:metrics-assessment-procedure}
-Completed runs will be assessed by file-ranking quality, object extraction precision/recall/F1 grouped by object type, attribute extraction F1, vocabulary mapping F1, source-trace coverage, required profile-field coverage, warning count, and schema validity. Incomplete runs will be recorded separately with outcome, status, workflow stage, processed chunk count, total chunk count, and completion fraction. This separation matters because a schema-valid final document does not imply scientific correctness, and an incomplete run is primarily runtime evidence rather than extraction-quality evidence.
-
-\section{Quantitative Results}
-\label{sec:quantitative-results}
-Table~\ref{tab:simone-preliminary-completed-results} will summarize the first completed post-fix run. The values should be interpreted as evidence about prototype behavior, not as final thesis benchmark results.
-
-\begin{table}[htbp]
-\centering
-\small
-\begin{tabular}{llllllllll}
-\hline
-Dataset & Schema & Top-1 & Top-3 & Obj. F1 & Attr. F1 & Vocab F1 & Trace & Profile & Warnings \\
-\hline
-\texttt{IR-IR.zip} & true & true & 0.75 & 0.2667 & 0.0 & 0.0 & 1.0 & 1.0 & 19 \\
-\hline
-\end{tabular}
-\caption{Preliminary completed-run metrics for the post-fix SIMONE workflow.}
-\label{tab:simone-preliminary-completed-results}
-\end{table}
-
-Table~\ref{tab:simone-preliminary-partial-results} will record packages from the current reference set without completed outputs. These rows are not quality scores; they indicate coverage and runtime gaps that must be resolved before robust claims can be made.
-
-\begin{table}[htbp]
-\centering
-\small
-\begin{tabular}{llllr}
-\hline
-Dataset & Outcome & Stage & Chunks & Fraction \\
-\hline
-\texttt{1H\_NMR-1H\_NMR.zip} & missing output & chunk extraction & 73/107 & 0.6822 \\
-\texttt{13C-Gel-NMR-13C-Gel-NMR.zip} & missing output & -- & 0/0 & 0.0 \\
-\texttt{13C\_Gel-NMR-13C\_Gel-NMR(1).zip} & missing output & -- & 0/0 & 0.0 \\
-\texttt{new-SCR252\_A.zip} & missing output & -- & 0/0 & 0.0 \\
-\hline
-\end{tabular}
-\caption{Partial evaluation evidence for packages without completed extraction outputs.}
-\label{tab:simone-preliminary-partial-results}
-\end{table}
-
-\section{Qualitative Error Analysis}
-\label{sec:qualitative-error-analysis}
-The completed IR run will later be used to demonstrate whether the complete workflow can reach a schema-valid profile document and preserve source-trace evidence. Schema validity alone is still not enough to claim semantic quality. The eventual scorer should check whether the expected method label \texttt{IR}, key attributes, and qualitative vocabulary mapping are recovered.
-
-The NMR package will be useful later for checking a different failure mode: large numbers of text-bearing chunks and long runtime. That kind of package is where runtime controls, file/chunk selection, or staged early stopping may be needed before robust claims can be made.
-
-\section{Comparison with a Baseline or Manual Process}
-\label{sec:comparison-baseline-manual-process}
-The comparison target will be a focused manual-reference baseline. It will consist of selected human-authored facts used to score whether SIMONE recovers thesis-relevant files, objects, attributes, vocabulary mappings, and profile fields. This baseline is deliberately narrower than a complete manual metadata extraction. It supports preliminary fact-level comparison, but it does not yet answer whether SIMONE is faster, more complete, or more accurate than expert curation of full metadata documents.
-
-A stronger next comparison would add either complete manually curated profile documents for the same packages or a single-prompt LLM baseline that skips semantic chunking and staged vocabulary grounding.
-
-This chapter interprets the results in relation to the research questions.
-
-\section{Interpretation of Main Findings}
-\label{sec:interpretation-main-findings}
-The current evidence supports claims about workflow architecture and observability more strongly than claims about extraction quality. SIMONE should eventually be able to execute an inspectable staged workflow from upload to validated profile output for at least one real package, compare that output against a focused manual-reference target, and record intermediate evidence for incomplete runs. It cannot yet substantiate broad claims about accurate metadata extraction, reliable vocabulary grounding, robust performance across heterogeneous spectroscopy packages, or superiority over manual curation.
-
-\section{Strengths of the Proposed Workflow}
-\label{sec:strengths-proposed-workflow}
-Discuss the strongest contributions and positive outcomes.
-
-\section{Weaknesses and Failure Modes}
-\label{sec:weaknesses-failure-modes}
-Describe the main limitations and error patterns.
-
-\section{Implications for Catalysis Data Management}
-\label{sec:implications-catalysis-data-management}
-Discuss relevance for data curation, reuse, and standardization.
-
-\section{Generalizability to Other Experimental Domains}
-\label{sec:generalizability-other-experimental-domains}
-Assess transferability beyond the selected use case.
-
+A first inspection of the reconstructed profile for the 1H-NMR dataset shows that the workflow can produce a coherent DCAT-AP+ draft, but it may still omit source facts that are present in the package.
+Two examples are the 1H spectrometer frequency and the solvent.
+Both facts are available in the original Bruker files.
+The frequency is stated as approximately 500 MHz in the instrument information and parameter files.
+The solvent is stated as CDCl3 in the acquisition parameter file.
+In the generated draft, these facts were not represented as attributes.
+This observation suggests that omissions can occur during evidence selection, parent-scoped attribute construction, or attribute placement, even when the information is text-accessible and explicitly present in the source files.
+The case is therefore treated as an evaluation observation rather than as a dataset limitation.
