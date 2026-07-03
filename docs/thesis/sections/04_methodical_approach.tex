@@ -462,7 +462,9 @@ The vector query paraphrases the underlying concept in natural language, whereas
 
 % Here must be a figure showing the input and output for the query generation step. This also includes the payloads
 
-The two queries are executed separately against the vocabulary store, which is implemented as a property graph store with vector indexing and full-text indexing.
+The two queries are executed separately against the vocabulary store.
+The vocabulary store is implemented as a property graph store with vector indexing and full-text indexing.
+It 
 Vector retrieval ranks terms by the semantic similarity of their embedded labels and definitions, whereas full-text retrieval ranks terms by lexical overlap with indexed literal properties.
 The result lists are combined using reciprocal-rank fusion and enriched with a bounded amount of graph context around the retrieved terms.
 This produces a compact candidate set for the subsequent selection step.
@@ -470,3 +472,21 @@ This produces a compact candidate set for the subsequent selection step.
 The \ac{LLM} receives the original bundle, both queries, the retrieved candidates, and their local graph context.
 It must either select one candidate URI from the supplied set or abstain.
 When no candidate denotes the same concept as the draft element, the original value is retained and the grounding warning remains visible in the final artifact.
+
+\section{Manual Curation}
+\label{sec:manual_curation}
+
+\section{Infrastructure and Implementation}
+\label{sec:infrastructure_and_implementation}
+
+\subsection{Workflow Runner}
+\label{sec:workflow_runner}
+
+\subsection{Ollama Model Server}
+\label{sec:ollama_model_server}
+
+\subsection{Neo4j Graph Store}
+\label{sec:neo4j_graph_store}
+
+\subsection{User Interface}
+\label{sec:user_interface}
