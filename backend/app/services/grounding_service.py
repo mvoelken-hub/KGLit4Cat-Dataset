@@ -694,13 +694,21 @@ class GroundingService:
             query_semaphore=query_semaphore,
             warnings=warnings,
         )
-        formulated_query = formulated.query
-        if formulated_query:
-            vector_query_text = formulated_query
-            fulltext_query_text = formulated_query
-        else:
-            vector_query_text = " ".join(part for part in (semantic_context, source_value) if part)
-            fulltext_query_text = " ".join(part for part in (brief_context, source_value) if part)
+        formulated_vector_query = (formulated.vector_query or "").strip()
+        formulated_fulltext_query = (formulated.fulltext_query or "").strip()
+        source_context["formulated_query"] = {
+            "vector_query": formulated_vector_query,
+            "fulltext_query": formulated_fulltext_query,
+        }
+        vector_query_text = formulated_vector_query or " ".join(
+            part for part in (semantic_context, source_value) if part
+        )
+        fulltext_query_text = formulated_fulltext_query or " ".join(
+            part for part in (brief_context, source_value) if part
+        )
+        formulated_query = " | ".join(
+            dict.fromkeys(part for part in (formulated_vector_query, formulated_fulltext_query) if part)
+        )
         if field_name == "has_quantity_type":
             query = self._configured_vocab_query(
                 VocabQuery(
@@ -2402,10 +2410,10 @@ class GroundingService:
         query_semaphore: asyncio.Semaphore,
         warnings: list[str],
     ) -> VocabularyRoutedQueryFormulation:
-        """Distill source_value + semantic context into a concise vocabulary search phrase.
+        """Distill source_value + semantic context into retrieval-specific vocabulary queries.
 
-        Returns the phrase, or an empty string when formulation fails so callers fall back
-        to the context-based query text.
+        Returns split vector/full-text phrases, or empty strings when formulation fails so
+        callers can fill each retrieval branch from its deterministic fallback.
         """
         if self.ollama_client is None:
             return VocabularyRoutedQueryFormulation()
@@ -2423,7 +2431,9 @@ class GroundingService:
                         ),
                         (
                             "formulation_instruction",
-                            "Return a short vocabulary search phrase and the vocabulary routes that should be queried. "
+                            "Return vector_query as a semantic paraphrase of the field meaning, fulltext_query as "
+                            "concise terms likely to occur in labels, definitions, abbreviations, symbols, or "
+                            "synonyms, and the vocabulary routes that should be queried. "
                             "Use only route vocabulary_identifier/rdf_type pairs from the available options. "
                             "Select every route that is plausibly relevant for this type field. "
                             "Return an empty routes list only if none of the vocabularies fit.",
@@ -2476,13 +2486,21 @@ class GroundingService:
                 if isinstance(result.output, VocabularyRoutedQueryFormulation)
                 else VocabularyRoutedQueryFormulation.model_validate(result.output)
             )
-            return output.model_copy(update={"query": (output.query or "").strip()})
+            return output.model_copy(
+                update={
+                    "vector_query": (output.vector_query or "").strip(),
+                    "fulltext_query": (output.fulltext_query or "").strip(),
+                }
+            )
         output = (
             result.output
             if isinstance(result.output, VocabularyQueryFormulation)
             else VocabularyQueryFormulation.model_validate(result.output)
         )
-        return VocabularyRoutedQueryFormulation(query=(output.query or "").strip())
+        return VocabularyRoutedQueryFormulation(
+            vector_query=(output.vector_query or "").strip(),
+            fulltext_query=(output.fulltext_query or "").strip(),
+        )
 
     async def _type_vocab_route_options(
         self,

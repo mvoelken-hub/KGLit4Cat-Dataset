@@ -118,7 +118,7 @@ Reasoning:
 - Fields typed as `DefinedTerm` are discovered from the active profile schema, not only from hardcoded field names.
 - `type` fields represent vocabulary concepts, usually SKOS concepts. `rdf_type` fields represent ontology classes.
 - Quantitative attributes receive deterministic QUDT class terms: the attribute itself is a QUDT `Quantity`, `has_quantity_type` terms are QUDT `QuantityKind`, and `unit` terms are QUDT `Unit`.
-- Vector search, full-text search, graph context, and candidate selection provide a controlled grounding process.
+- Query formulation now produces separate vector and full-text queries: the vector query paraphrases the semantic concept, while the full-text query favors exact labels, abbreviations, symbols, and domain terms. Vector search, full-text search, graph context, reciprocal-rank fusion, and candidate selection then provide a controlled grounding process.
 - Failed grounding preserves raw values and warnings instead of fabricating semantic links.
 - Grounding runs as its own stage (POST /extraction/stages/grounding/{id}/run) and never rebuilds the profile draft. It grounds the persisted reconstructed draft in place. Rerun all queries only refreshes existing query records without re-discovering fields.
 

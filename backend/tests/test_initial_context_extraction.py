@@ -3756,7 +3756,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 return empty_profile_patch()
             if output_type is VocabularyQueryFormulation:
                 return CompletionResult(
-                    output=VocabularyQueryFormulation(query=""),
+                    output=VocabularyQueryFormulation(),
                     usage=RunUsage(requests=1),
                 )
             return CompletionResult(
@@ -4472,12 +4472,119 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(quantitative_query.fulltext_weight, 0.5)
         self.assertEqual(quantitative_query.rrf_k, 80)
 
+    async def test_vocab_query_formulation_uses_split_retrieval_queries(self):
+        service, _, _ = make_service([[make_chunk()]])
+
+        class CapturingSemanticService:
+            def __init__(self):
+                self.query = None
+
+            async def query_vocabulary(self, identifier: str, query):
+                self.query = query
+                return VocabQueryResult(identifier=identifier, rdf_type=query.rdf_type, resources={})
+
+        semantic_service = CapturingSemanticService()
+        service.semantic_service = semantic_service  # type: ignore[assignment]
+        state = ExtractionRunState()
+
+        async def fake_generate(*_args, **kwargs):
+            if kwargs["output_type"] is VocabularyQueryFormulation:
+                return CompletionResult(
+                    output=VocabularyQueryFormulation(
+                        vector_query="proton nuclear magnetic resonance spectroscopy",
+                        fulltext_query="1H NMR",
+                    ),
+                    usage=RunUsage(requests=1),
+                )
+            return CompletionResult(
+                output=VocabularyCandidateSelection(selected_uri=None),
+                usage=RunUsage(requests=1),
+            )
+
+        with patch("app.services.grounding_service.generate_structured", side_effect=fake_generate):
+            await service._discover_profile_field_candidates(
+                json_path="/measurements/0/has_quantity_type",
+                field_name="has_quantity_type",
+                source_value="1H NMR",
+                document={"measurements": [{"title": "NMR experiment", "has_quantity_type": "1H NMR"}]},
+                state=state,
+                data_package_id="package-id",
+                query_semaphore=asyncio.Semaphore(1),
+                on_progress=lambda: None,
+                warnings=[],
+            )
+
+        self.assertIsNotNone(semantic_service.query)
+        self.assertEqual(semantic_service.query.vector_query, "proton nuclear magnetic resonance spectroscopy")
+        self.assertEqual(semantic_service.query.fulltext_query, "1H NMR")
+        self.assertEqual(
+            state.vocab_queries[0].source_context["formulated_query"],
+            {
+                "vector_query": "proton nuclear magnetic resonance spectroscopy",
+                "fulltext_query": "1H NMR",
+            },
+        )
+
+    async def test_vocab_query_formulation_fills_only_missing_branch_with_fallback(self):
+        service, _, _ = make_service([[make_chunk()]])
+
+        class CapturingSemanticService:
+            def __init__(self):
+                self.query = None
+
+            async def query_vocabulary(self, identifier: str, query):
+                self.query = query
+                return VocabQueryResult(identifier=identifier, rdf_type=query.rdf_type, resources={})
+
+        semantic_service = CapturingSemanticService()
+        service.semantic_service = semantic_service  # type: ignore[assignment]
+        state = ExtractionRunState()
+
+        async def fake_generate(*_args, **kwargs):
+            if kwargs["output_type"] is VocabularyQueryFormulation:
+                return CompletionResult(
+                    output=VocabularyQueryFormulation(
+                        vector_query="proton nuclear magnetic resonance spectroscopy",
+                        fulltext_query="",
+                    ),
+                    usage=RunUsage(requests=1),
+                )
+            return CompletionResult(
+                output=VocabularyCandidateSelection(selected_uri=None),
+                usage=RunUsage(requests=1),
+            )
+
+        with patch("app.services.grounding_service.generate_structured", side_effect=fake_generate):
+            await service._discover_profile_field_candidates(
+                json_path="/measurements/0/has_quantity_type",
+                field_name="has_quantity_type",
+                source_value="1H NMR",
+                document={"measurements": [{"title": "NMR experiment", "has_quantity_type": "1H NMR"}]},
+                state=state,
+                data_package_id="package-id",
+                query_semaphore=asyncio.Semaphore(1),
+                on_progress=lambda: None,
+                warnings=[],
+            )
+
+        self.assertIsNotNone(semantic_service.query)
+        self.assertEqual(semantic_service.query.vector_query, "proton nuclear magnetic resonance spectroscopy")
+        self.assertNotEqual(semantic_service.query.fulltext_query, "proton nuclear magnetic resonance spectroscopy")
+        self.assertIn("1H NMR", semantic_service.query.fulltext_query)
+        self.assertEqual(
+            state.vocab_queries[0].source_context["formulated_query"],
+            {
+                "vector_query": "proton nuclear magnetic resonance spectroscopy",
+                "fulltext_query": "",
+            },
+        )
+
     async def test_type_query_formulation_selects_vocabulary_route(self):
         service, _, _ = make_service([[make_chunk()]])
 
         class RoutedSemanticService:
             def __init__(self):
-                self.query_calls: list[tuple[str, str, str]] = []
+                self.query_calls: list[tuple[str, str, str, str]] = []
 
             async def list_vocabularies(self):
                 return ["https://w3id.org/nfdi4cat/voc4cat", "nmrCV"]
@@ -4506,7 +4613,9 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 )
 
             async def query_vocabulary(self, identifier: str, query):
-                self.query_calls.append((identifier, query.rdf_type, query.fulltext_query or ""))
+                self.query_calls.append(
+                    (identifier, query.rdf_type, query.vector_query or "", query.fulltext_query or "")
+                )
                 return VocabQueryResult(identifier=identifier, rdf_type=query.rdf_type, resources={})
 
         routed_semantic_service = RoutedSemanticService()
@@ -4517,7 +4626,8 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             if kwargs["output_type"] is VocabularyRoutedQueryFormulation:
                 return CompletionResult(
                     output=VocabularyRoutedQueryFormulation(
-                        query="NMR spectroscopy",
+                        vector_query="nuclear magnetic resonance spectroscopy",
+                        fulltext_query="NMR spectroscopy",
                         routes=[
                             VocabularyQueryRoute(
                                 vocabulary_identifier="nmrCV",
@@ -4549,7 +4659,7 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(discovery.query_ids, [state.vocab_queries[0].query_id])
         self.assertEqual(
             routed_semantic_service.query_calls,
-            [("nmrCV", "owl__Class", "NMR spectroscopy")],
+            [("nmrCV", "owl__Class", "nuclear magnetic resonance spectroscopy", "NMR spectroscopy")],
         )
         self.assertEqual(state.vocab_queries[0].vocabulary_identifier, "nmrCV")
 

@@ -451,4 +451,15 @@ This workflow populates the \texttt{dcterms:type} slot with terms from \ac{Voc4C
 The \ac{QUDT} ontology is used to populate the \texttt{unit} and \texttt{has\_quantity\_kind} slots of quantitative attributes.
 The \texttt{rdf\_type} slot is not populated in this workflow.
 
+This stage starts by scanning the draft for fields that are eligible for controlled-vocabulary mapping.
+Any activity, entity, agent, plan, surrounding, or attribute with a non-empty \texttt{title} or \texttt{description} is considered eligible.
+The workflow then collects the eligible fields and their text content into bundles.
+These are individually given to an \ac{LLM} that formulates a query for each bundle.
+The query consists of a vector query and a full-text query.
+The vector query expresses the semantic meaning of the bundle in natural language and is used to retrieve conceptually similar vocabulary terms even when their labels use different wording.
+The full-text query instead contains concise domain-specific keywords that are expected to occur directly in vocabulary labels, definitions, or synonyms.
+Thus, the vector query supports semantic matching, whereas the full-text query favours lexical correspondence.
+Both queries are kept self-contained and limited to information present in the bundle.
+Their results are combined to improve retrieval recall without relying exclusively on either exact terminology or semantic similarity.
 
+The both queries are running separately against the 

@@ -56,7 +56,14 @@ class VocabularyFallbackQuery(BaseModel):
 
 
 class VocabularyQueryFormulation(BaseModel):
-    query: str = Field(default="", description="A concise vocabulary search phrase distilled from the source value and its semantic context.")
+    vector_query: str = Field(
+        default="",
+        description="Semantic natural-language vocabulary search phrase distilled from the field meaning.",
+    )
+    fulltext_query: str = Field(
+        default="",
+        description="Concise exact labels, abbreviations, symbols, or domain terms for full-text search.",
+    )
     reason: str = ""
 
 
@@ -67,7 +74,14 @@ class VocabularyQueryRoute(BaseModel):
 
 
 class VocabularyRoutedQueryFormulation(BaseModel):
-    query: str = Field(default="", description="A concise vocabulary search phrase distilled from the source value and its semantic context.")
+    vector_query: str = Field(
+        default="",
+        description="Semantic natural-language vocabulary search phrase distilled from the field meaning.",
+    )
+    fulltext_query: str = Field(
+        default="",
+        description="Concise exact labels, abbreviations, symbols, or domain terms for full-text search.",
+    )
     routes: list[VocabularyQueryRoute] = Field(
         default_factory=list,
         description="Vocabulary/rdf_type routes that should be queried for this field.",
@@ -177,26 +191,27 @@ Use the source value and local context only. Return only JSON.
 """
 
 VOCAB_QUERY_FORMULATION_SYSTEM_PROMPT = """
-You rewrite a metadata field value into a short, on-target vocabulary search phrase.
+You rewrite a metadata field value into two short, on-target vocabulary search queries.
 Use the source value AND the semantic context (dataset/entity/attribute title and description) to identify the
-physical quantity or concept the field measures, then return that concept as a plain search phrase a controlled
-vocabulary would label (e.g. a unit written as a symbol or abbreviation -> the full unit name).
+physical quantity or concept the field measures.
 Rules:
-- Always reduce the value to the underlying physical quantity or concept. Never echo the raw value, an axis or
-  column code, or a unit token.
+- Always reduce vector_query to the underlying physical quantity or concept in natural language. Never echo the
+  raw value, an axis or column code, or a unit token unless it is the concept itself.
+- Set fulltext_query to concise terms likely to occur in vocabulary labels, definitions, abbreviations, symbols,
+  or synonyms. Prefer exact labels, abbreviations, symbols, and domain terms from the source and context.
 - A unit symbol or abbreviation appearing in the value (e.g. %, cm, Hz, K, 1/cm) describes the unit of
-  measurement, not the physical quantity. Strip it entirely from the formulated phrase - do not incorporate
-  the unit name into the quantity search phrase. For example, a field named "length %" formulates as "length",
-  not "length percentage"; a field named "voltage Hz" formulates as "voltage", not "voltage hertz".
+  measurement, not the physical quantity. Strip it from vector_query - do not incorporate the unit name into
+  the quantity search phrase. For example, a field named "length %" has vector_query "length", not "length
+  percentage"; a field named "voltage Hz" has vector_query "voltage", not "voltage hertz".
 - When the value is an axis or column label (for example a single letter paired with a unit, or an ordinal like
   first/last/min/max applied to an axis), name the physical quantity that axis or column measures, using the
   semantic context (what the dataset/entity actually records).
 - A unit written as "1/X" or "X^-1" denotes the reciprocal of unit X; formulate it as "reciprocal X" (e.g.
   "1/m" -> "reciprocal metre"). Likewise a value with a reciprocal unit usually measures the quantity whose
   standard unit is that reciprocal unit.
-- Output the plain concept name only (1-6 words). Do NOT echo ordinals, raw numbers, or the literal field name
-  unless they ARE the concept.
-- If you cannot identify the concept, still return your best short phrase based on the context.
+- Output short strings only (1-8 words each). Do NOT echo ordinals, raw numbers, or the literal field name
+  unless they are useful vocabulary terms.
+- If you cannot identify the concept, still return your best short phrases based on the context.
 Return only JSON.
 """
 
@@ -225,7 +240,8 @@ def build_query_formulation_prompt_components(
         ("source_context", "Source context JSON:\n" f"{source_context}\n\n"),
         (
             "formulation_instruction",
-            "Return the short vocabulary search phrase for this field value.",
+            "Return vector_query as a semantic paraphrase of the field meaning, and fulltext_query as concise "
+            "terms likely to occur in labels, definitions, abbreviations, symbols, or synonyms.",
         ),
     ]
 
