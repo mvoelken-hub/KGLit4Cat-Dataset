@@ -2,8 +2,8 @@
 
 This chapter describes the methodical approach used to construct semantic metadata from heterogeneous dataset packages.
 The workflow is designed as a staged extraction process.
-It does not treat the uploaded dataset as one large prompt.
-Instead, it separates source access, preprocessing, evidence extraction, profile construction, curation, and vocabulary grounding.
+It does not treat the uploaded dataset as one large input.
+Instead, it separates source access, preprocessing, evidence extraction, profile construction, vocabulary grounding and curation.
 \Cref{fig:workflow-concept} shows this process on a conceptual level.
 
 The workflow starts with the ingestion of a dataset package.
@@ -437,10 +437,39 @@ The workflow then assembles a requirement report that combines three scores: a c
 The report distinguishes requirements that were patched, requirements that were reconstructed, and requirements that remain unresolved.
 This report is the basis for the manual curation step that follows.
 
+\section{Manual Curation}
+\label{sec:manual_curation}
+
+Manual curation provides a human validation checkpoint between automated artifact construction and vocabulary mapping.
+Although the preceding stages enforce schema validity, evaluate evidence support, and attempt to repair semantic defects, they cannot guarantee that every generated description reflects the scientific meaning and overall context of the dataset.
+In particular, an \ac{LLM} may produce a locally plausible interpretation that is too broad, too specific, or inconsistent with the intended role of an object.
+The manual curation stage therefore allows a domain-informed user to review and refine the reconstructed draft before semantic identifiers are added.
+
+The curation interface is organized around the nested structure of the \ac{DCAT-AP+} artifact.
+As shown in \cref{fig:manual-curation-interface}, the tree view on the left represents the objects and relations contained in the draft and serves as the primary navigation mechanism.
+Selecting an object opens its current content in an editable form on the right.
+This allows the user to inspect the object in its structural context while directly modifying its textual fields, such as titles and descriptions.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/manual-curation-interface.png}
+    \caption{Manual curation interface with tree-based navigation of the \ac{DCAT-AP+} draft and editable object fields.}
+    \label{fig:manual-curation-interface}
+\end{figure}
+
+Individual fields can additionally be protected against later automated modification.
+A protected field retains the curator-approved value during subsequent workflow stages.
+This provides an explicit distinction between values that remain provisional and values that have been reviewed and accepted by the user.
+
+The current prototype supports content-level curation of objects that are already present in the draft.
+It does not yet support structural editing.
+Users cannot create additional profile shapes or move existing shapes to different parent objects.
+Consequently, the curation stage can correct or clarify the contents of the generated structure, but structural omissions or incorrect parent assignments that were not resolved during semantic reconstruction cannot yet be repaired through the interface.
+
 \section{Vocabulary Mapping}
 \label{sec:vocabulary_mapping}
 
-Vocabulary mapping is performed after the schema-valid \ac{DCAT-AP+} draft has been reconstructed.
+Vocabulary mapping is performed after the schema-valid \ac{DCAT-AP+} draft has been reconstructed and curated.
 The stage follows the classifier mixin pattern discussed in \cref{sec:dcat-ap-plus-chemdcat-ap}.
 In \ac{DCAT-AP+}, this pattern provides the classification slots \texttt{type} and \texttt{rdf\_type} for the central profile shapes, as well as \texttt{unit} and \texttt{has\_quantity\_kind} for quantitative attributes \cite{dcatapplusDocumentation}.
 These slots carry different semantic commitments.
@@ -472,9 +501,6 @@ This produces a compact candidate set for the subsequent selection step.
 The \ac{LLM} receives the original bundle, both queries, the retrieved candidates, and their local graph context.
 It must either select one candidate URI from the supplied set or abstain.
 When no candidate denotes the same concept as the draft element, the original value is retained and the grounding warning remains visible in the final artifact.
-
-\section{Manual Curation}
-\label{sec:manual_curation}
 
 \section{Infrastructure and Implementation}
 \label{sec:infrastructure_and_implementation}
