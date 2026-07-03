@@ -9,6 +9,36 @@ async def generate_structured(*args: Any, **kwargs: Any) -> Any:
     return await workflow_service.generate_structured(*args, **kwargs)
 
 
+def _text_property_values(
+    properties: dict[str, Any],
+    keys: tuple[str, ...],
+    *,
+    limit: int,
+    max_chars: int = 160,
+) -> list[str]:
+    values: list[str] = []
+    seen: set[str] = set()
+    for key in keys:
+        raw = properties.get(key)
+        raw_values = raw if isinstance(raw, list) else [raw]
+        for item in raw_values:
+            if item is None:
+                continue
+            text = " ".join(str(item).split())
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            values.append(text[:max_chars].rstrip())
+            if len(values) >= limit:
+                return values
+    return values
+
+
+def _first_text_property(properties: dict[str, Any], keys: tuple[str, ...]) -> str:
+    values = _text_property_values(properties, keys, limit=1, max_chars=400)
+    return values[0] if values else ""
+
+
 class GroundingService:
     async def update_vocab_query_config(
         self,
@@ -2281,16 +2311,98 @@ class GroundingService:
                 # (which reads candidate.get("title"))
                 "title": _resource_title(props),
             }
-            # Add description if available (dcterms__description or rdfs__comment)
-            desc = props.get("dcterms__description") or props.get("rdfs__comment")
-            if desc:
-                slim["description"] = str(desc)[:300]
+            if slim["title"]:
+                slim["label"] = slim["title"]
+            definition = _first_text_property(
+                props,
+                (
+                    "skos__definition",
+                    "obo__IAO_0000115",
+                    "dcterms__description",
+                    "qudt__plainTextDescription",
+                    "rdfs__comment",
+                    "description",
+                    "definition",
+                ),
+            )
+            if definition:
+                slim["definition"] = definition[:400]
+            synonyms = _text_property_values(
+                props,
+                (
+                    "skos__altLabel",
+                    "oboInOwl__hasExactSynonym",
+                    "oboInOwl__hasRelatedSynonym",
+                    "oboInOwl__hasBroadSynonym",
+                    "oboInOwl__hasNarrowSynonym",
+                ),
+                limit=6,
+            )
+            if synonyms:
+                slim["synonyms"] = synonyms
             # Add symbol if available (useful for unit matching)
             symbol = props.get("qudt__symbol") or props.get("qudt__abbreviation")
             if symbol:
                 slim["symbol"] = str(symbol)
+            unit_code = props.get("qudt__ucumCode") or props.get("qudt__udunitsCode")
+            if unit_code:
+                slim["unit_code"] = str(unit_code)
+            related_terms = GroundingService._candidate_related_terms(uri, result)
+            if related_terms:
+                slim["related_terms"] = related_terms
             records.append(slim)
         return records
+
+    @staticmethod
+    def _candidate_related_terms(uri: str, result: VocabQueryResult) -> list[dict[str, str]]:
+        related: list[dict[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+        for statement in result.graph_statements:
+            if statement.subject_uri == uri:
+                other_uri = statement.object_uri
+                candidate_is_subject = True
+            elif statement.object_uri == uri:
+                other_uri = statement.subject_uri
+                candidate_is_subject = False
+            else:
+                continue
+            if "/.well-known/genid/" in other_uri:
+                continue
+            other = result.resources.get(other_uri)
+            if other is None:
+                continue
+            label = _resource_title(other.properties)
+            if not label:
+                continue
+            relation = GroundingService._candidate_relation_label(
+                statement.predicate,
+                candidate_is_subject=candidate_is_subject,
+            )
+            if relation == "narrower":
+                continue
+            key = (relation, label)
+            if key in seen:
+                continue
+            seen.add(key)
+            related.append({"relation": relation, "label": label})
+            if len(related) >= 6:
+                break
+        return related
+
+    @staticmethod
+    def _candidate_relation_label(predicate: str, *, candidate_is_subject: bool) -> str:
+        relation = predicate.split("__", 1)[-1]
+        if relation == "broader":
+            return "broader" if candidate_is_subject else "narrower"
+        if relation == "narrower":
+            return "narrower" if candidate_is_subject else "broader"
+        if relation == "subClassOf":
+            return "broader" if candidate_is_subject else "narrower"
+        if relation == "member":
+            return "member" if candidate_is_subject else "member_of"
+        if relation == "inScheme":
+            return "in_scheme" if candidate_is_subject else "has_concept"
+        return relation if candidate_is_subject else f"inverse_{relation}"
 
     async def _select_from_candidates(
         self,

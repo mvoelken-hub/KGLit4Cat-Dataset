@@ -333,12 +333,33 @@ def build_candidate_selection_prompt_components(
     return [
         ("source_value", "Source value:\n" f"{source_value}\n\n"),
         ("source_context", "Source context JSON:\n" f"{source_context}\n\n"),
-        ("candidate_terms", "Candidate terms JSON:\n" f"{candidates}\n\n"),
+        ("candidate_terms", "Candidate terms JSON:\n" f"{_candidate_prompt_payload(candidates)}\n\n"),
         (
             "selection_instruction",
             "Select the best candidate URI, or return null if none fits.",
         ),
     ]
+
+
+def _candidate_prompt_payload(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep candidate prompts semantic while preserving internal metadata elsewhere."""
+    prompt_keys = (
+        "definition",
+        "description",
+        "synonyms",
+        "symbol",
+        "unit_code",
+        "related_terms",
+    )
+    payload: list[dict[str, Any]] = []
+    for candidate in candidates:
+        item = {"uri": candidate["uri"]} if candidate.get("uri") else {}
+        label = candidate.get("label") or candidate.get("title")
+        if label:
+            item["label"] = label
+        item.update({key: candidate[key] for key in prompt_keys if candidate.get(key)})
+        payload.append(item)
+    return payload
 
 
 def build_object_grounding_selection_prompt(
