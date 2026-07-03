@@ -4630,6 +4630,66 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
             },
         )
 
+    async def test_blank_unit_fallback_uses_quantitative_context(self):
+        service, _, _ = make_service([[make_chunk()]])
+
+        class CapturingSemanticService:
+            def __init__(self):
+                self.query = None
+
+            async def query_vocabulary(self, identifier: str, query):
+                self.query = query
+                return VocabQueryResult(identifier=identifier, rdf_type=query.rdf_type, resources={})
+
+        semantic_service = CapturingSemanticService()
+        service.semantic_service = semantic_service  # type: ignore[assignment]
+        state = ExtractionRunState()
+        formulation_prompts: list[str] = []
+
+        async def fake_generate(*_args, **kwargs):
+            if kwargs["output_type"] is VocabularyQueryFormulation:
+                formulation_prompts.append(kwargs["prompt"])
+                return CompletionResult(
+                    output=VocabularyQueryFormulation(vector_query="", fulltext_query=""),
+                    usage=RunUsage(requests=1),
+                )
+            return CompletionResult(
+                output=VocabularyCandidateSelection(selected_uri=None),
+                usage=RunUsage(requests=1),
+            )
+
+        with patch("app.services.grounding_service.generate_structured", side_effect=fake_generate):
+            await service._discover_profile_field_candidates(
+                json_path="/has_quantitative_attribute/0/unit",
+                field_name="unit",
+                source_value="",
+                document={
+                    "title": "Records Dataset",
+                    "description": "Dataset documents a collection of records.",
+                    "has_quantitative_attribute": [
+                        {
+                            "title": "Threshold",
+                            "value": 0.005,
+                            "has_quantity_type": "Threshold",
+                            "unit": "",
+                        }
+                    ],
+                },
+                state=state,
+                data_package_id="package-id",
+                query_semaphore=asyncio.Semaphore(1),
+                on_progress=lambda: None,
+                warnings=[],
+            )
+
+        self.assertIsNotNone(semantic_service.query)
+        self.assertEqual(semantic_service.query.vector_query, "unit for Threshold")
+        self.assertEqual(semantic_service.query.fulltext_query, "Threshold")
+        self.assertNotIn("Records Dataset", semantic_service.query.vector_query)
+        self.assertNotIn("Dataset documents", semantic_service.query.fulltext_query)
+        self.assertEqual(state.vocab_queries[0].source_context["query_focus"], "unit for Threshold")
+        self.assertIn("Source value:\nunit for Threshold", formulation_prompts[0])
+
     async def test_type_query_formulation_selects_vocabulary_route(self):
         service, _, _ = make_service([[make_chunk()]])
 

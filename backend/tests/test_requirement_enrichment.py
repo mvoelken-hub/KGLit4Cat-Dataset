@@ -1731,6 +1731,67 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("must not request synthesis", rejected[0])
         self.assertEqual(mocked.await_count, 1)
 
+    async def test_semantic_synthesis_refuses_unsupported_attribute_append(self):
+        service = WorkflowService(
+            profile_service=FakeProfileService(),
+            settings=Settings(),
+            ollama_client=Mock(chat_model="test-model", max_context_length=4096),
+        )
+        item = RequirementReportItem(
+            requirement_id="attribute_duplicate_coherence",
+            label="Attribute duplicate coherence",
+            weight=1.0,
+            status="partial",
+            applicable=True,
+            quality=0.5,
+            weighted_score=0.5,
+            target_paths=["/was_generated_by/0/has_quantitative_attribute"],
+            selected_evidence=[],
+            context_window=[],
+        )
+        diagnosis = Mock(
+            output={
+                "defects": [
+                    {
+                        "defect_type": "missing_plan",
+                        "target_path": "/was_generated_by/0/has_quantitative_attribute",
+                        "entry_indices": [],
+                        "recommended_action": "append",
+                        "needs_synthesis": True,
+                        "reason": "The target path is missing.",
+                    }
+                ],
+                "reason": "Append missing attribute.",
+            },
+            usage=None,
+        )
+        document = {"was_generated_by": [{}]}
+
+        with patch(
+            "app.services.projection_service.generate_structured",
+            AsyncMock(return_value=diagnosis),
+        ) as mocked:
+            updated, paths, _, errors, applied, rejected = await service._semantic_reconstruction_update(
+                data_package_id="pkg",
+                profile_identifier="profile",
+                document=document,
+                item=item,
+                requirement=DcatRequirement(
+                    requirement_id="attribute_duplicate_coherence",
+                    label="Attribute duplicate coherence",
+                    description="Duplicate attributes are merged or removed.",
+                    target_paths=item.target_paths,
+                ),
+                validation_schema={},
+            )
+
+        self.assertEqual(updated, document)
+        self.assertEqual(paths, [])
+        self.assertEqual(errors, [])
+        self.assertEqual(applied, 0)
+        self.assertIn("Attribute synthesis requires selected evidence", rejected[0])
+        self.assertEqual(mocked.await_count, 1)
+
     def test_sanitizer_preserves_nested_attribute_payload(self):
         write = SchemaConstrainedWrite(
             target_path="/was_generated_by/0/evaluated_entity/0/has_quantitative_attribute",

@@ -442,20 +442,21 @@ This report is the basis for the manual curation step that follows.
 
 Vocabulary mapping is performed after the schema-valid \ac{DCAT-AP+} draft has been reconstructed.
 The stage follows the classifier mixin pattern discussed in \cref{sec:dcat-ap-plus-chemdcat-ap}.
-In \ac{DCAT-AP+}, this pattern provides the classification slots \texttt{type} and \texttt{rdf\_type} for the central profile shapes \cite{dcatapplusDocumentation}.
-The two slots carry different semantic commitments.
+In \ac{DCAT-AP+}, this pattern provides the classification slots \texttt{type} and \texttt{rdf\_type} for the central profile shapes, as well as \texttt{unit} and \texttt{has\_quantity\_kind} for quantitative attributes \cite{dcatapplusDocumentation}.
+These slots carry different semantic commitments.
 The \texttt{type} slot maps to \texttt{dcterms:type} and supports controlled-vocabulary categorization.
 The \texttt{rdf\_type} slot maps to \texttt{rdf:type} and supports links to classes from formal ontologies.
-It can be applied to activities, entities, agents, plans, surroundings, and qualitative or quantitative attributes.
+These two slots can be applied to activities, entities, agents, plans, surroundings, and qualitative or quantitative attributes.
+Quantitative attributes also have the \texttt{unit} and \texttt{has\_quantity\_kind} slots, which support links to \ac{QUDT} terms.
 This workflow populates the \texttt{dcterms:type} slot with terms from \ac{Voc4Cat} and \ac{nmrCV}, which are structured taxonomies and not formal ontologies in the strict sense.
-The \ac{QUDT} ontology is used to populate the \texttt{unit} and \texttt{has\_quantity\_kind} slots of quantitative attributes.
 The \texttt{rdf\_type} slot is not populated in this workflow.
 
-This stage first identifies draft elements that are eligible for vocabulary mapping.
+In this stage, the program first identifies draft elements that are eligible for vocabulary mapping.
 An activity, entity, agent, plan, surrounding, or attribute is considered eligible when it contains a non-empty \texttt{title} or \texttt{description}.
 For each eligible element, the available text is collected into a self-contained bundle.
 Those bundles consist of the element's title and description, as well as a the target path in the schema in a compressed form, e.g. \texttt{dataset.was\_generated\_by.carried\_out\_by} with the parent elements' titles and descriptions as surrounding context.
-This bundle is then passed to an \ac{LLM}, which generates two complementary retrieval queries.
+This bundle is then passed to an \ac{LLM}, which generates two complementary retrieval queries and chooses vocabularies that these queries are run against.
+For the prototype in this work, the \ac{LLM} could choose \ac{Voc4Cat}, \ac{nmrCV} or both.
 The vector query paraphrases the underlying concept in natural language, whereas the full-text query preserves concise domain terms, labels, abbreviations, or parameter codes that may occur literally in vocabulary entries.
 % \Cref{fig:query-generation} shows an example input and output for the query generation step.
 

@@ -197,6 +197,9 @@ physical quantity or concept the field measures.
 Rules:
 - Always reduce vector_query to the underlying physical quantity or concept in natural language. Never echo the
   raw value, an axis or column code, or a unit token unless it is the concept itself.
+- Exception: when source_context says field_name or role is "unit", formulate a unit search instead. Use the
+  raw unit symbol/name when present; when it is blank, use sibling_has_quantity_type, sibling_identifier, value,
+  and local context to produce a concise compatible-unit query rather than returning an empty query.
 - Set fulltext_query to concise terms likely to occur in vocabulary labels, definitions, abbreviations, symbols,
   or synonyms. Prefer exact labels, abbreviations, symbols, and domain terms from the source and context.
 - A unit symbol or abbreviation appearing in the value (e.g. %, cm, Hz, K, 1/cm) describes the unit of

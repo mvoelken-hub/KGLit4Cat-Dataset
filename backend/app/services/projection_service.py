@@ -953,6 +953,22 @@ class ProjectionService:
                         f"{defect.target_path}."
                     )
                     continue
+                current_target = self._value_at_json_pointer(document, defect.target_path)
+                attribute_array_target = defect.target_path.rstrip("/").endswith(
+                    ("/has_quantitative_attribute", "/has_qualitative_attribute")
+                )
+                if (
+                    attribute_array_target
+                    and defect.recommended_action in {"append", "replace"}
+                    and current_target is None
+                    and not item.selected_evidence
+                    and not item.context_window
+                ):
+                    rejected.append(
+                        "Attribute synthesis requires selected evidence, context evidence, or an existing target; "
+                        f"refusing placeholder attribute at {defect.target_path}."
+                    )
+                    continue
                 if requirement.requirement_id == "activity_evaluation_target":
                     rejected.append(
                         "Evaluation-target relations must come from explicit projection evidence; "
@@ -960,10 +976,6 @@ class ProjectionService:
                     )
                     continue
                 synthesis_defect = defect
-                current_target = self._value_at_json_pointer(document, defect.target_path)
-                attribute_array_target = defect.target_path.rstrip("/").endswith(
-                    ("/has_quantitative_attribute", "/has_qualitative_attribute")
-                )
                 if (
                     defect.recommended_action == "replace"
                     and isinstance(current_target, list)

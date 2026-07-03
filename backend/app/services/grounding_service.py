@@ -674,6 +674,72 @@ class GroundingService:
             context = context[:max_chars].rstrip()
         return context
 
+    @staticmethod
+    def _join_query_parts(parts: list[str]) -> str:
+        seen: set[str] = set()
+        joined: list[str] = []
+        for part in parts:
+            text = str(part or "").strip()
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            joined.append(text)
+        return " ".join(joined)
+
+    @classmethod
+    def _profile_field_formulation_source_value(
+        cls,
+        *,
+        field_name: str,
+        source_value: str,
+        source_context: dict[str, Any],
+    ) -> str:
+        value = source_value.strip()
+        if value:
+            return value
+        if field_name == "unit":
+            quantity_kind = str(source_context.get("sibling_has_quantity_type", "")).strip()
+            identifier = str(source_context.get("sibling_identifier", "")).strip()
+            focus = cls._join_query_parts([quantity_kind, identifier])
+            return f"unit for {focus}" if focus else value
+        if field_name == "has_quantity_type":
+            identifier = str(source_context.get("sibling_identifier", "")).strip()
+            return f"quantity kind for {identifier}" if identifier else value
+        return value
+
+    @classmethod
+    def _profile_field_fallback_queries(
+        cls,
+        *,
+        field_name: str,
+        source_value: str,
+        source_context: dict[str, Any],
+        semantic_context: str,
+        brief_context: str,
+    ) -> tuple[str, str]:
+        value = source_value.strip()
+        if field_name == "unit":
+            quantity_kind = str(source_context.get("sibling_has_quantity_type", "")).strip()
+            identifier = str(source_context.get("sibling_identifier", "")).strip()
+            if value:
+                return (
+                    cls._join_query_parts([value, quantity_kind, identifier]),
+                    cls._join_query_parts([value, quantity_kind]),
+                )
+            focus = cls._join_query_parts([quantity_kind, identifier])
+            if focus:
+                return (f"unit for {focus}", focus)
+        elif field_name == "has_quantity_type":
+            identifier = str(source_context.get("sibling_identifier", "")).strip()
+            query = cls._join_query_parts([value, identifier])
+            if query:
+                return (query, query)
+
+        return (
+            cls._join_query_parts([semantic_context, value]),
+            cls._join_query_parts([brief_context, value]),
+        )
+
     async def _discover_profile_field_candidates(
         self,
         *,
@@ -710,6 +776,13 @@ class GroundingService:
                         sib_val = parent_node.get(sibling_key)
                         if sib_val is not None and str(sib_val).strip() and str(sib_val).strip() != "?":
                             source_context[f"sibling_{sibling_key}"] = str(sib_val)
+        formulation_source_value = self._profile_field_formulation_source_value(
+            field_name=field_name,
+            source_value=source_value,
+            source_context=source_context,
+        )
+        if formulation_source_value != source_value:
+            source_context["query_focus"] = formulation_source_value
         route_options = (
             await self._type_vocab_route_options(state)
             if field_name == "type"
@@ -718,7 +791,7 @@ class GroundingService:
         formulated = await self._formulate_vocab_query(
             data_package_id=data_package_id,
             agent_name="vocab_query_formulation",
-            source_value=source_value,
+            source_value=formulation_source_value,
             source_context=source_context,
             route_options=route_options,
             query_semaphore=query_semaphore,
@@ -730,12 +803,15 @@ class GroundingService:
             "vector_query": formulated_vector_query,
             "fulltext_query": formulated_fulltext_query,
         }
-        vector_query_text = formulated_vector_query or " ".join(
-            part for part in (semantic_context, source_value) if part
+        fallback_vector_query, fallback_fulltext_query = self._profile_field_fallback_queries(
+            field_name=field_name,
+            source_value=source_value,
+            source_context=source_context,
+            semantic_context=semantic_context,
+            brief_context=brief_context,
         )
-        fulltext_query_text = formulated_fulltext_query or " ".join(
-            part for part in (brief_context, source_value) if part
-        )
+        vector_query_text = formulated_vector_query or fallback_vector_query
+        fulltext_query_text = formulated_fulltext_query or fallback_fulltext_query
         formulated_query = " | ".join(
             dict.fromkeys(part for part in (formulated_vector_query, formulated_fulltext_query) if part)
         )
