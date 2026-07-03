@@ -1,0 +1,772 @@
+[
+  {
+    "route": "rejected_evidence",
+    "reason": "duplicate_evidence",
+    "candidate": {
+      "candidate_id": "10/pdata/1/proc:110:128:1",
+      "category": "resource_signal",
+      "role": "qualitative_attribute",
+      "claim": "The experiment was performed by AK BRaese.",
+      "evidence_text": "<AK BRaese, Jasmin Seibert, JTS112-01-04-F3",
+      "source_context": "##$TDeff= 0\n##$TDoff= 0\n##$TI= <AK BRaese, Jasmin Seibert, JTS112-01-04-F3\n##$TILT= no\n##$TM1= 0",
+      "uncertainty": "",
+      "file_path": "10/pdata/1/proc",
+      "start_idx": 110,
+      "end_idx": 128,
+      "evidence_match_score": 1.0
+    },
+    "assessment": {
+      "candidate_id": "10/pdata/1/proc:110:128:1",
+      "groundedness": "yes",
+      "self_containedness": "yes",
+      "scope_clarity": "yes",
+      "portability": "yes",
+      "semantic_interpretability": "yes",
+      "environment_dependence": "low",
+      "specificity": "yes",
+      "novelty": "no",
+      "uncertainty": "low",
+      "rationale": "The evidence text directly states the experiment was performed by AK BRaese."
+    },
+    "chunk_index": 10
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "duplicate_evidence",
+    "candidate": {
+      "candidate_id": "10/pdata/1/procs:10:92:2",
+      "category": "resource_signal",
+      "role": "descriptor",
+      "claim": "The AXUNIT is empty.",
+      "evidence_text": "<>",
+      "source_context": "##$AUNMP= <proc_1d>\n##$AXLEFT= 0\n##$AXNAME= <>\n##$AXNUC= <off>\n##$AXRIGHT= 0",
+      "uncertainty": "",
+      "file_path": "10/pdata/1/procs",
+      "start_idx": 10,
+      "end_idx": 92,
+      "evidence_match_score": 1.0
+    },
+    "assessment": {
+      "candidate_id": "10/pdata/1/procs:10:92:2",
+      "groundedness": "yes",
+      "self_containedness": "yes",
+      "scope_clarity": "yes",
+      "portability": "yes",
+      "semantic_interpretability": "yes",
+      "environment_dependence": "low",
+      "specificity": "yes",
+      "novelty": "no",
+      "uncertainty": "low",
+      "rationale": "The evidence text directly states the AXUNIT is empty, which is a clear and specific attribute."
+    },
+    "chunk_index": 12
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "duplicate_evidence",
+    "candidate": {
+      "candidate_id": "10/acqu:76:98:1",
+      "category": "resource_signal",
+      "role": "qualitative_attribute",
+      "claim": "The file format is FT1",
+      "evidence_text": "$FTLPGN= 0",
+      "source_context": "##$FRQLO3N= 0\n##$FS= (0..7)\n##$FTLPGN= 0\n##$FW= 125000\n##$FnMODE= 0",
+      "uncertainty": "",
+      "file_path": "10/acqu",
+      "start_idx": 76,
+      "end_idx": 98,
+      "evidence_match_score": 1.0
+    },
+    "assessment": {
+      "candidate_id": "10/acqu:76:98:1",
+      "groundedness": "yes",
+      "self_containedness": "yes",
+      "scope_clarity": "yes",
+      "portability": "yes",
+      "semantic_interpretability": "yes",
+      "environment_dependence": "low",
+      "specificity": "yes",
+      "novelty": "no",
+      "uncertainty": "low",
+      "rationale": "The evidence text directly states the file format is FT1."
+    },
+    "chunk_index": 17
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "duplicate_evidence",
+    "candidate": {
+      "candidate_id": "10/acqu:76:98:8",
+      "category": "resource_signal",
+      "role": "qualitative_attribute",
+      "claim": "The gradient delay is -1",
+      "evidence_text": "$GRDPROG= <>",
+      "source_context": "##$GPY= (0..31)\n##$GPZ= (0..31)\n##$GRDPROG= <>\n##$GRPDLY= -1\n##$HDDUTY= 20",
+      "uncertainty": "",
+      "file_path": "10/acqu",
+      "start_idx": 76,
+      "end_idx": 98,
+      "evidence_match_score": 1.0
+    },
+    "assessment": {
+      "candidate_id": "10/acqu:76:98:8",
+      "groundedness": "yes",
+      "self_containedness": "yes",
+      "scope_clarity": "yes",
+      "portability": "yes",
+      "semantic_interpretability": "yes",
+      "environment_dependence": "low",
+      "specificity": "yes",
+      "novelty": "no",
+      "uncertainty": "low",
+      "rationale": "The evidence text directly states the gradient delay is -1."
+    },
+    "chunk_index": 17
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "duplicate_evidence",
+    "candidate": {
+      "candidate_id": "10/acqu:98:164:8",
+      "category": "resource_signal",
+      "role": "descriptor",
+      "claim": "Lock field is 0",
+      "evidence_text": "0",
+      "source_context": "##$HL4= 17\n##$HOLDER= 1\n##$HPMOD= (0..7)\n##$HPPRGN= 0\n##$IN= (0..63)",
+      "uncertainty": "",
+      "file_path": "10/acqu",
+      "start_idx": 98,
+      "end_idx": 164,
+      "evidence_match_score": 1.0
+    },
+    "assessment": {
+      "candidate_id": "10/acqu:98:164:8",
+      "groundedness": "yes",
+      "self_containedness": "yes",
+      "scope_clarity": "yes",
+      "portability": "yes",
+      "semantic_interpretability": "yes",
+      "environment_dependence": "low",
+      "specificity": "yes",
+      "novelty": "no",
+      "uncertainty": "low",
+      "rationale": "The text explicitly states 'Lock field is 0'."
+    },
+    "chunk_index": 18
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "duplicate_evidence",
+    "candidate": {
+      "candidate_id": "10/acqu:98:164:9",
+      "category": "resource_signal",
+      "role": "descriptor",
+      "claim": "Lock gain is 0",
+      "evidence_text": "0",
+      "source_context": "##$HL4= 17\n##$HOLDER= 1\n##$HPMOD= (0..7)\n##$HPPRGN= 0\n##$IN= (0..63)",
+      "uncertainty": "",
+      "file_path": "10/acqu",
+      "start_idx": 98,
+      "end_idx": 164,
+      "evidence_match_score": 1.0
+    },
+    "assessment": {
+      "candidate_id": "10/acqu:98:164:9",
+      "groundedness": "yes",
+      "self_containedness": "yes",
+      "scope_clarity": "yes",
+      "portability": "yes",
+      "semantic_interpretability": "yes",
+      "environment_dependence": "low",
+      "specificity": "yes",
+      "novelty": "no",
+      "uncertainty": "low",
+      "rationale": "The text explicitly states 'Lock gain is 0'."
+    },
+    "chunk_index": 18
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "duplicate_evidence",
+    "candidate": {
+      "candidate_id": "10/acqu:98:164:10",
+      "category": "resource_signal",
+      "role": "descriptor",
+      "claim": "Lock phase is 0",
+      "evidence_text": "0",
+      "source_context": "##$HL4= 17\n##$HOLDER= 1\n##$HPMOD= (0..7)\n##$HPPRGN= 0\n##$IN= (0..63)",
+      "uncertainty": "",
+      "file_path": "10/acqu",
+      "start_idx": 98,
+      "end_idx": 164,
+      "evidence_match_score": 1.0
+    },
+    "assessment": {
+      "candidate_id": "10/acqu:98:164:10",
+      "groundedness": "yes",
+      "self_containedness": "yes",
+      "scope_clarity": "yes",
+      "portability": "yes",
+      "semantic_interpretability": "yes",
+      "environment_dependence": "low",
+      "specificity": "yes",
+      "novelty": "no",
+      "uncertainty": "low",
+      "rationale": "The text explicitly states 'Lock phase is 0'."
+    },
+    "chunk_index": 18
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "duplicate_evidence",
+    "candidate": {
+      "candidate_id": "10/acqu:98:164:11",
+      "category": "resource_signal",
+      "role": "descriptor",
+      "claim": "Lock shift is no",
+      "evidence_text": "no",
+      "source_context": "##$LGAIN= -10\n##$LINPSTP= 0\n##$LOCKED= no\n##$LOCKFLD= 0\n##$LOCKGN= 0",
+      "uncertainty": "",
+      "file_path": "10/acqu",
+      "start_idx": 98,
+      "end_idx": 164,
+      "evidence_match_score": 1.0
+    },
+    "assessment": {
+      "candidate_id": "10/acqu:98:164:11",
+      "groundedness": "yes",
+      "self_containedness": "yes",
+      "scope_clarity": "yes",
+      "portability": "yes",
+      "semantic_interpretability": "yes",
+      "environment_dependence": "low",
+      "specificity": "yes",
+      "novelty": "no",
+      "uncertainty": "low",
+      "rationale": "The text explicitly states 'Lock shift is no'."
+    },
+    "chunk_index": 18
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "duplicate_evidence",
+    "candidate": {
+      "candidate_id": "10/acqu:98:164:12",
+      "category": "resource_signal",
+      "role": "descriptor",
+      "claim": "Lock sw is 0",
+      "evidence_text": "0",
+      "source_context": "##$HL4= 17\n##$HOLDER= 1\n##$HPMOD= (0..7)\n##$HPPRGN= 0\n##$IN= (0..63)",
+      "uncertainty": "",
+      "file_path": "10/acqu",
+      "start_idx": 98,
+      "end_idx": 164,
+      "evidence_match_score": 1.0
+    },
+    "assessment": {
+      "candidate_id": "10/acqu:98:164:12",
+      "groundedness": "yes",
+      "self_containedness": "yes",
+      "scope_clarity": "yes",
+      "portability": "yes",
+      "semantic_interpretability": "yes",
+      "environment_dependence": "low",
+      "specificity": "yes",
+      "novelty": "no",
+      "uncertainty": "low",
+      "rationale": "The text explicitly states 'Lock sw is 0'."
+    },
+    "chunk_index": 18
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "duplicate_evidence",
+    "candidate": {
+      "candidate_id": "10/acqu:98:164:18",
+      "category": "resource_signal",
+      "role": "descriptor",
+      "claim": "NC is 0",
+      "evidence_text": "0",
+      "source_context": "##$HL4= 17\n##$HOLDER= 1\n##$HPMOD= (0..7)\n##$HPPRGN= 0\n##$IN= (0..63)",
+      "uncertainty": "",
+      "file_path": "10/acqu",
+      "start_idx": 98,
+      "end_idx": 164,
+      "evidence_match_score": 1.0
+    },
+    "assessment": {
+      "candidate_id": "10/acqu:98:164:18",
+      "groundedness": "yes",
+      "self_containedness": "yes",
+      "scope_clarity": "yes",
+      "portability": "yes",
+      "semantic_interpretability": "yes",
+      "environment_dependence": "low",
+      "specificity": "yes",
+      "novelty": "no",
+      "uncertainty": "low",
+      "rationale": "The text explicitly states 'NC is 0'."
+    },
+    "chunk_index": 18
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "duplicate_evidence",
+    "candidate": {
+      "candidate_id": "10/acqu:98:164:19",
+      "category": "resource_signal",
+      "role": "descriptor",
+      "claim": "Nlogch is 1",
+      "evidence_text": "1",
+      "source_context": "##$HL1= 1\n##$HL2= 35\n##$HL3= 16",
+      "uncertainty": "",
+      "file_path": "10/acqu",
+      "start_idx": 98,
+      "end_idx": 164,
+      "evidence_match_score": 1.0
+    },
+    "assessment": {
+      "candidate_id": "10/acqu:98:164:19",
+      "groundedness": "yes",
+      "self_containedness": "yes",
+      "scope_clarity": "yes",
+      "portability": "yes",
+      "semantic_interpretability": "yes",
+      "environment_dependence": "low",
+      "specificity": "yes",
+      "novelty": "no",
+      "uncertainty": "low",
+      "rationale": "The text explicitly states 'Nlogch is 1'."
+    },
+    "chunk_index": 18
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "duplicate_evidence",
+    "candidate": {
+      "candidate_id": "10/acqu:98:164:20",
+      "category": "resource_signal",
+      "role": "descriptor",
+      "claim": "Novflw is 0",
+      "evidence_text": "0",
+      "source_context": "##$HL4= 17\n##$HOLDER= 1\n##$HPMOD= (0..7)\n##$HPPRGN= 0\n##$IN= (0..63)",
+      "uncertainty": "",
+      "file_path": "10/acqu",
+      "start_idx": 98,
+      "end_idx": 164,
+      "evidence_match_score": 1.0
+    },
+    "assessment": {
+      "candidate_id": "10/acqu:98:164:20",
+      "groundedness": "yes",
+      "self_containedness": "yes",
+      "scope_clarity": "yes",
+      "portability": "yes",
+      "semantic_interpretability": "yes",
+      "environment_dependence": "low",
+      "specificity": "yes",
+      "novelty": "no",
+      "uncertainty": "low",
+      "rationale": "The text explicitly states 'Novflw is 0'."
+    },
+    "chunk_index": 18
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "duplicate_evidence",
+    "candidate": {
+      "candidate_id": "10/acqu:98:164:21",
+      "category": "resource_signal",
+      "role": "descriptor",
+      "claim": "NusT2 is 1",
+      "evidence_text": "1",
+      "source_context": "##$HL1= 1\n##$HL2= 35\n##$HL3= 16",
+      "uncertainty": "",
+      "file_path": "10/acqu",
+      "start_idx": 98,
+      "end_idx": 164,
+      "evidence_match_score": 1.0
+    },
+    "assessment": {
+      "candidate_id": "10/acqu:98:164:21",
+      "groundedness": "yes",
+      "self_containedness": "yes",
+      "scope_clarity": "yes",
+      "portability": "yes",
+      "semantic_interpretability": "yes",
+      "environment_dependence": "low",
+      "specificity": "yes",
+      "novelty": "no",
+      "uncertainty": "low",
+      "rationale": "The text explicitly states 'NusT2 is 1'."
+    },
+    "chunk_index": 18
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "duplicate_evidence",
+    "candidate": {
+      "candidate_id": "10/acqu:98:164:22",
+      "category": "resource_signal",
+      "role": "descriptor",
+      "claim": "NusTD is 0",
+      "evidence_text": "0",
+      "source_context": "##$HL4= 17\n##$HOLDER= 1\n##$HPMOD= (0..7)\n##$HPPRGN= 0\n##$IN= (0..63)",
+      "uncertainty": "",
+      "file_path": "10/acqu",
+      "start_idx": 98,
+      "end_idx": 164,
+      "evidence_match_score": 1.0
+    },
+    "assessment": {
+      "candidate_id": "10/acqu:98:164:22",
+      "groundedness": "yes",
+      "self_containedness": "yes",
+      "scope_clarity": "yes",
+      "portability": "yes",
+      "semantic_interpretability": "yes",
+      "environment_dependence": "low",
+      "specificity": "yes",
+      "novelty": "no",
+      "uncertainty": "low",
+      "rationale": "The text explicitly states 'NusTD is 0'."
+    },
+    "chunk_index": 18
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "duplicate_evidence",
+    "candidate": {
+      "candidate_id": "10/format.temp:0:36:11",
+      "category": "resource_signal",
+      "role": "descriptor",
+      "claim": "The class is ACQU.",
+      "evidence_text": "CLASS ACQU",
+      "source_context": "T_NAME Date_\n TYPE R64\n CLASS ACQU\n REL \"Date_=itodate(DATE)\"\n INV_REL \"DATE=datetoi(Date_,DATE)\"",
+      "uncertainty": "",
+      "file_path": "10/format.temp",
+      "start_idx": 0,
+      "end_idx": 36,
+      "evidence_match_score": 1.0
+    },
+    "assessment": {
+      "candidate_id": "10/format.temp:0:36:11",
+      "groundedness": "yes",
+      "self_containedness": "yes",
+      "scope_clarity": "yes",
+      "portability": "yes",
+      "semantic_interpretability": "yes",
+      "environment_dependence": "low",
+      "specificity": "yes",
+      "novelty": "no",
+      "uncertainty": "low",
+      "rationale": "The evidence text directly states the class is ACQU."
+    },
+    "chunk_index": 24
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "duplicate_evidence",
+    "candidate": {
+      "candidate_id": "10/format.temp:36:65:5",
+      "category": "instrument_signal",
+      "role": "parameter",
+      "claim": "SW unit is Hz",
+      "evidence_text": "UNIT \"Hz\"",
+      "source_context": "REL \"SWH=SW*SFO1\"\n INV_REL \"SW=SWH/SFO1\"\n UNIT \"Hz\"\n FORMAT \"%14.3f Hz\"\n TEXT \" \"",
+      "uncertainty": "",
+      "file_path": "10/format.temp",
+      "start_idx": 36,
+      "end_idx": 65,
+      "evidence_match_score": 1.0
+    },
+    "assessment": {
+      "candidate_id": "10/format.temp:36:65:5",
+      "groundedness": "yes",
+      "self_containedness": "yes",
+      "scope_clarity": "yes",
+      "portability": "yes",
+      "semantic_interpretability": "yes",
+      "environment_dependence": "low",
+      "specificity": "yes",
+      "novelty": "no",
+      "uncertainty": "low",
+      "rationale": "The claim is directly stated in the evidence text."
+    },
+    "chunk_index": 25
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "duplicate_evidence",
+    "candidate": {
+      "candidate_id": "10/format.temp:36:65:8",
+      "category": "instrument_signal",
+      "role": "descriptor",
+      "claim": "SW type is R32",
+      "evidence_text": "TYPE R32",
+      "source_context": "END\nT_NAME SWH\n TYPE R32\n CLASS ACQU\n SUBRANGE 0.0 1e8",
+      "uncertainty": "",
+      "file_path": "10/format.temp",
+      "start_idx": 36,
+      "end_idx": 65,
+      "evidence_match_score": 1.0
+    },
+    "assessment": {
+      "candidate_id": "10/format.temp:36:65:8",
+      "groundedness": "yes",
+      "self_containedness": "yes",
+      "scope_clarity": "yes",
+      "portability": "yes",
+      "semantic_interpretability": "yes",
+      "environment_dependence": "low",
+      "specificity": "yes",
+      "novelty": "no",
+      "uncertainty": "low",
+      "rationale": "The claim is directly stated in the evidence text."
+    },
+    "chunk_index": 25
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "duplicate_evidence",
+    "candidate": {
+      "candidate_id": "10/format.temp:36:65:9",
+      "category": "instrument_signal",
+      "role": "descriptor",
+      "claim": "FIDRES type is R32",
+      "evidence_text": "TYPE R32",
+      "source_context": "END\nT_NAME SWH\n TYPE R32\n CLASS ACQU\n SUBRANGE 0.0 1e8",
+      "uncertainty": "",
+      "file_path": "10/format.temp",
+      "start_idx": 36,
+      "end_idx": 65,
+      "evidence_match_score": 1.0
+    },
+    "assessment": {
+      "candidate_id": "10/format.temp:36:65:9",
+      "groundedness": "yes",
+      "self_containedness": "yes",
+      "scope_clarity": "yes",
+      "portability": "yes",
+      "semantic_interpretability": "yes",
+      "environment_dependence": "low",
+      "specificity": "yes",
+      "novelty": "no",
+      "uncertainty": "low",
+      "rationale": "The claim is directly stated in the evidence text."
+    },
+    "chunk_index": 25
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "duplicate_evidence",
+    "candidate": {
+      "candidate_id": "10/format.temp:36:65:11",
+      "category": "instrument_signal",
+      "role": "descriptor",
+      "claim": "SW class is ACQU",
+      "evidence_text": "CLASS ACQU",
+      "source_context": "T_NAME SWH\n TYPE R32\n CLASS ACQU\n SUBRANGE 0.0 1e8\n REL \"SWH=SW*SFO1\"",
+      "uncertainty": "",
+      "file_path": "10/format.temp",
+      "start_idx": 36,
+      "end_idx": 65,
+      "evidence_match_score": 1.0
+    },
+    "assessment": {
+      "candidate_id": "10/format.temp:36:65:11",
+      "groundedness": "yes",
+      "self_containedness": "yes",
+      "scope_clarity": "yes",
+      "portability": "yes",
+      "semantic_interpretability": "yes",
+      "environment_dependence": "low",
+      "specificity": "yes",
+      "novelty": "no",
+      "uncertainty": "low",
+      "rationale": "The claim is directly stated in the evidence text."
+    },
+    "chunk_index": 25
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "duplicate_evidence",
+    "candidate": {
+      "candidate_id": "10/format.temp:36:65:12",
+      "category": "instrument_signal",
+      "role": "descriptor",
+      "claim": "FIDRES class is ACQU",
+      "evidence_text": "CLASS ACQU",
+      "source_context": "T_NAME SWH\n TYPE R32\n CLASS ACQU\n SUBRANGE 0.0 1e8\n REL \"SWH=SW*SFO1\"",
+      "uncertainty": "",
+      "file_path": "10/format.temp",
+      "start_idx": 36,
+      "end_idx": 65,
+      "evidence_match_score": 1.0
+    },
+    "assessment": {
+      "candidate_id": "10/format.temp:36:65:12",
+      "groundedness": "yes",
+      "self_containedness": "yes",
+      "scope_clarity": "yes",
+      "portability": "yes",
+      "semantic_interpretability": "yes",
+      "environment_dependence": "low",
+      "specificity": "yes",
+      "novelty": "no",
+      "uncertainty": "low",
+      "rationale": "The claim is directly stated in the evidence text."
+    },
+    "chunk_index": 25
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "duplicate_evidence",
+    "candidate": {
+      "candidate_id": "10/format.temp:98:140:14",
+      "category": "surrounding_signal",
+      "role": "context",
+      "claim": "Acquisition parameter PLW1",
+      "evidence_text": "PLW1",
+      "source_context": "TEXT \" \"\nEND\nT_NAME PLW1\n TYPE R32\n CLASS ACQU",
+      "uncertainty": "",
+      "file_path": "10/format.temp",
+      "start_idx": 98,
+      "end_idx": 140,
+      "evidence_match_score": 1.0
+    },
+    "assessment": {
+      "candidate_id": "10/format.temp:98:140:14",
+      "groundedness": "yes",
+      "self_containedness": "yes",
+      "scope_clarity": "yes",
+      "portability": "yes",
+      "semantic_interpretability": "yes",
+      "environment_dependence": "low",
+      "specificity": "yes",
+      "novelty": "no",
+      "uncertainty": "low",
+      "rationale": "The text 'PLW1' indicates an acquisition parameter. The claim is clear and self-contained."
+    },
+    "chunk_index": 28
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "evidence_text_unsupported",
+    "candidate": {
+      "candidate_id": "10/specpar:0:88:0",
+      "category": "resource_signal",
+      "role": "qualitative_attribute",
+      "claim": "The file contains parameter values for a Bruker NMR experiment.",
+      "evidence_text": "This file contains parameter values for a Bruker NMR experiment",
+      "source_context": "This file contains parameter values for a Bruker NMR experiment",
+      "uncertainty": "",
+      "file_path": "10/specpar",
+      "start_idx": 0,
+      "end_idx": 88,
+      "evidence_match_score": 0.4286
+    },
+    "assessment": null,
+    "chunk_index": 29
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "evidence_text_unsupported",
+    "candidate": {
+      "candidate_id": "10/pulseprogram:0:68:0",
+      "category": "resource_signal",
+      "role": "descriptor",
+      "claim": "The file contains a Bruker NMR pulse program.",
+      "evidence_text": "This file contains a Bruker NMR pulse program",
+      "source_context": "This file contains a Bruker NMR pulse program",
+      "uncertainty": "",
+      "file_path": "10/pulseprogram",
+      "start_idx": 0,
+      "end_idx": 68,
+      "evidence_match_score": 0.4222
+    },
+    "assessment": null,
+    "chunk_index": 30
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "evidence_text_unsupported",
+    "candidate": {
+      "candidate_id": "10/pulseprogram:0:68:1",
+      "category": "method_signal",
+      "role": "identity",
+      "claim": "The pulse program is likely for a 1D experiment.",
+      "evidence_text": "likely for a 1D experiment",
+      "source_context": "likely for a 1D experiment",
+      "uncertainty": "",
+      "file_path": "10/pulseprogram",
+      "start_idx": 0,
+      "end_idx": 68,
+      "evidence_match_score": 0.4615
+    },
+    "assessment": null,
+    "chunk_index": 30
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "duplicate_evidence",
+    "candidate": {
+      "candidate_id": "10/uxnmr.info:0:63:6",
+      "category": "resource_signal",
+      "role": "descriptor",
+      "claim": "The IP address of the AQS is 149.236.99.89.",
+      "evidence_text": "149.236.99.89",
+      "source_context": "- DPP : none\nDRU: AQS DRU-E Z102520/04112 ECL 07.00\n- TCP/IP address = 149.236.99.89\n- Firmware Version = 170619\n- DRU controls AQS-Rack and HPPR/2",
+      "uncertainty": "",
+      "file_path": "10/uxnmr.info",
+      "start_idx": 0,
+      "end_idx": 63,
+      "evidence_match_score": 1.0
+    },
+    "assessment": {
+      "candidate_id": "10/uxnmr.info:0:63:6",
+      "groundedness": "yes",
+      "self_containedness": "yes",
+      "scope_clarity": "yes",
+      "portability": "yes",
+      "semantic_interpretability": "yes",
+      "environment_dependence": "low",
+      "specificity": "yes",
+      "novelty": "no",
+      "uncertainty": "low",
+      "rationale": "The text explicitly states the AQS IP address."
+    },
+    "chunk_index": 37
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "duplicate_evidence",
+    "candidate": {
+      "candidate_id": "10/uxnmr.info:0:63:9",
+      "category": "resource_signal",
+      "role": "descriptor",
+      "claim": "The TCP/IP address of the transmitter is 149.236.99.20.",
+      "evidence_text": "149.236.99.20",
+      "source_context": "- Controller = BLA CONTROL BOARD 6 2CH: W1522050/8180 ECL 50\n- QNP-Accessory : 1 X-input and 1 H-input\n- TCP/IP address = 149.236.99.20\n- Amplifier = BSMS/2 LOCK TRANSCEIVER 500: Z109889/00522 ECL 03.01\nBSMS: BSMS/2 connected to ethernet",
+      "uncertainty": "",
+      "file_path": "10/uxnmr.info",
+      "start_idx": 0,
+      "end_idx": 63,
+      "evidence_match_score": 1.0
+    },
+    "assessment": {
+      "candidate_id": "10/uxnmr.info:0:63:9",
+      "groundedness": "yes",
+      "self_containedness": "yes",
+      "scope_clarity": "yes",
+      "portability": "yes",
+      "semantic_interpretability": "yes",
+      "environment_dependence": "low",
+      "specificity": "yes",
+      "novelty": "no",
+      "uncertainty": "low",
+      "rationale": "The text explicitly states the transmitter IP address."
+    },
+    "chunk_index": 37
+  }
+]

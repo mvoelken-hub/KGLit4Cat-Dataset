@@ -1,0 +1,901 @@
+[
+  {
+    "parent_path": "/was_generated_by/0",
+    "parent_class": "DataGeneratingActivity",
+    "status": "skipped_invalid_intent",
+    "reason": "Quantitative attribute intent was missing a required title or value.",
+    "answer": "",
+    "attribute_kind": "quantitative",
+    "intent_index": 0,
+    "target_field": null,
+    "target_path": null,
+    "actual_path": null,
+    "evidence_note_identifiers": [
+      "ev:38d18a579b80ca01",
+      "ev:b9eea016d22198be",
+      "ev:2f1a17bd29af8f1d",
+      "ev:a97a2f8e8ada0e66"
+    ],
+    "candidate_attribute": null,
+    "raw_intent": {
+      "title": "Acquisition Time",
+      "value": null,
+      "unit": "sec",
+      "description": "The acquisition time is in seconds, as stated in the format.temp file."
+    },
+    "error": null
+  },
+  {
+    "parent_path": "/was_generated_by/0",
+    "parent_class": "DataGeneratingActivity",
+    "status": "skipped_invalid_intent",
+    "reason": "Quantitative attribute intent was missing a required title or value.",
+    "answer": "",
+    "attribute_kind": "quantitative",
+    "intent_index": 1,
+    "target_field": null,
+    "target_path": null,
+    "actual_path": null,
+    "evidence_note_identifiers": [
+      "ev:38d18a579b80ca01",
+      "ev:b9eea016d22198be",
+      "ev:2f1a17bd29af8f1d",
+      "ev:a97a2f8e8ada0e66"
+    ],
+    "candidate_attribute": null,
+    "raw_intent": {
+      "title": "Spectral Width",
+      "value": null,
+      "unit": "Hz",
+      "description": "The spectral width is in Hertz, as stated in the format.temp file."
+    },
+    "error": null
+  },
+  {
+    "parent_path": "/was_generated_by/0/carried_out_by/0",
+    "parent_class": "AgenticEntity",
+    "status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "answer": "",
+    "attribute_kind": "qualitative",
+    "intent_index": 0,
+    "target_field": "has_qualitative_attribute",
+    "target_path": "/was_generated_by/0/carried_out_by/0/has_qualitative_attribute/-",
+    "actual_path": "/was_generated_by/0/carried_out_by/0/has_qualitative_attribute/0",
+    "evidence_note_identifiers": [
+      "ev:68290dafbfdba17d",
+      "ev:e4448cbfe615f6e3",
+      "ev:cbf92cf7af25713a",
+      "ev:61159293b660682c"
+    ],
+    "candidate_attribute": {
+      "title": "Manufacturer",
+      "description": "The origin of the data is Bruker BioSpin GmbH, as stated in the acqu file.",
+      "value": "Bruker BioSpin GmbH"
+    },
+    "raw_intent": {
+      "title": "Manufacturer",
+      "value": "Bruker BioSpin GmbH",
+      "description": "The origin of the data is Bruker BioSpin GmbH, as stated in the acqu file."
+    },
+    "error": null
+  },
+  {
+    "parent_path": "/was_generated_by/0/carried_out_by/0",
+    "parent_class": "AgenticEntity",
+    "status": "skipped_semantic_placement",
+    "reason": "Generic numeric attributes are not semantically local to parent role 'manufacturer'.",
+    "answer": "",
+    "attribute_kind": "qualitative",
+    "intent_index": 1,
+    "target_field": "has_qualitative_attribute",
+    "target_path": "/was_generated_by/0/carried_out_by/0/has_qualitative_attribute/-",
+    "actual_path": null,
+    "evidence_note_identifiers": [
+      "ev:68290dafbfdba17d",
+      "ev:e4448cbfe615f6e3",
+      "ev:cbf92cf7af25713a",
+      "ev:61159293b660682c"
+    ],
+    "candidate_attribute": {
+      "title": "Control Unit",
+      "description": "The Prodigy Control Unit is PCU - LNP PRODIGY UNIT Z127349/302, as stated in the uxnmr.info file.",
+      "value": "PCU - LNP PRODIGY UNIT Z127349/302"
+    },
+    "raw_intent": {
+      "title": "Control Unit",
+      "value": "PCU - LNP PRODIGY UNIT Z127349/302",
+      "description": "The Prodigy Control Unit is PCU - LNP PRODIGY UNIT Z127349/302, as stated in the uxnmr.info file."
+    },
+    "error": null
+  },
+  {
+    "parent_path": "/was_generated_by/0/carried_out_by/0",
+    "parent_class": "AgenticEntity",
+    "status": "skipped_semantic_placement",
+    "reason": "Generic numeric attributes are not semantically local to parent role 'manufacturer'.",
+    "answer": "",
+    "attribute_kind": "qualitative",
+    "intent_index": 2,
+    "target_field": "has_qualitative_attribute",
+    "target_path": "/was_generated_by/0/carried_out_by/0/has_qualitative_attribute/-",
+    "actual_path": null,
+    "evidence_note_identifiers": [
+      "ev:68290dafbfdba17d",
+      "ev:e4448cbfe615f6e3",
+      "ev:cbf92cf7af25713a",
+      "ev:61159293b660682c"
+    ],
+    "candidate_attribute": {
+      "title": "VTU Connection",
+      "description": "The VTU is in BSMS/2 connected to ethernet, as stated in the uxnmr.info file.",
+      "value": "in BSMS/2 connected to ethernet"
+    },
+    "raw_intent": {
+      "title": "VTU Connection",
+      "value": "in BSMS/2 connected to ethernet",
+      "description": "The VTU is in BSMS/2 connected to ethernet, as stated in the uxnmr.info file."
+    },
+    "error": null
+  },
+  {
+    "parent_path": "/was_generated_by/0/carried_out_by/0",
+    "parent_class": "AgenticEntity",
+    "status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "answer": "",
+    "attribute_kind": "qualitative",
+    "intent_index": 3,
+    "target_field": "has_qualitative_attribute",
+    "target_path": "/was_generated_by/0/carried_out_by/0/has_qualitative_attribute/-",
+    "actual_path": "/was_generated_by/0/carried_out_by/0/has_qualitative_attribute/1",
+    "evidence_note_identifiers": [
+      "ev:68290dafbfdba17d",
+      "ev:e4448cbfe615f6e3",
+      "ev:cbf92cf7af25713a",
+      "ev:61159293b660682c"
+    ],
+    "candidate_attribute": {
+      "title": "Institution",
+      "description": "The NMR experiment was performed at Karlsruher Institut fuer Technologie Karlsruhe Germany, as stated in the uxnmr.par file.",
+      "value": "Karlsruher Institut fuer Technologie Karlsruhe Germany"
+    },
+    "raw_intent": {
+      "title": "Institution",
+      "value": "Karlsruher Institut fuer Technologie Karlsruhe Germany",
+      "description": "The NMR experiment was performed at Karlsruher Institut fuer Technologie Karlsruhe Germany, as stated in the uxnmr.par file."
+    },
+    "error": null
+  },
+  {
+    "parent_path": "/was_generated_by/0/carried_out_by/1",
+    "parent_class": "AgenticEntity",
+    "status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "answer": "",
+    "attribute_kind": "qualitative",
+    "intent_index": 0,
+    "target_field": "has_qualitative_attribute",
+    "target_path": "/was_generated_by/0/carried_out_by/1/has_qualitative_attribute/-",
+    "actual_path": "/was_generated_by/0/carried_out_by/1/has_qualitative_attribute/0",
+    "evidence_note_identifiers": [
+      "ev:87f5d6248c2a8f51",
+      "ev:a603002defed77b6",
+      "ev:997e1756c0f564fc",
+      "ev:ab04c4be2059b380"
+    ],
+    "candidate_attribute": {
+      "title": "File Format Version",
+      "description": "The file format version as indicated in the acqu file.",
+      "value": "5.0"
+    },
+    "raw_intent": {
+      "title": "File Format Version",
+      "value": "5.0",
+      "description": "The file format version as indicated in the acqu file."
+    },
+    "error": null
+  },
+  {
+    "parent_path": "/was_generated_by/0/carried_out_by/1",
+    "parent_class": "AgenticEntity",
+    "status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "answer": "",
+    "attribute_kind": "qualitative",
+    "intent_index": 1,
+    "target_field": "has_qualitative_attribute",
+    "target_path": "/was_generated_by/0/carried_out_by/1/has_qualitative_attribute/-",
+    "actual_path": "/was_generated_by/0/carried_out_by/1/has_qualitative_attribute/1",
+    "evidence_note_identifiers": [
+      "ev:87f5d6248c2a8f51",
+      "ev:a603002defed77b6",
+      "ev:997e1756c0f564fc",
+      "ev:ab04c4be2059b380"
+    ],
+    "candidate_attribute": {
+      "title": "Data Type",
+      "description": "The data type as indicated in the acqu file.",
+      "value": "Parameter Values"
+    },
+    "raw_intent": {
+      "title": "Data Type",
+      "value": "Parameter Values",
+      "description": "The data type as indicated in the acqu file."
+    },
+    "error": null
+  },
+  {
+    "parent_path": "/was_generated_by/0/carried_out_by/1",
+    "parent_class": "AgenticEntity",
+    "status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "answer": "",
+    "attribute_kind": "qualitative",
+    "intent_index": 2,
+    "target_field": "has_qualitative_attribute",
+    "target_path": "/was_generated_by/0/carried_out_by/1/has_qualitative_attribute/-",
+    "actual_path": "/was_generated_by/0/carried_out_by/1/has_qualitative_attribute/2",
+    "evidence_note_identifiers": [
+      "ev:87f5d6248c2a8f51",
+      "ev:a603002defed77b6",
+      "ev:997e1756c0f564fc",
+      "ev:ab04c4be2059b380"
+    ],
+    "candidate_attribute": {
+      "title": "Origin",
+      "description": "The origin of the data as recorded in the audit trail.",
+      "value": "Bruker BioSpin GmbH"
+    },
+    "raw_intent": {
+      "title": "Origin",
+      "value": "Bruker BioSpin GmbH",
+      "description": "The origin of the data as recorded in the audit trail."
+    },
+    "error": null
+  },
+  {
+    "parent_path": "/was_generated_by/0/carried_out_by/1",
+    "parent_class": "AgenticEntity",
+    "status": "skipped_semantic_placement",
+    "reason": "Attribute family 'data_hash' is not semantically local to parent role 'software'.",
+    "answer": "",
+    "attribute_kind": "qualitative",
+    "intent_index": 3,
+    "target_field": "has_qualitative_attribute",
+    "target_path": "/was_generated_by/0/carried_out_by/1/has_qualitative_attribute/-",
+    "actual_path": null,
+    "evidence_note_identifiers": [
+      "ev:87f5d6248c2a8f51",
+      "ev:a603002defed77b6",
+      "ev:997e1756c0f564fc",
+      "ev:ab04c4be2059b380"
+    ],
+    "candidate_attribute": {
+      "title": "Configuration Hash MD5",
+      "description": "The configuration hash MD5 as recorded in the audit trail.",
+      "value": "64K"
+    },
+    "raw_intent": {
+      "title": "Configuration Hash MD5",
+      "value": "64K",
+      "description": "The configuration hash MD5 as recorded in the audit trail."
+    },
+    "error": null
+  },
+  {
+    "parent_path": "/was_generated_by/0/carried_out_by/2",
+    "parent_class": "AgenticEntity",
+    "status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "answer": "",
+    "attribute_kind": "qualitative",
+    "intent_index": 0,
+    "target_field": "has_qualitative_attribute",
+    "target_path": "/was_generated_by/0/carried_out_by/2/has_qualitative_attribute/-",
+    "actual_path": "/was_generated_by/0/carried_out_by/2/has_qualitative_attribute/0",
+    "evidence_note_identifiers": [
+      "ev:ab04c4be2059b380",
+      "ev:894f4d3ddb7d7305"
+    ],
+    "candidate_attribute": {
+      "title": "User ID",
+      "description": "The user ID recorded in the audit trail.",
+      "value": "braese"
+    },
+    "raw_intent": {
+      "title": "User ID",
+      "value": "braese",
+      "description": "The user ID recorded in the audit trail."
+    },
+    "error": null
+  },
+  {
+    "parent_path": "/was_generated_by/0/evaluated_entity/0",
+    "parent_class": "EvaluatedEntity",
+    "status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "answer": "",
+    "attribute_kind": "qualitative",
+    "intent_index": 0,
+    "target_field": "has_qualitative_attribute",
+    "target_path": "/was_generated_by/0/evaluated_entity/0/has_qualitative_attribute/-",
+    "actual_path": "/was_generated_by/0/evaluated_entity/0/has_qualitative_attribute/0",
+    "evidence_note_identifiers": [
+      "ev:57714898a22fea76",
+      "ev:083d09d288d52994",
+      "ev:61159293b660682c",
+      "ev:68290dafbfdba17d"
+    ],
+    "candidate_attribute": {
+      "title": "NMR Type",
+      "description": "The NMR experiment is Proton, as stated in the acqu file.",
+      "value": "Proton"
+    },
+    "raw_intent": {
+      "title": "NMR Type",
+      "value": "Proton",
+      "description": "The NMR experiment is Proton, as stated in the acqu file."
+    },
+    "error": null
+  },
+  {
+    "parent_path": "/was_generated_by/0/evaluated_entity/0",
+    "parent_class": "EvaluatedEntity",
+    "status": "skipped_semantic_placement",
+    "reason": "Attribute family 'spectrometer_frequency' is not semantically local to parent role 'target_nucleus'.",
+    "answer": "",
+    "attribute_kind": "qualitative",
+    "intent_index": 1,
+    "target_field": "has_qualitative_attribute",
+    "target_path": "/was_generated_by/0/evaluated_entity/0/has_qualitative_attribute/-",
+    "actual_path": null,
+    "evidence_note_identifiers": [
+      "ev:57714898a22fea76",
+      "ev:083d09d288d52994",
+      "ev:61159293b660682c",
+      "ev:68290dafbfdba17d"
+    ],
+    "candidate_attribute": {
+      "title": "Spectrometer Model",
+      "description": "The spectrometer used was an Avance III NMR spectrometer, as stated in the uxnmr.info file.",
+      "value": "Avance III"
+    },
+    "raw_intent": {
+      "title": "Spectrometer Model",
+      "value": "Avance III",
+      "description": "The spectrometer used was an Avance III NMR spectrometer, as stated in the uxnmr.info file."
+    },
+    "error": null
+  },
+  {
+    "parent_path": "/was_generated_by/0/evaluated_entity/0",
+    "parent_class": "EvaluatedEntity",
+    "status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "answer": "",
+    "attribute_kind": "qualitative",
+    "intent_index": 2,
+    "target_field": "has_qualitative_attribute",
+    "target_path": "/was_generated_by/0/evaluated_entity/0/has_qualitative_attribute/-",
+    "actual_path": "/was_generated_by/0/evaluated_entity/0/has_qualitative_attribute/1",
+    "evidence_note_identifiers": [
+      "ev:57714898a22fea76",
+      "ev:083d09d288d52994",
+      "ev:61159293b660682c",
+      "ev:68290dafbfdba17d"
+    ],
+    "candidate_attribute": {
+      "title": "Origin",
+      "description": "The origin of the data is Bruker BioSpin GmbH, as stated in the acqu file.",
+      "value": "Bruker BioSpin GmbH"
+    },
+    "raw_intent": {
+      "title": "Origin",
+      "value": "Bruker BioSpin GmbH",
+      "description": "The origin of the data is Bruker BioSpin GmbH, as stated in the acqu file."
+    },
+    "error": null
+  },
+  {
+    "parent_path": "/was_generated_by/0/had_input_entity/0",
+    "parent_class": "EvaluatedEntity",
+    "status": "skipped_invalid_intent",
+    "reason": "Quantitative attribute intent was missing a required title or value.",
+    "answer": "",
+    "attribute_kind": "quantitative",
+    "intent_index": 0,
+    "target_field": null,
+    "target_path": null,
+    "actual_path": null,
+    "evidence_note_identifiers": [
+      "ev:7e90261486a29a33",
+      "ev:6ce08203ae9a11d4",
+      "ev:a1ffd1d0fe73f297",
+      "ev:d6bed19323f4187a"
+    ],
+    "candidate_attribute": null,
+    "raw_intent": {
+      "title": "Spectral Width (SW)",
+      "value": null,
+      "unit": null,
+      "description": "Calculated as SW*SFO1, as specified in the format.temp file."
+    },
+    "error": null
+  },
+  {
+    "parent_path": "/was_generated_by/0/had_input_entity/0",
+    "parent_class": "EvaluatedEntity",
+    "status": "skipped_invalid_intent",
+    "reason": "Quantitative attribute intent was missing a required title or value.",
+    "answer": "",
+    "attribute_kind": "quantitative",
+    "intent_index": 1,
+    "target_field": null,
+    "target_path": null,
+    "actual_path": null,
+    "evidence_note_identifiers": [
+      "ev:7e90261486a29a33",
+      "ev:6ce08203ae9a11d4",
+      "ev:a1ffd1d0fe73f297",
+      "ev:d6bed19323f4187a"
+    ],
+    "candidate_attribute": null,
+    "raw_intent": {
+      "title": "Digital Resolution (FIDRES)",
+      "value": null,
+      "unit": null,
+      "description": "Calculated as SW*SFO1/TD, as specified in the format.temp file."
+    },
+    "error": null
+  },
+  {
+    "parent_path": "/was_generated_by/0/had_input_entity/0",
+    "parent_class": "EvaluatedEntity",
+    "status": "skipped_invalid_intent",
+    "reason": "Quantitative attribute intent was missing a required title or value.",
+    "answer": "",
+    "attribute_kind": "quantitative",
+    "intent_index": 2,
+    "target_field": null,
+    "target_path": null,
+    "actual_path": null,
+    "evidence_note_identifiers": [
+      "ev:7e90261486a29a33",
+      "ev:6ce08203ae9a11d4",
+      "ev:a1ffd1d0fe73f297",
+      "ev:d6bed19323f4187a"
+    ],
+    "candidate_attribute": null,
+    "raw_intent": {
+      "title": "Digital Width (DW)",
+      "value": null,
+      "unit": null,
+      "description": "Calculated as 1/(2*SW*SFO1), as specified in the format.temp file."
+    },
+    "error": null
+  },
+  {
+    "parent_path": "/was_generated_by/0/had_input_entity/1",
+    "parent_class": "EvaluatedEntity",
+    "status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "answer": "",
+    "attribute_kind": "qualitative",
+    "intent_index": 0,
+    "target_field": "has_qualitative_attribute",
+    "target_path": "/was_generated_by/0/had_input_entity/1/has_qualitative_attribute/-",
+    "actual_path": "/was_generated_by/0/had_input_entity/1/has_qualitative_attribute/0",
+    "evidence_note_identifiers": [
+      "ev:9f4a86483ad0fe5d",
+      "ev:81484d48172327ad",
+      "ev:e885ef60fbe4c1d4",
+      "ev:8bc8840d8f1fdf99"
+    ],
+    "candidate_attribute": {
+      "title": "Flip Angle",
+      "description": "The pulse program uses a 30 degree flip angle.",
+      "value": "30 degree"
+    },
+    "raw_intent": {
+      "title": "Flip Angle",
+      "value": "30 degree",
+      "description": "The pulse program uses a 30 degree flip angle."
+    },
+    "error": null
+  },
+  {
+    "parent_path": "/was_generated_by/0/had_input_entity/1",
+    "parent_class": "EvaluatedEntity",
+    "status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "answer": "",
+    "attribute_kind": "qualitative",
+    "intent_index": 1,
+    "target_field": "has_qualitative_attribute",
+    "target_path": "/was_generated_by/0/had_input_entity/1/has_qualitative_attribute/-",
+    "actual_path": "/was_generated_by/0/had_input_entity/1/has_qualitative_attribute/1",
+    "evidence_note_identifiers": [
+      "ev:9f4a86483ad0fe5d",
+      "ev:81484d48172327ad",
+      "ev:e885ef60fbe4c1d4",
+      "ev:8bc8840d8f1fdf99"
+    ],
+    "candidate_attribute": {
+      "title": "Pulse Program Class",
+      "description": "The pulse program is defined as CLASS HighRes.",
+      "value": "HighRes"
+    },
+    "raw_intent": {
+      "title": "Pulse Program Class",
+      "value": "HighRes",
+      "description": "The pulse program is defined as CLASS HighRes."
+    },
+    "error": null
+  },
+  {
+    "parent_path": "/was_generated_by/0/had_input_entity/1",
+    "parent_class": "EvaluatedEntity",
+    "status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "answer": "",
+    "attribute_kind": "qualitative",
+    "intent_index": 2,
+    "target_field": "has_qualitative_attribute",
+    "target_path": "/was_generated_by/0/had_input_entity/1/has_qualitative_attribute/-",
+    "actual_path": "/was_generated_by/0/had_input_entity/1/has_qualitative_attribute/2",
+    "evidence_note_identifiers": [
+      "ev:9f4a86483ad0fe5d",
+      "ev:81484d48172327ad",
+      "ev:e885ef60fbe4c1d4",
+      "ev:8bc8840d8f1fdf99"
+    ],
+    "candidate_attribute": {
+      "title": "Pulse Program Dimension",
+      "description": "The pulse program is defined as DIM 1D.",
+      "value": "1D"
+    },
+    "raw_intent": {
+      "title": "Pulse Program Dimension",
+      "value": "1D",
+      "description": "The pulse program is defined as DIM 1D."
+    },
+    "error": null
+  },
+  {
+    "parent_path": "/was_generated_by/0/had_input_entity/1",
+    "parent_class": "EvaluatedEntity",
+    "status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "answer": "",
+    "attribute_kind": "qualitative",
+    "intent_index": 3,
+    "target_field": "has_qualitative_attribute",
+    "target_path": "/was_generated_by/0/had_input_entity/1/has_qualitative_attribute/-",
+    "actual_path": "/was_generated_by/0/had_input_entity/1/has_qualitative_attribute/3",
+    "evidence_note_identifiers": [
+      "ev:9f4a86483ad0fe5d",
+      "ev:81484d48172327ad",
+      "ev:e885ef60fbe4c1d4",
+      "ev:8bc8840d8f1fdf99"
+    ],
+    "candidate_attribute": {
+      "title": "Pulse Program Type",
+      "description": "The pulse program is defined as TYPE blank.",
+      "value": "blank"
+    },
+    "raw_intent": {
+      "title": "Pulse Program Type",
+      "value": "blank",
+      "description": "The pulse program is defined as TYPE blank."
+    },
+    "error": null
+  },
+  {
+    "parent_path": "/was_generated_by/0/had_input_entity/2",
+    "parent_class": "EvaluatedEntity",
+    "status": "skipped_invalid_intent",
+    "reason": "Quantitative attribute intent was missing a required title or value.",
+    "answer": "",
+    "attribute_kind": "quantitative",
+    "intent_index": 0,
+    "target_field": null,
+    "target_path": null,
+    "actual_path": null,
+    "evidence_note_identifiers": [
+      "ev:b9eea016d22198be",
+      "ev:a97a2f8e8ada0e66",
+      "ev:66a79e62d7b1c8e7",
+      "ev:26e56828cb45b2c6"
+    ],
+    "candidate_attribute": null,
+    "raw_intent": {
+      "title": "Acquisition Time (AQ)",
+      "value": null,
+      "unit": "sec",
+      "description": "The acquisition time is in seconds, as specified in the format.temp file."
+    },
+    "error": null
+  },
+  {
+    "parent_path": "/was_generated_by/0/had_input_entity/2",
+    "parent_class": "EvaluatedEntity",
+    "status": "skipped_invalid_intent",
+    "reason": "Quantitative attribute intent was missing a required title or value.",
+    "answer": "",
+    "attribute_kind": "quantitative",
+    "intent_index": 1,
+    "target_field": null,
+    "target_path": null,
+    "actual_path": null,
+    "evidence_note_identifiers": [
+      "ev:b9eea016d22198be",
+      "ev:a97a2f8e8ada0e66",
+      "ev:66a79e62d7b1c8e7",
+      "ev:26e56828cb45b2c6"
+    ],
+    "candidate_attribute": null,
+    "raw_intent": {
+      "title": "Spectral Width (SWH)",
+      "value": null,
+      "unit": "Hz",
+      "description": "The spectral width is in Hertz, as specified in the format.temp file."
+    },
+    "error": null
+  },
+  {
+    "parent_path": "/was_generated_by/0/had_input_entity/2",
+    "parent_class": "EvaluatedEntity",
+    "status": "skipped_invalid_intent",
+    "reason": "Quantitative attribute intent was missing a required title or value.",
+    "answer": "",
+    "attribute_kind": "quantitative",
+    "intent_index": 2,
+    "target_field": null,
+    "target_path": null,
+    "actual_path": null,
+    "evidence_note_identifiers": [
+      "ev:b9eea016d22198be",
+      "ev:a97a2f8e8ada0e66",
+      "ev:66a79e62d7b1c8e7",
+      "ev:26e56828cb45b2c6"
+    ],
+    "candidate_attribute": null,
+    "raw_intent": {
+      "title": "Digital Width (DW)",
+      "value": null,
+      "unit": "usec",
+      "description": "The digital width is in microseconds, as specified in the format.temp file."
+    },
+    "error": null
+  },
+  {
+    "parent_path": "/was_generated_by/0/had_input_entity/2",
+    "parent_class": "EvaluatedEntity",
+    "status": "skipped_invalid_intent",
+    "reason": "Quantitative attribute intent was missing a required title or value.",
+    "answer": "",
+    "attribute_kind": "quantitative",
+    "intent_index": 3,
+    "target_field": null,
+    "target_path": null,
+    "actual_path": null,
+    "evidence_note_identifiers": [
+      "ev:b9eea016d22198be",
+      "ev:a97a2f8e8ada0e66",
+      "ev:66a79e62d7b1c8e7",
+      "ev:26e56828cb45b2c6"
+    ],
+    "candidate_attribute": null,
+    "raw_intent": {
+      "title": "PLW1",
+      "value": null,
+      "unit": "W",
+      "description": "PLW1 has a unit of Watts, as specified in the format.temp file."
+    },
+    "error": null
+  },
+  {
+    "parent_path": "/was_generated_by/0/had_output_entity/0",
+    "parent_class": "EvaluatedEntity",
+    "status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "answer": "",
+    "attribute_kind": "qualitative",
+    "intent_index": 0,
+    "target_field": "has_qualitative_attribute",
+    "target_path": "/was_generated_by/0/had_output_entity/0/has_qualitative_attribute/-",
+    "actual_path": "/was_generated_by/0/had_output_entity/0/has_qualitative_attribute/0",
+    "evidence_note_identifiers": [
+      "ev:68290dafbfdba17d",
+      "ev:38d18a579b80ca01",
+      "ev:c0f2fd74111e860b",
+      "ev:997e1756c0f564fc"
+    ],
+    "candidate_attribute": {
+      "title": "Origin",
+      "description": "The origin of the data, as recorded in the acquisition file.",
+      "value": "Bruker BioSpin GmbH"
+    },
+    "raw_intent": {
+      "title": "Origin",
+      "value": "Bruker BioSpin GmbH",
+      "description": "The origin of the data, as recorded in the acquisition file."
+    },
+    "error": null
+  },
+  {
+    "parent_path": "/was_generated_by/0/had_output_entity/1",
+    "parent_class": "EvaluatedEntity",
+    "status": "skipped_semantic_placement",
+    "reason": "Attribute family 'software_version' is not semantically local to parent role 'output_spectrum'.",
+    "answer": "",
+    "attribute_kind": "qualitative",
+    "intent_index": 0,
+    "target_field": "has_qualitative_attribute",
+    "target_path": "/was_generated_by/0/had_output_entity/1/has_qualitative_attribute/-",
+    "actual_path": null,
+    "evidence_note_identifiers": [
+      "ev:87f5d6248c2a8f51",
+      "ev:ba98c9705b164b41",
+      "ev:036618348b4dd711",
+      "ev:6ce08203ae9a11d4"
+    ],
+    "candidate_attribute": {
+      "title": "File Format Version",
+      "description": "The file format version as indicated in the acqu file.",
+      "value": "5.0"
+    },
+    "raw_intent": {
+      "title": "File Format Version",
+      "value": "5.0",
+      "description": "The file format version as indicated in the acqu file."
+    },
+    "error": null
+  },
+  {
+    "parent_path": "/was_generated_by/0/had_output_entity/1",
+    "parent_class": "EvaluatedEntity",
+    "status": "skipped_semantic_placement",
+    "reason": "Attribute family 'software_version' is not semantically local to parent role 'output_spectrum'.",
+    "answer": "",
+    "attribute_kind": "qualitative",
+    "intent_index": 1,
+    "target_field": "has_qualitative_attribute",
+    "target_path": "/was_generated_by/0/had_output_entity/1/has_qualitative_attribute/-",
+    "actual_path": null,
+    "evidence_note_identifiers": [
+      "ev:87f5d6248c2a8f51",
+      "ev:ba98c9705b164b41",
+      "ev:036618348b4dd711",
+      "ev:6ce08203ae9a11d4"
+    ],
+    "candidate_attribute": {
+      "title": "File Format Version",
+      "description": "The file format version as indicated in the acqus file.",
+      "value": "5"
+    },
+    "raw_intent": {
+      "title": "File Format Version",
+      "value": "5",
+      "description": "The file format version as indicated in the acqus file."
+    },
+    "error": null
+  },
+  {
+    "parent_path": "/was_generated_by/0/had_output_entity/2",
+    "parent_class": "EvaluatedEntity",
+    "status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "answer": "",
+    "attribute_kind": "qualitative",
+    "intent_index": 0,
+    "target_field": "has_qualitative_attribute",
+    "target_path": "/was_generated_by/0/had_output_entity/2/has_qualitative_attribute/-",
+    "actual_path": "/was_generated_by/0/had_output_entity/2/has_qualitative_attribute/0",
+    "evidence_note_identifiers": [
+      "ev:997e1756c0f564fc",
+      "ev:507edb6f747c4e2c",
+      "ev:ab04c4be2059b380",
+      "ev:894f4d3ddb7d7305"
+    ],
+    "candidate_attribute": {
+      "title": "Origin",
+      "description": "The origin of the NMR data, as recorded in the audit trail.",
+      "value": "Bruker BioSpin GmbH"
+    },
+    "raw_intent": {
+      "title": "Origin",
+      "value": "Bruker BioSpin GmbH",
+      "description": "The origin of the NMR data, as recorded in the audit trail."
+    },
+    "error": null
+  },
+  {
+    "parent_path": "/was_generated_by/0/had_output_entity/2",
+    "parent_class": "EvaluatedEntity",
+    "status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "answer": "",
+    "attribute_kind": "qualitative",
+    "intent_index": 1,
+    "target_field": "has_qualitative_attribute",
+    "target_path": "/was_generated_by/0/had_output_entity/2/has_qualitative_attribute/-",
+    "actual_path": "/was_generated_by/0/had_output_entity/2/has_qualitative_attribute/1",
+    "evidence_note_identifiers": [
+      "ev:997e1756c0f564fc",
+      "ev:507edb6f747c4e2c",
+      "ev:ab04c4be2059b380",
+      "ev:894f4d3ddb7d7305"
+    ],
+    "candidate_attribute": {
+      "title": "Owner",
+      "description": "The owner of the NMR data, as recorded in the audit trail.",
+      "value": "nmr"
+    },
+    "raw_intent": {
+      "title": "Owner",
+      "value": "nmr",
+      "description": "The owner of the NMR data, as recorded in the audit trail."
+    },
+    "error": null
+  },
+  {
+    "parent_path": "/was_generated_by/0/had_output_entity/2",
+    "parent_class": "EvaluatedEntity",
+    "status": "skipped_semantic_placement",
+    "reason": "Attribute family 'data_hash' is not semantically local to parent role 'audit_trail'.",
+    "answer": "",
+    "attribute_kind": "qualitative",
+    "intent_index": 2,
+    "target_field": "has_qualitative_attribute",
+    "target_path": "/was_generated_by/0/had_output_entity/2/has_qualitative_attribute/-",
+    "actual_path": null,
+    "evidence_note_identifiers": [
+      "ev:997e1756c0f564fc",
+      "ev:507edb6f747c4e2c",
+      "ev:ab04c4be2059b380",
+      "ev:894f4d3ddb7d7305"
+    ],
+    "candidate_attribute": {
+      "title": "Configuration hash MD5",
+      "description": "The configuration hash MD5, as recorded in the audit trail.",
+      "value": "64K"
+    },
+    "raw_intent": {
+      "title": "Configuration hash MD5",
+      "value": "64K",
+      "description": "The configuration hash MD5, as recorded in the audit trail."
+    },
+    "error": null
+  },
+  {
+    "parent_path": "/was_generated_by/0/had_output_entity/2",
+    "parent_class": "EvaluatedEntity",
+    "status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "answer": "",
+    "attribute_kind": "qualitative",
+    "intent_index": 3,
+    "target_field": "has_qualitative_attribute",
+    "target_path": "/was_generated_by/0/had_output_entity/2/has_qualitative_attribute/-",
+    "actual_path": "/was_generated_by/0/had_output_entity/2/has_qualitative_attribute/2",
+    "evidence_note_identifiers": [
+      "ev:997e1756c0f564fc",
+      "ev:507edb6f747c4e2c",
+      "ev:ab04c4be2059b380",
+      "ev:894f4d3ddb7d7305"
+    ],
+    "candidate_attribute": {
+      "title": "User ID",
+      "description": "The user ID, as recorded in the audit trail.",
+      "value": "braese"
+    },
+    "raw_intent": {
+      "title": "User ID",
+      "value": "braese",
+      "description": "The user ID, as recorded in the audit trail."
+    },
+    "error": null
+  }
+]

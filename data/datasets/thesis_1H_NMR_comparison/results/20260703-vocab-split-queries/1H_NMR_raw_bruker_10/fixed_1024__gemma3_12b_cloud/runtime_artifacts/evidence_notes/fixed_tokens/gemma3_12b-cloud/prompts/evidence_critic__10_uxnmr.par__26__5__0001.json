@@ -1,0 +1,72 @@
+{
+  "operation_id": "evidence_critic__10_uxnmr.par__26__5",
+  "agent_name": "evidence_critic",
+  "model": "gemma3:12b-cloud",
+  "output_type": "EvidenceAssessmentContext",
+  "status": "completed",
+  "metadata": {
+    "file_path": "10/uxnmr.par",
+    "chunk_index": 26,
+    "candidate_count": 5
+  },
+  "attempts": [
+    {
+      "attempt_index": 0,
+      "attempt_kind": "initial",
+      "model": "gemma3:12b-cloud",
+      "tokenizer_fallback": false,
+      "tokenizer_fallback_reason": null,
+      "components": [
+        {
+          "channel": "system",
+          "name": "evidence_critic_system_prompt",
+          "text": "\nYou assess grounded evidence candidates using only domain-agnostic quality criteria.\nDo not decide relevance by recognizing a particular scientific domain, instrument, vendor, file format, or key name.\nReturn only a valid EvidenceAssessmentContext JSON object.\n\nAssess each candidate independently using categorical judgments:\n- groundedness: whether evidence_text supports the claim.\n- self_containedness: whether the claim can be understood without hidden prompt context.\n- scope_clarity: whether package/resource/section/environment scope is clear.\n- portability: whether the claim remains meaningful when the package is copied elsewhere.\n- semantic_interpretability: whether the claim is meaningful rather than raw unexplained syntax.\n- environment_dependence: low/medium/high dependence on local machine, session, user, installation, or network context.\n- specificity: whether the claim is concrete without overinterpretation.\n- novelty: whether it adds information beyond repeated template content.\n- uncertainty: low/medium/high ambiguity.\n",
+          "chars": 1048,
+          "tokens": 206,
+          "cumulative_tokens": 206
+        },
+        {
+          "channel": "system",
+          "name": "system_schema",
+          "text": "\n\nReturn exactly one JSON object that satisfies this JSON Schema. Do not include Markdown fences, prose, comments, or additional text.\n\nJSON Schema:\n{\"$defs\":{\"EvidenceAssessment\":{\"properties\":{\"candidate_id\":{\"title\":\"Candidate Id\",\"type\":\"string\"},\"groundedness\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Groundedness\",\"type\":\"string\"},\"self_containedness\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Self Containedness\",\"type\":\"string\"},\"scope_clarity\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Scope Clarity\",\"type\":\"string\"},\"portability\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Portability\",\"type\":\"string\"},\"semantic_interpretability\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Semantic Interpretability\",\"type\":\"string\"},\"environment_dependence\":{\"default\":\"medium\",\"enum\":[\"low\",\"medium\",\"high\"],\"title\":\"Environment Dependence\",\"type\":\"string\"},\"specificity\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Specificity\",\"type\":\"string\"},\"novelty\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Novelty\",\"type\":\"string\"},\"uncertainty\":{\"default\":\"medium\",\"enum\":[\"low\",\"medium\",\"high\"],\"title\":\"Uncertainty\",\"type\":\"string\"},\"rationale\":{\"default\":\"\",\"title\":\"Rationale\",\"type\":\"string\"}},\"required\":[\"candidate_id\"],\"title\":\"EvidenceAssessment\",\"type\":\"object\"}},\"properties\":{\"assessments\":{\"items\":{\"$ref\":\"#/$defs/EvidenceAssessment\"},\"title\":\"Assessments\",\"type\":\"array\"}},\"title\":\"EvidenceAssessmentContext\",\"type\":\"object\"}",
+          "chars": 1554,
+          "tokens": 361,
+          "cumulative_tokens": 566
+        },
+        {
+          "channel": "prompt",
+          "name": "chunk_metadata",
+          "text": "Chunk context metadata:\n{\"start_idx\":0,\"end_idx\":151,\"file_path\":\"10/uxnmr.par\",\"data_package_name\":\"1H_NMR_raw_bruker_10\"}\n\n",
+          "chars": 125,
+          "tokens": 53,
+          "cumulative_tokens": 619
+        },
+        {
+          "channel": "prompt",
+          "name": "validated_candidates",
+          "text": "Validated evidence candidates JSON:\n[{'candidate_id': '10/uxnmr.par:0:151:0', 'category': 'resource_signal', 'role': 'qualitative_attribute', 'claim': 'The file is version 5.0.', 'evidence_text': '##JCAMPDX= 5.0', 'uncertainty': '', 'file_path': '10/uxnmr.par', 'start_idx': 0, 'end_idx': 151, 'evidence_match_score': 1.0}, {'candidate_id': '10/uxnmr.par:0:151:1', 'category': 'resource_signal', 'role': 'descriptor', 'claim': 'The data type is parameter values.', 'evidence_text': '##DATATYPE= Parameter Values', 'uncertainty': '', 'file_path': '10/uxnmr.par', 'start_idx': 0, 'end_idx': 151, 'evidence_match_score': 1.0}, {'candidate_id': '10/uxnmr.par:0:151:2', 'category': 'surrounding_signal', 'role': 'context', 'claim': 'The file was created on 2020-09-30.', 'evidence_text': '$$ 2020-09-30 11:31:06.878 +0200 nmr@CZC412575Q', 'uncertainty': '', 'file_path': '10/uxnmr.par', 'start_idx': 0, 'end_idx': 151, 'evidence_match_score': 1.0}, {'candidate_id': '10/uxnmr.par:0:151:3', 'category': 'resource_signal', 'role': 'descriptor', 'claim': 'The file path is C:/Bruker/TopSpin3.2/conf/instr/spect/uxnmr.par.', 'evidence_text': '$$ C:/Bruker/TopSpin3.2/conf/instr/spect/uxnmr.par', 'uncertainty': '', 'file_path': '10/uxnmr.par', 'start_idx': 0, 'end_idx': 151, 'evidence_match_score': 1.0}, {'candidate_id': '10/uxnmr.par:0:151:4', 'category': 'software_signal', 'role': 'descriptor', 'claim': 'The program confwiring.exe is used.', 'evidence_text': '$$ process C:\\\\Bruker\\\\TopSpin3.2\\\\prog\\\\mod\\\\confwiring.exe', 'uncertainty': '', 'file_path': '10/uxnmr.par', 'start_idx': 0, 'end_idx': 151, 'evidence_match_score': 1.0}]\n\n",
+          "chars": 1631,
+          "tokens": 673,
+          "cumulative_tokens": 1292
+        },
+        {
+          "channel": "prompt",
+          "name": "local_chunk_context",
+          "text": "Local chunk context for assessment:\n##TITLE= Parameter file, TOPSPIN Version 3.2\n##JCAMPDX= 5.0\n##DATATYPE= Parameter Values\n##NPOINTS= 74 $$ modification sequence number\n##ORIGIN= Bruker BioSpin GmbH\n##OWNER= nmr\n$$ 2020-09-30 11:31:06.878 +0200 nmr@CZC412575Q\n$$ C:/Bruker/TopSpin3.2/conf/instr/spect/uxnmr.par\n$$ process C:\\Bruker\\TopSpin3.2\\prog\\mod\\confwiring.exe\n##$ACB= 0\n##$ACBTAT= (0..23)\n##$ACBTBA= (0..23)\n##$ACBTBLK= (0..23)\n##$ACBTCTL= (0..23)\n##$ACBTDI= (0..23)\n##$ACBTDM= (0..23)\n##$ACBTFHI= (0..23)\n##$ACBTFL= (0..23)\n##$ACBTFLO= (0..23)\n##$ACBTINP= (0..23)\n##$ACBTOUT= (0..23)\n##$ACBTPO= (0..23)\n##$ACBTPW= (0..23)\n##$ACBTSB= (0..23)\n##$ACBTSDT= (0..23)\n##$ACBTY= <no>\n##$AMPDFLT= no\n##$AQSBDCH= (0..95)\n##$AQSBDHW= (0..95)\n##$AQSBDID= (0..95)\n##$AQSBDNO= (0..95)\n##$AQSBDSL= (0..95)\n##$AQSBDTY= (0..95)\n##$AQSBUAD= (0..95)\n##$AQSECL= (0..95)\n##$AQSECLS= (0..95)\n##$AQSETH1= <no>\n##$AQSETH2= <no>\n##$AQSSPLT= no\n##$ATT19F= (0..1)\n##$ATT1H= (0..1)\n##$ATT3H= (0..1)\n##$ATTX= (0..1)\n##$ATTY= (0..1)\n##$ATTZ= (0..1)\n##$BACSAIR= yes\n##$BACSCAP= 0\n##$BACSDEL= 1\n##$BACSFCM= no\n##$BACSOPT= <>\n##$BACSTY= <no>\n##$BARPTY= <no>\n##$BFREQ= 500.13\n##$BGAETH1= <no>\n##$BGAETH2= <no>\n##$BGAETH3= <no>\n##$BGAETH4= <no>\n##$BGAETH5= <no>\n##$BGAETH6= <no>\n##$BGAETH7= <no>\n##$BGAETH8= <no>\n##$BIRDS= yes\n##$BMPC= 0\n##$BMPCTY= <no>\n##$BPSUTY= <no>\n##$BSMS= 2\n##$BSMS19FLock= no\n##$BSMSETH= <149.236.99.20>\n##$BSMSTY= <no>\n##$BgaChMap= (0..7)\n##$BgaChShimMap= (0..7)\n##$Bla01Eth= <149.236.99.254>\n##$Bla01Nam= <BLAXH300/100 E 200-600MHZ INR>\n##$Bla01PN= <W1345083>\n",
+          "chars": 1561,
+          "tokens": 952,
+          "cumulative_tokens": 2244
+        }
+      ],
+      "usage": {
+        "requests": 1,
+        "input_tokens": 2252,
+        "output_tokens": 694,
+        "prompt_eval_duration_ms": 0,
+        "load_duration_ms": 0,
+        "response_duration_ms": 0,
+        "total_duration_ms": 19664
+      }
+    }
+  ]
+}

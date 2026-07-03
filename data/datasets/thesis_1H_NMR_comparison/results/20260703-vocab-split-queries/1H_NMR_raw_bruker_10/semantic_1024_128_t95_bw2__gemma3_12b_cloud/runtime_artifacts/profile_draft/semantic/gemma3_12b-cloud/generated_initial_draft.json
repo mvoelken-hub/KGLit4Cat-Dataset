@@ -1,0 +1,35 @@
+{
+  "id": "2e38a6a6",
+  "title": [
+    "NMR Experiment Configuration and Data"
+  ],
+  "description": [
+    "Dataset: NMR Experiment Configuration and Data. dataset_subject: NMR spectroscopy data and associated configuration files. generated_by: Automated data acquisition and processing pipeline using Bruker NMR instruments and software. activity_target: 1H NMR spectra and related parameters. instruments: Bruker NMR spectrometer (model unspecified). software: Bruker TopSpin NMR software. setting_plan: Experiment parameters defined in 'acqus' and 'specpar' files control acquisition (frequency, time domain size, pulse durations) and processing (TopSpin software). 'pulseprogram' defines NMR pulse sequences. Audit trail ('audita.txt') records user actions and configuration hashes. Raw data ('fid') stored separately. File summaries: r1|10/acqus|summary=Acquisition parameters. r2|10/pdata/1/proc|fmt=text|summary=Processing parameters. r3|10/pdata/1/procs|fmt=text|summary=Processing parameters. r4|10/acqu|summary=Acquisition parameters. r5|10/audita.txt|fmt=txt|summary=Audit trail. r6|10/pdata/1/outd|fmt=text|summary=Configuration settings. r7|10/format.temp|fmt=text|summary=Acquisition parameters. r8|10/specpar|fmt=text|summary=Instrument settings. r9|10/pulseprogram|fmt=text|summary=NMR pulse program. r10|10/fid|fmt=fid|summary=Raw NMR data. characteristics: Data primarily in text and proprietary 'fid' formats. Focus on parameter configuration and raw data acquisition."
+  ],
+  "was_generated_by": [],
+  "identifier": [
+    "2e38a6a6"
+  ],
+  "keyword": [
+    "NMR spectroscopy",
+    "NMR",
+    "configuration",
+    "data acquisition",
+    "TopSpin",
+    "pulse program"
+  ],
+  "creator": [
+    {
+      "name": [
+        "Bruker"
+      ]
+    }
+  ],
+  "type": [
+    {
+      "preferred_label": [
+        "Spectroscopy"
+      ]
+    }
+  ]
+}

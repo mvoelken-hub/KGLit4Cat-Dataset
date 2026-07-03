@@ -1,0 +1,79 @@
+{
+  "operation_id": "profile_field_vocab_selection__NMR_data",
+  "agent_name": "profile_field_vocab_selection",
+  "model": "gemma3:12b-cloud",
+  "output_type": "VocabularyCandidateSelection",
+  "status": "completed",
+  "metadata": {
+    "source_value": "NMR data",
+    "candidate_count": 45
+  },
+  "attempts": [
+    {
+      "attempt_index": 0,
+      "attempt_kind": "initial",
+      "model": "gemma3:12b-cloud",
+      "tokenizer_fallback": false,
+      "tokenizer_fallback_reason": null,
+      "components": [
+        {
+          "channel": "system",
+          "name": "vocab_candidate_selection_system_prompt",
+          "text": "\nYou select a single controlled-vocabulary term that normalizes a metadata field, or return null.\nMatch on the physical quantity or concept the field actually measures, using the source value AND the\nsemantic context (dataset/entity/attribute title and description). Read each candidate's label AND definition,\nnot just its URI fragment.\nWhen several candidates describe the same kind of quantity or concept, prefer the most general/plain one over a\nmore specific or named variant of it. But \"most general\" only applies among candidates that are the same\nquantity - it never justifies picking a wrong-domain term.\nHard rules - return null for selected_uri when ANY of these hold:\n- No candidate describes the same physical quantity or concept as the field. Sharing a token or a symbol with\n  the source value is not a match. Common traps include bare axis or column codes, incidental words, and unit\n  symbols or mathematical symbols; a single letter or a unit symbol by itself is never a quantity kind.\n- An ordinal or extremum modifier (first/last/minimum/maximum) by itself is not a quantity kind. However, when\n  it qualifies a field whose semantic context or source value clearly identifies the underlying physical\n  quantity, the ordinal does NOT disqualify the match - select the candidate that matches that underlying\n  quantity. Only abstain when the ordinal is the ONLY signal and no underlying quantity can be identified.\n- The candidate belongs to a different scientific or engineering domain than the measurement described in the\n  context (for example, a radioactivity, electrical-impedance, typography/printing, aerospace, or oceanography\n  term used for a measurement in an unrelated field). A different-domain candidate is not a match even if it\n  is the most general available - return null.\n- The best candidate is only a superficial or adjacent match rather than the same quantity or concept.\n- You are not confident the candidate is the same quantity. In that case return null with confidence 0 and a\n  short reason naming the trap, rather than forcing a match.\nUse only candidate URIs from the prompt. Always include selected_uri, confidence (0.0-1.0), and reason.\nYou MUST NOT select a candidate you just argued does not fit - return null instead. Return only JSON.\n",
+          "chars": 2289,
+          "tokens": 481,
+          "cumulative_tokens": 481
+        },
+        {
+          "channel": "system",
+          "name": "system_schema",
+          "text": "\n\nReturn exactly one JSON object that satisfies this JSON Schema. Do not include Markdown fences, prose, comments, or additional text.\n\nJSON Schema:\n{\"properties\":{\"selected_uri\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null,\"description\":\"URI of the selected candidate, or null when no candidate fits.\",\"title\":\"Selected Uri\"},\"confidence\":{\"default\":0.0,\"maximum\":1.0,\"minimum\":0.0,\"title\":\"Confidence\",\"type\":\"number\"},\"reason\":{\"default\":\"\",\"title\":\"Reason\",\"type\":\"string\"}},\"title\":\"VocabularyCandidateSelection\",\"type\":\"object\"}",
+          "chars": 549,
+          "tokens": 129,
+          "cumulative_tokens": 609
+        },
+        {
+          "channel": "prompt",
+          "name": "source_value",
+          "text": "Source value:\nNMR data\n\n",
+          "chars": 24,
+          "tokens": 7,
+          "cumulative_tokens": 616
+        },
+        {
+          "channel": "prompt",
+          "name": "source_context",
+          "text": "Source context JSON:\n{'json_path': '/was_generated_by/0/had_output_entity/0/type', 'field_name': 'type', 'source_value': 'Raw NMR Data (fid) Raw NMR data in binary format. 2e38a6a6:output-entity:raw-nmr-data-fid', 'role': 'type', 'semantic_context': 'NMR Spectral Data NMR spectral data acquired on an Avance III NMR spectrometer. | Automated NMR Spectral Data Acquisition and Processing Automated acquisition and processing of 1H NMR spectra using Bruker TOPSPIN software, defined by parameter files and pulse programs. | Raw NMR Data (fid) Raw NMR data in binary format.'}\n\n",
+          "chars": 576,
+          "tokens": 155,
+          "cumulative_tokens": 771
+        },
+        {
+          "channel": "prompt",
+          "name": "candidate_terms",
+          "text": "Candidate terms JSON:\n[{'uri': 'http://nmrML.org/nmrCV#NMR:1000008', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'quadrature detection', 'description': 'One of the problems that should be apparent after observing the spectrum and the FID is that it is not possible \\nto determine if the frequency is positive or negative. The instrument uses a spectrometer \\nfrequency and all signal frequencies are measured relative to the spectrometer frequency.  If a '}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000013', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': '1D spectrum coordinate system descriptor'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000015', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'peak processing'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000071', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'phase correction'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000075', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'spectral referencing'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000079', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'scaling', 'description': \"used to be called 'scaling algorithm'\"}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000099', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'Gibbs multiplication'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000113', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'NMR Star 3.1 file format'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000114', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'NMR Star 2.1 file format'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000172', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'NMR spectrum descriptor'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000201', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': '2D spectrum coordinate system descriptor'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000208', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'spectral projection axis'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000223', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'chemical shift'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000224', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'nmr signal intensity'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000231', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'peak feature'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000238', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'reference compound NMR spectrum', 'description': 'e.g as in HMDB'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000261', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'chemical shift sorting'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000435', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'plot and graph generation'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000452', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'NMR data conversion'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000530', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'file format conversion'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1001459', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'data file format'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1002004', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'NMR spectrometer file format'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1002007', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'NMR spectrum'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1002008', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'conversion to nmrML'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1002009', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'conversion to JCAMP-DX'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1002014', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'binned spectrum descriptor'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1400038', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'frequency domain data processing', 'description': 'def: Automatic or manual procedures performed upon pre-processed NMR data sets that aim to summarise them or annotate them with speculative values.'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1400041', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'time domain data processing', 'description': 'def: The post acquisition process of producing or refining a spectrum from raw data.\\n   defprov: Daniel Schober'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1400042', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'NMR data processing', 'description': 'def: A data transformation that converts an NMR input data set into an output data set in a tracable and useful manner.'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1400048', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'data encoding', 'description': 'tempdef: A data processing  which alteres a data file for a specific purpose.\\n   defprov: Daniel Schober'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1400063', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'data transformation', 'description': 'defneed'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1400073', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'spectral denoising', 'description': 'def: A method for eliminating or reducing the noise in a spectrum.'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1400074', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'baseline correction', 'description': 'def: A method of flattening the baseline of a spectrum.'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1400081', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'symmetrisation', 'description': 'defneed'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1400126', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'NMR quality check descriptor', 'description': 'def: A result of an NMR quality check.\\n   synonym: NMR quality check result'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1400285', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'NMR software data format'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1400286', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'ChemMagnetics format'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1400287', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'GE Omega format'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1400288', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'JEOL Lambda format'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1400289', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'JEOL Alpha format'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1400290', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'Jeol Delta format'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1400291', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'JEOL generic format'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1400292', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'JEOL AL95 format'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1400295', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'JEOL EX format'}, {'uri': 'http://purl.obolibrary.org/obo/BFO_0000031', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'generically dependent continuant'}]\n\n",
+          "chars": 7649,
+          "tokens": 2752,
+          "cumulative_tokens": 3523
+        },
+        {
+          "channel": "prompt",
+          "name": "selection_instruction",
+          "text": "Select the best candidate URI, or return null if none fits.",
+          "chars": 59,
+          "tokens": 13,
+          "cumulative_tokens": 3536
+        }
+      ],
+      "usage": {
+        "requests": 1,
+        "input_tokens": 3545,
+        "output_tokens": 116,
+        "prompt_eval_duration_ms": 0,
+        "load_duration_ms": 0,
+        "response_duration_ms": 0,
+        "total_duration_ms": 2847
+      }
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "qualitative_vocab_identifiers": [],
+  "type_policy": {
+    "vocabulary_identifiers": [],
+    "rdf_type": "skos__Concept",
+    "enabled": true
+  },
+  "rdf_type_policy": {
+    "vocabulary_identifiers": [],
+    "rdf_type": "",
+    "enabled": false
+  },
+  "vector_top_k": 12,
+  "fulltext_top_k": 12,
+  "seed_top_k": 6,
+  "max_hops": 1,
+  "max_statements_per_seed": 12,
+  "traversal_direction": "undirected",
+  "vector_weight": 1.0,
+  "fulltext_weight": 1.0,
+  "rrf_k": 60,
+  "quantitative_vector_top_k": 12,
+  "quantitative_fulltext_top_k": 12,
+  "quantitative_seed_top_k": 10,
+  "quantitative_max_hops": 1,
+  "quantitative_max_statements_per_seed": 12,
+  "quantitative_traversal_direction": "undirected",
+  "quantitative_vector_weight": 1.0,
+  "quantitative_fulltext_weight": 1.0,
+  "quantitative_rrf_k": 60
+}

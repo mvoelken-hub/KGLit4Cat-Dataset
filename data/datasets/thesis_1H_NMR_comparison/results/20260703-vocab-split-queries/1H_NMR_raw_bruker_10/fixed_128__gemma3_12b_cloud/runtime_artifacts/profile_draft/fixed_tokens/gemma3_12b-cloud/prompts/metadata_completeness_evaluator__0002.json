@@ -1,0 +1,52 @@
+{
+  "operation_id": "metadata_completeness_evaluator",
+  "agent_name": "metadata_completeness_evaluator",
+  "model": "gemma3:12b-cloud",
+  "output_type": "RequirementEvaluation",
+  "status": "completed",
+  "metadata": {},
+  "attempts": [
+    {
+      "attempt_index": 0,
+      "attempt_kind": "initial",
+      "model": "gemma3:12b-cloud",
+      "tokenizer_fallback": false,
+      "tokenizer_fallback_reason": null,
+      "components": [
+        {
+          "channel": "system",
+          "name": "requirement_evaluator_system_prompt",
+          "text": "\nYou evaluate one DCAT-AP+ scientific semantic requirement for one Dataset draft slice.\nReturn only JSON matching the supplied schema.\nReturn exactly one assessment for every supplied requirement_id. Do not omit requirements.\nAssess semantic adequacy, not JSON Schema validity or field coverage.\nEvidence establishes applicability and supports interpretation. Only values visibly present at the supplied draft target paths can establish fulfillment.\nNever mark a requirement fulfilled when all supplied target paths are empty or absent.\nUse statuses: fulfilled, partial, missing, not_applicable.\nquality must be 1 for fulfilled, 0.5 for partial, 0 for missing/not_applicable.\nPrefer not_applicable only when the supplied evidence categories make the semantic requirement irrelevant.\nFor activity targets, evaluated_entity/evaluated_activity answer what that specific DataGeneratingActivity directly measured, observed, analysed, or studied. Every data-generating activity needs at least one concrete target. A merely generated output is not an evaluated target; an input file is valid only when evidence says it was directly analysed.\nForbid a DataGeneratingActivity from referencing its own id through evaluated_activity.\nFor dataset descriptions, prefer a compact scope summary. A description is partial when it repeats structured activity, agent, plan, target, or attribute facts that are already present in the supplied draft excerpt.\nFor dataset description scope, do not remove the only description entry. Use replace with synthesis when streamlining is possible, or no_action when it is not.\nFor generation activities, evaluate only the activity title, description, and type. Unsupported fields that cannot be streamlined should remain unresolved rather than deleting the activity.\nFor method plans, explicit method/procedure/protocol/plan evidence is required for fulfilled; prefer method_signal, but accept another category when the claim/evidence explicitly says method, procedure, protocol, plan, sampling, or acquisition.\nFor attribute parent semantics, device/software configuration belongs to agent parents; acquisition/processing settings and thresholds belong to activities; axis bounds, point counts, transmittance/intensity extents, resolution, and data scaling belong to the evaluated data entity unless evidence explicitly says otherwise.\nFor technical agents, instruments, software, and devices are all valid carried_out_by entries; people and provenance-only origins are not.\n",
+          "chars": 2498,
+          "tokens": 469,
+          "cumulative_tokens": 469
+        },
+        {
+          "channel": "system",
+          "name": "system_schema",
+          "text": "\n\nReturn exactly one JSON object that satisfies this JSON Schema. Do not include Markdown fences, prose, comments, or additional text.\n\nJSON Schema:\n{\"$defs\":{\"RequirementAssessment\":{\"properties\":{\"requirement_id\":{\"title\":\"Requirement Id\",\"type\":\"string\"},\"status\":{\"enum\":[\"fulfilled\",\"partial\",\"missing\",\"unanswered\",\"unresolved\",\"not_applicable\"],\"title\":\"Status\",\"type\":\"string\"},\"quality\":{\"default\":0.0,\"maximum\":1.0,\"minimum\":0.0,\"title\":\"Quality\",\"type\":\"number\"},\"applicable\":{\"default\":true,\"title\":\"Applicable\",\"type\":\"boolean\"},\"rationale\":{\"default\":\"\",\"title\":\"Rationale\",\"type\":\"string\"},\"target_paths\":{\"items\":{\"type\":\"string\"},\"title\":\"Target Paths\",\"type\":\"array\"},\"evidence_search_hints\":{\"items\":{\"type\":\"string\"},\"title\":\"Evidence Search Hints\",\"type\":\"array\"},\"expected_target_class\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null,\"title\":\"Expected Target Class\"}},\"required\":[\"requirement_id\",\"status\"],\"title\":\"RequirementAssessment\",\"type\":\"object\"}},\"properties\":{\"assessments\":{\"items\":{\"$ref\":\"#/$defs/RequirementAssessment\"},\"title\":\"Assessments\",\"type\":\"array\"}},\"title\":\"RequirementEvaluation\",\"type\":\"object\"}",
+          "chars": 1157,
+          "tokens": 274,
+          "cumulative_tokens": 742
+        },
+        {
+          "channel": "prompt",
+          "name": "prompt",
+          "text": "Evaluate the draft excerpt against the supplied semantic requirement. Use only supplied evidence and category meanings.\n\n{\n  \"draft_excerpt\": {\n    \"/description\": [\n      \"Dataset subject: NMR spectral data and associated configuration files. Generated by: Automated NMR experiment execution using Bruker TOPSPIN software. Activity target: 1H NMR spectra acquisition and processing. Instruments: Bruker NMR spectrometer (model unspecified). Setting plan: Defined by parameter files (acqu, pulseprogram, format.temp) specifying acquisition sequence, pulse parameters, and frequency settings. Data processing involved TopSpin software for Fourier transformation and baseline correction. Characteristics: Data format includes proprietary binary (fid) and text-based parameter files. Audit trail (audita.txt) records user actions and system configuration. Data files (pdata) contain processed spectral data and intermediate results. File summaries: r1|10/acqu|summary=NMR acquisition parameters. r2|10/pdata/1/proc|fmt=text|summary=NMR processing parameters. r3|10/pdata/1/procs|fmt=text|summary=NMR processing parameters. r4|10/audita.txt|fmt=txt|summary=TOPSPIN audit trail. r5|10/pdata/1/outd|fmt=text|summary=NMR configuration settings. r6|10/format.temp|fmt=text|summary=NMR acquisition parameters. r7|10/pulseprogram|fmt=text|summary=NMR pulse program. r8|10/acqus|summary=NMR acquisition parameters. r9|10/fid|fmt=binary|summary=Raw NMR data. r10|10/fq1list|summary=Signal intensity values.\"\n    ]\n  },\n  \"requirements\": [\n    {\n      \"requirement_id\": \"dataset_description_scope\",\n      \"label\": \"Dataset description scope\",\n      \"description\": \"Description remains a compact dataset-level summary and does not repeat facts that are already represented as structured activity, agent, plan, target, or attribute fields.\",\n      \"weight\": 1.0,\n      \"target_paths\": [\n        \"/description\"\n      ],\n      \"expected_target_class\": null,\n      \"evidence_hints\": [\n        \"dataset description\",\n        \"summary\",\n        \"content\",\n        \"scope\"\n      ],\n      \"allow_not_applicable\": false,\n      \"allowed_categories\": []\n    }\n  ],\n  \"selected_evidence\": [\n    {\n      \"evidence_id\": \"ev:3909a9aafa61f362\",\n      \"category\": \"instrument_signal\",\n      \"role\": \"descriptor\",\n      \"claim\": \"The NMR spectrometer is an Avance III.\",\n      \"evidence_text\": \"Avance III NMR spectrometer\",\n      \"file_path\": \"10/uxnmr.info\",\n      \"source_context\": \"Description : CABINET 500 HD OB\\nLocation : Karlsruher Institut fuer Technologie Karlsruhe Germany\\nSystem : Avance III NMR spectrometer\\n1H-frequency : 500.13 MHz\\nOrder Number : 10146761\"\n    },\n    {\n      \"evidence_id\": \"ev:d06c73763af35508\",\n      \"category\": \"surrounding_signal\",\n      \"role\": \"context\",\n      \"claim\": \"The NMR spectrometer is located in Karlsruhe Germany.\",\n      \"evidence_text\": \"Karlsruhe Germany\",\n      \"file_path\": \"10/uxnmr.info\",\n      \"source_context\": \"User : nmr\\nDescription : CABINET 500 HD OB\\nLocation : Karlsruher Institut fuer Technologie Karlsruhe Germany\\nSystem : Avance III NMR spectrometer\\n1H-frequency : 500.13 MHz\"\n    },\n    {\n      \"evidence_id\": \"ev:de76edc0bc051075\",\n      \"category\": \"activity_signal\",\n      \"role\": \"identity\",\n      \"claim\": \"DRU controls AQS-Rack and HPPR/2\",\n      \"evidence_text\": \"DRU controls AQS-Rack and HPPR/2\",\n      \"file_path\": \"10/uxnmr.info\",\n      \"source_context\": \"- TCP/IP address = 149.236.99.89\\n- Firmware Version = 170619\\n- DRU controls AQS-Rack and HPPR/2\\nAQS: connected to 149.236.99.89:/dev/tty10\\n Number Addr Type HW-VS FW-VS ID ECL Name Description\"\n    }\n  ],\n  \"context_window\": [\n    {\n      \"evidence_id\": \"ev:390cb112711400ab\",\n      \"category\": \"surrounding_signal\",\n      \"role\": \"context\",\n      \"claim\": \"The date is Wed Sep 30 11:30:59 2020\",\n      \"evidence_text\": \"Wed Sep 30 11:30:59 2020\",\n      \"file_path\": \"10/uxnmr.info\"\n    }\n  ],\n  \"category_meanings\": {\n    \"resource_signal\": \"files, distributions, formats, access paths, and resource-scoped notes\",\n    \"method_signal\": \"explicit realized plans, protocols, methods, procedures\",\n    \"activity_signal\": \"data-generating activities and other activities\",\n    \"software_signal\": \"software, scripts, executable systems, services, processing applications\",\n    \"instrument_signal\": \"acquisition, instrument, processing, calibration, unit, threshold, and configuration settings\",\n    \"surrounding_signal\": \"dates, labs, teams, people, organizations, ownership, origin, authorship, provenance context\",\n    \"measurement_signal\": \"measurement-related evidence that can route to quantitative or qualitative activity/entity attributes\",\n    \"measurement_condition\": \"axis bounds, axis units, point counts, ranges, scales, and dataset-level measurement descriptors\"\n  }\n}",
+          "chars": 4792,
+          "tokens": 1403,
+          "cumulative_tokens": 2145
+        }
+      ],
+      "usage": {
+        "requests": 1,
+        "input_tokens": 2154,
+        "output_tokens": 212,
+        "prompt_eval_duration_ms": 0,
+        "load_duration_ms": 0,
+        "response_duration_ms": 0,
+        "total_duration_ms": 5182
+      }
+    }
+  ]
+}

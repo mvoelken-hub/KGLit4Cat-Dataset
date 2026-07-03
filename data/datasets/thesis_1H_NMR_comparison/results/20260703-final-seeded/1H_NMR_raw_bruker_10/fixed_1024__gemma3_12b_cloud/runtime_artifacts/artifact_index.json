@@ -1,0 +1,1907 @@
+{
+  "workflow_id": "2e38a6a6",
+  "artifacts": [
+    {
+      "path": "chunks/fixed_tokens/09711.json",
+      "stage": "chunks",
+      "strategy": "fixed_tokens",
+      "model": null,
+      "size_bytes": 7521
+    },
+    {
+      "path": "chunks/fixed_tokens/177f1.json",
+      "stage": "chunks",
+      "strategy": "fixed_tokens",
+      "model": null,
+      "size_bytes": 3026
+    },
+    {
+      "path": "chunks/fixed_tokens/29142.json",
+      "stage": "chunks",
+      "strategy": "fixed_tokens",
+      "model": null,
+      "size_bytes": 1269
+    },
+    {
+      "path": "chunks/fixed_tokens/37829.json",
+      "stage": "chunks",
+      "strategy": "fixed_tokens",
+      "model": null,
+      "size_bytes": 6071
+    },
+    {
+      "path": "chunks/fixed_tokens/46024.json",
+      "stage": "chunks",
+      "strategy": "fixed_tokens",
+      "model": null,
+      "size_bytes": 1812
+    },
+    {
+      "path": "chunks/fixed_tokens/49aab.json",
+      "stage": "chunks",
+      "strategy": "fixed_tokens",
+      "model": null,
+      "size_bytes": 2594
+    },
+    {
+      "path": "chunks/fixed_tokens/67c45.json",
+      "stage": "chunks",
+      "strategy": "fixed_tokens",
+      "model": null,
+      "size_bytes": 355
+    },
+    {
+      "path": "chunks/fixed_tokens/7a082.json",
+      "stage": "chunks",
+      "strategy": "fixed_tokens",
+      "model": null,
+      "size_bytes": 3572
+    },
+    {
+      "path": "chunks/fixed_tokens/a8bed.json",
+      "stage": "chunks",
+      "strategy": "fixed_tokens",
+      "model": null,
+      "size_bytes": 1006
+    },
+    {
+      "path": "chunks/fixed_tokens/ae196.json",
+      "stage": "chunks",
+      "strategy": "fixed_tokens",
+      "model": null,
+      "size_bytes": 7041
+    },
+    {
+      "path": "chunks/fixed_tokens/b65fc.json",
+      "stage": "chunks",
+      "strategy": "fixed_tokens",
+      "model": null,
+      "size_bytes": 301
+    },
+    {
+      "path": "chunks/fixed_tokens/b8927.json",
+      "stage": "chunks",
+      "strategy": "fixed_tokens",
+      "model": null,
+      "size_bytes": 4661
+    },
+    {
+      "path": "chunks/fixed_tokens/c600b.json",
+      "stage": "chunks",
+      "strategy": "fixed_tokens",
+      "model": null,
+      "size_bytes": 915
+    },
+    {
+      "path": "chunks/fixed_tokens/d4d2f.json",
+      "stage": "chunks",
+      "strategy": "fixed_tokens",
+      "model": null,
+      "size_bytes": 13063
+    },
+    {
+      "path": "chunks/fixed_tokens/de591.json",
+      "stage": "chunks",
+      "strategy": "fixed_tokens",
+      "model": null,
+      "size_bytes": 3610
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/contextual_evidence.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 25793
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/evidence_assessments.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 120926
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/evidence_context.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 232488
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/filtered_evidence_notes.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 119317
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/portable_evidence.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 57664
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_acqu__0__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 14164,
+      "operation_id": "chunk_extraction__10_acqu__0",
+      "agent_name": "chunk_extraction"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_acqu__1__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 14030,
+      "operation_id": "chunk_extraction__10_acqu__1",
+      "agent_name": "chunk_extraction"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_acqu__2__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 13974,
+      "operation_id": "chunk_extraction__10_acqu__2",
+      "agent_name": "chunk_extraction"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_acqus__12__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 13859,
+      "operation_id": "chunk_extraction__10_acqus__12",
+      "agent_name": "chunk_extraction"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_acqus__13__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 13676,
+      "operation_id": "chunk_extraction__10_acqus__13",
+      "agent_name": "chunk_extraction"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_acqus__14__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 13696,
+      "operation_id": "chunk_extraction__10_acqus__14",
+      "agent_name": "chunk_extraction"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_acqus__15__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 12580,
+      "operation_id": "chunk_extraction__10_acqus__15",
+      "agent_name": "chunk_extraction"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_audita.txt__7__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 13397,
+      "operation_id": "chunk_extraction__10_audita.txt__7",
+      "agent_name": "chunk_extraction"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_fid__16__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 12258,
+      "operation_id": "chunk_extraction__10_fid__16",
+      "agent_name": "chunk_extraction"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_format.temp__10__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 12689,
+      "operation_id": "chunk_extraction__10_format.temp__10",
+      "agent_name": "chunk_extraction"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_format.temp__9__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 14208,
+      "operation_id": "chunk_extraction__10_format.temp__9",
+      "agent_name": "chunk_extraction"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_pdata_1_outd__8__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 12887,
+      "operation_id": "chunk_extraction__10_pdata_1_outd__8",
+      "agent_name": "chunk_extraction"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_pdata_1_proc__3__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 14189,
+      "operation_id": "chunk_extraction__10_pdata_1_proc__3",
+      "agent_name": "chunk_extraction"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_pdata_1_proc__4__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 13142,
+      "operation_id": "chunk_extraction__10_pdata_1_proc__4",
+      "agent_name": "chunk_extraction"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_pdata_1_procs__5__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 14184,
+      "operation_id": "chunk_extraction__10_pdata_1_procs__5",
+      "agent_name": "chunk_extraction"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_pdata_1_procs__6__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 13095,
+      "operation_id": "chunk_extraction__10_pdata_1_procs__6",
+      "agent_name": "chunk_extraction"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_pdata_1_title__17__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 12144,
+      "operation_id": "chunk_extraction__10_pdata_1_title__17",
+      "agent_name": "chunk_extraction"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_pulseprogram__11__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 14235,
+      "operation_id": "chunk_extraction__10_pulseprogram__11",
+      "agent_name": "chunk_extraction"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_scon2__18__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 29638,
+      "operation_id": "chunk_extraction__10_scon2__18",
+      "agent_name": "chunk_extraction"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_shimvalues__19__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 12649,
+      "operation_id": "chunk_extraction__10_shimvalues__19",
+      "agent_name": "chunk_extraction"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_shimvalues__20__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 13660,
+      "operation_id": "chunk_extraction__10_shimvalues__20",
+      "agent_name": "chunk_extraction"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_shimvalues__21__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 12678,
+      "operation_id": "chunk_extraction__10_shimvalues__21",
+      "agent_name": "chunk_extraction"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_specpar__22__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 27910,
+      "operation_id": "chunk_extraction__10_specpar__22",
+      "agent_name": "chunk_extraction"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_uxnmr.info__23__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 14465,
+      "operation_id": "chunk_extraction__10_uxnmr.info__23",
+      "agent_name": "chunk_extraction"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_uxnmr.info__24__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 14298,
+      "operation_id": "chunk_extraction__10_uxnmr.info__24",
+      "agent_name": "chunk_extraction"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_uxnmr.info__25__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 12992,
+      "operation_id": "chunk_extraction__10_uxnmr.info__25",
+      "agent_name": "chunk_extraction"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_uxnmr.par__26__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 13445,
+      "operation_id": "chunk_extraction__10_uxnmr.par__26",
+      "agent_name": "chunk_extraction"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_uxnmr.par__27__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 13371,
+      "operation_id": "chunk_extraction__10_uxnmr.par__27",
+      "agent_name": "chunk_extraction"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_uxnmr.par__28__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 13427,
+      "operation_id": "chunk_extraction__10_uxnmr.par__28",
+      "agent_name": "chunk_extraction"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_uxnmr.par__29__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 13358,
+      "operation_id": "chunk_extraction__10_uxnmr.par__29",
+      "agent_name": "chunk_extraction"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_uxnmr.par__30__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 13415,
+      "operation_id": "chunk_extraction__10_uxnmr.par__30",
+      "agent_name": "chunk_extraction"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_uxnmr.par__31__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 12113,
+      "operation_id": "chunk_extraction__10_uxnmr.par__31",
+      "agent_name": "chunk_extraction"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction_repair__10_specpar__22__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 24463,
+      "operation_id": "chunk_extraction_repair__10_specpar__22",
+      "agent_name": "chunk_extraction_repair"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_acqu__0__6__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 8201,
+      "operation_id": "evidence_critic__10_acqu__0__6",
+      "agent_name": "evidence_critic"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_acqu__1__4__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 7409,
+      "operation_id": "evidence_critic__10_acqu__1__4",
+      "agent_name": "evidence_critic"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_acqu__2__5__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 7724,
+      "operation_id": "evidence_critic__10_acqu__2__5",
+      "agent_name": "evidence_critic"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_acqus__12__7__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 8466,
+      "operation_id": "evidence_critic__10_acqus__12__7",
+      "agent_name": "evidence_critic"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_acqus__13__20__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 11854,
+      "operation_id": "evidence_critic__10_acqus__13__20",
+      "agent_name": "evidence_critic"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_acqus__14__5__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 7729,
+      "operation_id": "evidence_critic__10_acqus__14__5",
+      "agent_name": "evidence_critic"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_acqus__15__10__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 7840,
+      "operation_id": "evidence_critic__10_acqus__15__10",
+      "agent_name": "evidence_critic"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_audita.txt__7__13__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 9350,
+      "operation_id": "evidence_critic__10_audita.txt__7__13",
+      "agent_name": "evidence_critic"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_format.temp__10__13__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 8840,
+      "operation_id": "evidence_critic__10_format.temp__10__13",
+      "agent_name": "evidence_critic"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_format.temp__9__12__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10404,
+      "operation_id": "evidence_critic__10_format.temp__9__12",
+      "agent_name": "evidence_critic"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_pdata_1_outd__8__14__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 9798,
+      "operation_id": "evidence_critic__10_pdata_1_outd__8__14",
+      "agent_name": "evidence_critic"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_pdata_1_proc__3__11__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 9891,
+      "operation_id": "evidence_critic__10_pdata_1_proc__3__11",
+      "agent_name": "evidence_critic"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_pdata_1_proc__4__6__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 7344,
+      "operation_id": "evidence_critic__10_pdata_1_proc__4__6",
+      "agent_name": "evidence_critic"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_pdata_1_procs__5__10__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 9474,
+      "operation_id": "evidence_critic__10_pdata_1_procs__5__10",
+      "agent_name": "evidence_critic"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_pdata_1_procs__6__3__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 6444,
+      "operation_id": "evidence_critic__10_pdata_1_procs__6__3",
+      "agent_name": "evidence_critic"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_pdata_1_title__17__3__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 5853,
+      "operation_id": "evidence_critic__10_pdata_1_title__17__3",
+      "agent_name": "evidence_critic"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_pulseprogram__11__14__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 21630,
+      "operation_id": "evidence_critic__10_pulseprogram__11__14",
+      "agent_name": "evidence_critic"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_scon2__18__22__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 11652,
+      "operation_id": "evidence_critic__10_scon2__18__22",
+      "agent_name": "evidence_critic"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_shimvalues__19__6__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 6886,
+      "operation_id": "evidence_critic__10_shimvalues__19__6",
+      "agent_name": "evidence_critic"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_shimvalues__20__29__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 61126,
+      "operation_id": "evidence_critic__10_shimvalues__20__29",
+      "agent_name": "evidence_critic"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_shimvalues__21__6__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 7053,
+      "operation_id": "evidence_critic__10_shimvalues__21__6",
+      "agent_name": "evidence_critic"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_uxnmr.info__23__10__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 9907,
+      "operation_id": "evidence_critic__10_uxnmr.info__23__10",
+      "agent_name": "evidence_critic"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_uxnmr.info__24__24__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 24611,
+      "operation_id": "evidence_critic__10_uxnmr.info__24__24",
+      "agent_name": "evidence_critic"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_uxnmr.info__25__3__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 6626,
+      "operation_id": "evidence_critic__10_uxnmr.info__25__3",
+      "agent_name": "evidence_critic"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_uxnmr.par__26__6__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 8371,
+      "operation_id": "evidence_critic__10_uxnmr.par__26__6",
+      "agent_name": "evidence_critic"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_uxnmr.par__27__2__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 7135,
+      "operation_id": "evidence_critic__10_uxnmr.par__27__2",
+      "agent_name": "evidence_critic"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_uxnmr.par__28__4__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 7770,
+      "operation_id": "evidence_critic__10_uxnmr.par__28__4",
+      "agent_name": "evidence_critic"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_uxnmr.par__29__7__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 8616,
+      "operation_id": "evidence_critic__10_uxnmr.par__29__7",
+      "agent_name": "evidence_critic"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_uxnmr.par__30__2__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 7147,
+      "operation_id": "evidence_critic__10_uxnmr.par__30__2",
+      "agent_name": "evidence_critic"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_uxnmr.par__31__11__0001.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 8347,
+      "operation_id": "evidence_critic__10_uxnmr.par__31__11",
+      "agent_name": "evidence_critic"
+    },
+    {
+      "path": "evidence_notes/fixed_tokens/gemma3_12b-cloud/rejected_evidence.json",
+      "stage": "evidence_notes",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10829
+    },
+    {
+      "path": "extraction_warnings.json",
+      "stage": "run_state",
+      "strategy": null,
+      "model": null,
+      "size_bytes": 743
+    },
+    {
+      "path": "grounding/fixed_tokens/gemma3_12b-cloud/grounded_final_draft.json",
+      "stage": "grounding",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 9480
+    },
+    {
+      "path": "grounding/fixed_tokens/gemma3_12b-cloud/grounded_validation.json",
+      "stage": "grounding",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 61
+    },
+    {
+      "path": "grounding/fixed_tokens/gemma3_12b-cloud/grounding_policy.json",
+      "stage": "grounding",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 841
+    },
+    {
+      "path": "grounding/fixed_tokens/gemma3_12b-cloud/normalization.json",
+      "stage": "grounding",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 21304
+    },
+    {
+      "path": "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__activity__0001.json",
+      "stage": "grounding",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 11954,
+      "operation_id": "profile_field_vocab_selection__activity",
+      "agent_name": "profile_field_vocab_selection"
+    },
+    {
+      "path": "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__audit_trail__0001.json",
+      "stage": "grounding",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 17954,
+      "operation_id": "profile_field_vocab_selection__audit_trail",
+      "agent_name": "profile_field_vocab_selection"
+    },
+    {
+      "path": "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__audit_trail__0002.json",
+      "stage": "grounding",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 17928,
+      "operation_id": "profile_field_vocab_selection__audit_trail",
+      "agent_name": "profile_field_vocab_selection"
+    },
+    {
+      "path": "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__data_type__0001.json",
+      "stage": "grounding",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 17806,
+      "operation_id": "profile_field_vocab_selection__data_type",
+      "agent_name": "profile_field_vocab_selection"
+    },
+    {
+      "path": "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__file_format_version__0001.json",
+      "stage": "grounding",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 17165,
+      "operation_id": "profile_field_vocab_selection__file_format_version",
+      "agent_name": "profile_field_vocab_selection"
+    },
+    {
+      "path": "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__file_format_version__0002.json",
+      "stage": "grounding",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 17114,
+      "operation_id": "profile_field_vocab_selection__file_format_version",
+      "agent_name": "profile_field_vocab_selection"
+    },
+    {
+      "path": "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__file_version__0001.json",
+      "stage": "grounding",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 16918,
+      "operation_id": "profile_field_vocab_selection__file_version",
+      "agent_name": "profile_field_vocab_selection"
+    },
+    {
+      "path": "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__flip_angle__0001.json",
+      "stage": "grounding",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 8587,
+      "operation_id": "profile_field_vocab_selection__flip_angle",
+      "agent_name": "profile_field_vocab_selection"
+    },
+    {
+      "path": "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__NMR_acquisition_parameters__0001.json",
+      "stage": "grounding",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 9851,
+      "operation_id": "profile_field_vocab_selection__NMR_acquisition_parameters",
+      "agent_name": "profile_field_vocab_selection"
+    },
+    {
+      "path": "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__NMR_acquisition_parameters__0002.json",
+      "stage": "grounding",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 9871,
+      "operation_id": "profile_field_vocab_selection__NMR_acquisition_parameters",
+      "agent_name": "profile_field_vocab_selection"
+    },
+    {
+      "path": "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__NMR_data__0001.json",
+      "stage": "grounding",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 13303,
+      "operation_id": "profile_field_vocab_selection__NMR_data",
+      "agent_name": "profile_field_vocab_selection"
+    },
+    {
+      "path": "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__NMR_pulse_program__0001.json",
+      "stage": "grounding",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 11088,
+      "operation_id": "profile_field_vocab_selection__NMR_pulse_program",
+      "agent_name": "profile_field_vocab_selection"
+    },
+    {
+      "path": "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__NMR_spectra__0001.json",
+      "stage": "grounding",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10333,
+      "operation_id": "profile_field_vocab_selection__NMR_spectra",
+      "agent_name": "profile_field_vocab_selection"
+    },
+    {
+      "path": "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__NMR_spectral_data__0001.json",
+      "stage": "grounding",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 11233,
+      "operation_id": "profile_field_vocab_selection__NMR_spectral_data",
+      "agent_name": "profile_field_vocab_selection"
+    },
+    {
+      "path": "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__NMR_spectral_data__0002.json",
+      "stage": "grounding",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 11283,
+      "operation_id": "profile_field_vocab_selection__NMR_spectral_data",
+      "agent_name": "profile_field_vocab_selection"
+    },
+    {
+      "path": "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__NMR_spectrometer__0001.json",
+      "stage": "grounding",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10604,
+      "operation_id": "profile_field_vocab_selection__NMR_spectrometer",
+      "agent_name": "profile_field_vocab_selection"
+    },
+    {
+      "path": "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__origin__0001.json",
+      "stage": "grounding",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 17538,
+      "operation_id": "profile_field_vocab_selection__origin",
+      "agent_name": "profile_field_vocab_selection"
+    },
+    {
+      "path": "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__origin__0002.json",
+      "stage": "grounding",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 9875,
+      "operation_id": "profile_field_vocab_selection__origin",
+      "agent_name": "profile_field_vocab_selection"
+    },
+    {
+      "path": "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__owner__0001.json",
+      "stage": "grounding",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 17879,
+      "operation_id": "profile_field_vocab_selection__owner",
+      "agent_name": "profile_field_vocab_selection"
+    },
+    {
+      "path": "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__owner__0002.json",
+      "stage": "grounding",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 17870,
+      "operation_id": "profile_field_vocab_selection__owner",
+      "agent_name": "profile_field_vocab_selection"
+    },
+    {
+      "path": "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__proton__0001.json",
+      "stage": "grounding",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 8728,
+      "operation_id": "profile_field_vocab_selection__proton",
+      "agent_name": "profile_field_vocab_selection"
+    },
+    {
+      "path": "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__pulse_program__0001.json",
+      "stage": "grounding",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 9538,
+      "operation_id": "profile_field_vocab_selection__pulse_program",
+      "agent_name": "profile_field_vocab_selection"
+    },
+    {
+      "path": "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__pulse_program__0002.json",
+      "stage": "grounding",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 9543,
+      "operation_id": "profile_field_vocab_selection__pulse_program",
+      "agent_name": "profile_field_vocab_selection"
+    },
+    {
+      "path": "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__pulse_program__0003.json",
+      "stage": "grounding",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 9538,
+      "operation_id": "profile_field_vocab_selection__pulse_program",
+      "agent_name": "profile_field_vocab_selection"
+    },
+    {
+      "path": "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__software__0001.json",
+      "stage": "grounding",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 17385,
+      "operation_id": "profile_field_vocab_selection__software",
+      "agent_name": "profile_field_vocab_selection"
+    },
+    {
+      "path": "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__software__0002.json",
+      "stage": "grounding",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 17237,
+      "operation_id": "profile_field_vocab_selection__software",
+      "agent_name": "profile_field_vocab_selection"
+    },
+    {
+      "path": "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__user__0001.json",
+      "stage": "grounding",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 18509,
+      "operation_id": "profile_field_vocab_selection__user",
+      "agent_name": "profile_field_vocab_selection"
+    },
+    {
+      "path": "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__user__0002.json",
+      "stage": "grounding",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 18475,
+      "operation_id": "profile_field_vocab_selection__user",
+      "agent_name": "profile_field_vocab_selection"
+    },
+    {
+      "path": "grounding/fixed_tokens/gemma3_12b-cloud/vocab_queries.json",
+      "stage": "grounding",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 1428015
+    },
+    {
+      "path": "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__1H_NMR_Spectra_The_target_of_the_NMR_experiment._2e3__0001.json",
+      "stage": "grounding",
+      "strategy": "semantic",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10320,
+      "operation_id": "vocab_query_formulation__query_formulation__1H_NMR_Spectra_The_target_of_the_NMR_experiment._2e38a6a6_evaluated-entity_1h-nmr-spectra",
+      "agent_name": "vocab_query_formulation"
+    },
+    {
+      "path": "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__acqu_File_NMR_acquisition_parameters._2e38a6a6_input__0001.json",
+      "stage": "grounding",
+      "strategy": "semantic",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10228,
+      "operation_id": "vocab_query_formulation__query_formulation__acqu_File_NMR_acquisition_parameters._2e38a6a6_input-entity_acqu-file",
+      "agent_name": "vocab_query_formulation"
+    },
+    {
+      "path": "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__Activity_The_activity_as_indicated_in_the_audita.txt__0001.json",
+      "stage": "grounding",
+      "strategy": "semantic",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10340,
+      "operation_id": "vocab_query_formulation__query_formulation__Activity_The_activity_as_indicated_in_the_audita.txt_file.",
+      "agent_name": "vocab_query_formulation"
+    },
+    {
+      "path": "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__Audit_Trail_audita.txt_Record_of_user_actions_and_sy__0001.json",
+      "stage": "grounding",
+      "strategy": "semantic",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10465,
+      "operation_id": "vocab_query_formulation__query_formulation__Audit_Trail_audita.txt_Record_of_user_actions_and_system_configuration._2e38a6a6_output-entity_audit-trail-audita-txt",
+      "agent_name": "vocab_query_formulation"
+    },
+    {
+      "path": "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__Automated_NMR_Spectral_Data_Acquisition_and_Processi__0001.json",
+      "stage": "grounding",
+      "strategy": "semantic",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10789,
+      "operation_id": "vocab_query_formulation__query_formulation__Automated_NMR_Spectral_Data_Acquisition_and_Processing_Automated_acquisition_and_processing_of_1H_NMR_spectra_using_Bruker_TOPSPIN_software_defined_by_parameter_files_and_pulse_programs._2e38a6a6_activity_dataset-generation",
+      "agent_name": "vocab_query_formulation"
+    },
+    {
+      "path": "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__Bruker_NMR_Spectrometer_NMR_instrument_used_for_data__0001.json",
+      "stage": "grounding",
+      "strategy": "semantic",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10431,
+      "operation_id": "vocab_query_formulation__query_formulation__Bruker_NMR_Spectrometer_NMR_instrument_used_for_data_acquisition._2e38a6a6_agentic-entity_bruker-nmr-spectrometer",
+      "agent_name": "vocab_query_formulation"
+    },
+    {
+      "path": "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__Data_Type_The_data_type_as_indicated_in_the_acqu_fil__0001.json",
+      "stage": "grounding",
+      "strategy": "semantic",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10320,
+      "operation_id": "vocab_query_formulation__query_formulation__Data_Type_The_data_type_as_indicated_in_the_acqu_file.",
+      "agent_name": "vocab_query_formulation"
+    },
+    {
+      "path": "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__File_Format_Version_The_file_format_version_as_indic__0001.json",
+      "stage": "grounding",
+      "strategy": "semantic",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10450,
+      "operation_id": "vocab_query_formulation__query_formulation__File_Format_Version_The_file_format_version_as_indicated_in_the_audita.txt_file.",
+      "agent_name": "vocab_query_formulation"
+    },
+    {
+      "path": "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__File_Format_Version_The_file_format_version_is_5.01___0001.json",
+      "stage": "grounding",
+      "strategy": "semantic",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10411,
+      "operation_id": "vocab_query_formulation__query_formulation__File_Format_Version_The_file_format_version_is_5.01_as_recorded_in_the_audit_trail.",
+      "agent_name": "vocab_query_formulation"
+    },
+    {
+      "path": "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__File_Version_The_file_version_as_indicated_in_the_ac__0001.json",
+      "stage": "grounding",
+      "strategy": "semantic",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10350,
+      "operation_id": "vocab_query_formulation__query_formulation__File_Version_The_file_version_as_indicated_in_the_acqu_file.",
+      "agent_name": "vocab_query_formulation"
+    },
+    {
+      "path": "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__Flip_Angle_The_pulse_program_uses_a_30_degree_flip_a__0001.json",
+      "stage": "grounding",
+      "strategy": "semantic",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10267,
+      "operation_id": "vocab_query_formulation__query_formulation__Flip_Angle_The_pulse_program_uses_a_30_degree_flip_angle.",
+      "agent_name": "vocab_query_formulation"
+    },
+    {
+      "path": "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__format.temp_File_NMR_acquisition_parameters._2e38a6a__0001.json",
+      "stage": "grounding",
+      "strategy": "semantic",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10291,
+      "operation_id": "vocab_query_formulation__query_formulation__format.temp_File_NMR_acquisition_parameters._2e38a6a6_input-entity_format-temp-file",
+      "agent_name": "vocab_query_formulation"
+    },
+    {
+      "path": "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__MCWRK_Command_1_The_program_includes_a_command_MCWRK__0001.json",
+      "stage": "grounding",
+      "strategy": "semantic",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10289,
+      "operation_id": "vocab_query_formulation__query_formulation__MCWRK_Command_1_The_program_includes_a_command_MCWRK_wr_0_.",
+      "agent_name": "vocab_query_formulation"
+    },
+    {
+      "path": "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__MCWRK_Command_2_The_program_includes_a_command_MCWRK__0001.json",
+      "stage": "grounding",
+      "strategy": "semantic",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10275,
+      "operation_id": "vocab_query_formulation__query_formulation__MCWRK_Command_2_The_program_includes_a_command_MCWRK_zd_.",
+      "agent_name": "vocab_query_formulation"
+    },
+    {
+      "path": "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__NMR_Nuclei_The_NMR_experiment_is_proton_as_indicated__0001.json",
+      "stage": "grounding",
+      "strategy": "semantic",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10431,
+      "operation_id": "vocab_query_formulation__query_formulation__NMR_Nuclei_The_NMR_experiment_is_proton_as_indicated_by_EXP_PROTON_in_the_acqu_file.",
+      "agent_name": "vocab_query_formulation"
+    },
+    {
+      "path": "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__Origin_Origin_of_the_data_as_recorded_in_the_audit_t__0001.json",
+      "stage": "grounding",
+      "strategy": "semantic",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10306,
+      "operation_id": "vocab_query_formulation__query_formulation__Origin_Origin_of_the_data_as_recorded_in_the_audit_trail.",
+      "agent_name": "vocab_query_formulation"
+    },
+    {
+      "path": "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__Origin_The_origin_of_the_data_as_stated_in_the_acqu___0001.json",
+      "stage": "grounding",
+      "strategy": "semantic",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10299,
+      "operation_id": "vocab_query_formulation__query_formulation__Origin_The_origin_of_the_data_as_stated_in_the_acqu_file.",
+      "agent_name": "vocab_query_formulation"
+    },
+    {
+      "path": "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__Origin_The_origin_of_the_data_is_Bruker_BioSpin_GmbH__0001.json",
+      "stage": "grounding",
+      "strategy": "semantic",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10577,
+      "operation_id": "vocab_query_formulation__query_formulation__Origin_The_origin_of_the_data_is_Bruker_BioSpin_GmbH_as_indicated_by_ORIGIN_Bruker_BioSpin_GmbH_in_the_acqu_file.",
+      "agent_name": "vocab_query_formulation"
+    },
+    {
+      "path": "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__Owner_Owner_of_the_data_as_recorded_in_the_audit_tra__0001.json",
+      "stage": "grounding",
+      "strategy": "semantic",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10296,
+      "operation_id": "vocab_query_formulation__query_formulation__Owner_Owner_of_the_data_as_recorded_in_the_audit_trail.",
+      "agent_name": "vocab_query_formulation"
+    },
+    {
+      "path": "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__Owner_The_owner_of_the_file_as_stated_in_the_pdata_1__0001.json",
+      "stage": "grounding",
+      "strategy": "semantic",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10334,
+      "operation_id": "vocab_query_formulation__query_formulation__Owner_The_owner_of_the_file_as_stated_in_the_pdata_1_procs_file.",
+      "agent_name": "vocab_query_formulation"
+    },
+    {
+      "path": "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__Processed_Spectral_Data_Processed_NMR_spectral_data.__0001.json",
+      "stage": "grounding",
+      "strategy": "semantic",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10365,
+      "operation_id": "vocab_query_formulation__query_formulation__Processed_Spectral_Data_Processed_NMR_spectral_data._2e38a6a6_output-entity_processed-spectral-data",
+      "agent_name": "vocab_query_formulation"
+    },
+    {
+      "path": "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__Pulse_Program_Class_The_pulse_program_is_defined_as___0001.json",
+      "stage": "grounding",
+      "strategy": "semantic",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10282,
+      "operation_id": "vocab_query_formulation__query_formulation__Pulse_Program_Class_The_pulse_program_is_defined_as_HighRes.",
+      "agent_name": "vocab_query_formulation"
+    },
+    {
+      "path": "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__pulseprogram_File_NMR_pulse_program._2e38a6a6_input-__0001.json",
+      "stage": "grounding",
+      "strategy": "semantic",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10255,
+      "operation_id": "vocab_query_formulation__query_formulation__pulseprogram_File_NMR_pulse_program._2e38a6a6_input-entity_pulseprogram-file",
+      "agent_name": "vocab_query_formulation"
+    },
+    {
+      "path": "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__Raw_NMR_Data_fid_Raw_NMR_data_in_binary_format._2e38__0001.json",
+      "stage": "grounding",
+      "strategy": "semantic",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10320,
+      "operation_id": "vocab_query_formulation__query_formulation__Raw_NMR_Data_fid_Raw_NMR_data_in_binary_format._2e38a6a6_output-entity_raw-nmr-data-fid",
+      "agent_name": "vocab_query_formulation"
+    },
+    {
+      "path": "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__Software_The_file_is_processed_by_dirdata.exe.__0001.json",
+      "stage": "grounding",
+      "strategy": "semantic",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10155,
+      "operation_id": "vocab_query_formulation__query_formulation__Software_The_file_is_processed_by_dirdata.exe.",
+      "agent_name": "vocab_query_formulation"
+    },
+    {
+      "path": "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__TOPSPIN_Software_Software_used_for_experiment_execut__0001.json",
+      "stage": "grounding",
+      "strategy": "semantic",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10602,
+      "operation_id": "vocab_query_formulation__query_formulation__TOPSPIN_Software_Software_used_for_experiment_execution_Fourier_transformation_and_baseline_correction._2e38a6a6_agentic-entity_topspin-software",
+      "agent_name": "vocab_query_formulation"
+    },
+    {
+      "path": "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__User_ID_User_ID_recorded_in_the_audit_trail.__0001.json",
+      "stage": "grounding",
+      "strategy": "semantic",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10222,
+      "operation_id": "vocab_query_formulation__query_formulation__User_ID_User_ID_recorded_in_the_audit_trail.",
+      "agent_name": "vocab_query_formulation"
+    },
+    {
+      "path": "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__User_User_performing_actions_recorded_in_the_audit_t__0001.json",
+      "stage": "grounding",
+      "strategy": "semantic",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10316,
+      "operation_id": "vocab_query_formulation__query_formulation__User_User_performing_actions_recorded_in_the_audit_trail._2e38a6a6_agentic-entity_user",
+      "agent_name": "vocab_query_formulation"
+    },
+    {
+      "path": "overview/gemma3_12b-cloud/initial_extraction_overview.json",
+      "stage": "overview",
+      "strategy": null,
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 28898
+    },
+    {
+      "path": "overview/gemma3_12b-cloud/initial_extraction_overview_diagnostic.json",
+      "stage": "overview",
+      "strategy": null,
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 23224
+    },
+    {
+      "path": "overview/gemma3_12b-cloud/initial_file_summaries.json",
+      "stage": "overview",
+      "strategy": null,
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 4651
+    },
+    {
+      "path": "overview/gemma3_12b-cloud/initial_file_summary_diagnostics.json",
+      "stage": "overview",
+      "strategy": null,
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 179
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/evidence_query_ledger.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 7780
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/field_completion_ledger.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 23119
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/generated_attribute_draft.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 8117
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/generated_core_draft.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 4437
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/generated_initial_draft.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 1786
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/generated_reconstructed_draft.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 9480
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/parent_attribute_ledger.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 30897
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/projection_ledger.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 25668
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/dataset_level_projection__0001.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 16230,
+      "operation_id": "dataset_level_projection",
+      "agent_name": "dataset_level_projection"
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/metadata_completeness_evaluator__0001.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 8573,
+      "operation_id": "metadata_completeness_evaluator",
+      "agent_name": "metadata_completeness_evaluator"
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/metadata_completeness_evaluator__0002.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 9647,
+      "operation_id": "metadata_completeness_evaluator",
+      "agent_name": "metadata_completeness_evaluator"
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/metadata_completeness_evaluator__0003.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 15963,
+      "operation_id": "metadata_completeness_evaluator",
+      "agent_name": "metadata_completeness_evaluator"
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/metadata_completeness_evaluator__0004.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10787,
+      "operation_id": "metadata_completeness_evaluator",
+      "agent_name": "metadata_completeness_evaluator"
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/metadata_completeness_evaluator__0005.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 9304,
+      "operation_id": "metadata_completeness_evaluator",
+      "agent_name": "metadata_completeness_evaluator"
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/metadata_completeness_evaluator__0006.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10862,
+      "operation_id": "metadata_completeness_evaluator",
+      "agent_name": "metadata_completeness_evaluator"
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/metadata_completeness_evaluator__0007.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 9166,
+      "operation_id": "metadata_completeness_evaluator",
+      "agent_name": "metadata_completeness_evaluator"
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/metadata_completeness_evaluator__0008.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 17268,
+      "operation_id": "metadata_completeness_evaluator",
+      "agent_name": "metadata_completeness_evaluator"
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/metadata_completeness_evaluator__0009.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 8573,
+      "operation_id": "metadata_completeness_evaluator",
+      "agent_name": "metadata_completeness_evaluator"
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/metadata_completeness_evaluator__0010.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 8386,
+      "operation_id": "metadata_completeness_evaluator",
+      "agent_name": "metadata_completeness_evaluator"
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/metadata_completeness_evaluator__0011.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 15963,
+      "operation_id": "metadata_completeness_evaluator",
+      "agent_name": "metadata_completeness_evaluator"
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/metadata_completeness_evaluator__0012.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10787,
+      "operation_id": "metadata_completeness_evaluator",
+      "agent_name": "metadata_completeness_evaluator"
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/metadata_completeness_evaluator__0013.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 9304,
+      "operation_id": "metadata_completeness_evaluator",
+      "agent_name": "metadata_completeness_evaluator"
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/metadata_completeness_evaluator__0014.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 10862,
+      "operation_id": "metadata_completeness_evaluator",
+      "agent_name": "metadata_completeness_evaluator"
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/metadata_completeness_evaluator__0015.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 9166,
+      "operation_id": "metadata_completeness_evaluator",
+      "agent_name": "metadata_completeness_evaluator"
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/metadata_completeness_evaluator__0016.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 17268,
+      "operation_id": "metadata_completeness_evaluator",
+      "agent_name": "metadata_completeness_evaluator"
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/parent_attribute_constructor__0001.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 11988,
+      "operation_id": "parent_attribute_constructor",
+      "agent_name": "parent_attribute_constructor"
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/parent_attribute_constructor__0002.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 12018,
+      "operation_id": "parent_attribute_constructor",
+      "agent_name": "parent_attribute_constructor"
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/parent_attribute_constructor__0003.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 11911,
+      "operation_id": "parent_attribute_constructor",
+      "agent_name": "parent_attribute_constructor"
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/parent_attribute_constructor__0004.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 11647,
+      "operation_id": "parent_attribute_constructor",
+      "agent_name": "parent_attribute_constructor"
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/parent_attribute_constructor__0005.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 12088,
+      "operation_id": "parent_attribute_constructor",
+      "agent_name": "parent_attribute_constructor"
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/parent_attribute_constructor__0006.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 12079,
+      "operation_id": "parent_attribute_constructor",
+      "agent_name": "parent_attribute_constructor"
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/parent_attribute_constructor__0007.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 12017,
+      "operation_id": "parent_attribute_constructor",
+      "agent_name": "parent_attribute_constructor"
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/parent_attribute_constructor__0008.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 11933,
+      "operation_id": "parent_attribute_constructor",
+      "agent_name": "parent_attribute_constructor"
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/parent_attribute_constructor__0009.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 11914,
+      "operation_id": "parent_attribute_constructor",
+      "agent_name": "parent_attribute_constructor"
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/parent_attribute_constructor__0010.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 11932,
+      "operation_id": "parent_attribute_constructor",
+      "agent_name": "parent_attribute_constructor"
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/parent_attribute_constructor__0011.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 11885,
+      "operation_id": "parent_attribute_constructor",
+      "agent_name": "parent_attribute_constructor"
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/provenance_core_constructor__0001.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 8917,
+      "operation_id": "provenance_core_constructor",
+      "agent_name": "provenance_core_constructor"
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/semantic_reconstruction__0001.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 18185,
+      "operation_id": "semantic_reconstruction",
+      "agent_name": "semantic_reconstruction"
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/semantic_reconstruction__0002.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 9994,
+      "operation_id": "semantic_reconstruction",
+      "agent_name": "semantic_reconstruction"
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/semantic_reconstruction_synthesis__0001.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 7200,
+      "operation_id": "semantic_reconstruction_synthesis",
+      "agent_name": "semantic_reconstruction_synthesis"
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/requirement_report.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 251613
+    },
+    {
+      "path": "profile_draft/fixed_tokens/gemma3_12b-cloud/validation.json",
+      "stage": "profile_draft",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 110
+    },
+    {
+      "path": "result/fixed_tokens/gemma3_12b-cloud/curation_ledger.json",
+      "stage": "result",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 2
+    },
+    {
+      "path": "result/fixed_tokens/gemma3_12b-cloud/extraction_result.json",
+      "stage": "result",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 463199
+    },
+    {
+      "path": "result/fixed_tokens/gemma3_12b-cloud/token_usage.json",
+      "stage": "result",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 3264
+    },
+    {
+      "path": "result/semantic/gemma3_12b-cloud/token_usage.json",
+      "stage": "result",
+      "strategy": "semantic",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 301
+    },
+    {
+      "path": "run_state/fixed_tokens/gemma3_12b-cloud/extraction_run_state.json",
+      "stage": "run_state",
+      "strategy": "fixed_tokens",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 1978576
+    },
+    {
+      "path": "run_state/semantic/gemma3_12b-cloud/extraction_run_state.json",
+      "stage": "run_state",
+      "strategy": "semantic",
+      "model": "gemma3_12b-cloud",
+      "size_bytes": 66846
+    }
+  ],
+  "by_stage": {
+    "chunks": [
+      "chunks/fixed_tokens/09711.json",
+      "chunks/fixed_tokens/177f1.json",
+      "chunks/fixed_tokens/29142.json",
+      "chunks/fixed_tokens/37829.json",
+      "chunks/fixed_tokens/46024.json",
+      "chunks/fixed_tokens/49aab.json",
+      "chunks/fixed_tokens/67c45.json",
+      "chunks/fixed_tokens/7a082.json",
+      "chunks/fixed_tokens/a8bed.json",
+      "chunks/fixed_tokens/ae196.json",
+      "chunks/fixed_tokens/b65fc.json",
+      "chunks/fixed_tokens/b8927.json",
+      "chunks/fixed_tokens/c600b.json",
+      "chunks/fixed_tokens/d4d2f.json",
+      "chunks/fixed_tokens/de591.json"
+    ],
+    "evidence_notes": [
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/contextual_evidence.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/evidence_assessments.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/evidence_context.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/filtered_evidence_notes.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/portable_evidence.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_acqu__0__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_acqu__1__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_acqu__2__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_acqus__12__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_acqus__13__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_acqus__14__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_acqus__15__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_audita.txt__7__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_fid__16__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_format.temp__10__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_format.temp__9__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_pdata_1_outd__8__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_pdata_1_proc__3__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_pdata_1_proc__4__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_pdata_1_procs__5__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_pdata_1_procs__6__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_pdata_1_title__17__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_pulseprogram__11__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_scon2__18__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_shimvalues__19__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_shimvalues__20__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_shimvalues__21__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_specpar__22__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_uxnmr.info__23__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_uxnmr.info__24__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_uxnmr.info__25__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_uxnmr.par__26__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_uxnmr.par__27__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_uxnmr.par__28__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_uxnmr.par__29__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_uxnmr.par__30__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction__10_uxnmr.par__31__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/chunk_extraction_repair__10_specpar__22__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_acqu__0__6__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_acqu__1__4__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_acqu__2__5__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_acqus__12__7__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_acqus__13__20__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_acqus__14__5__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_acqus__15__10__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_audita.txt__7__13__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_format.temp__10__13__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_format.temp__9__12__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_pdata_1_outd__8__14__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_pdata_1_proc__3__11__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_pdata_1_proc__4__6__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_pdata_1_procs__5__10__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_pdata_1_procs__6__3__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_pdata_1_title__17__3__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_pulseprogram__11__14__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_scon2__18__22__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_shimvalues__19__6__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_shimvalues__20__29__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_shimvalues__21__6__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_uxnmr.info__23__10__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_uxnmr.info__24__24__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_uxnmr.info__25__3__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_uxnmr.par__26__6__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_uxnmr.par__27__2__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_uxnmr.par__28__4__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_uxnmr.par__29__7__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_uxnmr.par__30__2__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/prompts/evidence_critic__10_uxnmr.par__31__11__0001.json",
+      "evidence_notes/fixed_tokens/gemma3_12b-cloud/rejected_evidence.json"
+    ],
+    "run_state": [
+      "extraction_warnings.json",
+      "run_state/fixed_tokens/gemma3_12b-cloud/extraction_run_state.json",
+      "run_state/semantic/gemma3_12b-cloud/extraction_run_state.json"
+    ],
+    "grounding": [
+      "grounding/fixed_tokens/gemma3_12b-cloud/grounded_final_draft.json",
+      "grounding/fixed_tokens/gemma3_12b-cloud/grounded_validation.json",
+      "grounding/fixed_tokens/gemma3_12b-cloud/grounding_policy.json",
+      "grounding/fixed_tokens/gemma3_12b-cloud/normalization.json",
+      "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__activity__0001.json",
+      "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__audit_trail__0001.json",
+      "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__audit_trail__0002.json",
+      "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__data_type__0001.json",
+      "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__file_format_version__0001.json",
+      "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__file_format_version__0002.json",
+      "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__file_version__0001.json",
+      "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__flip_angle__0001.json",
+      "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__NMR_acquisition_parameters__0001.json",
+      "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__NMR_acquisition_parameters__0002.json",
+      "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__NMR_data__0001.json",
+      "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__NMR_pulse_program__0001.json",
+      "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__NMR_spectra__0001.json",
+      "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__NMR_spectral_data__0001.json",
+      "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__NMR_spectral_data__0002.json",
+      "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__NMR_spectrometer__0001.json",
+      "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__origin__0001.json",
+      "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__origin__0002.json",
+      "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__owner__0001.json",
+      "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__owner__0002.json",
+      "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__proton__0001.json",
+      "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__pulse_program__0001.json",
+      "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__pulse_program__0002.json",
+      "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__pulse_program__0003.json",
+      "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__software__0001.json",
+      "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__software__0002.json",
+      "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__user__0001.json",
+      "grounding/fixed_tokens/gemma3_12b-cloud/prompts/profile_field_vocab_selection__user__0002.json",
+      "grounding/fixed_tokens/gemma3_12b-cloud/vocab_queries.json",
+      "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__1H_NMR_Spectra_The_target_of_the_NMR_experiment._2e3__0001.json",
+      "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__acqu_File_NMR_acquisition_parameters._2e38a6a6_input__0001.json",
+      "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__Activity_The_activity_as_indicated_in_the_audita.txt__0001.json",
+      "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__Audit_Trail_audita.txt_Record_of_user_actions_and_sy__0001.json",
+      "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__Automated_NMR_Spectral_Data_Acquisition_and_Processi__0001.json",
+      "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__Bruker_NMR_Spectrometer_NMR_instrument_used_for_data__0001.json",
+      "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__Data_Type_The_data_type_as_indicated_in_the_acqu_fil__0001.json",
+      "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__File_Format_Version_The_file_format_version_as_indic__0001.json",
+      "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__File_Format_Version_The_file_format_version_is_5.01___0001.json",
+      "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__File_Version_The_file_version_as_indicated_in_the_ac__0001.json",
+      "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__Flip_Angle_The_pulse_program_uses_a_30_degree_flip_a__0001.json",
+      "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__format.temp_File_NMR_acquisition_parameters._2e38a6a__0001.json",
+      "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__MCWRK_Command_1_The_program_includes_a_command_MCWRK__0001.json",
+      "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__MCWRK_Command_2_The_program_includes_a_command_MCWRK__0001.json",
+      "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__NMR_Nuclei_The_NMR_experiment_is_proton_as_indicated__0001.json",
+      "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__Origin_Origin_of_the_data_as_recorded_in_the_audit_t__0001.json",
+      "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__Origin_The_origin_of_the_data_as_stated_in_the_acqu___0001.json",
+      "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__Origin_The_origin_of_the_data_is_Bruker_BioSpin_GmbH__0001.json",
+      "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__Owner_Owner_of_the_data_as_recorded_in_the_audit_tra__0001.json",
+      "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__Owner_The_owner_of_the_file_as_stated_in_the_pdata_1__0001.json",
+      "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__Processed_Spectral_Data_Processed_NMR_spectral_data.__0001.json",
+      "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__Pulse_Program_Class_The_pulse_program_is_defined_as___0001.json",
+      "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__pulseprogram_File_NMR_pulse_program._2e38a6a6_input-__0001.json",
+      "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__Raw_NMR_Data_fid_Raw_NMR_data_in_binary_format._2e38__0001.json",
+      "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__Software_The_file_is_processed_by_dirdata.exe.__0001.json",
+      "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__TOPSPIN_Software_Software_used_for_experiment_execut__0001.json",
+      "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__User_ID_User_ID_recorded_in_the_audit_trail.__0001.json",
+      "grounding/semantic/gemma3_12b-cloud/prompts/vocab_query_formulation__query_formulation__User_User_performing_actions_recorded_in_the_audit_t__0001.json"
+    ],
+    "overview": [
+      "overview/gemma3_12b-cloud/initial_extraction_overview.json",
+      "overview/gemma3_12b-cloud/initial_extraction_overview_diagnostic.json",
+      "overview/gemma3_12b-cloud/initial_file_summaries.json",
+      "overview/gemma3_12b-cloud/initial_file_summary_diagnostics.json"
+    ],
+    "profile_draft": [
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/evidence_query_ledger.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/field_completion_ledger.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/generated_attribute_draft.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/generated_core_draft.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/generated_initial_draft.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/generated_reconstructed_draft.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/parent_attribute_ledger.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/projection_ledger.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/dataset_level_projection__0001.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/metadata_completeness_evaluator__0001.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/metadata_completeness_evaluator__0002.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/metadata_completeness_evaluator__0003.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/metadata_completeness_evaluator__0004.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/metadata_completeness_evaluator__0005.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/metadata_completeness_evaluator__0006.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/metadata_completeness_evaluator__0007.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/metadata_completeness_evaluator__0008.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/metadata_completeness_evaluator__0009.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/metadata_completeness_evaluator__0010.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/metadata_completeness_evaluator__0011.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/metadata_completeness_evaluator__0012.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/metadata_completeness_evaluator__0013.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/metadata_completeness_evaluator__0014.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/metadata_completeness_evaluator__0015.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/metadata_completeness_evaluator__0016.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/parent_attribute_constructor__0001.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/parent_attribute_constructor__0002.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/parent_attribute_constructor__0003.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/parent_attribute_constructor__0004.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/parent_attribute_constructor__0005.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/parent_attribute_constructor__0006.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/parent_attribute_constructor__0007.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/parent_attribute_constructor__0008.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/parent_attribute_constructor__0009.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/parent_attribute_constructor__0010.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/parent_attribute_constructor__0011.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/provenance_core_constructor__0001.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/semantic_reconstruction__0001.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/semantic_reconstruction__0002.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/prompts/semantic_reconstruction_synthesis__0001.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/requirement_report.json",
+      "profile_draft/fixed_tokens/gemma3_12b-cloud/validation.json"
+    ],
+    "result": [
+      "result/fixed_tokens/gemma3_12b-cloud/curation_ledger.json",
+      "result/fixed_tokens/gemma3_12b-cloud/extraction_result.json",
+      "result/fixed_tokens/gemma3_12b-cloud/token_usage.json",
+      "result/semantic/gemma3_12b-cloud/token_usage.json"
+    ]
+  }
+}

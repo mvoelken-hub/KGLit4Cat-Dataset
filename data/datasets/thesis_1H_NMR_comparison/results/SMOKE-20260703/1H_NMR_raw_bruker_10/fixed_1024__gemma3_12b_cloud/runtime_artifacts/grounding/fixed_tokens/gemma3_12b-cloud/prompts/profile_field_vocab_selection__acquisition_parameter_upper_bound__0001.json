@@ -1,0 +1,79 @@
+{
+  "operation_id": "profile_field_vocab_selection__acquisition_parameter_upper_bound",
+  "agent_name": "profile_field_vocab_selection",
+  "model": "gemma3:12b-cloud",
+  "output_type": "VocabularyCandidateSelection",
+  "status": "completed",
+  "metadata": {
+    "source_value": "acquisition parameter upper bound",
+    "candidate_count": 26
+  },
+  "attempts": [
+    {
+      "attempt_index": 0,
+      "attempt_kind": "initial",
+      "model": "gemma3:12b-cloud",
+      "tokenizer_fallback": false,
+      "tokenizer_fallback_reason": null,
+      "components": [
+        {
+          "channel": "system",
+          "name": "vocab_candidate_selection_system_prompt",
+          "text": "\nYou select a single controlled-vocabulary term that normalizes a metadata field, or return null.\nMatch on the physical quantity or concept the field actually measures, using the source value AND the\nsemantic context (dataset/entity/attribute title and description). Read each candidate's label AND definition,\nnot just its URI fragment.\nWhen several candidates describe the same kind of quantity or concept, prefer the most general/plain one over a\nmore specific or named variant of it. But \"most general\" only applies among candidates that are the same\nquantity - it never justifies picking a wrong-domain term.\nHard rules - return null for selected_uri when ANY of these hold:\n- No candidate describes the same physical quantity or concept as the field. Sharing a token or a symbol with\n  the source value is not a match. Common traps include bare axis or column codes, incidental words, and unit\n  symbols or mathematical symbols; a single letter or a unit symbol by itself is never a quantity kind.\n- An ordinal or extremum modifier (first/last/minimum/maximum) by itself is not a quantity kind. However, when\n  it qualifies a field whose semantic context or source value clearly identifies the underlying physical\n  quantity, the ordinal does NOT disqualify the match - select the candidate that matches that underlying\n  quantity. Only abstain when the ordinal is the ONLY signal and no underlying quantity can be identified.\n- The candidate belongs to a different scientific or engineering domain than the measurement described in the\n  context (for example, a radioactivity, electrical-impedance, typography/printing, aerospace, or oceanography\n  term used for a measurement in an unrelated field). A different-domain candidate is not a match even if it\n  is the most general available - return null.\n- The best candidate is only a superficial or adjacent match rather than the same quantity or concept.\n- You are not confident the candidate is the same quantity. In that case return null with confidence 0 and a\n  short reason naming the trap, rather than forcing a match.\nUse only candidate URIs from the prompt. Always include selected_uri, confidence (0.0-1.0), and reason.\nYou MUST NOT select a candidate you just argued does not fit - return null instead. Return only JSON.\n",
+          "chars": 2289,
+          "tokens": 481,
+          "cumulative_tokens": 481
+        },
+        {
+          "channel": "system",
+          "name": "system_schema",
+          "text": "\n\nReturn exactly one JSON object that satisfies this JSON Schema. Do not include Markdown fences, prose, comments, or additional text.\n\nJSON Schema:\n{\"properties\":{\"selected_uri\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null,\"description\":\"URI of the selected candidate, or null when no candidate fits.\",\"title\":\"Selected Uri\"},\"confidence\":{\"default\":0.0,\"maximum\":1.0,\"minimum\":0.0,\"title\":\"Confidence\",\"type\":\"number\"},\"reason\":{\"default\":\"\",\"title\":\"Reason\",\"type\":\"string\"}},\"title\":\"VocabularyCandidateSelection\",\"type\":\"object\"}",
+          "chars": 549,
+          "tokens": 129,
+          "cumulative_tokens": 609
+        },
+        {
+          "channel": "prompt",
+          "name": "source_value",
+          "text": "Source value:\nacquisition parameter upper bound\n\n",
+          "chars": 49,
+          "tokens": 9,
+          "cumulative_tokens": 618
+        },
+        {
+          "channel": "prompt",
+          "name": "source_context",
+          "text": "Source context JSON:\n{'json_path': '/was_generated_by/0/had_input_entity/0/has_quantitative_attribute/2/unit', 'field_name': 'unit', 'source_value': '', 'role': 'unit', 'semantic_context': 'NMR Spectral Data NMR spectral data acquired on an Avance III spectrometer at KIT. | Automated NMR Spectral Data Acquisition and Processing Automated acquisition and processing of 1H NMR spectra using Bruker TOPSPIN software, defined by parameter files and pulse programs. | acqu File NMR acquisition parameters. | AQ Subrange Upper Bound Upper bound of the AQ parameter, as defined in the format.temp file.', 'sibling_has_quantity_type': 'AQ Subrange Upper Bound', 'sibling_value': '1000.0'}\n\n",
+          "chars": 684,
+          "tokens": 171,
+          "cumulative_tokens": 789
+        },
+        {
+          "channel": "prompt",
+          "name": "candidate_terms",
+          "text": "Candidate terms JSON:\n[{'uri': 'http://qudt.org/vocab/quantitykind/ApparentPower', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'apparent power', 'description': '\"Apparent Power\" is the product of the rms voltage $U$ between the terminals of a two-terminal element or two-terminal circuit and the rms electric current I in the element or circuit. Under sinusoidal conditions, the apparent power is the modulus of the complex power.'}, {'uri': 'http://qudt.org/vocab/quantitykind/Count', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Count', 'description': '\"Count\" is the value of a count of items.'}, {'uri': 'http://qudt.org/vocab/quantitykind/Distance', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'distance', 'description': '\"Distance\" is a numerical description of how far apart objects are. ', 'symbol': 'd'}, {'uri': 'http://qudt.org/vocab/quantitykind/ElectricCurrent', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'electric current', 'description': '\\n  The quantity kind $\\\\textit{Electric Current}$ is the flow (movement) of electric charge. \\n  The amount of electric current through some surface, for example, a section through a copper conductor,\\n   is defined as the amount of electric charge flowing through that surface over time. \\n  Current is ', 'symbol': 'I'}, {'uri': 'http://qudt.org/vocab/quantitykind/ForcePerArea', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Force Per Area', 'description': 'The force applied to a unit area of surface; measured in pascals (SI unit) or in dynes (cgs unit)', 'symbol': 'p'}, {'uri': 'http://qudt.org/vocab/quantitykind/Length', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'length', 'description': 'In geometric measurements, length most commonly refers to the longest dimension of an object. In some contexts, the term \"length\" is reserved for a certain dimension of an object along which the length is measured.', 'symbol': 'l'}, {'uri': 'http://qudt.org/vocab/quantitykind/SoundPressureLevel', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'sound pressure level', 'description': 'Sound pressure level ($SPL$) or sound level is a logarithmic measure of the effective sound pressure of a sound relative to a reference value. It is measured in decibels (dB) above a standard reference level.', 'symbol': 'L'}, {'uri': 'http://qudt.org/vocab/quantitykind/StandardGravitationalParameter', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Standard Gravitational Parameter', 'description': 'In celestial mechanics the standard gravitational parameter of a celestial body is the product of the gravitational constant G and the mass M of the body. Expressed as $\\\\mu = G \\\\cdot M$. The SI units of the standard gravitational parameter are $m^{3}s^{-2}$.'}, {'uri': 'http://qudt.org/vocab/quantitykind/VapourPressure', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Vapour Pressure', 'description': 'A pressure that is the one exerted by a substance vapour in thermodynamic equilibrium with either its solid or liquid phase at a given temperature in a closed system.'}, {'uri': 'http://qudt.org/vocab/unit/A', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Ampere', 'description': '$\\\\textit{Ampere}$, often shortened to $\\\\text{amp}$,\\nis the SI unit of electric current and is one of the seven SI base units defined as:\\n\\n$$\\\\text{A} \\\\equiv \\\\frac{\\\\textit{C}}{\\\\textit{s}}\\n\\\\equiv \\\\frac{\\\\textit{coulomb}}{\\\\textit{second}}\\n\\\\equiv \\\\frac{\\\\text{joule}}{\\\\text{weber}}$$\\n\\nNote that SI supports ', 'symbol': 'A'}, {'uri': 'http://qudt.org/vocab/unit/BREATH', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Breath'}, {'uri': 'http://qudt.org/vocab/unit/CASES', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Cases'}, {'uri': 'http://qudt.org/vocab/unit/KiloM3-PER-SEC2', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Cubic Kilometre per Square Second', 'description': '$\\\\textit{Cubic Kilometer per Square Second}$ is a unit for $\\\\textit{Standard Gravitational Parameter}$ expressed as $km^3/s^2$.', 'symbol': 'km³/s²'}, {'uri': 'http://qudt.org/vocab/unit/M', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Metre', 'description': 'The metric and SI base unit of distance.  The 17th General Conference on Weights and Measures in 1983 defined the meter as that distance that makes the speed of light in a vacuum equal to exactly 299 792 458 meters per second. The speed of light in a vacuum, $c$, is one of the fundamental constants ', 'symbol': 'm'}, {'uri': 'http://qudt.org/vocab/unit/M3-PER-SEC2', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Cubic Metre per Square Second', 'description': '$\\\\textit{Cubic Meter per Square Second}$ is a C.G.S System unit for  $\\\\textit{Standard Gravitational Parameter}$ expressed as $m^3/s^2$', 'symbol': 'm³/s²'}, {'uri': 'http://qudt.org/vocab/unit/MicroTORR', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Microtorr', 'description': '\"MicroTorr\" is a unit for  \\'Force Per Area\\' expressed as $microtorr$.', 'symbol': 'μTorr'}, {'uri': 'http://qudt.org/vocab/unit/MilliTORR', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Millitorr', 'description': '\"MilliTorr\" is a unit for  \\'Force Per Area\\' expressed as $utorr$.', 'symbol': 'mTorr'}, {'uri': 'http://qudt.org/vocab/unit/NUM', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Number', 'description': '\"Number\" is a unit for  \\'Dimensionless\\' expressed as (\\\\#$.', 'symbol': '#'}, {'uri': 'http://qudt.org/vocab/unit/PA', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Pascal', 'description': 'The SI unit of pressure. The pascal is the standard pressure unit in the MKS metric system, equal to one newton per square meter or one \"kilogram per meter per second per second.\" The unit is named for Blaise Pascal (1623-1662), French philosopher and mathematician, who was the first person to use a', 'symbol': 'Pa'}, {'uri': 'http://qudt.org/vocab/unit/PCA', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Pica', 'description': 'A pica is a typographic unit of measure corresponding to 1/72 of its respective foot, and therefore to 1/6 of an inch. The pica contains 12 point units of measure. Notably, Adobe PostScript promoted the pica unit of measure that is the standard in contemporary printing, as in home computers and prin', 'symbol': 'pc'}, {'uri': 'http://qudt.org/vocab/unit/PHON', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Phon', 'description': 'psychoacoustical unit for the loudness level, to describe the emotionally sense of the sound level, with which a human will understand an acoustic noise event as an hearing event', 'symbol': 'phon'}, {'uri': 'http://qudt.org/vocab/unit/PT_BIG', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Big Point', 'description': 'unit for the type size correspondening to: 1 bp = 1/72 in', 'symbol': 'pb'}, {'uri': 'http://qudt.org/vocab/unit/PetaV-A', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Petavolt Ampere', 'description': '1,000,000,000,000,000-fold of the product of the SI base unit volt with the SI base unit ampere', 'symbol': 'PV·A'}, {'uri': 'http://qudt.org/vocab/unit/PetaVA', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Peta Volt Ampere', 'description': '1,000,000,000,000,000-fold of the SI derived unit ampere', 'symbol': 'PVA'}, {'uri': 'http://qudt.org/vocab/unit/PicoA', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Picoampere', 'symbol': 'pA'}, {'uri': 'http://qudt.org/vocab/unit/TORR', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Torr', 'description': '<p>The \\\\textit{torr} is a non-SI unit of pressure with the ratio of 760 to 1 standard atmosphere, chosen to be roughly equal to the fluid pressure exerted by a millimeter of mercury, i.e. , a pressure of 1 torr is approximately equal to one millimeter of mercury. Note that the symbol (Torr) is spell', 'symbol': 'Torr'}]\n\n",
+          "chars": 8875,
+          "tokens": 2675,
+          "cumulative_tokens": 3464
+        },
+        {
+          "channel": "prompt",
+          "name": "selection_instruction",
+          "text": "Select the best candidate URI, or return null if none fits.",
+          "chars": 59,
+          "tokens": 13,
+          "cumulative_tokens": 3477
+        }
+      ],
+      "usage": {
+        "requests": 1,
+        "input_tokens": 3486,
+        "output_tokens": 115,
+        "prompt_eval_duration_ms": 0,
+        "load_duration_ms": 0,
+        "response_duration_ms": 0,
+        "total_duration_ms": 2820
+      }
+    }
+  ]
+}

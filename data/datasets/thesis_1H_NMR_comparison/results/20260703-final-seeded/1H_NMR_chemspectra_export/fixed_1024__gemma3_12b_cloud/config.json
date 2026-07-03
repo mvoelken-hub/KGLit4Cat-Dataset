@@ -1,0 +1,29 @@
+{
+  "dataset": {
+    "slug": "1H_NMR_chemspectra_export",
+    "file_name": "1H_NMR_chemspectra_export.zip",
+    "expected_package_id": "7ac2f7cf"
+  },
+  "profile_identifier": "dcat-ap-plus",
+  "run_config": {
+    "config_id": "fixed_1024__gemma3_12b_cloud",
+    "chat_model": "gemma3:12b-cloud",
+    "chunking_strategy": "fixed_tokens",
+    "generation_seed": 42,
+    "fixed_tokens_per_chunk": 1024,
+    "min_tokens_per_chunk": 128,
+    "max_tokens_per_chunk": 1024,
+    "semantic_chunking_threshold": 95.0,
+    "buffer_window_size": 1
+  },
+  "stage_order": [
+    "upload",
+    "runtime_model_switch",
+    "orientation",
+    "chunking",
+    "evidence_context",
+    "profile_construction",
+    "grounding",
+    "artifact_export"
+  ]
+}

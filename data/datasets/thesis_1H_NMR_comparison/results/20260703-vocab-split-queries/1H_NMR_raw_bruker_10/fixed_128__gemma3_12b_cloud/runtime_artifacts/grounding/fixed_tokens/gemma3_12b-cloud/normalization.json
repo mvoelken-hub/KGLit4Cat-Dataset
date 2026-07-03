@@ -1,0 +1,358 @@
+{
+  "quantities": [],
+  "qualitative_attributes": [],
+  "profile_fields": [
+    {
+      "json_path": "/was_generated_by/0/carried_out_by/0/type",
+      "field_name": "type",
+      "source_value": "Bruker NMR Spectrometer NMR instrument used for data acquisition. 2e38a6a6:agentic-entity:bruker-nmr-spectrometer",
+      "term": {
+        "source_value": "NMR spectrometer",
+        "vocabulary_identifier": "nmrCV",
+        "rdf_type": "owl__Class",
+        "selected_uri": "http://nmrML.org/nmrCV#NMR:1400198",
+        "selected_title": "Bruker NMR instrument",
+        "confidence": 1.0,
+        "reason": "The source value 'NMR spectrometer' and the semantic context clearly indicate a measurement related to NMR spectroscopy. The candidate 'Bruker NMR instrument' (NMR:1400198) directly references a Bruker NMR instrument, aligning perfectly with the source value and context. Other candidates are either too general (e.g., 'NMR instrument type') or related to specific aspects of NMR data (e.g., spectrum coordinate systems, signal intensity) rather than the instrument itself."
+      }
+    },
+    {
+      "json_path": "/was_generated_by/0/carried_out_by/1/has_qualitative_attribute/0/type",
+      "field_name": "type",
+      "source_value": "TOPSPIN Version The version of TOPSPIN software used, as indicated in the parameter file.",
+      "term": {
+        "source_value": "software version | TOPSPIN version",
+        "vocabulary_identifier": "nmrCV",
+        "rdf_type": "owl__Class",
+        "selected_uri": "http://nmrML.org/nmrCV#NMR:1400215",
+        "selected_title": "Bruker TopSpin software",
+        "confidence": 1.0,
+        "reason": "The source value 'TOPSPIN Version' and the semantic context clearly indicate a software version related to Bruker TopSpin software. This candidate directly matches that concept."
+      }
+    },
+    {
+      "json_path": "/was_generated_by/0/carried_out_by/1/has_qualitative_attribute/1/type",
+      "field_name": "type",
+      "source_value": "JCAMPDX Version The JCAMPDX version, as indicated in the parameter file.",
+      "term": {
+        "source_value": "software version | JCAMPDX version",
+        "vocabulary_identifier": "nmrCV",
+        "rdf_type": "owl__Class",
+        "selected_uri": "http://nmrML.org/nmrCV#NMR:1400213",
+        "selected_title": "NMR software",
+        "confidence": 1.0,
+        "reason": "The source value 'JCAMPDX version' and the context describing NMR spectral data acquisition and processing using TOPSPIN software strongly indicate a software version. The candidate 'NMR software' (http://nmrML.org/nmrCV#NMR:1400213) directly describes this concept within the NMR domain, aligning perfectly with the semantic context."
+      }
+    },
+    {
+      "json_path": "/was_generated_by/0/carried_out_by/1/has_qualitative_attribute/2/type",
+      "field_name": "type",
+      "source_value": "Program The program name, as indicated in the parameter file.",
+      "term": {
+        "source_value": "NMR pulse program | program",
+        "vocabulary_identifier": "nmrCV",
+        "rdf_type": "owl__Class",
+        "selected_uri": "http://nmrML.org/nmrCV#NMR:1400037",
+        "selected_title": "NMR pulse sequence",
+        "confidence": 0.95,
+        "reason": "The source value 'NMR pulse program' and the context describing NMR spectral data acquisition using TOPSPIN software strongly indicate a reference to an NMR pulse sequence. The candidate 'NMR pulse sequence' (http://nmrML.org/nmrCV#NMR:1400037) directly describes this concept and its description 'def: A sequence of excitation pulses.' aligns perfectly with the context."
+      }
+    },
+    {
+      "json_path": "/was_generated_by/0/carried_out_by/1/type",
+      "field_name": "type",
+      "source_value": "TOPSPIN Software Software used for experiment execution, Fourier transformation, and baseline correction. 2e38a6a6:agentic-entity:topspin-software",
+      "term": {
+        "source_value": "software | TOPSPIN software",
+        "vocabulary_identifier": "nmrCV",
+        "rdf_type": "owl__Class",
+        "selected_uri": "http://nmrML.org/nmrCV#NMR:1400215",
+        "selected_title": "Bruker TopSpin software",
+        "confidence": 1.0,
+        "reason": "The source value and context clearly describe TOPSPIN software used for NMR experiments. The candidate 'Bruker TopSpin software' (http://nmrML.org/nmrCV#NMR:1400215) directly matches this description and is the most specific and relevant term."
+      }
+    },
+    {
+      "json_path": "/was_generated_by/0/carried_out_by/2/type",
+      "field_name": "type",
+      "source_value": "User User performing actions recorded in the audit trail. 2e38a6a6:agentic-entity:user",
+      "term": {
+        "source_value": "user",
+        "vocabulary_identifier": "nmrCV",
+        "rdf_type": "owl__Class",
+        "selected_uri": "http://nmrML.org/nmrCV#NMR:1400203",
+        "selected_title": "NMR Case",
+        "confidence": 1.0,
+        "reason": "The source context describes an audit trail of actions performed by a 'User'. The candidate 'http://nmrML.org/nmrCV#NMR:1400203' (NMR Case) represents a device that handles samples, aligning with the context of actions related to NMR spectral data acquisition and processing. Other candidates are either too general (physical entity, actions, attributes) or unrelated to the NMR context."
+      }
+    },
+    {
+      "json_path": "/was_generated_by/0/evaluated_entity/0/has_qualitative_attribute/0/type",
+      "field_name": "type",
+      "source_value": "Nucleus The NMR experiment uses 1H as the primary nucleus.",
+      "term": {
+        "source_value": "nucleus",
+        "vocabulary_identifier": "nmrCV",
+        "rdf_type": "owl__Class",
+        "selected_uri": "http://nmrML.org/nmrCV#NMR:1400083",
+        "selected_title": "acquisition nucleus",
+        "confidence": 1.0,
+        "reason": "The source value 'nucleus' and the context of NMR spectral data clearly indicate a reference to the 'acquisition nucleus' as defined in the NMR domain. This candidate directly addresses the concept of the nucleus being studied in the NMR experiment."
+      }
+    },
+    {
+      "json_path": "/was_generated_by/0/evaluated_entity/0/has_qualitative_attribute/1/type",
+      "field_name": "type",
+      "source_value": "Second Nucleus The experiment does not use a second nucleus.",
+      "term": {
+        "source_value": "NMR experiment configuration | NMR experiment",
+        "vocabulary_identifier": "nmrCV",
+        "rdf_type": "owl__Class",
+        "selected_uri": "http://nmrML.org/nmrCV#NMR:1002007",
+        "selected_title": "NMR spectrum",
+        "confidence": 1.0,
+        "reason": "The source value 'NMR experiment' and the semantic context 'NMR Spectral Data' strongly indicate a general NMR spectrum. 'NMR spectrum' (http://nmrML.org/nmrCV#NMR:1002007) is the most general and appropriate term among the candidates."
+      }
+    },
+    {
+      "json_path": "/was_generated_by/0/evaluated_entity/0/has_qualitative_attribute/2/type",
+      "field_name": "type",
+      "source_value": "Experiment Type The experiment type is proton.",
+      "term": {
+        "source_value": "NMR experiment type | proton",
+        "vocabulary_identifier": "nmrCV",
+        "rdf_type": "owl__Class",
+        "selected_uri": "http://nmrML.org/nmrCV#NMR:1400037",
+        "selected_title": "NMR pulse sequence",
+        "confidence": 1.0,
+        "reason": "The source value 'Experiment Type The experiment type is proton.' and the context indicate an NMR experiment involving protons. The candidate 'NMR pulse sequence' (http://nmrML.org/nmrCV#NMR:1400037) accurately describes a sequence of pulses used in NMR experiments, aligning with the described context."
+      }
+    },
+    {
+      "json_path": "/was_generated_by/0/evaluated_entity/0/type",
+      "field_name": "type",
+      "source_value": "1H NMR Spectra The target of the NMR experiment. 2e38a6a6:evaluated-entity:1h-nmr-spectra",
+      "term": {
+        "source_value": "NMR spectra | 1H NMR Spectra",
+        "vocabulary_identifier": "https://w3id.org/nfdi4cat/voc4cat",
+        "rdf_type": "skos__Concept",
+        "selected_uri": "https://w3id.org/nfdi4cat/voc4cat_0000073",
+        "selected_title": "nuclear magnetic resonance spectroscopy",
+        "confidence": 1.0,
+        "reason": "The source value and context clearly describe NMR spectroscopy. The candidate term 'nuclear magnetic resonance spectroscopy' directly matches this description."
+      }
+    },
+    {
+      "json_path": "/was_generated_by/0/had_input_entity/0/has_qualitative_attribute/0/type",
+      "field_name": "type",
+      "source_value": "Acquisition Name The acquisition name as specified in the format.temp file.",
+      "term": {
+        "source_value": "NMR acquisition parameters | acquisition parameters",
+        "vocabulary_identifier": "nmrCV",
+        "rdf_type": "owl__Class",
+        "selected_uri": "http://nmrML.org/nmrCV#NMR:1001954",
+        "selected_title": "NMR acquisition parameter",
+        "confidence": 1.0,
+        "reason": "The source value 'NMR acquisition parameters' and the semantic context clearly indicate that the field describes parameters related to NMR acquisition. The candidate 'NMR acquisition parameter' (http://nmrML.org/nmrCV#NMR:1001954) directly matches this concept and is the most general and appropriate term."
+      }
+    },
+    {
+      "json_path": "/was_generated_by/0/had_input_entity/0/has_qualitative_attribute/1/type",
+      "field_name": "type",
+      "source_value": "Class The class of the file, indicating it contains acquisition parameters.",
+      "term": {
+        "source_value": "acquisition parameters",
+        "vocabulary_identifier": "nmrCV",
+        "rdf_type": "owl__Class",
+        "selected_uri": "http://nmrML.org/nmrCV#NMR:1002006",
+        "selected_title": "acquisition parameter file",
+        "confidence": 1.0,
+        "reason": "The source value 'acquisition parameters' and the context describing NMR spectral data strongly indicate a need for a term related to NMR acquisition parameters. The candidate 'NMR acquisition parameter file' (http://nmrML.org/nmrCV#NMR:1002006) directly addresses this, making it the most appropriate match."
+      }
+    },
+    {
+      "json_path": "/was_generated_by/0/had_input_entity/0/has_qualitative_attribute/2/type",
+      "field_name": "type",
+      "source_value": "Date Variable The variable representing the date, as specified in the format.temp file.",
+      "term": {
+        "source_value": "date",
+        "vocabulary_identifier": "nmrCV",
+        "rdf_type": "owl__Class",
+        "selected_uri": "http://nmrML.org/nmrCV#NMR:1000264",
+        "selected_title": "Bruker FID file",
+        "confidence": 1.0,
+        "reason": "The source value 'date' and the context describing NMR spectral data acquisition strongly suggest a reference to a Bruker FID file, which inherently contains date information. This candidate is the most specific and relevant term among the options."
+      }
+    },
+    {
+      "json_path": "/was_generated_by/0/had_input_entity/0/type",
+      "field_name": "type",
+      "source_value": "acqu File NMR acquisition parameters. 2e38a6a6:input-entity:acqu-file",
+      "term": {
+        "source_value": "NMR acquisition parameters | acqu File NMR",
+        "vocabulary_identifier": "nmrCV",
+        "rdf_type": "owl__Class",
+        "selected_uri": "http://nmrML.org/nmrCV#NMR:1400196",
+        "selected_title": "NMR instrument parameter set",
+        "confidence": 0.95,
+        "reason": "The source value 'NMR acquisition parameters' and the semantic context describing NMR spectral data acquisition strongly suggest a focus on the parameters used in the acquisition process. 'NMR instrument acquisition parameter set' (NMR:1400196) directly addresses this, describing a list of parameters used for spectrum acquisition. Other candidates are either too specific (e.g., 'sweep width', 'FID file') or too general (e.g., 'parameter')."
+      }
+    },
+    {
+      "json_path": "/was_generated_by/0/had_input_entity/1/has_qualitative_attribute/0/type",
+      "field_name": "type",
+      "source_value": "Pulse Program Type The type of NMR sequence used in the pulse program.",
+      "term": {
+        "source_value": "NMR sequence type | NMR sequence",
+        "vocabulary_identifier": "nmrCV",
+        "rdf_type": "owl__Class",
+        "selected_uri": "http://nmrML.org/nmrCV#NMR:1400140",
+        "selected_title": "presat pulse sequence",
+        "confidence": 0.95,
+        "reason": "The source value describes the 'type' of an NMR sequence, and the context indicates it's related to pulse programs. 'presat pulse sequence' is a specific type of NMR pulse sequence, aligning well with the context and source value. Other candidates are either too specific (e.g., 'Zangger-Sterk pulse sequence') or too general (e.g., 'NMR spectrum')."
+      }
+    },
+    {
+      "json_path": "/was_generated_by/0/had_input_entity/1/has_qualitative_attribute/1/type",
+      "field_name": "type",
+      "source_value": "Comment A comment included in the pulse program.",
+      "term": {
+        "source_value": "pulse program comment | comment",
+        "vocabulary_identifier": "nmrCV",
+        "rdf_type": "owl__Class",
+        "selected_uri": "http://nmrML.org/nmrCV#NMR:1400037",
+        "selected_title": "NMR pulse sequence",
+        "confidence": 1.0,
+        "reason": "The source value and context describe a pulse program, and this candidate directly represents an 'NMR pulse sequence'."
+      }
+    },
+    {
+      "json_path": "/was_generated_by/0/had_input_entity/1/type",
+      "field_name": "type",
+      "source_value": "pulseprogram File NMR pulse program. 2e38a6a6:input-entity:pulseprogram-file",
+      "term": {
+        "source_value": "NMR pulse program | pulse program",
+        "vocabulary_identifier": "nmrCV",
+        "rdf_type": "owl__Class",
+        "selected_uri": "http://nmrML.org/nmrCV#NMR:1400140",
+        "selected_title": "presat pulse sequence",
+        "confidence": 0.95,
+        "reason": "The source value 'NMR pulse program' and the context describing NMR spectral data acquisition and processing strongly indicate a pulse sequence. 'NMR pulse sequence' (http://nmrML.org/nmrCV#NMR:1400140) is a general term that accurately describes the concept, and 'pulse parameter' is too specific."
+      }
+    },
+    {
+      "json_path": "/was_generated_by/0/had_input_entity/2/has_qualitative_attribute/0/type",
+      "field_name": "type",
+      "source_value": "Data Format The data format is R32 as stated in the format.temp file.",
+      "term": {
+        "source_value": "data format",
+        "vocabulary_identifier": "https://w3id.org/nfdi4cat/voc4cat",
+        "rdf_type": "skos__Concept",
+        "selected_uri": "https://w3id.org/nfdi4cat/voc4cat_0005017",
+        "selected_title": "data service",
+        "confidence": 1.0,
+        "reason": "The source value 'data format' and the context describing NMR spectral data acquisition and processing strongly suggest a reference to a data service. The candidate 'data service' (https://w3id.org/nfdi4cat/voc4cat_0005017) aligns well with this semantic context."
+      }
+    },
+    {
+      "json_path": "/was_generated_by/0/had_input_entity/2/type",
+      "field_name": "type",
+      "source_value": "format.temp File NMR acquisition parameters. 2e38a6a6:input-entity:format-temp-file",
+      "term": {
+        "source_value": "NMR acquisition parameters",
+        "vocabulary_identifier": "nmrCV",
+        "rdf_type": "owl__Class",
+        "selected_uri": "http://nmrML.org/nmrCV#NMR:1002006",
+        "selected_title": "acquisition parameter file",
+        "confidence": 1.0,
+        "reason": "The source value 'NMR acquisition parameters' directly matches the title 'acquisition parameter file' of the candidate term. The semantic context confirms this is related to NMR spectral data and parameter files."
+      }
+    },
+    {
+      "json_path": "/was_generated_by/0/had_output_entity/0/type",
+      "field_name": "type",
+      "source_value": "Raw NMR Data (fid) Raw NMR data in binary format. 2e38a6a6:output-entity:raw-nmr-data-fid",
+      "term": {
+        "source_value": "NMR data | raw NMR data",
+        "vocabulary_identifier": "nmrCV",
+        "rdf_type": "owl__Class",
+        "selected_uri": "http://nmrML.org/nmrCV#NMR:1400042",
+        "selected_title": "NMR data processing",
+        "confidence": 0.95,
+        "reason": "The source value 'Raw NMR Data (fid)' and the semantic context describing NMR spectral data acquisition and processing strongly indicate that the field represents NMR data processing. The candidate 'NMR data processing' (http://nmrML.org/nmrCV#NMR:1400042) accurately reflects this, encompassing the conversion of raw data into a usable spectrum. Other candidates are either too specific (e.g., FID zero filling, Fourier transformation) or related to file formats or quality checks, not the core concept of processing raw NMR data."
+      }
+    },
+    {
+      "json_path": "/was_generated_by/0/had_output_entity/1/type",
+      "field_name": "type",
+      "source_value": "Processed Spectral Data Processed spectral data in text format. 2e38a6a6:output-entity:processed-spectral-data",
+      "term": {
+        "source_value": "processed spectral data",
+        "vocabulary_identifier": "nmrCV",
+        "rdf_type": "owl__Class",
+        "selected_uri": "http://nmrML.org/nmrCV#NMR:1400042",
+        "selected_title": "NMR data processing",
+        "confidence": 1.0,
+        "reason": "The source value 'processed spectral data' and the context describing NMR spectral data processing strongly suggest a general data processing step. 'NMR data processing' (http://nmrML.org/nmrCV#NMR:1400042) is the most appropriate and general term from the candidates that aligns with this context."
+      }
+    },
+    {
+      "json_path": "/was_generated_by/0/had_output_entity/2/type",
+      "field_name": "type",
+      "source_value": "Audit Trail (audita.txt) Record of user actions and system configuration. 2e38a6a6:output-entity:audit-trail-audita-txt",
+      "term": {
+        "source_value": "user actions and system configuration | audit trail",
+        "vocabulary_identifier": "https://w3id.org/nfdi4cat/voc4cat",
+        "rdf_type": "skos__Concept",
+        "selected_uri": "https://w3id.org/nfdi4cat/voc4cat_0000184",
+        "selected_title": "actions",
+        "confidence": 1.0,
+        "reason": "The source value 'user actions and system configuration | audit trail' and the semantic context describing an 'Audit Trail (audita.txt) Record of user actions and system configuration' strongly indicate the field represents actions. The candidate 'actions' (https://w3id.org/nfdi4cat/voc4cat_0000184) directly corresponds to this concept."
+      }
+    },
+    {
+      "json_path": "/was_generated_by/0/has_qualitative_attribute/0/type",
+      "field_name": "type",
+      "source_value": "NMR Spectrometer Model The NMR spectrometer is an Avance III as stated in the uxnmr.info file.",
+      "term": {
+        "source_value": "NMR spectrometer",
+        "vocabulary_identifier": "nmrCV",
+        "rdf_type": "owl__Class",
+        "selected_uri": "http://nmrML.org/nmrCV#NMR:1400198",
+        "selected_title": "Bruker NMR instrument",
+        "confidence": 0.95,
+        "reason": "The source context explicitly mentions 'NMR spectrometer' and 'Avance III spectrometer'. The candidate 'Bruker NMR instrument' (NMR:1400198) directly references Bruker, a manufacturer of NMR spectrometers, and aligns with the context of NMR spectral data acquisition. Other candidates are either too general (e.g., 'NMR instrument type') or related to specific aspects of NMR spectra (e.g., coordinate systems, signal intensity) rather than the instrument itself."
+      }
+    },
+    {
+      "json_path": "/was_generated_by/0/has_qualitative_attribute/1/type",
+      "field_name": "type",
+      "source_value": "Primary Nucleus The NMR experiment uses 1H as the primary nucleus as stated in the acqu file.",
+      "term": {
+        "source_value": "nucleus",
+        "vocabulary_identifier": "nmrCV",
+        "rdf_type": "owl__Class",
+        "selected_uri": "http://nmrML.org/nmrCV#NMR:1400083",
+        "selected_title": "acquisition nucleus",
+        "confidence": 1.0,
+        "reason": "The source value 'nucleus' and the context of NMR spectral data strongly indicate that the field measures the 'acquisition nucleus'. The candidate 'acquisition nucleus' directly describes this concept and is the most appropriate match."
+      }
+    },
+    {
+      "json_path": "/was_generated_by/0/type",
+      "field_name": "type",
+      "source_value": "Automated NMR Spectral Data Acquisition and Processing Automated acquisition and processing of 1H NMR spectra using Bruker TOPSPIN software, defined by parameter files and pulse programs. 2e38a6a6:activity:dataset-generation",
+      "term": {
+        "source_value": "NMR spectral data | NMR spectra",
+        "vocabulary_identifier": "nmrCV",
+        "rdf_type": "owl__Class",
+        "selected_uri": "http://nmrML.org/nmrCV#NMR:1002007",
+        "selected_title": "NMR spectrum",
+        "confidence": 1.0,
+        "reason": "The source value 'NMR spectra' and the semantic context describing 'NMR spectral data' strongly indicate a measurement of NMR spectra. The candidate 'NMR spectrum' (http://nmrML.org/nmrCV#NMR:1002007) directly corresponds to this concept."
+      }
+    }
+  ],
+  "grounded_objects": [],
+  "object_groundings": []
+}

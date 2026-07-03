@@ -1,0 +1,72 @@
+{
+  "operation_id": "evidence_critic__10_acqus__100__6",
+  "agent_name": "evidence_critic",
+  "model": "gemma3:12b-cloud",
+  "output_type": "EvidenceAssessmentContext",
+  "status": "completed",
+  "metadata": {
+    "file_path": "10/acqus",
+    "chunk_index": 100,
+    "candidate_count": 6
+  },
+  "attempts": [
+    {
+      "attempt_index": 0,
+      "attempt_kind": "initial",
+      "model": "gemma3:12b-cloud",
+      "tokenizer_fallback": false,
+      "tokenizer_fallback_reason": null,
+      "components": [
+        {
+          "channel": "system",
+          "name": "evidence_critic_system_prompt",
+          "text": "\nYou assess grounded evidence candidates using only domain-agnostic quality criteria.\nDo not decide relevance by recognizing a particular scientific domain, instrument, vendor, file format, or key name.\nReturn only a valid EvidenceAssessmentContext JSON object.\n\nAssess each candidate independently using categorical judgments:\n- groundedness: whether evidence_text supports the claim.\n- self_containedness: whether the claim can be understood without hidden prompt context.\n- scope_clarity: whether package/resource/section/environment scope is clear.\n- portability: whether the claim remains meaningful when the package is copied elsewhere.\n- semantic_interpretability: whether the claim is meaningful rather than raw unexplained syntax.\n- environment_dependence: low/medium/high dependence on local machine, session, user, installation, or network context.\n- specificity: whether the claim is concrete without overinterpretation.\n- novelty: whether it adds information beyond repeated template content.\n- uncertainty: low/medium/high ambiguity.\n",
+          "chars": 1048,
+          "tokens": 206,
+          "cumulative_tokens": 206
+        },
+        {
+          "channel": "system",
+          "name": "system_schema",
+          "text": "\n\nReturn exactly one JSON object that satisfies this JSON Schema. Do not include Markdown fences, prose, comments, or additional text.\n\nJSON Schema:\n{\"$defs\":{\"EvidenceAssessment\":{\"properties\":{\"candidate_id\":{\"title\":\"Candidate Id\",\"type\":\"string\"},\"groundedness\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Groundedness\",\"type\":\"string\"},\"self_containedness\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Self Containedness\",\"type\":\"string\"},\"scope_clarity\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Scope Clarity\",\"type\":\"string\"},\"portability\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Portability\",\"type\":\"string\"},\"semantic_interpretability\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Semantic Interpretability\",\"type\":\"string\"},\"environment_dependence\":{\"default\":\"medium\",\"enum\":[\"low\",\"medium\",\"high\"],\"title\":\"Environment Dependence\",\"type\":\"string\"},\"specificity\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Specificity\",\"type\":\"string\"},\"novelty\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Novelty\",\"type\":\"string\"},\"uncertainty\":{\"default\":\"medium\",\"enum\":[\"low\",\"medium\",\"high\"],\"title\":\"Uncertainty\",\"type\":\"string\"},\"rationale\":{\"default\":\"\",\"title\":\"Rationale\",\"type\":\"string\"}},\"required\":[\"candidate_id\"],\"title\":\"EvidenceAssessment\",\"type\":\"object\"}},\"properties\":{\"assessments\":{\"items\":{\"$ref\":\"#/$defs/EvidenceAssessment\"},\"title\":\"Assessments\",\"type\":\"array\"}},\"title\":\"EvidenceAssessmentContext\",\"type\":\"object\"}",
+          "chars": 1554,
+          "tokens": 361,
+          "cumulative_tokens": 566
+        },
+        {
+          "channel": "prompt",
+          "name": "chunk_metadata",
+          "text": "Chunk context metadata:\n{\"start_idx\":303,\"end_idx\":314,\"file_path\":\"10/acqus\",\"data_package_name\":\"1H_NMR_raw_bruker_10\"}\n\n",
+          "chars": 123,
+          "tokens": 52,
+          "cumulative_tokens": 618
+        },
+        {
+          "channel": "prompt",
+          "name": "validated_candidates",
+          "text": "Validated evidence candidates JSON:\n[{'candidate_id': '10/acqus:303:314:0', 'category': 'measurement_condition', 'role': 'parameter', 'claim': 'YMAX_a is 3122091', 'evidence_text': '$YMAX_a= 3122091', 'uncertainty': '', 'file_path': '10/acqus', 'start_idx': 303, 'end_idx': 314, 'evidence_match_score': 1.0}, {'candidate_id': '10/acqus:303:314:1', 'category': 'measurement_condition', 'role': 'parameter', 'claim': 'YMIN_a is -3447590', 'evidence_text': '$YMIN_a= -3447590', 'uncertainty': '', 'file_path': '10/acqus', 'start_idx': 303, 'end_idx': 314, 'evidence_match_score': 1.0}, {'candidate_id': '10/acqus:303:314:2', 'category': 'resource_signal', 'role': 'qualitative_attribute', 'claim': 'ZGOPTNS is empty', 'evidence_text': '$ZGOPTNS= <>', 'uncertainty': '', 'file_path': '10/acqus', 'start_idx': 303, 'end_idx': 314, 'evidence_match_score': 1.0}, {'candidate_id': '10/acqus:303:314:3', 'category': 'measurement_condition', 'role': 'parameter', 'claim': 'ZL1 is 120', 'evidence_text': '$ZL1= 120', 'uncertainty': '', 'file_path': '10/acqus', 'start_idx': 303, 'end_idx': 314, 'evidence_match_score': 1.0}, {'candidate_id': '10/acqus:303:314:4', 'category': 'measurement_condition', 'role': 'parameter', 'claim': 'ZL2 is 120', 'evidence_text': '$ZL2= 120', 'uncertainty': '', 'file_path': '10/acqus', 'start_idx': 303, 'end_idx': 314, 'evidence_match_score': 1.0}, {'candidate_id': '10/acqus:303:314:5', 'category': 'measurement_condition', 'role': 'parameter', 'claim': 'ZL3 is 120', 'evidence_text': '$ZL3= 120', 'uncertainty': '', 'file_path': '10/acqus', 'start_idx': 303, 'end_idx': 314, 'evidence_match_score': 1.0}]\n\n",
+          "chars": 1631,
+          "tokens": 697,
+          "cumulative_tokens": 1315
+        },
+        {
+          "channel": "prompt",
+          "name": "local_chunk_context",
+          "text": "Local chunk context for assessment:\n##$WBST= 1024\n##$WBSW= 4\n##$XGAIN= (0..3)\n##$XL= 0\n##$YL= 0\n##$YMAX_a= 3122091\n##$YMIN_a= -3447590\n##$ZGOPTNS= <>\n##$ZL1= 120\n##$ZL2= 120\n##$ZL3= 120\n",
+          "chars": 186,
+          "tokens": 122,
+          "cumulative_tokens": 1437
+        }
+      ],
+      "usage": {
+        "requests": 1,
+        "input_tokens": 1445,
+        "output_tokens": 709,
+        "prompt_eval_duration_ms": 0,
+        "load_duration_ms": 0,
+        "response_duration_ms": 0,
+        "total_duration_ms": 22497
+      }
+    }
+  ]
+}

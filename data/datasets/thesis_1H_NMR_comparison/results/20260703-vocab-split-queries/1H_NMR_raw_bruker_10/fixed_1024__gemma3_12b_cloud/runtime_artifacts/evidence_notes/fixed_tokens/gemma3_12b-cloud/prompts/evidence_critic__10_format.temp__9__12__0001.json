@@ -1,0 +1,72 @@
+{
+  "operation_id": "evidence_critic__10_format.temp__9__12",
+  "agent_name": "evidence_critic",
+  "model": "gemma3:12b-cloud",
+  "output_type": "EvidenceAssessmentContext",
+  "status": "completed",
+  "metadata": {
+    "file_path": "10/format.temp",
+    "chunk_index": 9,
+    "candidate_count": 12
+  },
+  "attempts": [
+    {
+      "attempt_index": 0,
+      "attempt_kind": "initial",
+      "model": "gemma3:12b-cloud",
+      "tokenizer_fallback": false,
+      "tokenizer_fallback_reason": null,
+      "components": [
+        {
+          "channel": "system",
+          "name": "evidence_critic_system_prompt",
+          "text": "\nYou assess grounded evidence candidates using only domain-agnostic quality criteria.\nDo not decide relevance by recognizing a particular scientific domain, instrument, vendor, file format, or key name.\nReturn only a valid EvidenceAssessmentContext JSON object.\n\nAssess each candidate independently using categorical judgments:\n- groundedness: whether evidence_text supports the claim.\n- self_containedness: whether the claim can be understood without hidden prompt context.\n- scope_clarity: whether package/resource/section/environment scope is clear.\n- portability: whether the claim remains meaningful when the package is copied elsewhere.\n- semantic_interpretability: whether the claim is meaningful rather than raw unexplained syntax.\n- environment_dependence: low/medium/high dependence on local machine, session, user, installation, or network context.\n- specificity: whether the claim is concrete without overinterpretation.\n- novelty: whether it adds information beyond repeated template content.\n- uncertainty: low/medium/high ambiguity.\n",
+          "chars": 1048,
+          "tokens": 206,
+          "cumulative_tokens": 206
+        },
+        {
+          "channel": "system",
+          "name": "system_schema",
+          "text": "\n\nReturn exactly one JSON object that satisfies this JSON Schema. Do not include Markdown fences, prose, comments, or additional text.\n\nJSON Schema:\n{\"$defs\":{\"EvidenceAssessment\":{\"properties\":{\"candidate_id\":{\"title\":\"Candidate Id\",\"type\":\"string\"},\"groundedness\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Groundedness\",\"type\":\"string\"},\"self_containedness\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Self Containedness\",\"type\":\"string\"},\"scope_clarity\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Scope Clarity\",\"type\":\"string\"},\"portability\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Portability\",\"type\":\"string\"},\"semantic_interpretability\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Semantic Interpretability\",\"type\":\"string\"},\"environment_dependence\":{\"default\":\"medium\",\"enum\":[\"low\",\"medium\",\"high\"],\"title\":\"Environment Dependence\",\"type\":\"string\"},\"specificity\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Specificity\",\"type\":\"string\"},\"novelty\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Novelty\",\"type\":\"string\"},\"uncertainty\":{\"default\":\"medium\",\"enum\":[\"low\",\"medium\",\"high\"],\"title\":\"Uncertainty\",\"type\":\"string\"},\"rationale\":{\"default\":\"\",\"title\":\"Rationale\",\"type\":\"string\"}},\"required\":[\"candidate_id\"],\"title\":\"EvidenceAssessment\",\"type\":\"object\"}},\"properties\":{\"assessments\":{\"items\":{\"$ref\":\"#/$defs/EvidenceAssessment\"},\"title\":\"Assessments\",\"type\":\"array\"}},\"title\":\"EvidenceAssessmentContext\",\"type\":\"object\"}",
+          "chars": 1554,
+          "tokens": 361,
+          "cumulative_tokens": 566
+        },
+        {
+          "channel": "prompt",
+          "name": "chunk_metadata",
+          "text": "Chunk context metadata:\n{\"start_idx\":0,\"end_idx\":124,\"file_path\":\"10/format.temp\",\"data_package_name\":\"1H_NMR_raw_bruker_10\"}\n\n",
+          "chars": 127,
+          "tokens": 51,
+          "cumulative_tokens": 617
+        },
+        {
+          "channel": "prompt",
+          "name": "validated_candidates",
+          "text": "Validated evidence candidates JSON:\n[{'candidate_id': '10/format.temp:0:124:0', 'category': 'measurement_signal', 'role': 'parameter', 'claim': 'The spectral width (SW) is calculated as SW*SFO1.', 'evidence_text': 'SWH=SW*SFO1', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 0, 'end_idx': 124, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:0:124:1', 'category': 'measurement_signal', 'role': 'parameter', 'claim': 'The digital resolution (FIDRES) is calculated as SW*SFO1/TD.', 'evidence_text': 'FIDRES=SW*SFO1/TD', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 0, 'end_idx': 124, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:0:124:2', 'category': 'measurement_signal', 'role': 'parameter', 'claim': 'The acquisition time (AQ) is calculated as aqcalc(SW,SFO1,TD,DIGTYP).', 'evidence_text': 'AQ=aqcalc(SW,SFO1,TD,DIGTYP)', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 0, 'end_idx': 124, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:0:124:3', 'category': 'measurement_signal', 'role': 'parameter', 'claim': 'The digital width (DW) is calculated as 1/(2*SW*SFO1).', 'evidence_text': 'DW=1/(2*SW*SFO1)', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 0, 'end_idx': 124, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:0:124:4', 'category': 'measurement_signal', 'role': 'parameter', 'claim': 'The relaxation delay 1 (D1) is equal to D[1].', 'evidence_text': 'D1=D[1]', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 0, 'end_idx': 124, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:0:124:5', 'category': 'resource_signal', 'role': 'qualitative_attribute', 'claim': 'The nucleus is indicated by NUC1.', 'evidence_text': 'NAME NUC1', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 0, 'end_idx': 124, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:0:124:6', 'category': 'measurement_condition', 'role': 'parameter', 'claim': 'The spectral width (SWH) is in Hz.', 'evidence_text': 'UNIT \"Hz\"', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 0, 'end_idx': 124, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:0:124:7', 'category': 'measurement_condition', 'role': 'parameter', 'claim': 'The digital resolution (FIDRES) is in Hz.', 'evidence_text': 'UNIT \"Hz\"', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 0, 'end_idx': 124, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:0:124:8', 'category': 'measurement_condition', 'role': 'parameter', 'claim': 'The acquisition time (AQ) is in sec.', 'evidence_text': 'UNIT \"sec\"', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 0, 'end_idx': 124, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:0:124:9', 'category': 'measurement_condition', 'role': 'parameter', 'claim': 'The digital width (DW) is in usec.', 'evidence_text': 'UNIT \"usec\"', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 0, 'end_idx': 124, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:0:124:10', 'category': 'measurement_condition', 'role': 'parameter', 'claim': 'The relaxation delay 1 (D1) is in sec.', 'evidence_text': 'UNIT \"sec\"', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 0, 'end_idx': 124, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:0:124:11', 'category': 'instrument_signal', 'role': 'descriptor', 'claim': 'The spectral width (SFO1) is in MHz.', 'evidence_text': 'FORMAT \"%14.7f MHz\"', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 0, 'end_idx': 124, 'evidence_match_score': 1.0}]\n\n",
+          "chars": 3677,
+          "tokens": 1393,
+          "cumulative_tokens": 2010
+        },
+        {
+          "channel": "prompt",
+          "name": "local_chunk_context",
+          "text": "Local chunk context for assessment:\nEDIT_PAR COMMAND FILE\nDI_MODE LONG\nED_ENTRY ACQU\nORDER FILE\nHEADER \"F2 - Acquisition Parameters\"\nT_NAME Date_\n TYPE R64\n CLASS ACQU\n REL \"Date_=itodate(DATE)\"\n INV_REL \"DATE=datetoi(Date_,DATE)\"\n FORMAT \"%14.0f\"\n TEXT \" \"\nEND\nT_NAME Time\n TYPE R32\n CLASS ACQU\n REL \"Time=itotime(DATE)\"\n INV_REL \"DATE=timetoi(Time,DATE)\"\n FORMAT \"%14.2f\"\n TEXT \" \"\nEND\nNAME INSTRUM\n TEXT \" \"\nEND\nNAME PROBHD\n FORMAT \"%14.14s\"\n TEXT \" \"\nEND\nNAME PULPROG\n TEXT \" \"\nEND\nNAME TD\n TEXT \" \"\nEND\nNAME SOLVENT\n TEXT \" \"\nEND\nNAME NS\n TEXT \" \"\nEND\nNAME DS\n TEXT \" \"\nEND\nT_NAME SWH\n TYPE R32\n CLASS ACQU\n SUBRANGE 0.0 1e8\n REL \"SWH=SW*SFO1\"\n INV_REL \"SW=SWH/SFO1\"\n UNIT \"Hz\"\n FORMAT \"%14.3f Hz\"\n TEXT \" \"\nEND\nT_NAME FIDRES\n TYPE R32\n CLASS ACQU\n SUBRANGE 0.0 100000\n REL \"FIDRES=SW*SFO1/TD\"\n INV_REL \"TD = nextpow(SW*SFO1/FIDRES)\"\n UNIT \"Hz\"\n FORMAT \"%14.6f Hz\"\n TEXT \" \"\nEND\nT_NAME AQ\n TYPE R32\n CLASS ACQU\n SUBRANGE 0.0 1000\n REL \"AQ=aqcalc(SW,SFO1,TD,DIGTYP)\"\n INV_REL \"TD=tdcalc(SW,SFO1,1.0e6*AQ,DIGTYP)\"\n UNIT \"sec\"\n FORMAT \"%14.7f sec\"\n TEXT \" \"\nEND\nNAME RG\n TEXT \" \"\nEND\nT_NAME DW\n TYPE R32\n CLASS ACQU\n REL \"DW=1/(2*SW*SFO1)\"\n INV_REL \"SW=1000000/(2*(0.005+DW)*SFO1)\"\n UNIT \"usec\"\n FORMAT \"%14.3lf usec\"\n TEXT \" \"\nEND\nNAME DE\n FORMAT \"%14.2f usec\"\n TEXT \" \"\nEND\nNAME TE\n FORMAT \"%14.1f K\"\n TEXT \" \"\nEND\nT_NAME D1\n TYPE R32\n CLASS ACQU\n SUBRANGE 0.0 1e38\n REL \"D1=D[1]\"\n INV_REL \"D[1]=D1\"\n UNIT \"sec\"\n FORMAT \"%14.8f sec\"\n TEXT \" \"\nEND\nNAME TD0\n TEXT \" \"\nEND\nNAME SFO1\n FORMAT \"%14.7f MHz\"\n TEXT \" \"\nEND\nNAME NUC1\n NONEDIT\n TEXT \" \"\nEND\nT_NAME P1\n TYPE R32\n CLASS ACQU\n SUBRANGE 0.0 1.0e10\n",
+          "chars": 1605,
+          "tokens": 750,
+          "cumulative_tokens": 2760
+        }
+      ],
+      "usage": {
+        "requests": 1,
+        "input_tokens": 2768,
+        "output_tokens": 1199,
+        "prompt_eval_duration_ms": 0,
+        "load_duration_ms": 0,
+        "response_duration_ms": 0,
+        "total_duration_ms": 29826
+      }
+    }
+  ]
+}

@@ -1,0 +1,254 @@
+{
+  "id": "2e38a6a6",
+  "title": [
+    "NMR Experiment Configuration and Data"
+  ],
+  "description": [
+    "Dataset: NMR Experiment Configuration and Data. dataset_subject: NMR spectroscopy data and associated configuration files. generated_by: Automated data acquisition and processing pipeline using Bruker NMR instruments and software. activity_target: 1H NMR spectra and related parameters. instruments: Bruker NMR spectrometer (model unspecified). software: Bruker TopSpin NMR software. setting_plan: Experiment parameters defined in 'acqus' and 'specpar' files control acquisition (frequency, time domain size, pulse durations) and processing (TopSpin software). 'pulseprogram' defines NMR pulse sequences. Audit trail ('audita.txt') records user actions and configuration hashes. Raw data ('fid') stored separately. File summaries: r1|10/acqus|summary=Acquisition parameters. r2|10/pdata/1/proc|fmt=text|summary=Processing parameters. r3|10/pdata/1/procs|fmt=text|summary=Processing parameters. r4|10/acqu|summary=Acquisition parameters. r5|10/audita.txt|fmt=txt|summary=Audit trail. r6|10/pdata/1/outd|fmt=text|summary=Configuration settings. r7|10/format.temp|fmt=text|summary=Acquisition parameters. r8|10/specpar|fmt=text|summary=Instrument settings. r9|10/pulseprogram|fmt=text|summary=NMR pulse program. r10|10/fid|fmt=fid|summary=Raw NMR data. characteristics: Data primarily in text and proprietary 'fid' formats. Focus on parameter configuration and raw data acquisition."
+  ],
+  "was_generated_by": [
+    {
+      "id": "2e38a6a6:activity:dataset-generation",
+      "title": [
+        "NMR Data Acquisition and Processing"
+      ],
+      "description": [
+        "Automated acquisition and processing of 1H NMR spectra using Bruker NMR instruments and TopSpin software, guided by configuration files and pulse programs."
+      ],
+      "realized_plan": {
+        "title": "TopSpin NMR Workflow",
+        "description": "Workflow defined by 'acqus', 'specpar', and 'pulseprogram' files, controlling acquisition and processing parameters within Bruker TopSpin software."
+      },
+      "carried_out_by": [
+        {
+          "id": "2e38a6a6:agentic-entity:bruker-nmr-spectrometer",
+          "title": "Bruker NMR Spectrometer",
+          "description": "NMR instrument performing data acquisition.",
+          "has_qualitative_attribute": [
+            {
+              "title": "Owner",
+              "description": "The owner of the NMR experiment configuration, as specified in the 'acqu' file.",
+              "value": "nmr"
+            }
+          ]
+        },
+        {
+          "id": "2e38a6a6:agentic-entity:bruker-topspin-software",
+          "title": "Bruker TopSpin Software",
+          "description": "Software controlling instrument and processing data.",
+          "has_qualitative_attribute": [
+            {
+              "title": "File format version",
+              "description": "File format version recorded in the audit trail.",
+              "value": "5.01"
+            },
+            {
+              "title": "User ID",
+              "description": "User ID recorded in the audit trail.",
+              "value": "braese"
+            },
+            {
+              "title": "Origin",
+              "description": "Origin recorded in the audit trail.",
+              "value": "Bruker BioSpin GmbH"
+            },
+            {
+              "title": "Activity",
+              "description": "Activity type recorded in the audit trail.",
+              "value": "audit"
+            }
+          ]
+        },
+        {
+          "id": "2e38a6a6:agentic-entity:user",
+          "title": "User",
+          "description": "User performing actions recorded in the audit trail.",
+          "has_qualitative_attribute": [
+            {
+              "title": "User ID",
+              "description": "User ID recorded in the audit trail.",
+              "value": "braese"
+            },
+            {
+              "title": "Activity",
+              "description": "Activity recorded in the audit trail.",
+              "value": "dirdata"
+            }
+          ]
+        }
+      ],
+      "evaluated_entity": [
+        {
+          "id": "2e38a6a6:evaluated-entity:1h-nmr-spectra",
+          "title": "1H NMR Spectra",
+          "description": "The target spectra being acquired and processed.",
+          "has_qualitative_attribute": [
+            {
+              "title": "NMR Nucleus",
+              "description": "NMR nucleus is 1H, as stated in the acqus file.",
+              "value": "1H"
+            },
+            {
+              "title": "File Origin",
+              "description": "The file origin is Bruker BioSpin GmbH, as stated in the acqus file.",
+              "value": "Bruker BioSpin GmbH"
+            }
+          ]
+        }
+      ],
+      "had_input_entity": [
+        {
+          "id": "2e38a6a6:input-entity:acqus-file",
+          "title": "acqus file",
+          "description": "Acquisition parameter settings.",
+          "has_quantitative_attribute": [
+            {
+              "title": "Acquisition Time",
+              "description": "The acquisition time as specified in the 'acqus' file.",
+              "value": -2.52100840336134,
+              "has_quantity_type": "Acquisition Time"
+            }
+          ]
+        },
+        {
+          "id": "2e38a6a6:input-entity:specpar-file",
+          "title": "specpar file",
+          "description": "Instrument settings.",
+          "has_quantitative_attribute": [
+            {
+              "title": "Lock power",
+              "description": "Lock power setting from the acqus file.",
+              "value": -20.0,
+              "has_quantity_type": "Lock power"
+            },
+            {
+              "title": "Lock gain",
+              "description": "Lock gain setting from the acqus file.",
+              "value": 132.46501159668,
+              "has_quantity_type": "Lock gain"
+            },
+            {
+              "title": "Lock PPM",
+              "description": "Lock PPM setting from the acqus file.",
+              "value": 7.23999977111816,
+              "has_quantity_type": "Lock PPM"
+            }
+          ]
+        },
+        {
+          "id": "2e38a6a6:input-entity:pulseprogram-file",
+          "title": "pulseprogram file",
+          "description": "NMR pulse sequence definition.",
+          "has_quantitative_attribute": [
+            {
+              "title": "Pulse Width",
+              "description": "Pulse width as defined in the acqus file.",
+              "value": 0.0,
+              "has_quantity_type": "Pulse Width"
+            }
+          ],
+          "has_qualitative_attribute": [
+            {
+              "title": "Pulse Program Class",
+              "description": "The class of the pulse program as defined in the pulseprogram file.",
+              "value": "HighRes"
+            },
+            {
+              "title": "Flip Angle",
+              "description": "The flip angle used in the pulse program.",
+              "value": "30 degree"
+            }
+          ]
+        }
+      ],
+      "had_output_entity": [
+        {
+          "id": "2e38a6a6:output-entity:raw-nmr-data-fid",
+          "title": "Raw NMR Data (fid)",
+          "description": "Raw data acquired by the spectrometer."
+        },
+        {
+          "id": "2e38a6a6:output-entity:processed-nmr-data",
+          "title": "Processed NMR Data",
+          "description": "Processed data files (proc, procs, outd).",
+          "has_qualitative_attribute": [
+            {
+              "title": "File origin",
+              "description": "File origin as recorded in the acquisition file.",
+              "value": "Bruker BioSpin GmbH"
+            },
+            {
+              "title": "File owner",
+              "description": "File owner as recorded in the acquisition file.",
+              "value": "nmr"
+            }
+          ]
+        },
+        {
+          "id": "2e38a6a6:output-entity:audit-trail-audita-txt",
+          "title": "Audit Trail (audita.txt)",
+          "description": "Record of user actions and configuration hashes.",
+          "has_qualitative_attribute": [
+            {
+              "title": "User ID",
+              "description": "User ID as recorded in the audit trail.",
+              "value": "braese"
+            },
+            {
+              "title": "Origin",
+              "description": "Origin as recorded in the audit trail.",
+              "value": "Bruker BioSpin GmbH"
+            },
+            {
+              "title": "Owner",
+              "description": "Owner as recorded in the audit trail.",
+              "value": "nmr"
+            }
+          ]
+        }
+      ],
+      "has_qualitative_attribute": [
+        {
+          "title": "Software",
+          "description": "The software used for processing, as indicated in the specpar file.",
+          "value": "cprserver.exe"
+        },
+        {
+          "title": "Processing Software",
+          "description": "The software used for acquisition, as indicated in the acqus file.",
+          "value": "dirdata.exe"
+        },
+        {
+          "title": "Instrument Type",
+          "description": "The type of instrument used for data acquisition, as indicated in the acqus file.",
+          "value": "Bruker NMR spectrometer"
+        }
+      ]
+    }
+  ],
+  "identifier": [
+    "2e38a6a6"
+  ],
+  "keyword": [
+    "NMR spectroscopy",
+    "NMR",
+    "configuration",
+    "data acquisition",
+    "TopSpin",
+    "pulse program"
+  ],
+  "creator": [
+    {
+      "name": [
+        "Bruker"
+      ]
+    }
+  ],
+  "type": [
+    {
+      "preferred_label": [
+        "Spectroscopy"
+      ]
+    }
+  ]
+}

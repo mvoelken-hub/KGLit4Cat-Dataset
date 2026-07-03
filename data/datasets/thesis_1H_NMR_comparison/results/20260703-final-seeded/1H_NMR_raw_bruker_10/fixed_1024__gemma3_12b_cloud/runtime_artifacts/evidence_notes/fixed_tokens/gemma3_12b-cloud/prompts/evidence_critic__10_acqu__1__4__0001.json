@@ -1,0 +1,72 @@
+{
+  "operation_id": "evidence_critic__10_acqu__1__4",
+  "agent_name": "evidence_critic",
+  "model": "gemma3:12b-cloud",
+  "output_type": "EvidenceAssessmentContext",
+  "status": "completed",
+  "metadata": {
+    "file_path": "10/acqu",
+    "chunk_index": 1,
+    "candidate_count": 4
+  },
+  "attempts": [
+    {
+      "attempt_index": 0,
+      "attempt_kind": "initial",
+      "model": "gemma3:12b-cloud",
+      "tokenizer_fallback": false,
+      "tokenizer_fallback_reason": null,
+      "components": [
+        {
+          "channel": "system",
+          "name": "evidence_critic_system_prompt",
+          "text": "\nYou assess grounded evidence candidates using only domain-agnostic quality criteria.\nDo not decide relevance by recognizing a particular scientific domain, instrument, vendor, file format, or key name.\nReturn only a valid EvidenceAssessmentContext JSON object.\n\nAssess each candidate independently using categorical judgments:\n- groundedness: whether evidence_text supports the claim.\n- self_containedness: whether the claim can be understood without hidden prompt context.\n- scope_clarity: whether package/resource/section/environment scope is clear.\n- portability: whether the claim remains meaningful when the package is copied elsewhere.\n- semantic_interpretability: whether the claim is meaningful rather than raw unexplained syntax.\n- environment_dependence: low/medium/high dependence on local machine, session, user, installation, or network context.\n- specificity: whether the claim is concrete without overinterpretation.\n- novelty: whether it adds information beyond repeated template content.\n- uncertainty: low/medium/high ambiguity.\n",
+          "chars": 1048,
+          "tokens": 206,
+          "cumulative_tokens": 206
+        },
+        {
+          "channel": "system",
+          "name": "system_schema",
+          "text": "\n\nReturn exactly one JSON object that satisfies this JSON Schema. Do not include Markdown fences, prose, comments, or additional text.\n\nJSON Schema:\n{\"$defs\":{\"EvidenceAssessment\":{\"properties\":{\"candidate_id\":{\"title\":\"Candidate Id\",\"type\":\"string\"},\"groundedness\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Groundedness\",\"type\":\"string\"},\"self_containedness\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Self Containedness\",\"type\":\"string\"},\"scope_clarity\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Scope Clarity\",\"type\":\"string\"},\"portability\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Portability\",\"type\":\"string\"},\"semantic_interpretability\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Semantic Interpretability\",\"type\":\"string\"},\"environment_dependence\":{\"default\":\"medium\",\"enum\":[\"low\",\"medium\",\"high\"],\"title\":\"Environment Dependence\",\"type\":\"string\"},\"specificity\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Specificity\",\"type\":\"string\"},\"novelty\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Novelty\",\"type\":\"string\"},\"uncertainty\":{\"default\":\"medium\",\"enum\":[\"low\",\"medium\",\"high\"],\"title\":\"Uncertainty\",\"type\":\"string\"},\"rationale\":{\"default\":\"\",\"title\":\"Rationale\",\"type\":\"string\"}},\"required\":[\"candidate_id\"],\"title\":\"EvidenceAssessment\",\"type\":\"object\"}},\"properties\":{\"assessments\":{\"items\":{\"$ref\":\"#/$defs/EvidenceAssessment\"},\"title\":\"Assessments\",\"type\":\"array\"}},\"title\":\"EvidenceAssessmentContext\",\"type\":\"object\"}",
+          "chars": 1554,
+          "tokens": 361,
+          "cumulative_tokens": 566
+        },
+        {
+          "channel": "prompt",
+          "name": "chunk_metadata",
+          "text": "Chunk context metadata:\n{\"start_idx\":106,\"end_idx\":217,\"file_path\":\"10/acqu\",\"data_package_name\":\"1H_NMR_raw_bruker_10\"}\n\n",
+          "chars": 122,
+          "tokens": 51,
+          "cumulative_tokens": 617
+        },
+        {
+          "channel": "prompt",
+          "name": "validated_candidates",
+          "text": "Validated evidence candidates JSON:\n[{'candidate_id': '10/acqu:106:217:0', 'category': 'resource_signal', 'role': 'descriptor', 'claim': 'The pulse program is zg30.', 'evidence_text': 'PULPROG= <zg30>', 'uncertainty': '', 'file_path': '10/acqu', 'start_idx': 106, 'end_idx': 217, 'evidence_match_score': 1.0}, {'candidate_id': '10/acqu:106:217:1', 'category': 'instrument_signal', 'role': 'parameter', 'claim': 'The lock power is -20.', 'evidence_text': 'LOCKPOW= -20', 'uncertainty': '', 'file_path': '10/acqu', 'start_idx': 106, 'end_idx': 217, 'evidence_match_score': 1.0}, {'candidate_id': '10/acqu:106:217:2', 'category': 'measurement_signal', 'role': 'parameter', 'claim': 'The number of scans is 16.', 'evidence_text': 'NS= 16', 'uncertainty': '', 'file_path': '10/acqu', 'start_idx': 106, 'end_idx': 217, 'evidence_match_score': 1.0}, {'candidate_id': '10/acqu:106:217:3', 'category': 'resource_signal', 'role': 'descriptor', 'claim': 'The nucleus is 1H.', 'evidence_text': 'NUC1= <1H>', 'uncertainty': '', 'file_path': '10/acqu', 'start_idx': 106, 'end_idx': 217, 'evidence_match_score': 1.0}]\n\n",
+          "chars": 1104,
+          "tokens": 444,
+          "cumulative_tokens": 1061
+        },
+        {
+          "channel": "prompt",
+          "name": "local_chunk_context",
+          "text": "Local chunk context for assessment:\n##$IN= (0..63)\n##$INF= (0..7)\n##$INP= (0..63)\n##$INSTRUM= <>\n##$L= (0..31)\n##$LFILTER= 10\n##$LGAIN= -10\n##$LINPSTP= 0\n##$LOCKED= no\n##$LOCKFLD= 0\n##$LOCKGN= 0\n##$LOCKPOW= -20\n##$LOCKPPM= 0\n##$LOCNUC= <2H>\n##$LOCPHAS= 0\n##$LOCSHFT= no\n##$LOCSW= 0\n##$LTIME= 0.1\n##$MASR= 4200\n##$MASRLST= <masrlst>\n##$MULEXPNO= (0..15)\n##$NBL= 1\n##$NC= 0\n##$NLOGCH= 1\n##$NOVFLW= 0\n##$NS= 16\n##$NUC1= <1H>\n##$NUC2= <off>\n##$NUC3= <off>\n##$NUC4= <off>\n##$NUC5= <off>\n##$NUC6= <off>\n##$NUC7= <off>\n##$NUC8= <off>\n##$NUCLEUS= <off>\n##$NUSLIST= <automatic>\n##$NusAMOUNT= 25\n##$NusFPNZ= no\n##$NusJSP= 0\n##$NusSEED= 54321\n##$NusT2= 1\n##$NusTD= 0\n##$O1= 3088.50747848055\n##$O2= 3088.50747848055\n##$O3= 3088.50747848055\n##$O4= 3088.50747848055\n##$O5= 3088.50747848055\n##$O6= 3088.50747848055\n##$O7= 3088.50747848055\n##$O8= 3088.50747848055\n##$OVERFLW= 0\n##$P= (0..63)\n##$PACOIL= (0..15)\n##$PAPS= 0\n##$PARMODE= 0\n##$PCPD= (0..9)\n##$PEXSEL= (0..9)\n##$PHCOR= (0..31)\n##$PHLIST= <>\n##$PHP= 1\n##$PH_ref= 0\n##$PL= (0..63)\n##$PLSTEP= 0.1\n##$PLSTRT= -6\n##$PLW= (0..63)\n##$PLWMAX= (0..7)\n##$POWMOD= 0\n##$PQPHASE= 0\n##$PQSCALE= 1\n##$PR= 1\n##$PRECHAN= (0..15)\n##$PRGAIN= 0\n##$PROBHD= <>\n##$PULPROG= <zg30>\n##$PW= 0\n##$PYNM= <>\n##$QNP= 0\n##$RD= 0\n##$RECCHAN= (0..15)\n##$RECPH= 0\n##$RECPRE= (0..15)\n##$RECPRFX= (0..15)\n##$RECSEL= (0..15)\n##$RG= 114\n##$RO= 0\n",
+          "chars": 1353,
+          "tokens": 940,
+          "cumulative_tokens": 2001
+        }
+      ],
+      "usage": {
+        "requests": 1,
+        "input_tokens": 2009,
+        "output_tokens": 423,
+        "prompt_eval_duration_ms": 0,
+        "load_duration_ms": 0,
+        "response_duration_ms": 0,
+        "total_duration_ms": 10210
+      }
+    }
+  ]
+}

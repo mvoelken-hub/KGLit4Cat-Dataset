@@ -1,0 +1,521 @@
+{
+  "status": "structured_success",
+  "prompt_budget": {
+    "max_input_tokens": 6942,
+    "expected_output_token_reserve": 1000,
+    "input_safety_margin_tokens": 250,
+    "protected_section_tokens": 974,
+    "system_tokens": 686,
+    "prompt_tokens": 2269,
+    "total_input_tokens": 2955,
+    "original_total_input_tokens": 3273,
+    "compacted_total_input_tokens_before_drop": 2955,
+    "token_budget_targets": {
+      "ranked_files": 347,
+      "compact_summaries": 3123,
+      "seeded_graph_compact_text": 1527,
+      "fallback_previews": 0
+    },
+    "token_budget_actuals": {
+      "ranked_files": 334,
+      "compact_summaries": 763,
+      "seeded_graph_compact_text": 842,
+      "fallback_previews": 0
+    },
+    "tokenizer_fallback": false,
+    "compact_summary_count": 16,
+    "original_summary_count": 16,
+    "included_summary_paths": [
+      "10/acqus",
+      "10/format.temp",
+      "10/pdata/1/proc",
+      "10/pdata/1/procs",
+      "10/acqu",
+      "10/audita.txt",
+      "10/pdata/1/outd",
+      "10/specpar",
+      "10/pulseprogram",
+      "10/fid",
+      "10/fq1list",
+      "10/pdata/1/title",
+      "10/scon2",
+      "10/shimvalues",
+      "10/uxnmr.info",
+      "10/uxnmr.par"
+    ],
+    "dropped_summary_paths": [],
+    "ranked_file_count": 7,
+    "original_ranked_file_count": 16,
+    "included_ranked_paths": [
+      "10/acqus",
+      "10/format.temp",
+      "10/pdata/1/proc",
+      "10/pdata/1/procs",
+      "10/acqu",
+      "10/audita.txt",
+      "10/pdata/1/outd"
+    ],
+    "dropped_ranked_paths": [
+      "10/specpar",
+      "10/pulseprogram",
+      "10/fid",
+      "10/fq1list",
+      "10/pdata/1/title",
+      "10/scon2",
+      "10/shimvalues",
+      "10/uxnmr.info",
+      "10/uxnmr.par"
+    ],
+    "preview_count": 0,
+    "original_preview_count": 0,
+    "included_preview_paths": [],
+    "dropped_preview_paths": [],
+    "hard_truncated": false,
+    "compact_graph_truncated": false,
+    "token_component_breakdown": {
+      "original": {
+        "message_total_tokens": 3273,
+        "concatenated_total_tokens": 3273,
+        "prompt_tokens": 2587,
+        "prompt_chars": 9309,
+        "components": [
+          {
+            "component": "system_prompt",
+            "delta_tokens": 686,
+            "cumulative_tokens": 686,
+            "chars": 3146,
+            "included_chars": 3146
+          },
+          {
+            "component": "intro_and_counts",
+            "delta_tokens": 80,
+            "cumulative_tokens": 766,
+            "chars": 326,
+            "included_chars": 326
+          },
+          {
+            "component": "ranked_files_json",
+            "delta_tokens": 660,
+            "cumulative_tokens": 1426,
+            "chars": 2205,
+            "included_chars": 2205
+          },
+          {
+            "component": "validated_summaries_json",
+            "delta_tokens": 774,
+            "cumulative_tokens": 2200,
+            "chars": 3419,
+            "included_chars": 3419
+          },
+          {
+            "component": "seeded_graph_compact_text",
+            "delta_tokens": 854,
+            "cumulative_tokens": 3054,
+            "chars": 2273,
+            "included_chars": 2273
+          },
+          {
+            "component": "fallback_previews_json",
+            "delta_tokens": 9,
+            "cumulative_tokens": 3063,
+            "chars": 37,
+            "included_chars": 37
+          },
+          {
+            "component": "final_task_instructions",
+            "delta_tokens": 210,
+            "cumulative_tokens": 3273,
+            "chars": 1049,
+            "included_chars": 1049
+          }
+        ]
+      },
+      "compacted_before_drop": {
+        "message_total_tokens": 2955,
+        "concatenated_total_tokens": 2955,
+        "prompt_tokens": 2269,
+        "prompt_chars": 8377,
+        "components": [
+          {
+            "component": "system_prompt",
+            "delta_tokens": 686,
+            "cumulative_tokens": 686,
+            "chars": 3146,
+            "included_chars": 3146
+          },
+          {
+            "component": "intro_and_counts",
+            "delta_tokens": 79,
+            "cumulative_tokens": 765,
+            "chars": 325,
+            "included_chars": 325
+          },
+          {
+            "component": "ranked_files_json",
+            "delta_tokens": 343,
+            "cumulative_tokens": 1108,
+            "chars": 1274,
+            "included_chars": 1274
+          },
+          {
+            "component": "validated_summaries_json",
+            "delta_tokens": 774,
+            "cumulative_tokens": 1882,
+            "chars": 3419,
+            "included_chars": 3419
+          },
+          {
+            "component": "seeded_graph_compact_text",
+            "delta_tokens": 854,
+            "cumulative_tokens": 2736,
+            "chars": 2273,
+            "included_chars": 2273
+          },
+          {
+            "component": "fallback_previews_json",
+            "delta_tokens": 9,
+            "cumulative_tokens": 2745,
+            "chars": 37,
+            "included_chars": 37
+          },
+          {
+            "component": "final_task_instructions",
+            "delta_tokens": 210,
+            "cumulative_tokens": 2955,
+            "chars": 1049,
+            "included_chars": 1049
+          }
+        ]
+      },
+      "final_before_truncation": {
+        "message_total_tokens": 2955,
+        "concatenated_total_tokens": 2955,
+        "prompt_tokens": 2269,
+        "prompt_chars": 8377,
+        "components": [
+          {
+            "component": "system_prompt",
+            "delta_tokens": 686,
+            "cumulative_tokens": 686,
+            "chars": 3146,
+            "included_chars": 3146
+          },
+          {
+            "component": "intro_and_counts",
+            "delta_tokens": 79,
+            "cumulative_tokens": 765,
+            "chars": 325,
+            "included_chars": 325
+          },
+          {
+            "component": "ranked_files_json",
+            "delta_tokens": 343,
+            "cumulative_tokens": 1108,
+            "chars": 1274,
+            "included_chars": 1274
+          },
+          {
+            "component": "validated_summaries_json",
+            "delta_tokens": 774,
+            "cumulative_tokens": 1882,
+            "chars": 3419,
+            "included_chars": 3419
+          },
+          {
+            "component": "seeded_graph_compact_text",
+            "delta_tokens": 854,
+            "cumulative_tokens": 2736,
+            "chars": 2273,
+            "included_chars": 2273
+          },
+          {
+            "component": "fallback_previews_json",
+            "delta_tokens": 9,
+            "cumulative_tokens": 2745,
+            "chars": 37,
+            "included_chars": 37
+          },
+          {
+            "component": "final_task_instructions",
+            "delta_tokens": 210,
+            "cumulative_tokens": 2955,
+            "chars": 1049,
+            "included_chars": 1049
+          }
+        ]
+      },
+      "final_sent": {
+        "message_total_tokens": 2955,
+        "concatenated_total_tokens": 2955,
+        "prompt_tokens": 2269,
+        "prompt_chars": 8377,
+        "components": [
+          {
+            "component": "system_prompt",
+            "delta_tokens": 686,
+            "cumulative_tokens": 686,
+            "chars": 3146,
+            "included_chars": 3146
+          },
+          {
+            "component": "intro_and_counts",
+            "delta_tokens": 79,
+            "cumulative_tokens": 765,
+            "chars": 325,
+            "included_chars": 325
+          },
+          {
+            "component": "ranked_files_json",
+            "delta_tokens": 343,
+            "cumulative_tokens": 1108,
+            "chars": 1274,
+            "included_chars": 1274
+          },
+          {
+            "component": "validated_summaries_json",
+            "delta_tokens": 774,
+            "cumulative_tokens": 1882,
+            "chars": 3419,
+            "included_chars": 3419
+          },
+          {
+            "component": "seeded_graph_compact_text",
+            "delta_tokens": 854,
+            "cumulative_tokens": 2736,
+            "chars": 2273,
+            "included_chars": 2273
+          },
+          {
+            "component": "fallback_previews_json",
+            "delta_tokens": 9,
+            "cumulative_tokens": 2745,
+            "chars": 37,
+            "included_chars": 37
+          },
+          {
+            "component": "final_task_instructions",
+            "delta_tokens": 210,
+            "cumulative_tokens": 2955,
+            "chars": 1049,
+            "included_chars": 1049
+          }
+        ]
+      },
+      "payloads": {
+        "ranked_files": {
+          "original_count": 16,
+          "included_count": 7,
+          "original_json_tokens": 651,
+          "included_json_tokens": 334
+        },
+        "compact_summaries": {
+          "original_count": 16,
+          "included_count": 16,
+          "json_tokens_total": 762,
+          "per_file": [
+            {
+              "file_path": "10/acqus",
+              "included": true,
+              "json_tokens": 48,
+              "json_chars": 252
+            },
+            {
+              "file_path": "10/format.temp",
+              "included": true,
+              "json_tokens": 61,
+              "json_chars": 273
+            },
+            {
+              "file_path": "10/pdata/1/proc",
+              "included": true,
+              "json_tokens": 58,
+              "json_chars": 248
+            },
+            {
+              "file_path": "10/pdata/1/procs",
+              "included": true,
+              "json_tokens": 61,
+              "json_chars": 261
+            },
+            {
+              "file_path": "10/acqu",
+              "included": true,
+              "json_tokens": 57,
+              "json_chars": 289
+            },
+            {
+              "file_path": "10/audita.txt",
+              "included": true,
+              "json_tokens": 58,
+              "json_chars": 270
+            },
+            {
+              "file_path": "10/pdata/1/outd",
+              "included": true,
+              "json_tokens": 55,
+              "json_chars": 218
+            },
+            {
+              "file_path": "10/specpar",
+              "included": true,
+              "json_tokens": 55,
+              "json_chars": 262
+            },
+            {
+              "file_path": "10/pulseprogram",
+              "included": true,
+              "json_tokens": 50,
+              "json_chars": 211
+            },
+            {
+              "file_path": "10/fid",
+              "included": true,
+              "json_tokens": 42,
+              "json_chars": 171
+            },
+            {
+              "file_path": "10/fq1list",
+              "included": true,
+              "json_tokens": 48,
+              "json_chars": 223
+            },
+            {
+              "file_path": "10/pdata/1/title",
+              "included": true,
+              "json_tokens": 46,
+              "json_chars": 178
+            },
+            {
+              "file_path": "10/scon2",
+              "included": true,
+              "json_tokens": 12,
+              "json_chars": 24
+            },
+            {
+              "file_path": "10/shimvalues",
+              "included": true,
+              "json_tokens": 46,
+              "json_chars": 211
+            },
+            {
+              "file_path": "10/uxnmr.info",
+              "included": true,
+              "json_tokens": 51,
+              "json_chars": 231
+            },
+            {
+              "file_path": "10/uxnmr.par",
+              "included": true,
+              "json_tokens": 14,
+              "json_chars": 28
+            }
+          ]
+        },
+        "file_previews": {
+          "original_count": 0,
+          "included_count": 0,
+          "original_json_tokens": 0,
+          "included_json_tokens": 0
+        },
+        "seeded_graph": {
+          "node_count": 26,
+          "edge_count": 41,
+          "uncertainty_count": 0,
+          "json_tokens": 4548,
+          "nodes_json_tokens": 1457,
+          "edges_json_tokens": 3152,
+          "uncertainties_json_tokens": 0
+        },
+        "seeded_graph_compact_text": {
+          "tokens": 842,
+          "chars": 2207,
+          "line_count": 53
+        }
+      }
+    },
+    "final_prompt_components": [
+      {
+        "name": "intro_and_counts",
+        "text": "Analyze the research artifact archive and extract a graph-shaped ExtractionOverview. The backend has summarized text-extractable files, ranked summarized files, and seeded deterministic path containment.\n\nData package name: 1H_NMR_raw_bruker_10\nRanked file count: 7\nPer-file summary count: 16\nFallback preview file count: 0\n\n"
+      },
+      {
+        "name": "ranked_files_json",
+        "text": "Ranked files JSON:\n[{\"rank\":1,\"file_path\":\"10/acqus\",\"score\":0.92,\"reasons\":[\"acquisition settings\",\"processing settings\",\"instrument/software/settings terms\",\"sample or condition context\",\"path/extension fallback\"]},\n{\"rank\":2,\"file_path\":\"10/format.temp\",\"score\":0.82,\"reasons\":[\"method or protocol orientation\",\"acquisition settings\",\"instrument/software/settings terms\",\"path/extension fallback\"]},\n{\"rank\":3,\"file_path\":\"10/pdata/1/proc\",\"score\":0.76,\"reasons\":[\"acquisition settings\",\"processing settings\",\"instrument/software/settings terms\",\"path/extension fallback\"]},\n{\"rank\":4,\"file_path\":\"10/pdata/1/procs\",\"score\":0.76,\"reasons\":[\"acquisition settings\",\"processing settings\",\"instrument/software/settings terms\",\"path/extension fallback\"]},\n{\"rank\":5,\"file_path\":\"10/acqu\",\"score\":0.7,\"reasons\":[\"acquisition settings\",\"instrument/software/settings terms\",\"sample or condition context\",\"path/extension fallback\"]},\n{\"rank\":6,\"file_path\":\"10/audita.txt\",\"score\":0.69,\"reasons\":[\"acquisition settings\",\"instrument/software/settings terms\",\"audit/provenance context\",\"text-like extension\"]},\n{\"rank\":7,\"file_path\":\"10/pdata/1/outd\",\"score\":0.66,\"reasons\":[\"explicit dataset/package documentation\",\"instrument/software/settings terms\",\"path/extension fallback\"]}]\n\n"
+      },
+      {
+        "name": "validated_summaries_json",
+        "text": "Validated per-file summaries JSON:\n[{\"file_path\":\"10/acqus\",\"information_summary\":\"This file contains parameter settings for a Bruker NMR experiment, likely used to control the instrument and define the experimental conditions. It includes various acquisition and processing parameters.\"},\n{\"file_path\":\"10/format.temp\",\"data_format\":\"text\",\"information_summary\":\"This file contains acquisition parameters for a 1H NMR experiment, likely generated by a Bruker instrument. It defines variables such as spectral width, time domain size, and pulse program details.\"},\n{\"file_path\":\"10/pdata/1/proc\",\"data_format\":\"text\",\"information_summary\":\"This file contains parameter values and settings for a 1H NMR experiment, likely used by Bruker TopSpin software. It defines various acquisition and processing parameters.\"},\n{\"file_path\":\"10/pdata/1/procs\",\"data_format\":\"text\",\"information_summary\":\"This file contains parameter values and settings for a 1H NMR experiment, likely used to control the Bruker TopSpin software. It defines various acquisition and processing parameters.\"},\n{\"file_path\":\"10/acqu\",\"information_summary\":\"This file contains parameter settings for a Bruker 1H NMR experiment, likely used to control the instrument and define the experimental conditions. It includes various parameters related to pulse sequences, frequencies, and data acquisition.\"},\n{\"file_path\":\"10/audita.txt\",\"data_format\":\"txt\",\"information_summary\":\"This file contains an audit trail generated by Bruker TOPSPIN NMR software. It records actions performed during data acquisition, including user information, configuration hashes, and data hashes.\"},\n{\"file_path\":\"10/pdata/1/outd\",\"data_format\":\"text\",\"information_summary\":\"This file is a parameter file for Bruker TopSpin NMR software, containing configuration settings and metadata related to a 1D NMR experiment.\"},\n{\"file_path\":\"10/specpar\",\"data_format\":\"text\",\"information_summary\":\"This file contains parameter values for a Bruker NMR experiment, including instrument settings and acquisition parameters. It appears to be a configuration file used by the TOPSPIN software.\"},\n{\"file_path\":\"10/pulseprogram\",\"data_format\":\"text\",\"information_summary\":\"This file contains a Bruker NMR pulse program, likely for a 1D experiment. It defines parameters and sequences for the NMR experiment.\"},\n{\"file_path\":\"10/fid\",\"data_format\":\"fid\",\"information_summary\":\"This file appears to contain raw NMR data, likely in a proprietary format. The sampled content is empty.\"},\n{\"file_path\":\"10/fq1list\",\"information_summary\":\"This file contains a list of numerical data, likely representing signal intensity values. The data appears to be a series of integers, possibly related to NMR spectroscopy.\"},\n{\"file_path\":\"10/pdata/1/title\",\"data_format\":\"text\",\"information_summary\":\"This file contains a title or label, likely for a NMR experiment, including names and an identifier.\"},\n{\"file_path\":\"10/scon2\"},\n{\"file_path\":\"10/shimvalues\",\"data_format\":\"text\",\"information_summary\":\"This file contains shim values and lock parameters for a Bruker NMR spectrometer. It includes gradient settings and shim current values.\"},\n{\"file_path\":\"10/uxnmr.info\",\"data_format\":\"text\",\"information_summary\":\"This file contains configuration information for a Bruker Avance III NMR spectrometer, including hardware details, network addresses, and cable connections.\"},\n{\"file_path\":\"10/uxnmr.par\"}]\n\n"
+      },
+      {
+        "name": "seeded_graph_compact_text",
+        "text": "Backend-seeded package graph endpoints and deterministic hints:\nFILES\n1 file:10/acqus | dir=10 | groups=group:acquisition_settings, group:instrument_settings, group:processing_settings\n2 file:10/format.temp | dir=10 | groups=group:acquisition_settings\n3 file:10/pdata/1/proc | dir=10/pdata/1 | groups=group:acquisition_settings, group:instrument_settings, group:processing_settings\n4 file:10/pdata/1/procs | dir=10/pdata/1 | groups=group:acquisition_settings, group:instrument_settings, group:processing_settings\n5 file:10/acqu | dir=10 | groups=group:acquisition_settings, group:instrument_settings\n6 file:10/audita.txt | dir=10 | groups=group:acquisition_settings, group:audit_provenance\n7 file:10/pdata/1/outd | dir=10/pdata/1 | groups=group:instrument_settings\n8 file:10/specpar | dir=10 | groups=group:acquisition_settings, group:instrument_settings\n9 file:10/pulseprogram | dir=10 | groups=group:parameter_settings\n10 file:10/fid | dir=10 | groups=-\n11 file:10/fq1list | dir=10 | groups=-\n12 file:10/pdata/1/title | dir=10/pdata/1 | groups=-\n13 file:10/scon2 | dir=10 | groups=-\n14 file:10/shimvalues | dir=10 | groups=group:instrument_settings\n15 file:10/uxnmr.info | dir=10 | groups=group:parameter_settings\n16 file:10/uxnmr.par | dir=10 | groups=-\n17 file:10/prosol_History | dir=10 | groups=-\n\nPATH TREE\npackage:root\n- 10/\n  - acqu\n  - acqus\n  - audita.txt\n  - fid\n  - format.temp\n  - fq1list\n  - pdata/\n    - 1/\n      - outd\n      - proc\n      - procs\n      - title\n  - prosol_History\n  - pulseprogram\n  - scon2\n  - shimvalues\n  - specpar\n  - uxnmr.info\n  - uxnmr.par\n\nGROUPS\ngroup:acquisition_settings <- file:10/acqu, file:10/acqus, file:10/audita.txt, file:10/format.temp, file:10/pdata/1/proc, file:10/pdata/1/procs, file:10/specpar\ngroup:audit_provenance <- file:10/audita.txt\ngroup:instrument_settings <- file:10/acqu, file:10/acqus, file:10/pdata/1/outd, file:10/pdata/1/proc, file:10/pdata/1/procs, file:10/shimvalues, file:10/specpar\ngroup:parameter_settings <- file:10/pulseprogram, file:10/uxnmr.info\ngroup:processing_settings <- file:10/acqus, file:10/pdata/1/proc, file:10/pdata/1/procs\n\nBACKEND HINTS\ngroup:instrument_settings parameterizes group:acquisition_settings\n\nContainment is backend-owned and deterministic. Do not create contains edges.\n\n"
+      },
+      {
+        "name": "fallback_previews_json",
+        "text": "Fallback raw file previews JSON:\n[]\n\n"
+      },
+      {
+        "name": "final_task_instructions",
+        "text": "Suggest additions to the backend-seeded ExtractionOverview package graph that will orient later one-shot chunk extraction calls. Use the per-file summaries as the primary input and previews only as fallback context when summaries are absent. Treat this as package graph triage, not final scientific interpretation. Do not create contains edges: the backend will add real package/directory/file containment from paths. Ranked order means extraction priority only; it is not evidence that one file contains another. Do not repeat seeded nodes or edges. Add only missing generic group nodes and missing semantic edges. Prefer file-to-group and group-to-group edges over file-to-file edges. When connecting to files, use file node IDs exactly as file:<file_path> from the ranked files JSON. When summaries are present, do not claim that per-file summaries are unavailable. Use uncertain_relation for weak or ambiguous links. Return at most 8 nodes and 16 edges. Later extracted objects must still be supported by source_text from the current chunk only."
+      }
+    ]
+  },
+  "included_summary_paths": [
+    "10/acqus",
+    "10/format.temp",
+    "10/pdata/1/proc",
+    "10/pdata/1/procs",
+    "10/acqu",
+    "10/audita.txt",
+    "10/pdata/1/outd",
+    "10/specpar",
+    "10/pulseprogram",
+    "10/fid",
+    "10/fq1list",
+    "10/pdata/1/title",
+    "10/scon2",
+    "10/shimvalues",
+    "10/uxnmr.info",
+    "10/uxnmr.par"
+  ],
+  "dropped_summary_paths": [],
+  "included_ranked_paths": [
+    "10/acqus",
+    "10/format.temp",
+    "10/pdata/1/proc",
+    "10/pdata/1/procs",
+    "10/acqu",
+    "10/audita.txt",
+    "10/pdata/1/outd"
+  ],
+  "dropped_ranked_paths": [
+    "10/specpar",
+    "10/pulseprogram",
+    "10/fid",
+    "10/fq1list",
+    "10/pdata/1/title",
+    "10/scon2",
+    "10/shimvalues",
+    "10/uxnmr.info",
+    "10/uxnmr.par"
+  ],
+  "included_preview_paths": [],
+  "dropped_preview_paths": [],
+  "hard_truncated": false,
+  "error_type": "",
+  "message": "",
+  "last_error_type": "",
+  "last_error": "",
+  "failed_response_excerpt": "",
+  "first_model_output": "",
+  "failed_model_output": "",
+  "usage": {
+    "requests": 1,
+    "input_tokens": 3474,
+    "output_tokens": 662,
+    "prompt_eval_duration_ms": 0,
+    "load_duration_ms": 0,
+    "response_duration_ms": 0,
+    "total_duration_ms": 16595
+  }
+}

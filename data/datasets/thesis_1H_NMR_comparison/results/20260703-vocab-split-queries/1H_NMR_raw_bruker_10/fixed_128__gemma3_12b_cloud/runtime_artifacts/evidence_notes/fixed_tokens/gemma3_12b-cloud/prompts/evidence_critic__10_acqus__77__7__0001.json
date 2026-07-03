@@ -1,0 +1,72 @@
+{
+  "operation_id": "evidence_critic__10_acqus__77__7",
+  "agent_name": "evidence_critic",
+  "model": "gemma3:12b-cloud",
+  "output_type": "EvidenceAssessmentContext",
+  "status": "completed",
+  "metadata": {
+    "file_path": "10/acqus",
+    "chunk_index": 77,
+    "candidate_count": 7
+  },
+  "attempts": [
+    {
+      "attempt_index": 0,
+      "attempt_kind": "initial",
+      "model": "gemma3:12b-cloud",
+      "tokenizer_fallback": false,
+      "tokenizer_fallback_reason": null,
+      "components": [
+        {
+          "channel": "system",
+          "name": "evidence_critic_system_prompt",
+          "text": "\nYou assess grounded evidence candidates using only domain-agnostic quality criteria.\nDo not decide relevance by recognizing a particular scientific domain, instrument, vendor, file format, or key name.\nReturn only a valid EvidenceAssessmentContext JSON object.\n\nAssess each candidate independently using categorical judgments:\n- groundedness: whether evidence_text supports the claim.\n- self_containedness: whether the claim can be understood without hidden prompt context.\n- scope_clarity: whether package/resource/section/environment scope is clear.\n- portability: whether the claim remains meaningful when the package is copied elsewhere.\n- semantic_interpretability: whether the claim is meaningful rather than raw unexplained syntax.\n- environment_dependence: low/medium/high dependence on local machine, session, user, installation, or network context.\n- specificity: whether the claim is concrete without overinterpretation.\n- novelty: whether it adds information beyond repeated template content.\n- uncertainty: low/medium/high ambiguity.\n",
+          "chars": 1048,
+          "tokens": 206,
+          "cumulative_tokens": 206
+        },
+        {
+          "channel": "system",
+          "name": "system_schema",
+          "text": "\n\nReturn exactly one JSON object that satisfies this JSON Schema. Do not include Markdown fences, prose, comments, or additional text.\n\nJSON Schema:\n{\"$defs\":{\"EvidenceAssessment\":{\"properties\":{\"candidate_id\":{\"title\":\"Candidate Id\",\"type\":\"string\"},\"groundedness\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Groundedness\",\"type\":\"string\"},\"self_containedness\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Self Containedness\",\"type\":\"string\"},\"scope_clarity\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Scope Clarity\",\"type\":\"string\"},\"portability\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Portability\",\"type\":\"string\"},\"semantic_interpretability\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Semantic Interpretability\",\"type\":\"string\"},\"environment_dependence\":{\"default\":\"medium\",\"enum\":[\"low\",\"medium\",\"high\"],\"title\":\"Environment Dependence\",\"type\":\"string\"},\"specificity\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Specificity\",\"type\":\"string\"},\"novelty\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Novelty\",\"type\":\"string\"},\"uncertainty\":{\"default\":\"medium\",\"enum\":[\"low\",\"medium\",\"high\"],\"title\":\"Uncertainty\",\"type\":\"string\"},\"rationale\":{\"default\":\"\",\"title\":\"Rationale\",\"type\":\"string\"}},\"required\":[\"candidate_id\"],\"title\":\"EvidenceAssessment\",\"type\":\"object\"}},\"properties\":{\"assessments\":{\"items\":{\"$ref\":\"#/$defs/EvidenceAssessment\"},\"title\":\"Assessments\",\"type\":\"array\"}},\"title\":\"EvidenceAssessmentContext\",\"type\":\"object\"}",
+          "chars": 1554,
+          "tokens": 361,
+          "cumulative_tokens": 566
+        },
+        {
+          "channel": "prompt",
+          "name": "chunk_metadata",
+          "text": "Chunk context metadata:\n{\"start_idx\":18,\"end_idx\":26,\"file_path\":\"10/acqus\",\"data_package_name\":\"1H_NMR_raw_bruker_10\"}\n\n",
+          "chars": 121,
+          "tokens": 50,
+          "cumulative_tokens": 616
+        },
+        {
+          "channel": "prompt",
+          "name": "validated_candidates",
+          "text": "Validated evidence candidates JSON:\n[{'candidate_id': '10/acqus:18:26:0', 'category': 'instrument_signal', 'role': 'parameter', 'claim': 'The 1H NMR frequency is 500.13 MHz.', 'evidence_text': '$BF1= 500.13', 'uncertainty': '', 'file_path': '10/acqus', 'start_idx': 18, 'end_idx': 26, 'evidence_match_score': 1.0}, {'candidate_id': '10/acqus:18:26:1', 'category': 'instrument_signal', 'role': 'parameter', 'claim': 'The 1H NMR frequency is 500.13 MHz.', 'evidence_text': '$BF2= 500.13', 'uncertainty': '', 'file_path': '10/acqus', 'start_idx': 18, 'end_idx': 26, 'evidence_match_score': 1.0}, {'candidate_id': '10/acqus:18:26:2', 'category': 'instrument_signal', 'role': 'parameter', 'claim': 'The 1H NMR frequency is 500.13 MHz.', 'evidence_text': '$BF3= 500.13', 'uncertainty': '', 'file_path': '10/acqus', 'start_idx': 18, 'end_idx': 26, 'evidence_match_score': 1.0}, {'candidate_id': '10/acqus:18:26:3', 'category': 'instrument_signal', 'role': 'parameter', 'claim': 'The 1H NMR frequency is 500.13 MHz.', 'evidence_text': '$BF4= 500.13', 'uncertainty': '', 'file_path': '10/acqus', 'start_idx': 18, 'end_idx': 26, 'evidence_match_score': 1.0}, {'candidate_id': '10/acqus:18:26:4', 'category': 'instrument_signal', 'role': 'parameter', 'claim': 'The 1H NMR frequency is 500.13 MHz.', 'evidence_text': '$BF5= 500.13', 'uncertainty': '', 'file_path': '10/acqus', 'start_idx': 18, 'end_idx': 26, 'evidence_match_score': 1.0}, {'candidate_id': '10/acqus:18:26:5', 'category': 'instrument_signal', 'role': 'parameter', 'claim': 'The 1H NMR frequency is 500.13 MHz.', 'evidence_text': '$BF6= 500.13', 'uncertainty': '', 'file_path': '10/acqus', 'start_idx': 18, 'end_idx': 26, 'evidence_match_score': 1.0}, {'candidate_id': '10/acqus:18:26:6', 'category': 'instrument_signal', 'role': 'parameter', 'claim': 'The 1H NMR frequency is 500.13 MHz.', 'evidence_text': '$BF7= 500.13', 'uncertainty': '', 'file_path': '10/acqus', 'start_idx': 18, 'end_idx': 26, 'evidence_match_score': 1.0}]\n\n",
+          "chars": 1984,
+          "tokens": 834,
+          "cumulative_tokens": 1450
+        },
+        {
+          "channel": "prompt",
+          "name": "local_chunk_context",
+          "text": "Local chunk context for assessment:\n##$AUNM= <au_zg>\n##$AUTOPOS= <1 >\n##$BF1= 500.13\n##$BF2= 500.13\n##$BF3= 500.13\n##$BF4= 500.13\n##$BF5= 500.13\n##$BF6= 500.13\n##$BF7= 500.13\n",
+          "chars": 175,
+          "tokens": 120,
+          "cumulative_tokens": 1570
+        }
+      ],
+      "usage": {
+        "requests": 1,
+        "input_tokens": 1578,
+        "output_tokens": 710,
+        "prompt_eval_duration_ms": 0,
+        "load_duration_ms": 0,
+        "response_duration_ms": 0,
+        "total_duration_ms": 24207
+      }
+    }
+  ]
+}

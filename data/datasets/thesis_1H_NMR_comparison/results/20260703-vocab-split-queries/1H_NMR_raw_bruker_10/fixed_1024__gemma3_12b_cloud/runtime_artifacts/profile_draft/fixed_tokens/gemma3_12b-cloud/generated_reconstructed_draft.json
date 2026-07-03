@@ -1,0 +1,307 @@
+{
+  "id": "2e38a6a6",
+  "title": [
+    "NMR Spectral Data"
+  ],
+  "description": [
+    "NMR spectral data acquired on an Avance III NMR spectrometer."
+  ],
+  "was_generated_by": [
+    {
+      "id": "2e38a6a6:activity:dataset-generation",
+      "title": [
+        "Automated NMR Spectral Data Acquisition and Processing"
+      ],
+      "description": [
+        "Automated acquisition and processing of 1H NMR spectra using Bruker TOPSPIN software, defined by parameter files and pulse programs."
+      ],
+      "realized_plan": {
+        "title": "NMR Experiment Plan",
+        "description": "Defined by parameter files (acqu, pulseprogram, format.temp) specifying acquisition sequence, pulse parameters, and frequency settings."
+      },
+      "carried_out_by": [
+        {
+          "id": "2e38a6a6:agentic-entity:bruker-nmr-spectrometer",
+          "title": "Bruker NMR Spectrometer",
+          "description": "NMR instrument used for data acquisition.",
+          "has_qualitative_attribute": [
+            {
+              "title": "Manufacturer",
+              "description": "The origin of the data is Bruker BioSpin GmbH, as stated in the acqu file.",
+              "value": "Bruker BioSpin GmbH",
+              "type": {
+                "id": "http://nmrML.org/nmrCV#NMR:1400257"
+              }
+            },
+            {
+              "title": "Institution",
+              "description": "The NMR experiment was performed at Karlsruher Institut fuer Technologie Karlsruhe Germany, as stated in the uxnmr.par file.",
+              "value": "Karlsruher Institut fuer Technologie Karlsruhe Germany"
+            }
+          ],
+          "has_quantitative_attribute": [
+            {
+              "value": 3122091,
+              "has_quantity_type": "length",
+              "rdf_type": {
+                "id": "https://qudt.org/schema/qudt/Quantity",
+                "title": "Quantity",
+                "from_CV": "http://qudt.org/schema/qudt"
+              }
+            },
+            {
+              "value": -3447590,
+              "has_quantity_type": "YMIN_a",
+              "rdf_type": {
+                "id": "https://qudt.org/schema/qudt/Quantity",
+                "title": "Quantity",
+                "from_CV": "http://qudt.org/schema/qudt"
+              }
+            }
+          ],
+          "type": {
+            "id": "http://nmrML.org/nmrCV#NMR:1400198"
+          }
+        },
+        {
+          "id": "2e38a6a6:agentic-entity:topspin-software",
+          "title": "TOPSPIN Software",
+          "description": "Software used for experiment execution, Fourier transformation, and baseline correction.",
+          "has_qualitative_attribute": [
+            {
+              "title": "File Format Version",
+              "description": "The file format version as indicated in the acqu file.",
+              "value": "5.0",
+              "type": {
+                "id": "https://w3id.org/nfdi4cat/voc4cat_0005027"
+              }
+            },
+            {
+              "title": "Data Type",
+              "description": "The data type as indicated in the acqu file.",
+              "value": "Parameter Values",
+              "type": {
+                "id": "http://nmrML.org/nmrCV#NMR:1400048"
+              }
+            },
+            {
+              "title": "Origin",
+              "description": "The origin of the data as recorded in the audit trail.",
+              "value": "Bruker BioSpin GmbH",
+              "type": {
+                "id": "http://nmrML.org/nmrCV#NMR:1000079"
+              }
+            }
+          ],
+          "type": {
+            "id": "http://nmrML.org/nmrCV#NMR:1400215"
+          }
+        },
+        {
+          "id": "2e38a6a6:agentic-entity:user",
+          "title": "User",
+          "description": "User performing actions recorded in the audit trail.",
+          "has_qualitative_attribute": [
+            {
+              "title": "User ID",
+              "description": "The user ID recorded in the audit trail.",
+              "value": "braese",
+              "type": {
+                "id": "http://nmrML.org/nmrCV#NMR:1000022"
+              }
+            }
+          ],
+          "type": {
+            "id": "https://w3id.org/nfdi4cat/voc4cat_0007045"
+          }
+        }
+      ],
+      "evaluated_entity": [
+        {
+          "id": "2e38a6a6:evaluated-entity:1h-nmr-spectra",
+          "title": "1H NMR Spectra",
+          "description": "The target of the NMR experiment.",
+          "has_qualitative_attribute": [
+            {
+              "title": "NMR Type",
+              "description": "The NMR experiment is Proton, as stated in the acqu file.",
+              "value": "Proton",
+              "type": {
+                "id": "https://w3id.org/nfdi4cat/voc4cat_0000196"
+              }
+            },
+            {
+              "title": "Origin",
+              "description": "The origin of the data is Bruker BioSpin GmbH, as stated in the acqu file.",
+              "value": "Bruker BioSpin GmbH",
+              "type": {
+                "id": "http://nmrML.org/nmrCV#NMR:1000079"
+              }
+            }
+          ],
+          "type": {
+            "id": "https://w3id.org/nfdi4cat/voc4cat_0000073"
+          }
+        }
+      ],
+      "had_input_entity": [
+        {
+          "id": "2e38a6a6:input-entity:acqu-file",
+          "title": "acqu File",
+          "description": "NMR acquisition parameters.",
+          "type": {
+            "id": "http://nmrML.org/nmrCV#NMR:1002006"
+          }
+        },
+        {
+          "id": "2e38a6a6:input-entity:pulseprogram-file",
+          "title": "pulseprogram File",
+          "description": "NMR pulse program.",
+          "has_qualitative_attribute": [
+            {
+              "title": "Flip Angle",
+              "description": "The pulse program uses a 30 degree flip angle.",
+              "value": "30 degree",
+              "type": {
+                "id": "http://nmrML.org/nmrCV#NMR:1000057"
+              }
+            },
+            {
+              "title": "Pulse Program Class",
+              "description": "The pulse program is defined as CLASS HighRes.",
+              "value": "HighRes",
+              "type": {
+                "id": "http://nmrML.org/nmrCV#NMR:1400143"
+              }
+            },
+            {
+              "title": "Pulse Program Dimension",
+              "description": "The pulse program is defined as DIM 1D.",
+              "value": "1D",
+              "type": {
+                "id": "http://nmrML.org/nmrCV#NMR:1400140"
+              }
+            },
+            {
+              "title": "Pulse Program Type",
+              "description": "The pulse program is defined as TYPE blank.",
+              "value": "blank",
+              "type": {
+                "id": "http://nmrML.org/nmrCV#NMR:1400037"
+              }
+            }
+          ],
+          "type": {
+            "id": "http://nmrML.org/nmrCV#NMR:1400037"
+          }
+        },
+        {
+          "id": "2e38a6a6:input-entity:format-temp-file",
+          "title": "format.temp File",
+          "description": "NMR acquisition parameters.",
+          "type": {
+            "id": "http://nmrML.org/nmrCV#NMR:1400196"
+          }
+        }
+      ],
+      "had_output_entity": [
+        {
+          "id": "2e38a6a6:output-entity:raw-nmr-data-fid",
+          "title": "Raw NMR Data (fid)",
+          "description": "Raw NMR data in binary format.",
+          "has_qualitative_attribute": [
+            {
+              "title": "Origin",
+              "description": "The origin of the data, as recorded in the acquisition file.",
+              "value": "Bruker BioSpin GmbH",
+              "type": {
+                "id": "http://nmrML.org/nmrCV#NMR:1000079"
+              }
+            }
+          ],
+          "type": {
+            "id": "http://nmrML.org/nmrCV#NMR:1000224"
+          }
+        },
+        {
+          "id": "2e38a6a6:output-entity:processed-spectral-data",
+          "title": "Processed Spectral Data",
+          "description": "Processed NMR spectral data.",
+          "type": {
+            "id": "http://nmrML.org/nmrCV#NMR:1002007"
+          }
+        },
+        {
+          "id": "2e38a6a6:output-entity:audit-trail-audita-txt",
+          "title": "Audit Trail (audita.txt)",
+          "description": "Record of user actions and system configuration.",
+          "has_qualitative_attribute": [
+            {
+              "title": "Origin",
+              "description": "The origin of the NMR data, as recorded in the audit trail.",
+              "value": "Bruker BioSpin GmbH",
+              "type": {
+                "id": "https://w3id.org/nfdi4cat/voc4cat_0000073"
+              }
+            },
+            {
+              "title": "Owner",
+              "description": "The owner of the NMR data, as recorded in the audit trail.",
+              "value": "nmr",
+              "type": {
+                "id": "http://nmrML.org/nmrCV#NMR:1400203"
+              }
+            },
+            {
+              "title": "User ID",
+              "description": "The user ID, as recorded in the audit trail.",
+              "value": "braese",
+              "type": {
+                "id": "http://nmrML.org/nmrCV#NMR:1000022"
+              }
+            }
+          ],
+          "type": {
+            "id": "https://w3id.org/nfdi4cat/voc4cat_0000184"
+          }
+        }
+      ],
+      "has_quantitative_attribute": [
+        {
+          "value": 0.0,
+          "has_quantity_type": "pulse width",
+          "rdf_type": {
+            "id": "https://qudt.org/schema/qudt/Quantity",
+            "title": "Quantity",
+            "from_CV": "http://qudt.org/schema/qudt"
+          }
+        }
+      ],
+      "type": {
+        "id": "http://nmrML.org/nmrCV#NMR:1002007"
+      }
+    }
+  ],
+  "identifier": [
+    "2e38a6a6"
+  ],
+  "keyword": [
+    "NMR",
+    "spectroscopy",
+    "Bruker",
+    "TOPSPIN",
+    "acquisition",
+    "processing",
+    "parameter",
+    "audit trail",
+    "fid",
+    "pulse program"
+  ],
+  "type": [
+    {
+      "preferred_label": [
+        "NMR Spectroscopy"
+      ]
+    }
+  ]
+}

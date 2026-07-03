@@ -1,0 +1,72 @@
+{
+  "operation_id": "evidence_critic__10_pdata_1_procs__40__13",
+  "agent_name": "evidence_critic",
+  "model": "gemma3:12b-cloud",
+  "output_type": "EvidenceAssessmentContext",
+  "status": "completed",
+  "metadata": {
+    "file_path": "10/pdata/1/procs",
+    "chunk_index": 40,
+    "candidate_count": 13
+  },
+  "attempts": [
+    {
+      "attempt_index": 0,
+      "attempt_kind": "initial",
+      "model": "gemma3:12b-cloud",
+      "tokenizer_fallback": false,
+      "tokenizer_fallback_reason": null,
+      "components": [
+        {
+          "channel": "system",
+          "name": "evidence_critic_system_prompt",
+          "text": "\nYou assess grounded evidence candidates using only domain-agnostic quality criteria.\nDo not decide relevance by recognizing a particular scientific domain, instrument, vendor, file format, or key name.\nReturn only a valid EvidenceAssessmentContext JSON object.\n\nAssess each candidate independently using categorical judgments:\n- groundedness: whether evidence_text supports the claim.\n- self_containedness: whether the claim can be understood without hidden prompt context.\n- scope_clarity: whether package/resource/section/environment scope is clear.\n- portability: whether the claim remains meaningful when the package is copied elsewhere.\n- semantic_interpretability: whether the claim is meaningful rather than raw unexplained syntax.\n- environment_dependence: low/medium/high dependence on local machine, session, user, installation, or network context.\n- specificity: whether the claim is concrete without overinterpretation.\n- novelty: whether it adds information beyond repeated template content.\n- uncertainty: low/medium/high ambiguity.\n",
+          "chars": 1048,
+          "tokens": 206,
+          "cumulative_tokens": 206
+        },
+        {
+          "channel": "system",
+          "name": "system_schema",
+          "text": "\n\nReturn exactly one JSON object that satisfies this JSON Schema. Do not include Markdown fences, prose, comments, or additional text.\n\nJSON Schema:\n{\"$defs\":{\"EvidenceAssessment\":{\"properties\":{\"candidate_id\":{\"title\":\"Candidate Id\",\"type\":\"string\"},\"groundedness\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Groundedness\",\"type\":\"string\"},\"self_containedness\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Self Containedness\",\"type\":\"string\"},\"scope_clarity\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Scope Clarity\",\"type\":\"string\"},\"portability\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Portability\",\"type\":\"string\"},\"semantic_interpretability\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Semantic Interpretability\",\"type\":\"string\"},\"environment_dependence\":{\"default\":\"medium\",\"enum\":[\"low\",\"medium\",\"high\"],\"title\":\"Environment Dependence\",\"type\":\"string\"},\"specificity\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Specificity\",\"type\":\"string\"},\"novelty\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Novelty\",\"type\":\"string\"},\"uncertainty\":{\"default\":\"medium\",\"enum\":[\"low\",\"medium\",\"high\"],\"title\":\"Uncertainty\",\"type\":\"string\"},\"rationale\":{\"default\":\"\",\"title\":\"Rationale\",\"type\":\"string\"}},\"required\":[\"candidate_id\"],\"title\":\"EvidenceAssessment\",\"type\":\"object\"}},\"properties\":{\"assessments\":{\"items\":{\"$ref\":\"#/$defs/EvidenceAssessment\"},\"title\":\"Assessments\",\"type\":\"array\"}},\"title\":\"EvidenceAssessmentContext\",\"type\":\"object\"}",
+          "chars": 1554,
+          "tokens": 361,
+          "cumulative_tokens": 566
+        },
+        {
+          "channel": "prompt",
+          "name": "chunk_metadata",
+          "text": "Chunk context metadata:\n{\"start_idx\":29,\"end_idx\":41,\"file_path\":\"10/pdata/1/procs\",\"data_package_name\":\"1H_NMR_raw_bruker_10\"}\n\n",
+          "chars": 129,
+          "tokens": 55,
+          "cumulative_tokens": 621
+        },
+        {
+          "channel": "prompt",
+          "name": "validated_candidates",
+          "text": "Validated evidence candidates JSON:\n[{'candidate_id': '10/pdata/1/procs:29:41:0', 'category': 'resource_signal', 'role': 'qualitative_attribute', 'claim': 'The data modification code is 1.', 'evidence_text': '$DATMOD= 1', 'uncertainty': '', 'file_path': '10/pdata/1/procs', 'start_idx': 29, 'end_idx': 41, 'evidence_match_score': 1.0}, {'candidate_id': '10/pdata/1/procs:29:41:1', 'category': 'resource_signal', 'role': 'qualitative_attribute', 'claim': 'The data type parameter is 0.', 'evidence_text': '$DTYPP= 0', 'uncertainty': '', 'file_path': '10/pdata/1/procs', 'start_idx': 29, 'end_idx': 41, 'evidence_match_score': 1.0}, {'candidate_id': '10/pdata/1/procs:29:41:2', 'category': 'resource_signal', 'role': 'qualitative_attribute', 'claim': 'The data correction offset is 0.', 'evidence_text': '$COROFFS= 0', 'uncertainty': '', 'file_path': '10/pdata/1/procs', 'start_idx': 29, 'end_idx': 41, 'evidence_match_score': 1.0}, {'candidate_id': '10/pdata/1/procs:29:41:3', 'category': 'resource_signal', 'role': 'qualitative_attribute', 'claim': 'The filter is empty.', 'evidence_text': '$DFILT= <>', 'uncertainty': '', 'file_path': '10/pdata/1/procs', 'start_idx': 29, 'end_idx': 41, 'evidence_match_score': 1.0}, {'candidate_id': '10/pdata/1/procs:29:41:4', 'category': 'resource_signal', 'role': 'qualitative_attribute', 'claim': 'The first dimension parameter is 0.', 'evidence_text': '$F1P= 0', 'uncertainty': '', 'file_path': '10/pdata/1/procs', 'start_idx': 29, 'end_idx': 41, 'evidence_match_score': 1.0}, {'candidate_id': '10/pdata/1/procs:29:41:5', 'category': 'resource_signal', 'role': 'qualitative_attribute', 'claim': 'The second dimension parameter is 0.', 'evidence_text': '$F2P= 0', 'uncertainty': '', 'file_path': '10/pdata/1/procs', 'start_idx': 29, 'end_idx': 41, 'evidence_match_score': 1.0}, {'candidate_id': '10/pdata/1/procs:29:41:6', 'category': 'resource_signal', 'role': 'qualitative_attribute', 'claim': 'The Fourier correction parameter is 0.5.', 'evidence_text': '$FCOR= 0.5', 'uncertainty': '', 'file_path': '10/pdata/1/procs', 'start_idx': 29, 'end_idx': 41, 'evidence_match_score': 1.0}, {'candidate_id': '10/pdata/1/procs:29:41:7', 'category': 'resource_signal', 'role': 'qualitative_attribute', 'claim': 'The FT size is 0.', 'evidence_text': '$FTSIZE= 0', 'uncertainty': '', 'file_path': '10/pdata/1/procs', 'start_idx': 29, 'end_idx': 41, 'evidence_match_score': 1.0}, {'candidate_id': '10/pdata/1/procs:29:41:8', 'category': 'resource_signal', 'role': 'qualitative_attribute', 'claim': 'The cyclic parameter is 15.', 'evidence_text': '$CY= 15', 'uncertainty': '', 'file_path': '10/pdata/1/procs', 'start_idx': 29, 'end_idx': 41, 'evidence_match_score': 1.0}, {'candidate_id': '10/pdata/1/procs:29:41:9', 'category': 'resource_signal', 'role': 'qualitative_attribute', 'claim': 'The data code is 2.', 'evidence_text': '$DC= 2', 'uncertainty': '', 'file_path': '10/pdata/1/procs', 'start_idx': 29, 'end_idx': 41, 'evidence_match_score': 1.0}, {'candidate_id': '10/pdata/1/procs:29:41:10', 'category': 'resource_signal', 'role': 'qualitative_attribute', 'claim': 'The byte order parameter is 0.', 'evidence_text': '$BYTORDP= 0', 'uncertainty': '', 'file_path': '10/pdata/1/procs', 'start_idx': 29, 'end_idx': 41, 'evidence_match_score': 1.0}, {'candidate_id': '10/pdata/1/procs:29:41:11', 'category': 'resource_signal', 'role': 'qualitative_attribute', 'claim': 'The boolean parameter is no.', 'evidence_text': '$ERETIC= no', 'uncertainty': '', 'file_path': '10/pdata/1/procs', 'start_idx': 29, 'end_idx': 41, 'evidence_match_score': 1.0}, {'candidate_id': '10/pdata/1/procs:29:41:12', 'category': 'resource_signal', 'role': 'qualitative_attribute', 'claim': 'The BC modification code is 2.', 'evidence_text': '##$BC_mod= 2', 'uncertainty': '', 'file_path': '10/pdata/1/procs', 'start_idx': 29, 'end_idx': 41, 'evidence_match_score': 1.0}]\n\n",
+          "chars": 3878,
+          "tokens": 1548,
+          "cumulative_tokens": 2169
+        },
+        {
+          "channel": "prompt",
+          "name": "local_chunk_context",
+          "text": "Local chunk context for assessment:\n##$BC_mod= 2\n##$BYTORDP= 0\n##$COROFFS= 0\n##$CY= 15\n##$DATMOD= 1\n##$DC= 2\n##$DFILT= <>\n##$DTYPP= 0\n##$ERETIC= no\n##$F1P= 0\n##$F2P= 0\n##$FCOR= 0.5\n##$FTSIZE= 0\n",
+          "chars": 194,
+          "tokens": 117,
+          "cumulative_tokens": 2286
+        }
+      ],
+      "usage": {
+        "requests": 1,
+        "input_tokens": 2294,
+        "output_tokens": 1183,
+        "prompt_eval_duration_ms": 0,
+        "load_duration_ms": 0,
+        "response_duration_ms": 0,
+        "total_duration_ms": 35343
+      }
+    }
+  ]
+}

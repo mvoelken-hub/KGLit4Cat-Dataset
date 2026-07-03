@@ -1,0 +1,79 @@
+{
+  "operation_id": "profile_field_vocab_selection__location",
+  "agent_name": "profile_field_vocab_selection",
+  "model": "gemma3:12b-cloud",
+  "output_type": "VocabularyCandidateSelection",
+  "status": "completed",
+  "metadata": {
+    "source_value": "location",
+    "candidate_count": 23
+  },
+  "attempts": [
+    {
+      "attempt_index": 0,
+      "attempt_kind": "initial",
+      "model": "gemma3:12b-cloud",
+      "tokenizer_fallback": false,
+      "tokenizer_fallback_reason": null,
+      "components": [
+        {
+          "channel": "system",
+          "name": "vocab_candidate_selection_system_prompt",
+          "text": "\nYou select a single controlled-vocabulary term that normalizes a metadata field, or return null.\nMatch on the physical quantity or concept the field actually measures, using the source value AND the\nsemantic context (dataset/entity/attribute title and description). Read each candidate's label AND definition,\nnot just its URI fragment.\nWhen several candidates describe the same kind of quantity or concept, prefer the most general/plain one over a\nmore specific or named variant of it. But \"most general\" only applies among candidates that are the same\nquantity - it never justifies picking a wrong-domain term.\nHard rules - return null for selected_uri when ANY of these hold:\n- No candidate describes the same physical quantity or concept as the field. Sharing a token or a symbol with\n  the source value is not a match. Common traps include bare axis or column codes, incidental words, and unit\n  symbols or mathematical symbols; a single letter or a unit symbol by itself is never a quantity kind.\n- An ordinal or extremum modifier (first/last/minimum/maximum) by itself is not a quantity kind. However, when\n  it qualifies a field whose semantic context or source value clearly identifies the underlying physical\n  quantity, the ordinal does NOT disqualify the match - select the candidate that matches that underlying\n  quantity. Only abstain when the ordinal is the ONLY signal and no underlying quantity can be identified.\n- The candidate belongs to a different scientific or engineering domain than the measurement described in the\n  context (for example, a radioactivity, electrical-impedance, typography/printing, aerospace, or oceanography\n  term used for a measurement in an unrelated field). A different-domain candidate is not a match even if it\n  is the most general available - return null.\n- The best candidate is only a superficial or adjacent match rather than the same quantity or concept.\n- You are not confident the candidate is the same quantity. In that case return null with confidence 0 and a\n  short reason naming the trap, rather than forcing a match.\nUse only candidate URIs from the prompt. Always include selected_uri, confidence (0.0-1.0), and reason.\nYou MUST NOT select a candidate you just argued does not fit - return null instead. Return only JSON.\n",
+          "chars": 2289,
+          "tokens": 481,
+          "cumulative_tokens": 481
+        },
+        {
+          "channel": "system",
+          "name": "system_schema",
+          "text": "\n\nReturn exactly one JSON object that satisfies this JSON Schema. Do not include Markdown fences, prose, comments, or additional text.\n\nJSON Schema:\n{\"properties\":{\"selected_uri\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null,\"description\":\"URI of the selected candidate, or null when no candidate fits.\",\"title\":\"Selected Uri\"},\"confidence\":{\"default\":0.0,\"maximum\":1.0,\"minimum\":0.0,\"title\":\"Confidence\",\"type\":\"number\"},\"reason\":{\"default\":\"\",\"title\":\"Reason\",\"type\":\"string\"}},\"title\":\"VocabularyCandidateSelection\",\"type\":\"object\"}",
+          "chars": 549,
+          "tokens": 129,
+          "cumulative_tokens": 609
+        },
+        {
+          "channel": "prompt",
+          "name": "source_value",
+          "text": "Source value:\nlocation\n\n",
+          "chars": 24,
+          "tokens": 6,
+          "cumulative_tokens": 615
+        },
+        {
+          "channel": "prompt",
+          "name": "source_context",
+          "text": "Source context JSON:\n{'json_path': '/was_generated_by/0/evaluated_entity/0/has_qualitative_attribute/2/type', 'field_name': 'type', 'source_value': 'Location The location where the data was acquired, as stated in the uxnmr.info file.', 'role': 'type', 'semantic_context': 'NMR Spectral Data NMR spectral data acquired on an Avance III spectrometer at KIT. | Automated NMR Spectral Data Acquisition and Processing Automated acquisition and processing of 1H NMR spectra using Bruker TOPSPIN software, defined by parameter files and pulse programs. | 1H NMR Spectra The target of the NMR experiment. | Location The location where the data was acquired, as stated in the uxnmr.info file.'}\n\n",
+          "chars": 687,
+          "tokens": 167,
+          "cumulative_tokens": 782
+        },
+        {
+          "channel": "prompt",
+          "name": "candidate_terms",
+          "text": "Candidate terms JSON:\n[{'uri': 'https://w3id.org/nfdi4cat/voc4cat_0000181', 'vocabulary_identifier': 'https://w3id.org/nfdi4cat/voc4cat', 'rdf_type': 'skos__Concept', 'title': 'non-temporal abstract entity'}, {'uri': 'https://w3id.org/nfdi4cat/voc4cat_0000186', 'vocabulary_identifier': 'https://w3id.org/nfdi4cat/voc4cat', 'rdf_type': 'skos__Concept', 'title': 'attributes'}, {'uri': 'https://w3id.org/nfdi4cat/voc4cat_0000188', 'vocabulary_identifier': 'https://w3id.org/nfdi4cat/voc4cat', 'rdf_type': 'skos__Concept', 'title': 'reactor equipment'}, {'uri': 'https://w3id.org/nfdi4cat/voc4cat_0005018', 'vocabulary_identifier': 'https://w3id.org/nfdi4cat/voc4cat', 'rdf_type': 'skos__Concept', 'title': 'resource relation'}, {'uri': 'https://w3id.org/nfdi4cat/voc4cat_0005042', 'vocabulary_identifier': 'https://w3id.org/nfdi4cat/voc4cat', 'rdf_type': 'skos__Concept', 'title': 'is identical to'}, {'uri': 'https://w3id.org/nfdi4cat/voc4cat_0007006', 'vocabulary_identifier': 'https://w3id.org/nfdi4cat/voc4cat', 'rdf_type': 'skos__Concept', 'title': 'active site'}, {'uri': 'https://w3id.org/nfdi4cat/voc4cat_0007020', 'vocabulary_identifier': 'https://w3id.org/nfdi4cat/voc4cat', 'rdf_type': 'skos__Concept', 'title': 'catalyst bed'}, {'uri': 'https://w3id.org/nfdi4cat/voc4cat_0007044', 'vocabulary_identifier': 'https://w3id.org/nfdi4cat/voc4cat', 'rdf_type': 'skos__Concept', 'title': 'dispersion'}, {'uri': 'https://w3id.org/nfdi4cat/voc4cat_0007258', 'vocabulary_identifier': 'https://w3id.org/nfdi4cat/voc4cat', 'rdf_type': 'skos__Concept', 'title': 'active area'}, {'uri': 'https://w3id.org/nfdi4cat/voc4cat_0008095', 'vocabulary_identifier': 'https://w3id.org/nfdi4cat/voc4cat', 'rdf_type': 'skos__Concept', 'title': 'effective measurement time'}, {'uri': 'https://w3id.org/nfdi4cat/voc4cat_0008098', 'vocabulary_identifier': 'https://w3id.org/nfdi4cat/voc4cat', 'rdf_type': 'skos__Concept', 'title': 'XAS collection'}, {'uri': 'https://w3id.org/nfdi4cat/voc4cat_0008100', 'vocabulary_identifier': 'https://w3id.org/nfdi4cat/voc4cat', 'rdf_type': 'skos__Concept', 'title': 'detector performance measure'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000179', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'center of bin on x-axis'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000227', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'Varian acquisition parameter file'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000232', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'global'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000255', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'Lorentz Gaussian window function', 'description': 'Functional form:\\n       gm(x_i) = exp(e - g*g)\\n   Where:  e = pi*i*g1\\n           g = 0.6*pi*g2*(g3*(size-1)-i)\\n   Parameters:\\n   * data  Array of spectral data.\\n   * g1    Inverse exponential width.\\n   * g2    Gaussian broaden width.\\n   * g3    Location of gauss maximum.\\n   * inv   Set True for inve'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000309', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'triangle window function', 'description': 'Functional form:\\n       0:loc   linear increase/decrease from lHi to 1.0   \\n       loc:    linear increase/decrease from 1.0 to rHi\\n   \\n   Parameters:\\n   * data  Array of spectral data.\\n   * loc   Location of apex, \"auto\" sets to middle.\\n   * lHi   Left side starting height.\\n   * rHi   Right side st'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000428', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'Gaussian window function parameter'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000430', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'Gaussian maximum position'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000585', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'contact attribute'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000588', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'contact URL'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1002014', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'binned spectrum descriptor'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1400068', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'window function for apodization'}]\n\n",
+          "chars": 4356,
+          "tokens": 1672,
+          "cumulative_tokens": 2454
+        },
+        {
+          "channel": "prompt",
+          "name": "selection_instruction",
+          "text": "Select the best candidate URI, or return null if none fits.",
+          "chars": 59,
+          "tokens": 13,
+          "cumulative_tokens": 2467
+        }
+      ],
+      "usage": {
+        "requests": 1,
+        "input_tokens": 2476,
+        "output_tokens": 111,
+        "prompt_eval_duration_ms": 0,
+        "load_duration_ms": 0,
+        "response_duration_ms": 0,
+        "total_duration_ms": 3003
+      }
+    }
+  ]
+}

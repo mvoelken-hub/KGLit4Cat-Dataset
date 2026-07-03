@@ -1,0 +1,79 @@
+{
+  "operation_id": "profile_field_vocab_selection__reciprocal_Hertz",
+  "agent_name": "profile_field_vocab_selection",
+  "model": "gemma3:12b-cloud",
+  "output_type": "VocabularyCandidateSelection",
+  "status": "completed",
+  "metadata": {
+    "source_value": "reciprocal Hertz",
+    "candidate_count": 18
+  },
+  "attempts": [
+    {
+      "attempt_index": 0,
+      "attempt_kind": "initial",
+      "model": "gemma3:12b-cloud",
+      "tokenizer_fallback": false,
+      "tokenizer_fallback_reason": null,
+      "components": [
+        {
+          "channel": "system",
+          "name": "vocab_candidate_selection_system_prompt",
+          "text": "\nYou select a single controlled-vocabulary term that normalizes a metadata field, or return null.\nMatch on the physical quantity or concept the field actually measures, using the source value AND the\nsemantic context (dataset/entity/attribute title and description). Read each candidate's label AND definition,\nnot just its URI fragment.\nWhen several candidates describe the same kind of quantity or concept, prefer the most general/plain one over a\nmore specific or named variant of it. But \"most general\" only applies among candidates that are the same\nquantity - it never justifies picking a wrong-domain term.\nHard rules - return null for selected_uri when ANY of these hold:\n- No candidate describes the same physical quantity or concept as the field. Sharing a token or a symbol with\n  the source value is not a match. Common traps include bare axis or column codes, incidental words, and unit\n  symbols or mathematical symbols; a single letter or a unit symbol by itself is never a quantity kind.\n- An ordinal or extremum modifier (first/last/minimum/maximum) by itself is not a quantity kind. However, when\n  it qualifies a field whose semantic context or source value clearly identifies the underlying physical\n  quantity, the ordinal does NOT disqualify the match - select the candidate that matches that underlying\n  quantity. Only abstain when the ordinal is the ONLY signal and no underlying quantity can be identified.\n- The candidate belongs to a different scientific or engineering domain than the measurement described in the\n  context (for example, a radioactivity, electrical-impedance, typography/printing, aerospace, or oceanography\n  term used for a measurement in an unrelated field). A different-domain candidate is not a match even if it\n  is the most general available - return null.\n- The best candidate is only a superficial or adjacent match rather than the same quantity or concept.\n- You are not confident the candidate is the same quantity. In that case return null with confidence 0 and a\n  short reason naming the trap, rather than forcing a match.\nUse only candidate URIs from the prompt. Always include selected_uri, confidence (0.0-1.0), and reason.\nYou MUST NOT select a candidate you just argued does not fit - return null instead. Return only JSON.\n",
+          "chars": 2289,
+          "tokens": 481,
+          "cumulative_tokens": 481
+        },
+        {
+          "channel": "system",
+          "name": "system_schema",
+          "text": "\n\nReturn exactly one JSON object that satisfies this JSON Schema. Do not include Markdown fences, prose, comments, or additional text.\n\nJSON Schema:\n{\"properties\":{\"selected_uri\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null,\"description\":\"URI of the selected candidate, or null when no candidate fits.\",\"title\":\"Selected Uri\"},\"confidence\":{\"default\":0.0,\"maximum\":1.0,\"minimum\":0.0,\"title\":\"Confidence\",\"type\":\"number\"},\"reason\":{\"default\":\"\",\"title\":\"Reason\",\"type\":\"string\"}},\"title\":\"VocabularyCandidateSelection\",\"type\":\"object\"}",
+          "chars": 549,
+          "tokens": 129,
+          "cumulative_tokens": 609
+        },
+        {
+          "channel": "prompt",
+          "name": "source_value",
+          "text": "Source value:\nreciprocal Hertz\n\n",
+          "chars": 32,
+          "tokens": 8,
+          "cumulative_tokens": 617
+        },
+        {
+          "channel": "prompt",
+          "name": "source_context",
+          "text": "Source context JSON:\n{'json_path': '/was_generated_by/0/had_input_entity/0/has_quantitative_attribute/0/unit', 'field_name': 'unit', 'source_value': '', 'role': 'unit', 'semantic_context': 'NMR Spectral Data NMR spectral data acquired on an Avance III spectrometer at KIT. | Automated NMR Spectral Data Acquisition and Processing Automated acquisition and processing of 1H NMR spectra using Bruker TOPSPIN software, defined by parameter files and pulse programs. | acqu File NMR acquisition parameters. | SWH Subrange Upper Bound Upper bound of the SWH parameter, as defined in the format.temp file.', 'sibling_has_quantity_type': 'SWH Subrange Upper Bound', 'sibling_value': '100000000.0'}\n\n",
+          "chars": 692,
+          "tokens": 179,
+          "cumulative_tokens": 796
+        },
+        {
+          "channel": "prompt",
+          "name": "candidate_terms",
+          "text": "Candidate terms JSON:\n[{'uri': 'http://qudt.org/vocab/quantitykind/AreaPerTime', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Area per Time', 'description': 'Applicable units are those of quantitykind:AreaPerTime'}, {'uri': 'http://qudt.org/vocab/quantitykind/Frequency', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'frequency', 'description': '\"Frequency\" is the number of occurrences of a repeating event per unit time. The repetition of the events may be periodic (that is. the length of time between event repetitions is fixed) or aperiodic (i.e. the length of time between event repetitions varies). Therefore, we distinguish between period'}, {'uri': 'http://qudt.org/vocab/quantitykind/InverseLength', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Inverse Length', 'description': 'Reciprocal length or inverse length is a measurement used in several branches of science and mathematics. As the reciprocal of length, common units used for this measurement include the reciprocal metre or inverse metre ($m^{-1}$), the reciprocal centimetre or inverse centimetre ($cm^{-1}$), and, in'}, {'uri': 'http://qudt.org/vocab/quantitykind/Reluctance', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Reluctance', 'description': '\"Reluctance\" or magnetic resistance, is a concept used in the analysis of magnetic circuits. It is analogous to resistance in an electrical circuit, but rather than dissipating electric energy it stores magnetic energy. In likeness to the way an electric field causes an electric current to follow th', 'symbol': 'R_m'}, {'uri': 'http://qudt.org/vocab/quantitykind/Speed', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Speed', 'description': 'Speed is the magnitude of velocity.'}, {'uri': 'http://qudt.org/vocab/quantitykind/Unknown', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Unknown', 'description': 'Placeholder value used for reference from units where it is not clear what a given unit is a measure of.'}, {'uri': 'http://qudt.org/vocab/unit/HZ', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Hertz', 'description': '\\n  $\\\\textit{Hertz}$ (symbol $Hz$) is the SI unit of frequency defined as the number of cycles per second of a periodic phenomenon.\\n  One of its most common uses is the description of the sine wave, particularly those used in radio and audio applications, such as the frequency of musical tones.\\n  The', 'symbol': 'Hz'}, {'uri': 'http://qudt.org/vocab/unit/HZ-M', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Hertz Metre', 'description': '$\\\\textit{Hertz Metre}$ is the product of the SI derived unit hertz and the SI base unit metre.\\n  ', 'symbol': 'Hz·m'}, {'uri': 'http://qudt.org/vocab/unit/M2-HZ', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Square Metre Hertz', 'symbol': 'm²·Hz'}, {'uri': 'http://qudt.org/vocab/unit/M2-HZ4', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Square Metre Quartic Hertz', 'symbol': 'm²·Hz⁴'}, {'uri': 'http://qudt.org/vocab/unit/M2-PER-HZ', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Square Metre per Hertz', 'symbol': 'm²/Hz'}, {'uri': 'http://qudt.org/vocab/unit/NUM-PER-HR', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Number per Hour', 'symbol': '#/h'}, {'uri': 'http://qudt.org/vocab/unit/NUM-PER-YR', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Number per Year', 'description': '\"Number per Year\" is a unit for  \\'Frequency\\' expressed as $\\\\#/yr$.', 'symbol': '#/a'}, {'uri': 'http://qudt.org/vocab/unit/PER-ANGSTROM', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Reciprocal Angstrom', 'description': 'reciprocal of the unit angstrom', 'symbol': '/Å'}, {'uri': 'http://qudt.org/vocab/unit/PER-H', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Reciprocal Henry', 'description': 'reciprocal of the SI derived unit henry', 'symbol': '/H'}, {'uri': 'http://qudt.org/vocab/unit/PER-HR', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Reciprocal Hour', 'description': 'A reciprocal unit of time for $\\\\textit{reciprocal hour}$ or \"inverse hour\".', 'symbol': '/h'}, {'uri': 'http://qudt.org/vocab/unit/PER-WK', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Reciprocal Week', 'description': 'reciprocal of the unit week', 'symbol': '/wk'}, {'uri': 'http://qudt.org/vocab/unit/PER-YR', 'vocabulary_identifier': 'http://qudt.org/vocab/unit', 'rdf_type': 'qudt__Unit', 'title': 'Reciprocal Year', 'description': 'reciprocal of the unit year', 'symbol': '/a'}]\n\n",
+          "chars": 5125,
+          "tokens": 1543,
+          "cumulative_tokens": 2339
+        },
+        {
+          "channel": "prompt",
+          "name": "selection_instruction",
+          "text": "Select the best candidate URI, or return null if none fits.",
+          "chars": 59,
+          "tokens": 13,
+          "cumulative_tokens": 2352
+        }
+      ],
+      "usage": {
+        "requests": 1,
+        "input_tokens": 2361,
+        "output_tokens": 76,
+        "prompt_eval_duration_ms": 0,
+        "load_duration_ms": 0,
+        "response_duration_ms": 0,
+        "total_duration_ms": 1859
+      }
+    }
+  ]
+}

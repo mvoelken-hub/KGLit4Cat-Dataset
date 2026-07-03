@@ -1,0 +1,72 @@
+{
+  "operation_id": "evidence_critic__10_format.temp__63__6",
+  "agent_name": "evidence_critic",
+  "model": "gemma3:12b-cloud",
+  "output_type": "EvidenceAssessmentContext",
+  "status": "completed",
+  "metadata": {
+    "file_path": "10/format.temp",
+    "chunk_index": 63,
+    "candidate_count": 6
+  },
+  "attempts": [
+    {
+      "attempt_index": 0,
+      "attempt_kind": "initial",
+      "model": "gemma3:12b-cloud",
+      "tokenizer_fallback": false,
+      "tokenizer_fallback_reason": null,
+      "components": [
+        {
+          "channel": "system",
+          "name": "evidence_critic_system_prompt",
+          "text": "\nYou assess grounded evidence candidates using only domain-agnostic quality criteria.\nDo not decide relevance by recognizing a particular scientific domain, instrument, vendor, file format, or key name.\nReturn only a valid EvidenceAssessmentContext JSON object.\n\nAssess each candidate independently using categorical judgments:\n- groundedness: whether evidence_text supports the claim.\n- self_containedness: whether the claim can be understood without hidden prompt context.\n- scope_clarity: whether package/resource/section/environment scope is clear.\n- portability: whether the claim remains meaningful when the package is copied elsewhere.\n- semantic_interpretability: whether the claim is meaningful rather than raw unexplained syntax.\n- environment_dependence: low/medium/high dependence on local machine, session, user, installation, or network context.\n- specificity: whether the claim is concrete without overinterpretation.\n- novelty: whether it adds information beyond repeated template content.\n- uncertainty: low/medium/high ambiguity.\n",
+          "chars": 1048,
+          "tokens": 206,
+          "cumulative_tokens": 206
+        },
+        {
+          "channel": "system",
+          "name": "system_schema",
+          "text": "\n\nReturn exactly one JSON object that satisfies this JSON Schema. Do not include Markdown fences, prose, comments, or additional text.\n\nJSON Schema:\n{\"$defs\":{\"EvidenceAssessment\":{\"properties\":{\"candidate_id\":{\"title\":\"Candidate Id\",\"type\":\"string\"},\"groundedness\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Groundedness\",\"type\":\"string\"},\"self_containedness\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Self Containedness\",\"type\":\"string\"},\"scope_clarity\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Scope Clarity\",\"type\":\"string\"},\"portability\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Portability\",\"type\":\"string\"},\"semantic_interpretability\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Semantic Interpretability\",\"type\":\"string\"},\"environment_dependence\":{\"default\":\"medium\",\"enum\":[\"low\",\"medium\",\"high\"],\"title\":\"Environment Dependence\",\"type\":\"string\"},\"specificity\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Specificity\",\"type\":\"string\"},\"novelty\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Novelty\",\"type\":\"string\"},\"uncertainty\":{\"default\":\"medium\",\"enum\":[\"low\",\"medium\",\"high\"],\"title\":\"Uncertainty\",\"type\":\"string\"},\"rationale\":{\"default\":\"\",\"title\":\"Rationale\",\"type\":\"string\"}},\"required\":[\"candidate_id\"],\"title\":\"EvidenceAssessment\",\"type\":\"object\"}},\"properties\":{\"assessments\":{\"items\":{\"$ref\":\"#/$defs/EvidenceAssessment\"},\"title\":\"Assessments\",\"type\":\"array\"}},\"title\":\"EvidenceAssessmentContext\",\"type\":\"object\"}",
+          "chars": 1554,
+          "tokens": 361,
+          "cumulative_tokens": 566
+        },
+        {
+          "channel": "prompt",
+          "name": "chunk_metadata",
+          "text": "Chunk context metadata:\n{\"start_idx\":103,\"end_idx\":120,\"file_path\":\"10/format.temp\",\"data_package_name\":\"1H_NMR_raw_bruker_10\"}\n\n",
+          "chars": 129,
+          "tokens": 53,
+          "cumulative_tokens": 619
+        },
+        {
+          "channel": "prompt",
+          "name": "validated_candidates",
+          "text": "Validated evidence candidates JSON:\n[{'candidate_id': '10/format.temp:103:120:0', 'category': 'measurement_condition', 'role': 'parameter', 'claim': 'The D1 parameter is equal to D[1].', 'evidence_text': 'D1=D[1]', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 103, 'end_idx': 120, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:103:120:1', 'category': 'measurement_condition', 'role': 'parameter', 'claim': 'The unit of D1 is seconds.', 'evidence_text': 'UNIT \"sec\"', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 103, 'end_idx': 120, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:103:120:2', 'category': 'measurement_condition', 'role': 'parameter', 'claim': 'The format of D1 is %14.8f sec.', 'evidence_text': 'FORMAT \"%14.8f sec\"', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 103, 'end_idx': 120, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:103:120:3', 'category': 'instrument_signal', 'role': 'identity', 'claim': 'The name of the parameter is TD0.', 'evidence_text': 'NAME TD0', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 103, 'end_idx': 120, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:103:120:4', 'category': 'instrument_signal', 'role': 'identity', 'claim': 'The name of the parameter is SFO1.', 'evidence_text': 'NAME SFO1', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 103, 'end_idx': 120, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:103:120:5', 'category': 'instrument_signal', 'role': 'identity', 'claim': 'The name of the parameter is NUC1.', 'evidence_text': 'NAME NUC1', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 103, 'end_idx': 120, 'evidence_match_score': 1.0}]\n\n",
+          "chars": 1783,
+          "tokens": 687,
+          "cumulative_tokens": 1306
+        },
+        {
+          "channel": "prompt",
+          "name": "local_chunk_context",
+          "text": "Local chunk context for assessment:\nREL \"D1=D[1]\"\n INV_REL \"D[1]=D1\"\n UNIT \"sec\"\n FORMAT \"%14.8f sec\"\n TEXT \" \"\nEND\nNAME TD0\n TEXT \" \"\nEND\nNAME SFO1\n FORMAT \"%14.7f MHz\"\n TEXT \" \"\nEND\nNAME NUC1\n NONEDIT\n TEXT \" \"\nEND\n",
+          "chars": 217,
+          "tokens": 95,
+          "cumulative_tokens": 1401
+        }
+      ],
+      "usage": {
+        "requests": 1,
+        "input_tokens": 1409,
+        "output_tokens": 646,
+        "prompt_eval_duration_ms": 0,
+        "load_duration_ms": 0,
+        "response_duration_ms": 0,
+        "total_duration_ms": 16639
+      }
+    }
+  ]
+}

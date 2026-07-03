@@ -1,0 +1,79 @@
+{
+  "operation_id": "profile_field_vocab_selection__flip_angle",
+  "agent_name": "profile_field_vocab_selection",
+  "model": "gemma3:12b-cloud",
+  "output_type": "VocabularyCandidateSelection",
+  "status": "completed",
+  "metadata": {
+    "source_value": "flip angle",
+    "candidate_count": 12
+  },
+  "attempts": [
+    {
+      "attempt_index": 0,
+      "attempt_kind": "initial",
+      "model": "gemma3:12b-cloud",
+      "tokenizer_fallback": false,
+      "tokenizer_fallback_reason": null,
+      "components": [
+        {
+          "channel": "system",
+          "name": "vocab_candidate_selection_system_prompt",
+          "text": "\nYou select a single controlled-vocabulary term that normalizes a metadata field, or return null.\nMatch on the physical quantity or concept the field actually measures, using the source value AND the\nsemantic context (dataset/entity/attribute title and description). Read each candidate's label AND definition,\nnot just its URI fragment.\nWhen several candidates describe the same kind of quantity or concept, prefer the most general/plain one over a\nmore specific or named variant of it. But \"most general\" only applies among candidates that are the same\nquantity - it never justifies picking a wrong-domain term.\nHard rules - return null for selected_uri when ANY of these hold:\n- No candidate describes the same physical quantity or concept as the field. Sharing a token or a symbol with\n  the source value is not a match. Common traps include bare axis or column codes, incidental words, and unit\n  symbols or mathematical symbols; a single letter or a unit symbol by itself is never a quantity kind.\n- An ordinal or extremum modifier (first/last/minimum/maximum) by itself is not a quantity kind. However, when\n  it qualifies a field whose semantic context or source value clearly identifies the underlying physical\n  quantity, the ordinal does NOT disqualify the match - select the candidate that matches that underlying\n  quantity. Only abstain when the ordinal is the ONLY signal and no underlying quantity can be identified.\n- The candidate belongs to a different scientific or engineering domain than the measurement described in the\n  context (for example, a radioactivity, electrical-impedance, typography/printing, aerospace, or oceanography\n  term used for a measurement in an unrelated field). A different-domain candidate is not a match even if it\n  is the most general available - return null.\n- The best candidate is only a superficial or adjacent match rather than the same quantity or concept.\n- You are not confident the candidate is the same quantity. In that case return null with confidence 0 and a\n  short reason naming the trap, rather than forcing a match.\nUse only candidate URIs from the prompt. Always include selected_uri, confidence (0.0-1.0), and reason.\nYou MUST NOT select a candidate you just argued does not fit - return null instead. Return only JSON.\n",
+          "chars": 2289,
+          "tokens": 481,
+          "cumulative_tokens": 481
+        },
+        {
+          "channel": "system",
+          "name": "system_schema",
+          "text": "\n\nReturn exactly one JSON object that satisfies this JSON Schema. Do not include Markdown fences, prose, comments, or additional text.\n\nJSON Schema:\n{\"properties\":{\"selected_uri\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null,\"description\":\"URI of the selected candidate, or null when no candidate fits.\",\"title\":\"Selected Uri\"},\"confidence\":{\"default\":0.0,\"maximum\":1.0,\"minimum\":0.0,\"title\":\"Confidence\",\"type\":\"number\"},\"reason\":{\"default\":\"\",\"title\":\"Reason\",\"type\":\"string\"}},\"title\":\"VocabularyCandidateSelection\",\"type\":\"object\"}",
+          "chars": 549,
+          "tokens": 129,
+          "cumulative_tokens": 609
+        },
+        {
+          "channel": "prompt",
+          "name": "source_value",
+          "text": "Source value:\nflip angle\n\n",
+          "chars": 26,
+          "tokens": 7,
+          "cumulative_tokens": 616
+        },
+        {
+          "channel": "prompt",
+          "name": "source_context",
+          "text": "Source context JSON:\n{'json_path': '/was_generated_by/0/had_input_entity/2/has_qualitative_attribute/1/type', 'field_name': 'type', 'source_value': 'Flip Angle The flip angle used in the pulse program.', 'role': 'type', 'semantic_context': 'NMR Experiment Configuration and Data NMR data and configuration files acquired on an Avance III 500 MHz NMR spectrometer. | NMR Data Acquisition and Processing Automated acquisition and processing of 1H NMR spectra using Bruker NMR instruments and TopSpin software, guided by configuration files and pulse programs. | pulseprogram file NMR pulse sequence definition. | Flip Angle The flip angle used in the pulse program.', 'formulated_query': {'vector_query': 'flip angle', 'fulltext_query': 'flip angle'}}\n\n",
+          "chars": 751,
+          "tokens": 180,
+          "cumulative_tokens": 796
+        },
+        {
+          "channel": "prompt",
+          "name": "candidate_terms",
+          "text": "Candidate terms JSON:\n[{'uri': 'http://nmrML.org/nmrCV#NMR:1000057', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'angle of sinusoid'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000068', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'data extrapolation using linear prediction'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000152', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'scaling by mirror image linear prediction'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1400037', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'NMR pulse sequence', 'description': 'def: A sequence of excitation pulses.'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1400096', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'window function parameter', 'description': 'def: A parameter to a window function.'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1400129', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'sample introduction parameter', 'description': 'tempdef: A sample introduction parameter is a parameter that describes the particular method of introducing the sample under investigation into the NMR instrument.'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1400130', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'magic angle spinning rotor', 'description': 'defneed\\n   synonym: MAS rotor'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1400141', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'water suppression enhanced through T1 effects', 'description': 'tempdef: An improved water-suppression technique called WET (water suppression enhanced through T1 effects), developed from a Bloch equation analysis of the longitudinal magnetization over the T1 and B1 ranges of interest, achieves T1- and B1-insensitive suppression with four RF pulses, each having '}, {'uri': 'http://nmrML.org/nmrCV#NMR:1400143', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'watergate', 'description': 'defneed'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1400147', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'flip-back watergate', 'description': 'defneed'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1400193', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'solid magic angle spinning probe', 'description': 'def: Magic angle spinning, nowadays a routine technique for solids NMR, still offers the capability of innovation. The high mechanical performance of MAS probes in conjunction with efficient rf pulse techniques open new exciting fields in solids NMR of biological samples and in the field of quadrupo'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1400231', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'Bruker NMR probe', 'description': 'https://www.bruker.com/products/mr/nmr/probes/probes.html'}]\n\n",
+          "chars": 2893,
+          "tokens": 908,
+          "cumulative_tokens": 1704
+        },
+        {
+          "channel": "prompt",
+          "name": "selection_instruction",
+          "text": "Select the best candidate URI, or return null if none fits.",
+          "chars": 59,
+          "tokens": 13,
+          "cumulative_tokens": 1717
+        }
+      ],
+      "usage": {
+        "requests": 1,
+        "input_tokens": 1726,
+        "output_tokens": 83,
+        "prompt_eval_duration_ms": 0,
+        "load_duration_ms": 0,
+        "response_duration_ms": 0,
+        "total_duration_ms": 2445
+      }
+    }
+  ]
+}

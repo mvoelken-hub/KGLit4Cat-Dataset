@@ -1,0 +1,189 @@
+{
+  "operation_id": "chunk_extraction_repair__10_specpar__22",
+  "agent_name": "chunk_extraction_repair",
+  "model": "gemma3:12b-cloud",
+  "output_type": "EvidenceContext",
+  "status": "failed",
+  "metadata": {
+    "file_path": "10/specpar",
+    "chunk_index": 22,
+    "start_idx": 0,
+    "end_idx": 88
+  },
+  "attempts": [
+    {
+      "attempt_index": 0,
+      "attempt_kind": "initial",
+      "model": "gemma3:12b-cloud",
+      "tokenizer_fallback": false,
+      "tokenizer_fallback_reason": null,
+      "components": [
+        {
+          "channel": "system",
+          "name": "repair_system_prompt",
+          "text": "You repair malformed structured JSON. Preserve the factual content and field values from the failed response. Do not solve the original task again, do not infer new facts, and do not add commentary. Return only the corrected JSON object.",
+          "chars": 237,
+          "tokens": 46,
+          "cumulative_tokens": 46
+        },
+        {
+          "channel": "system",
+          "name": "system_schema",
+          "text": "\n\nReturn exactly one JSON object that satisfies this JSON Schema. Do not include Markdown fences, prose, comments, or additional text.\n\nJSON Schema:\n{\"$defs\":{\"EvidenceCandidate\":{\"properties\":{\"candidate_id\":{\"default\":\"\",\"description\":\"Stable candidate identifier within the chunk.\",\"title\":\"Candidate Id\",\"type\":\"string\"},\"category\":{\"description\":\"Broad evidence category.\",\"enum\":[\"resource_signal\",\"method_signal\",\"measurement_signal\",\"measurement_condition\",\"software_signal\",\"instrument_signal\",\"activity_signal\",\"surrounding_signal\",\"other\"],\"title\":\"Category\",\"type\":\"string\"},\"role\":{\"description\":\"Profile-routing role. Use parameter for quantitative attributes, qualitative_attribute for non-numeric attributes, identity for names/identifiers, descriptor for descriptive type/class/summary facts, context for provenance or surrounding facts, and other_metadata for reusable metadata that does not fit another role.\",\"enum\":[\"qualitative_attribute\",\"identity\",\"descriptor\",\"context\",\"parameter\",\"other_metadata\"],\"title\":\"Role\",\"type\":\"string\"},\"claim\":{\"description\":\"A concise, molecular claim supported by the evidence text. The claim should be specific enough to verify but contextualized enough to stand alone without hidden local prompt context.\",\"title\":\"Claim\",\"type\":\"string\"},\"evidence_text\":{\"description\":\"Text copied from the current chunk that supports the observation.\",\"title\":\"Evidence Text\",\"type\":\"string\"},\"source_context\":{\"default\":\"\",\"description\":\"Smallest contiguous text span copied from the current chunk that preserves the local source scope for this evidence. It may equal evidence_text when no extra section, block, resource, method, instrument, software, or activity context is needed.\",\"title\":\"Source Context\",\"type\":\"string\"},\"uncertainty\":{\"default\":\"\",\"description\":\"Short uncertainty note; empty string when the evidence is straightforward.\",\"title\":\"Uncertainty\",\"type\":\"string\"},\"file_path\":{\"default\":\"\",\"title\":\"File Path\",\"type\":\"string\"},\"start_idx\":{\"default\":0,\"minimum\":0,\"title\":\"Start Idx\",\"type\":\"integer\"},\"end_idx\":{\"default\":0,\"minimum\":0,\"title\":\"End Idx\",\"type\":\"integer\"},\"evidence_match_score\":{\"default\":0.0,\"maximum\":1.0,\"minimum\":0.0,\"title\":\"Evidence Match Score\",\"type\":\"number\"}},\"required\":[\"category\",\"role\",\"claim\",\"evidence_text\"],\"title\":\"EvidenceCandidate\",\"type\":\"object\"},\"FileInventoryItem\":{\"properties\":{\"file_path\":{\"title\":\"File Path\",\"type\":\"string\"},\"byte_size\":{\"default\":0,\"title\":\"Byte Size\",\"type\":\"integer\"},\"file_type\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null,\"title\":\"File Type\"},\"rank\":{\"anyOf\":[{\"type\":\"integer\"},{\"type\":\"null\"}],\"default\":null,\"title\":\"Rank\"},\"summary\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null,\"title\":\"Summary\"}},\"required\":[\"file_path\"],\"title\":\"FileInventoryItem\",\"type\":\"object\"}},\"properties\":{\"candidates\":{\"items\":{\"$ref\":\"#/$defs/EvidenceCandidate\"},\"title\":\"Candidates\",\"type\":\"array\"},\"file_inventory\":{\"items\":{\"$ref\":\"#/$defs/FileInventoryItem\"},\"title\":\"File Inventory\",\"type\":\"array\"}},\"title\":\"EvidenceContext\",\"type\":\"object\"}",
+          "chars": 3097,
+          "tokens": 695,
+          "cumulative_tokens": 741
+        },
+        {
+          "channel": "prompt",
+          "name": "repair_instruction",
+          "text": "The previous response failed JSON parsing or schema validation. Repair only the JSON structure, field names, and value types needed to satisfy the schema. Preserve the existing information from the failed response. If a required field is missing and cannot be derived from the failed response, use the least-informative schema-valid value. Return only corrected JSON.\n\n",
+          "chars": 369,
+          "tokens": 68,
+          "cumulative_tokens": 809
+        },
+        {
+          "channel": "prompt",
+          "name": "validation_error",
+          "text": "Validation error:\nInvalid \\escape: line 1 column 845 (char 844)\n\n",
+          "chars": 65,
+          "tokens": 24,
+          "cumulative_tokens": 833
+        },
+        {
+          "channel": "prompt",
+          "name": "failed_response",
+          "text": "Failed response:\n```json\n{\"candidates\":[{\"category\":\"resource_signal\",\"role\":\"qualitative_attribute\",\"claim\":\"The file contains parameter values for a Bruker NMR spectrometer\",\"evidence_text\":\"This file contains parameter values for a Bruker NMR spectrometer\",\"uncertainty\":\"\"},{\"category\":\"resource_signal\",\"role\":\"qualitative_attribute\",\"claim\":\"The file format version is 5.0\",\"evidence_text\":\"JCAMPDX= 5.0\",\"uncertainty\":\"\"},{\"category\":\"measurement_signal\",\"role\":\"parameter\",\"claim\":\"The number of points is 3516\",\"evidence_text\":\"NPOINTS= 3516\",\"uncertainty\":\"\"},{\"category\":\"surrounding_signal\",\"role\":\"context\",\"claim\":\"The file was created on 2020-10-01\",\"evidence_text\":\"2020-10-01 09:27:45.962 +0200 nmr@CZC412575Q\",\"uncertainty\":\"\"},{\"category\":\"software_signal\",\"role\":\"context\",\"claim\":\"The file is processed by cprserver.exe\",\"evidence_text\":\"process C:\\Bruker\\TopSpin3.2\\prog\\mod\\cprserver.exe\",\"uncertainty\":\"\"},{\"category\":\"instrument_signal\",\"role\":\"parameter\",\"claim\":\"The first field is 100.13\",\"evidence_text\":\"$BF1= 100.13\",\"uncertainty\":\"\"},{\"category\":\"instrument_signal\",\"role\":\"qualitative_attribute\",\"claim\":\"The DEC parameter is 1\",\"evidence_text\":\"$DEC= 1\",\"uncertainty\":\"\"},{\"category\":\"instrument_signal\",\"role\":\"qualitative_attribute\",\"claim\":\"The DEFRSEL parameter is yes\",\"evidence_text\":\"$DEFRSEL= yes\",\"uncertainty\":\"\"},{\"category\":\"instrument_signal\",\"role\":\"parameter\",\"claim\":\"The NUC1 parameter is 112\",\"evidence_text\":\"$NUC1= 112\",\"uncertainty\":\"\"},{\"category\":\"instrument_signal\",\"role\":\"parameter\",\"claim\":\"The SFO1 parameter is 107.511866\",\"evidence_text\":\"$SFO1= 107.511866\",\"uncertainty\":\"\"},{\"category\":\"instrument_signal\",\"role\":\"parameter\",\"claim\":\"The SFO2 parameter is 500.13\",\"evidence_text\":\"$SFO2= 500.13\",\"uncertainty\":\"\"},{\"category\":\"instrument_signal\",\"role\":\"parameter\",\"claim\":\"The TY parameter is in the range 0 to 123\",\"evidence_text\":\"$TY= (0..123)\",\"uncertainty\":\"\"}],\"file_inventory\":[{\"file_path\":\"10/specpar\",\"byte_size\":88,\"file_type\":\"text\",\"rank\":null,\"summary\":\"This file contains parameter values for a Bruker NMR spectrometer, likely used to configure an experiment. It includes settings like number of points, frequencies, and offsets.\"}]}\n```",
+          "chars": 2219,
+          "tokens": 660,
+          "cumulative_tokens": 1493
+        }
+      ],
+      "usage": {
+        "requests": 1,
+        "input_tokens": 1503,
+        "output_tokens": 657,
+        "prompt_eval_duration_ms": 0,
+        "load_duration_ms": 0,
+        "response_duration_ms": 0,
+        "total_duration_ms": 16190
+      }
+    },
+    {
+      "attempt_index": 1,
+      "attempt_kind": "repair",
+      "model": "gemma3:12b-cloud",
+      "tokenizer_fallback": false,
+      "tokenizer_fallback_reason": null,
+      "components": [
+        {
+          "channel": "system",
+          "name": "repair_system_prompt",
+          "text": "You repair malformed structured JSON. Preserve the factual content and field values from the failed response. Do not solve the original task again, do not infer new facts, and do not add commentary. Return only the corrected JSON object.",
+          "chars": 237,
+          "tokens": 46,
+          "cumulative_tokens": 46
+        },
+        {
+          "channel": "system",
+          "name": "system_schema",
+          "text": "\n\nReturn exactly one JSON object that satisfies this JSON Schema. Do not include Markdown fences, prose, comments, or additional text.\n\nJSON Schema:\n{\"$defs\":{\"EvidenceCandidate\":{\"properties\":{\"candidate_id\":{\"default\":\"\",\"description\":\"Stable candidate identifier within the chunk.\",\"title\":\"Candidate Id\",\"type\":\"string\"},\"category\":{\"description\":\"Broad evidence category.\",\"enum\":[\"resource_signal\",\"method_signal\",\"measurement_signal\",\"measurement_condition\",\"software_signal\",\"instrument_signal\",\"activity_signal\",\"surrounding_signal\",\"other\"],\"title\":\"Category\",\"type\":\"string\"},\"role\":{\"description\":\"Profile-routing role. Use parameter for quantitative attributes, qualitative_attribute for non-numeric attributes, identity for names/identifiers, descriptor for descriptive type/class/summary facts, context for provenance or surrounding facts, and other_metadata for reusable metadata that does not fit another role.\",\"enum\":[\"qualitative_attribute\",\"identity\",\"descriptor\",\"context\",\"parameter\",\"other_metadata\"],\"title\":\"Role\",\"type\":\"string\"},\"claim\":{\"description\":\"A concise, molecular claim supported by the evidence text. The claim should be specific enough to verify but contextualized enough to stand alone without hidden local prompt context.\",\"title\":\"Claim\",\"type\":\"string\"},\"evidence_text\":{\"description\":\"Text copied from the current chunk that supports the observation.\",\"title\":\"Evidence Text\",\"type\":\"string\"},\"source_context\":{\"default\":\"\",\"description\":\"Smallest contiguous text span copied from the current chunk that preserves the local source scope for this evidence. It may equal evidence_text when no extra section, block, resource, method, instrument, software, or activity context is needed.\",\"title\":\"Source Context\",\"type\":\"string\"},\"uncertainty\":{\"default\":\"\",\"description\":\"Short uncertainty note; empty string when the evidence is straightforward.\",\"title\":\"Uncertainty\",\"type\":\"string\"},\"file_path\":{\"default\":\"\",\"title\":\"File Path\",\"type\":\"string\"},\"start_idx\":{\"default\":0,\"minimum\":0,\"title\":\"Start Idx\",\"type\":\"integer\"},\"end_idx\":{\"default\":0,\"minimum\":0,\"title\":\"End Idx\",\"type\":\"integer\"},\"evidence_match_score\":{\"default\":0.0,\"maximum\":1.0,\"minimum\":0.0,\"title\":\"Evidence Match Score\",\"type\":\"number\"}},\"required\":[\"category\",\"role\",\"claim\",\"evidence_text\"],\"title\":\"EvidenceCandidate\",\"type\":\"object\"},\"FileInventoryItem\":{\"properties\":{\"file_path\":{\"title\":\"File Path\",\"type\":\"string\"},\"byte_size\":{\"default\":0,\"title\":\"Byte Size\",\"type\":\"integer\"},\"file_type\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null,\"title\":\"File Type\"},\"rank\":{\"anyOf\":[{\"type\":\"integer\"},{\"type\":\"null\"}],\"default\":null,\"title\":\"Rank\"},\"summary\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null,\"title\":\"Summary\"}},\"required\":[\"file_path\"],\"title\":\"FileInventoryItem\",\"type\":\"object\"}},\"properties\":{\"candidates\":{\"items\":{\"$ref\":\"#/$defs/EvidenceCandidate\"},\"title\":\"Candidates\",\"type\":\"array\"},\"file_inventory\":{\"items\":{\"$ref\":\"#/$defs/FileInventoryItem\"},\"title\":\"File Inventory\",\"type\":\"array\"}},\"title\":\"EvidenceContext\",\"type\":\"object\"}",
+          "chars": 3097,
+          "tokens": 695,
+          "cumulative_tokens": 741
+        },
+        {
+          "channel": "prompt",
+          "name": "repair_instruction",
+          "text": "The previous response failed JSON parsing or schema validation. Repair only the JSON structure, field names, and value types needed to satisfy the schema. Preserve the existing information from the failed response. If a required field is missing and cannot be derived from the failed response, use the least-informative schema-valid value. Return only corrected JSON.\n\n",
+          "chars": 369,
+          "tokens": 68,
+          "cumulative_tokens": 809
+        },
+        {
+          "channel": "prompt",
+          "name": "validation_error",
+          "text": "Validation error:\nInvalid \\escape: line 1 column 845 (char 844)\n\n",
+          "chars": 65,
+          "tokens": 24,
+          "cumulative_tokens": 833
+        },
+        {
+          "channel": "prompt",
+          "name": "failed_response",
+          "text": "Failed response:\n```json\n{\"candidates\":[{\"category\":\"resource_signal\",\"role\":\"qualitative_attribute\",\"claim\":\"The file contains parameter values for a Bruker NMR spectrometer\",\"evidence_text\":\"This file contains parameter values for a Bruker NMR spectrometer\",\"uncertainty\":\"\"},{\"category\":\"resource_signal\",\"role\":\"qualitative_attribute\",\"claim\":\"The file format version is 5.0\",\"evidence_text\":\"JCAMPDX= 5.0\",\"uncertainty\":\"\"},{\"category\":\"measurement_signal\",\"role\":\"parameter\",\"claim\":\"The number of points is 3516\",\"evidence_text\":\"NPOINTS= 3516\",\"uncertainty\":\"\"},{\"category\":\"surrounding_signal\",\"role\":\"context\",\"claim\":\"The file was created on 2020-10-01\",\"evidence_text\":\"2020-10-01 09:27:45.962 +0200 nmr@CZC412575Q\",\"uncertainty\":\"\"},{\"category\":\"software_signal\",\"role\":\"context\",\"claim\":\"The file is processed by cprserver.exe\",\"evidence_text\":\"process C:\\Bruker\\TopSpin3.2\\prog\\mod\\cprserver.exe\",\"uncertainty\":\"\"},{\"category\":\"instrument_signal\",\"role\":\"parameter\",\"claim\":\"The first field is 100.13\",\"evidence_text\":\"$BF1= 100.13\",\"uncertainty\":\"\"},{\"category\":\"instrument_signal\",\"role\":\"qualitative_attribute\",\"claim\":\"The DEC parameter is 1\",\"evidence_text\":\"$DEC= 1\",\"uncertainty\":\"\"},{\"category\":\"instrument_signal\",\"role\":\"qualitative_attribute\",\"claim\":\"The DEFRSEL parameter is yes\",\"evidence_text\":\"$DEFRSEL= yes\",\"uncertainty\":\"\"},{\"category\":\"instrument_signal\",\"role\":\"parameter\",\"claim\":\"The NUC1 parameter is 112\",\"evidence_text\":\"$NUC1= 112\",\"uncertainty\":\"\"},{\"category\":\"instrument_signal\",\"role\":\"parameter\",\"claim\":\"The SFO1 parameter is 107.511866\",\"evidence_text\":\"$SFO1= 107.511866\",\"uncertainty\":\"\"},{\"category\":\"instrument_signal\",\"role\":\"parameter\",\"claim\":\"The SFO2 parameter is 500.13\",\"evidence_text\":\"$SFO2= 500.13\",\"uncertainty\":\"\"},{\"category\":\"instrument_signal\",\"role\":\"parameter\",\"claim\":\"The TY parameter is in the range 0 to 123\",\"evidence_text\":\"$TY= (0..123)\",\"uncertainty\":\"\"}],\"file_inventory\":[{\"file_path\":\"10/specpar\",\"byte_size\":88,\"file_type\":\"text\",\"rank\":null,\"summary\":\"This file contains parameter values for a Bruker NMR spectrometer, likely used to configure an experiment. It includes settings like number of points, frequencies, and offsets.\"}]}\n```",
+          "chars": 2219,
+          "tokens": 660,
+          "cumulative_tokens": 1493
+        }
+      ],
+      "usage": {
+        "requests": 1,
+        "input_tokens": 1503,
+        "output_tokens": 657,
+        "prompt_eval_duration_ms": 0,
+        "load_duration_ms": 0,
+        "response_duration_ms": 0,
+        "total_duration_ms": 14723
+      }
+    },
+    {
+      "attempt_index": 2,
+      "attempt_kind": "repair",
+      "model": "gemma3:12b-cloud",
+      "tokenizer_fallback": false,
+      "tokenizer_fallback_reason": null,
+      "components": [
+        {
+          "channel": "system",
+          "name": "repair_system_prompt",
+          "text": "You repair malformed structured JSON. Preserve the factual content and field values from the failed response. Do not solve the original task again, do not infer new facts, and do not add commentary. Return only the corrected JSON object.",
+          "chars": 237,
+          "tokens": 46,
+          "cumulative_tokens": 46
+        },
+        {
+          "channel": "system",
+          "name": "system_schema",
+          "text": "\n\nReturn exactly one JSON object that satisfies this JSON Schema. Do not include Markdown fences, prose, comments, or additional text.\n\nJSON Schema:\n{\"$defs\":{\"EvidenceCandidate\":{\"properties\":{\"candidate_id\":{\"default\":\"\",\"description\":\"Stable candidate identifier within the chunk.\",\"title\":\"Candidate Id\",\"type\":\"string\"},\"category\":{\"description\":\"Broad evidence category.\",\"enum\":[\"resource_signal\",\"method_signal\",\"measurement_signal\",\"measurement_condition\",\"software_signal\",\"instrument_signal\",\"activity_signal\",\"surrounding_signal\",\"other\"],\"title\":\"Category\",\"type\":\"string\"},\"role\":{\"description\":\"Profile-routing role. Use parameter for quantitative attributes, qualitative_attribute for non-numeric attributes, identity for names/identifiers, descriptor for descriptive type/class/summary facts, context for provenance or surrounding facts, and other_metadata for reusable metadata that does not fit another role.\",\"enum\":[\"qualitative_attribute\",\"identity\",\"descriptor\",\"context\",\"parameter\",\"other_metadata\"],\"title\":\"Role\",\"type\":\"string\"},\"claim\":{\"description\":\"A concise, molecular claim supported by the evidence text. The claim should be specific enough to verify but contextualized enough to stand alone without hidden local prompt context.\",\"title\":\"Claim\",\"type\":\"string\"},\"evidence_text\":{\"description\":\"Text copied from the current chunk that supports the observation.\",\"title\":\"Evidence Text\",\"type\":\"string\"},\"source_context\":{\"default\":\"\",\"description\":\"Smallest contiguous text span copied from the current chunk that preserves the local source scope for this evidence. It may equal evidence_text when no extra section, block, resource, method, instrument, software, or activity context is needed.\",\"title\":\"Source Context\",\"type\":\"string\"},\"uncertainty\":{\"default\":\"\",\"description\":\"Short uncertainty note; empty string when the evidence is straightforward.\",\"title\":\"Uncertainty\",\"type\":\"string\"},\"file_path\":{\"default\":\"\",\"title\":\"File Path\",\"type\":\"string\"},\"start_idx\":{\"default\":0,\"minimum\":0,\"title\":\"Start Idx\",\"type\":\"integer\"},\"end_idx\":{\"default\":0,\"minimum\":0,\"title\":\"End Idx\",\"type\":\"integer\"},\"evidence_match_score\":{\"default\":0.0,\"maximum\":1.0,\"minimum\":0.0,\"title\":\"Evidence Match Score\",\"type\":\"number\"}},\"required\":[\"category\",\"role\",\"claim\",\"evidence_text\"],\"title\":\"EvidenceCandidate\",\"type\":\"object\"},\"FileInventoryItem\":{\"properties\":{\"file_path\":{\"title\":\"File Path\",\"type\":\"string\"},\"byte_size\":{\"default\":0,\"title\":\"Byte Size\",\"type\":\"integer\"},\"file_type\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null,\"title\":\"File Type\"},\"rank\":{\"anyOf\":[{\"type\":\"integer\"},{\"type\":\"null\"}],\"default\":null,\"title\":\"Rank\"},\"summary\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null,\"title\":\"Summary\"}},\"required\":[\"file_path\"],\"title\":\"FileInventoryItem\",\"type\":\"object\"}},\"properties\":{\"candidates\":{\"items\":{\"$ref\":\"#/$defs/EvidenceCandidate\"},\"title\":\"Candidates\",\"type\":\"array\"},\"file_inventory\":{\"items\":{\"$ref\":\"#/$defs/FileInventoryItem\"},\"title\":\"File Inventory\",\"type\":\"array\"}},\"title\":\"EvidenceContext\",\"type\":\"object\"}",
+          "chars": 3097,
+          "tokens": 695,
+          "cumulative_tokens": 741
+        },
+        {
+          "channel": "prompt",
+          "name": "repair_instruction",
+          "text": "The previous response failed JSON parsing or schema validation. Repair only the JSON structure, field names, and value types needed to satisfy the schema. Preserve the existing information from the failed response. If a required field is missing and cannot be derived from the failed response, use the least-informative schema-valid value. Return only corrected JSON.\n\n",
+          "chars": 369,
+          "tokens": 68,
+          "cumulative_tokens": 809
+        },
+        {
+          "channel": "prompt",
+          "name": "validation_error",
+          "text": "Validation error:\nInvalid \\escape: line 1 column 845 (char 844)\n\n",
+          "chars": 65,
+          "tokens": 24,
+          "cumulative_tokens": 833
+        },
+        {
+          "channel": "prompt",
+          "name": "failed_response",
+          "text": "Failed response:\n```json\n{\"candidates\":[{\"category\":\"resource_signal\",\"role\":\"qualitative_attribute\",\"claim\":\"The file contains parameter values for a Bruker NMR spectrometer\",\"evidence_text\":\"This file contains parameter values for a Bruker NMR spectrometer\",\"uncertainty\":\"\"},{\"category\":\"resource_signal\",\"role\":\"qualitative_attribute\",\"claim\":\"The file format version is 5.0\",\"evidence_text\":\"JCAMPDX= 5.0\",\"uncertainty\":\"\"},{\"category\":\"measurement_signal\",\"role\":\"parameter\",\"claim\":\"The number of points is 3516\",\"evidence_text\":\"NPOINTS= 3516\",\"uncertainty\":\"\"},{\"category\":\"surrounding_signal\",\"role\":\"context\",\"claim\":\"The file was created on 2020-10-01\",\"evidence_text\":\"2020-10-01 09:27:45.962 +0200 nmr@CZC412575Q\",\"uncertainty\":\"\"},{\"category\":\"software_signal\",\"role\":\"context\",\"claim\":\"The file is processed by cprserver.exe\",\"evidence_text\":\"process C:\\Bruker\\TopSpin3.2\\prog\\mod\\cprserver.exe\",\"uncertainty\":\"\"},{\"category\":\"instrument_signal\",\"role\":\"parameter\",\"claim\":\"The first field is 100.13\",\"evidence_text\":\"$BF1= 100.13\",\"uncertainty\":\"\"},{\"category\":\"instrument_signal\",\"role\":\"qualitative_attribute\",\"claim\":\"The DEC parameter is 1\",\"evidence_text\":\"$DEC= 1\",\"uncertainty\":\"\"},{\"category\":\"instrument_signal\",\"role\":\"qualitative_attribute\",\"claim\":\"The DEFRSEL parameter is yes\",\"evidence_text\":\"$DEFRSEL= yes\",\"uncertainty\":\"\"},{\"category\":\"instrument_signal\",\"role\":\"parameter\",\"claim\":\"The NUC1 parameter is 112\",\"evidence_text\":\"$NUC1= 112\",\"uncertainty\":\"\"},{\"category\":\"instrument_signal\",\"role\":\"parameter\",\"claim\":\"The SFO1 parameter is 107.511866\",\"evidence_text\":\"$SFO1= 107.511866\",\"uncertainty\":\"\"},{\"category\":\"instrument_signal\",\"role\":\"parameter\",\"claim\":\"The SFO2 parameter is 500.13\",\"evidence_text\":\"$SFO2= 500.13\",\"uncertainty\":\"\"},{\"category\":\"instrument_signal\",\"role\":\"parameter\",\"claim\":\"The TY parameter is in the range 0 to 123\",\"evidence_text\":\"$TY= (0..123)\",\"uncertainty\":\"\"}],\"file_inventory\":[{\"file_path\":\"10/specpar\",\"byte_size\":88,\"file_type\":\"text\",\"rank\":null,\"summary\":\"This file contains parameter values for a Bruker NMR spectrometer, likely used to configure an experiment. It includes settings like number of points, frequencies, and offsets.\"}]}\n```",
+          "chars": 2219,
+          "tokens": 660,
+          "cumulative_tokens": 1493
+        }
+      ],
+      "usage": {
+        "requests": 1,
+        "input_tokens": 1503,
+        "output_tokens": 657,
+        "prompt_eval_duration_ms": 0,
+        "load_duration_ms": 0,
+        "response_duration_ms": 0,
+        "total_duration_ms": 13474
+      }
+    }
+  ]
+}

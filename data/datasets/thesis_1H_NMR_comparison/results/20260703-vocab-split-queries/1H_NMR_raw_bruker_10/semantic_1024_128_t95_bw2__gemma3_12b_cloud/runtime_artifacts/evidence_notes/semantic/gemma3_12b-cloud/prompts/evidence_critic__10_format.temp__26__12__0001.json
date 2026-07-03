@@ -1,0 +1,72 @@
+{
+  "operation_id": "evidence_critic__10_format.temp__26__12",
+  "agent_name": "evidence_critic",
+  "model": "gemma3:12b-cloud",
+  "output_type": "EvidenceAssessmentContext",
+  "status": "completed",
+  "metadata": {
+    "file_path": "10/format.temp",
+    "chunk_index": 26,
+    "candidate_count": 12
+  },
+  "attempts": [
+    {
+      "attempt_index": 0,
+      "attempt_kind": "initial",
+      "model": "gemma3:12b-cloud",
+      "tokenizer_fallback": false,
+      "tokenizer_fallback_reason": null,
+      "components": [
+        {
+          "channel": "system",
+          "name": "evidence_critic_system_prompt",
+          "text": "\nYou assess grounded evidence candidates using only domain-agnostic quality criteria.\nDo not decide relevance by recognizing a particular scientific domain, instrument, vendor, file format, or key name.\nReturn only a valid EvidenceAssessmentContext JSON object.\n\nAssess each candidate independently using categorical judgments:\n- groundedness: whether evidence_text supports the claim.\n- self_containedness: whether the claim can be understood without hidden prompt context.\n- scope_clarity: whether package/resource/section/environment scope is clear.\n- portability: whether the claim remains meaningful when the package is copied elsewhere.\n- semantic_interpretability: whether the claim is meaningful rather than raw unexplained syntax.\n- environment_dependence: low/medium/high dependence on local machine, session, user, installation, or network context.\n- specificity: whether the claim is concrete without overinterpretation.\n- novelty: whether it adds information beyond repeated template content.\n- uncertainty: low/medium/high ambiguity.\n",
+          "chars": 1048,
+          "tokens": 206,
+          "cumulative_tokens": 206
+        },
+        {
+          "channel": "system",
+          "name": "system_schema",
+          "text": "\n\nReturn exactly one JSON object that satisfies this JSON Schema. Do not include Markdown fences, prose, comments, or additional text.\n\nJSON Schema:\n{\"$defs\":{\"EvidenceAssessment\":{\"properties\":{\"candidate_id\":{\"title\":\"Candidate Id\",\"type\":\"string\"},\"groundedness\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Groundedness\",\"type\":\"string\"},\"self_containedness\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Self Containedness\",\"type\":\"string\"},\"scope_clarity\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Scope Clarity\",\"type\":\"string\"},\"portability\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Portability\",\"type\":\"string\"},\"semantic_interpretability\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Semantic Interpretability\",\"type\":\"string\"},\"environment_dependence\":{\"default\":\"medium\",\"enum\":[\"low\",\"medium\",\"high\"],\"title\":\"Environment Dependence\",\"type\":\"string\"},\"specificity\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Specificity\",\"type\":\"string\"},\"novelty\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Novelty\",\"type\":\"string\"},\"uncertainty\":{\"default\":\"medium\",\"enum\":[\"low\",\"medium\",\"high\"],\"title\":\"Uncertainty\",\"type\":\"string\"},\"rationale\":{\"default\":\"\",\"title\":\"Rationale\",\"type\":\"string\"}},\"required\":[\"candidate_id\"],\"title\":\"EvidenceAssessment\",\"type\":\"object\"}},\"properties\":{\"assessments\":{\"items\":{\"$ref\":\"#/$defs/EvidenceAssessment\"},\"title\":\"Assessments\",\"type\":\"array\"}},\"title\":\"EvidenceAssessmentContext\",\"type\":\"object\"}",
+          "chars": 1554,
+          "tokens": 361,
+          "cumulative_tokens": 566
+        },
+        {
+          "channel": "prompt",
+          "name": "chunk_metadata",
+          "text": "Chunk context metadata:\n{\"start_idx\":65,\"end_idx\":81,\"file_path\":\"10/format.temp\",\"data_package_name\":\"1H_NMR_raw_bruker_10\"}\n\n",
+          "chars": 127,
+          "tokens": 51,
+          "cumulative_tokens": 617
+        },
+        {
+          "channel": "prompt",
+          "name": "validated_candidates",
+          "text": "Validated evidence candidates JSON:\n[{'candidate_id': '10/format.temp:65:81:0', 'category': 'measurement_condition', 'role': 'parameter', 'claim': 'The subrange is 0.0 to 1000', 'evidence_text': 'SUBRANGE 0.0 1000', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 65, 'end_idx': 81, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:65:81:1', 'category': 'resource_signal', 'role': 'descriptor', 'claim': 'The unit is sec', 'evidence_text': 'UNIT \"sec\"', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 65, 'end_idx': 81, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:65:81:2', 'category': 'measurement_condition', 'role': 'parameter', 'claim': 'The format is %14.7f sec', 'evidence_text': 'FORMAT \"%14.7f sec\"', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 65, 'end_idx': 81, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:65:81:3', 'category': 'resource_signal', 'role': 'identity', 'claim': 'The name is RG', 'evidence_text': 'NAME RG', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 65, 'end_idx': 81, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:65:81:4', 'category': 'resource_signal', 'role': 'identity', 'claim': 'The name is DW', 'evidence_text': 'NAME DW', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 65, 'end_idx': 81, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:65:81:5', 'category': 'method_signal', 'role': 'context', 'claim': 'The type is R32', 'evidence_text': 'TYPE R32', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 65, 'end_idx': 81, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:65:81:6', 'category': 'method_signal', 'role': 'context', 'claim': 'The class is ACQU', 'evidence_text': 'CLASS ACQU', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 65, 'end_idx': 81, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:65:81:7', 'category': 'method_signal', 'role': 'context', 'claim': 'The T_NAME is AQ', 'evidence_text': 'T_NAME AQ', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 65, 'end_idx': 81, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:65:81:8', 'category': 'method_signal', 'role': 'context', 'claim': 'The T_NAME is DW', 'evidence_text': 'T_NAME DW', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 65, 'end_idx': 81, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:65:81:9', 'category': 'measurement_signal', 'role': 'context', 'claim': 'The format is %14.6f Hz', 'evidence_text': 'FORMAT \"%14.6f Hz\"', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 65, 'end_idx': 81, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:65:81:10', 'category': 'other', 'role': 'other_metadata', 'claim': 'The relation is AQ=aqcalc(SW,SFO1,TD,DIGTYP)', 'evidence_text': 'REL \"AQ=aqcalc(SW,SFO1,TD,DIGTYP)\"', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 65, 'end_idx': 81, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:65:81:11', 'category': 'other', 'role': 'other_metadata', 'claim': 'The relation is TD=tdcalc(SW,SFO1,1.0e6*AQ,DIGTYP)', 'evidence_text': 'INV_REL \"TD=tdcalc(SW,SFO1,1.0e6*AQ,DIGTYP)\"', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 65, 'end_idx': 81, 'evidence_match_score': 1.0}]\n\n",
+          "chars": 3385,
+          "tokens": 1358,
+          "cumulative_tokens": 1975
+        },
+        {
+          "channel": "prompt",
+          "name": "local_chunk_context",
+          "text": "Local chunk context for assessment:\nFORMAT \"%14.6f Hz\"\n TEXT \" \"\nEND\nT_NAME AQ\n TYPE R32\n CLASS ACQU\n SUBRANGE 0.0 1000\n REL \"AQ=aqcalc(SW,SFO1,TD,DIGTYP)\"\n INV_REL \"TD=tdcalc(SW,SFO1,1.0e6*AQ,DIGTYP)\"\n UNIT \"sec\"\n FORMAT \"%14.7f sec\"\n TEXT \" \"\nEND\nNAME RG\n TEXT \" \"\nEND\nT_NAME DW\n",
+          "chars": 281,
+          "tokens": 132,
+          "cumulative_tokens": 2107
+        }
+      ],
+      "usage": {
+        "requests": 1,
+        "input_tokens": 2115,
+        "output_tokens": 1001,
+        "prompt_eval_duration_ms": 0,
+        "load_duration_ms": 0,
+        "response_duration_ms": 0,
+        "total_duration_ms": 24150
+      }
+    }
+  ]
+}

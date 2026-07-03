@@ -1,0 +1,72 @@
+{
+  "operation_id": "evidence_critic__10_uxnmr.info__125__6",
+  "agent_name": "evidence_critic",
+  "model": "gemma3:12b-cloud",
+  "output_type": "EvidenceAssessmentContext",
+  "status": "completed",
+  "metadata": {
+    "file_path": "10/uxnmr.info",
+    "chunk_index": 125,
+    "candidate_count": 6
+  },
+  "attempts": [
+    {
+      "attempt_index": 0,
+      "attempt_kind": "initial",
+      "model": "gemma3:12b-cloud",
+      "tokenizer_fallback": false,
+      "tokenizer_fallback_reason": null,
+      "components": [
+        {
+          "channel": "system",
+          "name": "evidence_critic_system_prompt",
+          "text": "\nYou assess grounded evidence candidates using only domain-agnostic quality criteria.\nDo not decide relevance by recognizing a particular scientific domain, instrument, vendor, file format, or key name.\nReturn only a valid EvidenceAssessmentContext JSON object.\n\nAssess each candidate independently using categorical judgments:\n- groundedness: whether evidence_text supports the claim.\n- self_containedness: whether the claim can be understood without hidden prompt context.\n- scope_clarity: whether package/resource/section/environment scope is clear.\n- portability: whether the claim remains meaningful when the package is copied elsewhere.\n- semantic_interpretability: whether the claim is meaningful rather than raw unexplained syntax.\n- environment_dependence: low/medium/high dependence on local machine, session, user, installation, or network context.\n- specificity: whether the claim is concrete without overinterpretation.\n- novelty: whether it adds information beyond repeated template content.\n- uncertainty: low/medium/high ambiguity.\n",
+          "chars": 1048,
+          "tokens": 206,
+          "cumulative_tokens": 206
+        },
+        {
+          "channel": "system",
+          "name": "system_schema",
+          "text": "\n\nReturn exactly one JSON object that satisfies this JSON Schema. Do not include Markdown fences, prose, comments, or additional text.\n\nJSON Schema:\n{\"$defs\":{\"EvidenceAssessment\":{\"properties\":{\"candidate_id\":{\"title\":\"Candidate Id\",\"type\":\"string\"},\"groundedness\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Groundedness\",\"type\":\"string\"},\"self_containedness\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Self Containedness\",\"type\":\"string\"},\"scope_clarity\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Scope Clarity\",\"type\":\"string\"},\"portability\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Portability\",\"type\":\"string\"},\"semantic_interpretability\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Semantic Interpretability\",\"type\":\"string\"},\"environment_dependence\":{\"default\":\"medium\",\"enum\":[\"low\",\"medium\",\"high\"],\"title\":\"Environment Dependence\",\"type\":\"string\"},\"specificity\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Specificity\",\"type\":\"string\"},\"novelty\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Novelty\",\"type\":\"string\"},\"uncertainty\":{\"default\":\"medium\",\"enum\":[\"low\",\"medium\",\"high\"],\"title\":\"Uncertainty\",\"type\":\"string\"},\"rationale\":{\"default\":\"\",\"title\":\"Rationale\",\"type\":\"string\"}},\"required\":[\"candidate_id\"],\"title\":\"EvidenceAssessment\",\"type\":\"object\"}},\"properties\":{\"assessments\":{\"items\":{\"$ref\":\"#/$defs/EvidenceAssessment\"},\"title\":\"Assessments\",\"type\":\"array\"}},\"title\":\"EvidenceAssessmentContext\",\"type\":\"object\"}",
+          "chars": 1554,
+          "tokens": 361,
+          "cumulative_tokens": 566
+        },
+        {
+          "channel": "prompt",
+          "name": "chunk_metadata",
+          "text": "Chunk context metadata:\n{\"start_idx\":0,\"end_idx\":8,\"file_path\":\"10/uxnmr.info\",\"data_package_name\":\"1H_NMR_raw_bruker_10\"}\n\n",
+          "chars": 124,
+          "tokens": 51,
+          "cumulative_tokens": 617
+        },
+        {
+          "channel": "prompt",
+          "name": "validated_candidates",
+          "text": "Validated evidence candidates JSON:\n[{'candidate_id': '10/uxnmr.info:0:8:0', 'category': 'resource_signal', 'role': 'descriptor', 'claim': 'The software version is 3.2-pl6', 'evidence_text': 'TOPSPIN Version 3.2-pl6', 'uncertainty': '', 'file_path': '10/uxnmr.info', 'start_idx': 0, 'end_idx': 8, 'evidence_match_score': 1.0}, {'candidate_id': '10/uxnmr.info:0:8:1', 'category': 'software_signal', 'role': 'identity', 'claim': 'The software is TOPSPIN', 'evidence_text': 'TOPSPIN Version 3.2-pl6', 'uncertainty': '', 'file_path': '10/uxnmr.info', 'start_idx': 0, 'end_idx': 8, 'evidence_match_score': 1.0}, {'candidate_id': '10/uxnmr.info:0:8:2', 'category': 'surrounding_signal', 'role': 'context', 'claim': 'The date is Wed Sep 30 11:30:59 2020', 'evidence_text': 'Wed Sep 30 11:30:59 2020', 'uncertainty': '', 'file_path': '10/uxnmr.info', 'start_idx': 0, 'end_idx': 8, 'evidence_match_score': 1.0}, {'candidate_id': '10/uxnmr.info:0:8:3', 'category': 'resource_signal', 'role': 'descriptor', 'claim': 'The file path is C:/Bruker/TopSpin3.2/conf/instr/spect/uxnmr.info', 'evidence_text': 'C:/Bruker/TopSpin3.2/conf/instr/spect/uxnmr.info', 'uncertainty': '', 'file_path': '10/uxnmr.info', 'start_idx': 0, 'end_idx': 8, 'evidence_match_score': 1.0}, {'candidate_id': '10/uxnmr.info:0:8:4', 'category': 'surrounding_signal', 'role': 'context', 'claim': 'The host is CZC412575Q', 'evidence_text': 'CZC412575Q', 'uncertainty': '', 'file_path': '10/uxnmr.info', 'start_idx': 0, 'end_idx': 8, 'evidence_match_score': 1.0}, {'candidate_id': '10/uxnmr.info:0:8:5', 'category': 'surrounding_signal', 'role': 'context', 'claim': 'The OS is Windows 7 (Vs 6.1) Service Pack 1', 'evidence_text': 'Windows 7 (Vs 6.1) Service Pack 1', 'uncertainty': '', 'file_path': '10/uxnmr.info', 'start_idx': 0, 'end_idx': 8, 'evidence_match_score': 1.0}]\n\n",
+          "chars": 1833,
+          "tokens": 760,
+          "cumulative_tokens": 1377
+        },
+        {
+          "channel": "prompt",
+          "name": "local_chunk_context",
+          "text": "Local chunk context for assessment:\nCONFIGURATION INFORMATION\nPath : C:/Bruker/TopSpin3.2/conf/instr/spect/uxnmr.info\nDate : Wed Sep 30 11:30:59 2020\nRelease : TOPSPIN Version 3.2-pl6\nInstalled in : C:/Bruker/TopSpin3.2\nHost : CZC412575Q\nOS : Windows 7 (Vs 6.1) Service Pack 1\n",
+          "chars": 277,
+          "tokens": 113,
+          "cumulative_tokens": 1490
+        }
+      ],
+      "usage": {
+        "requests": 1,
+        "input_tokens": 1498,
+        "output_tokens": 633,
+        "prompt_eval_duration_ms": 0,
+        "load_duration_ms": 0,
+        "response_duration_ms": 0,
+        "total_duration_ms": 17620
+      }
+    }
+  ]
+}

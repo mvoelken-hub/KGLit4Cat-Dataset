@@ -1,0 +1,72 @@
+{
+  "operation_id": "evidence_critic__10_uxnmr.info__23__10",
+  "agent_name": "evidence_critic",
+  "model": "gemma3:12b-cloud",
+  "output_type": "EvidenceAssessmentContext",
+  "status": "completed",
+  "metadata": {
+    "file_path": "10/uxnmr.info",
+    "chunk_index": 23,
+    "candidate_count": 10
+  },
+  "attempts": [
+    {
+      "attempt_index": 0,
+      "attempt_kind": "initial",
+      "model": "gemma3:12b-cloud",
+      "tokenizer_fallback": false,
+      "tokenizer_fallback_reason": null,
+      "components": [
+        {
+          "channel": "system",
+          "name": "evidence_critic_system_prompt",
+          "text": "\nYou assess grounded evidence candidates using only domain-agnostic quality criteria.\nDo not decide relevance by recognizing a particular scientific domain, instrument, vendor, file format, or key name.\nReturn only a valid EvidenceAssessmentContext JSON object.\n\nAssess each candidate independently using categorical judgments:\n- groundedness: whether evidence_text supports the claim.\n- self_containedness: whether the claim can be understood without hidden prompt context.\n- scope_clarity: whether package/resource/section/environment scope is clear.\n- portability: whether the claim remains meaningful when the package is copied elsewhere.\n- semantic_interpretability: whether the claim is meaningful rather than raw unexplained syntax.\n- environment_dependence: low/medium/high dependence on local machine, session, user, installation, or network context.\n- specificity: whether the claim is concrete without overinterpretation.\n- novelty: whether it adds information beyond repeated template content.\n- uncertainty: low/medium/high ambiguity.\n",
+          "chars": 1048,
+          "tokens": 206,
+          "cumulative_tokens": 206
+        },
+        {
+          "channel": "system",
+          "name": "system_schema",
+          "text": "\n\nReturn exactly one JSON object that satisfies this JSON Schema. Do not include Markdown fences, prose, comments, or additional text.\n\nJSON Schema:\n{\"$defs\":{\"EvidenceAssessment\":{\"properties\":{\"candidate_id\":{\"title\":\"Candidate Id\",\"type\":\"string\"},\"groundedness\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Groundedness\",\"type\":\"string\"},\"self_containedness\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Self Containedness\",\"type\":\"string\"},\"scope_clarity\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Scope Clarity\",\"type\":\"string\"},\"portability\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Portability\",\"type\":\"string\"},\"semantic_interpretability\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Semantic Interpretability\",\"type\":\"string\"},\"environment_dependence\":{\"default\":\"medium\",\"enum\":[\"low\",\"medium\",\"high\"],\"title\":\"Environment Dependence\",\"type\":\"string\"},\"specificity\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Specificity\",\"type\":\"string\"},\"novelty\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Novelty\",\"type\":\"string\"},\"uncertainty\":{\"default\":\"medium\",\"enum\":[\"low\",\"medium\",\"high\"],\"title\":\"Uncertainty\",\"type\":\"string\"},\"rationale\":{\"default\":\"\",\"title\":\"Rationale\",\"type\":\"string\"}},\"required\":[\"candidate_id\"],\"title\":\"EvidenceAssessment\",\"type\":\"object\"}},\"properties\":{\"assessments\":{\"items\":{\"$ref\":\"#/$defs/EvidenceAssessment\"},\"title\":\"Assessments\",\"type\":\"array\"}},\"title\":\"EvidenceAssessmentContext\",\"type\":\"object\"}",
+          "chars": 1554,
+          "tokens": 361,
+          "cumulative_tokens": 566
+        },
+        {
+          "channel": "prompt",
+          "name": "chunk_metadata",
+          "text": "Chunk context metadata:\n{\"start_idx\":0,\"end_idx\":63,\"file_path\":\"10/uxnmr.info\",\"data_package_name\":\"1H_NMR_raw_bruker_10\"}\n\n",
+          "chars": 125,
+          "tokens": 52,
+          "cumulative_tokens": 618
+        },
+        {
+          "channel": "prompt",
+          "name": "validated_candidates",
+          "text": "Validated evidence candidates JSON:\n[{'candidate_id': '10/uxnmr.info:0:63:0', 'category': 'resource_signal', 'role': 'descriptor', 'claim': 'The spectrometer version is TOPSPIN Version 3.2-pl6.', 'evidence_text': 'TOPSPIN Version 3.2-pl6', 'uncertainty': '', 'file_path': '10/uxnmr.info', 'start_idx': 0, 'end_idx': 63, 'evidence_match_score': 1.0}, {'candidate_id': '10/uxnmr.info:0:63:1', 'category': 'instrument_signal', 'role': 'identity', 'claim': 'The spectrometer is an Avance III NMR spectrometer.', 'evidence_text': 'Avance III NMR spectrometer', 'uncertainty': '', 'file_path': '10/uxnmr.info', 'start_idx': 0, 'end_idx': 63, 'evidence_match_score': 1.0}, {'candidate_id': '10/uxnmr.info:0:63:2', 'category': 'measurement_signal', 'role': 'parameter', 'claim': 'The 1H-frequency is 500.13 MHz.', 'evidence_text': '500.13 MHz', 'uncertainty': '', 'file_path': '10/uxnmr.info', 'start_idx': 0, 'end_idx': 63, 'evidence_match_score': 1.0}, {'candidate_id': '10/uxnmr.info:0:63:3', 'category': 'resource_signal', 'role': 'descriptor', 'claim': 'The IP address of the IPSO is 149.236.99.253.', 'evidence_text': '149.236.99.253', 'uncertainty': '', 'file_path': '10/uxnmr.info', 'start_idx': 0, 'end_idx': 63, 'evidence_match_score': 1.0}, {'candidate_id': '10/uxnmr.info:0:63:4', 'category': 'resource_signal', 'role': 'descriptor', 'claim': 'The IP address of the DRU is 149.236.99.89.', 'evidence_text': '149.236.99.89', 'uncertainty': '', 'file_path': '10/uxnmr.info', 'start_idx': 0, 'end_idx': 63, 'evidence_match_score': 1.0}, {'candidate_id': '10/uxnmr.info:0:63:5', 'category': 'resource_signal', 'role': 'descriptor', 'claim': 'The firmware version of the DRU is 170619.', 'evidence_text': '170619', 'uncertainty': '', 'file_path': '10/uxnmr.info', 'start_idx': 0, 'end_idx': 63, 'evidence_match_score': 1.0}, {'candidate_id': '10/uxnmr.info:0:63:6', 'category': 'resource_signal', 'role': 'descriptor', 'claim': 'The IP address of the AQS is 149.236.99.89.', 'evidence_text': '149.236.99.89', 'uncertainty': '', 'file_path': '10/uxnmr.info', 'start_idx': 0, 'end_idx': 63, 'evidence_match_score': 1.0}, {'candidate_id': '10/uxnmr.info:0:63:7', 'category': 'resource_signal', 'role': 'descriptor', 'claim': 'The IP address of the BSMS is 149.236.99.20.', 'evidence_text': '149.236.99.20', 'uncertainty': '', 'file_path': '10/uxnmr.info', 'start_idx': 0, 'end_idx': 63, 'evidence_match_score': 1.0}, {'candidate_id': '10/uxnmr.info:0:63:8', 'category': 'resource_signal', 'role': 'descriptor', 'claim': 'The TCP/IP address of the transmitter is 149.236.99.254.', 'evidence_text': '149.236.99.254', 'uncertainty': '', 'file_path': '10/uxnmr.info', 'start_idx': 0, 'end_idx': 63, 'evidence_match_score': 1.0}, {'candidate_id': '10/uxnmr.info:0:63:9', 'category': 'resource_signal', 'role': 'descriptor', 'claim': 'The TCP/IP address of the transmitter is 149.236.99.20.', 'evidence_text': '149.236.99.20', 'uncertainty': '', 'file_path': '10/uxnmr.info', 'start_idx': 0, 'end_idx': 63, 'evidence_match_score': 1.0}]\n\n",
+          "chars": 3028,
+          "tokens": 1276,
+          "cumulative_tokens": 1894
+        },
+        {
+          "channel": "prompt",
+          "name": "local_chunk_context",
+          "text": "Local chunk context for assessment:\nCONFIGURATION INFORMATION\nPath : C:/Bruker/TopSpin3.2/conf/instr/spect/uxnmr.info\nDate : Wed Sep 30 11:30:59 2020\nRelease : TOPSPIN Version 3.2-pl6\nInstalled in : C:/Bruker/TopSpin3.2\nHost : CZC412575Q\nOS : Windows 7 (Vs 6.1) Service Pack 1\nCPU : Intel(R) Xeon(R) CPU E5-1620 v2 @ 3.70GHz (8 cores at 3691 MHz with Hyperthreading)\nUser : nmr\nDescription : CABINET 500 HD OB\nLocation : Karlsruher Institut fuer Technologie Karlsruhe Germany\nSystem : Avance III NMR spectrometer\n1H-frequency : 500.13 MHz\nOrder Number : 10146761\nConfigured in: C:/Bruker/TopSpin3.2/conf/instr/spect\nIPSO: connected to spectrometer subnet\n- TCP/IP address = 149.236.99.253\n- Tctrl : 1\n- Fctrls: 2\n- Gctrl1: without digital preemphasis\n- Rctrl : 1\n- FREDs : none\n- DPP : none\nDRU: AQS DRU-E Z102520/04112 ECL 07.00\n- TCP/IP address = 149.236.99.89\n- Firmware Version = 170619\n- DRU controls AQS-Rack and HPPR/2\nAQS: connected to 149.236.99.89:/dev/tty10\n Number Addr Type HW-VS FW-VS ID ECL Name Description\n 2 0x10 0x43 0x5 CD R 0.2 REC-1 AQS RXAD/2 600 Z130588/1483 ECL 00.02\n 3 0x34 0xd6 0x1 X 4.1 REF-1 REF/3-600 Reference Board for AQS/3 Receiver\n 4 0x24 0x32 0 S 2.2 SGU-1 AQS SGU/3 600 (2CH) Z117129/01787 ECL 02.02 FPGA-Vs=20131031\n 14 0xa1 0x91 0 V 1.2 PS-2 AQS PSM-D Power Supply Module\n -- 0x20 0xd8 0 B 2.0 MASTER AQS/3+ Chassis\n 1 0x20 0x7 0 B MASTER AQS Rack Master\n Logical Receiver/SGU configuration:\nRouter: none installed\nTransmitters at the spectrometer subnet:\n- TCP/IP address = 149.236.99.254\n- Firmware VS = 20120627\n- Amplifier = BLAXH300/100 E 200-600MHZ INR: W1345083/0905 ECL 21\n- Router = BLMMR32 RF AMPLIFIER MODULE: W1345204/2215 ECL 20\n- Controller = BLA CONTROL BOARD 6 2CH: W1522050/8180 ECL 50\n- QNP-Accessory : 1 X-input and 1 H-input\n- TCP/IP address = 149.236.99.20\n- Amplifier = BSMS/2 LOCK TRANSCEIVER 500: Z109889/00522 ECL 03.01\nBSMS: BSMS/2 connected to ethernet\n- TCP/IP address = 149.236.99.20\n",
+          "chars": 1953,
+          "tokens": 941,
+          "cumulative_tokens": 2835
+        }
+      ],
+      "usage": {
+        "requests": 1,
+        "input_tokens": 2843,
+        "output_tokens": 869,
+        "prompt_eval_duration_ms": 0,
+        "load_duration_ms": 0,
+        "response_duration_ms": 0,
+        "total_duration_ms": 23528
+      }
+    }
+  ]
+}

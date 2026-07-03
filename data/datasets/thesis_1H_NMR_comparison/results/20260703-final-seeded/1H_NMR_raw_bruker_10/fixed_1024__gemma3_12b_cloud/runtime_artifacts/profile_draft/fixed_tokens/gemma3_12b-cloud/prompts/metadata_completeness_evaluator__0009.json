@@ -1,0 +1,52 @@
+{
+  "operation_id": "metadata_completeness_evaluator",
+  "agent_name": "metadata_completeness_evaluator",
+  "model": "gemma3:12b-cloud",
+  "output_type": "RequirementEvaluation",
+  "status": "completed",
+  "metadata": {},
+  "attempts": [
+    {
+      "attempt_index": 0,
+      "attempt_kind": "initial",
+      "model": "gemma3:12b-cloud",
+      "tokenizer_fallback": false,
+      "tokenizer_fallback_reason": null,
+      "components": [
+        {
+          "channel": "system",
+          "name": "requirement_evaluator_system_prompt",
+          "text": "\nYou evaluate one DCAT-AP+ scientific semantic requirement for one Dataset draft slice.\nReturn only JSON matching the supplied schema.\nReturn exactly one assessment for every supplied requirement_id. Do not omit requirements.\nAssess semantic adequacy, not JSON Schema validity or field coverage.\nEvidence establishes applicability and supports interpretation. Only values visibly present at the supplied draft target paths can establish fulfillment.\nNever mark a requirement fulfilled when all supplied target paths are empty or absent.\nUse statuses: fulfilled, partial, missing, not_applicable.\nquality must be 1 for fulfilled, 0.5 for partial, 0 for missing/not_applicable.\nPrefer not_applicable only when the supplied evidence categories make the semantic requirement irrelevant.\nFor activity targets, evaluated_entity/evaluated_activity answer what that specific DataGeneratingActivity directly measured, observed, analysed, or studied. Every data-generating activity needs at least one concrete target. A merely generated output is not an evaluated target; an input file is valid only when evidence says it was directly analysed.\nForbid a DataGeneratingActivity from referencing its own id through evaluated_activity.\nFor dataset descriptions, prefer a compact scope summary. A description is partial when it repeats structured activity, agent, plan, target, or attribute facts that are already present in the supplied draft excerpt.\nFor dataset description scope, do not remove the only description entry. Use replace with synthesis when streamlining is possible, or no_action when it is not.\nFor generation activities, evaluate only the activity title, description, and type. Unsupported fields that cannot be streamlined should remain unresolved rather than deleting the activity.\nFor method plans, explicit method/procedure/protocol/plan evidence is required for fulfilled; prefer method_signal, but accept another category when the claim/evidence explicitly says method, procedure, protocol, plan, sampling, or acquisition.\nFor attribute parent semantics, device/software configuration belongs to agent parents; acquisition/processing settings and thresholds belong to activities; axis bounds, point counts, transmittance/intensity extents, resolution, and data scaling belong to the evaluated data entity unless evidence explicitly says otherwise.\nFor technical agents, instruments, software, and devices are all valid carried_out_by entries; people and provenance-only origins are not.\n",
+          "chars": 2498,
+          "tokens": 469,
+          "cumulative_tokens": 469
+        },
+        {
+          "channel": "system",
+          "name": "system_schema",
+          "text": "\n\nReturn exactly one JSON object that satisfies this JSON Schema. Do not include Markdown fences, prose, comments, or additional text.\n\nJSON Schema:\n{\"$defs\":{\"RequirementAssessment\":{\"properties\":{\"requirement_id\":{\"title\":\"Requirement Id\",\"type\":\"string\"},\"status\":{\"enum\":[\"fulfilled\",\"partial\",\"missing\",\"unanswered\",\"unresolved\",\"not_applicable\"],\"title\":\"Status\",\"type\":\"string\"},\"quality\":{\"default\":0.0,\"maximum\":1.0,\"minimum\":0.0,\"title\":\"Quality\",\"type\":\"number\"},\"applicable\":{\"default\":true,\"title\":\"Applicable\",\"type\":\"boolean\"},\"rationale\":{\"default\":\"\",\"title\":\"Rationale\",\"type\":\"string\"},\"target_paths\":{\"items\":{\"type\":\"string\"},\"title\":\"Target Paths\",\"type\":\"array\"},\"evidence_search_hints\":{\"items\":{\"type\":\"string\"},\"title\":\"Evidence Search Hints\",\"type\":\"array\"},\"expected_target_class\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null,\"title\":\"Expected Target Class\"}},\"required\":[\"requirement_id\",\"status\"],\"title\":\"RequirementAssessment\",\"type\":\"object\"}},\"properties\":{\"assessments\":{\"items\":{\"$ref\":\"#/$defs/RequirementAssessment\"},\"title\":\"Assessments\",\"type\":\"array\"}},\"title\":\"RequirementEvaluation\",\"type\":\"object\"}",
+          "chars": 1157,
+          "tokens": 274,
+          "cumulative_tokens": 742
+        },
+        {
+          "channel": "prompt",
+          "name": "prompt",
+          "text": "Evaluate the draft excerpt against the supplied semantic requirement. Use only supplied evidence and category meanings.\n\n{\n  \"draft_excerpt\": {\n    \"/title\": [\n      \"NMR Spectral Data\"\n    ]\n  },\n  \"requirements\": [\n    {\n      \"requirement_id\": \"dataset_title_identity\",\n      \"label\": \"Dataset title identity\",\n      \"description\": \"Title identifies the dataset itself rather than only a source file or projection process.\",\n      \"weight\": 0.75,\n      \"target_paths\": [\n        \"/title\"\n      ],\n      \"expected_target_class\": null,\n      \"evidence_hints\": [\n        \"dataset title\",\n        \"dataset identifier\",\n        \"dataset name\"\n      ],\n      \"allow_not_applicable\": false,\n      \"allowed_categories\": []\n    }\n  ],\n  \"selected_evidence\": [\n    {\n      \"evidence_id\": \"ev:7f462427a6d51208\",\n      \"category\": \"surrounding_signal\",\n      \"role\": \"identity\",\n      \"claim\": \"JTS112-01-04-F3 is an identifier.\",\n      \"evidence_text\": \"JTS112-01-04-F3\",\n      \"file_path\": \"10/pdata/1/title\",\n      \"source_context\": \"AK BRaese, Jasmin Seibert, JTS112-01-04-F3\"\n    },\n    {\n      \"evidence_id\": \"ev:ea105e2c4cec6663\",\n      \"category\": \"resource_signal\",\n      \"role\": \"qualitative_attribute\",\n      \"claim\": \"The file version is 5.0.\",\n      \"evidence_text\": \"##JCAMPDX= 5.0\",\n      \"file_path\": \"10/acqu\",\n      \"source_context\": \"##TITLE= Parameter file, TOPSPIN Version 3.2\\n##JCAMPDX= 5.0\\n##DATATYPE= Parameter Values\\n##NPOINTS= 1 $$ modification sequence number\"\n    },\n    {\n      \"evidence_id\": \"ev:56ad4e2b1d63af5f\",\n      \"category\": \"resource_signal\",\n      \"role\": \"descriptor\",\n      \"claim\": \"The data type is parameter values.\",\n      \"evidence_text\": \"##DATATYPE= Parameter Values\",\n      \"file_path\": \"10/acqu\",\n      \"source_context\": \"##TITLE= Parameter file, TOPSPIN Version 3.2\\n##JCAMPDX= 5.0\\n##DATATYPE= Parameter Values\\n##NPOINTS= 1 $$ modification sequence number\\n##ORIGIN= Bruker BioSpin GmbH\"\n    }\n  ],\n  \"context_window\": [\n    {\n      \"evidence_id\": \"ev:c8f041f8840175e3\",\n      \"category\": \"surrounding_signal\",\n      \"role\": \"identity\",\n      \"claim\": \"Jasmin Seibert is a person.\",\n      \"evidence_text\": \"Jasmin Seibert\",\n      \"file_path\": \"10/pdata/1/title\"\n    }\n  ],\n  \"category_meanings\": {\n    \"resource_signal\": \"files, distributions, formats, access paths, and resource-scoped notes\",\n    \"method_signal\": \"explicit realized plans, protocols, methods, procedures\",\n    \"activity_signal\": \"data-generating activities and other activities\",\n    \"software_signal\": \"software, scripts, executable systems, services, processing applications\",\n    \"instrument_signal\": \"acquisition, instrument, processing, calibration, unit, threshold, and configuration settings\",\n    \"surrounding_signal\": \"dates, labs, teams, people, organizations, ownership, origin, authorship, provenance context\",\n    \"measurement_signal\": \"measurement-related evidence that can route to quantitative or qualitative activity/entity attributes\",\n    \"measurement_condition\": \"axis bounds, axis units, point counts, ranges, scales, and dataset-level measurement descriptors\"\n  }\n}",
+          "chars": 3104,
+          "tokens": 963,
+          "cumulative_tokens": 1705
+        }
+      ],
+      "usage": {
+        "requests": 1,
+        "input_tokens": 1714,
+        "output_tokens": 190,
+        "prompt_eval_duration_ms": 0,
+        "load_duration_ms": 0,
+        "response_duration_ms": 0,
+        "total_duration_ms": 4100
+      }
+    }
+  ]
+}

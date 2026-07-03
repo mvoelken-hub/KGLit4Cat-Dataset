@@ -1,0 +1,5 @@
+[
+  "Chunk extraction repair failed for 10/pdata/1/proc chunk 26: Max retries exceeded while generating structured output",
+  "Chunk extraction completed with failed chunks: 10/pdata/1/proc chunk 26: Max retries exceeded while generating structured output",
+  "Filtered evidence notes: 89 rejected evidence candidates, 68 unsupported evidence candidates, 762 similarity_merged."
+]

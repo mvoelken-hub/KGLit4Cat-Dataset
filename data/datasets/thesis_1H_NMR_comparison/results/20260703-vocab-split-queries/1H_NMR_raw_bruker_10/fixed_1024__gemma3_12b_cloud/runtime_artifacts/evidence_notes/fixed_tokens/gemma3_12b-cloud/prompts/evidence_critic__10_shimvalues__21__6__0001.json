@@ -1,0 +1,72 @@
+{
+  "operation_id": "evidence_critic__10_shimvalues__21__6",
+  "agent_name": "evidence_critic",
+  "model": "gemma3:12b-cloud",
+  "output_type": "EvidenceAssessmentContext",
+  "status": "completed",
+  "metadata": {
+    "file_path": "10/shimvalues",
+    "chunk_index": 21,
+    "candidate_count": 6
+  },
+  "attempts": [
+    {
+      "attempt_index": 0,
+      "attempt_kind": "initial",
+      "model": "gemma3:12b-cloud",
+      "tokenizer_fallback": false,
+      "tokenizer_fallback_reason": null,
+      "components": [
+        {
+          "channel": "system",
+          "name": "evidence_critic_system_prompt",
+          "text": "\nYou assess grounded evidence candidates using only domain-agnostic quality criteria.\nDo not decide relevance by recognizing a particular scientific domain, instrument, vendor, file format, or key name.\nReturn only a valid EvidenceAssessmentContext JSON object.\n\nAssess each candidate independently using categorical judgments:\n- groundedness: whether evidence_text supports the claim.\n- self_containedness: whether the claim can be understood without hidden prompt context.\n- scope_clarity: whether package/resource/section/environment scope is clear.\n- portability: whether the claim remains meaningful when the package is copied elsewhere.\n- semantic_interpretability: whether the claim is meaningful rather than raw unexplained syntax.\n- environment_dependence: low/medium/high dependence on local machine, session, user, installation, or network context.\n- specificity: whether the claim is concrete without overinterpretation.\n- novelty: whether it adds information beyond repeated template content.\n- uncertainty: low/medium/high ambiguity.\n",
+          "chars": 1048,
+          "tokens": 206,
+          "cumulative_tokens": 206
+        },
+        {
+          "channel": "system",
+          "name": "system_schema",
+          "text": "\n\nReturn exactly one JSON object that satisfies this JSON Schema. Do not include Markdown fences, prose, comments, or additional text.\n\nJSON Schema:\n{\"$defs\":{\"EvidenceAssessment\":{\"properties\":{\"candidate_id\":{\"title\":\"Candidate Id\",\"type\":\"string\"},\"groundedness\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Groundedness\",\"type\":\"string\"},\"self_containedness\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Self Containedness\",\"type\":\"string\"},\"scope_clarity\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Scope Clarity\",\"type\":\"string\"},\"portability\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Portability\",\"type\":\"string\"},\"semantic_interpretability\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Semantic Interpretability\",\"type\":\"string\"},\"environment_dependence\":{\"default\":\"medium\",\"enum\":[\"low\",\"medium\",\"high\"],\"title\":\"Environment Dependence\",\"type\":\"string\"},\"specificity\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Specificity\",\"type\":\"string\"},\"novelty\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Novelty\",\"type\":\"string\"},\"uncertainty\":{\"default\":\"medium\",\"enum\":[\"low\",\"medium\",\"high\"],\"title\":\"Uncertainty\",\"type\":\"string\"},\"rationale\":{\"default\":\"\",\"title\":\"Rationale\",\"type\":\"string\"}},\"required\":[\"candidate_id\"],\"title\":\"EvidenceAssessment\",\"type\":\"object\"}},\"properties\":{\"assessments\":{\"items\":{\"$ref\":\"#/$defs/EvidenceAssessment\"},\"title\":\"Assessments\",\"type\":\"array\"}},\"title\":\"EvidenceAssessmentContext\",\"type\":\"object\"}",
+          "chars": 1554,
+          "tokens": 361,
+          "cumulative_tokens": 566
+        },
+        {
+          "channel": "prompt",
+          "name": "chunk_metadata",
+          "text": "Chunk context metadata:\n{\"start_idx\":94,\"end_idx\":100,\"file_path\":\"10/shimvalues\",\"data_package_name\":\"1H_NMR_raw_bruker_10\"}\n\n",
+          "chars": 127,
+          "tokens": 51,
+          "cumulative_tokens": 617
+        },
+        {
+          "channel": "prompt",
+          "name": "validated_candidates",
+          "text": "Validated evidence candidates JSON:\n[{'candidate_id': '10/shimvalues:94:100:0', 'category': 'measurement_signal', 'role': 'parameter', 'claim': 'Shim setting at index 34 is 7124.76300000', 'evidence_text': 'SHIM_SETTING [34] 7124.76300000', 'uncertainty': '', 'file_path': '10/shimvalues', 'start_idx': 94, 'end_idx': 100, 'evidence_match_score': 1.0}, {'candidate_id': '10/shimvalues:94:100:1', 'category': 'measurement_signal', 'role': 'parameter', 'claim': 'Shim setting at index 35 is 6442.55600000', 'evidence_text': 'SHIM_SETTING [35] 6442.55600000', 'uncertainty': '', 'file_path': '10/shimvalues', 'start_idx': 94, 'end_idx': 100, 'evidence_match_score': 1.0}, {'candidate_id': '10/shimvalues:94:100:2', 'category': 'measurement_signal', 'role': 'parameter', 'claim': 'Shim setting at index 36 is -11193.29200000', 'evidence_text': 'SHIM_SETTING [36] -11193.29200000', 'uncertainty': '', 'file_path': '10/shimvalues', 'start_idx': 94, 'end_idx': 100, 'evidence_match_score': 1.0}, {'candidate_id': '10/shimvalues:94:100:3', 'category': 'measurement_signal', 'role': 'parameter', 'claim': 'Shim setting at index 38 is -6012.19500000', 'evidence_text': 'SHIM_SETTING [38] -6012.19500000', 'uncertainty': '', 'file_path': '10/shimvalues', 'start_idx': 94, 'end_idx': 100, 'evidence_match_score': 1.0}, {'candidate_id': '10/shimvalues:94:100:4', 'category': 'measurement_signal', 'role': 'parameter', 'claim': 'Shim setting at index 39 is -568.86700000', 'evidence_text': 'SHIM_SETTING [39] -568.86700000', 'uncertainty': '', 'file_path': '10/shimvalues', 'start_idx': 94, 'end_idx': 100, 'evidence_match_score': 1.0}, {'candidate_id': '10/shimvalues:94:100:5', 'category': 'measurement_signal', 'role': 'parameter', 'claim': 'Shim setting at index 40 is 0.00000000', 'evidence_text': 'SHIM_SETTING [40] 0.00000000', 'uncertainty': '', 'file_path': '10/shimvalues', 'start_idx': 94, 'end_idx': 100, 'evidence_match_score': 1.0}]\n\n",
+          "chars": 1934,
+          "tokens": 842,
+          "cumulative_tokens": 1459
+        },
+        {
+          "channel": "prompt",
+          "name": "local_chunk_context",
+          "text": "Local chunk context for assessment:\nSHIM_SETTING [34] 7124.76300000\nSHIM_SETTING [35] 6442.55600000\nSHIM_SETTING [36] -11193.29200000\nSHIM_SETTING [38] -6012.19500000\nSHIM_SETTING [39] -568.86700000\nSHIM_SETTING [40] 0.00000000\n",
+          "chars": 228,
+          "tokens": 148,
+          "cumulative_tokens": 1607
+        }
+      ],
+      "usage": {
+        "requests": 1,
+        "input_tokens": 1615,
+        "output_tokens": 598,
+        "prompt_eval_duration_ms": 0,
+        "load_duration_ms": 0,
+        "response_duration_ms": 0,
+        "total_duration_ms": 17267
+      }
+    }
+  ]
+}

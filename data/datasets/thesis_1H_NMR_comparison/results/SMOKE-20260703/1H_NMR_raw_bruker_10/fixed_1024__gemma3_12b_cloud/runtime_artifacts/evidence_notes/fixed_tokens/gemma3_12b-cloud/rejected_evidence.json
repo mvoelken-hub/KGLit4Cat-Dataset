@@ -1,0 +1,302 @@
+[
+  {
+    "route": "rejected_evidence",
+    "reason": "evidence_text_unsupported",
+    "candidate": {
+      "candidate_id": "10/pdata/1/outd:0:14:0",
+      "category": "resource_signal",
+      "role": "qualitative_attribute",
+      "claim": "The file is a parameter file for Bruker TopSpin",
+      "evidence_text": "This file is a parameter file for Bruker TopSpin",
+      "source_context": "This file is a parameter file for Bruker TopSpin",
+      "uncertainty": "",
+      "file_path": "10/pdata/1/outd",
+      "start_idx": 0,
+      "end_idx": 14,
+      "evidence_match_score": 0.5625
+    },
+    "assessment": null,
+    "chunk_index": 8
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "evidence_text_unsupported",
+    "candidate": {
+      "candidate_id": "10/format.temp:0:124:0",
+      "category": "resource_signal",
+      "role": "descriptor",
+      "claim": "The file contains acquisition parameters for a 1H NMR experiment.",
+      "evidence_text": "This file contains acquisition parameters for a 1H NMR",
+      "source_context": "This file contains acquisition parameters for a 1H NMR",
+      "uncertainty": "",
+      "file_path": "10/format.temp",
+      "start_idx": 0,
+      "end_idx": 124,
+      "evidence_match_score": 0.6111
+    },
+    "assessment": null,
+    "chunk_index": 9
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "duplicate_evidence",
+    "candidate": {
+      "candidate_id": "10/format.temp:0:124:5",
+      "category": "instrument_signal",
+      "role": "descriptor",
+      "claim": "The unit of FIDRES is Hz.",
+      "evidence_text": "UNIT \"Hz\"",
+      "source_context": "REL \"SWH=SW*SFO1\"\n INV_REL \"SW=SWH/SFO1\"\n UNIT \"Hz\"\n FORMAT \"%14.3f Hz\"\n TEXT \" \"",
+      "uncertainty": "",
+      "file_path": "10/format.temp",
+      "start_idx": 0,
+      "end_idx": 124,
+      "evidence_match_score": 1.0
+    },
+    "assessment": {
+      "candidate_id": "10/format.temp:0:124:5",
+      "groundedness": "yes",
+      "self_containedness": "yes",
+      "scope_clarity": "yes",
+      "portability": "yes",
+      "semantic_interpretability": "yes",
+      "environment_dependence": "low",
+      "specificity": "yes",
+      "novelty": "no",
+      "uncertainty": "low",
+      "rationale": "The text directly states 'UNIT \"Hz\"' for the FIDRES parameter."
+    },
+    "chunk_index": 9
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "duplicate_evidence",
+    "candidate": {
+      "candidate_id": "10/format.temp:0:124:8",
+      "category": "instrument_signal",
+      "role": "descriptor",
+      "claim": "The unit of D1 is sec.",
+      "evidence_text": "UNIT \"sec\"",
+      "source_context": "REL \"AQ=aqcalc(SW,SFO1,TD,DIGTYP)\"\n INV_REL \"TD=tdcalc(SW,SFO1,1.0e6*AQ,DIGTYP)\"\n UNIT \"sec\"\n FORMAT \"%14.7f sec\"\n TEXT \" \"",
+      "uncertainty": "",
+      "file_path": "10/format.temp",
+      "start_idx": 0,
+      "end_idx": 124,
+      "evidence_match_score": 1.0
+    },
+    "assessment": {
+      "candidate_id": "10/format.temp:0:124:8",
+      "groundedness": "yes",
+      "self_containedness": "yes",
+      "scope_clarity": "yes",
+      "portability": "yes",
+      "semantic_interpretability": "yes",
+      "environment_dependence": "low",
+      "specificity": "yes",
+      "novelty": "no",
+      "uncertainty": "low",
+      "rationale": "The text directly states 'UNIT \"sec\"' for the D1 parameter."
+    },
+    "chunk_index": 9
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "evidence_text_unsupported",
+    "candidate": {
+      "candidate_id": "10/pulseprogram:0:68:0",
+      "category": "resource_signal",
+      "role": "descriptor",
+      "claim": "The file contains a Bruker NMR pulse program.",
+      "evidence_text": "This file contains a Bruker NMR pulse program",
+      "source_context": "This file contains a Bruker NMR pulse program",
+      "uncertainty": "",
+      "file_path": "10/pulseprogram",
+      "start_idx": 0,
+      "end_idx": 68,
+      "evidence_match_score": 0.4222
+    },
+    "assessment": null,
+    "chunk_index": 11
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "evidence_text_unsupported",
+    "candidate": {
+      "candidate_id": "10/pulseprogram:0:68:1",
+      "category": "activity_signal",
+      "role": "identity",
+      "claim": "The pulse program is likely for a 1D experiment.",
+      "evidence_text": "likely for a 1D experiment",
+      "source_context": "likely for a 1D experiment",
+      "uncertainty": "",
+      "file_path": "10/pulseprogram",
+      "start_idx": 0,
+      "end_idx": 68,
+      "evidence_match_score": 0.4615
+    },
+    "assessment": null,
+    "chunk_index": 11
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "evidence_text_unsupported",
+    "candidate": {
+      "candidate_id": "10/acqus:298:315:0",
+      "category": "resource_signal",
+      "role": "qualitative_attribute",
+      "claim": "ShimPowRcbType is 3",
+      "evidence_text": "ShimPowRcbType=3",
+      "source_context": "ShimPowRcbType=3",
+      "uncertainty": "",
+      "file_path": "10/acqus",
+      "start_idx": 298,
+      "end_idx": 315,
+      "evidence_match_score": 0.25
+    },
+    "assessment": null,
+    "chunk_index": 15
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "evidence_text_unsupported",
+    "candidate": {
+      "candidate_id": "10/uxnmr.par:0:151:5",
+      "category": "measurement_signal",
+      "role": "parameter",
+      "claim": "The BFREQ value is 500.13.",
+      "evidence_text": "##BFREQ= 500.13",
+      "source_context": "##BFREQ= 500.13",
+      "uncertainty": "",
+      "file_path": "10/uxnmr.par",
+      "start_idx": 0,
+      "end_idx": 151,
+      "evidence_match_score": 0.8667
+    },
+    "assessment": null,
+    "chunk_index": 26
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "duplicate_evidence",
+    "candidate": {
+      "candidate_id": "10/uxnmr.par:152:252:4",
+      "category": "resource_signal",
+      "role": "qualitative_attribute",
+      "claim": "The CRCOTY setting is no.",
+      "evidence_text": "<no>",
+      "source_context": "##$Bla02PN= <Z109889>\n##$Bla02SN= <00522>\n##$Bla03Eth= <no>\n##$Bla03Nam= <>\n##$Bla03PN= <>",
+      "uncertainty": "",
+      "file_path": "10/uxnmr.par",
+      "start_idx": 152,
+      "end_idx": 252,
+      "evidence_match_score": 1.0
+    },
+    "assessment": {
+      "candidate_id": "10/uxnmr.par:152:252:4",
+      "groundedness": "yes",
+      "self_containedness": "yes",
+      "scope_clarity": "yes",
+      "portability": "yes",
+      "semantic_interpretability": "yes",
+      "environment_dependence": "low",
+      "specificity": "yes",
+      "novelty": "no",
+      "uncertainty": "low",
+      "rationale": "The evidence text directly matches the value of CRCOTY."
+    },
+    "chunk_index": 27
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "duplicate_evidence",
+    "candidate": {
+      "candidate_id": "10/uxnmr.par:691:713:7",
+      "category": "measurement_condition",
+      "role": "parameter",
+      "claim": "WBREFLM is in the range of 0 to 15",
+      "evidence_text": "(0..15)",
+      "source_context": "##$VTUETH= <149.236.99.20>\n##$VTUTY= <no>\n##$WBREFAM= (0..15)\n##$WBREFLM= (0..15)\n##$WBREFPH= (0..15)",
+      "uncertainty": "",
+      "file_path": "10/uxnmr.par",
+      "start_idx": 691,
+      "end_idx": 713,
+      "evidence_match_score": 1.0
+    },
+    "assessment": {
+      "candidate_id": "10/uxnmr.par:691:713:7",
+      "groundedness": "yes",
+      "self_containedness": "yes",
+      "scope_clarity": "yes",
+      "portability": "yes",
+      "semantic_interpretability": "yes",
+      "environment_dependence": "low",
+      "specificity": "yes",
+      "novelty": "no",
+      "uncertainty": "low",
+      "rationale": "The evidence text directly states the range."
+    },
+    "chunk_index": 31
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "duplicate_evidence",
+    "candidate": {
+      "candidate_id": "10/uxnmr.par:691:713:8",
+      "category": "measurement_condition",
+      "role": "parameter",
+      "claim": "WBREFPH is in the range of 0 to 15",
+      "evidence_text": "(0..15)",
+      "source_context": "##$VTUETH= <149.236.99.20>\n##$VTUTY= <no>\n##$WBREFAM= (0..15)\n##$WBREFLM= (0..15)\n##$WBREFPH= (0..15)",
+      "uncertainty": "",
+      "file_path": "10/uxnmr.par",
+      "start_idx": 691,
+      "end_idx": 713,
+      "evidence_match_score": 1.0
+    },
+    "assessment": {
+      "candidate_id": "10/uxnmr.par:691:713:8",
+      "groundedness": "yes",
+      "self_containedness": "yes",
+      "scope_clarity": "yes",
+      "portability": "yes",
+      "semantic_interpretability": "yes",
+      "environment_dependence": "low",
+      "specificity": "yes",
+      "novelty": "no",
+      "uncertainty": "low",
+      "rationale": "The evidence text directly states the range."
+    },
+    "chunk_index": 31
+  },
+  {
+    "route": "rejected_evidence",
+    "reason": "duplicate_evidence",
+    "candidate": {
+      "candidate_id": "10/uxnmr.par:691:713:9",
+      "category": "measurement_condition",
+      "role": "parameter",
+      "claim": "WBSGU is in the range of 0 to 15",
+      "evidence_text": "(0..15)",
+      "source_context": "##$VTUETH= <149.236.99.20>\n##$VTUTY= <no>\n##$WBREFAM= (0..15)\n##$WBREFLM= (0..15)\n##$WBREFPH= (0..15)",
+      "uncertainty": "",
+      "file_path": "10/uxnmr.par",
+      "start_idx": 691,
+      "end_idx": 713,
+      "evidence_match_score": 1.0
+    },
+    "assessment": {
+      "candidate_id": "10/uxnmr.par:691:713:9",
+      "groundedness": "yes",
+      "self_containedness": "yes",
+      "scope_clarity": "yes",
+      "portability": "yes",
+      "semantic_interpretability": "yes",
+      "environment_dependence": "low",
+      "specificity": "yes",
+      "novelty": "no",
+      "uncertainty": "low",
+      "rationale": "The evidence text directly states the range."
+    },
+    "chunk_index": 31
+  }
+]

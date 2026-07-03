@@ -1,0 +1,12 @@
+[
+  "Chunk extraction repair failed for 10/pdata/1/outd chunk 23: Max retries exceeded while generating structured output",
+  "Chunk extraction repair failed for 10/uxnmr.par chunk 40: Max retries exceeded while generating structured output",
+  "Chunk extraction completed with failed chunks: 10/pdata/1/outd chunk 23: Max retries exceeded while generating structured output; 10/uxnmr.par chunk 40: Max retries exceeded while generating structured output",
+  "Filtered evidence notes: 23 rejected evidence candidates, 3 unsupported evidence candidates, 210 similarity_merged.",
+  "Profile field '/was_generated_by/0/had_output_entity/1/type' kept raw value 'Processed NMR Data Processed data files (proc, procs, outd). 2e38a6a6:output-entity:processed-nmr-data'.",
+  "QUDT quantity-kind/unit pair for '/was_generated_by/0/had_input_entity/0/has_quantitative_attribute/0' was not cross-validated via qudt:hasQuantityKind: http://qudt.org/vocab/quantitykind/Frequency with http://qudt.org/vocab/quantitykind/MassPerTime. Pair resolver rejected both fields.",
+  "QUDT quantity-kind/unit pair for '/was_generated_by/0/had_input_entity/1/has_quantitative_attribute/0' was not cross-validated via qudt:hasQuantityKind: http://qudt.org/vocab/quantitykind/Activity with http://qudt.org/vocab/quantitykind/Power. Pair resolver rejected both fields.",
+  "QUDT quantity-kind/unit pair for '/was_generated_by/0/had_input_entity/1/has_quantitative_attribute/1' was not cross-validated via qudt:hasQuantityKind: http://qudt.org/vocab/quantitykind/Gain with http://qudt.org/vocab/quantitykind/MassPerTime. Pair resolver rejected both fields.",
+  "QUDT quantity-kind/unit pair for '/was_generated_by/0/had_input_entity/1/has_quantitative_attribute/2' was not cross-validated via qudt:hasQuantityKind: http://qudt.org/vocab/quantitykind/Frequency with http://qudt.org/vocab/unit/PPM. Pair resolver rejected both fields.",
+  "QUDT quantity-kind/unit pair for '/was_generated_by/0/had_input_entity/2/has_quantitative_attribute/0' was not cross-validated via qudt:hasQuantityKind: http://qudt.org/vocab/quantitykind/Frequency with http://qudt.org/vocab/quantitykind/Conductance. Pair resolver rejected both fields."
+]

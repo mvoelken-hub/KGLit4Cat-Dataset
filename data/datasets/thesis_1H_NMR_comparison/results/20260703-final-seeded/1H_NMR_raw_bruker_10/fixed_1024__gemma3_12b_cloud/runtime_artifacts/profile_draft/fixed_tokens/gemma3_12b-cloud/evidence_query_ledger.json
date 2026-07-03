@@ -1,0 +1,254 @@
+[
+  {
+    "query_id": "requirement_query:dataset_identity:6af6ad590f90",
+    "requirement_id": "dataset_identity",
+    "target_path": "/id",
+    "query": {
+      "text": "dataset title dataset description dataset identifier",
+      "target_paths": [
+        "/id",
+        "/title",
+        "/description"
+      ],
+      "expected_target_class": null,
+      "routes": [
+        "portable",
+        "contextual"
+      ],
+      "limit": {
+        "selected": 5,
+        "context": 12
+      }
+    },
+    "result_evidence_ids": [
+      "ev:7f462427a6d51208",
+      "ev:ea105e2c4cec6663",
+      "ev:56ad4e2b1d63af5f",
+      "ev:9c18dcdb7e30d4c2",
+      "ev:a828b0c0bcffaf50",
+      "ev:c8f041f8840175e3",
+      "ev:1642b5b2d273d488",
+      "ev:68290dafbfdba17d",
+      "ev:0c7382ee91c92bc8",
+      "ev:ba98c9705b164b41",
+      "ev:03d12af712203f71",
+      "ev:81555d2278dd6cf1"
+    ],
+    "selected_evidence_ids": [
+      "ev:7f462427a6d51208",
+      "ev:ea105e2c4cec6663",
+      "ev:56ad4e2b1d63af5f",
+      "ev:9c18dcdb7e30d4c2",
+      "ev:a828b0c0bcffaf50"
+    ],
+    "rejected_result_reasons": {
+      "ev:c8f041f8840175e3": "context_window_only",
+      "ev:1642b5b2d273d488": "context_window_only",
+      "ev:68290dafbfdba17d": "context_window_only",
+      "ev:0c7382ee91c92bc8": "context_window_only",
+      "ev:ba98c9705b164b41": "context_window_only",
+      "ev:03d12af712203f71": "context_window_only",
+      "ev:81555d2278dd6cf1": "context_window_only"
+    },
+    "ranking_explanation": [
+      "Ranked portable and contextual evidence by requirement search hints.",
+      "Boosted candidates matching expected DCAT-AP+ target class."
+    ]
+  },
+  {
+    "query_id": "requirement_query:dataset_generation:653b8b39911b",
+    "requirement_id": "dataset_generation",
+    "target_path": "/was_generated_by/-",
+    "query": {
+      "text": "acquisition measurement processing generated experiment method procedure instrument software setting",
+      "target_paths": [
+        "/was_generated_by/-"
+      ],
+      "expected_target_class": "DataGeneratingActivity",
+      "routes": [
+        "portable",
+        "contextual"
+      ],
+      "limit": {
+        "selected": 5,
+        "context": 12
+      }
+    },
+    "result_evidence_ids": [
+      "ev:211735907ab2e951",
+      "ev:dc6c8e589f15e423",
+      "ev:df305e55842b47fd",
+      "ev:385f6330fa7149e8",
+      "ev:acfd8d7484c080d3",
+      "ev:e57f4c33ffad29ec",
+      "ev:5e575cc50c907d91",
+      "ev:849dbf0bc203b16a",
+      "ev:195e83c57601207d",
+      "ev:12714fffd49eaba2",
+      "ev:614a64668bed2993"
+    ],
+    "selected_evidence_ids": [
+      "ev:211735907ab2e951",
+      "ev:dc6c8e589f15e423",
+      "ev:df305e55842b47fd",
+      "ev:385f6330fa7149e8",
+      "ev:acfd8d7484c080d3"
+    ],
+    "rejected_result_reasons": {
+      "ev:e57f4c33ffad29ec": "context_window_only",
+      "ev:5e575cc50c907d91": "context_window_only",
+      "ev:849dbf0bc203b16a": "context_window_only",
+      "ev:195e83c57601207d": "context_window_only",
+      "ev:12714fffd49eaba2": "context_window_only",
+      "ev:614a64668bed2993": "context_window_only"
+    },
+    "ranking_explanation": [
+      "Ranked portable and contextual evidence by requirement search hints.",
+      "Boosted candidates matching expected DCAT-AP+ target class."
+    ]
+  },
+  {
+    "query_id": "requirement_query:generation_activity_detail:188abd111f3a",
+    "requirement_id": "generation_activity_detail",
+    "target_path": "/was_generated_by/-",
+    "query": {
+      "text": "acquisition processing experiment type method",
+      "target_paths": [
+        "/was_generated_by/-"
+      ],
+      "expected_target_class": "DataGeneratingActivity",
+      "routes": [
+        "portable",
+        "contextual"
+      ],
+      "limit": {
+        "selected": 5,
+        "context": 12
+      }
+    },
+    "result_evidence_ids": [
+      "ev:211735907ab2e951",
+      "ev:dc6c8e589f15e423",
+      "ev:df305e55842b47fd",
+      "ev:385f6330fa7149e8",
+      "ev:acfd8d7484c080d3",
+      "ev:e57f4c33ffad29ec",
+      "ev:5e575cc50c907d91",
+      "ev:849dbf0bc203b16a",
+      "ev:195e83c57601207d",
+      "ev:12714fffd49eaba2",
+      "ev:614a64668bed2993"
+    ],
+    "selected_evidence_ids": [
+      "ev:211735907ab2e951",
+      "ev:dc6c8e589f15e423",
+      "ev:df305e55842b47fd",
+      "ev:385f6330fa7149e8",
+      "ev:acfd8d7484c080d3"
+    ],
+    "rejected_result_reasons": {
+      "ev:e57f4c33ffad29ec": "context_window_only",
+      "ev:5e575cc50c907d91": "context_window_only",
+      "ev:849dbf0bc203b16a": "context_window_only",
+      "ev:195e83c57601207d": "context_window_only",
+      "ev:12714fffd49eaba2": "context_window_only",
+      "ev:614a64668bed2993": "context_window_only"
+    },
+    "ranking_explanation": [
+      "Ranked portable and contextual evidence by requirement search hints.",
+      "Boosted candidates matching expected DCAT-AP+ target class."
+    ]
+  },
+  {
+    "query_id": "requirement_query:technical_agents:e176f66eadd6",
+    "requirement_id": "technical_agents",
+    "target_path": "/was_generated_by/0/carried_out_by/-",
+    "query": {
+      "text": "instrument software device",
+      "target_paths": [
+        "/was_generated_by/0/carried_out_by/-"
+      ],
+      "expected_target_class": "AgenticEntity",
+      "routes": [
+        "portable",
+        "contextual"
+      ],
+      "limit": {
+        "selected": 5,
+        "context": 12
+      }
+    },
+    "result_evidence_ids": [
+      "ev:fdd4ba3188f04c3b",
+      "ev:2f1a17bd29af8f1d",
+      "ev:9438f52bb6d1f8f0",
+      "ev:7387cdf154071976",
+      "ev:04513f3b0896810e",
+      "ev:9842a38cb2242708",
+      "ev:41b58d7db124ec23",
+      "ev:452232765df6f8a1"
+    ],
+    "selected_evidence_ids": [
+      "ev:fdd4ba3188f04c3b",
+      "ev:2f1a17bd29af8f1d",
+      "ev:9438f52bb6d1f8f0",
+      "ev:7387cdf154071976",
+      "ev:04513f3b0896810e"
+    ],
+    "rejected_result_reasons": {
+      "ev:9842a38cb2242708": "context_window_only",
+      "ev:41b58d7db124ec23": "context_window_only",
+      "ev:452232765df6f8a1": "context_window_only"
+    },
+    "ranking_explanation": [
+      "Ranked portable and contextual evidence by requirement search hints.",
+      "Boosted candidates matching expected DCAT-AP+ target class."
+    ]
+  },
+  {
+    "query_id": "requirement_query:method_plan:389089ec54c2",
+    "requirement_id": "method_plan",
+    "target_path": "/was_generated_by/0/realized_plan",
+    "query": {
+      "text": "method protocol plan procedure program",
+      "target_paths": [
+        "/was_generated_by/0/realized_plan"
+      ],
+      "expected_target_class": "Plan",
+      "routes": [
+        "portable",
+        "contextual"
+      ],
+      "limit": {
+        "selected": 5,
+        "context": 12
+      }
+    },
+    "result_evidence_ids": [
+      "ev:e57f4c33ffad29ec",
+      "ev:5e575cc50c907d91",
+      "ev:ca46414c8f868b6a",
+      "ev:cd48e934c136def7",
+      "ev:ae8276e77a0180a4",
+      "ev:7e90261486a29a33",
+      "ev:b9eea016d22198be",
+      "ev:a5de931dcac4398f"
+    ],
+    "selected_evidence_ids": [
+      "ev:e57f4c33ffad29ec",
+      "ev:5e575cc50c907d91",
+      "ev:ca46414c8f868b6a",
+      "ev:cd48e934c136def7",
+      "ev:ae8276e77a0180a4"
+    ],
+    "rejected_result_reasons": {
+      "ev:7e90261486a29a33": "context_window_only",
+      "ev:b9eea016d22198be": "context_window_only",
+      "ev:a5de931dcac4398f": "context_window_only"
+    },
+    "ranking_explanation": [
+      "Ranked portable and contextual evidence by requirement search hints.",
+      "Boosted candidates matching expected DCAT-AP+ target class."
+    ]
+  }
+]

@@ -1,0 +1,79 @@
+{
+  "operation_id": "profile_field_vocab_selection__upper_limit",
+  "agent_name": "profile_field_vocab_selection",
+  "model": "gemma3:12b-cloud",
+  "output_type": "VocabularyCandidateSelection",
+  "status": "completed",
+  "metadata": {
+    "source_value": "upper limit",
+    "candidate_count": 17
+  },
+  "attempts": [
+    {
+      "attempt_index": 0,
+      "attempt_kind": "initial",
+      "model": "gemma3:12b-cloud",
+      "tokenizer_fallback": false,
+      "tokenizer_fallback_reason": null,
+      "components": [
+        {
+          "channel": "system",
+          "name": "vocab_candidate_selection_system_prompt",
+          "text": "\nYou select a single controlled-vocabulary term that normalizes a metadata field, or return null.\nMatch on the physical quantity or concept the field actually measures, using the source value AND the\nsemantic context (dataset/entity/attribute title and description). Read each candidate's label AND definition,\nnot just its URI fragment.\nWhen several candidates describe the same kind of quantity or concept, prefer the most general/plain one over a\nmore specific or named variant of it. But \"most general\" only applies among candidates that are the same\nquantity - it never justifies picking a wrong-domain term.\nHard rules - return null for selected_uri when ANY of these hold:\n- No candidate describes the same physical quantity or concept as the field. Sharing a token or a symbol with\n  the source value is not a match. Common traps include bare axis or column codes, incidental words, and unit\n  symbols or mathematical symbols; a single letter or a unit symbol by itself is never a quantity kind.\n- An ordinal or extremum modifier (first/last/minimum/maximum) by itself is not a quantity kind. However, when\n  it qualifies a field whose semantic context or source value clearly identifies the underlying physical\n  quantity, the ordinal does NOT disqualify the match - select the candidate that matches that underlying\n  quantity. Only abstain when the ordinal is the ONLY signal and no underlying quantity can be identified.\n- The candidate belongs to a different scientific or engineering domain than the measurement described in the\n  context (for example, a radioactivity, electrical-impedance, typography/printing, aerospace, or oceanography\n  term used for a measurement in an unrelated field). A different-domain candidate is not a match even if it\n  is the most general available - return null.\n- The best candidate is only a superficial or adjacent match rather than the same quantity or concept.\n- You are not confident the candidate is the same quantity. In that case return null with confidence 0 and a\n  short reason naming the trap, rather than forcing a match.\nUse only candidate URIs from the prompt. Always include selected_uri, confidence (0.0-1.0), and reason.\nYou MUST NOT select a candidate you just argued does not fit - return null instead. Return only JSON.\n",
+          "chars": 2289,
+          "tokens": 481,
+          "cumulative_tokens": 481
+        },
+        {
+          "channel": "system",
+          "name": "system_schema",
+          "text": "\n\nReturn exactly one JSON object that satisfies this JSON Schema. Do not include Markdown fences, prose, comments, or additional text.\n\nJSON Schema:\n{\"properties\":{\"selected_uri\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null,\"description\":\"URI of the selected candidate, or null when no candidate fits.\",\"title\":\"Selected Uri\"},\"confidence\":{\"default\":0.0,\"maximum\":1.0,\"minimum\":0.0,\"title\":\"Confidence\",\"type\":\"number\"},\"reason\":{\"default\":\"\",\"title\":\"Reason\",\"type\":\"string\"}},\"title\":\"VocabularyCandidateSelection\",\"type\":\"object\"}",
+          "chars": 549,
+          "tokens": 129,
+          "cumulative_tokens": 609
+        },
+        {
+          "channel": "prompt",
+          "name": "source_value",
+          "text": "Source value:\nupper limit\n\n",
+          "chars": 27,
+          "tokens": 7,
+          "cumulative_tokens": 616
+        },
+        {
+          "channel": "prompt",
+          "name": "source_context",
+          "text": "Source context JSON:\n{'json_path': '/was_generated_by/0/had_input_entity/0/has_quantitative_attribute/1/has_quantity_type', 'field_name': 'has_quantity_type', 'source_value': 'FIDRES Subrange Upper Bound', 'role': 'has_quantity_type', 'semantic_context': 'NMR Spectral Data NMR spectral data acquired on an Avance III spectrometer at KIT. | Automated NMR Spectral Data Acquisition and Processing Automated acquisition and processing of 1H NMR spectra using Bruker TOPSPIN software, defined by parameter files and pulse programs. | acqu File NMR acquisition parameters. | FIDRES Subrange Upper Bound Upper bound of the FIDRES parameter, as defined in the format.temp file.', 'sibling_value': '100000.0'}\n\n",
+          "chars": 704,
+          "tokens": 178,
+          "cumulative_tokens": 794
+        },
+        {
+          "channel": "prompt",
+          "name": "candidate_terms",
+          "text": "Candidate terms JSON:\n[{'uri': 'http://qudt.org/vocab/quantitykind/CONTROL-MASS', 'vocabulary_identifier': 'http://qudt.org/vocab/quantitykind', 'rdf_type': 'qudt__QuantityKind', 'title': 'Control Mass.', 'description': 'The upper design gross mass limit of a system at a specified mission event against which margins are calculated after accounting for basic masses of flight hardware, MGA, and uncertainties. It may include propellants, crew, and cargo.'}, {'uri': 'http://qudt.org/vocab/quantitykind/Capacity', 'vocabulary_identifier': 'http://qudt.org/vocab/quantitykind', 'rdf_type': 'qudt__QuantityKind', 'title': 'Capacity', 'description': 'In computer operations, (a) the largest quantity which can be stored, processed, or transferred; (b) the largest number of digits or characters which may regularly be processed; (c) the upper and lower limits of the quantities which may be processed. In other contexts, the amount of material that  c', 'symbol': 'TBD'}, {'uri': 'http://qudt.org/vocab/quantitykind/LowerCriticalMagneticFluxDensity', 'vocabulary_identifier': 'http://qudt.org/vocab/quantitykind', 'rdf_type': 'qudt__QuantityKind', 'title': 'Lower Critical Magnetic Flux Density', 'description': '\"Lower Critical Magnetic Flux Density\" for type II superconductors, is the threshold magnetic flux density for magnetic flux entering the superconductor.', 'symbol': 'B_{c1}'}, {'uri': 'http://qudt.org/vocab/quantitykind/MASS-PROPERTY-UNCERTAINTY', 'vocabulary_identifier': 'http://qudt.org/vocab/quantitykind', 'rdf_type': 'qudt__QuantityKind', 'title': 'Mass Property Uncertainty', 'description': 'Variation in predicted MP due to lack of definition, manufacturing variations, environment effects, or accuracy limitation of measuring devices.'}, {'uri': 'http://qudt.org/vocab/quantitykind/MagneticFluxDensity', 'vocabulary_identifier': 'http://qudt.org/vocab/quantitykind', 'rdf_type': 'qudt__QuantityKind', 'title': 'magnetic flux density', 'description': '\"Magnetic Flux Density\" is a vector quantity and is the magnetic flux per unit area of a magnetic field at right angles to the magnetic force. It can be defined in terms of the effects the field has, for example by $B = F/q v \\\\sin \\\\theta$, where $F$ is the force a moving charge $q$ would experience ', 'symbol': 'B'}, {'uri': 'http://qudt.org/vocab/quantitykind/Mass', 'vocabulary_identifier': 'http://qudt.org/vocab/quantitykind', 'rdf_type': 'qudt__QuantityKind', 'title': 'mass', 'description': \"In physics, mass, more specifically inertial mass, can be defined as a quantitative measure of an object's resistance to acceleration. The SI unit of mass is the kilogram ($kg$)\", 'symbol': 'm'}, {'uri': 'http://qudt.org/vocab/quantitykind/MaxExpectedOperatingThrust', 'vocabulary_identifier': 'http://qudt.org/vocab/quantitykind', 'rdf_type': 'qudt__QuantityKind', 'title': 'Maximum Expected Operating Thrust', 'description': 'Applicable units are those of quantitykind:Force'}, {'uri': 'http://qudt.org/vocab/quantitykind/MaxOperatingThrust', 'vocabulary_identifier': 'http://qudt.org/vocab/quantitykind', 'rdf_type': 'qudt__QuantityKind', 'title': 'Max Operating Thrust', 'description': 'Applicable units are those of quantitykind:Force'}, {'uri': 'http://qudt.org/vocab/quantitykind/MaxSeaLevelThrust', 'vocabulary_identifier': 'http://qudt.org/vocab/quantitykind', 'rdf_type': 'qudt__QuantityKind', 'title': 'Max Sea Level Thrust', 'description': 'Max Sea Level thrust (Mlbf) '}, {'uri': 'http://qudt.org/vocab/quantitykind/MaximumExpectedOperatingPressure', 'vocabulary_identifier': 'http://qudt.org/vocab/quantitykind', 'rdf_type': 'qudt__QuantityKind', 'title': 'Maximum Expected Operating Pressure', 'description': 'Applicable units are those of quantitykind:ForcePerArea'}, {'uri': 'http://qudt.org/vocab/quantitykind/MaximumOperatingPressure', 'vocabulary_identifier': 'http://qudt.org/vocab/quantitykind', 'rdf_type': 'qudt__QuantityKind', 'title': 'Maximum Operating Pressure', 'description': 'Applicable units are those of quantitykind:ForcePerArea', 'symbol': 'MOP'}, {'uri': 'http://qudt.org/vocab/quantitykind/Pressure', 'vocabulary_identifier': 'http://qudt.org/vocab/quantitykind', 'rdf_type': 'qudt__QuantityKind', 'title': 'pressure', 'description': 'Pressure is an effect which occurs when a force is applied on a surface. Pressure is the amount of force acting on a unit area. Pressure is distinct from stress, as the former is the ratio of the component of force normal to a surface to the surface area. Stress is a tensor that relates the vector f'}, {'uri': 'http://qudt.org/vocab/quantitykind/RateOfRiseOfOffStateVoltage', 'vocabulary_identifier': 'http://qudt.org/vocab/quantitykind', 'rdf_type': 'qudt__QuantityKind', 'title': None, 'description': 'du/dt as time dependent change in voltage', 'symbol': '0173-1#Z4-BAJ289#003'}, {'uri': 'http://qudt.org/vocab/quantitykind/RiseOfOffStateVoltage', 'vocabulary_identifier': 'http://qudt.org/vocab/quantitykind', 'rdf_type': 'qudt__QuantityKind', 'title': None, 'description': 'du/dt as time dependent change in voltage', 'symbol': '0173-1#Z4-BAJ289#003'}, {'uri': 'http://qudt.org/vocab/quantitykind/TARGET-BOGIE-MASS', 'vocabulary_identifier': 'http://qudt.org/vocab/quantitykind', 'rdf_type': 'qudt__QuantityKind', 'title': 'Target Bogie Mass', 'description': 'An informal mass limit established by a Project Office (at the Element Integrated Product Team (IPT) level or below) to control mass.'}, {'uri': 'http://qudt.org/vocab/quantitykind/Thrust', 'vocabulary_identifier': 'http://qudt.org/vocab/quantitykind', 'rdf_type': 'qudt__QuantityKind', 'title': 'Thrust', 'description': \"Thrust is a reaction force described quantitatively by Newton's Second and Third Laws. When a system expels or accelerates mass in one direction the accelerated mass will cause a proportional but opposite force on that system.\\nThe pushing or pulling force developed by an aircraft engine or a rocket \"}, {'uri': 'http://qudt.org/vocab/quantitykind/UpperCriticalMagneticFluxDensity', 'vocabulary_identifier': 'http://qudt.org/vocab/quantitykind', 'rdf_type': 'qudt__QuantityKind', 'title': 'Upper Critical Magnetic Flux Density', 'description': '\"Upper Critical Magnetic Flux Density\" for type II superconductors, is the threshold magnetic flux density for disappearance of bulk superconductivity.', 'symbol': 'B_{c2}'}]\n\n",
+          "chars": 6356,
+          "tokens": 1686,
+          "cumulative_tokens": 2480
+        },
+        {
+          "channel": "prompt",
+          "name": "selection_instruction",
+          "text": "Select the best candidate URI, or return null if none fits.",
+          "chars": 59,
+          "tokens": 13,
+          "cumulative_tokens": 2493
+        }
+      ],
+      "usage": {
+        "requests": 1,
+        "input_tokens": 2502,
+        "output_tokens": 83,
+        "prompt_eval_duration_ms": 0,
+        "load_duration_ms": 0,
+        "response_duration_ms": 0,
+        "total_duration_ms": 2431
+      }
+    }
+  ]
+}

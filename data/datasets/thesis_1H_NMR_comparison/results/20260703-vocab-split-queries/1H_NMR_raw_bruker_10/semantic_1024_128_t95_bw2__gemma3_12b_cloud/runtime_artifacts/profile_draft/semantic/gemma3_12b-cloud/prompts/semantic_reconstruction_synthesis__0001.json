@@ -1,0 +1,52 @@
+{
+  "operation_id": "semantic_reconstruction_synthesis",
+  "agent_name": "semantic_reconstruction_synthesis",
+  "model": "gemma3:12b-cloud",
+  "output_type": "json_schema",
+  "status": "completed",
+  "metadata": {},
+  "attempts": [
+    {
+      "attempt_index": 0,
+      "attempt_kind": "initial",
+      "model": "gemma3:12b-cloud",
+      "tokenizer_fallback": false,
+      "tokenizer_fallback_reason": null,
+      "components": [
+        {
+          "channel": "system",
+          "name": "semantic_synthesis_system_prompt",
+          "text": "\nYou synthesize exactly one small value for a backend-validated semantic reconstruction action.\nReturn only JSON matching the supplied target schema.\nDo not return writes, operations, JSON Patch, action envelopes, target paths, or commentary.\nUse only the supplied current target value and evidence. Preserve schema-required value shapes such as arrays.\nDo not invent facts. Return the smallest value that resolves the diagnosed defect.\nFor DCAT-AP+ generic attributes, synthesize a value only when the evidence directly characterizes the target parent itself.\nDo not synthesize attributes from source-record metadata, creator/owner/origin fields, file paths, process paths,\naudit/hash details, provenance bookkeeping, identifiers for other objects, placeholder labels, or generic values such as\nmeasured/unknown/present without a clear parent-specific characterization.\n",
+          "chars": 871,
+          "tokens": 169,
+          "cumulative_tokens": 169
+        },
+        {
+          "channel": "system",
+          "name": "system_schema",
+          "text": "\n\nReturn exactly one JSON object that satisfies this JSON Schema. Do not include Markdown fences, prose, comments, or additional text.\n\nJSON Schema:\n{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"$schema\":\"https://json-schema.org/draft/2019-09/schema\"}",
+          "chars": 248,
+          "tokens": 65,
+          "cumulative_tokens": 233
+        },
+        {
+          "channel": "prompt",
+          "name": "prompt",
+          "text": "Synthesize one semantic reconstruction value for backend compilation.\n\n{\n  \"requirement\": {\n    \"requirement_id\": \"dataset_description_scope\",\n    \"label\": \"Dataset description scope\",\n    \"description\": \"Description remains a compact dataset-level summary and does not repeat facts that are already represented as structured activity, agent, plan, target, or attribute fields.\",\n    \"weight\": 1.0,\n    \"target_paths\": [\n      \"/description\"\n    ],\n    \"expected_target_class\": null,\n    \"evidence_hints\": [\n      \"dataset description\",\n      \"summary\",\n      \"content\",\n      \"scope\"\n    ],\n    \"allow_not_applicable\": false,\n    \"allowed_categories\": []\n  },\n  \"defect\": {\n    \"defect_type\": \"bad_aboutness\",\n    \"target_path\": \"/description\",\n    \"entry_indices\": [\n      0\n    ],\n    \"recommended_action\": \"replace\",\n    \"needs_synthesis\": true,\n    \"reason\": \"The description includes details about acquisition and processing parameters, which are already represented as structured fields (setting_plan, instruments, software). The description should provide a concise summary of the dataset's content and purpose, not repeat structured information.\"\n  },\n  \"current_target\": [\n    \"Dataset: NMR Experiment Configuration and Data. dataset_subject: NMR spectroscopy data and associated configuration files. generated_by: Automated data acquisition and processing pipeline using Bruker NMR instruments and software. activity_target: 1H NMR spectra and related parameters. instruments: Bruker NMR spectrometer (model unspecified). software: Bruker TopSpin NMR software. setting_plan: Experiment parameters defined in 'acqus' and 'specpar' files control acquisition (frequency, time domain size, pulse durations) and processing (TopSpin software). 'pulseprogram' defines NMR pulse sequences. Audit trail ('audita.txt') records user actions and configuration hashes. Raw data ('fid') stored separately. File summaries: r1|10/acqus|summary=Acquisition parameters. r2|10/pdata/1/proc|fmt=text|summary=Processing parameters. r3|10/pdata/1/procs|fmt=text|summary=Processing parameters. r4|10/acqu|summary=Acquisition parameters. r5|10/audita.txt|fmt=txt|summary=Audit trail. r6|10/pdata/1/outd|fmt=text|summary=Configuration settings. r7|10/format.temp|fmt=text|summary=Acquisition parameters. r8|10/specpar|fmt=text|summary=Instrument settings. r9|10/pulseprogram|fmt=text|summary=NMR pulse program. r10|10/fid|fmt=fid|summary=Raw NMR data. characteristics: Data primarily in text and proprietary 'fid' formats. Focus on parameter configuration and raw data acquisition.\"\n  ],\n  \"selected_evidence\": [\n    {\n      \"evidence_id\": \"ev:083d09d288d52994\",\n      \"category\": \"instrument_signal\",\n      \"role\": \"identity\",\n      \"claim\": \"The spectrometer is an Avance III NMR spectrometer.\",\n      \"evidence_text\": \"Avance III NMR spectrometer\",\n      \"file_path\": \"10/uxnmr.info\",\n      \"source_context\": \"Description : CABINET 500 HD OB\\nLocation : Karlsruher Institut fuer Technologie Karlsruhe Germany\\nSystem : Avance III NMR spectrometer\\n1H-frequency : 500.13 MHz\\nOrder Number : 10146761\"\n    },\n    {\n      \"evidence_id\": \"ev:1070591f0f572085\",\n      \"category\": \"instrument_signal\",\n      \"role\": \"descriptor\",\n      \"claim\": \"The cabinet is a 500 HD OB.\",\n      \"evidence_text\": \"<CABINET 500 HD OB>\",\n      \"file_path\": \"10/uxnmr.par\",\n      \"source_context\": \"##$DRUETH31= <no>\\n##$DRUETH32= <no>\\n##$Description= <CABINET 500 HD OB>\\n##$DppType= 0\\n##$FCUMEM= (0..7)\"\n    }\n  ],\n  \"context_window\": [\n    {\n      \"evidence_id\": \"ev:05f74e5adc4ce3df\",\n      \"category\": \"resource_signal\",\n      \"role\": \"descriptor\",\n      \"claim\": \"The firmware version of the DRU is 170619.\",\n      \"evidence_text\": \"170619\",\n      \"file_path\": \"10/uxnmr.info\"\n    }\n  ],\n  \"rules\": [\n    \"Return one small schema-valid object or value for the defect target.\",\n    \"Use only selected evidence and context window.\",\n    \"Do not include profile patch operations.\",\n    \"For generic attributes, the value must characterize the exact target parent and have clear parent-specific intent.\",\n    \"Do not synthesize source-record metadata, creator/owner/origin fields, file paths, process paths, audit/hash details, provenance bookkeeping, identifiers for other objects, placeholders, or generic measured/unknown/present values as attributes.\",\n    \"For creator/publisher/provenance targets, do not infer dataset-level responsibility from generic origin/owner/source metadata alone.\"\n  ]\n}",
+          "chars": 4471,
+          "tokens": 1270,
+          "cumulative_tokens": 1503
+        }
+      ],
+      "usage": {
+        "requests": 1,
+        "input_tokens": 1512,
+        "output_tokens": 31,
+        "prompt_eval_duration_ms": 0,
+        "load_duration_ms": 0,
+        "response_duration_ms": 0,
+        "total_duration_ms": 1410
+      }
+    }
+  ]
+}

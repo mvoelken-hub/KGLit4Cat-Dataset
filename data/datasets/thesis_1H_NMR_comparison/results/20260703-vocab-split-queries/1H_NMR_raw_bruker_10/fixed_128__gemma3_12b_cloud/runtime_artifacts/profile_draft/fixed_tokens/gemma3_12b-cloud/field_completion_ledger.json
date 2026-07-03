@@ -1,0 +1,635 @@
+[
+  {
+    "json_path": "/description",
+    "field_name": "description",
+    "generated_value": [
+      "NMR spectral data acquired on an Avance III spectrometer in Karlsruhe, Germany."
+    ],
+    "curated_value": null,
+    "source_evidence": [
+      "ev:3909a9aafa61f362"
+    ],
+    "validation_status": "valid",
+    "enrichment_status": "not_grounded",
+    "selection_kind": "evidence_projection",
+    "issue_categories": [],
+    "edit_needed_reason": ""
+  },
+  {
+    "json_path": "/id",
+    "field_name": "id",
+    "generated_value": "2e38a6a6",
+    "curated_value": null,
+    "source_evidence": [],
+    "validation_status": "valid",
+    "enrichment_status": "not_grounded",
+    "selection_kind": "none",
+    "issue_categories": [],
+    "edit_needed_reason": ""
+  },
+  {
+    "json_path": "/title",
+    "field_name": "title",
+    "generated_value": [
+      "NMR Spectral Data"
+    ],
+    "curated_value": null,
+    "source_evidence": [],
+    "validation_status": "valid",
+    "enrichment_status": "not_grounded",
+    "selection_kind": "none",
+    "issue_categories": [],
+    "edit_needed_reason": ""
+  },
+  {
+    "json_path": "/was_generated_by",
+    "field_name": "was_generated_by",
+    "generated_value": [
+      {
+        "id": "2e38a6a6:activity:dataset-generation",
+        "title": [
+          "Automated NMR Spectral Data Acquisition and Processing"
+        ],
+        "description": [
+          "Automated acquisition and processing of 1H NMR spectra using Bruker TOPSPIN software, defined by parameter files and pulse programs."
+        ],
+        "realized_plan": {
+          "title": "NMR Experiment Plan",
+          "description": "Defined by parameter files (acqu, pulseprogram, format.temp) specifying acquisition sequence, pulse parameters, and frequency settings."
+        },
+        "carried_out_by": [
+          {
+            "id": "2e38a6a6:agentic-entity:bruker-nmr-spectrometer",
+            "title": "Bruker NMR Spectrometer",
+            "description": "NMR instrument used for data acquisition.",
+            "type": {
+              "id": "http://nmrML.org/nmrCV#NMR:1400198"
+            }
+          },
+          {
+            "id": "2e38a6a6:agentic-entity:topspin-software",
+            "title": "TOPSPIN Software",
+            "description": "Software used for experiment execution, Fourier transformation, and baseline correction.",
+            "has_qualitative_attribute": [
+              {
+                "title": "TOPSPIN Version",
+                "description": "The version of TOPSPIN software used, as indicated in the parameter file.",
+                "value": "3.2",
+                "type": {
+                  "id": "http://nmrML.org/nmrCV#NMR:1400215"
+                }
+              },
+              {
+                "title": "JCAMPDX Version",
+                "description": "The JCAMPDX version, as indicated in the parameter file.",
+                "value": "5.0",
+                "type": {
+                  "id": "http://nmrML.org/nmrCV#NMR:1400213"
+                }
+              },
+              {
+                "title": "Program",
+                "description": "The program name, as indicated in the parameter file.",
+                "value": "dirdata.exe",
+                "type": {
+                  "id": "http://nmrML.org/nmrCV#NMR:1400037"
+                }
+              }
+            ],
+            "type": {
+              "id": "http://nmrML.org/nmrCV#NMR:1400215"
+            }
+          },
+          {
+            "id": "2e38a6a6:agentic-entity:user",
+            "title": "User",
+            "description": "User performing actions recorded in the audit trail.",
+            "type": {
+              "id": "http://nmrML.org/nmrCV#NMR:1400203"
+            }
+          }
+        ],
+        "evaluated_entity": [
+          {
+            "id": "2e38a6a6:evaluated-entity:1h-nmr-spectra",
+            "title": "1H NMR Spectra",
+            "description": "The target of the NMR experiment.",
+            "has_qualitative_attribute": [
+              {
+                "title": "Nucleus",
+                "description": "The NMR experiment uses 1H as the primary nucleus.",
+                "value": "1H",
+                "type": {
+                  "id": "http://nmrML.org/nmrCV#NMR:1400083"
+                }
+              },
+              {
+                "title": "Second Nucleus",
+                "description": "The experiment does not use a second nucleus.",
+                "value": "off",
+                "type": {
+                  "id": "http://nmrML.org/nmrCV#NMR:1002007"
+                }
+              },
+              {
+                "title": "Experiment Type",
+                "description": "The experiment type is proton.",
+                "value": "proton",
+                "type": {
+                  "id": "http://nmrML.org/nmrCV#NMR:1400037"
+                }
+              }
+            ],
+            "type": {
+              "id": "https://w3id.org/nfdi4cat/voc4cat_0000073"
+            }
+          }
+        ],
+        "had_input_entity": [
+          {
+            "id": "2e38a6a6:input-entity:acqu-file",
+            "title": "acqu File",
+            "description": "NMR acquisition parameters.",
+            "has_qualitative_attribute": [
+              {
+                "title": "Acquisition Name",
+                "description": "The acquisition name as specified in the format.temp file.",
+                "value": "AQ",
+                "type": {
+                  "id": "http://nmrML.org/nmrCV#NMR:1001954"
+                }
+              },
+              {
+                "title": "Class",
+                "description": "The class of the file, indicating it contains acquisition parameters.",
+                "value": "ACQU",
+                "type": {
+                  "id": "http://nmrML.org/nmrCV#NMR:1002006"
+                }
+              },
+              {
+                "title": "Date Variable",
+                "description": "The variable representing the date, as specified in the format.temp file.",
+                "value": "Date_=itodate(DATE)",
+                "type": {
+                  "id": "http://nmrML.org/nmrCV#NMR:1000264"
+                }
+              }
+            ],
+            "type": {
+              "id": "http://nmrML.org/nmrCV#NMR:1400196"
+            }
+          },
+          {
+            "id": "2e38a6a6:input-entity:pulseprogram-file",
+            "title": "pulseprogram File",
+            "description": "NMR pulse program.",
+            "has_qualitative_attribute": [
+              {
+                "title": "Pulse Program Type",
+                "description": "The type of NMR sequence used in the pulse program.",
+                "value": "1D sequence",
+                "type": {
+                  "id": "http://nmrML.org/nmrCV#NMR:1400140"
+                }
+              },
+              {
+                "title": "Comment",
+                "description": "A comment included in the pulse program.",
+                "value": "$COMMENT=",
+                "type": {
+                  "id": "http://nmrML.org/nmrCV#NMR:1400037"
+                }
+              }
+            ],
+            "type": {
+              "id": "http://nmrML.org/nmrCV#NMR:1400140"
+            }
+          },
+          {
+            "id": "2e38a6a6:input-entity:format-temp-file",
+            "title": "format.temp File",
+            "description": "NMR acquisition parameters.",
+            "has_qualitative_attribute": [
+              {
+                "title": "Data Format",
+                "description": "The data format is R32 as stated in the format.temp file.",
+                "value": "R32",
+                "type": {
+                  "id": "https://w3id.org/nfdi4cat/voc4cat_0005017"
+                }
+              }
+            ],
+            "type": {
+              "id": "http://nmrML.org/nmrCV#NMR:1002006"
+            }
+          }
+        ],
+        "had_output_entity": [
+          {
+            "id": "2e38a6a6:output-entity:raw-nmr-data-fid",
+            "title": "Raw NMR Data (fid)",
+            "description": "Raw NMR data in binary format.",
+            "type": {
+              "id": "http://nmrML.org/nmrCV#NMR:1400042"
+            }
+          },
+          {
+            "id": "2e38a6a6:output-entity:processed-spectral-data",
+            "title": "Processed Spectral Data",
+            "description": "Processed spectral data in text format.",
+            "type": {
+              "id": "http://nmrML.org/nmrCV#NMR:1400042"
+            }
+          },
+          {
+            "id": "2e38a6a6:output-entity:audit-trail-audita-txt",
+            "title": "Audit Trail (audita.txt)",
+            "description": "Record of user actions and system configuration.",
+            "type": {
+              "id": "https://w3id.org/nfdi4cat/voc4cat_0000184"
+            }
+          }
+        ],
+        "has_qualitative_attribute": [
+          {
+            "title": "NMR Spectrometer Model",
+            "description": "The NMR spectrometer is an Avance III as stated in the uxnmr.info file.",
+            "value": "Avance III",
+            "type": {
+              "id": "http://nmrML.org/nmrCV#NMR:1400198"
+            }
+          },
+          {
+            "title": "Primary Nucleus",
+            "description": "The NMR experiment uses 1H as the primary nucleus as stated in the acqu file.",
+            "value": "1H",
+            "type": {
+              "id": "http://nmrML.org/nmrCV#NMR:1400083"
+            }
+          }
+        ],
+        "type": {
+          "id": "http://nmrML.org/nmrCV#NMR:1002007"
+        }
+      }
+    ],
+    "curated_value": null,
+    "source_evidence": [],
+    "validation_status": "valid",
+    "enrichment_status": "not_grounded",
+    "selection_kind": "none",
+    "issue_categories": [],
+    "edit_needed_reason": ""
+  },
+  {
+    "json_path": "/was_generated_by/0/carried_out_by/0/type",
+    "field_name": "type",
+    "generated_value": {
+      "id": "http://nmrML.org/nmrCV#NMR:1400198"
+    },
+    "curated_value": null,
+    "source_evidence": [],
+    "validation_status": "valid",
+    "enrichment_status": "grounded",
+    "selection_kind": "vocab_selection",
+    "issue_categories": [],
+    "edit_needed_reason": ""
+  },
+  {
+    "json_path": "/was_generated_by/0/carried_out_by/1/has_qualitative_attribute/0/type",
+    "field_name": "type",
+    "generated_value": {
+      "id": "http://nmrML.org/nmrCV#NMR:1400215"
+    },
+    "curated_value": null,
+    "source_evidence": [],
+    "validation_status": "valid",
+    "enrichment_status": "grounded",
+    "selection_kind": "vocab_selection",
+    "issue_categories": [],
+    "edit_needed_reason": ""
+  },
+  {
+    "json_path": "/was_generated_by/0/carried_out_by/1/has_qualitative_attribute/1/type",
+    "field_name": "type",
+    "generated_value": {
+      "id": "http://nmrML.org/nmrCV#NMR:1400213"
+    },
+    "curated_value": null,
+    "source_evidence": [],
+    "validation_status": "valid",
+    "enrichment_status": "grounded",
+    "selection_kind": "vocab_selection",
+    "issue_categories": [],
+    "edit_needed_reason": ""
+  },
+  {
+    "json_path": "/was_generated_by/0/carried_out_by/1/has_qualitative_attribute/2/type",
+    "field_name": "type",
+    "generated_value": {
+      "id": "http://nmrML.org/nmrCV#NMR:1400037"
+    },
+    "curated_value": null,
+    "source_evidence": [],
+    "validation_status": "valid",
+    "enrichment_status": "grounded",
+    "selection_kind": "vocab_selection",
+    "issue_categories": [],
+    "edit_needed_reason": ""
+  },
+  {
+    "json_path": "/was_generated_by/0/carried_out_by/1/type",
+    "field_name": "type",
+    "generated_value": {
+      "id": "http://nmrML.org/nmrCV#NMR:1400215"
+    },
+    "curated_value": null,
+    "source_evidence": [],
+    "validation_status": "valid",
+    "enrichment_status": "grounded",
+    "selection_kind": "vocab_selection",
+    "issue_categories": [],
+    "edit_needed_reason": ""
+  },
+  {
+    "json_path": "/was_generated_by/0/carried_out_by/2/type",
+    "field_name": "type",
+    "generated_value": {
+      "id": "http://nmrML.org/nmrCV#NMR:1400203"
+    },
+    "curated_value": null,
+    "source_evidence": [],
+    "validation_status": "valid",
+    "enrichment_status": "grounded",
+    "selection_kind": "vocab_selection",
+    "issue_categories": [],
+    "edit_needed_reason": ""
+  },
+  {
+    "json_path": "/was_generated_by/0/evaluated_entity/0/has_qualitative_attribute/0/type",
+    "field_name": "type",
+    "generated_value": {
+      "id": "http://nmrML.org/nmrCV#NMR:1400083"
+    },
+    "curated_value": null,
+    "source_evidence": [],
+    "validation_status": "valid",
+    "enrichment_status": "grounded",
+    "selection_kind": "vocab_selection",
+    "issue_categories": [],
+    "edit_needed_reason": ""
+  },
+  {
+    "json_path": "/was_generated_by/0/evaluated_entity/0/has_qualitative_attribute/1/type",
+    "field_name": "type",
+    "generated_value": {
+      "id": "http://nmrML.org/nmrCV#NMR:1002007"
+    },
+    "curated_value": null,
+    "source_evidence": [],
+    "validation_status": "valid",
+    "enrichment_status": "grounded",
+    "selection_kind": "vocab_selection",
+    "issue_categories": [],
+    "edit_needed_reason": ""
+  },
+  {
+    "json_path": "/was_generated_by/0/evaluated_entity/0/has_qualitative_attribute/2/type",
+    "field_name": "type",
+    "generated_value": {
+      "id": "http://nmrML.org/nmrCV#NMR:1400037"
+    },
+    "curated_value": null,
+    "source_evidence": [],
+    "validation_status": "valid",
+    "enrichment_status": "grounded",
+    "selection_kind": "vocab_selection",
+    "issue_categories": [],
+    "edit_needed_reason": ""
+  },
+  {
+    "json_path": "/was_generated_by/0/evaluated_entity/0/type",
+    "field_name": "type",
+    "generated_value": {
+      "id": "https://w3id.org/nfdi4cat/voc4cat_0000073"
+    },
+    "curated_value": null,
+    "source_evidence": [],
+    "validation_status": "valid",
+    "enrichment_status": "grounded",
+    "selection_kind": "vocab_selection",
+    "issue_categories": [],
+    "edit_needed_reason": ""
+  },
+  {
+    "json_path": "/was_generated_by/0/had_input_entity/0/has_qualitative_attribute/0/type",
+    "field_name": "type",
+    "generated_value": {
+      "id": "http://nmrML.org/nmrCV#NMR:1001954"
+    },
+    "curated_value": null,
+    "source_evidence": [],
+    "validation_status": "valid",
+    "enrichment_status": "grounded",
+    "selection_kind": "vocab_selection",
+    "issue_categories": [],
+    "edit_needed_reason": ""
+  },
+  {
+    "json_path": "/was_generated_by/0/had_input_entity/0/has_qualitative_attribute/1/type",
+    "field_name": "type",
+    "generated_value": {
+      "id": "http://nmrML.org/nmrCV#NMR:1002006"
+    },
+    "curated_value": null,
+    "source_evidence": [],
+    "validation_status": "valid",
+    "enrichment_status": "grounded",
+    "selection_kind": "vocab_selection",
+    "issue_categories": [],
+    "edit_needed_reason": ""
+  },
+  {
+    "json_path": "/was_generated_by/0/had_input_entity/0/has_qualitative_attribute/2/type",
+    "field_name": "type",
+    "generated_value": {
+      "id": "http://nmrML.org/nmrCV#NMR:1000264"
+    },
+    "curated_value": null,
+    "source_evidence": [],
+    "validation_status": "valid",
+    "enrichment_status": "grounded",
+    "selection_kind": "vocab_selection",
+    "issue_categories": [],
+    "edit_needed_reason": ""
+  },
+  {
+    "json_path": "/was_generated_by/0/had_input_entity/0/type",
+    "field_name": "type",
+    "generated_value": {
+      "id": "http://nmrML.org/nmrCV#NMR:1400196"
+    },
+    "curated_value": null,
+    "source_evidence": [],
+    "validation_status": "valid",
+    "enrichment_status": "grounded",
+    "selection_kind": "vocab_selection",
+    "issue_categories": [],
+    "edit_needed_reason": ""
+  },
+  {
+    "json_path": "/was_generated_by/0/had_input_entity/1/has_qualitative_attribute/0/type",
+    "field_name": "type",
+    "generated_value": {
+      "id": "http://nmrML.org/nmrCV#NMR:1400140"
+    },
+    "curated_value": null,
+    "source_evidence": [],
+    "validation_status": "valid",
+    "enrichment_status": "grounded",
+    "selection_kind": "vocab_selection",
+    "issue_categories": [],
+    "edit_needed_reason": ""
+  },
+  {
+    "json_path": "/was_generated_by/0/had_input_entity/1/has_qualitative_attribute/1/type",
+    "field_name": "type",
+    "generated_value": {
+      "id": "http://nmrML.org/nmrCV#NMR:1400037"
+    },
+    "curated_value": null,
+    "source_evidence": [],
+    "validation_status": "valid",
+    "enrichment_status": "grounded",
+    "selection_kind": "vocab_selection",
+    "issue_categories": [],
+    "edit_needed_reason": ""
+  },
+  {
+    "json_path": "/was_generated_by/0/had_input_entity/1/type",
+    "field_name": "type",
+    "generated_value": {
+      "id": "http://nmrML.org/nmrCV#NMR:1400140"
+    },
+    "curated_value": null,
+    "source_evidence": [],
+    "validation_status": "valid",
+    "enrichment_status": "grounded",
+    "selection_kind": "vocab_selection",
+    "issue_categories": [],
+    "edit_needed_reason": ""
+  },
+  {
+    "json_path": "/was_generated_by/0/had_input_entity/2/has_qualitative_attribute/0/type",
+    "field_name": "type",
+    "generated_value": {
+      "id": "https://w3id.org/nfdi4cat/voc4cat_0005017"
+    },
+    "curated_value": null,
+    "source_evidence": [],
+    "validation_status": "valid",
+    "enrichment_status": "grounded",
+    "selection_kind": "vocab_selection",
+    "issue_categories": [],
+    "edit_needed_reason": ""
+  },
+  {
+    "json_path": "/was_generated_by/0/had_input_entity/2/type",
+    "field_name": "type",
+    "generated_value": {
+      "id": "http://nmrML.org/nmrCV#NMR:1002006"
+    },
+    "curated_value": null,
+    "source_evidence": [],
+    "validation_status": "valid",
+    "enrichment_status": "grounded",
+    "selection_kind": "vocab_selection",
+    "issue_categories": [],
+    "edit_needed_reason": ""
+  },
+  {
+    "json_path": "/was_generated_by/0/had_output_entity/0/type",
+    "field_name": "type",
+    "generated_value": {
+      "id": "http://nmrML.org/nmrCV#NMR:1400042"
+    },
+    "curated_value": null,
+    "source_evidence": [],
+    "validation_status": "valid",
+    "enrichment_status": "grounded",
+    "selection_kind": "vocab_selection",
+    "issue_categories": [],
+    "edit_needed_reason": ""
+  },
+  {
+    "json_path": "/was_generated_by/0/had_output_entity/1/type",
+    "field_name": "type",
+    "generated_value": {
+      "id": "http://nmrML.org/nmrCV#NMR:1400042"
+    },
+    "curated_value": null,
+    "source_evidence": [],
+    "validation_status": "valid",
+    "enrichment_status": "grounded",
+    "selection_kind": "vocab_selection",
+    "issue_categories": [],
+    "edit_needed_reason": ""
+  },
+  {
+    "json_path": "/was_generated_by/0/had_output_entity/2/type",
+    "field_name": "type",
+    "generated_value": {
+      "id": "https://w3id.org/nfdi4cat/voc4cat_0000184"
+    },
+    "curated_value": null,
+    "source_evidence": [],
+    "validation_status": "valid",
+    "enrichment_status": "grounded",
+    "selection_kind": "vocab_selection",
+    "issue_categories": [],
+    "edit_needed_reason": ""
+  },
+  {
+    "json_path": "/was_generated_by/0/has_qualitative_attribute/0/type",
+    "field_name": "type",
+    "generated_value": {
+      "id": "http://nmrML.org/nmrCV#NMR:1400198"
+    },
+    "curated_value": null,
+    "source_evidence": [],
+    "validation_status": "valid",
+    "enrichment_status": "grounded",
+    "selection_kind": "vocab_selection",
+    "issue_categories": [],
+    "edit_needed_reason": ""
+  },
+  {
+    "json_path": "/was_generated_by/0/has_qualitative_attribute/1/type",
+    "field_name": "type",
+    "generated_value": {
+      "id": "http://nmrML.org/nmrCV#NMR:1400083"
+    },
+    "curated_value": null,
+    "source_evidence": [],
+    "validation_status": "valid",
+    "enrichment_status": "grounded",
+    "selection_kind": "vocab_selection",
+    "issue_categories": [],
+    "edit_needed_reason": ""
+  },
+  {
+    "json_path": "/was_generated_by/0/type",
+    "field_name": "type",
+    "generated_value": {
+      "id": "http://nmrML.org/nmrCV#NMR:1002007"
+    },
+    "curated_value": null,
+    "source_evidence": [],
+    "validation_status": "valid",
+    "enrichment_status": "grounded",
+    "selection_kind": "vocab_selection",
+    "issue_categories": [],
+    "edit_needed_reason": ""
+  }
+]

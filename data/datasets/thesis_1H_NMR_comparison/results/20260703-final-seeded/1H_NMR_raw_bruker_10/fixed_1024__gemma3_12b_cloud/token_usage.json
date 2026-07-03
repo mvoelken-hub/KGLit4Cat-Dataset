@@ -1,0 +1,123 @@
+{
+  "chunk_extraction": {
+    "input_tokens": 92125,
+    "output_tokens": 21484,
+    "total_tokens": 113609,
+    "requests": 36,
+    "operation_count": 32,
+    "prompt_eval_duration_ms": 0,
+    "load_duration_ms": 0,
+    "response_duration_ms": 0,
+    "total_duration_ms": 560039
+  },
+  "evidence_critic": {
+    "input_tokens": 92301,
+    "output_tokens": 30999,
+    "total_tokens": 123300,
+    "requests": 33,
+    "operation_count": 30,
+    "prompt_eval_duration_ms": 0,
+    "load_duration_ms": 0,
+    "response_duration_ms": 0,
+    "total_duration_ms": 731858
+  },
+  "chunk_extraction_repair": {
+    "input_tokens": 4458,
+    "output_tokens": 1920,
+    "total_tokens": 6378,
+    "requests": 3,
+    "operation_count": 1,
+    "prompt_eval_duration_ms": 0,
+    "load_duration_ms": 0,
+    "response_duration_ms": 0,
+    "total_duration_ms": 44617
+  },
+  "dedupe_triage": {
+    "input_tokens": 1482,
+    "output_tokens": 28,
+    "total_tokens": 1510,
+    "requests": 2,
+    "operation_count": 2,
+    "prompt_eval_duration_ms": 0,
+    "load_duration_ms": 0,
+    "response_duration_ms": 0,
+    "total_duration_ms": 1853
+  },
+  "dataset_level_projection": {
+    "input_tokens": 2859,
+    "output_tokens": 152,
+    "total_tokens": 3011,
+    "requests": 2,
+    "operation_count": 1,
+    "prompt_eval_duration_ms": 0,
+    "load_duration_ms": 0,
+    "response_duration_ms": 0,
+    "total_duration_ms": 4138
+  },
+  "provenance_core_constructor": {
+    "input_tokens": 1773,
+    "output_tokens": 484,
+    "total_tokens": 2257,
+    "requests": 1,
+    "operation_count": 1,
+    "prompt_eval_duration_ms": 0,
+    "load_duration_ms": 0,
+    "response_duration_ms": 0,
+    "total_duration_ms": 14690
+  },
+  "parent_attribute_constructor": {
+    "input_tokens": 28550,
+    "output_tokens": 1931,
+    "total_tokens": 30481,
+    "requests": 11,
+    "operation_count": 11,
+    "prompt_eval_duration_ms": 0,
+    "load_duration_ms": 0,
+    "response_duration_ms": 0,
+    "total_duration_ms": 47290
+  },
+  "metadata_completeness_evaluator": {
+    "input_tokens": 39684,
+    "output_tokens": 3754,
+    "total_tokens": 43438,
+    "requests": 16,
+    "operation_count": 16,
+    "prompt_eval_duration_ms": 0,
+    "load_duration_ms": 0,
+    "response_duration_ms": 0,
+    "total_duration_ms": 85507
+  },
+  "semantic_reconstruction": {
+    "input_tokens": 6494,
+    "output_tokens": 429,
+    "total_tokens": 6923,
+    "requests": 2,
+    "operation_count": 2,
+    "prompt_eval_duration_ms": 0,
+    "load_duration_ms": 0,
+    "response_duration_ms": 0,
+    "total_duration_ms": 9937
+  },
+  "semantic_reconstruction_synthesis": {
+    "input_tokens": 1513,
+    "output_tokens": 24,
+    "total_tokens": 1537,
+    "requests": 1,
+    "operation_count": 1,
+    "prompt_eval_duration_ms": 0,
+    "load_duration_ms": 0,
+    "response_duration_ms": 0,
+    "total_duration_ms": 1369
+  },
+  "profile_field_vocab_selection": {
+    "input_tokens": 110011,
+    "output_tokens": 2920,
+    "total_tokens": 112931,
+    "requests": 28,
+    "operation_count": 28,
+    "prompt_eval_duration_ms": 0,
+    "load_duration_ms": 0,
+    "response_duration_ms": 0,
+    "total_duration_ms": 103484
+  }
+}

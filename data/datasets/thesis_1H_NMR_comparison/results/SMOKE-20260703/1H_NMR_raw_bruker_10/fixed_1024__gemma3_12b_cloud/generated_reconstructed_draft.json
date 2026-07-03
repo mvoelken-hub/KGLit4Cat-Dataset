@@ -1,0 +1,347 @@
+{
+  "id": "2e38a6a6",
+  "title": [
+    "NMR Spectral Data"
+  ],
+  "description": [
+    "NMR spectral data acquired on an Avance III spectrometer at KIT."
+  ],
+  "was_generated_by": [
+    {
+      "id": "2e38a6a6:activity:dataset-generation",
+      "title": [
+        "Automated NMR Spectral Data Acquisition and Processing"
+      ],
+      "description": [
+        "Automated acquisition and processing of 1H NMR spectra using Bruker TOPSPIN software, defined by parameter files and pulse programs."
+      ],
+      "realized_plan": {
+        "title": "NMR Experiment Plan",
+        "description": "Defined by parameter files (acqu, pulseprogram, format.temp) specifying acquisition sequence, pulse parameters, and frequency settings."
+      },
+      "carried_out_by": [
+        {
+          "id": "2e38a6a6:agentic-entity:bruker-nmr-spectrometer",
+          "title": "Bruker NMR Spectrometer",
+          "description": "NMR instrument used for data acquisition.",
+          "has_qualitative_attribute": [
+            {
+              "title": "Origin",
+              "description": "The origin of the data as stated in the acqu and procs files.",
+              "value": "Bruker BioSpin GmbH",
+              "type": {
+                "id": "http://nmrML.org/nmrCV#NMR:1002011"
+              }
+            },
+            {
+              "title": "Owner",
+              "description": "The owner of the data as stated in the acqu and procs files.",
+              "value": "nmr",
+              "type": {
+                "id": "https://w3id.org/nfdi4cat/voc4cat_0007045"
+              }
+            }
+          ],
+          "type": {
+            "id": "http://nmrML.org/nmrCV#NMR:1400198"
+          }
+        },
+        {
+          "id": "2e38a6a6:agentic-entity:topspin-software",
+          "title": "TOPSPIN Software",
+          "description": "Software used for experiment execution, Fourier transformation, and baseline correction.",
+          "has_qualitative_attribute": [
+            {
+              "title": "File Format Version (acqu)",
+              "description": "The file format version as recorded in the acqu file.",
+              "value": "5.0",
+              "type": {
+                "id": "https://w3id.org/nfdi4cat/voc4cat_0005029"
+              }
+            },
+            {
+              "title": "Data Type (acqu)",
+              "description": "The data type as recorded in the acqu file.",
+              "value": "Parameter Values",
+              "type": {
+                "id": "https://w3id.org/nfdi4cat/voc4cat_0005016"
+              }
+            },
+            {
+              "title": "Process Used",
+              "description": "The process used as recorded in the acqus file.",
+              "value": "dirdata.exe",
+              "type": {
+                "id": "http://purl.obolibrary.org/obo/BFO_0000015"
+              }
+            },
+            {
+              "title": "File Format Version (audita.txt)",
+              "description": "The file format version as recorded in the audita.txt file.",
+              "value": "5.01",
+              "type": {
+                "id": "https://w3id.org/nfdi4cat/voc4cat_0005028"
+              }
+            }
+          ]
+        },
+        {
+          "id": "2e38a6a6:agentic-entity:user",
+          "title": "User",
+          "description": "User performing actions recorded in the audit trail.",
+          "has_qualitative_attribute": [
+            {
+              "title": "Location",
+              "description": "The location where the NMR data was generated, as recorded in the audit trail.",
+              "value": "Karlsruher Institut fuer Technologie Karlsruhe Germany",
+              "type": {
+                "id": "http://nmrML.org/nmrCV#NMR:1000227"
+              }
+            }
+          ],
+          "type": {
+            "id": "https://w3id.org/nfdi4cat/voc4cat_0007045"
+          }
+        }
+      ],
+      "evaluated_entity": [
+        {
+          "id": "2e38a6a6:evaluated-entity:1h-nmr-spectra",
+          "title": "1H NMR Spectra",
+          "description": "The target of the NMR experiment.",
+          "has_qualitative_attribute": [
+            {
+              "title": "NMR Type",
+              "description": "The type of NMR experiment, as indicated by the 'EXP' parameter in the acqu file.",
+              "value": "Proton",
+              "type": {
+                "id": "http://nmrML.org/nmrCV#NMR:1000117"
+              }
+            },
+            {
+              "title": "Data Origin",
+              "description": "The origin of the data, as indicated by the 'ORIGIN' parameter in the acqu file.",
+              "value": "Bruker BioSpin GmbH",
+              "type": {
+                "id": "https://w3id.org/nfdi4cat/voc4cat_0005043"
+              }
+            },
+            {
+              "title": "Location",
+              "description": "The location where the data was acquired, as stated in the uxnmr.info file.",
+              "value": "Karlsruhe Germany",
+              "type": {
+                "id": "http://nmrML.org/nmrCV#NMR:1000227"
+              }
+            }
+          ],
+          "type": {
+            "id": "http://nmrML.org/nmrCV#NMR:1002007"
+          }
+        }
+      ],
+      "had_input_entity": [
+        {
+          "id": "2e38a6a6:input-entity:acqu-file",
+          "title": "acqu File",
+          "description": "NMR acquisition parameters.",
+          "has_quantitative_attribute": [
+            {
+              "title": "SWH Subrange Upper Bound",
+              "description": "Upper bound of the SWH parameter, as defined in the format.temp file.",
+              "value": 100000000.0,
+              "has_quantity_type": "SWH Subrange Upper Bound",
+              "rdf_type": {
+                "id": "https://qudt.org/schema/qudt/Quantity",
+                "title": "Quantity",
+                "from_CV": "http://qudt.org/schema/qudt"
+              },
+              "type": {
+                "id": "https://w3id.org/nfdi4cat/voc4cat_0007215"
+              }
+            },
+            {
+              "title": "FIDRES Subrange Upper Bound",
+              "description": "Upper bound of the FIDRES parameter, as defined in the format.temp file.",
+              "value": 100000.0,
+              "has_quantity_type": "FIDRES Subrange Upper Bound",
+              "rdf_type": {
+                "id": "https://qudt.org/schema/qudt/Quantity",
+                "title": "Quantity",
+                "from_CV": "http://qudt.org/schema/qudt"
+              },
+              "type": {
+                "id": "http://nmrML.org/nmrCV#NMR:1400017"
+              }
+            },
+            {
+              "title": "AQ Subrange Upper Bound",
+              "description": "Upper bound of the AQ parameter, as defined in the format.temp file.",
+              "value": 1000.0,
+              "has_quantity_type": "AQ Subrange Upper Bound",
+              "rdf_type": {
+                "id": "https://qudt.org/schema/qudt/Quantity",
+                "title": "Quantity",
+                "from_CV": "http://qudt.org/schema/qudt"
+              },
+              "type": {
+                "id": "http://nmrML.org/nmrCV#NMR:1400101"
+              }
+            }
+          ],
+          "type": {
+            "id": "http://nmrML.org/nmrCV#NMR:1400196"
+          }
+        },
+        {
+          "id": "2e38a6a6:input-entity:pulseprogram-file",
+          "title": "pulseprogram File",
+          "description": "NMR pulse program.",
+          "has_quantitative_attribute": [
+            {
+              "title": "Pulse Width",
+              "description": "The pulse width used in the NMR experiment, as defined in the acqu file.",
+              "value": 0.0,
+              "has_quantity_type": "Pulse Width",
+              "rdf_type": {
+                "id": "https://qudt.org/schema/qudt/Quantity",
+                "title": "Quantity",
+                "from_CV": "http://qudt.org/schema/qudt"
+              },
+              "type": {
+                "id": "http://nmrML.org/nmrCV#NMR:1000173"
+              }
+            }
+          ],
+          "has_qualitative_attribute": [
+            {
+              "title": "Pulse Program Class",
+              "description": "The class of the pulse program, as defined in the pulseprogram file.",
+              "value": "HighRes",
+              "type": {
+                "id": "http://nmrML.org/nmrCV#NMR:1400037"
+              }
+            },
+            {
+              "title": "Pulse Program Type",
+              "description": "The type of the pulse program, as defined in the pulseprogram file.",
+              "value": "1D sequence",
+              "type": {
+                "id": "http://nmrML.org/nmrCV#NMR:1400037"
+              }
+            },
+            {
+              "title": "Pulse Program Name",
+              "description": "The name of the pulse program, as defined in the acqu file.",
+              "value": "zg30",
+              "type": {
+                "id": "http://nmrML.org/nmrCV#NMR:1400037"
+              }
+            }
+          ],
+          "type": {
+            "id": "http://nmrML.org/nmrCV#NMR:1400140"
+          }
+        },
+        {
+          "id": "2e38a6a6:input-entity:format-temp-file",
+          "title": "format.temp File",
+          "description": "NMR acquisition parameters.",
+          "has_qualitative_attribute": [
+            {
+              "title": "File Format Version",
+              "description": "The file format version is 5.01, as stated in the audita.txt file.",
+              "value": "5.01",
+              "type": {
+                "id": "https://w3id.org/nfdi4cat/voc4cat_0005028"
+              }
+            }
+          ],
+          "type": {
+            "id": "http://nmrML.org/nmrCV#NMR:1400196"
+          }
+        }
+      ],
+      "had_output_entity": [
+        {
+          "id": "2e38a6a6:output-entity:raw-nmr-data-fid",
+          "title": "Raw NMR Data (fid)",
+          "description": "Raw NMR data in binary format.",
+          "type": {
+            "id": "http://nmrML.org/nmrCV#NMR:1400042"
+          }
+        },
+        {
+          "id": "2e38a6a6:output-entity:processed-spectral-data",
+          "title": "Processed Spectral Data",
+          "description": "Processed NMR spectral data.",
+          "type": {
+            "id": "http://nmrML.org/nmrCV#NMR:1002007"
+          }
+        },
+        {
+          "id": "2e38a6a6:output-entity:audit-trail-audita-txt",
+          "title": "Audit Trail (audita.txt)",
+          "description": "Record of user actions and system configuration.",
+          "type": {
+            "id": "https://w3id.org/nfdi4cat/voc4cat_0000184"
+          }
+        }
+      ],
+      "has_qualitative_attribute": [
+        {
+          "title": "Software Used",
+          "description": "The file was processed by dirdata.exe as indicated in the processing parameters file.",
+          "value": "dirdata.exe"
+        }
+      ],
+      "has_quantitative_attribute": [
+        {
+          "value": 0.0,
+          "has_quantity_type": "http://qudt.org/vocab/quantitykind/CatalyticActivity",
+          "rdf_type": {
+            "id": "https://qudt.org/schema/qudt/Quantity",
+            "title": "Quantity",
+            "from_CV": "http://qudt.org/schema/qudt"
+          },
+          "unit": "http://qudt.org/vocab/unit/ENZ"
+        },
+        {
+          "value": 100000000.0,
+          "has_quantity_type": "http://qudt.org/vocab/quantitykind/CatalyticActivity",
+          "rdf_type": {
+            "id": "https://qudt.org/schema/qudt/Quantity",
+            "title": "Quantity",
+            "from_CV": "http://qudt.org/schema/qudt"
+          },
+          "unit": "http://qudt.org/vocab/unit/ENZ"
+        }
+      ],
+      "type": {
+        "id": "http://nmrML.org/nmrCV#NMR:1002007"
+      }
+    }
+  ],
+  "identifier": [
+    "2e38a6a6"
+  ],
+  "keyword": [
+    "NMR",
+    "spectroscopy",
+    "Bruker",
+    "TOPSPIN",
+    "acquisition",
+    "processing",
+    "parameter",
+    "audit trail",
+    "fid",
+    "pulse program"
+  ],
+  "type": [
+    {
+      "preferred_label": [
+        "NMR Spectroscopy"
+      ]
+    }
+  ]
+}

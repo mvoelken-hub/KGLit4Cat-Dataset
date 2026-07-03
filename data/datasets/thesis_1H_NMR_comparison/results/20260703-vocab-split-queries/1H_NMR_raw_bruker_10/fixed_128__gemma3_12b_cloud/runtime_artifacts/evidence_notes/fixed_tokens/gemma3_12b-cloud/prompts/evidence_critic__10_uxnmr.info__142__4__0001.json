@@ -1,0 +1,72 @@
+{
+  "operation_id": "evidence_critic__10_uxnmr.info__142__4",
+  "agent_name": "evidence_critic",
+  "model": "gemma3:12b-cloud",
+  "output_type": "EvidenceAssessmentContext",
+  "status": "completed",
+  "metadata": {
+    "file_path": "10/uxnmr.info",
+    "chunk_index": 142,
+    "candidate_count": 4
+  },
+  "attempts": [
+    {
+      "attempt_index": 0,
+      "attempt_kind": "initial",
+      "model": "gemma3:12b-cloud",
+      "tokenizer_fallback": false,
+      "tokenizer_fallback_reason": null,
+      "components": [
+        {
+          "channel": "system",
+          "name": "evidence_critic_system_prompt",
+          "text": "\nYou assess grounded evidence candidates using only domain-agnostic quality criteria.\nDo not decide relevance by recognizing a particular scientific domain, instrument, vendor, file format, or key name.\nReturn only a valid EvidenceAssessmentContext JSON object.\n\nAssess each candidate independently using categorical judgments:\n- groundedness: whether evidence_text supports the claim.\n- self_containedness: whether the claim can be understood without hidden prompt context.\n- scope_clarity: whether package/resource/section/environment scope is clear.\n- portability: whether the claim remains meaningful when the package is copied elsewhere.\n- semantic_interpretability: whether the claim is meaningful rather than raw unexplained syntax.\n- environment_dependence: low/medium/high dependence on local machine, session, user, installation, or network context.\n- specificity: whether the claim is concrete without overinterpretation.\n- novelty: whether it adds information beyond repeated template content.\n- uncertainty: low/medium/high ambiguity.\n",
+          "chars": 1048,
+          "tokens": 206,
+          "cumulative_tokens": 206
+        },
+        {
+          "channel": "system",
+          "name": "system_schema",
+          "text": "\n\nReturn exactly one JSON object that satisfies this JSON Schema. Do not include Markdown fences, prose, comments, or additional text.\n\nJSON Schema:\n{\"$defs\":{\"EvidenceAssessment\":{\"properties\":{\"candidate_id\":{\"title\":\"Candidate Id\",\"type\":\"string\"},\"groundedness\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Groundedness\",\"type\":\"string\"},\"self_containedness\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Self Containedness\",\"type\":\"string\"},\"scope_clarity\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Scope Clarity\",\"type\":\"string\"},\"portability\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Portability\",\"type\":\"string\"},\"semantic_interpretability\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Semantic Interpretability\",\"type\":\"string\"},\"environment_dependence\":{\"default\":\"medium\",\"enum\":[\"low\",\"medium\",\"high\"],\"title\":\"Environment Dependence\",\"type\":\"string\"},\"specificity\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Specificity\",\"type\":\"string\"},\"novelty\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Novelty\",\"type\":\"string\"},\"uncertainty\":{\"default\":\"medium\",\"enum\":[\"low\",\"medium\",\"high\"],\"title\":\"Uncertainty\",\"type\":\"string\"},\"rationale\":{\"default\":\"\",\"title\":\"Rationale\",\"type\":\"string\"}},\"required\":[\"candidate_id\"],\"title\":\"EvidenceAssessment\",\"type\":\"object\"}},\"properties\":{\"assessments\":{\"items\":{\"$ref\":\"#/$defs/EvidenceAssessment\"},\"title\":\"Assessments\",\"type\":\"array\"}},\"title\":\"EvidenceAssessmentContext\",\"type\":\"object\"}",
+          "chars": 1554,
+          "tokens": 361,
+          "cumulative_tokens": 566
+        },
+        {
+          "channel": "prompt",
+          "name": "chunk_metadata",
+          "text": "Chunk context metadata:\n{\"start_idx\":112,\"end_idx\":112,\"file_path\":\"10/uxnmr.info\",\"data_package_name\":\"1H_NMR_raw_bruker_10\"}\n\n",
+          "chars": 128,
+          "tokens": 55,
+          "cumulative_tokens": 621
+        },
+        {
+          "channel": "prompt",
+          "name": "validated_candidates",
+          "text": "Validated evidence candidates JSON:\n[{'candidate_id': '10/uxnmr.info:112:112:0', 'category': 'instrument_signal', 'role': 'descriptor', 'claim': 'Transmitter is BLAXH300/100 E 200-600MHZ INR W1345083/0905', 'evidence_text': 'BLAXH300/100 E 200-600MHZ INR W1345083/0905', 'uncertainty': '', 'file_path': '10/uxnmr.info', 'start_idx': 112, 'end_idx': 112, 'evidence_match_score': 1.0}, {'candidate_id': '10/uxnmr.info:112:112:1', 'category': 'instrument_signal', 'role': 'descriptor', 'claim': 'TCP/IP address is 149.236.99.254', 'evidence_text': '149.236.99.254', 'uncertainty': '', 'file_path': '10/uxnmr.info', 'start_idx': 112, 'end_idx': 112, 'evidence_match_score': 1.0}, {'candidate_id': '10/uxnmr.info:112:112:2', 'category': 'instrument_signal', 'role': 'descriptor', 'claim': 'Amplifier is 1H-100W', 'evidence_text': '1H-100W', 'uncertainty': '', 'file_path': '10/uxnmr.info', 'start_idx': 112, 'end_idx': 112, 'evidence_match_score': 1.0}, {'candidate_id': '10/uxnmr.info:112:112:3', 'category': 'instrument_signal', 'role': 'descriptor', 'claim': 'Amplifier uses blanking 2', 'evidence_text': 'uses blanking 2', 'uncertainty': '', 'file_path': '10/uxnmr.info', 'start_idx': 112, 'end_idx': 112, 'evidence_match_score': 1.0}]\n\n",
+          "chars": 1236,
+          "tokens": 557,
+          "cumulative_tokens": 1178
+        },
+        {
+          "channel": "prompt",
+          "name": "local_chunk_context",
+          "text": "Local chunk context for assessment:\ntransmitter 1 (BLAXH300/100 E 200-600MHZ INR W1345083/0905 at TCP/IP 149.236.99.254) amplifier 1H-100W uses blanking 2\n",
+          "chars": 155,
+          "tokens": 81,
+          "cumulative_tokens": 1259
+        }
+      ],
+      "usage": {
+        "requests": 1,
+        "input_tokens": 1267,
+        "output_tokens": 446,
+        "prompt_eval_duration_ms": 0,
+        "load_duration_ms": 0,
+        "response_duration_ms": 0,
+        "total_duration_ms": 14449
+      }
+    }
+  ]
+}

@@ -1,0 +1,154 @@
+{
+  "status": "completed",
+  "created_at": "2026-07-03T06:49:26+00:00",
+  "dataset": {
+    "slug": "1H_NMR_raw_bruker_10",
+    "file_name": "1H_NMR_raw_bruker_10.zip",
+    "expected_package_id": "2e38a6a6"
+  },
+  "source": {
+    "path": "C:\\Users\\simcl\\Documents\\GitHub\\Semantic Inference Module for Ontology-driven Node Extraction (SIMONE)\\data\\datasets\\thesis_1H_NMR_comparison\\1H_NMR_raw_bruker_10.zip",
+    "sha256": "49cfaf2da52495e2f9c9f4b261e2a80eeaa797f114856af9c35b5d16ae861ca7"
+  },
+  "profile_identifier": "dcat-ap-plus",
+  "config": {
+    "config_id": "fixed_1024__gemma3_12b_cloud",
+    "chat_model": "gemma3:12b-cloud",
+    "chunking_strategy": "fixed_tokens",
+    "generation_seed": 42,
+    "fixed_tokens_per_chunk": 1024,
+    "min_tokens_per_chunk": 128,
+    "max_tokens_per_chunk": 1024,
+    "semantic_chunking_threshold": 95.0,
+    "buffer_window_size": 1
+  },
+  "stages": {
+    "upload": {
+      "name": "upload",
+      "endpoint": "POST /api/v1/datasources",
+      "request": {
+        "file": "1H_NMR_raw_bruker_10.zip"
+      },
+      "started_at": "2026-07-03T06:49:26+00:00",
+      "finished_at": "2026-07-03T06:49:26+00:00",
+      "duration_seconds": 0.14,
+      "final_status": "completed",
+      "error": null
+    },
+    "runtime_model_switch": {
+      "name": "runtime_model_switch",
+      "endpoint": "PATCH /api/v1/ollama-config/runtime",
+      "request": {
+        "chat_model": "gemma3:12b-cloud",
+        "generation_seed": 42
+      },
+      "started_at": "2026-07-03T06:49:26+00:00",
+      "finished_at": "2026-07-03T06:49:27+00:00",
+      "duration_seconds": 0.422,
+      "final_status": "completed",
+      "error": null
+    },
+    "orientation": {
+      "name": "orientation",
+      "endpoint": "POST /api/v1/extraction/stages/orientation/2e38a6a6",
+      "request": {
+        "force_rerun": true
+      },
+      "started_at": "2026-07-03T06:49:27+00:00",
+      "finished_at": "2026-07-03T06:51:00+00:00",
+      "duration_seconds": 93.016,
+      "final_status": "completed",
+      "error": null
+    },
+    "chunking": {
+      "name": "chunking",
+      "endpoint": "POST /api/v1/datasources/chunk",
+      "request": {
+        "id": "2e38a6a6",
+        "buffer_window_size": 1,
+        "semantic_chunking_threshold": 95.0,
+        "replace_existing_chunks": "true",
+        "chunking_strategy": "fixed_tokens",
+        "fixed_tokens_per_chunk": 1024,
+        "min_tokens_per_chunk": 128,
+        "max_tokens_per_chunk": 1024
+      },
+      "started_at": "2026-07-03T06:51:00+00:00",
+      "finished_at": "2026-07-03T06:51:00+00:00",
+      "duration_seconds": 0.594,
+      "final_status": "completed",
+      "error": null
+    },
+    "evidence_context": {
+      "name": "evidence_context",
+      "endpoint": "POST /api/v1/extraction/stages/evidence",
+      "request": {
+        "data_package_id": "2e38a6a6",
+        "profile_identifier": "dcat-ap-plus",
+        "resume": false,
+        "force_profile_rebuild": false,
+        "target_stage": "context",
+        "chunking_strategy": "fixed_tokens",
+        "chat_model": "gemma3:12b-cloud"
+      },
+      "started_at": "2026-07-03T06:51:00+00:00",
+      "finished_at": "2026-07-03T07:15:17+00:00",
+      "duration_seconds": 1456.953,
+      "final_status": "completed",
+      "error": null
+    },
+    "profile_construction": {
+      "name": "profile_construction",
+      "endpoint": "POST /api/v1/extraction/stages/profile",
+      "request": {
+        "data_package_id": "2e38a6a6",
+        "profile_identifier": "dcat-ap-plus",
+        "resume": false,
+        "force_rebuild": true,
+        "chunking_strategy": "fixed_tokens",
+        "chat_model": "gemma3:12b-cloud"
+      },
+      "started_at": "2026-07-03T07:15:17+00:00",
+      "finished_at": "2026-07-03T07:18:46+00:00",
+      "duration_seconds": 208.422,
+      "final_status": "completed",
+      "error": null
+    },
+    "grounding": {
+      "name": "grounding",
+      "endpoint": "POST /api/v1/extraction/stages/grounding/2e38a6a6/run",
+      "request": {
+        "chunking_strategy": "fixed_tokens",
+        "chat_model": "gemma3:12b-cloud"
+      },
+      "started_at": "2026-07-03T07:18:46+00:00",
+      "finished_at": "2026-07-03T07:22:29+00:00",
+      "duration_seconds": 222.766,
+      "final_status": "completed",
+      "error": null
+    },
+    "artifact_export": {
+      "name": "artifact_export",
+      "endpoint": "local runtime artifact copy",
+      "request": {
+        "runtime_output_dir": "C:\\Users\\simcl\\Documents\\GitHub\\Semantic Inference Module for Ontology-driven Node Extraction (SIMONE)\\backend\\.runtime\\output"
+      },
+      "started_at": "2026-07-03T07:22:29+00:00",
+      "finished_at": "2026-07-03T07:22:29+00:00",
+      "duration_seconds": 0.797,
+      "final_status": "completed",
+      "error": null
+    }
+  },
+  "copied_runtime_artifacts": [
+    "artifact_index.json",
+    "extraction_warnings.json",
+    "chunks/fixed_tokens",
+    "overview/gemma3_12b-cloud",
+    "evidence_notes/fixed_tokens/gemma3_12b-cloud",
+    "profile_draft/fixed_tokens/gemma3_12b-cloud",
+    "grounding/fixed_tokens/gemma3_12b-cloud",
+    "result/fixed_tokens/gemma3_12b-cloud",
+    "run_state/fixed_tokens/gemma3_12b-cloud"
+  ]
+}

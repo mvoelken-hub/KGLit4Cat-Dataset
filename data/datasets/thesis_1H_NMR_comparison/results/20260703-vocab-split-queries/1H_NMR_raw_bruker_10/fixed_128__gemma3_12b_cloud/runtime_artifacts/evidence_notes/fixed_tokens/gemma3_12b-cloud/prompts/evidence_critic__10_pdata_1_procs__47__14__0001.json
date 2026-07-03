@@ -1,0 +1,72 @@
+{
+  "operation_id": "evidence_critic__10_pdata_1_procs__47__14",
+  "agent_name": "evidence_critic",
+  "model": "gemma3:12b-cloud",
+  "output_type": "EvidenceAssessmentContext",
+  "status": "completed",
+  "metadata": {
+    "file_path": "10/pdata/1/procs",
+    "chunk_index": 47,
+    "candidate_count": 14
+  },
+  "attempts": [
+    {
+      "attempt_index": 0,
+      "attempt_kind": "initial",
+      "model": "gemma3:12b-cloud",
+      "tokenizer_fallback": false,
+      "tokenizer_fallback_reason": null,
+      "components": [
+        {
+          "channel": "system",
+          "name": "evidence_critic_system_prompt",
+          "text": "\nYou assess grounded evidence candidates using only domain-agnostic quality criteria.\nDo not decide relevance by recognizing a particular scientific domain, instrument, vendor, file format, or key name.\nReturn only a valid EvidenceAssessmentContext JSON object.\n\nAssess each candidate independently using categorical judgments:\n- groundedness: whether evidence_text supports the claim.\n- self_containedness: whether the claim can be understood without hidden prompt context.\n- scope_clarity: whether package/resource/section/environment scope is clear.\n- portability: whether the claim remains meaningful when the package is copied elsewhere.\n- semantic_interpretability: whether the claim is meaningful rather than raw unexplained syntax.\n- environment_dependence: low/medium/high dependence on local machine, session, user, installation, or network context.\n- specificity: whether the claim is concrete without overinterpretation.\n- novelty: whether it adds information beyond repeated template content.\n- uncertainty: low/medium/high ambiguity.\n",
+          "chars": 1048,
+          "tokens": 206,
+          "cumulative_tokens": 206
+        },
+        {
+          "channel": "system",
+          "name": "system_schema",
+          "text": "\n\nReturn exactly one JSON object that satisfies this JSON Schema. Do not include Markdown fences, prose, comments, or additional text.\n\nJSON Schema:\n{\"$defs\":{\"EvidenceAssessment\":{\"properties\":{\"candidate_id\":{\"title\":\"Candidate Id\",\"type\":\"string\"},\"groundedness\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Groundedness\",\"type\":\"string\"},\"self_containedness\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Self Containedness\",\"type\":\"string\"},\"scope_clarity\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Scope Clarity\",\"type\":\"string\"},\"portability\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Portability\",\"type\":\"string\"},\"semantic_interpretability\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Semantic Interpretability\",\"type\":\"string\"},\"environment_dependence\":{\"default\":\"medium\",\"enum\":[\"low\",\"medium\",\"high\"],\"title\":\"Environment Dependence\",\"type\":\"string\"},\"specificity\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Specificity\",\"type\":\"string\"},\"novelty\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Novelty\",\"type\":\"string\"},\"uncertainty\":{\"default\":\"medium\",\"enum\":[\"low\",\"medium\",\"high\"],\"title\":\"Uncertainty\",\"type\":\"string\"},\"rationale\":{\"default\":\"\",\"title\":\"Rationale\",\"type\":\"string\"}},\"required\":[\"candidate_id\"],\"title\":\"EvidenceAssessment\",\"type\":\"object\"}},\"properties\":{\"assessments\":{\"items\":{\"$ref\":\"#/$defs/EvidenceAssessment\"},\"title\":\"Assessments\",\"type\":\"array\"}},\"title\":\"EvidenceAssessmentContext\",\"type\":\"object\"}",
+          "chars": 1554,
+          "tokens": 361,
+          "cumulative_tokens": 566
+        },
+        {
+          "channel": "prompt",
+          "name": "chunk_metadata",
+          "text": "Chunk context metadata:\n{\"start_idx\":112,\"end_idx\":125,\"file_path\":\"10/pdata/1/procs\",\"data_package_name\":\"1H_NMR_raw_bruker_10\"}\n\n",
+          "chars": 131,
+          "tokens": 57,
+          "cumulative_tokens": 623
+        },
+        {
+          "channel": "prompt",
+          "name": "validated_candidates",
+          "text": "Validated evidence candidates JSON:\n[{'candidate_id': '10/pdata/1/procs:112:125:0', 'category': 'resource_signal', 'role': 'qualitative_attribute', 'claim': 'TDoff is 0', 'evidence_text': '##$TDoff= 0', 'uncertainty': '', 'file_path': '10/pdata/1/procs', 'start_idx': 112, 'end_idx': 125, 'evidence_match_score': 1.0}, {'candidate_id': '10/pdata/1/procs:112:125:1', 'category': 'resource_signal', 'role': 'qualitative_attribute', 'claim': 'TI is empty', 'evidence_text': '##$TI= <>', 'uncertainty': '', 'file_path': '10/pdata/1/procs', 'start_idx': 112, 'end_idx': 125, 'evidence_match_score': 1.0}, {'candidate_id': '10/pdata/1/procs:112:125:2', 'category': 'resource_signal', 'role': 'qualitative_attribute', 'claim': 'TILT is no', 'evidence_text': '##$TILT= no', 'uncertainty': '', 'file_path': '10/pdata/1/procs', 'start_idx': 112, 'end_idx': 125, 'evidence_match_score': 1.0}, {'candidate_id': '10/pdata/1/procs:112:125:3', 'category': 'resource_signal', 'role': 'qualitative_attribute', 'claim': 'TM1 is 0', 'evidence_text': '##$TM1= 0', 'uncertainty': '', 'file_path': '10/pdata/1/procs', 'start_idx': 112, 'end_idx': 125, 'evidence_match_score': 1.0}, {'candidate_id': '10/pdata/1/procs:112:125:4', 'category': 'resource_signal', 'role': 'qualitative_attribute', 'claim': 'TM2 is 0', 'evidence_text': '##$TM2= 0', 'uncertainty': '', 'file_path': '10/pdata/1/procs', 'start_idx': 112, 'end_idx': 125, 'evidence_match_score': 1.0}, {'candidate_id': '10/pdata/1/procs:112:125:5', 'category': 'resource_signal', 'role': 'qualitative_attribute', 'claim': 'TOPLEV is 0', 'evidence_text': '##$TOPLEV= 0', 'uncertainty': '', 'file_path': '10/pdata/1/procs', 'start_idx': 112, 'end_idx': 125, 'evidence_match_score': 1.0}, {'candidate_id': '10/pdata/1/procs:112:125:6', 'category': 'resource_signal', 'role': 'qualitative_attribute', 'claim': 'USERP1 is empty', 'evidence_text': '##$USERP1= <>', 'uncertainty': '', 'file_path': '10/pdata/1/procs', 'start_idx': 112, 'end_idx': 125, 'evidence_match_score': 1.0}, {'candidate_id': '10/pdata/1/procs:112:125:7', 'category': 'resource_signal', 'role': 'qualitative_attribute', 'claim': 'USERP2 is empty', 'evidence_text': '##$USERP2= <>', 'uncertainty': '', 'file_path': '10/pdata/1/procs', 'start_idx': 112, 'end_idx': 125, 'evidence_match_score': 1.0}, {'candidate_id': '10/pdata/1/procs:112:125:8', 'category': 'resource_signal', 'role': 'qualitative_attribute', 'claim': 'USERP3 is empty', 'evidence_text': '##$USERP3= <>', 'uncertainty': '', 'file_path': '10/pdata/1/procs', 'start_idx': 112, 'end_idx': 125, 'evidence_match_score': 1.0}, {'candidate_id': '10/pdata/1/procs:112:125:9', 'category': 'resource_signal', 'role': 'qualitative_attribute', 'claim': 'USERP4 is empty', 'evidence_text': '##$USERP4= <>', 'uncertainty': '', 'file_path': '10/pdata/1/procs', 'start_idx': 112, 'end_idx': 125, 'evidence_match_score': 1.0}, {'candidate_id': '10/pdata/1/procs:112:125:10', 'category': 'resource_signal', 'role': 'qualitative_attribute', 'claim': 'USERP5 is empty', 'evidence_text': '##$USERP5= <>', 'uncertainty': '', 'file_path': '10/pdata/1/procs', 'start_idx': 112, 'end_idx': 125, 'evidence_match_score': 1.0}, {'candidate_id': '10/pdata/1/procs:112:125:11', 'category': 'resource_signal', 'role': 'qualitative_attribute', 'claim': 'WDW is 1', 'evidence_text': '##$WDW= 1', 'uncertainty': '', 'file_path': '10/pdata/1/procs', 'start_idx': 112, 'end_idx': 125, 'evidence_match_score': 1.0}, {'candidate_id': '10/pdata/1/procs:112:125:12', 'category': 'resource_signal', 'role': 'qualitative_attribute', 'claim': 'XDIM is 0', 'evidence_text': '##$XDIM= 0', 'uncertainty': '', 'file_path': '10/pdata/1/procs', 'start_idx': 112, 'end_idx': 125, 'evidence_match_score': 1.0}, {'candidate_id': '10/pdata/1/procs:112:125:13', 'category': 'resource_signal', 'role': 'qualitative_attribute', 'claim': 'YMAX_p is 0', 'evidence_text': '##$YMAX_p= 0', 'uncertainty': '', 'file_path': '10/pdata/1/procs', 'start_idx': 112, 'end_idx': 125, 'evidence_match_score': 1.0}]\n\n",
+          "chars": 4014,
+          "tokens": 1718,
+          "cumulative_tokens": 2341
+        },
+        {
+          "channel": "prompt",
+          "name": "local_chunk_context",
+          "text": "Local chunk context for assessment:\n##$TDoff= 0\n##$TI= <>\n##$TILT= no\n##$TM1= 0\n##$TM2= 0\n##$TOPLEV= 0\n##$USERP1= <>\n##$USERP2= <>\n##$USERP3= <>\n##$USERP4= <>\n##$USERP5= <>\n##$WDW= 1\n##$XDIM= 0\n##$YMAX_p= 0\n",
+          "chars": 207,
+          "tokens": 118,
+          "cumulative_tokens": 2459
+        }
+      ],
+      "usage": {
+        "requests": 1,
+        "input_tokens": 2467,
+        "output_tokens": 1310,
+        "prompt_eval_duration_ms": 0,
+        "load_duration_ms": 0,
+        "response_duration_ms": 0,
+        "total_duration_ms": 42568
+      }
+    }
+  ]
+}

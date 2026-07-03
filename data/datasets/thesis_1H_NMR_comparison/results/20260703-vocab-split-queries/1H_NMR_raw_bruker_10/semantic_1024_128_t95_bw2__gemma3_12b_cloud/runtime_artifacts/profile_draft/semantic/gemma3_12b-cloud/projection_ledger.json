@@ -1,0 +1,866 @@
+[
+  {
+    "object_identifier": "dataset_level_projection",
+    "object_kind": "DatasetLevelProjection",
+    "source_evidence": null,
+    "evidence_note_identifiers": [],
+    "status": "projected",
+    "projected_paths": [
+      "/creator",
+      "/description",
+      "/id",
+      "/identifier",
+      "/keyword",
+      "/title",
+      "/type",
+      "/was_generated_by"
+    ],
+    "target_path": "/",
+    "target_class": "Dataset",
+    "planner_status": "dataset_level_projection",
+    "planner_reason": null,
+    "evidence_quality": {},
+    "schema_queries": [],
+    "candidate_paths": [],
+    "selected_schema_branch": null,
+    "merge_status": null,
+    "reason": "Dataset-level projection produced full-profile-valid Dataset draft.",
+    "error": null
+  },
+  {
+    "object_identifier": "scaffold:/was_generated_by/0/id",
+    "object_kind": "ScaffoldFact",
+    "source_evidence": null,
+    "evidence_note_identifiers": [],
+    "status": "projected",
+    "projected_paths": [
+      "/was_generated_by/0/id"
+    ],
+    "target_path": "/was_generated_by/0/id",
+    "target_class": null,
+    "planner_status": "scaffold",
+    "planner_reason": null,
+    "evidence_quality": {},
+    "schema_queries": [],
+    "candidate_paths": [],
+    "selected_schema_branch": null,
+    "merge_status": null,
+    "reason": "Backend filled missing required shallow projection identifier.",
+    "error": null
+  },
+  {
+    "object_identifier": "provenance_core:generic",
+    "object_kind": "ProvenanceCore",
+    "source_evidence": null,
+    "evidence_note_identifiers": [],
+    "status": "projected",
+    "projected_paths": [
+      "/was_generated_by/0/title",
+      "/was_generated_by/0/description",
+      "/was_generated_by/0/realized_plan",
+      "/was_generated_by/0/carried_out_by/0",
+      "/was_generated_by/0/carried_out_by/1",
+      "/was_generated_by/0/carried_out_by/2",
+      "/was_generated_by/0/evaluated_entity/0",
+      "/was_generated_by/0/had_input_entity/0",
+      "/was_generated_by/0/had_input_entity/1",
+      "/was_generated_by/0/had_input_entity/2",
+      "/was_generated_by/0/had_output_entity/0",
+      "/was_generated_by/0/had_output_entity/1",
+      "/was_generated_by/0/had_output_entity/2"
+    ],
+    "target_path": "/was_generated_by/0",
+    "target_class": "DataGeneratingActivity",
+    "planner_status": "generic_provenance_core",
+    "planner_reason": "Constructed provenance core for NMR experiment data generation.",
+    "evidence_quality": {
+      "requirement_id": "generic_provenance_core",
+      "source_packet": "orientation_context",
+      "construction_strategy": "backend_shaped_core_intents"
+    },
+    "schema_queries": [],
+    "candidate_paths": [],
+    "selected_schema_branch": null,
+    "merge_status": "applied",
+    "reason": "Constructed provenance core for NMR experiment data generation.",
+    "error": null
+  },
+  {
+    "object_identifier": "parent_attribute:/was_generated_by/0:/was_generated_by/0/has_qualitative_attribute/0",
+    "object_kind": "QualitativeAttribute",
+    "source_evidence": "ev:9ca4343e27109d63",
+    "evidence_note_identifiers": [
+      "ev:9ca4343e27109d63",
+      "ev:cb82388dbcf66e95",
+      "ev:b731c07716f26150",
+      "ev:d15d86b2c2864195"
+    ],
+    "status": "projected",
+    "projected_paths": [
+      "/was_generated_by/0/has_qualitative_attribute/0"
+    ],
+    "target_path": "/was_generated_by/0/has_qualitative_attribute/0",
+    "target_class": "DataGeneratingActivity",
+    "planner_status": "parent_scoped_attribute",
+    "planner_reason": "Parent-scoped attribute question for DataGeneratingActivity.",
+    "evidence_quality": {
+      "parent_path": "/was_generated_by/0",
+      "attribute_kind": "qualitative",
+      "answer": ""
+    },
+    "schema_queries": [],
+    "candidate_paths": [],
+    "selected_schema_branch": null,
+    "merge_status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "error": null
+  },
+  {
+    "object_identifier": "parent_attribute:/was_generated_by/0:/was_generated_by/0/has_qualitative_attribute/1",
+    "object_kind": "QualitativeAttribute",
+    "source_evidence": "ev:9ca4343e27109d63",
+    "evidence_note_identifiers": [
+      "ev:9ca4343e27109d63",
+      "ev:cb82388dbcf66e95",
+      "ev:b731c07716f26150",
+      "ev:d15d86b2c2864195"
+    ],
+    "status": "projected",
+    "projected_paths": [
+      "/was_generated_by/0/has_qualitative_attribute/1"
+    ],
+    "target_path": "/was_generated_by/0/has_qualitative_attribute/1",
+    "target_class": "DataGeneratingActivity",
+    "planner_status": "parent_scoped_attribute",
+    "planner_reason": "Parent-scoped attribute question for DataGeneratingActivity.",
+    "evidence_quality": {
+      "parent_path": "/was_generated_by/0",
+      "attribute_kind": "qualitative",
+      "answer": ""
+    },
+    "schema_queries": [],
+    "candidate_paths": [],
+    "selected_schema_branch": null,
+    "merge_status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "error": null
+  },
+  {
+    "object_identifier": "parent_attribute:/was_generated_by/0:/was_generated_by/0/has_qualitative_attribute/2",
+    "object_kind": "QualitativeAttribute",
+    "source_evidence": "ev:9ca4343e27109d63",
+    "evidence_note_identifiers": [
+      "ev:9ca4343e27109d63",
+      "ev:cb82388dbcf66e95",
+      "ev:b731c07716f26150",
+      "ev:d15d86b2c2864195"
+    ],
+    "status": "projected",
+    "projected_paths": [
+      "/was_generated_by/0/has_qualitative_attribute/2"
+    ],
+    "target_path": "/was_generated_by/0/has_qualitative_attribute/2",
+    "target_class": "DataGeneratingActivity",
+    "planner_status": "parent_scoped_attribute",
+    "planner_reason": "Parent-scoped attribute question for DataGeneratingActivity.",
+    "evidence_quality": {
+      "parent_path": "/was_generated_by/0",
+      "attribute_kind": "qualitative",
+      "answer": ""
+    },
+    "schema_queries": [],
+    "candidate_paths": [],
+    "selected_schema_branch": null,
+    "merge_status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "error": null
+  },
+  {
+    "object_identifier": "parent_attribute:/was_generated_by/0/carried_out_by/0:/was_generated_by/0/carried_out_by/0/has_qualitative_attribute/0",
+    "object_kind": "QualitativeAttribute",
+    "source_evidence": "ev:d15d86b2c2864195",
+    "evidence_note_identifiers": [
+      "ev:d15d86b2c2864195",
+      "ev:306e472d35741f1c",
+      "ev:bc2ad6050f8287e2",
+      "ev:2ec1469adbfbffcc"
+    ],
+    "status": "projected",
+    "projected_paths": [
+      "/was_generated_by/0/carried_out_by/0/has_qualitative_attribute/0"
+    ],
+    "target_path": "/was_generated_by/0/carried_out_by/0/has_qualitative_attribute/0",
+    "target_class": "AgenticEntity",
+    "planner_status": "parent_scoped_attribute",
+    "planner_reason": "Parent-scoped attribute question for AgenticEntity.",
+    "evidence_quality": {
+      "parent_path": "/was_generated_by/0/carried_out_by/0",
+      "attribute_kind": "qualitative",
+      "answer": ""
+    },
+    "schema_queries": [],
+    "candidate_paths": [],
+    "selected_schema_branch": null,
+    "merge_status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "error": null
+  },
+  {
+    "object_identifier": "parent_attribute:/was_generated_by/0/carried_out_by/1:/was_generated_by/0/carried_out_by/1/has_qualitative_attribute/0",
+    "object_kind": "QualitativeAttribute",
+    "source_evidence": "ev:9c18dcdb7e30d4c2",
+    "evidence_note_identifiers": [
+      "ev:9c18dcdb7e30d4c2",
+      "ev:e6ac5c993af8c90f",
+      "ev:a828b0c0bcffaf50",
+      "ev:9ca4343e27109d63"
+    ],
+    "status": "projected",
+    "projected_paths": [
+      "/was_generated_by/0/carried_out_by/1/has_qualitative_attribute/0"
+    ],
+    "target_path": "/was_generated_by/0/carried_out_by/1/has_qualitative_attribute/0",
+    "target_class": "AgenticEntity",
+    "planner_status": "parent_scoped_attribute",
+    "planner_reason": "Parent-scoped attribute question for AgenticEntity.",
+    "evidence_quality": {
+      "parent_path": "/was_generated_by/0/carried_out_by/1",
+      "attribute_kind": "qualitative",
+      "answer": ""
+    },
+    "schema_queries": [],
+    "candidate_paths": [],
+    "selected_schema_branch": null,
+    "merge_status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "error": null
+  },
+  {
+    "object_identifier": "parent_attribute:/was_generated_by/0/carried_out_by/1:/was_generated_by/0/carried_out_by/1/has_qualitative_attribute/1",
+    "object_kind": "QualitativeAttribute",
+    "source_evidence": "ev:9c18dcdb7e30d4c2",
+    "evidence_note_identifiers": [
+      "ev:9c18dcdb7e30d4c2",
+      "ev:e6ac5c993af8c90f",
+      "ev:a828b0c0bcffaf50",
+      "ev:9ca4343e27109d63"
+    ],
+    "status": "projected",
+    "projected_paths": [
+      "/was_generated_by/0/carried_out_by/1/has_qualitative_attribute/1"
+    ],
+    "target_path": "/was_generated_by/0/carried_out_by/1/has_qualitative_attribute/1",
+    "target_class": "AgenticEntity",
+    "planner_status": "parent_scoped_attribute",
+    "planner_reason": "Parent-scoped attribute question for AgenticEntity.",
+    "evidence_quality": {
+      "parent_path": "/was_generated_by/0/carried_out_by/1",
+      "attribute_kind": "qualitative",
+      "answer": ""
+    },
+    "schema_queries": [],
+    "candidate_paths": [],
+    "selected_schema_branch": null,
+    "merge_status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "error": null
+  },
+  {
+    "object_identifier": "parent_attribute:/was_generated_by/0/carried_out_by/1:/was_generated_by/0/carried_out_by/1/has_qualitative_attribute/2",
+    "object_kind": "QualitativeAttribute",
+    "source_evidence": "ev:9c18dcdb7e30d4c2",
+    "evidence_note_identifiers": [
+      "ev:9c18dcdb7e30d4c2",
+      "ev:e6ac5c993af8c90f",
+      "ev:a828b0c0bcffaf50",
+      "ev:9ca4343e27109d63"
+    ],
+    "status": "projected",
+    "projected_paths": [
+      "/was_generated_by/0/carried_out_by/1/has_qualitative_attribute/2"
+    ],
+    "target_path": "/was_generated_by/0/carried_out_by/1/has_qualitative_attribute/2",
+    "target_class": "AgenticEntity",
+    "planner_status": "parent_scoped_attribute",
+    "planner_reason": "Parent-scoped attribute question for AgenticEntity.",
+    "evidence_quality": {
+      "parent_path": "/was_generated_by/0/carried_out_by/1",
+      "attribute_kind": "qualitative",
+      "answer": ""
+    },
+    "schema_queries": [],
+    "candidate_paths": [],
+    "selected_schema_branch": null,
+    "merge_status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "error": null
+  },
+  {
+    "object_identifier": "parent_attribute:/was_generated_by/0/carried_out_by/1:/was_generated_by/0/carried_out_by/1/has_qualitative_attribute/3",
+    "object_kind": "QualitativeAttribute",
+    "source_evidence": "ev:9c18dcdb7e30d4c2",
+    "evidence_note_identifiers": [
+      "ev:9c18dcdb7e30d4c2",
+      "ev:e6ac5c993af8c90f",
+      "ev:a828b0c0bcffaf50",
+      "ev:9ca4343e27109d63"
+    ],
+    "status": "projected",
+    "projected_paths": [
+      "/was_generated_by/0/carried_out_by/1/has_qualitative_attribute/3"
+    ],
+    "target_path": "/was_generated_by/0/carried_out_by/1/has_qualitative_attribute/3",
+    "target_class": "AgenticEntity",
+    "planner_status": "parent_scoped_attribute",
+    "planner_reason": "Parent-scoped attribute question for AgenticEntity.",
+    "evidence_quality": {
+      "parent_path": "/was_generated_by/0/carried_out_by/1",
+      "attribute_kind": "qualitative",
+      "answer": ""
+    },
+    "schema_queries": [],
+    "candidate_paths": [],
+    "selected_schema_branch": null,
+    "merge_status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "error": null
+  },
+  {
+    "object_identifier": "parent_attribute:/was_generated_by/0/carried_out_by/2:/was_generated_by/0/carried_out_by/2/has_qualitative_attribute/0",
+    "object_kind": "QualitativeAttribute",
+    "source_evidence": "ev:e6ac5c993af8c90f",
+    "evidence_note_identifiers": [
+      "ev:e6ac5c993af8c90f",
+      "ev:42f65923692e7fcb",
+      "ev:7c7c154e3d97e670"
+    ],
+    "status": "projected",
+    "projected_paths": [
+      "/was_generated_by/0/carried_out_by/2/has_qualitative_attribute/0"
+    ],
+    "target_path": "/was_generated_by/0/carried_out_by/2/has_qualitative_attribute/0",
+    "target_class": "AgenticEntity",
+    "planner_status": "parent_scoped_attribute",
+    "planner_reason": "Parent-scoped attribute question for AgenticEntity.",
+    "evidence_quality": {
+      "parent_path": "/was_generated_by/0/carried_out_by/2",
+      "attribute_kind": "qualitative",
+      "answer": ""
+    },
+    "schema_queries": [],
+    "candidate_paths": [],
+    "selected_schema_branch": null,
+    "merge_status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "error": null
+  },
+  {
+    "object_identifier": "parent_attribute:/was_generated_by/0/carried_out_by/2:/was_generated_by/0/carried_out_by/2/has_qualitative_attribute/1",
+    "object_kind": "QualitativeAttribute",
+    "source_evidence": "ev:e6ac5c993af8c90f",
+    "evidence_note_identifiers": [
+      "ev:e6ac5c993af8c90f",
+      "ev:42f65923692e7fcb",
+      "ev:7c7c154e3d97e670"
+    ],
+    "status": "projected",
+    "projected_paths": [
+      "/was_generated_by/0/carried_out_by/2/has_qualitative_attribute/1"
+    ],
+    "target_path": "/was_generated_by/0/carried_out_by/2/has_qualitative_attribute/1",
+    "target_class": "AgenticEntity",
+    "planner_status": "parent_scoped_attribute",
+    "planner_reason": "Parent-scoped attribute question for AgenticEntity.",
+    "evidence_quality": {
+      "parent_path": "/was_generated_by/0/carried_out_by/2",
+      "attribute_kind": "qualitative",
+      "answer": ""
+    },
+    "schema_queries": [],
+    "candidate_paths": [],
+    "selected_schema_branch": null,
+    "merge_status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "error": null
+  },
+  {
+    "object_identifier": "parent_attribute:/was_generated_by/0/evaluated_entity/0:/was_generated_by/0/evaluated_entity/0/has_qualitative_attribute/0",
+    "object_kind": "QualitativeAttribute",
+    "source_evidence": "ev:bb0efd0c2f0e4fef",
+    "evidence_note_identifiers": [
+      "ev:bb0efd0c2f0e4fef",
+      "ev:3084ea30dbb7eb53",
+      "ev:083d09d288d52994",
+      "ev:306e472d35741f1c"
+    ],
+    "status": "projected",
+    "projected_paths": [
+      "/was_generated_by/0/evaluated_entity/0/has_qualitative_attribute/0"
+    ],
+    "target_path": "/was_generated_by/0/evaluated_entity/0/has_qualitative_attribute/0",
+    "target_class": "EvaluatedEntity",
+    "planner_status": "parent_scoped_attribute",
+    "planner_reason": "Parent-scoped attribute question for EvaluatedEntity.",
+    "evidence_quality": {
+      "parent_path": "/was_generated_by/0/evaluated_entity/0",
+      "attribute_kind": "qualitative",
+      "answer": ""
+    },
+    "schema_queries": [],
+    "candidate_paths": [],
+    "selected_schema_branch": null,
+    "merge_status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "error": null
+  },
+  {
+    "object_identifier": "parent_attribute:/was_generated_by/0/evaluated_entity/0:/was_generated_by/0/evaluated_entity/0/has_qualitative_attribute/1",
+    "object_kind": "QualitativeAttribute",
+    "source_evidence": "ev:bb0efd0c2f0e4fef",
+    "evidence_note_identifiers": [
+      "ev:bb0efd0c2f0e4fef",
+      "ev:3084ea30dbb7eb53",
+      "ev:083d09d288d52994",
+      "ev:306e472d35741f1c"
+    ],
+    "status": "projected",
+    "projected_paths": [
+      "/was_generated_by/0/evaluated_entity/0/has_qualitative_attribute/1"
+    ],
+    "target_path": "/was_generated_by/0/evaluated_entity/0/has_qualitative_attribute/1",
+    "target_class": "EvaluatedEntity",
+    "planner_status": "parent_scoped_attribute",
+    "planner_reason": "Parent-scoped attribute question for EvaluatedEntity.",
+    "evidence_quality": {
+      "parent_path": "/was_generated_by/0/evaluated_entity/0",
+      "attribute_kind": "qualitative",
+      "answer": ""
+    },
+    "schema_queries": [],
+    "candidate_paths": [],
+    "selected_schema_branch": null,
+    "merge_status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "error": null
+  },
+  {
+    "object_identifier": "parent_attribute:/was_generated_by/0/had_input_entity/0:/was_generated_by/0/had_input_entity/0/has_quantitative_attribute/0",
+    "object_kind": "QuantitativeAttribute",
+    "source_evidence": "ev:389f9fff4f553318",
+    "evidence_note_identifiers": [
+      "ev:389f9fff4f553318",
+      "ev:1d6bb52d22be26ee",
+      "ev:10841640a50d765e",
+      "ev:4f6922ebbce46bee"
+    ],
+    "status": "projected",
+    "projected_paths": [
+      "/was_generated_by/0/had_input_entity/0/has_quantitative_attribute/0"
+    ],
+    "target_path": "/was_generated_by/0/had_input_entity/0/has_quantitative_attribute/0",
+    "target_class": "EvaluatedEntity",
+    "planner_status": "parent_scoped_attribute",
+    "planner_reason": "Parent-scoped attribute question for EvaluatedEntity.",
+    "evidence_quality": {
+      "parent_path": "/was_generated_by/0/had_input_entity/0",
+      "attribute_kind": "quantitative",
+      "answer": ""
+    },
+    "schema_queries": [],
+    "candidate_paths": [],
+    "selected_schema_branch": null,
+    "merge_status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "error": null
+  },
+  {
+    "object_identifier": "parent_attribute:/was_generated_by/0/had_input_entity/1:/was_generated_by/0/had_input_entity/1/has_quantitative_attribute/0",
+    "object_kind": "QuantitativeAttribute",
+    "source_evidence": "ev:6184b3b22c39a8b4",
+    "evidence_note_identifiers": [
+      "ev:6184b3b22c39a8b4",
+      "ev:d15d86b2c2864195",
+      "ev:17a0731d45c1a12e",
+      "ev:162e718bdb1cef9d"
+    ],
+    "status": "projected",
+    "projected_paths": [
+      "/was_generated_by/0/had_input_entity/1/has_quantitative_attribute/0"
+    ],
+    "target_path": "/was_generated_by/0/had_input_entity/1/has_quantitative_attribute/0",
+    "target_class": "EvaluatedEntity",
+    "planner_status": "parent_scoped_attribute",
+    "planner_reason": "Parent-scoped attribute question for EvaluatedEntity.",
+    "evidence_quality": {
+      "parent_path": "/was_generated_by/0/had_input_entity/1",
+      "attribute_kind": "quantitative",
+      "answer": ""
+    },
+    "schema_queries": [],
+    "candidate_paths": [],
+    "selected_schema_branch": null,
+    "merge_status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "error": null
+  },
+  {
+    "object_identifier": "parent_attribute:/was_generated_by/0/had_input_entity/1:/was_generated_by/0/had_input_entity/1/has_quantitative_attribute/1",
+    "object_kind": "QuantitativeAttribute",
+    "source_evidence": "ev:6184b3b22c39a8b4",
+    "evidence_note_identifiers": [
+      "ev:6184b3b22c39a8b4",
+      "ev:d15d86b2c2864195",
+      "ev:17a0731d45c1a12e",
+      "ev:162e718bdb1cef9d"
+    ],
+    "status": "projected",
+    "projected_paths": [
+      "/was_generated_by/0/had_input_entity/1/has_quantitative_attribute/1"
+    ],
+    "target_path": "/was_generated_by/0/had_input_entity/1/has_quantitative_attribute/1",
+    "target_class": "EvaluatedEntity",
+    "planner_status": "parent_scoped_attribute",
+    "planner_reason": "Parent-scoped attribute question for EvaluatedEntity.",
+    "evidence_quality": {
+      "parent_path": "/was_generated_by/0/had_input_entity/1",
+      "attribute_kind": "quantitative",
+      "answer": ""
+    },
+    "schema_queries": [],
+    "candidate_paths": [],
+    "selected_schema_branch": null,
+    "merge_status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "error": null
+  },
+  {
+    "object_identifier": "parent_attribute:/was_generated_by/0/had_input_entity/1:/was_generated_by/0/had_input_entity/1/has_quantitative_attribute/2",
+    "object_kind": "QuantitativeAttribute",
+    "source_evidence": "ev:6184b3b22c39a8b4",
+    "evidence_note_identifiers": [
+      "ev:6184b3b22c39a8b4",
+      "ev:d15d86b2c2864195",
+      "ev:17a0731d45c1a12e",
+      "ev:162e718bdb1cef9d"
+    ],
+    "status": "projected",
+    "projected_paths": [
+      "/was_generated_by/0/had_input_entity/1/has_quantitative_attribute/2"
+    ],
+    "target_path": "/was_generated_by/0/had_input_entity/1/has_quantitative_attribute/2",
+    "target_class": "EvaluatedEntity",
+    "planner_status": "parent_scoped_attribute",
+    "planner_reason": "Parent-scoped attribute question for EvaluatedEntity.",
+    "evidence_quality": {
+      "parent_path": "/was_generated_by/0/had_input_entity/1",
+      "attribute_kind": "quantitative",
+      "answer": ""
+    },
+    "schema_queries": [],
+    "candidate_paths": [],
+    "selected_schema_branch": null,
+    "merge_status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "error": null
+  },
+  {
+    "object_identifier": "parent_attribute:/was_generated_by/0/had_input_entity/2:/was_generated_by/0/had_input_entity/2/has_quantitative_attribute/0",
+    "object_kind": "QuantitativeAttribute",
+    "source_evidence": "ev:adad0f4add8c7b5f",
+    "evidence_note_identifiers": [
+      "ev:adad0f4add8c7b5f",
+      "ev:93076757f0e4187b",
+      "ev:f131f00f6704d29e",
+      "ev:3061e0b1b4ef2a21"
+    ],
+    "status": "projected",
+    "projected_paths": [
+      "/was_generated_by/0/had_input_entity/2/has_quantitative_attribute/0"
+    ],
+    "target_path": "/was_generated_by/0/had_input_entity/2/has_quantitative_attribute/0",
+    "target_class": "EvaluatedEntity",
+    "planner_status": "parent_scoped_attribute",
+    "planner_reason": "Parent-scoped attribute question for EvaluatedEntity.",
+    "evidence_quality": {
+      "parent_path": "/was_generated_by/0/had_input_entity/2",
+      "attribute_kind": "quantitative",
+      "answer": ""
+    },
+    "schema_queries": [],
+    "candidate_paths": [],
+    "selected_schema_branch": null,
+    "merge_status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "error": null
+  },
+  {
+    "object_identifier": "parent_attribute:/was_generated_by/0/had_input_entity/2:/was_generated_by/0/had_input_entity/2/has_qualitative_attribute/0",
+    "object_kind": "QualitativeAttribute",
+    "source_evidence": "ev:adad0f4add8c7b5f",
+    "evidence_note_identifiers": [
+      "ev:adad0f4add8c7b5f",
+      "ev:93076757f0e4187b",
+      "ev:f131f00f6704d29e",
+      "ev:3061e0b1b4ef2a21"
+    ],
+    "status": "projected",
+    "projected_paths": [
+      "/was_generated_by/0/had_input_entity/2/has_qualitative_attribute/0"
+    ],
+    "target_path": "/was_generated_by/0/had_input_entity/2/has_qualitative_attribute/0",
+    "target_class": "EvaluatedEntity",
+    "planner_status": "parent_scoped_attribute",
+    "planner_reason": "Parent-scoped attribute question for EvaluatedEntity.",
+    "evidence_quality": {
+      "parent_path": "/was_generated_by/0/had_input_entity/2",
+      "attribute_kind": "qualitative",
+      "answer": ""
+    },
+    "schema_queries": [],
+    "candidate_paths": [],
+    "selected_schema_branch": null,
+    "merge_status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "error": null
+  },
+  {
+    "object_identifier": "parent_attribute:/was_generated_by/0/had_input_entity/2:/was_generated_by/0/had_input_entity/2/has_qualitative_attribute/1",
+    "object_kind": "QualitativeAttribute",
+    "source_evidence": "ev:adad0f4add8c7b5f",
+    "evidence_note_identifiers": [
+      "ev:adad0f4add8c7b5f",
+      "ev:93076757f0e4187b",
+      "ev:f131f00f6704d29e",
+      "ev:3061e0b1b4ef2a21"
+    ],
+    "status": "projected",
+    "projected_paths": [
+      "/was_generated_by/0/had_input_entity/2/has_qualitative_attribute/1"
+    ],
+    "target_path": "/was_generated_by/0/had_input_entity/2/has_qualitative_attribute/1",
+    "target_class": "EvaluatedEntity",
+    "planner_status": "parent_scoped_attribute",
+    "planner_reason": "Parent-scoped attribute question for EvaluatedEntity.",
+    "evidence_quality": {
+      "parent_path": "/was_generated_by/0/had_input_entity/2",
+      "attribute_kind": "qualitative",
+      "answer": ""
+    },
+    "schema_queries": [],
+    "candidate_paths": [],
+    "selected_schema_branch": null,
+    "merge_status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "error": null
+  },
+  {
+    "object_identifier": "parent_attribute:/was_generated_by/0/had_output_entity/1:/was_generated_by/0/had_output_entity/1/has_qualitative_attribute/0",
+    "object_kind": "QualitativeAttribute",
+    "source_evidence": "ev:9c18dcdb7e30d4c2",
+    "evidence_note_identifiers": [
+      "ev:9c18dcdb7e30d4c2",
+      "ev:306e472d35741f1c",
+      "ev:bc2ad6050f8287e2",
+      "ev:4847e0b8244d9f97"
+    ],
+    "status": "projected",
+    "projected_paths": [
+      "/was_generated_by/0/had_output_entity/1/has_qualitative_attribute/0"
+    ],
+    "target_path": "/was_generated_by/0/had_output_entity/1/has_qualitative_attribute/0",
+    "target_class": "EvaluatedEntity",
+    "planner_status": "parent_scoped_attribute",
+    "planner_reason": "Parent-scoped attribute question for EvaluatedEntity.",
+    "evidence_quality": {
+      "parent_path": "/was_generated_by/0/had_output_entity/1",
+      "attribute_kind": "qualitative",
+      "answer": ""
+    },
+    "schema_queries": [],
+    "candidate_paths": [],
+    "selected_schema_branch": null,
+    "merge_status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "error": null
+  },
+  {
+    "object_identifier": "parent_attribute:/was_generated_by/0/had_output_entity/1:/was_generated_by/0/had_output_entity/1/has_qualitative_attribute/1",
+    "object_kind": "QualitativeAttribute",
+    "source_evidence": "ev:9c18dcdb7e30d4c2",
+    "evidence_note_identifiers": [
+      "ev:9c18dcdb7e30d4c2",
+      "ev:306e472d35741f1c",
+      "ev:bc2ad6050f8287e2",
+      "ev:4847e0b8244d9f97"
+    ],
+    "status": "projected",
+    "projected_paths": [
+      "/was_generated_by/0/had_output_entity/1/has_qualitative_attribute/1"
+    ],
+    "target_path": "/was_generated_by/0/had_output_entity/1/has_qualitative_attribute/1",
+    "target_class": "EvaluatedEntity",
+    "planner_status": "parent_scoped_attribute",
+    "planner_reason": "Parent-scoped attribute question for EvaluatedEntity.",
+    "evidence_quality": {
+      "parent_path": "/was_generated_by/0/had_output_entity/1",
+      "attribute_kind": "qualitative",
+      "answer": ""
+    },
+    "schema_queries": [],
+    "candidate_paths": [],
+    "selected_schema_branch": null,
+    "merge_status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "error": null
+  },
+  {
+    "object_identifier": "parent_attribute:/was_generated_by/0/had_output_entity/2:/was_generated_by/0/had_output_entity/2/has_qualitative_attribute/0",
+    "object_kind": "QualitativeAttribute",
+    "source_evidence": "ev:9c18dcdb7e30d4c2",
+    "evidence_note_identifiers": [
+      "ev:9c18dcdb7e30d4c2",
+      "ev:e6ac5c993af8c90f",
+      "ev:a828b0c0bcffaf50",
+      "ev:03d12af712203f71"
+    ],
+    "status": "projected",
+    "projected_paths": [
+      "/was_generated_by/0/had_output_entity/2/has_qualitative_attribute/0"
+    ],
+    "target_path": "/was_generated_by/0/had_output_entity/2/has_qualitative_attribute/0",
+    "target_class": "EvaluatedEntity",
+    "planner_status": "parent_scoped_attribute",
+    "planner_reason": "Parent-scoped attribute question for EvaluatedEntity.",
+    "evidence_quality": {
+      "parent_path": "/was_generated_by/0/had_output_entity/2",
+      "attribute_kind": "qualitative",
+      "answer": ""
+    },
+    "schema_queries": [],
+    "candidate_paths": [],
+    "selected_schema_branch": null,
+    "merge_status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "error": null
+  },
+  {
+    "object_identifier": "parent_attribute:/was_generated_by/0/had_output_entity/2:/was_generated_by/0/had_output_entity/2/has_qualitative_attribute/1",
+    "object_kind": "QualitativeAttribute",
+    "source_evidence": "ev:9c18dcdb7e30d4c2",
+    "evidence_note_identifiers": [
+      "ev:9c18dcdb7e30d4c2",
+      "ev:e6ac5c993af8c90f",
+      "ev:a828b0c0bcffaf50",
+      "ev:03d12af712203f71"
+    ],
+    "status": "projected",
+    "projected_paths": [
+      "/was_generated_by/0/had_output_entity/2/has_qualitative_attribute/1"
+    ],
+    "target_path": "/was_generated_by/0/had_output_entity/2/has_qualitative_attribute/1",
+    "target_class": "EvaluatedEntity",
+    "planner_status": "parent_scoped_attribute",
+    "planner_reason": "Parent-scoped attribute question for EvaluatedEntity.",
+    "evidence_quality": {
+      "parent_path": "/was_generated_by/0/had_output_entity/2",
+      "attribute_kind": "qualitative",
+      "answer": ""
+    },
+    "schema_queries": [],
+    "candidate_paths": [],
+    "selected_schema_branch": null,
+    "merge_status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "error": null
+  },
+  {
+    "object_identifier": "parent_attribute:/was_generated_by/0/had_output_entity/2:/was_generated_by/0/had_output_entity/2/has_qualitative_attribute/2",
+    "object_kind": "QualitativeAttribute",
+    "source_evidence": "ev:9c18dcdb7e30d4c2",
+    "evidence_note_identifiers": [
+      "ev:9c18dcdb7e30d4c2",
+      "ev:e6ac5c993af8c90f",
+      "ev:a828b0c0bcffaf50",
+      "ev:03d12af712203f71"
+    ],
+    "status": "projected",
+    "projected_paths": [
+      "/was_generated_by/0/had_output_entity/2/has_qualitative_attribute/2"
+    ],
+    "target_path": "/was_generated_by/0/had_output_entity/2/has_qualitative_attribute/2",
+    "target_class": "EvaluatedEntity",
+    "planner_status": "parent_scoped_attribute",
+    "planner_reason": "Parent-scoped attribute question for EvaluatedEntity.",
+    "evidence_quality": {
+      "parent_path": "/was_generated_by/0/had_output_entity/2",
+      "attribute_kind": "qualitative",
+      "answer": ""
+    },
+    "schema_queries": [],
+    "candidate_paths": [],
+    "selected_schema_branch": null,
+    "merge_status": "applied",
+    "reason": "Projected schema-valid parent-scoped attribute.",
+    "error": null
+  },
+  {
+    "object_identifier": "semantic_reconstruction:dataset_description_scope:eeef73807d4e",
+    "object_kind": "SemanticReconstruction",
+    "source_evidence": "ev:083d09d288d52994",
+    "evidence_note_identifiers": [
+      "ev:083d09d288d52994",
+      "ev:1070591f0f572085",
+      "ev:05f74e5adc4ce3df"
+    ],
+    "status": "projected",
+    "projected_paths": [
+      "/description"
+    ],
+    "target_path": "/description",
+    "target_class": null,
+    "planner_status": "dataset_description_scope",
+    "planner_reason": "The dataset description includes details about acquisition and processing parameters, which are already represented as structured fields (setting_plan, instruments, software). The description should provide a concise summary of the dataset’s content and purpose, not repeat structured information.",
+    "evidence_quality": {
+      "requirement_id": "dataset_description_scope",
+      "iteration_kind": "semantic_reconstruction",
+      "defect_type": "bad_aboutness",
+      "diagnosed_defects_count": 1,
+      "compiled_actions_count": 1,
+      "synthesis_calls_count": 1,
+      "applied_actions_count": 1,
+      "rejected_actions_count": 0,
+      "rejected_reasons": [],
+      "diagnosed_defects": [
+        {
+          "defect_type": "bad_aboutness",
+          "target_path": "/description",
+          "entry_indices": [
+            0
+          ],
+          "recommended_action": "replace",
+          "needs_synthesis": true,
+          "reason": "The description includes details about acquisition and processing parameters, which are already represented as structured fields (setting_plan, instruments, software). The description should provide a concise summary of the dataset's content and purpose, not repeat structured information."
+        }
+      ],
+      "compiled_actions": [
+        {
+          "target_path": "/description",
+          "mode": "replace",
+          "items": [],
+          "value": [
+            "NMR data and configuration files acquired on an Avance III 500 MHz NMR spectrometer."
+          ],
+          "survivor_index": null,
+          "merged_indices": [],
+          "reason": "The description includes details about acquisition and processing parameters, which are already represented as structured fields (setting_plan, instruments, software). The description should provide a concise summary of the dataset's content and purpose, not repeat structured information."
+        }
+      ]
+    },
+    "schema_queries": [],
+    "candidate_paths": [],
+    "selected_schema_branch": null,
+    "merge_status": "applied",
+    "reason": "The dataset description includes details about acquisition and processing parameters, which are already represented as structured fields (setting_plan, instruments, software). The description should provide a concise summary of the dataset’s content and purpose, not repeat structured information.",
+    "error": null
+  }
+]

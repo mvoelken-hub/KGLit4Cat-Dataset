@@ -1,0 +1,79 @@
+{
+  "operation_id": "profile_field_vocab_selection__software_TOPSPIN_software",
+  "agent_name": "profile_field_vocab_selection",
+  "model": "gemma3:12b-cloud",
+  "output_type": "VocabularyCandidateSelection",
+  "status": "completed",
+  "metadata": {
+    "source_value": "software | TOPSPIN software",
+    "candidate_count": 32
+  },
+  "attempts": [
+    {
+      "attempt_index": 0,
+      "attempt_kind": "initial",
+      "model": "gemma3:12b-cloud",
+      "tokenizer_fallback": false,
+      "tokenizer_fallback_reason": null,
+      "components": [
+        {
+          "channel": "system",
+          "name": "vocab_candidate_selection_system_prompt",
+          "text": "\nYou select a single controlled-vocabulary term that normalizes a metadata field, or return null.\nMatch on the physical quantity or concept the field actually measures, using the source value AND the\nsemantic context (dataset/entity/attribute title and description). Read each candidate's label AND definition,\nnot just its URI fragment.\nWhen several candidates describe the same kind of quantity or concept, prefer the most general/plain one over a\nmore specific or named variant of it. But \"most general\" only applies among candidates that are the same\nquantity - it never justifies picking a wrong-domain term.\nHard rules - return null for selected_uri when ANY of these hold:\n- No candidate describes the same physical quantity or concept as the field. Sharing a token or a symbol with\n  the source value is not a match. Common traps include bare axis or column codes, incidental words, and unit\n  symbols or mathematical symbols; a single letter or a unit symbol by itself is never a quantity kind.\n- An ordinal or extremum modifier (first/last/minimum/maximum) by itself is not a quantity kind. However, when\n  it qualifies a field whose semantic context or source value clearly identifies the underlying physical\n  quantity, the ordinal does NOT disqualify the match - select the candidate that matches that underlying\n  quantity. Only abstain when the ordinal is the ONLY signal and no underlying quantity can be identified.\n- The candidate belongs to a different scientific or engineering domain than the measurement described in the\n  context (for example, a radioactivity, electrical-impedance, typography/printing, aerospace, or oceanography\n  term used for a measurement in an unrelated field). A different-domain candidate is not a match even if it\n  is the most general available - return null.\n- The best candidate is only a superficial or adjacent match rather than the same quantity or concept.\n- You are not confident the candidate is the same quantity. In that case return null with confidence 0 and a\n  short reason naming the trap, rather than forcing a match.\nUse only candidate URIs from the prompt. Always include selected_uri, confidence (0.0-1.0), and reason.\nYou MUST NOT select a candidate you just argued does not fit - return null instead. Return only JSON.\n",
+          "chars": 2289,
+          "tokens": 481,
+          "cumulative_tokens": 481
+        },
+        {
+          "channel": "system",
+          "name": "system_schema",
+          "text": "\n\nReturn exactly one JSON object that satisfies this JSON Schema. Do not include Markdown fences, prose, comments, or additional text.\n\nJSON Schema:\n{\"properties\":{\"selected_uri\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null,\"description\":\"URI of the selected candidate, or null when no candidate fits.\",\"title\":\"Selected Uri\"},\"confidence\":{\"default\":0.0,\"maximum\":1.0,\"minimum\":0.0,\"title\":\"Confidence\",\"type\":\"number\"},\"reason\":{\"default\":\"\",\"title\":\"Reason\",\"type\":\"string\"}},\"title\":\"VocabularyCandidateSelection\",\"type\":\"object\"}",
+          "chars": 549,
+          "tokens": 129,
+          "cumulative_tokens": 609
+        },
+        {
+          "channel": "prompt",
+          "name": "source_value",
+          "text": "Source value:\nsoftware | TOPSPIN software\n\n",
+          "chars": 43,
+          "tokens": 10,
+          "cumulative_tokens": 619
+        },
+        {
+          "channel": "prompt",
+          "name": "source_context",
+          "text": "Source context JSON:\n{'json_path': '/was_generated_by/0/carried_out_by/1/type', 'field_name': 'type', 'source_value': 'TOPSPIN Software Software used for experiment execution, Fourier transformation, and baseline correction. 2e38a6a6:agentic-entity:topspin-software', 'role': 'type', 'semantic_context': 'NMR Spectral Data NMR spectral data acquired on an Avance III spectrometer in Karlsruhe, Germany. | Automated NMR Spectral Data Acquisition and Processing Automated acquisition and processing of 1H NMR spectra using Bruker TOPSPIN software, defined by parameter files and pulse programs. | TOPSPIN Software Software used for experiment execution, Fourier transformation, and baseline correction.', 'formulated_query': {'vector_query': 'software', 'fulltext_query': 'TOPSPIN software'}}\n\n",
+          "chars": 792,
+          "tokens": 187,
+          "cumulative_tokens": 806
+        },
+        {
+          "channel": "prompt",
+          "name": "candidate_terms",
+          "text": "Candidate terms JSON:\n[{'uri': 'https://w3id.org/nfdi4cat/voc4cat_0000046', 'vocabulary_identifier': 'https://w3id.org/nfdi4cat/voc4cat', 'rdf_type': 'skos__Concept', 'title': 'literature research'}, {'uri': 'https://w3id.org/nfdi4cat/voc4cat_0000048', 'vocabulary_identifier': 'https://w3id.org/nfdi4cat/voc4cat', 'rdf_type': 'skos__Concept', 'title': 'literature organization'}, {'uri': 'https://w3id.org/nfdi4cat/voc4cat_0000049', 'vocabulary_identifier': 'https://w3id.org/nfdi4cat/voc4cat', 'rdf_type': 'skos__Concept', 'title': 'synthesis procedure'}, {'uri': 'https://w3id.org/nfdi4cat/voc4cat_0000185', 'vocabulary_identifier': 'https://w3id.org/nfdi4cat/voc4cat', 'rdf_type': 'skos__Concept', 'title': 'processes'}, {'uri': 'https://w3id.org/nfdi4cat/voc4cat_0000186', 'vocabulary_identifier': 'https://w3id.org/nfdi4cat/voc4cat', 'rdf_type': 'skos__Concept', 'title': 'attributes'}, {'uri': 'https://w3id.org/nfdi4cat/voc4cat_0000187', 'vocabulary_identifier': 'https://w3id.org/nfdi4cat/voc4cat', 'rdf_type': 'skos__Concept', 'title': 'equipment'}, {'uri': 'https://w3id.org/nfdi4cat/voc4cat_0000195', 'vocabulary_identifier': 'https://w3id.org/nfdi4cat/voc4cat', 'rdf_type': 'skos__Concept', 'title': 'ChemCatChem keyword collection'}, {'uri': 'https://w3id.org/nfdi4cat/voc4cat_0001901', 'vocabulary_identifier': 'https://w3id.org/nfdi4cat/voc4cat', 'rdf_type': 'skos__Concept', 'title': 'Photocatalysis collection'}, {'uri': 'https://w3id.org/nfdi4cat/voc4cat_0005018', 'vocabulary_identifier': 'https://w3id.org/nfdi4cat/voc4cat', 'rdf_type': 'skos__Concept', 'title': 'resource relation'}, {'uri': 'https://w3id.org/nfdi4cat/voc4cat_0005038', 'vocabulary_identifier': 'https://w3id.org/nfdi4cat/voc4cat', 'rdf_type': 'skos__Concept', 'title': 'is compiled by'}, {'uri': 'https://w3id.org/nfdi4cat/voc4cat_0005039', 'vocabulary_identifier': 'https://w3id.org/nfdi4cat/voc4cat', 'rdf_type': 'skos__Concept', 'title': 'compiles'}, {'uri': 'https://w3id.org/nfdi4cat/voc4cat_0007012', 'vocabulary_identifier': 'https://w3id.org/nfdi4cat/voc4cat', 'rdf_type': 'skos__Concept', 'title': 'handbook'}, {'uri': 'https://w3id.org/nfdi4cat/voc4cat_0007126', 'vocabulary_identifier': 'https://w3id.org/nfdi4cat/voc4cat', 'rdf_type': 'skos__Concept', 'title': 'acquisition mode'}, {'uri': 'https://w3id.org/nfdi4cat/voc4cat_0007130', 'vocabulary_identifier': 'https://w3id.org/nfdi4cat/voc4cat', 'rdf_type': 'skos__Concept', 'title': 'SEM measurement attribute'}, {'uri': 'https://w3id.org/nfdi4cat/voc4cat_0007131', 'vocabulary_identifier': 'https://w3id.org/nfdi4cat/voc4cat', 'rdf_type': 'skos__Concept', 'title': 'measurement metadata attribute collection'}, {'uri': 'https://w3id.org/nfdi4cat/voc4cat_0007840', 'vocabulary_identifier': 'https://w3id.org/nfdi4cat/voc4cat', 'rdf_type': 'skos__Concept', 'title': 'solvation'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000091', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'commercial NMR software'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000132', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'Felix software'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000244', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'NMR software vendor'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000245', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'Spinworks'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000276', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'Varian NMR software'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000353', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'software attribute'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1000354', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'NMR software version'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1001267', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'software vendor'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1002001', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'Chenomx software'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1002002', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'Chenomx NMR Suite software'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1400135', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'spectrum post-processing software', 'description': 'def: A software artifact used during spectral post-processing.'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1400213', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'NMR software', 'description': 'defneed'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1400214', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'Bruker NMR software', 'description': 'defneed'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1400215', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'Bruker TopSpin software'}, {'uri': 'http://nmrML.org/nmrCV#NMR:1400229', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'JEOL NMR software'}, {'uri': 'http://purl.obolibrary.org/obo/BFO_0000031', 'vocabulary_identifier': 'nmrCV', 'rdf_type': 'owl__Class', 'title': 'generically dependent continuant'}]\n\n",
+          "chars": 5210,
+          "tokens": 2040,
+          "cumulative_tokens": 2846
+        },
+        {
+          "channel": "prompt",
+          "name": "selection_instruction",
+          "text": "Select the best candidate URI, or return null if none fits.",
+          "chars": 59,
+          "tokens": 13,
+          "cumulative_tokens": 2859
+        }
+      ],
+      "usage": {
+        "requests": 1,
+        "input_tokens": 2868,
+        "output_tokens": 107,
+        "prompt_eval_duration_ms": 0,
+        "load_duration_ms": 0,
+        "response_duration_ms": 0,
+        "total_duration_ms": 2700
+      }
+    }
+  ]
+}

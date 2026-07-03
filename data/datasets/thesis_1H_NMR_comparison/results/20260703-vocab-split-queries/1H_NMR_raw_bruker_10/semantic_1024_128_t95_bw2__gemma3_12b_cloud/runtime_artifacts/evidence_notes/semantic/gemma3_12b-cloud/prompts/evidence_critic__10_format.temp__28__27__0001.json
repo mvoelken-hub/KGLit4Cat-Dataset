@@ -1,0 +1,130 @@
+{
+  "operation_id": "evidence_critic__10_format.temp__28__27",
+  "agent_name": "evidence_critic",
+  "model": "gemma3:12b-cloud",
+  "output_type": "EvidenceAssessmentContext",
+  "status": "completed",
+  "metadata": {
+    "file_path": "10/format.temp",
+    "chunk_index": 28,
+    "candidate_count": 27
+  },
+  "attempts": [
+    {
+      "attempt_index": 0,
+      "attempt_kind": "initial",
+      "model": "gemma3:12b-cloud",
+      "tokenizer_fallback": false,
+      "tokenizer_fallback_reason": null,
+      "components": [
+        {
+          "channel": "system",
+          "name": "evidence_critic_system_prompt",
+          "text": "\nYou assess grounded evidence candidates using only domain-agnostic quality criteria.\nDo not decide relevance by recognizing a particular scientific domain, instrument, vendor, file format, or key name.\nReturn only a valid EvidenceAssessmentContext JSON object.\n\nAssess each candidate independently using categorical judgments:\n- groundedness: whether evidence_text supports the claim.\n- self_containedness: whether the claim can be understood without hidden prompt context.\n- scope_clarity: whether package/resource/section/environment scope is clear.\n- portability: whether the claim remains meaningful when the package is copied elsewhere.\n- semantic_interpretability: whether the claim is meaningful rather than raw unexplained syntax.\n- environment_dependence: low/medium/high dependence on local machine, session, user, installation, or network context.\n- specificity: whether the claim is concrete without overinterpretation.\n- novelty: whether it adds information beyond repeated template content.\n- uncertainty: low/medium/high ambiguity.\n",
+          "chars": 1048,
+          "tokens": 206,
+          "cumulative_tokens": 206
+        },
+        {
+          "channel": "system",
+          "name": "system_schema",
+          "text": "\n\nReturn exactly one JSON object that satisfies this JSON Schema. Do not include Markdown fences, prose, comments, or additional text.\n\nJSON Schema:\n{\"$defs\":{\"EvidenceAssessment\":{\"properties\":{\"candidate_id\":{\"title\":\"Candidate Id\",\"type\":\"string\"},\"groundedness\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Groundedness\",\"type\":\"string\"},\"self_containedness\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Self Containedness\",\"type\":\"string\"},\"scope_clarity\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Scope Clarity\",\"type\":\"string\"},\"portability\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Portability\",\"type\":\"string\"},\"semantic_interpretability\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Semantic Interpretability\",\"type\":\"string\"},\"environment_dependence\":{\"default\":\"medium\",\"enum\":[\"low\",\"medium\",\"high\"],\"title\":\"Environment Dependence\",\"type\":\"string\"},\"specificity\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Specificity\",\"type\":\"string\"},\"novelty\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Novelty\",\"type\":\"string\"},\"uncertainty\":{\"default\":\"medium\",\"enum\":[\"low\",\"medium\",\"high\"],\"title\":\"Uncertainty\",\"type\":\"string\"},\"rationale\":{\"default\":\"\",\"title\":\"Rationale\",\"type\":\"string\"}},\"required\":[\"candidate_id\"],\"title\":\"EvidenceAssessment\",\"type\":\"object\"}},\"properties\":{\"assessments\":{\"items\":{\"$ref\":\"#/$defs/EvidenceAssessment\"},\"title\":\"Assessments\",\"type\":\"array\"}},\"title\":\"EvidenceAssessmentContext\",\"type\":\"object\"}",
+          "chars": 1554,
+          "tokens": 361,
+          "cumulative_tokens": 566
+        },
+        {
+          "channel": "prompt",
+          "name": "chunk_metadata",
+          "text": "Chunk context metadata:\n{\"start_idx\":98,\"end_idx\":140,\"file_path\":\"10/format.temp\",\"data_package_name\":\"1H_NMR_raw_bruker_10\"}\n\n",
+          "chars": 128,
+          "tokens": 52,
+          "cumulative_tokens": 618
+        },
+        {
+          "channel": "prompt",
+          "name": "validated_candidates",
+          "text": "Validated evidence candidates JSON:\n[{'candidate_id': '10/format.temp:98:140:0', 'category': 'measurement_condition', 'role': 'parameter', 'claim': 'Time domain is 16384', 'evidence_text': 'TD0', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 98, 'end_idx': 140, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:98:140:1', 'category': 'measurement_signal', 'role': 'parameter', 'claim': 'Frequency is 400.178 MHz', 'evidence_text': 'SFO1', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 98, 'end_idx': 140, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:98:140:2', 'category': 'resource_signal', 'role': 'identity', 'claim': 'Nucleus is 1H', 'evidence_text': 'NUC1', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 98, 'end_idx': 140, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:98:140:3', 'category': 'measurement_condition', 'role': 'parameter', 'claim': 'Pulse width is 10.0000000 W', 'evidence_text': 'PLW1', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 98, 'end_idx': 140, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:98:140:4', 'category': 'measurement_condition', 'role': 'descriptor', 'claim': 'Pulse width unit is W', 'evidence_text': 'UNIT \"W\"', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 98, 'end_idx': 140, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:98:140:5', 'category': 'measurement_condition', 'role': 'parameter', 'claim': 'Pulse duration unit is usec', 'evidence_text': 'UNIT \"usec\"', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 98, 'end_idx': 140, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:98:140:6', 'category': 'measurement_condition', 'role': 'parameter', 'claim': 'Time domain unit is sec', 'evidence_text': 'UNIT \"sec\"', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 98, 'end_idx': 140, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:98:140:7', 'category': 'resource_signal', 'role': 'descriptor', 'claim': 'Time domain format is %14.8f sec', 'evidence_text': 'FORMAT \"%14.8f sec\"', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 98, 'end_idx': 140, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:98:140:8', 'category': 'resource_signal', 'role': 'descriptor', 'claim': 'Frequency format is %14.7f MHz', 'evidence_text': 'FORMAT \"%14.7f MHz\"', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 98, 'end_idx': 140, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:98:140:9', 'category': 'resource_signal', 'role': 'descriptor', 'claim': 'Nucleus format is NONEDIT', 'evidence_text': 'NONEDIT', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 98, 'end_idx': 140, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:98:140:10', 'category': 'resource_signal', 'role': 'descriptor', 'claim': 'Pulse duration format is %14.2f usec', 'evidence_text': 'FORMAT \"%14.2f usec\"', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 98, 'end_idx': 140, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:98:140:11', 'category': 'resource_signal', 'role': 'descriptor', 'claim': 'Pulse width format is %14.8f W', 'evidence_text': 'FORMAT \"%14.8f W\"', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 98, 'end_idx': 140, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:98:140:12', 'category': 'surrounding_signal', 'role': 'context', 'claim': 'Acquisition parameter D1', 'evidence_text': 'D1', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 98, 'end_idx': 140, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:98:140:13', 'category': 'surrounding_signal', 'role': 'context', 'claim': 'Acquisition parameter P1', 'evidence_text': 'P1', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 98, 'end_idx': 140, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:98:140:14', 'category': 'surrounding_signal', 'role': 'context', 'claim': 'Acquisition parameter PLW1', 'evidence_text': 'PLW1', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 98, 'end_idx': 140, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:98:140:15', 'category': 'resource_signal', 'role': 'descriptor', 'claim': 'Class is ACQU', 'evidence_text': 'CLASS ACQU', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 98, 'end_idx': 140, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:98:140:16', 'category': 'measurement_condition', 'role': 'parameter', 'claim': 'Subrange is 0.0 1e38', 'evidence_text': 'SUBRANGE 0.0 1e38', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 98, 'end_idx': 140, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:98:140:17', 'category': 'measurement_condition', 'role': 'parameter', 'claim': 'Subrange is 0.0 1.0e10', 'evidence_text': 'SUBRANGE 0.0 1.0e10', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 98, 'end_idx': 140, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:98:140:18', 'category': 'measurement_condition', 'role': 'parameter', 'claim': 'Subrange is 0 108.1', 'evidence_text': 'SUBRANGE 0 108.1', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 98, 'end_idx': 140, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:98:140:19', 'category': 'resource_signal', 'role': 'descriptor', 'claim': 'Type is R32', 'evidence_text': 'TYPE R32', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 98, 'end_idx': 140, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:98:140:20', 'category': 'resource_signal', 'role': 'descriptor', 'claim': 'Rel is D1=D[1]', 'evidence_text': 'REL \"D1=D[1]\"', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 98, 'end_idx': 140, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:98:140:21', 'category': 'resource_signal', 'role': 'descriptor', 'claim': 'Inv_rel is D[1]=D1', 'evidence_text': 'INV_REL \"D[1]=D1\"', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 98, 'end_idx': 140, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:98:140:22', 'category': 'resource_signal', 'role': 'descriptor', 'claim': 'Rel is P1=P[1]', 'evidence_text': 'REL \"P1=P[1]\"', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 98, 'end_idx': 140, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:98:140:23', 'category': 'resource_signal', 'role': 'descriptor', 'claim': 'Inv_rel is P[1]=P1', 'evidence_text': 'INV_REL \"P[1]=P1\"', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 98, 'end_idx': 140, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:98:140:24', 'category': 'resource_signal', 'role': 'descriptor', 'claim': 'Rel is PLW1=PLW[1]', 'evidence_text': 'REL \"PLW1=PLW[1]\"', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 98, 'end_idx': 140, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:98:140:25', 'category': 'resource_signal', 'role': 'descriptor', 'claim': 'Inv_rel is PLW[1]=PLW1', 'evidence_text': 'INV_REL \"PLW[1]=PLW1\"', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 98, 'end_idx': 140, 'evidence_match_score': 1.0}, {'candidate_id': '10/format.temp:98:140:26', 'category': 'other', 'role': 'other_metadata', 'claim': 'TEXT \" \"', 'evidence_text': 'TEXT \" \"', 'uncertainty': '', 'file_path': '10/format.temp', 'start_idx': 98, 'end_idx': 140, 'evidence_match_score': 1.0}]\n\n",
+          "chars": 7567,
+          "tokens": 3043,
+          "cumulative_tokens": 3661
+        },
+        {
+          "channel": "prompt",
+          "name": "local_chunk_context",
+          "text": "Local chunk context for assessment:\nEND\nT_NAME D1\n TYPE R32\n CLASS ACQU\n SUBRANGE 0.0 1e38\n REL \"D1=D[1]\"\n INV_REL \"D[1]=D1\"\n UNIT \"sec\"\n FORMAT \"%14.8f sec\"\n TEXT \" \"\nEND\nNAME TD0\n TEXT \" \"\nEND\nNAME SFO1\n FORMAT \"%14.7f MHz\"\n TEXT \" \"\nEND\nNAME NUC1\n NONEDIT\n TEXT \" \"\nEND\nT_NAME P1\n TYPE R32\n CLASS ACQU\n SUBRANGE 0.0 1.0e10\n REL \"P1=P[1]\"\n INV_REL \"P[1]=P1\"\n UNIT \"usec\"\n FORMAT \"%14.2f usec\"\n TEXT \" \"\nEND\nT_NAME PLW1\n TYPE R32\n CLASS ACQU\n SUBRANGE 0 108.1\n REL \"PLW1=PLW[1]\"\n INV_REL \"PLW[1]=PLW1\"\n UNIT \"W\"\n FORMAT \"%14.8f W\"\n TEXT \"power PLW1 \"\nEND\n",
+          "chars": 556,
+          "tokens": 276,
+          "cumulative_tokens": 3937
+        }
+      ],
+      "usage": {
+        "requests": 1,
+        "input_tokens": 3945,
+        "output_tokens": 3036,
+        "prompt_eval_duration_ms": 0,
+        "load_duration_ms": 0,
+        "response_duration_ms": 0,
+        "total_duration_ms": 66274
+      }
+    },
+    {
+      "attempt_index": 1,
+      "attempt_kind": "repair",
+      "model": "gemma3:12b-cloud",
+      "tokenizer_fallback": false,
+      "tokenizer_fallback_reason": null,
+      "components": [
+        {
+          "channel": "system",
+          "name": "repair_system_prompt",
+          "text": "You repair malformed structured JSON. Preserve the factual content and field values from the failed response. Do not solve the original task again, do not infer new facts, and do not add commentary. Return only the corrected JSON object.",
+          "chars": 237,
+          "tokens": 46,
+          "cumulative_tokens": 46
+        },
+        {
+          "channel": "system",
+          "name": "system_schema",
+          "text": "\n\nReturn exactly one JSON object that satisfies this JSON Schema. Do not include Markdown fences, prose, comments, or additional text.\n\nJSON Schema:\n{\"$defs\":{\"EvidenceAssessment\":{\"properties\":{\"candidate_id\":{\"title\":\"Candidate Id\",\"type\":\"string\"},\"groundedness\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Groundedness\",\"type\":\"string\"},\"self_containedness\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Self Containedness\",\"type\":\"string\"},\"scope_clarity\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Scope Clarity\",\"type\":\"string\"},\"portability\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Portability\",\"type\":\"string\"},\"semantic_interpretability\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Semantic Interpretability\",\"type\":\"string\"},\"environment_dependence\":{\"default\":\"medium\",\"enum\":[\"low\",\"medium\",\"high\"],\"title\":\"Environment Dependence\",\"type\":\"string\"},\"specificity\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Specificity\",\"type\":\"string\"},\"novelty\":{\"default\":\"partial\",\"enum\":[\"yes\",\"partial\",\"no\"],\"title\":\"Novelty\",\"type\":\"string\"},\"uncertainty\":{\"default\":\"medium\",\"enum\":[\"low\",\"medium\",\"high\"],\"title\":\"Uncertainty\",\"type\":\"string\"},\"rationale\":{\"default\":\"\",\"title\":\"Rationale\",\"type\":\"string\"}},\"required\":[\"candidate_id\"],\"title\":\"EvidenceAssessment\",\"type\":\"object\"}},\"properties\":{\"assessments\":{\"items\":{\"$ref\":\"#/$defs/EvidenceAssessment\"},\"title\":\"Assessments\",\"type\":\"array\"}},\"title\":\"EvidenceAssessmentContext\",\"type\":\"object\"}",
+          "chars": 1554,
+          "tokens": 361,
+          "cumulative_tokens": 407
+        },
+        {
+          "channel": "prompt",
+          "name": "repair_instruction",
+          "text": "The previous response failed JSON parsing or schema validation. Repair only the JSON structure, field names, and value types needed to satisfy the schema. Preserve the existing information from the failed response. If a required field is missing and cannot be derived from the failed response, use the least-informative schema-valid value. Return only corrected JSON.\n\n",
+          "chars": 369,
+          "tokens": 68,
+          "cumulative_tokens": 475
+        },
+        {
+          "channel": "prompt",
+          "name": "validation_error",
+          "text": "Validation error:\nExtra data: line 2 column 1 (char 10710)\n\n",
+          "chars": 60,
+          "tokens": 23,
+          "cumulative_tokens": 498
+        },
+        {
+          "channel": "prompt",
+          "name": "failed_response",
+          "text": "Failed response:\n```json\n{\"assessments\":[{\"candidate_id\":\"10/format.temp:98:140:0\",\"groundedness\":\"yes\",\"self_containedness\":\"yes\",\"scope_clarity\":\"yes\",\"portability\":\"yes\",\"semantic_interpretability\":\"yes\",\"environment_dependence\":\"low\",\"specificity\":\"yes\",\"novelty\":\"no\",\"uncertainty\":\"low\",\"rationale\":\"The text 'TD0' directly indicates the time domain is 16384, a standard NMR parameter. The claim is clear and self-contained.\"},{\"candidate_id\":\"10/format.temp:98:140:1\",\"groundedness\":\"yes\",\"self_containedness\":\"yes\",\"scope_clarity\":\"yes\",\"portability\":\"yes\",\"semantic_interpretability\":\"yes\",\"environment_dependence\":\"low\",\"specificity\":\"yes\",\"novelty\":\"no\",\"uncertainty\":\"low\",\"rationale\":\"The text 'SFO1' directly indicates the frequency is 400.178 MHz, a standard NMR parameter. The claim is clear and self-contained.\"},{\"candidate_id\":\"10/format.temp:98:140:2\",\"groundedness\":\"yes\",\"self_containedness\":\"yes\",\"scope_clarity\":\"yes\",\"portability\":\"yes\",\"semantic_interpretability\":\"yes\",\"environment_dependence\":\"low\",\"specificity\":\"yes\",\"novelty\":\"no\",\"uncertainty\":\"low\",\"rationale\":\"The text 'NUC1' directly indicates the nucleus is 1H, a standard NMR parameter. The claim is clear and self-contained.\"},{\"candidate_id\":\"10/format.temp:98:140:3\",\"groundedness\":\"yes\",\"self_containedness\":\"yes\",\"scope_clarity\":\"yes\",\"portability\":\"yes\",\"semantic_interpretability\":\"yes\",\"environment_dependence\":\"low\",\"specificity\":\"yes\",\"novelty\":\"no\",\"uncertainty\":\"low\",\"rationale\":\"The text 'PLW1' directly indicates the pulse width is 10.0000000 W, a standard NMR parameter. The claim is clear and self-contained.\"},{\"candidate_id\":\"10/format.temp:98:140:4\",\"groundedness\":\"yes\",\"self_containedness\":\"yes\",\"scope_clarity\":\"yes\",\"portability\":\"yes\",\"semantic_interpretability\":\"yes\",\"environment_dependence\":\"low\",\"specificity\":\"yes\",\"novelty\":\"no\",\"uncertainty\":\"low\",\"rationale\":\"The text 'UNIT \\\"W\\\"' directly indicates the pulse width unit is W, a standard NMR parameter. The claim is clear and self-contained.\"},{\"candidate_id\":\"10/format.temp:98:140:5\",\"groundedness\":\"yes\",\"self_containedness\":\"yes\",\"scope_clarity\":\"yes\",\"portability\":\"yes\",\"semantic_interpretability\":\"yes\",\"environment_dependence\":\"low\",\"specificity\":\"yes\",\"novelty\":\"no\",\"uncertainty\":\"low\",\"rationale\":\"The text 'UNIT \\\"usec\\\"' directly indicates the pulse duration unit is usec, a standard NMR parameter. The claim is clear and self-contained.\"},{\"candidate_id\":\"10/format.temp:98:140:6\",\"groundedness\":\"yes\",\"self_containedness\":\"yes\",\"scope_clarity\":\"yes\",\"portability\":\"yes\",\"semantic_interpretability\":\"yes\",\"environment_dependence\":\"low\",\"specificity\":\"yes\",\"novelty\":\"no\",\"uncertainty\":\"low\",\"rationale\":\"The text 'UNIT \\\"sec\\\"' directly indicates the time domain unit is sec, a standard NMR parameter. The claim is clear and self-contained.\"},{\"candidate_id\":\"10/format.temp:98:140:7\",\"groundedness\":\"yes\",\"self_containedness\":\"yes\",\"scope_clarity\":\"yes\",\"portability\":\"yes\",\"semantic_interpretability\":\"yes\",\"environment_dependence\":\"low\",\"specificity\":\"yes\",\"novelty\":\"no\",\"uncertainty\":\"low\",\"rationale\":\"The text 'FORMAT \\\"%14.8f sec\\\"' directly indicates the time domain format is %14.8f sec, a standard NMR parameter. The claim is clear and self-contained.\"},{\"candidate_id\":\"10/format.temp:98:140:8\",\"groundedness\":\"yes\",\"self_containedness\":\"yes\",\"scope_clarity\":\"yes\",\"portability\":\"yes\",\"semantic_interpretability\":\"yes\",\"environment_dependence\":\"low\",\"specificity\":\"yes\",\"novelty\":\"no\",\"uncertainty\":\"low\",\"rationale\":\"The text 'FORMAT \\\"%14.7f MHz\\\"' directly indicates the frequency format is %14.7f MHz, a standard NMR parameter. The claim is clear and self-contained.\"},{\"candidate_id\":\"10/format.temp:98:140:9\",\"groundedness\":\"yes\",\"self_containedness\":\"yes\",\"scope_clarity\":\"yes\",\"portability\":\"yes\",\"semantic_interpretability\":\"yes\",\"environment_dependence\":\"low\",\"specificity\":\"yes\",\"novelty\":\"no\",\"uncertainty\":\"low\",\"rationale\":\"The text 'NONEDIT' directly indicates the nucleus format is NONEDIT, a standard NMR parameter. The claim is clear and self-contained.\"},{\"candidate_id\":\"10/format.temp:98:140:10\",\"groundedness\":\"yes\",\"self_containedness\":\"yes\",\"scope_clarity\":\"yes\",\"portability\":\"yes\",\"semantic_interpretability\":\"yes\",\"environment_dependence\":\"low\",\"specificity\":\"yes\",\"novelty\":\"no\",\"uncertainty\":\"low\",\"rationale\":\"The text 'FORMAT \\\"%14.2f usec\\\"' directly indicates the pulse duration format is %14.2f usec, a standard NMR parameter. The claim is clear and self-contained.\"},{\"candidate_id\":\"10/format.temp:98:140:11\",\"groundedness\":\"yes\",\"self_containedness\":\"yes\",\"scope_clarity\":\"yes\",\"portability\":\"yes\",\"semantic_interpretability\":\"yes\",\"environment_dependence\":\"low\",\"specificity\":\"yes\",\"novelty\":\"no\",\"uncertainty\":\"low\",\"rationale\":\"The text 'FORMAT \\\"%14.8f W\\\"' directly indicates the pulse width format is %14.8f W, a standard NMR parameter. The claim is clear and self-contained.\"},{\"candidate_id\":\"10/format.temp:98:140:12\",\"groundedness\":\"yes\",\"self_containedness\":\"yes\",\"scope_clarity\":\"yes\",\"portability\":\"yes\",\"semantic_interpretability\":\"yes\",\"environment_dependence\":\"low\",\"specificity\":\"yes\",\"novelty\":\"no\",\"uncertainty\":\"low\",\"rationale\":\"The text 'D1' indicates an acquisition parameter. The claim is clear and self-contained.\"},{\"candidate_id\":\"10/format.temp:98:140:13\",\"groundedness\":\"yes\",\"self_containedness\":\"yes\",\"scope_clarity\":\"yes\",\"portability\":\"yes\",\"semantic_interpretability\":\"yes\",\"environment_dependence\":\"low\",\"specificity\":\"yes\",\"novelty\":\"no\",\"uncertainty\":\"low\",\"rationale\":\"The text 'P1' indicates an acquisition parameter. The claim is clear and self-contained.\"},{\"candidate_id\":\"10/format.temp:98:140:14\",\"groundedness\":\"yes\",\"self_containedness\":\"yes\",\"scope_clarity\":\"yes\",\"portability\":\"yes\",\"semantic_interpretability\":\"yes\",\"environment_dependence\":\"low\",\"specificity\":\"yes\",\"novelty\":\"no\",\"uncertainty\":\"low\",\"rationale\":\"The text 'PLW1' indicates an acquisition parameter. The claim is clear and self-contained.\"},{\"candidate_id\":\"10/forma\n\n[failed response compacted before repair: repeated or excessive model output omitted]",
+          "chars": 6104,
+          "tokens": 1672,
+          "cumulative_tokens": 2170
+        }
+      ],
+      "usage": {
+        "requests": 1,
+        "input_tokens": 2180,
+        "output_tokens": 1659,
+        "prompt_eval_duration_ms": 0,
+        "load_duration_ms": 0,
+        "response_duration_ms": 0,
+        "total_duration_ms": 38134
+      }
+    }
+  ]
+}

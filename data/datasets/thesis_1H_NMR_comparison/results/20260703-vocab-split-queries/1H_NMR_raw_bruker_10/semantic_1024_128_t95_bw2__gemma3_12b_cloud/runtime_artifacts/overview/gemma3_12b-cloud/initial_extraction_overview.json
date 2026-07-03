@@ -1,0 +1,841 @@
+{
+  "status": "structured",
+  "overview": {
+    "source_fingerprint": "486fa56877bd491cc36efe243387517788764b97",
+    "source_file_paths": [
+      "10/acqus",
+      "10/pdata/1/proc",
+      "10/pdata/1/procs",
+      "10/acqu",
+      "10/audita.txt",
+      "10/pdata/1/outd",
+      "10/format.temp",
+      "10/specpar",
+      "10/pulseprogram",
+      "10/fid",
+      "10/fq1list",
+      "10/pdata/1/title",
+      "10/scon2",
+      "10/shimvalues",
+      "10/uxnmr.info",
+      "10/uxnmr.par",
+      "10/prosol_History"
+    ],
+    "inspected_files": [
+      {
+        "file_path": "10/acqus",
+        "byte_size": 8177,
+        "chars_read": 1671,
+        "reason": ""
+      },
+      {
+        "file_path": "10/pdata/1/proc",
+        "byte_size": 2087,
+        "chars_read": 1196,
+        "reason": ""
+      },
+      {
+        "file_path": "10/pdata/1/procs",
+        "byte_size": 2042,
+        "chars_read": 1197,
+        "reason": ""
+      },
+      {
+        "file_path": "10/acqu",
+        "byte_size": 7990,
+        "chars_read": 1628,
+        "reason": ""
+      },
+      {
+        "file_path": "10/audita.txt",
+        "byte_size": 1108,
+        "chars_read": 1054,
+        "reason": ""
+      },
+      {
+        "file_path": "10/pdata/1/outd",
+        "byte_size": 502,
+        "chars_read": 470,
+        "reason": ""
+      },
+      {
+        "file_path": "10/format.temp",
+        "byte_size": 2288,
+        "chars_read": 1195,
+        "reason": ""
+      },
+      {
+        "file_path": "10/specpar",
+        "byte_size": 3277,
+        "chars_read": 2700,
+        "reason": ""
+      },
+      {
+        "file_path": "10/pulseprogram",
+        "byte_size": 1913,
+        "chars_read": 1775,
+        "reason": ""
+      },
+      {
+        "file_path": "10/fid",
+        "byte_size": 262144,
+        "chars_read": 4,
+        "reason": ""
+      },
+      {
+        "file_path": "10/fq1list",
+        "byte_size": 5135,
+        "chars_read": 645,
+        "reason": ""
+      },
+      {
+        "file_path": "10/pdata/1/title",
+        "byte_size": 44,
+        "chars_read": 42,
+        "reason": ""
+      },
+      {
+        "file_path": "10/scon2",
+        "byte_size": 640,
+        "chars_read": 588,
+        "reason": ""
+      },
+      {
+        "file_path": "10/shimvalues",
+        "byte_size": 3067,
+        "chars_read": 2130,
+        "reason": ""
+      },
+      {
+        "file_path": "10/uxnmr.info",
+        "byte_size": 5157,
+        "chars_read": 2937,
+        "reason": ""
+      },
+      {
+        "file_path": "10/uxnmr.par",
+        "byte_size": 23918,
+        "chars_read": 3424,
+        "reason": ""
+      },
+      {
+        "file_path": "10/prosol_History",
+        "byte_size": 0,
+        "chars_read": 0,
+        "reason": ""
+      }
+    ],
+    "nodes": [
+      {
+        "node_id": "package:root",
+        "label": "1H_NMR_raw_bruker_10",
+        "kind": "package",
+        "file_path": null,
+        "rank": null,
+        "summary": "Package root; directory and file containment is derived from archive paths."
+      },
+      {
+        "node_id": "dir:10",
+        "label": "10",
+        "kind": "directory",
+        "file_path": null,
+        "rank": null,
+        "summary": "Directory inferred from package file paths."
+      },
+      {
+        "node_id": "file:10/acqus",
+        "label": "acqus",
+        "kind": "file",
+        "file_path": "10/acqus",
+        "rank": 1,
+        "summary": "This file contains parameter settings for a Bruker NMR experiment, likely used to control the instrument and define the experimental conditions. It includes various acquisition and processing parameters."
+      },
+      {
+        "node_id": "dir:10/pdata",
+        "label": "pdata",
+        "kind": "directory",
+        "file_path": null,
+        "rank": null,
+        "summary": "Directory inferred from package file paths."
+      },
+      {
+        "node_id": "dir:10/pdata/1",
+        "label": "1",
+        "kind": "directory",
+        "file_path": null,
+        "rank": null,
+        "summary": "Directory inferred from package file paths."
+      },
+      {
+        "node_id": "file:10/pdata/1/proc",
+        "label": "proc",
+        "kind": "file",
+        "file_path": "10/pdata/1/proc",
+        "rank": 2,
+        "summary": "text; This file contains parameter values and settings for a 1H NMR experiment, likely used by Bruker TopSpin software. It defines various acquisition and processing parameters."
+      },
+      {
+        "node_id": "file:10/pdata/1/procs",
+        "label": "procs",
+        "kind": "file",
+        "file_path": "10/pdata/1/procs",
+        "rank": 3,
+        "summary": "text; This file contains parameter values and settings for a 1H NMR experiment, likely used to control the Bruker TopSpin software. It defines various acquisition and processing parameters."
+      },
+      {
+        "node_id": "file:10/acqu",
+        "label": "acqu",
+        "kind": "file",
+        "file_path": "10/acqu",
+        "rank": 4,
+        "summary": "This file contains parameter settings for a Bruker 1H NMR experiment, likely used to control the instrument and define the experimental conditions. It includes various parameters related to pulse sequences, frequencies, and data acquisition."
+      },
+      {
+        "node_id": "file:10/audita.txt",
+        "label": "audita.txt",
+        "kind": "file",
+        "file_path": "10/audita.txt",
+        "rank": 5,
+        "summary": "txt; This file contains an audit trail generated by Bruker TOPSPIN NMR software. It records actions performed during data acquisition, including user information, configuration hashes, and data hashes."
+      },
+      {
+        "node_id": "file:10/pdata/1/outd",
+        "label": "outd",
+        "kind": "file",
+        "file_path": "10/pdata/1/outd",
+        "rank": 6,
+        "summary": "text; This file is a parameter file for Bruker TopSpin NMR software, containing configuration settings and metadata related to a 1D NMR experiment."
+      },
+      {
+        "node_id": "file:10/format.temp",
+        "label": "format.temp",
+        "kind": "file",
+        "file_path": "10/format.temp",
+        "rank": 7,
+        "summary": "text; This file contains acquisition parameters for a 1H NMR experiment, likely generated by a Bruker instrument. It defines variables like frequency, time domain size, and pulse durations."
+      },
+      {
+        "node_id": "file:10/specpar",
+        "label": "specpar",
+        "kind": "file",
+        "file_path": "10/specpar",
+        "rank": 8,
+        "summary": "text; This file contains parameter values for a Bruker NMR experiment, including instrument settings and acquisition parameters. It appears to be a configuration file used by the TOPSPIN software."
+      },
+      {
+        "node_id": "file:10/pulseprogram",
+        "label": "pulseprogram",
+        "kind": "file",
+        "file_path": "10/pulseprogram",
+        "rank": 9,
+        "summary": "text; This file contains a Bruker NMR pulse program, likely for a 1D experiment. It defines parameters and sequences for the NMR experiment."
+      },
+      {
+        "node_id": "file:10/fid",
+        "label": "fid",
+        "kind": "file",
+        "file_path": "10/fid",
+        "rank": 10,
+        "summary": "fid; This file appears to contain raw NMR data, likely in a proprietary format. The sampled content is empty."
+      },
+      {
+        "node_id": "file:10/fq1list",
+        "label": "fq1list",
+        "kind": "file",
+        "file_path": "10/fq1list",
+        "rank": 11,
+        "summary": "This file contains a list of numerical data, likely representing signal intensity values. The data appears to be a sequence of integers, potentially related to NMR spectroscopy."
+      },
+      {
+        "node_id": "file:10/pdata/1/title",
+        "label": "title",
+        "kind": "file",
+        "file_path": "10/pdata/1/title",
+        "rank": 12,
+        "summary": "text; This file contains a title or label, likely for a NMR experiment, including names and an identifier."
+      },
+      {
+        "node_id": "file:10/scon2",
+        "label": "scon2",
+        "kind": "file",
+        "file_path": "10/scon2",
+        "rank": 13,
+        "summary": ""
+      },
+      {
+        "node_id": "file:10/shimvalues",
+        "label": "shimvalues",
+        "kind": "file",
+        "file_path": "10/shimvalues",
+        "rank": 14,
+        "summary": "text; This file contains shim values and lock parameters for a Bruker NMR spectrometer. It includes gradient settings and shim current values."
+      },
+      {
+        "node_id": "file:10/uxnmr.info",
+        "label": "uxnmr.info",
+        "kind": "file",
+        "file_path": "10/uxnmr.info",
+        "rank": 15,
+        "summary": "text; This file contains configuration information for a Bruker Avance III NMR spectrometer, including hardware details, network addresses, and cable connections."
+      },
+      {
+        "node_id": "file:10/uxnmr.par",
+        "label": "uxnmr.par",
+        "kind": "file",
+        "file_path": "10/uxnmr.par",
+        "rank": 16,
+        "summary": ""
+      },
+      {
+        "node_id": "file:10/prosol_History",
+        "label": "prosol_History",
+        "kind": "file",
+        "file_path": "10/prosol_History",
+        "rank": null,
+        "summary": ""
+      },
+      {
+        "node_id": "group:acquisition_settings",
+        "label": "Acquisition settings",
+        "kind": "group",
+        "file_path": null,
+        "rank": null,
+        "summary": "Configuration and parameter files for data acquisition."
+      },
+      {
+        "node_id": "group:processing_settings",
+        "label": "Processing settings",
+        "kind": "group",
+        "file_path": null,
+        "rank": null,
+        "summary": "Configuration and parameter files for data processing."
+      },
+      {
+        "node_id": "group:instrument_settings",
+        "label": "Instrument settings",
+        "kind": "group",
+        "file_path": null,
+        "rank": null,
+        "summary": "Instrument tuning, calibration, reference, or setting resources."
+      },
+      {
+        "node_id": "group:audit_provenance",
+        "label": "Audit and provenance",
+        "kind": "group",
+        "file_path": null,
+        "rank": null,
+        "summary": "Audit, provenance, log, history, and integrity-check resources."
+      },
+      {
+        "node_id": "group:parameter_settings",
+        "label": "Parameter settings",
+        "kind": "group",
+        "file_path": null,
+        "rank": null,
+        "summary": "Parameter/configuration resources whose role is not more specific."
+      },
+      {
+        "node_id": "group:nmr_experiment",
+        "label": "NMR Experiment",
+        "kind": "group",
+        "file_path": null,
+        "rank": null,
+        "summary": "This file contains parameter settings for a Bruker NMR experiment."
+      },
+      {
+        "node_id": "group:pulse_sequences",
+        "label": "Pulse Sequences",
+        "kind": "group",
+        "file_path": null,
+        "rank": null,
+        "summary": "This file contains a Bruker NMR pulse program, likely for a 1D experiment."
+      }
+    ],
+    "edges": [
+      {
+        "edge_id": "package:root-contains-dir:10",
+        "source": "package:root",
+        "target": "dir:10",
+        "relation": "contains",
+        "evidence": [
+          "path structure"
+        ],
+        "note": "Deterministic package path containment."
+      },
+      {
+        "edge_id": "dir:10-contains-file:10/acqus",
+        "source": "dir:10",
+        "target": "file:10/acqus",
+        "relation": "contains",
+        "evidence": [
+          "path structure"
+        ],
+        "note": "Deterministic package path containment."
+      },
+      {
+        "edge_id": "dir:10-contains-dir:10/pdata",
+        "source": "dir:10",
+        "target": "dir:10/pdata",
+        "relation": "contains",
+        "evidence": [
+          "path structure"
+        ],
+        "note": "Deterministic package path containment."
+      },
+      {
+        "edge_id": "dir:10/pdata-contains-dir:10/pdata/1",
+        "source": "dir:10/pdata",
+        "target": "dir:10/pdata/1",
+        "relation": "contains",
+        "evidence": [
+          "path structure"
+        ],
+        "note": "Deterministic package path containment."
+      },
+      {
+        "edge_id": "dir:10/pdata/1-contains-file:10/pdata/1/proc",
+        "source": "dir:10/pdata/1",
+        "target": "file:10/pdata/1/proc",
+        "relation": "contains",
+        "evidence": [
+          "path structure"
+        ],
+        "note": "Deterministic package path containment."
+      },
+      {
+        "edge_id": "dir:10/pdata/1-contains-file:10/pdata/1/procs",
+        "source": "dir:10/pdata/1",
+        "target": "file:10/pdata/1/procs",
+        "relation": "contains",
+        "evidence": [
+          "path structure"
+        ],
+        "note": "Deterministic package path containment."
+      },
+      {
+        "edge_id": "dir:10-contains-file:10/acqu",
+        "source": "dir:10",
+        "target": "file:10/acqu",
+        "relation": "contains",
+        "evidence": [
+          "path structure"
+        ],
+        "note": "Deterministic package path containment."
+      },
+      {
+        "edge_id": "dir:10-contains-file:10/audita.txt",
+        "source": "dir:10",
+        "target": "file:10/audita.txt",
+        "relation": "contains",
+        "evidence": [
+          "path structure"
+        ],
+        "note": "Deterministic package path containment."
+      },
+      {
+        "edge_id": "dir:10/pdata/1-contains-file:10/pdata/1/outd",
+        "source": "dir:10/pdata/1",
+        "target": "file:10/pdata/1/outd",
+        "relation": "contains",
+        "evidence": [
+          "path structure"
+        ],
+        "note": "Deterministic package path containment."
+      },
+      {
+        "edge_id": "dir:10-contains-file:10/format.temp",
+        "source": "dir:10",
+        "target": "file:10/format.temp",
+        "relation": "contains",
+        "evidence": [
+          "path structure"
+        ],
+        "note": "Deterministic package path containment."
+      },
+      {
+        "edge_id": "dir:10-contains-file:10/specpar",
+        "source": "dir:10",
+        "target": "file:10/specpar",
+        "relation": "contains",
+        "evidence": [
+          "path structure"
+        ],
+        "note": "Deterministic package path containment."
+      },
+      {
+        "edge_id": "dir:10-contains-file:10/pulseprogram",
+        "source": "dir:10",
+        "target": "file:10/pulseprogram",
+        "relation": "contains",
+        "evidence": [
+          "path structure"
+        ],
+        "note": "Deterministic package path containment."
+      },
+      {
+        "edge_id": "dir:10-contains-file:10/fid",
+        "source": "dir:10",
+        "target": "file:10/fid",
+        "relation": "contains",
+        "evidence": [
+          "path structure"
+        ],
+        "note": "Deterministic package path containment."
+      },
+      {
+        "edge_id": "dir:10-contains-file:10/fq1list",
+        "source": "dir:10",
+        "target": "file:10/fq1list",
+        "relation": "contains",
+        "evidence": [
+          "path structure"
+        ],
+        "note": "Deterministic package path containment."
+      },
+      {
+        "edge_id": "dir:10/pdata/1-contains-file:10/pdata/1/title",
+        "source": "dir:10/pdata/1",
+        "target": "file:10/pdata/1/title",
+        "relation": "contains",
+        "evidence": [
+          "path structure"
+        ],
+        "note": "Deterministic package path containment."
+      },
+      {
+        "edge_id": "dir:10-contains-file:10/scon2",
+        "source": "dir:10",
+        "target": "file:10/scon2",
+        "relation": "contains",
+        "evidence": [
+          "path structure"
+        ],
+        "note": "Deterministic package path containment."
+      },
+      {
+        "edge_id": "dir:10-contains-file:10/shimvalues",
+        "source": "dir:10",
+        "target": "file:10/shimvalues",
+        "relation": "contains",
+        "evidence": [
+          "path structure"
+        ],
+        "note": "Deterministic package path containment."
+      },
+      {
+        "edge_id": "dir:10-contains-file:10/uxnmr.info",
+        "source": "dir:10",
+        "target": "file:10/uxnmr.info",
+        "relation": "contains",
+        "evidence": [
+          "path structure"
+        ],
+        "note": "Deterministic package path containment."
+      },
+      {
+        "edge_id": "dir:10-contains-file:10/uxnmr.par",
+        "source": "dir:10",
+        "target": "file:10/uxnmr.par",
+        "relation": "contains",
+        "evidence": [
+          "path structure"
+        ],
+        "note": "Deterministic package path containment."
+      },
+      {
+        "edge_id": "dir:10-contains-file:10/prosol_History",
+        "source": "dir:10",
+        "target": "file:10/prosol_History",
+        "relation": "contains",
+        "evidence": [
+          "path structure"
+        ],
+        "note": "Deterministic package path containment."
+      },
+      {
+        "edge_id": "file:10/acqus-parameterizes-group:acquisition_settings",
+        "source": "file:10/acqus",
+        "target": "group:acquisition_settings",
+        "relation": "parameterizes",
+        "evidence": [
+          "This file contains parameter settings for a Bruker NMR experiment, likely used to control the instrument and define the experimental conditions. It includes various acquisition and processing parameters."
+        ],
+        "note": "Deterministic group assignment from validated file summary."
+      },
+      {
+        "edge_id": "file:10/acqus-parameterizes-group:processing_settings",
+        "source": "file:10/acqus",
+        "target": "group:processing_settings",
+        "relation": "parameterizes",
+        "evidence": [
+          "This file contains parameter settings for a Bruker NMR experiment, likely used to control the instrument and define the experimental conditions. It includes various acquisition and processing parameters."
+        ],
+        "note": "Deterministic group assignment from validated file summary."
+      },
+      {
+        "edge_id": "file:10/acqus-parameterizes-group:instrument_settings",
+        "source": "file:10/acqus",
+        "target": "group:instrument_settings",
+        "relation": "parameterizes",
+        "evidence": [
+          "This file contains parameter settings for a Bruker NMR experiment, likely used to control the instrument and define the experimental conditions. It includes various acquisition and processing parameters."
+        ],
+        "note": "Deterministic group assignment from validated file summary."
+      },
+      {
+        "edge_id": "file:10/pdata/1/proc-parameterizes-group:acquisition_settings",
+        "source": "file:10/pdata/1/proc",
+        "target": "group:acquisition_settings",
+        "relation": "parameterizes",
+        "evidence": [
+          "This file contains parameter values and settings for a 1H NMR experiment, likely used by Bruker TopSpin software. It defines various acquisition and processing parameters."
+        ],
+        "note": "Deterministic group assignment from validated file summary."
+      },
+      {
+        "edge_id": "file:10/pdata/1/proc-parameterizes-group:processing_settings",
+        "source": "file:10/pdata/1/proc",
+        "target": "group:processing_settings",
+        "relation": "parameterizes",
+        "evidence": [
+          "This file contains parameter values and settings for a 1H NMR experiment, likely used by Bruker TopSpin software. It defines various acquisition and processing parameters."
+        ],
+        "note": "Deterministic group assignment from validated file summary."
+      },
+      {
+        "edge_id": "file:10/pdata/1/proc-parameterizes-group:instrument_settings",
+        "source": "file:10/pdata/1/proc",
+        "target": "group:instrument_settings",
+        "relation": "parameterizes",
+        "evidence": [
+          "This file contains parameter values and settings for a 1H NMR experiment, likely used by Bruker TopSpin software. It defines various acquisition and processing parameters."
+        ],
+        "note": "Deterministic group assignment from validated file summary."
+      },
+      {
+        "edge_id": "file:10/pdata/1/procs-parameterizes-group:acquisition_settings",
+        "source": "file:10/pdata/1/procs",
+        "target": "group:acquisition_settings",
+        "relation": "parameterizes",
+        "evidence": [
+          "This file contains parameter values and settings for a 1H NMR experiment, likely used to control the Bruker TopSpin software. It defines various acquisition and processing parameters."
+        ],
+        "note": "Deterministic group assignment from validated file summary."
+      },
+      {
+        "edge_id": "file:10/pdata/1/procs-parameterizes-group:processing_settings",
+        "source": "file:10/pdata/1/procs",
+        "target": "group:processing_settings",
+        "relation": "parameterizes",
+        "evidence": [
+          "This file contains parameter values and settings for a 1H NMR experiment, likely used to control the Bruker TopSpin software. It defines various acquisition and processing parameters."
+        ],
+        "note": "Deterministic group assignment from validated file summary."
+      },
+      {
+        "edge_id": "file:10/pdata/1/procs-parameterizes-group:instrument_settings",
+        "source": "file:10/pdata/1/procs",
+        "target": "group:instrument_settings",
+        "relation": "parameterizes",
+        "evidence": [
+          "This file contains parameter values and settings for a 1H NMR experiment, likely used to control the Bruker TopSpin software. It defines various acquisition and processing parameters."
+        ],
+        "note": "Deterministic group assignment from validated file summary."
+      },
+      {
+        "edge_id": "file:10/acqu-parameterizes-group:acquisition_settings",
+        "source": "file:10/acqu",
+        "target": "group:acquisition_settings",
+        "relation": "parameterizes",
+        "evidence": [
+          "This file contains parameter settings for a Bruker 1H NMR experiment, likely used to control the instrument and define the experimental conditions. It includes various parameters related to pulse sequences, frequencies, and data acquisition."
+        ],
+        "note": "Deterministic group assignment from validated file summary."
+      },
+      {
+        "edge_id": "file:10/acqu-parameterizes-group:instrument_settings",
+        "source": "file:10/acqu",
+        "target": "group:instrument_settings",
+        "relation": "parameterizes",
+        "evidence": [
+          "This file contains parameter settings for a Bruker 1H NMR experiment, likely used to control the instrument and define the experimental conditions. It includes various parameters related to pulse sequences, frequencies, and data acquisition."
+        ],
+        "note": "Deterministic group assignment from validated file summary."
+      },
+      {
+        "edge_id": "file:10/audita.txt-documents-group:audit_provenance",
+        "source": "file:10/audita.txt",
+        "target": "group:audit_provenance",
+        "relation": "documents",
+        "evidence": [
+          "This file contains an audit trail generated by Bruker TOPSPIN NMR software. It records actions performed during data acquisition, including user information, configuration hashes, and data hashes."
+        ],
+        "note": "Deterministic group assignment from validated file summary."
+      },
+      {
+        "edge_id": "file:10/audita.txt-parameterizes-group:acquisition_settings",
+        "source": "file:10/audita.txt",
+        "target": "group:acquisition_settings",
+        "relation": "parameterizes",
+        "evidence": [
+          "This file contains an audit trail generated by Bruker TOPSPIN NMR software. It records actions performed during data acquisition, including user information, configuration hashes, and data hashes."
+        ],
+        "note": "Deterministic group assignment from validated file summary."
+      },
+      {
+        "edge_id": "file:10/pdata/1/outd-parameterizes-group:instrument_settings",
+        "source": "file:10/pdata/1/outd",
+        "target": "group:instrument_settings",
+        "relation": "parameterizes",
+        "evidence": [
+          "This file is a parameter file for Bruker TopSpin NMR software, containing configuration settings and metadata related to a 1D NMR experiment."
+        ],
+        "note": "Deterministic group assignment from validated file summary."
+      },
+      {
+        "edge_id": "file:10/format.temp-parameterizes-group:acquisition_settings",
+        "source": "file:10/format.temp",
+        "target": "group:acquisition_settings",
+        "relation": "parameterizes",
+        "evidence": [
+          "This file contains acquisition parameters for a 1H NMR experiment, likely generated by a Bruker instrument. It defines variables like frequency, time domain size, and pulse durations."
+        ],
+        "note": "Deterministic group assignment from validated file summary."
+      },
+      {
+        "edge_id": "file:10/specpar-parameterizes-group:acquisition_settings",
+        "source": "file:10/specpar",
+        "target": "group:acquisition_settings",
+        "relation": "parameterizes",
+        "evidence": [
+          "This file contains parameter values for a Bruker NMR experiment, including instrument settings and acquisition parameters. It appears to be a configuration file used by the TOPSPIN software."
+        ],
+        "note": "Deterministic group assignment from validated file summary."
+      },
+      {
+        "edge_id": "file:10/specpar-parameterizes-group:instrument_settings",
+        "source": "file:10/specpar",
+        "target": "group:instrument_settings",
+        "relation": "parameterizes",
+        "evidence": [
+          "This file contains parameter values for a Bruker NMR experiment, including instrument settings and acquisition parameters. It appears to be a configuration file used by the TOPSPIN software."
+        ],
+        "note": "Deterministic group assignment from validated file summary."
+      },
+      {
+        "edge_id": "file:10/pulseprogram-parameterizes-group:parameter_settings",
+        "source": "file:10/pulseprogram",
+        "target": "group:parameter_settings",
+        "relation": "parameterizes",
+        "evidence": [
+          "This file contains a Bruker NMR pulse program, likely for a 1D experiment. It defines parameters and sequences for the NMR experiment."
+        ],
+        "note": "Deterministic group assignment from validated file summary."
+      },
+      {
+        "edge_id": "file:10/shimvalues-parameterizes-group:instrument_settings",
+        "source": "file:10/shimvalues",
+        "target": "group:instrument_settings",
+        "relation": "parameterizes",
+        "evidence": [
+          "This file contains shim values and lock parameters for a Bruker NMR spectrometer. It includes gradient settings and shim current values."
+        ],
+        "note": "Deterministic group assignment from validated file summary."
+      },
+      {
+        "edge_id": "file:10/uxnmr.info-parameterizes-group:parameter_settings",
+        "source": "file:10/uxnmr.info",
+        "target": "group:parameter_settings",
+        "relation": "parameterizes",
+        "evidence": [
+          "This file contains configuration information for a Bruker Avance III NMR spectrometer, including hardware details, network addresses, and cable connections."
+        ],
+        "note": "Deterministic group assignment from validated file summary."
+      },
+      {
+        "edge_id": "group:instrument_settings-parameterizes-group:acquisition_settings",
+        "source": "group:instrument_settings",
+        "target": "group:acquisition_settings",
+        "relation": "parameterizes",
+        "evidence": [
+          "instrument settings",
+          "acquisition settings"
+        ],
+        "note": "Conservative relation inferred from seeded package roles."
+      },
+      {
+        "edge_id": "file:10/acqus-documents-group:nmr_experiment-0",
+        "source": "file:10/acqus",
+        "target": "group:nmr_experiment",
+        "relation": "documents",
+        "evidence": [
+          "NMR experiment"
+        ],
+        "note": "Describes the NMR experiment settings."
+      },
+      {
+        "edge_id": "file:10/acqu-documents-group:nmr_experiment-1",
+        "source": "file:10/acqu",
+        "target": "group:nmr_experiment",
+        "relation": "documents",
+        "evidence": [
+          "NMR experiment"
+        ],
+        "note": "Describes the NMR experiment settings."
+      },
+      {
+        "edge_id": "file:10/format.temp-documents-group:nmr_experiment-2",
+        "source": "file:10/format.temp",
+        "target": "group:nmr_experiment",
+        "relation": "documents",
+        "evidence": [
+          "NMR experiment"
+        ],
+        "note": "Describes the NMR experiment settings."
+      },
+      {
+        "edge_id": "file:10/pulseprogram-documents-group:pulse_sequences-3",
+        "source": "file:10/pulseprogram",
+        "target": "group:pulse_sequences",
+        "relation": "documents",
+        "evidence": [
+          "pulse program"
+        ],
+        "note": "Documents the pulse sequence definition."
+      },
+      {
+        "edge_id": "group:nmr_experiment-parameterizes-group:instrument_settings-4",
+        "source": "group:nmr_experiment",
+        "target": "group:instrument_settings",
+        "relation": "parameterizes",
+        "evidence": [
+          "parameter settings",
+          "instrument settings"
+        ],
+        "note": "NMR experiment is parameterized by instrument settings."
+      },
+      {
+        "edge_id": "file:10/shimvalues-documents-group:instrument_settings-5",
+        "source": "file:10/shimvalues",
+        "target": "group:instrument_settings",
+        "relation": "documents",
+        "evidence": [
+          "shim values",
+          "lock parameters"
+        ],
+        "note": "Documents instrument settings."
+      },
+      {
+        "edge_id": "file:10/uxnmr.info-documents-group:parameter_settings-6",
+        "source": "file:10/uxnmr.info",
+        "target": "group:parameter_settings",
+        "relation": "documents",
+        "evidence": [
+          "configuration information"
+        ],
+        "note": "Documents parameter settings."
+      }
+    ],
+    "uncertainties": []
+  }
+}
