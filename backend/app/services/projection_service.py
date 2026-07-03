@@ -77,10 +77,15 @@ class _ProvenanceCoreIntentResponse(BaseModel):
 
 PROVENANCE_CORE_SYSTEM_PROMPT = (
     "Answer one narrow generic provenance-core question for a DCAT-AP+ dataset draft. "
-    "Focus on the scientific or technical DataGeneratingActivity that produced the dataset. "
-    "Classify each candidate by its role in that activity before placing it in exactly one relation. "
+    "Focus on the final scientific or technical DataGeneratingActivity that produced the dataset. "
+    "Represent prior workflow stages as input activities of that final activity when evidence distinguishes "
+    "stages, tools, inputs, and outputs. "
+    "Emit exactly one final DataGeneratingActivity intent; prior activities belong in input_activities. "
+    "Classify each candidate by its role in that final activity before placing it in exactly one relation. "
     "Use only the supplied orientation context. Use concise labels and descriptions only; "
     "do not emit JSON paths, schema patches, provenance bookkeeping, or nested profile objects. "
+    "Do not label profile entities with source filenames alone; use semantic content or data-product labels "
+    "when supported, or omit the entity. "
     "Return empty arrays when the orientation context does not support a relation. "
     "When unsure between agent and plan/input, prefer plan/input or omit."
 )
@@ -2932,41 +2937,39 @@ class ProjectionService:
             activities[0] = activity
 
         changed_paths: list[str] = []
+        activity_path = "/was_generated_by/0"
         title = response.activity_title.strip()
         if title and not self._semantic_value_present(activity.get("title")):
             activity["title"] = [title]
-            changed_paths.append("/was_generated_by/0/title")
+            changed_paths.append(f"{activity_path}/title")
         description = response.activity_description.strip()
         if description and not self._semantic_value_present(activity.get("description")):
             activity["description"] = [description]
-            changed_paths.append("/was_generated_by/0/description")
+            changed_paths.append(f"{activity_path}/description")
 
         if response.plan is not None and not self._semantic_value_present(activity.get("realized_plan")):
             plan = self._core_plan_instance(response.plan)
             if plan is not None:
                 activity["realized_plan"] = plan
-                changed_paths.append("/was_generated_by/0/realized_plan")
+                changed_paths.append(f"{activity_path}/realized_plan")
 
         relation_specs = [
-            ("carried_out_by", "agentic-entity", response.agents, 3, False),
-            ("evaluated_entity", "evaluated-entity", response.evaluated_entities, 3, False),
-            ("evaluated_activity", "evaluated-activity", response.evaluated_activities, 3, True),
-            ("had_input_entity", "input-entity", response.input_entities, 3, False),
-            ("had_input_activity", "input-activity", response.input_activities, 3, True),
-            ("had_output_entity", "output-entity", response.output_entities, 3, False),
+            ("carried_out_by", "agentic-entity", response.agents, False),
+            ("evaluated_entity", "evaluated-entity", response.evaluated_entities, False),
+            ("evaluated_activity", "evaluated-activity", response.evaluated_activities, True),
+            ("had_input_entity", "input-entity", response.input_entities, False),
+            ("had_input_activity", "input-activity", response.input_activities, True),
+            ("had_output_entity", "output-entity", response.output_entities, False),
         ]
-        for field_name, kind, intents, limit, list_text in relation_specs:
-            allowed = limit
-            if field_name == "evaluated_activity":
-                allowed = max(0, 3 - len(activity.get("evaluated_entity") or []))
+        for field_name, kind, intents, list_text in relation_specs:
             changed_paths.extend(
                 self._append_core_relation_intents(
                     data_package_id=data_package_id,
                     activity=activity,
+                    activity_path=activity_path,
                     field_name=field_name,
                     kind=kind,
                     intents=intents,
-                    limit=allowed,
                     list_text=list_text,
                 )
             )
@@ -2977,13 +2980,13 @@ class ProjectionService:
         *,
         data_package_id: str,
         activity: dict[str, Any],
+        activity_path: str,
         field_name: str,
         kind: str,
         intents: list[_CoreObjectIntent],
-        limit: int,
         list_text: bool,
     ) -> list[str]:
-        if limit <= 0:
+        if not intents:
             return []
         values = activity.get(field_name)
         if not isinstance(values, list):
@@ -2996,8 +2999,8 @@ class ProjectionService:
             if isinstance(item, dict)
         }
         for intent in intents:
-            if len(values) >= limit:
-                break
+            if kind == "input-entity" and self._looks_like_source_filename(intent.title):
+                continue
             instance = self._core_relation_instance(
                 data_package_id=data_package_id,
                 kind=kind,
@@ -3012,10 +3015,24 @@ class ProjectionService:
                 continue
             seen.add(key)
             values.append(instance)
-            changed_paths.append(f"/was_generated_by/0/{field_name}/{len(values) - 1}")
+            changed_paths.append(f"{activity_path}/{field_name}/{len(values) - 1}")
         if not values:
             activity.pop(field_name, None)
         return changed_paths
+
+    @staticmethod
+    def _looks_like_source_filename(label: str) -> bool:
+        stripped = (label or "").strip()
+        if not stripped or len(stripped) > 180:
+            return False
+        normalized = stripped.replace("\\", "/")
+        basename = normalized.rsplit("/", 1)[-1]
+        if not basename:
+            return False
+        if basename != stripped:
+            return True
+        match = re.search(r"\.([A-Za-z0-9]{1,8})$", basename)
+        return bool(match and re.search(r"[A-Za-z]", match.group(1)))
 
     def _core_relation_instance(
         self,
@@ -3127,33 +3144,68 @@ class ProjectionService:
     ) -> str:
         payload = {
             "question": (
-                "Construct the generic provenance core. Return one combined acquisition/processing "
-                "DataGeneratingActivity with supported agents, evaluated targets, inputs, outputs, and plan. "
-                "Put generated data products in output_entities, not evaluated_entities. Keep only profile-level "
-                "objects, not low-level internal parameters. Silently classify every candidate by relation role "
-                "before emitting it, and place each object in at most one relation."
+                "Construct the generic provenance core. Return the final DataGeneratingActivity that is "
+                "supported by the orientation context, with its supported agents, evaluated targets, inputs, "
+                "outputs, prior input activities, and plan. Put generated data products in output_entities, "
+                "not evaluated_entities. Keep only profile-level objects, not low-level internal parameters. "
+                "Return exactly one activity_title/activity_description pair for the final activity. Put prior "
+                "stages in input_activities only when they are evidence-supported predecessors of that final "
+                "activity. Silently classify every candidate by relation role before emitting it, and place each "
+                "object in at most one relation within the final activity."
             ),
-            "limits": {
-                "data_generating_activity": 1,
-                "evaluated_entities_and_activities_total": 3,
-                "agents": 3,
-                "plan": 1,
-                "input_entities": 3,
-                "input_activities": 3,
-                "output_entities": 3,
+            "activity_decomposition_guidance": {
+                "granularity": (
+                    "Do not assume a fixed number of relation objects or prior workflow stages. The dataset "
+                    "should have one final was_generated_by activity; represent earlier stages through that "
+                    "activity's input_activities when supported."
+                ),
+                "combine_when": (
+                    "Use one activity when the context only supports an undifferentiated generation workflow, "
+                    "or when acquisition, processing, conversion, and export cannot be separated by evidence."
+                ),
+                "split_when": (
+                    "Add prior input_activities when the context explicitly distinguishes earlier stages with "
+                    "different tools, methods, inputs, outputs, or temporal dependency."
+                ),
+                "input_activity_rule": (
+                    "Use input_activities only for prior activities consumed or depended on by the current "
+                    "activity. Do not model a stage as an input_activity of itself or of a broad combined activity."
+                ),
+                "domain_agnostic_example": {
+                    "context": (
+                        "A package states that a physical signal was measured with an instrument, then a "
+                        "separate software step transformed the raw signal into a derived table."
+                    ),
+                    "preferred_shape": (
+                        "Emit one final activity: data processing. Put the software in carried_out_by, the "
+                        "prior signal acquisition in input_activities, the raw signal data in input_entities, "
+                        "and the derived table in output_entities. The acquisition is not a second direct "
+                        "dataset was_generated_by relation."
+                    ),
+                    "combined_shape": (
+                        "If the evidence only says that a dataset was generated from the signal and derived "
+                        "table without separating stages, use one combined generation activity instead."
+                    ),
+                },
             },
             "current_draft": document,
             "orientation_context": orientation_context,
             "rules": [
                 "Use only the orientation context in this prompt.",
                 "Do not invent low-level file parameters as profile entities.",
+                "Do not assume a fixed number of agents, inputs, outputs, targets, or prior input activities.",
+                "Keep Dataset.was_generated_by focused on the final dataset-generating activity.",
+                "Use prior input_activities when evidence supports distinct earlier workflow stages.",
+                "Use one combined DataGeneratingActivity when the evidence does not support a clear activity boundary.",
                 "Use output_entities for generated dataset products.",
                 "Use evaluated_entities or evaluated_activities for the thing being measured, observed, or analyzed.",
                 "Use agents only for participants that perform, control, execute, operate, or are responsible for the activity.",
                 "Do not put vendors or manufacturers in agents unless the context says they performed, controlled, operated, or were responsible for the activity.",
                 "Do not put methods, protocols, scripts, recipes, program definitions, parameter files, settings, or instruction sets in agents.",
                 "Use plan for the method, protocol, workflow, recipe, program definition, or instruction set that specifies how the activity is done.",
-                "Use input_entities for files, configurations, materials, or other entities consumed, read, transformed, or used by the activity.",
+                "Use input_entities for semantic inputs, configurations, materials, source data, or other entities consumed, read, transformed, or used by the activity.",
+                "Use input_activities for prior activities whose outputs or occurrence are consumed by a later activity.",
+                "File names and paths are evidence cues, not profile labels. Do not emit one had_input_entity per source file. Only emit an input file when its content or product role is clear, and label it by semantic role rather than filename.",
                 "If an object could be either an agent or a plan/input, choose plan/input or omit it.",
             ],
         }

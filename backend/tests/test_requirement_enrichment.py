@@ -770,7 +770,7 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         pass
 
-    def test_provenance_core_intents_are_backend_shaped_and_capped(self):
+    def test_provenance_core_intents_are_backend_shaped(self):
         service = WorkflowService(profile_service=FakeProfileService(), settings=Settings())
         document = {
             "id": "pkg",
@@ -810,11 +810,43 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(activity["realized_plan"]["title"], "zg30 pulse program")
         self.assertEqual(activity["carried_out_by"][0]["title"], "Avance III NMR spectrometer")
         self.assertEqual(activity["evaluated_entity"][0]["title"], "1H NMR measurement")
-        self.assertEqual(len(activity["evaluated_entity"]) + len(activity["evaluated_activity"]), 3)
+        self.assertEqual(len(activity["evaluated_entity"]) + len(activity["evaluated_activity"]), 4)
         self.assertEqual(activity["had_input_entity"][0]["title"], "FID")
         self.assertEqual(activity["had_output_entity"][0]["title"], "Processed NMR spectrum")
         self.assertIn("/was_generated_by/0/carried_out_by/0", changed_paths)
         self.assertIn("/was_generated_by/0/evaluated_entity/0", changed_paths)
+
+    def test_provenance_core_intents_attach_prior_stages_to_final_activity(self):
+        service = WorkflowService(profile_service=FakeProfileService(), settings=Settings())
+        document = {
+            "id": "pkg",
+            "title": ["Dataset"],
+            "description": ["Dataset description."],
+            "was_generated_by": [],
+        }
+        response = _ProvenanceCoreIntentResponse(
+            answer="Split acquisition and processing because the context distinguishes the stages.",
+            activity_title="Data processing",
+            activity_description="Raw signal data was transformed into a derived table.",
+            agents=[_CoreObjectIntent(title="Processing software", description="Software used for processing.")],
+            input_activities=[_CoreObjectIntent(title="Signal acquisition", description="Prior acquisition activity.")],
+            input_entities=[_CoreObjectIntent(title="Raw signal data", description="Raw acquired data.")],
+            output_entities=[_CoreObjectIntent(title="Derived data table", description="Processed result table.")],
+        )
+
+        updated, changed_paths = service._apply_provenance_core_intents(
+            data_package_id="pkg",
+            document=document,
+            response=response,
+        )
+
+        activities = updated["was_generated_by"]
+        self.assertEqual(len(activities), 1)
+        self.assertEqual(activities[0]["title"], ["Data processing"])
+        self.assertEqual(activities[0]["had_input_activity"][0]["title"], ["Signal acquisition"])
+        self.assertEqual(activities[0]["had_input_entity"][0]["title"], "Raw signal data")
+        self.assertIn("/was_generated_by/0/had_input_activity/0", changed_paths)
+        self.assertIn("/was_generated_by/0/had_output_entity/0", changed_paths)
 
     def test_provenance_core_prompt_uses_draft_description_and_file_orientation(self):
         prompt = WorkflowService._provenance_core_prompt(
@@ -828,7 +860,13 @@ class RequirementEnrichmentServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("dataset_summary", payload["orientation_context"])
         self.assertNotIn("selected_evidence", payload)
         self.assertNotIn("context_window", payload)
+        self.assertNotIn("limits", payload)
+        self.assertIn("activity_decomposition_guidance", payload)
+        self.assertIn("domain_agnostic_example", payload["activity_decomposition_guidance"])
         rules = "\n".join(payload["rules"])
+        self.assertIn("Do not assume a fixed number of agents", rules)
+        self.assertIn("Keep Dataset.was_generated_by focused on the final", rules)
+        self.assertIn("Use input_activities for prior activities", rules)
         self.assertIn("Do not put vendors or manufacturers in agents unless the context says they performed", rules)
         self.assertIn("Do not put methods, protocols, scripts, recipes, program definitions", rules)
 
