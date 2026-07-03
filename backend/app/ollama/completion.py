@@ -194,6 +194,10 @@ def _effective_temperature(client: OllamaClientWrapper, fallback: float) -> floa
     return float(getattr(client, "generation_temperature", fallback))
 
 
+def _effective_seed(client: OllamaClientWrapper, fallback: int) -> int:
+    return int(getattr(client, "generation_seed", fallback))
+
+
 def _output_token_cap(
     *,
     client: OllamaClientWrapper,
@@ -222,7 +226,7 @@ def _structured_generation_options(
 ) -> ollama.Options:
     return ollama.Options(
         temperature=_effective_temperature(client, temperature),
-        seed=seed,
+        seed=_effective_seed(client, seed),
         num_ctx=num_ctx,
         num_predict=_output_token_cap(
             client=client,
@@ -244,6 +248,7 @@ def _text_generation_options(
 ) -> dict[str, Any]:
     values = dict(options or {})
     values["temperature"] = _effective_temperature(client, float(values.get("temperature", 0.0)))
+    values["seed"] = _effective_seed(client, int(values.get("seed", 42)))
     values["num_predict"] = _output_token_cap(
         client=client,
         system=system,

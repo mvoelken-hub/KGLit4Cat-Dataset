@@ -247,6 +247,7 @@ async def ollama_config_payload(settings: Settings, ollama_client: OllamaClientW
     input_token_budget = int(max_context_length * 0.75)
     embedding_num_gpu = int(getattr(ollama_client, "embed_num_gpu", getattr(settings, "ollama_embed_num_gpu", -1)))
     generation_temperature = float(getattr(ollama_client, "generation_temperature", getattr(settings, "ollama_generation_temperature", 0.0)))
+    generation_seed = int(getattr(ollama_client, "generation_seed", getattr(settings, "ollama_generation_seed", 42)))
     enforce_output_token_limit = bool(getattr(ollama_client, "enforce_output_token_limit", getattr(settings, "ollama_enforce_output_token_limit", True)))
     chat_model = getattr(ollama_client, "chat_model", settings.ollama_chat_model)
     embedding_model = getattr(ollama_client, "embed_model", settings.ollama_embed_model)
@@ -277,6 +278,7 @@ async def ollama_config_payload(settings: Settings, ollama_client: OllamaClientW
             "embedding_num_gpu": embedding_num_gpu,
             "embedding_gpu_label": embedding_gpu_label(embedding_num_gpu),
             "generation_temperature": generation_temperature,
+            "generation_seed": generation_seed,
             "enforce_output_token_limit": enforce_output_token_limit,
             "resets_on_api_restart": True,
         },
@@ -313,6 +315,8 @@ def apply_runtime_config(
         settings.ollama_embed_num_gpu = updates["embedding_num_gpu"]
     if "generation_temperature" in updates:
         settings.ollama_generation_temperature = updates["generation_temperature"]
+    if "generation_seed" in updates:
+        settings.ollama_generation_seed = updates["generation_seed"]
     if "enforce_output_token_limit" in updates:
         settings.ollama_enforce_output_token_limit = updates["enforce_output_token_limit"]
 
@@ -322,6 +326,7 @@ def apply_runtime_config(
         max_context_length=updates.get("max_context_length"),
         embed_num_gpu=updates.get("embedding_num_gpu"),
         generation_temperature=updates.get("generation_temperature"),
+        generation_seed=updates.get("generation_seed"),
         enforce_output_token_limit=updates.get("enforce_output_token_limit"),
     )
 

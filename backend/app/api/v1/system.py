@@ -38,6 +38,7 @@ class OllamaRuntimeConfigPatch(BaseModel):
     embedding_batch_size: int | None = Field(None, ge=1, le=2048)
     embedding_num_gpu: int | None = Field(None, ge=-1, le=999)
     generation_temperature: float | None = Field(None, ge=0.0, le=2.0)
+    generation_seed: int | None = Field(None, ge=0)
     enforce_output_token_limit: bool | None = None
 
 

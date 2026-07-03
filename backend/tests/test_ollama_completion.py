@@ -383,6 +383,23 @@ class GenerateStructuredHappyPathTests(IsolatedAsyncioTestCase):
 
         self.assertEqual(client.calls[0]["options"].temperature, 0.0)
 
+    async def test_wrapper_seed_overrides_call_seed(self):
+        client = FakeOllamaClient([
+            FakeGenerateResponse(response='{"answer": "x", "score": 1}'),
+        ])
+        client.generation_seed = 987
+
+        await generate_structured(
+            client,
+            model="qwen3.5:4b",
+            system="sys",
+            prompt="prompt",
+            output_type=SimpleOutput,
+            seed=123,
+        )
+
+        self.assertEqual(client.calls[0]["options"].seed, 987)
+
     async def test_output_token_limit_is_derived_from_context(self):
         client = FakeOllamaClient([
             FakeGenerateResponse(response='{"answer": "x", "score": 1}'),
@@ -442,6 +459,7 @@ class GenerateStructuredHappyPathTests(IsolatedAsyncioTestCase):
             FakeGenerateResponse(response="ok"),
         ])
         client.generation_temperature = 0.0
+        client.generation_seed = 987
         client.enforce_output_token_limit = True
 
         await generate_text(
@@ -453,6 +471,7 @@ class GenerateStructuredHappyPathTests(IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(client.calls[0]["options"]["temperature"], 0.0)
+        self.assertEqual(client.calls[0]["options"]["seed"], 987)
         self.assertEqual(client.calls[0]["options"]["num_predict"], 5)
 
     async def test_injects_json_schema_into_system_prompt_by_default(self):

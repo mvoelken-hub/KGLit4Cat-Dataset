@@ -437,6 +437,18 @@ The workflow then assembles a requirement report that combines three scores: a c
 The report distinguishes requirements that were patched, requirements that were reconstructed, and requirements that remain unresolved.
 This report is the basis for the manual curation step that follows.
 
-\section{Vocabulary Grounding}
-\label{sec:vocabulary_grounding}
+\section{Vocabulary Mapping}
+\label{sec:vocabulary_mapping}
+
+Vocabulary mapping is performed after the schema-valid \ac{DCAT-AP+} draft has been reconstructed.
+The stage follows the classifier mixin pattern discussed in \cref{sec:dcat-ap-plus-chemdcat-ap}.
+In \ac{DCAT-AP+}, this pattern provides the classification slots \texttt{type} and \texttt{rdf\_type} for the central profile shapes \cite{dcatapplusDocumentation}.
+The two slots carry different semantic commitments.
+The \texttt{type} slot maps to \texttt{dcterms:type} and supports controlled-vocabulary categorization.
+The \texttt{rdf\_type} slot maps to \texttt{rdf:type} and supports links to classes from formal ontologies.
+It can be applied to activities, entities, agents, plans, surroundings, and qualitative or quantitative attributes.
+This workflow populates the \texttt{dcterms:type} slot with terms from \ac{Voc4Cat} and \ac{nmrCV}, which are structured taxonomies and not formal ontologies in the strict sense.
+The \ac{QUDT} ontology is used to populate the \texttt{unit} and \texttt{has\_quantity\_kind} slots of quantitative attributes.
+The \texttt{rdf\_type} slot is not populated in this workflow.
+
 

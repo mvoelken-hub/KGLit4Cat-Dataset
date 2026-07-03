@@ -17,6 +17,7 @@ class FakeSettings:
     embedding_batch_size = 32
     max_context_length = 8192
     ollama_generation_temperature = 0.0
+    ollama_generation_seed = 42
     ollama_enforce_output_token_limit = True
 
 
@@ -51,6 +52,7 @@ class FakeOllamaClient:
     max_context_length = 4096
     embed_num_gpu = 0
     generation_temperature = 0.0
+    generation_seed = 42
     enforce_output_token_limit = True
 
     def __init__(self):
@@ -107,6 +109,8 @@ class FakeOllamaClient:
             self.embed_num_gpu = kwargs["embed_num_gpu"]
         if kwargs.get("generation_temperature") is not None:
             self.generation_temperature = kwargs["generation_temperature"]
+        if kwargs.get("generation_seed") is not None:
+            self.generation_seed = kwargs["generation_seed"]
         if kwargs.get("enforce_output_token_limit") is not None:
             self.enforce_output_token_limit = kwargs["enforce_output_token_limit"]
 
@@ -148,6 +152,7 @@ class TestSystemApi:
         assert payload["runtime"]["max_context_length"] == 4096
         assert payload["runtime"]["embedding_num_gpu"] == 0
         assert payload["runtime"]["generation_temperature"] == 0.0
+        assert payload["runtime"]["generation_seed"] == 42
         assert payload["runtime"]["enforce_output_token_limit"] is True
         assert payload["running"]["chat_model_loaded"] is True
         assert payload["running"]["embedding_model_loaded"] is True
@@ -234,6 +239,7 @@ class TestSystemApi:
                 "embedding_batch_size": 8,
                 "embedding_num_gpu": -1,
                 "generation_temperature": 0.2,
+                "generation_seed": 123,
                 "enforce_output_token_limit": False,
             },
         )
@@ -246,6 +252,7 @@ class TestSystemApi:
         assert payload["runtime"]["embedding_batch_size"] == 8
         assert payload["runtime"]["embedding_num_gpu"] == -1
         assert payload["runtime"]["generation_temperature"] == 0.2
+        assert payload["runtime"]["generation_seed"] == 123
         assert payload["runtime"]["enforce_output_token_limit"] is False
         assert fake_ollama.updates[-1] == {
             "chat_model": "next-chat",
@@ -253,6 +260,7 @@ class TestSystemApi:
             "max_context_length": 16384,
             "embed_num_gpu": -1,
             "generation_temperature": 0.2,
+            "generation_seed": 123,
             "enforce_output_token_limit": False,
         }
 
