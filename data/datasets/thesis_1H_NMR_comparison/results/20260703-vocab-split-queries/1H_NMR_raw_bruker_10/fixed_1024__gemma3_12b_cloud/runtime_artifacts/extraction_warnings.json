@@ -1,9 +1,0 @@
-[
-  "Chunk extraction repair failed for 10/scon2 chunk 18: Max retries exceeded while generating structured output",
-  "Chunk extraction completed with failed chunks: 10/scon2 chunk 18: Max retries exceeded while generating structured output",
-  "Filtered evidence notes: 39 rejected evidence candidates, 41 unsupported evidence candidates, 115 similarity_merged.",
-  "Profile field '/was_generated_by/0/carried_out_by/0/has_qualitative_attribute/1/type' kept raw value 'Institution The NMR experiment was performed at Karlsruher Institut fuer Technologie Karlsruhe Germany, as stated in the uxnmr.par file.'.",
-  "QUDT quantity-kind/unit pair for '/was_generated_by/0/carried_out_by/0/has_quantitative_attribute/0' was not cross-validated via qudt:hasQuantityKind: http://qudt.org/vocab/quantitykind/Length with http://qudt.org/vocab/quantitykind/MassFlowRate. Pair resolver rejected both fields.",
-  "QUDT quantity-kind/unit pair for '/was_generated_by/0/carried_out_by/0/has_quantitative_attribute/1' was not cross-validated via qudt:hasQuantityKind: http://qudt.org/vocab/quantitykind/Length with http://qudt.org/vocab/quantitykind/MassFlowRate. Pair resolver rejected both fields.",
-  "QUDT quantity-kind/unit pair for '/was_generated_by/0/has_quantitative_attribute/0' was not cross-validated via qudt:hasQuantityKind: http://qudt.org/vocab/quantitykind/Time with http://qudt.org/vocab/quantitykind/Time. Pair resolver rejected both fields."
-]

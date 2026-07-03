@@ -1,7 +1,0 @@
-[
-  "Chunk extraction repair failed for 10/specpar chunk 22: Max retries exceeded while generating structured output",
-  "Chunk extraction completed with failed chunks: 10/specpar chunk 22: Max retries exceeded while generating structured output",
-  "Filtered evidence notes: 16 rejected evidence candidates, 17 unsupported evidence candidates, 122 similarity_merged.",
-  "Profile field '/was_generated_by/0/carried_out_by/1/type' kept raw value 'TOPSPIN Software Software used for experiment execution, Fourier transformation, and baseline correction. 2e38a6a6:agentic-entity:topspin-software'.",
-  "Profile field '/was_generated_by/0/has_qualitative_attribute/0/type' kept raw value 'Software The file is processed by dirdata.exe.'."
-]
