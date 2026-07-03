@@ -2842,6 +2842,57 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(attribute["has_quantity_type"]["id"], "http://qudt.org/vocab/quantitykind/Temperature")
         self.assertEqual(attribute["has_quantity_type"]["rdf_type"]["id"], "https://qudt.org/schema/qudt/QuantityKind")
 
+    def test_grounded_profile_document_keeps_term_label_and_vocab_source_for_defined_term(self):
+        schema = {
+            "type": "object",
+            "$defs": {
+                "DefinedTerm": {
+                    "title": "DefinedTerm",
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "title": {"type": "string"},
+                        "from_CV": {"type": "string"},
+                    },
+                }
+            },
+            "properties": {
+                "type": {
+                    "anyOf": [{"$ref": "#/$defs/DefinedTerm"}, {"type": "null"}],
+                },
+            },
+        }
+        normalization = ExtractionNormalization(
+            profile_fields=[
+                ProfileFieldNormalization(
+                    json_path="/type",
+                    field_name="type",
+                    source_value="software | TOPSPIN software",
+                    term=VocabularyTermMapping(
+                        source_value="software | TOPSPIN software",
+                        vocabulary_identifier="nmrCV",
+                        selected_uri="http://nmrML.org/nmrCV#NMR:1400215",
+                        selected_title="Bruker TopSpin software",
+                    ),
+                ),
+            ]
+        )
+
+        grounded = WorkflowService._grounded_profile_document(
+            document={"type": {"id": "raw"}},
+            normalization=normalization,
+            validation_schema=schema,
+        )
+
+        self.assertEqual(
+            grounded["type"],
+            {
+                "id": "http://nmrML.org/nmrCV#NMR:1400215",
+                "title": "Bruker TopSpin software",
+                "from_CV": "nmrCV",
+            },
+        )
+
     async def test_profile_quantity_pair_cross_validation_keeps_compatible_pair(self):
         service, _, _ = make_service([[make_chunk()]])
         state = ExtractionRunState(

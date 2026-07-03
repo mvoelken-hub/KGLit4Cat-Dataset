@@ -7208,13 +7208,23 @@ class ProjectionService:
         rdf_type_term: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         schema = cls._resolve_schema_node(schema, root_schema)
+        for union_key in ("anyOf", "oneOf"):
+            options = schema.get(union_key) if isinstance(schema, dict) else None
+            if isinstance(options, list):
+                for option in options:
+                    if isinstance(option, dict) and cls._schema_accepts_term_object(option, root_schema):
+                        schema = cls._resolve_schema_node(option, root_schema)
+                        break
+                break
         properties = schema.get("properties", {}) if isinstance(schema, dict) else {}
         if not isinstance(properties, dict):
             return {"id": selected_uri}
         value: dict[str, Any] = {"id": selected_uri}
-        if "title" in properties and selected_title is not None:
+        if selected_title is not None and (schema.get("title") == "DefinedTerm" or "title" in properties):
             value["title"] = selected_title
-        if "from_CV" in properties and vocabulary_identifier is not None:
+        if vocabulary_identifier is not None and (
+            schema.get("title") == "DefinedTerm" or "from_CV" in properties
+        ):
             value["from_CV"] = vocabulary_identifier
         if "rdf_type" in properties and rdf_type_term is not None:
             value["rdf_type"] = rdf_type_term
