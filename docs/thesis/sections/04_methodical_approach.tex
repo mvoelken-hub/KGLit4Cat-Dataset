@@ -410,40 +410,46 @@ The backend then applies a lightweight lexical placement check.
 It normalizes the words in the proposed attribute title, description, type label, unit, and value, and compares them with heuristic cues for common attribute families, such as configuration values, software versions, method labels, format descriptors, and generic numeric values.
 The check is used to reject attributes whose inferred category does not fit the parent role or whose label or value is not supported by the selected parent-local evidence.
 Duplicate attributes under the same parent are also rejected.
-The resulting draft, which is enriched with attributes, is the working document for semantic requirement evaluation in the next steps.
+These construction-time checks are local insertion filters.
+They ensure that an attribute intent can be converted into a complete schema-valid attribute object, is supported by the selected parent-local evidence, is not a duplicate under the same parent, and does not obviously contradict coarse role-specific placement cues.
+They do not, however, constitute the final semantic assessment of whether the attribute is attached to the best parent in the provenance structure.
+That broader judgement is deferred to the attribute parent placement requirement described in \cref{sec:semantic_requirement_evaluation}.
+The resulting attribute-enriched draft is therefore treated as the input for the subsequent semantic requirement evaluation.
 
 \subsection{Semantic Requirement Evaluation}
 \label{sec:semantic_requirement_evaluation}
 
 Semantic requirement evaluation checks the attribute-enriched draft against a set of semantic adequacy requirements.
-These requirements are distinct from the completeness criteria checked earlier, as they focus on the semantic quality of the placed values rather than their presence or absence.
+These requirements are distinct from schema-validity checks and missing-field checks, because they evaluate whether placed values have an appropriate meaning in their profile position.
+The goal is therefore not only to determine whether a field is filled, but whether the filled value is semantically suitable for the role it has been assigned.
+
 Eight semantic requirements are defined.
 They cover dataset title identity, dataset description scope, generation activity reality, technical agent kind, method plan presence, activity evaluation target, attribute range decomposition, and attribute parent placement.
-The dataset description scope requirement reflects the earlier draft initialization step.
-The description already comes from the dataset-level summary.
-The semantic check therefore asks whether it remains a compact dataset-level summary and whether it repeats facts that are already represented by structured activity, agent, plan, target, or attribute fields.
-The generation activity requirement checks whether the activity title, description, and type describe a real acquisition, measurement, processing, or generation activity.
-Fields that do not meet this requirement and cannot be streamlined are flagged as unresolved.
-The evaluation target requirement checks aboutness rather than simple presence.
-It asks whether the evaluated entity or evaluated activity is the concrete object measured, observed, analysed, or studied.
+The dataset description scope requirement reflects the earlier draft initialization step, where the description is initialized from the dataset-level summary.
+The semantic check therefore asks whether the description still functions as a compact dataset-level summary, and whether it unnecessarily repeats facts that are already represented by structured activity, agent, plan, target, or attribute fields.
+The generation activity requirement checks whether the core activity title, description, and type describe a real acquisition, measurement, or processing.
+The activity evaluation target requirement checks aboutness rather than simple presence.
+It asks whether the evaluated entity or evaluated activity is the concrete object, signal, sample, process, or activity that is measured, observed, analysed, or studied.
 
 Each semantic requirement declares target paths, evidence hints, and allowed evidence categories.
-For each requirement, the workflow selects a small evidence packet and a context window from the evidence grounding set.
-The workflow then runs a constrained \ac{LLM} evaluation for each semantic requirement.
-The model receives a draft excerpt that contains only the values at the requirement's target paths, the selected evidence, and the context window.
+For each requirement, the workflow selects a requirement-specific evidence packet from the evidence grounding set.
+The workflow then runs a constrained \ac{LLM}-based evaluation for the requirement.
+The model receives a draft excerpt containing the values at the requirement's target paths, together with the selected evidence notes.
 For attribute parent placement, the excerpt is broader.
-It contains the relevant parent objects and their quantitative and qualitative attributes, so the model can reason about placement in the compact draft context.
-It returns one assessment per requirement with a status, a quality score, and a rationale.
-After the \ac{LLM} returns its assessment, the backend applies guard checks.
-These guards override the model's assessment when the draft state contradicts it.
-For example, if the model marks a requirement as fulfilled but none of the target paths contain a placed value, the backend downgrades the status.
-If the model omits a requirement entirely, the backend records it as unanswered.
-The backend also performs guard checks for technical agents, evaluation targets, method plans, and collapsed range attributes.
-These guards do not replace the semantic assessment.
-They prevent fulfilled ratings when the draft state makes fulfillment impossible.
+It contains the relevant parent objects and their quantitative and qualitative attributes, so that the model can judge whether attributes are attached to suitable parent shapes in the compact draft context.
+The model returns one assessment per requirement, consisting of a status, a quality score, and a rationale.
 
-After all requirements have been evaluated, each requirement carries a status (fulfilled, partial, missing, or not applicable), a quality score, a rationale, and the evidence that was selected for it.
-Requirements that are not fulfilled are candidates for semantic reconstruction.
+After the \ac{LLM} returns its assessment, the backend applies guard checks against the actual draft state.
+These guards prevent fulfilled ratings when the draft structure makes fulfillment impossible.
+For example, if the model marks a requirement as fulfilled although none of the target paths contain a placed value, the backend downgrades the status.
+If the model omits a requirement entirely, the backend records it as unanswered.
+Further guards check technical agents, evaluation targets, method plans, and collapsed range attributes.
+These guards do not replace the semantic assessment.
+They constrain it by ensuring that the final status remains consistent with the placed profile content.
+
+After all requirements have been evaluated, each requirement carries a status, a quality score, a rationale, and the evidence selected for the assessment.
+The possible statuses are \texttt{fulfilled}, \texttt{partial}, \texttt{missing}, and \texttt{not\_applicable}.
+Requirements that are not fulfilled become candidates for semantic reconstruction.
 
 \subsection{Semantic Reconstruction}
 \label{sec:semantic_reconstruction}
