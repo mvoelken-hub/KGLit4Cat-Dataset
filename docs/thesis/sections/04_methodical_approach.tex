@@ -78,16 +78,16 @@ They also describe instrument configuration, spectrometer settings, shim values,
 Some files mainly contain numeric frequency values.
 These values can be relevant for signal processing, but they provide little natural-language metadata for the extraction task.
 
-The ChemSpectra export really only contains one relevant file with all the primary data and metadata at one place.
-The \texttt{10.edit.jdx} file is a \ac{JCAMP-DX} representation of the spectrum.
+The ChemSpectra export contains one text-accessible file that is especially relevant for extraction.
+The \texttt{10.edit.jdx} file is a \ac{JCAMP-DX} link file whose main block represents the \ac{NMR} spectrum as \texttt{XYDATA}.
+It records the observed nucleus, observation frequency, solvent, shift reference, pulse sequence, axis units, scaling factors, chemical-shift bounds, and point count.
+The same file also contains ChemSpectra-derived integral and peak-table blocks, including edited and automatically detected peaks.
+Most lines, however, encode spectral values or peak coordinates rather than descriptive metadata.
+For the workflow, this file therefore represents a standardized but dense text input in which useful key-value records must be separated from long numeric arrays.
 
-
-This structure makes the archive a useful test case for the ingestion stage.
-It contains one large binary signal file and several small text files with instrument metadata.
-The text files are not prose documents.
-They are structured technical records.
-The workflow must therefore preserve key-value lines and short parameter statements.
-At the same time, it must reduce dense numeric arrays and low-information lines before the text is sent to the model.
+These different datasets structures are useful test cases for the workflow.
+They differntiate between metadata signals that are embedded in one dense text file together with the primary data and metadata signals that are distributed across multiple files in a nested archive.
+The workflow must therefore handle the separation of metadata from primary data, the extraction of key-value records from noisy text, and the preservation of file provenance for correct scoping of signals.
 
 \section{Preprocessing}
 \label{sec:preprocessing}
