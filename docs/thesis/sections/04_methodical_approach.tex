@@ -676,20 +676,25 @@ Its role is to provide the indexed and connected semantic resources required for
 \subsection{User Interface}
 \label{sec:user_interface}
 
-The user-facing application is implemented as a React and TypeScript frontend built with Vite.
-For the containerized deployment, the compiled application is served by Nginx.
-Nginx also forwards requests under the configured \ac{API} path to the FastAPI service.
-As a result, the browser communicates with one public application endpoint, while the remaining services can remain accessible only within the host or container network.
+The user-facing application provides browser-based access to the prototype.
+It is intended to make the workflow usable without requiring direct interaction with the Python backend, the Neo4j database, or the Ollama model server.
+For the containerized deployment, the frontend is served as a web application and forwards user requests to the workflow \ac{API}.
+As a result, users interact with a single application endpoint, while the remaining services can remain hidden inside the host or container network.
 
-The interface covers the complete interaction cycle of the prototype.
-It allows users to upload dataset packages, select preprocessing and chunking options, start extraction workflows, and inspect their current progress.
-Intermediate workflow products can be reviewed to make the behavior of the extraction process visible.
-The interface also exposes configuration options for the selected models and their runtime parameters.
+The interface covers the complete interaction cycle from dataset upload to metadata export.
+Users can upload dataset packages, select the relevant preprocessing and chunking options, start an extraction workflow, and follow its current progress.
+Intermediate workflow products can be inspected so that the automated extraction process remains transparent rather than hidden behind a single final result.
+The interface also exposes the most relevant model and runtime settings, allowing users to adapt the workflow to the available local infrastructure without editing configuration files manually.
 
-After automated profile construction, the same interface provides the manual curation view described in \cref{sec:manual_curation}.
-The tree representation is used to navigate the nested artifact, while editable controls show the content of the selected object.
-Curated fields can be protected against subsequent automated modification.
-After vocabulary grounding has completed, the resulting metadata artifact and its associated workflow reports can be retrieved and exported through the interface.
+A central purpose of the interface is to support manual curation after automated profile construction.
+The generated \ac{DCAT-AP+} artifact is shown as a navigable tree, while editable controls display the fields of the selected object.
+This allows users to inspect, correct, complete, or protect individual metadata fields.
+Protected fields are excluded from subsequent automated modification, so that expert corrections can be preserved during later workflow steps.
+This is important for catalysis research, where automated extraction can prepare a structured metadata draft, but domain knowledge is still needed to verify experimental context, terminology, and semantic placement.
+
+After vocabulary grounding has completed, the curated metadata artifact and its associated workflow reports can be retrieved and exported through the interface.
+The interface therefore acts as the practical access point for producing better annotated catalysis datasets.
+It separates the user task from the underlying technical infrastructure and presents the workflow as a guided process rather than as a collection of backend services.
 
 The frontend does not implement the extraction or semantic-mapping rules itself.
 It acts as a presentation and control layer over the backend \ac{API}.
