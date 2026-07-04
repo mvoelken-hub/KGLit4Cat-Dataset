@@ -94,34 +94,48 @@ The workflow must therefore handle the separation of metadata from primary data,
 
 The ingestion stage expands the uploaded archive and records the contained files as package resources.
 Nested archives are expanded recursively.
-This preserves the original package structure while making individual files addressable by the later workflow stages.
+This preserves the original package structure while making individual files addressable by later workflow stages.
 Each file is then handled according to its accessible content type.
-Plain files are decoded after character-set detection with \texttt{charset-normalizer} \cite{charsetNormalizerDocs}.
-Tables are converted into textual rows.
-PDF files are converted by text extraction.
+Plain text files are decoded after character-encoding detection with the \texttt{charset-normalizer} library \cite{charsetNormalizerDocs}.
+Tables are linearized into textual rows.
+PDF files are processed by text extraction.
 Images and unsupported binary files are kept as resources, but they are not treated as textual evidence.
 
-After text extraction, the workflow applies a text-quality gate at line level.
-This gate removes lines that are empty, too short, dominated by control characters, repeated characters, numeric arrays, dense hexadecimal-like values, base64-like strings, or high-entropy text without spacing.
-It keeps lines that contain words, sufficient alphabetic content, spacing, or recognizable structured text.
-Structured metadata lines are important for instrument exports and must not be removed only because they contain many symbols.
-\Cref{fig:text-quality-gate} shows the corresponding preview in the workflow interface for an acquisition-parameter file.
-The preview displays the selected file, the number of source lines, and the number of lines removed by the gate.
-Lines kept for downstream chunking are highlighted as readable parameter records.
-Numeric array lines are marked as dropped.
-The gate therefore denoises the file without reducing the archive to ordinary prose.
+After text extraction, the workflow applies a line-level text-quality gate.
+The gate classifies each extracted line as either kept or dropped using deterministic heuristic rules.
+Empty lines, one-character lines, lines with many control characters, repeated-character noise, and dense numeric arrays are removed directly.
+The numeric-array rule is applied before scoring so that long lists of signal or frequency values are not passed to later model stages.
+
+All remaining lines are scored from textual and structural features.
+Positive evidence is assigned to lines that contain multiple words, sufficient alphabetic content, whitespace, reasonable word length, or recognizable structured metadata syntax.
+The latter includes short key-value records, assignment-style records, headings, and bullet-like entries.
+This structured-text signal is important for instrument files, because acquisition and processing metadata are often stored as compact parameter records rather than prose.
+
+The score is reduced for lines dominated by digits or symbols, dense strings without whitespace, very long uninterrupted tokens, and hexadecimal-like values.
+These features are detected with regular-expression patterns and character-level statistics and are translated into additive score contributions.
+Textual and structured metadata features add to the score, while noise-like features subtract from it.
+A line is kept only if this final score reaches the configured threshold.
+This design removes low-information technical noise while preserving readable metadata records, including Bruker-style parameter lines that contain symbols, numbers, or key-value syntax.
+
+\Cref{fig:text-quality-gate} shows the corresponding preview in the workflow interface for the Bruker acquisition-parameter file \texttt{10/acqu}.
+The preview reports the selected file, the total number of source lines, the number of filtered lines, and the number of protected lines.
+Each line is displayed with its gate decision.
+Kept lines are shown as readable parameter records, and the decision tooltip exposes the final score together with the feature labels that contributed to it.
+In the example, the header records and Bruker parameter assignments are kept even though they contain symbols and numeric values.
+By contrast, dense numeric array lines are marked as \texttt{DROP}.
+The figure therefore illustrates that the gate removes low-information numeric content while preserving structured acquisition metadata for downstream chunking.
 
 \begin{figure}[H]
-    \centering
-    \includegraphics[width=0.8\textwidth]{figures/text-quality-gate.png}
-    \caption{Workflow preview of the text-quality gate for a Bruker acquisition-parameter file.}
-    \label{fig:text-quality-gate}
+\centering
+\includegraphics[width=0.8\textwidth]{figures/text-quality-gate.png}
+\caption{Workflow preview of the text-quality gate for the Bruker acquisition-parameter file \texttt{10/acqu}. Structured parameter records are kept with score-based feature labels, while dense numeric array lines are dropped.}
+\label{fig:text-quality-gate}
 \end{figure}
 
 \section{Dataset-Level Overview}
 \label{sec:dataset_level_overview}
 
-The workflow creates a dataset-level overview before chunk evidence is extracted.
+After the preprocessing steps, the workflow creates a dataset-level overview before chunk evidence is extracted.
 This stage consists of several smaller orientation steps.
 First, the program creates bounded previews from text-accessible files.
 Small files are represented as complete text.
