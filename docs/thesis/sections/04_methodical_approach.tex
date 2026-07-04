@@ -115,15 +115,22 @@ The score is reduced for lines dominated by digits or symbols, dense strings wit
 These features are detected with regular-expression patterns and character-level statistics and are translated into additive score contributions.
 Textual and structured metadata features add to the score, while noise-like features subtract from it.
 A line is kept only if this final score reaches the configured threshold.
+Before the drop decision is applied, users can manually protect individual lines in the preview.
+Protected lines are retained for downstream chunking even if the heuristic gate would otherwise classify them as noise.
+The gate parameters are also exposed in the interface.
+Users can adjust the symbol-ratio threshold, digit-ratio threshold, minimum keep-score threshold, and structured-text bonus.
+These controls make the filtering behavior tunable so preprocessing can be adapted to different types of instrument files.
 This design removes low-information technical noise while preserving readable metadata records, including Bruker-style parameter lines that contain symbols, numbers, or key-value syntax.
 
 \Cref{fig:text-quality-gate} shows the corresponding preview in the workflow interface for the Bruker acquisition-parameter file \texttt{10/acqu}.
 The preview reports the selected file, the total number of source lines, the number of filtered lines, and the number of protected lines.
-Each line is displayed with its gate decision.
+Each line is displayed with its gate decision, and individual lines can be protected before filtering is applied.
 Kept lines are shown as readable parameter records, and the decision tooltip exposes the final score together with the feature labels that contributed to it.
+The interface also exposes the main gate parameters, including the symbol-ratio threshold, digit-ratio threshold, keep-score threshold, and structured-text bonus.
 In the example, the header records and Bruker parameter assignments are kept even though they contain symbols and numeric values.
 By contrast, dense numeric array lines are marked as \texttt{DROP}.
-The figure therefore illustrates that the gate removes low-information numeric content while preserving structured acquisition metadata for downstream chunking.
+The figure therefore illustrates that the gate removes low-information numeric content while preserving structured acquisition metadata for downstream chunking and allowing manual protection where needed.
+
 
 \begin{figure}[H]
 \centering
@@ -158,17 +165,23 @@ The \ac{LLM} then proposes a structured overview from the seeded graph and the r
 The result is sanitized programmatically so that it only refers to files present in the package.
 The resulting graph overview is stored as orientation context for later workflow stages.
 
-\Cref{fig:initial-overview-graph} shows this graph in the workflow interface.
-The graph focuses on relationships between files, directories, and coarse file roles.
-It is not meant to provide comprehensive summaries of every file.
-Its purpose is to add dataset-scope context to file-level and chunk-level extraction tasks.
-This context helps the model avoid overinterpreting local resources.
-For example, a parameter file can be read as part of a raw instrument export rather than as a standalone dataset description.
+\Cref{fig:initial-overview-graph} shows the dataset-level overview generated for the \textsuperscript{1}H NMR sample dataset.
+The graph uses color to distinguish node types.
+The green central node represents the dataset root.
+Purple nodes represent subdirectories and inferred group nodes.
+Subdirectory nodes are connected to file nodes through containment relations, while group nodes represent recurring metadata roles such as acquisition settings, processing settings, instrument settings, audit information, and raw data.
+Blue nodes represent individual files.
+They contain file-local summaries and are linked both to their directory context and to relevant group nodes.
+The links from file nodes to group nodes indicate that a file documents a particular type of metadata.
+The selected file \texttt{10/acqu} is shown in the detail panel on the right.
+Its rank and summary indicate why it is considered relevant for metadata extraction: it contains acquisition parameters for the Bruker \textsuperscript{1}H NMR experiment, including pulse-sequence, frequency, and data-acquisition information.
+The figure therefore illustrates how the workflow turns file-local summaries into dataset-level orientation context before chunk-level evidence is selected.
+
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.8\textwidth]{figures/initial-overview-graph.png}
-    \caption{Workflow preview of the dataset-level overview graph for the \textsuperscript{1}H NMR sample dataset.}
+    \caption{Workflow preview of the dataset-level overview graph for the \textsuperscript{1}H NMR sample dataset. The green node represents the dataset root, purple nodes represent subdirectories and metadata-role groups, and blue nodes represent files. The detail panel shows the ranked summary for the selected acquisition-parameter file \texttt{10/acqu}.}
     \label{fig:initial-overview-graph}
 \end{figure}
 
