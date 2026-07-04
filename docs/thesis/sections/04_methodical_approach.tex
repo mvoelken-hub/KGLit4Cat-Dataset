@@ -592,8 +592,8 @@ The browser-based interface communicates with the workflow \ac{API}, so users do
 \label{sec:workflow_runner}
 
 The workflow backend is primarily implemented in Python as a FastAPI application.
-FastAPI exposes the workflow functionality through an \ac{HTTP} interface and generates interactive OpenAPI-based endpoint documentation \cite{ramirezFastAPI}.
-The exposed operations cover dataset ingestion, preprocessing, extraction execution, profile management, semantic vocabulary operations, configuration, progress monitoring, and result retrieval.
+FastAPI exposes the workflow functionality through an \ac{HTTP} interface and automatically generates interactive endpoint documentation from the implemented route and schema definitions, thereby documenting the required inputs for each workflow stage alongside the backend implementation \cite{ramirezFastAPI}.
+The exposed operations cover dataset ingestion, preprocessing, extraction execution, application profile management, semantic vocabulary operations, configuration, progress monitoring, and result retrieval.
 Long-running operations are registered as asynchronous tasks so that an extraction run can continue after the initial request has returned.
 The user interface can subsequently query the current workflow state and retrieve intermediate or final artifacts.
 
@@ -610,35 +610,24 @@ During shutdown, remaining background tasks are cancelled and the Neo4j and Olla
 \subsection{Ollama Model Server}
 \label{sec:ollama_model_server}
 
-Ollama provides the local model-serving infrastructure.
-It exposes an \ac{HTTP} interface through which the workflow sends \texttt{generate} and \texttt{embedding} requests.
-The generation model performs the language-based extraction, classification, evaluation, reconstruction, query-generation, and candidate-selection tasks described in the preceding sections.
-The generation models used in this work are gemma3:4b, gemma3:12b, and gemma3:27b \cite{gemma3technicalreport}.
-These models are all 
-
+Ollama provides the local model-serving infrastructure for the prototype.
+It exposes an \ac{HTTP} interface through which the workflow sends generation and embedding requests \cite{ollamaplatform}.
+The selected generation model performs the language-based extraction, classification, evaluation, reconstruction, query-generation, and candidate-selection tasks described in the preceding sections.
+The generation models used in this work are \texttt{gemma3:4b}, \texttt{gemma3:12b}, and \texttt{gemma3:27b} \cite{gemma3technicalreport}.
+They belong to the same Gemma 3 model family, but differ in parameter count and therefore in resource demand.
+The 4B, 12B, and 27B Gemma 3 variants support long-context generation and are available as multimodal models with text and image input.
+In this workflow, however, they are used only through their text-generation interface.
+Using three model sizes makes it possible to run the same workflow under different local hardware constraints and to compare smaller and larger generation models without changing the workflow implementation.
 
 A separate embedding model creates vector representations for semantic chunking and vocabulary retrieval.
-The model configuration can be defined through the application configuration or adjusted for subsequent requests through the user interface.
-The selectable runtime options include the chat model, embedding model, maximum context length, embedding batch size, generation temperature, output-token restriction, and the use of the \ac{GPU} for embedding requests.
-Models can also be downloaded to or removed from the configured Ollama host through the interface.
-This makes it possible to adapt the workflow to the memory capacity and model availability of the deployment machine without changing the workflow implementation.
+For this purpose, the prototype uses \texttt{qwen3-embedding:0.6b}.
+This model is the smallest member of the Qwen3 Embedding model family and was selected as a comparatively lightweight recent embedding model.
+It is designed for text-embedding tasks and supports multilingual retrieval scenarios.
+Its smaller size is useful for local deployment, because embedding requests are made repeatedly during semantic chunking and vocabulary lookup and can make up a lot of the computational load \cite{qwen3embedding2025}.
 
-Container-level Ollama settings are supplied as environment variables.
-For the prototype, these include the quantization type of the key--value cache, model-retention behavior, Flash Attention, network binding, and memory-mapping behavior.
-The configuration
-
-\begin{verbatim}
-OLLAMA_KV_CACHE_TYPE=q8_0
-OLLAMA_KEEP_ALIVE=-1
-OLLAMA_FLASH_ATTENTION=1
-OLLAMA_NO_MMAP=0
-\end{verbatim}
-
-uses a quantized key--value cache and keeps loaded models resident rather than unloading them after individual requests.
-Flash Attention is enabled when supported, while memory mapping remains available.
-These parameters affect the memory consumption and loading behavior of the model server rather than the semantic behavior of the workflow.
-An additional Docker Compose configuration can reserve available NVIDIA devices for the Ollama container.
-Consequently, the same workflow can be operated with CPU inference, local GPU acceleration, or a remote Ollama instance on a dedicated inference server.
+The active generation and embedding models, together with basic runtime parameters, can be configured through the application settings or the user interface.
+This allows the workflow to be adapted to the available hardware and installed models without changing the workflow implementation.
+The exact Ollama environment configuration used in the prototype is listed in \cref{app:ollama_configuration}.
 
 \subsection{Neo4j Graph Store}
 \label{sec:neo4j_graph_store}
