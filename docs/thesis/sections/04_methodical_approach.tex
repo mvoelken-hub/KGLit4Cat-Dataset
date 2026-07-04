@@ -177,7 +177,6 @@ The selected file \texttt{10/acqu} is shown in the detail panel on the right.
 Its rank and summary indicate why it is considered relevant for metadata extraction: it contains acquisition parameters for the Bruker \textsuperscript{1}H NMR experiment, including pulse-sequence, frequency, and data-acquisition information.
 The figure therefore illustrates how the workflow turns file-local summaries into dataset-level orientation context before chunk-level evidence is selected.
 
-
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.8\textwidth]{figures/initial-overview-graph.png}
@@ -191,7 +190,7 @@ The figure therefore illustrates how the workflow turns file-local summaries int
 Chunking manages the amount of text that is passed to later \ac{LLM}-based workflow stages.
 Its purpose is to compensate for the limited context window of \acp{LLM}, as described in \cref{sec:large-language-models}.
 Reducing the context size is beneficial for two reasons.
-First, it supports the use of locally deployed models, where memory, compute, and energy constraints make smaller inputs more practical \cite{xu2024ondevice}.
+First, it supports the use of locally deployed models, where memory and compute constraints make smaller inputs more practical \cite{xu2024ondevice}.
 Second, it reduces the need to perform extraction over very long inputs.
 Long-context studies show that models do not use long prompts uniformly and that realistic long-context reasoning remains difficult even for capable systems \cite{liu2024lostmiddle,bai2025longbenchv2}.
 Chunking also keeps source provenance local.
@@ -219,59 +218,71 @@ The method therefore treats chunking as context management and provenance preser
 \label{sec:evidence_extraction}
 
 The evidence extraction stage iterates over the prepared chunks.
-Its purpose is to turn local source text into explicit evidence signals before any effort is made to organize them into a target structure.
-This explicitly follows the \ac{GO} principle of separating content generation from content organization \cite{li2024structuredoutput}.
+Its purpose is to turn local source text into explicit evidence signals before these signals are organized into the target metadata profile.
+This follows the \ac{GO} principle of separating content generation from content organization \cite{li2024structuredoutput}.
 The stage captures observations that may later support dataset identity, resources, methods, instruments, software, activities, measured values, conditions, or surrounding provenance.
-For each chunk, the \ac{LLM} receives a system instruction that asks it to detect broadly reusable metadata signals.
-The instruction uses a basic categorization scheme for signal affiliation and routing role.
-It also requires every supporting text span to be copied from the current chunk.
-The initial dataset overview and the current file summary are supplied only as orientation.
-They must not be cited as evidence.
 
-Chunk specific input for a model is constructed with the current chunk text and chunk metadata, as well as the orientation context.
-The chunk metadata contains the package name, file path, and line span, while the orientation context contains the dataset-level overview and the current file summary.
-Additionally, the model receives a short instruction to extract evidence candidates from the current chunk.
-These candidates are returned in a basic structured format.
+For each chunk, the \ac{LLM} receives the current chunk text and chunk metadata.
+The chunk metadata contains the package name, file path, and line span.
+The system prompt is augmented with a compact orientation section.
+This section is not the full initial overview object.
+It contains a token-limited excerpt of the initial extraction overview, consisting of the graph nodes and relations around the current file.
+It also contains the initial summary for the current file, selected by matching the chunk file path against the stored file summaries.
+This context is supplied only to help interpret the local source text.
+It must not be cited as evidence.
+The model instruction asks the \ac{LLM} to extract broadly reusable metadata signals from the current chunk and to copy every supporting source span from that chunk.
 
-Its central output is a list of evidence candidates.
-The model-facing schema is intentionally small.
-It asks for a broad \texttt{category}, a routing \texttt{role}, a concise \texttt{claim}, and copied \texttt{evidence\_text}.
+The model-facing schema is intentionally small with only four fields: \texttt{category}, \texttt{role}, \texttt{claim}, and \texttt{evidence\_\allowbreak{}text}.
 The \texttt{category} field describes what kind of source signal was found.
 The \texttt{role} field describes how the signal may later be used by the profile construction stage.
 The \texttt{claim} field states the observation in a compact and checkable form.
-The \texttt{evidence\_text} field contains the copied source span that supports the claim.
+The \texttt{evidence\_\allowbreak{}text} field contains the copied source span that supports the claim.
 The categories distinguish resource, method, measurement, condition, software, instrument, activity, surrounding, and other signals.
 The roles distinguish identity, descriptor, context, parameter, qualitative attribute, and other reusable metadata.
-These categories and roles are not meant to be final or exhaustive.
-Their purpose is to provide a coarse classification that helps the workflow to route the extracted signals into the profile construction stage later.
+These categories and roles are not final profile classes.
+They provide a coarse routing layer that helps the later profile construction stage organize the extracted signals.
 
 Several fields are added deterministically after generation.
 The backend assigns stable candidate identifiers, file paths, line spans, source-context windows, and evidence-match scores.
 It validates that the copied \texttt{evidence\_text} is supported by the current chunk.
-Unsupported candidates are filtered out.
-A reviewing step then evaluates the remaining candidates.
-This review is performed by an \ac{LLM}-based critic.
-The critic receives the validated candidates as structured input together with the same chunk metadata and the local chunk text.
-Then, it evaluates whether each candidate is supported by its copied source span.
-It also judges whether the claim can be understood without hidden context, whether its file or dataset scope is clear, and whether the signal remains meaningful outside the local runtime environment.
-The critic returns one assessment record for each candidate.
-This record contains categorical judgements for groundedness, self-containedness, scope clarity, portability, semantic interpretability, environment dependence, specificity, novelty, and ambiguity.
-The routing is performed programmatically from these assessment records.
-Well-supported, specific and reusable candidates are routed as portable evidence.
-Those that are supported but depend on local context are retained as contextual evidence.
-Those with unsupported text, unclear scope, high ambiguity or duplicate content are rejected.
+Candidates whose copied evidence cannot be matched to the chunk are filtered out.
+
+The remaining candidates are then reviewed by an \ac{LLM}-based critic.
+The critic receives the validated candidates together with the same chunk metadata and local chunk text.
+It evaluates whether each claim is supported by its copied source span.
+It also assesses whether the claim is self-contained, whether its file or dataset scope is clear, and whether the signal remains meaningful outside the local runtime environment.
+For each candidate, the critic returns categorical judgements for groundedness, self-containedness, scope clarity, portability, semantic interpretability, environment dependence, specificity, novelty, and ambiguity.
+
+Routing is performed programmatically from these critic assessments and is shown in \cref{fig:evidence-critic}.
+A candidate is routed as portable evidence only when the critic marks it as grounded, self-contained, semantically interpretable, and specific.
+Its uncertainty must not be high, and its scope must be at least partially clear.
+Portable evidence is therefore intended to provide reusable input for later profile construction.
+The note should remain understandable outside the immediate chunk prompt and should be traceable back to source text.
+This status is auditable rather than assumed.
+Each note keeps the copied evidence text, source file, line span, local source context, route reason, and critic assessment, so later profile entries can be checked against the original chunk.
+Candidates are retained as contextual evidence when they are grounded enough to remain useful but are only partially self-contained, only partially portable, ambiguous, or dependent on file-level or dataset-level context.
+They are therefore not routed into the pool of queriable portable evidence, but only appear as contextual notes for portable evidence notes that have a close origin in the same file.
+Therefore, contextual evidence can still support later decisions, but it is treated as weaker orientation for schema patching than portable evidence.
+Rejected evidence records cover candidates whose copied evidence text cannot be matched to the chunk, candidates rejected by the critic as ungrounded, and duplicate evidence records removed during routing.
+The critic model is not yet seeing the final metadata schema that the workflow aims to produce.
+It provides structured quality judgements that determine how evidence candidates are retained or filtered for later schema patching.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/evidence-critic.png}
+    \caption{Categorization of extracted evidence notes by an \ac{LLM}-critic. It receives extracted candidates from a chunk as input and returns structured judgements that lead to routing as portable evidence, contextual evidence, or rejected evidence.}
+    \label{fig:evidence-critic}
+\end{figure}
 
 After all chunks have been processed, the workflow merges the routed evidence contexts from the individual chunks.
-This merge preserves the distinction between portable evidence, contextual evidence, rejected evidence, critic assessments, and file inventory entries.
-During this step, exact duplicates are removed first.
-The duplicate key combines the source file, line span, category, role, claim, and normalized copied evidence text.
+This merge preserves the distinction between portable evidence, contextual evidence, rejected evidence, and file inventory entries.
+Exact duplicates are removed first.
+The duplicate key combines category, role, and claim.
 If several candidates share this key, the workflow keeps one representative.
-Candidates from higher-ranked files are preferred, and richer claims are preferred when the file rank is equal.
+Candidates from higher-ranked files are preferred.
 A second duplicate pass compares the normalized evidence text of portable candidates.
 Highly similar candidates are grouped, and one representative is kept for each group.
 Clear near-duplicates are resolved deterministically, while less clear similarity groups can be triaged by an \ac{LLM}.
-Filtered candidates are not discarded silently.
-They are written to a ledger together with the reason for filtering and the identifier of the retained representative where applicable.
 The resulting evidence grounding set forms the input for profile construction.
 
 \section{DCAT-AP+ Artifact Construction}
