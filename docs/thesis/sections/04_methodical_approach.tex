@@ -535,14 +535,14 @@ Consequently, the curation stage can correct or clarify the contents of the gene
 
 Vocabulary mapping is performed after the schema-valid \ac{DCAT-AP+} draft has been reconstructed and curated.
 The stage follows the classifier mixin pattern discussed in \cref{sec:dcat-ap-plus-chemdcat-ap}.
-In \ac{DCAT-AP+}, this pattern provides the classification slots \texttt{type} and \texttt{rdf\_type} for the central profile shapes, as well as \texttt{unit} and \texttt{has\_quantity\_kind} for quantitative attributes \cite{dcatapplusDocumentation}.
+In \ac{DCAT-AP+}, this pattern provides the classification slots \texttt{type} and \texttt{rdf\_\allowbreak{}type} for the central profile shapes, as well as \texttt{unit} and \texttt{has\_\allowbreak{}quantity\_\allowbreak{}kind} for quantitative attributes \cite{dcatapplusDocumentation}.
 These slots carry different semantic commitments.
 The \texttt{type} slot maps to \texttt{dcterms:type} and supports controlled-vocabulary categorization.
-The \texttt{rdf\_type} slot maps to \texttt{rdf:type} and supports links to classes from formal ontologies.
+The \texttt{rdf\_\allowbreak{}type} slot maps to \texttt{rdf:type} and supports links to classes from formal ontologies.
 These two slots can be applied to activities, entities, agents, plans, surroundings, and qualitative or quantitative attributes.
-Quantitative attributes also have the \texttt{unit} and \texttt{has\_quantity\_kind} slots, which support links to \ac{QUDT} terms.
+Quantitative attributes also have the \texttt{unit} and \texttt{has\_\allowbreak{}quantity\_\allowbreak{}kind} slots, which support links to \ac{QUDT} terms.
 This workflow populates the \texttt{dcterms:type} slot with terms from \ac{Voc4Cat} and \ac{nmrCV}, which are structured taxonomies and not formal ontologies in the strict sense.
-The \texttt{rdf\_type} slot is not populated in this workflow.
+The \texttt{rdf\_\allowbreak{}type} slot is not populated in this workflow.
 
 In this stage, the program first identifies draft elements that are eligible for vocabulary mapping.
 An activity, entity, agent, plan, surrounding, or attribute is considered eligible when it contains a non-empty \texttt{title} or \texttt{description}.
@@ -569,22 +569,30 @@ When no candidate denotes the same concept as the draft element, the original va
 \section{Infrastructure and Implementation}
 \label{sec:infrastructure_and_implementation}
 
-The prototype is implemented as a service-oriented application composed of four main services.
-The workflow \ac{API}, the user interface, a Neo4j property graph database, and an Ollama model server.
-The services are packaged as separate containers and coordinated through Docker Compose.
+The prototype is implemented as a service-oriented application composed of four main services as illustrated in \cref{fig:application-infrastructure}.
+The workflow \ac{API}, the user interface, a Neo4j property graph database, and an Ollama model server \cite{neo4jdatabase, ollamaplatform}.
+The services are packaged as separate containers and coordinated through Docker Compose \cite{docker_compose_patterns}.
 This separation isolates the workflow logic, user interaction, vocabulary storage, and model execution while allowing the individual services to be deployed according to their hardware requirements.
 
 The services can run together on one workstation or server.
 Alternatively, the \ac{API} can connect to Neo4j or Ollama instances hosted on another machine.
 This is particularly relevant for Ollama because local inference may require a server equipped with sufficient system memory or a supported \ac{GPU}.
-The browser-based interface communicates with the workflow through \ac{HTTP}, so users do not need direct access to the Python runtime, the database, or the model server.
-In the containerized deployment, the frontend also acts as the public entry point and forwards \ac{API} requests to the backend service.
+It can also be relevant for Neo4j when the vocabulary graph should contain a vast number of vocbaulary terms and requires a dedicated database server.
+The browser-based interface communicates with the workflow \ac{API}, so users do not need direct access to the Python runtime, the database, or the model server.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/application-infrastructure.png}
+    \caption{Application infrastructure showing the four main services as containerized components, plus the optional external services for Neo4j and Ollama.}
+    \label{fig:application-infrastructure}
+\end{figure}
+
 
 \subsection{Workflow Runner}
 \label{sec:workflow_runner}
 
-The workflow backend is primarily implemented in Python as a FastAPI application \cite{ramirezFastAPI}.
-FastAPI exposes the workflow functionality through an \ac{HTTP} interface and generates an interactive description of the available endpoints.
+The workflow backend is primarily implemented in Python as a FastAPI application.
+FastAPI exposes the workflow functionality through an \ac{HTTP} interface and generates interactive OpenAPI-based endpoint documentation \cite{ramirezFastAPI}.
 The exposed operations cover dataset ingestion, preprocessing, extraction execution, profile management, semantic vocabulary operations, configuration, progress monitoring, and result retrieval.
 Long-running operations are registered as asynchronous tasks so that an extraction run can continue after the initial request has returned.
 The user interface can subsequently query the current workflow state and retrieve intermediate or final artifacts.
