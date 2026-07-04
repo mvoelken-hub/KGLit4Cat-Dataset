@@ -383,25 +383,34 @@ After completion, the resulting core draft provides the parent structure for lat
 \label{sec:parent_scoped_attribute_construction}
 
 Parent-scoped attribute construction adds quantitative and qualitative attributes to the parent objects that already exist in the core draft.
+It uses the generic attribute pattern of \ac{DCAT-AP+}, which allows contextual metadata to be attached to the main provenance and catalogue shapes, as shown in \cref{fig:dcat-ap-plus}.
+In this workflow, the attribute step does not create new parent structures.
+Instead, it treats the already constructed provenance core as a fixed context and decides which additional facts can be attached to each existing parent object.
+
 The backend freezes the core draft as context and iterates over every parent object that has a non-empty title or description.
 These parents include the data-generating activity, technical agents, evaluated entities, evaluated activities, input entities, input activities, and output entities.
-
 For each parent, the workflow selects an evidence packet from the evidence grounding set.
-The selection matches evidence candidates whose category and routing role are semantically local to the parent's position in the draft.
+The selection scores portable and contextual evidence candidates against the parent path, parent class, and the text already present on the parent.
+Evidence is preferred when its category, role, claim, source text, or source path overlaps with the parent's title or description and with role-specific cues.
+For example, software and instrument signals are favoured for agent parents, method and activity signals for the data-generating activity or its plan, and measurement or resource signals for evaluated, input, or output entities.
 If no matching evidence is found, the parent is skipped.
-This prevents the model from inventing attributes.
-The \ac{LLM} then receives the core draft, the target path, the target class, the selected evidence notes, as well as sourounding context in form of evidence notes from nearby dataset locations, and a system instruction.
+This prevents the model from inventing attributes without parent-local support.
+
+For each target parent, the \ac{LLM} receives the frozen core draft, the target path, the target class, the selected portable evidence notes together with their surrounding context notes, and a system instruction.
 The instruction asks the model to decide which facts, if any, are useful profile-level attributes for this parent.
 It explicitly instructs the model to exclude source-record metadata, provenance bookkeeping, file paths, and identifiers for other objects.
-The model then only returns structured quantitative and qualitative attribute intents.
+The model does not modify the profile directly.
+Instead, it returns structured quantitative and qualitative attribute intents.
 
 The backend owns the concrete schema path.
 It transforms each accepted intent into an attribute object, assigns a generated local identifier, and validates each insertion against the target schema.
-Weak or unsupported attribute intents are rejected at this stage.
-This includes attributes with unclear intent, placeholder-like labels, generic values, or labels and values that are not supported by the selected parent-local evidence.
+An attribute intent is skipped when it cannot be converted into a complete attribute object.
+Quantitative intents require a title and numeric value; qualitative intents require a title and textual value.
+The backend then applies a lightweight lexical placement check.
+It normalizes the words in the proposed attribute title, description, type label, unit, and value, and compares them with heuristic cues for common attribute families, such as configuration values, software versions, method labels, format descriptors, and generic numeric values.
+The check is used to reject attributes whose inferred category does not fit the parent role or whose label or value is not supported by the selected parent-local evidence.
 Duplicate attributes under the same parent are also rejected.
-A parent attribute ledger records every accepted and rejected attribute, including the evidence identifiers that supported it and the reason for rejection when applicable.
-This draft is the working document for semantic requirement evaluation.
+The resulting draft, which is enriched with attributes, is the working document for semantic requirement evaluation in the next steps.
 
 \subsection{Semantic Requirement Evaluation}
 \label{sec:semantic_requirement_evaluation}
