@@ -427,9 +427,16 @@ Eight semantic requirements are defined.
 They cover dataset title identity, dataset description scope, generation activity reality, technical agent kind, method plan presence, activity evaluation target, attribute range decomposition, and attribute parent placement.
 The dataset description scope requirement reflects the earlier draft initialization step, where the description is initialized from the dataset-level summary.
 The semantic check therefore asks whether the description still functions as a compact dataset-level summary, and whether it unnecessarily repeats facts that are already represented by structured activity, agent, plan, target, or attribute fields.
-The generation activity requirement checks whether the core activity title, description, and type describe a real acquisition, measurement, or processing.
+The generation activity requirement checks whether the core activity title, description, and type describe a real acquisition, measurement, processing, or data-generation activity.
 The activity evaluation target requirement checks aboutness rather than simple presence.
 It asks whether the evaluated entity or evaluated activity is the concrete object, signal, sample, process, or activity that is measured, observed, analysed, or studied.
+
+The remaining requirements address common identity, role, and placement errors.
+The dataset title identity requirement checks whether the title names the dataset rather than a file, method, instrument, or parameter.
+The technical agent kind requirement checks whether agent objects are plausible actors or technical systems, such as instruments, software, organizations, or people.
+The method plan presence requirement checks whether available method, protocol, workflow, recipe, pulse-sequence, or instruction information is represented as a plan of the data-generating activity.
+The attribute range decomposition requirement checks whether collapsed value ranges are decomposed into separate lower- and upper-bound attributes.
+The attribute parent placement requirement checks whether attributes are attached to the parent object they actually describe, rather than to a nearby but semantically different activity, agent, input, target, or output.
 
 Each semantic requirement declares target paths, evidence hints, and allowed evidence categories.
 For each requirement, the workflow selects a requirement-specific evidence packet from the evidence grounding set.
@@ -437,7 +444,8 @@ The workflow then runs a constrained \ac{LLM}-based evaluation for the requireme
 The model receives a draft excerpt containing the values at the requirement's target paths, together with the selected evidence notes.
 For attribute parent placement, the excerpt is broader.
 It contains the relevant parent objects and their quantitative and qualitative attributes, so that the model can judge whether attributes are attached to suitable parent shapes in the compact draft context.
-The model returns one assessment per requirement, consisting of a status, a quality score, and a rationale.
+The model returns one assessment per requirement, consisting of a quality score and a rationale.
+The quality score is restricted to the values \texttt{1.0}, \texttt{0.5}, and \texttt{0.0}, which are interpreted as \texttt{fulfilled}, \texttt{partial}, and \texttt{missing}, respectively.
 
 After the \ac{LLM} returns its assessment, the backend applies guard checks against the actual draft state.
 These guards prevent fulfilled ratings when the draft structure makes fulfillment impossible.
@@ -447,55 +455,52 @@ Further guards check technical agents, evaluation targets, method plans, and col
 These guards do not replace the semantic assessment.
 They constrain it by ensuring that the final status remains consistent with the placed profile content.
 
-After all requirements have been evaluated, each requirement carries a status, a quality score, a rationale, and the evidence selected for the assessment.
-The possible statuses are \texttt{fulfilled}, \texttt{partial}, \texttt{missing}, and \texttt{not\_applicable}.
+After all requirements have been evaluated, each requirement carries a quality score, a rationale, and the evidence selected for the assessment.
 Requirements that are not fulfilled become candidates for semantic reconstruction.
 
 \subsection{Semantic Reconstruction}
 \label{sec:semantic_reconstruction}
 
-Semantic reconstruction attempts to repair the defects identified by semantic requirement evaluation.
-It does not search for new evidence.
-It works only with the current draft, the evidence already selected for each requirement, and the context window from the evidence grounding set.
+Semantic reconstruction attempts to repair defects identified by semantic requirement evaluation.
+It does not perform a new evidence search.
+Instead, it works only with the current draft and with the evidence notes and local context already selected for the corresponding requirement.
+The reconstruction therefore remains bounded by the existing evidence grounding set.
+
 The reconstruction proceeds requirement by requirement in a fixed order.
-Attribute range decomposition and attribute parent placement run before the higher-level provenance and dataset identity requirements.
+Requirements that may change local attribute structure are handled first, because later checks over activities, agents, targets, and dataset identity should operate on the repaired attribute layout.
 The order is attribute range decomposition, attribute parent placement, technical agent kind, method plan presence, generation activity reality, dataset title identity, dataset description scope, and activity evaluation target.
 
-For each requirement that is not already fulfilled, the workflow first checks whether a narrow deterministic repair is available.
-This only applies to self-referential \texttt{evaluated\_\allowbreak activity} links where an activity references itself.
-In that case, the backend compiles a remove action from the draft without calling the \ac{LLM}.
-If the deterministic pass produces repair actions, they are applied immediately.
-
-If the deterministic pass produces no actions, the workflow falls back to an \ac{LLM}-based diagnosis.
-The model receives a draft excerpt at the requirement's target paths, the selected evidence, and the context window.
+For each requirement that is not already fulfilled, the workflow falls back to an \ac{LLM}-based diagnosis.
+The model receives a draft excerpt at the requirement's target paths together with the selected requirement evidence.
 It returns a list of diagnosed defects.
-Each defect specifies a defect type, a target path, entry indices for array entries, a recommended action (merge, remove, move, replace, or append), and whether a new value must be synthesized.
-The backend then compiles these diagnoses into concrete write actions.
-Mechanical actions (merge, remove, move) must not request synthesis.
-If a diagnosis requests synthesis for a mechanical action, it is rejected.
-For append or replace actions that need a new value, the workflow calls a separate synthesis step.
+Each defect specifies a defect type, a target path, optional entry indices for array entries, a recommended action, and whether a new value must be synthesized.
+The supported action types are merge, remove, move, replace, and append.
+
+The backend then compiles the diagnoses into concrete write actions.
+Mechanical actions such as merge, remove, and move must not request synthesized content.
+If a diagnosis requests synthesis for such an action, it is rejected.
+For append or replace actions that require a new value, the workflow calls a separate synthesis step.
 This step sends the diagnosed defect, the current value at the target path, and a small schema branch to the \ac{LLM}.
-The model returns only the replacement value, not a profile patch.
-The backend validates that the synthesized value matches the target schema.
-Array replacements must identify exactly one entry; collection-wide replacements are rejected.
-For range decomposition, the diagnosis must identify the collapsed range entry and the required bound attributes.
-The \ac{LLM} may request synthesis for separate minimum and maximum attributes.
-The backend then writes those attributes as schema-valid append actions and removes the collapsed range entry.
-For evaluation-target requirements, relation synthesis is refused because evaluated targets require explicit projection evidence.
+The model returns only the replacement or appended value, not a profile patch.
+The backend validates that the synthesized value matches the target schema before compiling the final write action.
 
 All compiled write actions are applied one at a time.
 Each action is validated against the full profile schema before it is committed.
-If an action produces an invalid draft, it is rejected and the draft is left unchanged.
-If a whole reconstruction attempt fails validation, it is rolled back to the state before the attempt.
-Valid actions are applied even if other actions from the same diagnosis are rejected.
-This allows the workflow to salvage independently valid repairs.
+If an individual action produces an invalid draft, it is rejected and the draft is left unchanged for that action.
+Other independently valid actions may still be applied.
+If an applied reconstruction attempt leaves the draft invalid at the attempt level, the workflow rolls back to the state before that attempt.
+This allows the workflow to retain valid repairs while preventing invalid profile states from being committed.
 
 After reconstruction, the workflow re-evaluates the semantic requirements against the reconstructed draft.
 This produces the final semantic requirement scores.
 Requirements that remain unfulfilled after reconstruction are recorded with their status and rationale.
-The workflow then assembles a requirement report that combines three scores: a coverage score that counts filled profile fields, a semantic requirements score that weights each requirement by its quality and declared weight, and a source trace score that measures how much of the placed draft content is supported by evidence from the source files.
-The report distinguishes requirements that were patched, requirements that were reconstructed, and requirements that remain unresolved.
-This report is the basis for the manual curation step that follows.
+The workflow then assembles a requirement report from three values.
+The coverage score counts filled profile fields.
+For the semantic requirements, the thesis evaluation uses the distribution of requirement outcomes.
+It reports how many requirements are fulfilled, partially fulfilled, or still missing or unresolved after reconstruction.
+The source trace score measures how much of the placed draft content is supported by evidence from the source files.
+The report distinguishes requirements that were filled during earlier patching, requirements repaired during semantic reconstruction, and requirements that remain unresolved.
+This report forms the basis for the manual curation step that follows.
 
 \section{Manual Curation}
 \label{sec:manual_curation}
@@ -517,10 +522,8 @@ This allows the user to inspect the object in its structural context while direc
     \label{fig:manual-curation-interface}
 \end{figure}
 
-Individual fields can additionally be protected against later automated modification.
-A protected field retains the curator-approved value during subsequent workflow stages.
-This provides an explicit distinction between values that remain provisional and values that have been reviewed and accepted by the user.
-
+Individual fields can additionally be protected against later automated modification during the classification stage.
+This also provides an explicit distinction between values that remain provisional and values that have been reviewed and accepted by the user.
 The current prototype supports content-level curation of objects that are already present in the draft.
 It does not yet support structural editing.
 Users cannot create additional profile shapes or move existing shapes to different parent objects.
