@@ -509,6 +509,7 @@ Manual curation provides a human validation checkpoint between automated artifac
 Although the preceding stages enforce schema validity, evaluate evidence support, and attempt to repair semantic defects, they cannot guarantee that every generated description reflects the scientific meaning and overall context of the dataset.
 In particular, an \ac{LLM} may produce a locally plausible interpretation that is too broad, too specific, or inconsistent with the intended role of an object.
 The manual curation stage therefore allows a domain-informed user to review and refine the reconstructed draft before semantic identifiers are added.
+For completely automated runs, the curation stage can be skipped at this point and the draft can be passed directly to vocabulary mapping.
 
 The curation interface is organized around the nested structure of the \ac{DCAT-AP+} artifact.
 As shown in \cref{fig:manual-curation-interface}, the tree view on the left represents the objects and relations contained in the draft and serves as the primary navigation mechanism.
