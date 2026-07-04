@@ -188,34 +188,32 @@ The figure therefore illustrates how the workflow turns file-local summaries int
 \section{Chunking}
 \label{sec:chunking}
 
-Chunking has a special role in the workflow.
+Chunking manages the amount of text that is passed to later \ac{LLM}-based workflow stages.
 Its purpose is to compensate for the limited context window of \acp{LLM}, as described in \cref{sec:large-language-models}.
 Reducing the context size is beneficial for two reasons.
 First, it supports the use of locally deployed models, where memory, compute, and energy constraints make smaller inputs more practical \cite{xu2024ondevice}.
-Second, it reduces the need to let the \ac{LLM} solve cognitively demanding extraction tasks over very long inputs.
+Second, it reduces the need to perform extraction over very long inputs.
 Long-context studies show that models do not use long prompts uniformly and that realistic long-context reasoning remains difficult even for capable systems \cite{liu2024lostmiddle,bai2025longbenchv2}.
 Chunking also keeps source provenance local.
 Each chunk retains its file path and the line span from which it was produced.
-This allows later evidence claims to be traced back to the source location.
+This allows later evidence claims to be traced back to the corresponding source location.
 
 Two chunking strategies are used in the prototype.
-The semantic strategy was tested to avoid splitting related details only because a fixed token limit has been reached.
+The semantic strategy was tested to reduce the risk of splitting related parameter records only because a fixed token limit has been reached.
 This matters for files in which several neighboring lines are only interpretable together.
-The strategy uses an embedding model to create vector representations of sliding line windows.
-It then calculates the cosine distance between consecutive windows.
-Large distances indicate stronger changes between neighboring text groups.
-The highest distances are therefore treated as likely thematic jumps.
-They define candidate breakpoints at the end of related content spans.
+The strategy creates sliding windows over the retained text lines and uses an embedding model to represent each window as a vector.
+It then calculates the cosine distance between consecutive window embeddings.
+Large distances indicate stronger changes between neighboring text regions.
+The highest distances are therefore treated as candidate breakpoints.
+The resulting chunks are intended to preserve locally coherent spans, but the breakpoint selection itself is still a heuristic preprocessing step.
 
-The fixed-token strategy follows a simpler rule.
+The fixed-token strategy follows a simpler deterministic rule.
 It chooses a target number of tokens per chunk and fills each chunk until this target would be exceeded.
 The split is independent of content similarity.
-This makes the strategy less sensitive to related lines that cross the chunk boundary.
-Its advantage is runtime.
-Fixed-token chunking finishes in a few seconds for the test dataset, while semantic chunking can take substantially longer because it requires embedding requests for many line windows.
+This makes the strategy faster and easier to reproduce, but it can separate lines that belong together semantically.
+In the test dataset, fixed-token chunking finishes in a few seconds, whereas semantic chunking can take substantially longer because it requires embedding requests for many line windows.
 Both strategies apply minimum and maximum token limits after the initial split.
-The method therefore treats chunking as context management rather than as a semantic conclusion.
-
+The method therefore treats chunking as context management and provenance preservation, not as a final semantic interpretation of the source files.
 
 \section{Evidence Extraction}
 \label{sec:evidence_extraction}
