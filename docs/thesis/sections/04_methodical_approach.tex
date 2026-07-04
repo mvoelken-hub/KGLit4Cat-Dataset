@@ -632,32 +632,42 @@ The exact Ollama environment configuration used for the prototype is documented 
 \subsection{Neo4j Graph Store}
 \label{sec:neo4j_graph_store}
 
-Neo4j serves as the semantic vocabulary store.
-It was selected because its property graph model supports both graph traversal and indexed retrieval over the same vocabulary resources.
-The database stores the imported vocabulary terms, their literal properties, their relationships, generated embeddings, and information about the vocabulary from which each resource originates.
-The APOC extension is enabled for additional graph-processing operations.
+Neo4j serves as the semantic vocabulary store of the prototype.
+It was selected because its property graph model supports indexed lookup and graph traversal over vocabulary resources.
+The database stores imported vocabulary terms, their literal properties, their relationships, generated embeddings, and information about the vocabulary from which each resource originates.
 
-The database is initialized through a vocabulary-bootstrap procedure.
-During this procedure, the configured RDF vocabularies are retrieved from their source locations or supplied as uploaded RDF files.
-They are parsed into RDFLib graphs and normalized before their transfer to Neo4j.
-The current preprocessing includes deterministic replacement of blank nodes with generated identifiers and filtering of literals that are explicitly marked with unsupported languages.
-The normalized RDF statements are then converted into the property graph representation according to the mapping rules described below.
+The database is prepared through a vocabulary-bootstrap procedure, as shown in \cref{fig:vocabulary-bootstrap-neo4j}.
+A vocabulary import starts from a registered \ac{RDF} source and a vocabulary identifier.
+The source can either be a remote vocabulary location or an uploaded \ac{RDF} file.
+The source is parsed into an RDFLib graph and normalized before import \cite{rdflibNeo4j}.
+This normalization replaces blank nodes with generated \ac{URI} identifiers, removes literals that are explicitly marked with unsupported languages, and extracts a short vocabulary description from ontology- or concept-scheme-resources.
+Untagged literals are retained.
 
-Each imported vocabulary is represented by a vocabulary-scheme node connected to its imported resources.
-After import, the backend examines the RDF types, literal properties, and relationships available for the vocabulary terms.
-It then creates full-text and vector indexes for the relevant term types.
-The full-text indexes cover textual properties such as labels, descriptions, synonyms, or symbols.
-For vector retrieval, the backend constructs a textual representation of each resource, sends it to the Ollama embedding model, and stores the resulting vector on the corresponding graph node.
+The normalized graph is imported into Neo4j through the \texttt{rdflib-neo4j} Python library, which maps \ac{RDF} resources, types, literal properties, and object relations into Neo4j nodes, labels, properties, and relationships \cite{rdflibNeo4j}.
+After the graph import, the workflow records the imported vocabulary as a \texttt{VocabScheme} node.
+This node is linked with \texttt{HAS\_RESOURCE} relationships to all imported \ac{URI} subjects that have an explicit \texttt{rdf:type}.
+These linked typed subjects form the vocabulary resources used by the workflow.
+Literal values, untyped object nodes, and helper nodes are therefore not treated as vocabulary terms.
+Nodes that only carry a generic resource label and no type-derived label are removed after import.
 
-The bootstrap is designed to preserve an existing graph.
-If a configured vocabulary has already been imported, its resources are not inserted a second time.
-Missing or outdated embeddings can nevertheless be generated after startup.
-The graph store is therefore prepared once and can subsequently be reused by multiple extraction runs without rebuilding the vocabularies for every dataset.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figures/vocabulary-bootstrap-neo4j.png}
+    \caption{Vocabulary-bootstrap procedure for preparing the Neo4j graph store. RDF sources are parsed and normalized before being imported into Neo4j through \texttt{rdflib-neo4j}. The backend derives lookup structures from typed resources, and generates embeddings for vector retrieval.}
+    \label{fig:vocabulary-bootstrap-neo4j}
+\end{figure}
 
-During vocabulary mapping, the \ac{API} submits the vector and full-text queries to Neo4j independently.
-The database returns indexed candidates and provides bounded graph traversal around the retrieved seed terms.
-The graph store is thus not used to persist the reconstructed \ac{DCAT-AP+} artifact itself.
-Its primary role in the prototype is to provide the indexed and connected semantic resources required for vocabulary grounding.
+After import, the backend inspects the available \ac{RDF} types, literal properties, and relationships of the vocabulary resources.
+For each usable resource type, it derives a term scheme and creates the corresponding lookup structures.
+Full-text indexes are created over textual properties such as labels, descriptions, synonyms, and symbols.
+For vector retrieval, each indexed resource is projected into a textual representation using its \ac{URI}, types, and selected properties.
+This text is sent to the Ollama embedding model, and the resulting vector is stored on the corresponding Neo4j node as an \texttt{embedding} property.
+
+
+During vocabulary mapping, the workflow \ac{API} submits vector and full-text queries to Neo4j independently.
+Neo4j returns indexed candidates and provides bounded graph traversal around the retrieved seed terms.
+The graph store is therefore not used to persist the reconstructed \ac{DCAT-AP+} artifact itself.
+Its role is to provide the indexed and connected semantic resources required for vocabulary grounding.
 
 \subsection{User Interface}
 \label{sec:user_interface}
