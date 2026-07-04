@@ -640,7 +640,7 @@ The database is prepared through a vocabulary-bootstrap procedure, as shown in \
 A vocabulary import starts from a registered \ac{RDF} source and a vocabulary identifier.
 The source can either be a remote vocabulary location or an uploaded \ac{RDF} file.
 The source is parsed into an RDFLib graph and normalized before import \cite{rdflibNeo4j}.
-This normalization replaces blank nodes with generated \ac{URI} identifiers, removes literals that are explicitly marked with unsupported languages, and extracts a short vocabulary description from ontology- or concept-scheme-resources.
+This normalization replaces blank nodes with generated \ac{URI} identifiers, removes literals that are explicitly marked with unsupported languages, and extracts a short vocabulary description from ontology- or concept-scheme resources.
 Untagged literals are retained.
 
 The normalized graph is imported into Neo4j through the \texttt{rdflib-neo4j} Python library, which maps \ac{RDF} resources, types, literal properties, and object relations into Neo4j nodes, labels, properties, and relationships \cite{rdflibNeo4j}.
@@ -653,7 +653,7 @@ Nodes that only carry a generic resource label and no type-derived label are rem
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.95\textwidth]{figures/vocabulary-bootstrap-neo4j.png}
-    \caption{Vocabulary-bootstrap procedure for preparing the Neo4j graph store. RDF sources are parsed and normalized before being imported into Neo4j through \texttt{rdflib-neo4j}. The backend derives lookup structures from typed resources, and generates embeddings for vector retrieval.}
+    \caption{Vocabulary-bootstrap procedure for preparing the Neo4j graph store. RDF sources are parsed and normalized before being imported into Neo4j through \texttt{rdflib-neo4j}. The backend derives lookup structures from typed resources and generates embeddings for vector retrieval.}
     \label{fig:vocabulary-bootstrap-neo4j}
 \end{figure}
 
@@ -663,6 +663,10 @@ Full-text indexes are created over textual properties such as labels, descriptio
 For vector retrieval, each indexed resource is projected into a textual representation using its \ac{URI}, types, and selected properties.
 This text is sent to the Ollama embedding model, and the resulting vector is stored on the corresponding Neo4j node as an \texttt{embedding} property.
 
+The vocabulary-bootstrap procedure is executed independently of an individual extraction run.
+This separates vocabulary preparation from dataset processing.
+The computational cost of creating resource embeddings is therefore paid during vocabulary preparation rather than during each workflow run.
+Once the embeddings have been stored on the Neo4j resource nodes, they can be reused for later vocabulary-mapping steps without being recomputed for every dataset.
 
 During vocabulary mapping, the workflow \ac{API} submits vector and full-text queries to Neo4j independently.
 Neo4j returns indexed candidates and provides bounded graph traversal around the retrieved seed terms.
