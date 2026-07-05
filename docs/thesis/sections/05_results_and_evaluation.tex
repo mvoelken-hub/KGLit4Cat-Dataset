@@ -94,23 +94,20 @@ It cannot support general claims about extraction accuracy, curator time savings
 \subsection{Reference Fact Tracing}
 \label{sec:evaluation-reference-fact-tracing}
 
-\begin{itemize}
-    \item Evaluation basis: original source package contents before automatic metadata construction.
-    \item Raw dataset: dataset identity is available through Bruker acquisition and processing files and through the title file \texttt{10/pdata/1/title}.
-    \item ChemSpectra export: dataset identity is available in \texttt{dataset\_description.txt} as \texttt{dataset name: 1H NMR} and in \texttt{10.edit.jdx} as an \ac{NMR} spectrum.
-    \item Raw dataset: observed nucleus is available in \texttt{10/acqus} and \texttt{10/acqu} as \texttt{NUC1=<1H>}.
-    \item ChemSpectra export: observed nucleus is available in \texttt{10.edit.jdx}.
-    \item Raw dataset: solvent information is available in acquisition files as \texttt{SOLVENT=<CDCl3>}.
-    \item ChemSpectra export: solvent and reference information is available as \texttt{CDCl3} records.
-    \item Raw dataset: pulse-sequence information is available in acquisition files and in the pulse-program file.
-    \item ChemSpectra export: pulse-sequence information is available in \texttt{10.edit.jdx} as \texttt{.PULSE SEQUENCE=zg30}.
-    \item Raw dataset: instrument information is available in \texttt{10/uxnmr.info} as \texttt{Avance III NMR spectrometer} and \texttt{1H-frequency: 500.13 MHz}.
-    \item ChemSpectra export: instrument information is available in \texttt{dataset\_description.txt} as \texttt{Bruker Avance 500 MHz}.
-    \item Raw dataset: observed resonance frequency is available as \texttt{SFO1=500.133088507478} and as rounded instrument frequency.
-    \item ChemSpectra export: observed resonance frequency is available in \texttt{10.edit.jdx} as \texttt{.OBSERVE FREQUENCY=500.133088507478}.
-    \item Raw dataset: package resources include the binary \texttt{fid} signal, acquisition files, processing files, pulse program, shim values, audit trail, and instrument configuration.
-    \item ChemSpectra export: package resources include the derived \texttt{10.edit.jdx} spectrum, rendered image, empty inference JSON file, and textual dataset description.
-\end{itemize}
+The reference fact tracing step establishes which selected facts are available in the original source package contents before automatic metadata construction.
+The inspected reference facts are limited to the scoped curator-relevant set introduced above: dataset identity as \textsuperscript{1}H \ac{NMR} data, observed nucleus, solvent or reference information, pulse sequence, instrument description, observed resonance frequency, and the distinction between raw and derived package resources.
+
+In the raw dataset, the dataset identity is available through Bruker acquisition and processing files and through the human-readable title file \texttt{10/pdata/1/title}.
+The observed nucleus is explicitly recorded in the acquisition files \texttt{10/acqus} and \texttt{10/acqu} as \texttt{NUC1=<1H>}.
+The same acquisition context also records the solvent as \texttt{SOLVENT=<CDCl3>} and the pulse sequence as \texttt{PULPROG=<zg30>}, while the pulse-program file provides the corresponding program content.
+Instrument information is available in \texttt{10/uxnmr.info}, which identifies an \texttt{Avance III NMR spectrometer} and reports a rounded \texttt{1H-frequency: 500.13 MHz}.
+The more specific observed resonance frequency is present in the acquisition files as \texttt{SFO1=500.133088507478}.
+The raw package also contains the binary \texttt{fid} signal, acquisition files, processing files, shim values, audit trail, pulse program, and instrument configuration.
+
+In the ChemSpectra export, the dataset identity is stated in \texttt{dataset\_description.txt} as \texttt{dataset name: 1H NMR} and is also implied by the \ac{JCAMP-DX} spectrum file.
+The \texttt{10.edit.jdx} file records the observed nucleus, the \texttt{CDCl3} solvent or reference information, the \texttt{zg30} pulse sequence, and the observed frequency \texttt{500.133088507478}.
+The instrument description is available in the textual dataset description as \texttt{Bruker Avance 500 MHz}.
+Compared with the raw dataset, this package exposes the same measurement through derived resources: the \ac{JCAMP-DX} spectrum, a rendered spectrum image, an empty inference JSON file, and a textual dataset description.
 
 \subsection{Preprocessing}
 \label{sec:evaluation-preprocessing-observations}
