@@ -2,12 +2,12 @@
 
 This chapter evaluates the implemented prototype as an end-to-end application for \ac{LLM}-assisted semantic metadata extraction from heterogeneous dataset packages.
 The system is not limited to isolated prompt experiments, but implements an executable workflow that connects dataset ingestion and preprocessing with evidence-backed metadata construction, semantic review, vocabulary grounding, and result inspection.
-The evaluated output is the automatically generated metadata draft before manual curation.
+The evaluated output is the automatically generated metadata draft without manual curation.
 
 The chapter treats this output as both a software result and a case-study baseline.
 It examines how far a domain-agnostic \ac{DCAT-AP+} profile can carry the extraction of curator-relevant metadata before domain-specific profile extensions are introduced.
 Using \ac{DCAT-AP+} as the initial profile is central to this interpretation.
-The profile provides a general semantic structure for describing datasets, distributions, provenance, activities, agents, entities, and quantitative attributes without requiring a customized domain profile at the outset.
+The profile provides a general semantic structure for describing datasets, distributions, provenance, activities, agents, entities and quantitative attributes, eliminating the need for a customised domain profile from the initial stage.
 The generated metadata drafts can therefore be read as baseline extraction results.
 They show which dataset facts can already be represented through a reusable profile foundation and where later domain-specific extensions would be needed to capture scientific meaning more precisely.
 
@@ -23,31 +23,58 @@ The chapter closes by identifying the evaluation gaps that remain.
 \section{Evaluation Setup}
 \label{sec:evaluation-setup}
 
-The evaluation setup defines the dataset inputs, the curator-oriented reference expectation, and the interpretation frame for the results.
-It does not measure general extraction accuracy across many datasets.
-Instead, it examines how the implemented workflow behaves on the two \textsuperscript{1}H \ac{NMR} package variants introduced in \cref{sec:dataset}.
-The focus is on metadata accessibility and workflow inspectability.
-The evaluation asks whether the workflow can turn heterogeneous source packages into profile-compatible metadata drafts, whether important source facts are represented in appropriate parts of the \ac{DCAT-AP+} structure, and whether intermediate artifacts make omissions, repairs, and evidence use visible.
+The evaluation is designed as an artifact-based diagnostic case study of the implemented workflow.
+It inspects how selected metadata facts are preserved, transformed, omitted, or misplaced between the source packages and the automatically generated metadata draft.
+The evaluation therefore follows the internal structure of the workflow rather than measuring general extraction accuracy across a large benchmark.
+In this sense, it combines a theory-oriented perspective, because the workflow stages define the expected processing logic, with a utilization-oriented perspective, because the output is judged with respect to its usefulness for later curator review and correction \cite{patton1979utilization,sidani1999program,deane2020theoretically}.
 
-The two evaluation inputs originate from the same underlying measurement but expose different metadata affordances.
-The raw Bruker archive is closer to the instrument output and preserves detailed acquisition and processing context in vendor-specific files.
-The ChemSpectra-derived export is closer to a repository-facing package and contains derived representations such as a \ac{JCAMP-DX} spectrum, a rendered spectrum image, and a textual dataset description.
-The comparison therefore does not evaluate different scientific measurements.
-It evaluates how different package representations of the same measurement affect metadata extraction and provenance representation.
+\begin{table}[htbp]
+\centering
+\caption{Stage-wise inspection focus of the evaluation.}
+\label{tab:evaluation-framework-checklist}
+\begin{tabular}{p{0.32\textwidth} p{0.58\textwidth}}
+\toprule
+\textbf{Workflow stage} & \textbf{Inspection focus} \\
+\midrule
+Reference fact tracing & source locations; explicit and implicit statements; package-specific availability \\
+Preprocessing & text preservation; file-section preservation; chunk availability \\
+Dataset overview & early fact coverage; location hints; misleading statements \\
+Chunk-level evidence extraction & signal detection; category and role assignment; claim formulation \\
+Evidence collection & deduplication; noise filtering; preservation or removal of relevant evidence \\
+Provenance core construction & profile skeleton; package-resource distinctions; provenance structure \\
+Evidence routing & entity assignment; relation assignment; misplaced or over-interpreted facts \\
+Attribute construction & generic attribute pattern; quantitative value preservation; duplicate or misplaced attributes \\
+Semantic requirement evaluation & \ac{LLM} judgements as workflow artifacts; reconstruction effects; remaining curation needs \\
+Vocabulary querying and grounding & query formulation; retrieved candidates; graph context; selected and rejected terms \\
+Overall workflow assessment & cross-stage error patterns; reliable stages; development needs \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-For the purpose of this evaluation, a helpful result is defined from the perspective of a dataset curator who wants to make the dataset more accessible through a structured metadata profile.
-This reference expectation is not a formal gold standard and does not require a complete scientific interpretation of the spectrum.
-Instead, it describes the kind of metadata draft that would support later review and publication.
-Such a draft should identify the dataset as a \textsuperscript{1}H \ac{NMR} dataset, describe the available distributions, capture central acquisition context where it is present, distinguish raw source files from derived representations, and keep generated claims inspectable through source evidence.
+The case study uses the two \textsuperscript{1}H \ac{NMR} package variants introduced in \cref{sec:dataset}.
+Both packages originate from the same underlying measurement, but expose different metadata affordances.
+The raw Bruker archive is closer to the instrument output and contains vendor-specific acquisition and processing files.
+The ChemSpectra-derived export is closer to a repository-facing package and contains derived resources such as a \ac{JCAMP-DX} spectrum, a rendered spectrum image, and a textual dataset description.
+The comparison therefore does not evaluate different scientific measurements, but how different representations of the same measurement affect source accessibility, evidence traceability, provenance representation, and profile construction.
 
-The expected acquisition context includes facts such as the observed nucleus, solvent or reference, pulse sequence, and observed resonance frequency.
-For the present measurement, the observed frequency is treated as a specific acquisition value of the \textsuperscript{1}H channel, recorded in the source files as approximately 500.13~MHz, rather than only as the nominal 500~MHz instrument description.
-These facts are relevant for \ac{NMR} metadata because they provide basic acquisition context and help distinguish raw, processed, and exchange-oriented representations of the measurement \cite{Schober2018nmrML}.
-The purpose of the reference expectation is not to require that every possible instrument parameter is extracted.
-Rather, it defines the level of structured, evidence-aware description that would make the package easier to review, correct, and publish.
+As an inspection reference, a small set of curator-relevant facts is defined before interpreting the workflow output.
+For the present measurement, these facts include the dataset identity as \textsuperscript{1}H \ac{NMR} data, the observed nucleus, solvent or reference information, pulse sequence, instrument description, observed resonance frequency, and the distinction between raw and derived package resources.
+The observed frequency is treated as a specific acquisition value of the \textsuperscript{1}H channel, recorded in the source files as approximately 500.13~MHz, rather than only as the nominal 500~MHz instrument description.
+These facts were selected because they provide basic acquisition and package-context information that supports curator review of an \ac{NMR} dataset \cite{Schober2018nmrML}.
+The reference expectation is not a formal metadata standard, ground truth benchmark, or complete scientific interpretation of the spectrum.
+It is a scoped inspection aid for evaluating whether the automatically generated draft contains reviewable, evidence-aware structure.
 
-The evaluation does not claim that schema-valid output is automatically scientifically correct.
-Scientific correctness, curator time savings, and broad performance improvements over alternative systems would require additional expert evaluation or benchmark studies.
+Across the evaluation, followed facts are described with the labels \emph{placed}, \emph{partial}, \emph{misplaced}, \emph{absent}, and \emph{not available in package}.
+A fact is treated as \emph{placed} when it appears in an appropriate part of the generated profile.
+It is \emph{partial} when it is present but underspecified or represented only at a coarse level.
+It is \emph{misplaced} when it is represented under an inappropriate entity, role, relation, or attribute structure.
+It is \emph{absent} when it is available in the source package or intermediate artifacts but not represented in the final draft.
+It is \emph{not available in package} when the corresponding package representation does not contain the required information.
+
+These labels are qualitative inspection categories, not statistically validated performance metrics.
+They are applied within the case study to identify where facts are preserved, lost, or incorrectly transformed.
+The evaluation can therefore support claims about observed workflow behaviour, traceability, and development needs in the selected case.
+It cannot support general claims about extraction accuracy, curator time savings, scientific correctness, or superiority over other systems without additional expert evaluation or benchmark studies.
 
 \section{Baseline Results}
 \label{sec:baseline-results}
