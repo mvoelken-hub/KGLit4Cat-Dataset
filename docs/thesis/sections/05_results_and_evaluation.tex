@@ -1,54 +1,67 @@
 \label{chap:results_and_evaluations}
 
-This chapter evaluates the implemented prototype as an end-to-end application for \ac{LLM}-assisted semantic metadata extraction from heterogeneous dataset packages.
-The system is not limited to isolated prompt experiments, but implements an executable workflow that connects dataset ingestion and preprocessing with evidence-backed metadata construction, semantic review, vocabulary grounding, and result inspection.
-The evaluated output is the automatically generated metadata draft without manual curation.
-
-The chapter treats this output as both a software result and a case-study baseline.
-It examines how far a domain-agnostic \ac{DCAT-AP+} profile can carry the extraction of curator-relevant metadata before domain-specific profile extensions are introduced.
-Using \ac{DCAT-AP+} as the initial profile is central to this interpretation.
-The profile provides a general semantic structure for describing datasets, distributions, provenance, activities, agents, entities and quantitative attributes, eliminating the need for a customised domain profile from the initial stage.
-The generated metadata drafts can therefore be read as baseline extraction results.
-They show which dataset facts can already be represented through a reusable profile foundation and where later domain-specific extensions would be needed to capture scientific meaning more precisely.
-
-The evaluation focuses on metadata accessibility and workflow inspectability.
-It asks whether the workflow can turn heterogeneous source packages into profile-compatible metadata drafts, whether important source facts are represented in appropriate parts of the \ac{DCAT-AP+} structure, and whether intermediate artifacts make omissions, repairs, and evidence use visible.
-It does not claim that schema-valid output is automatically scientifically correct.
-Scientific correctness, curator time savings, and broad performance improvements over alternative systems would require additional expert evaluation or benchmark studies.
-
-The chapter first defines the case-study setup and the curator-oriented reference expectation.
-It then evaluates the generated metadata drafts, package affordances, persisted interim artifacts, semantic requirement outcomes, and vocabulary grounding results.
+The implemented prototype is evaluated as an end-to-end application for \ac{LLM}-assisted semantic metadata extraction from heterogeneous dataset packages.
+The system is not limited to isolated prompt experiments.
+Instead, it implements an executable workflow that connects dataset ingestion and preprocessing with evidence-backed metadata construction, semantic review, vocabulary grounding, and result inspection.
+The primary evaluation focus is the automatically generated metadata draft without manual curation as a case study baseline.
+It is examined how far a domain-agnostic \ac{DCAT-AP+} profile can carry the extraction of curator-relevant metadata before domain-specific profile extensions are introduced.
+This work does not claim that schema-valid output is automatically scientifically correct.
+Scientific correctness, curator time savings, and broad performance improvements over alternative systems would require additional evaluation or benchmark studies.
+Therefore, a secondary focus is the software implementation itself.
+A review on the usability of local models on commodity hardware is done.
+This reagrds computing time and cost.
+The effort for the vocabulary database curation is discussed.
 The chapter closes by identifying the evaluation gaps that remain.
 
-\section{Evaluation Setup}
+\section{Worfklow Evaluation Setup}
 \label{sec:evaluation-setup}
 
 The evaluation is designed as an artifact-based diagnostic case study of the implemented workflow.
 It inspects how selected metadata facts are preserved, transformed, omitted, or misplaced between the source packages and the automatically generated metadata draft.
-The evaluation therefore follows the internal structure of the workflow rather than measuring general extraction accuracy across a large benchmark.
-In this sense, it combines a theory-oriented perspective, because the workflow stages define the expected processing logic, with a utilization-oriented perspective, because the output is judged with respect to its usefulness for later curator review and correction \cite{patton1979utilization,sidani1999program,deane2020theoretically}.
+The evaluation therefore follows the internal structure of the workflow as presented in \cref{tab:evaluation-framework-checklist}.
 
 \begin{table}[htbp]
-\centering
-\caption{Stage-wise inspection focus of the evaluation.}
-\label{tab:evaluation-framework-checklist}
-\begin{tabular}{p{0.32\textwidth} p{0.58\textwidth}}
-\toprule
-\textbf{Workflow stage} & \textbf{Inspection focus} \\
-\midrule
-Reference fact tracing & source locations; explicit and implicit statements; package-specific availability \\
-Preprocessing & text preservation; file-section preservation; chunk availability \\
-Dataset overview & early fact coverage; location hints; misleading statements \\
-Chunk-level evidence extraction & signal detection; category and role assignment; claim formulation \\
-Evidence collection & deduplication; noise filtering; preservation or removal of relevant evidence \\
-Provenance core construction & profile skeleton; package-resource distinctions; provenance structure \\
-Evidence routing & entity assignment; relation assignment; misplaced or over-interpreted facts \\
-Attribute construction & generic attribute pattern; quantitative value preservation; duplicate or misplaced attributes \\
-Semantic requirement evaluation & \ac{LLM} judgements as workflow artifacts; reconstruction effects; remaining curation needs \\
-Vocabulary querying and grounding & query formulation; retrieved candidates; graph context; selected and rejected terms \\
-Overall workflow assessment & cross-stage error patterns; reliable stages; development needs \\
-\bottomrule
-\end{tabular}
+    \centering
+    \caption{Inspection focus for each workflow stage as evaluation checklist.}
+    \label{tab:evaluation-framework-checklist}
+    \begin{minipage}{0.92\textwidth}
+        \small
+        \setlength{\parskip}{0.55em}
+        \setlength{\parindent}{0pt}
+
+        \textbf{Reference fact tracing}\\
+        \hspace*{1em}source file locations; explicit and implicit statements
+
+        \textbf{Preprocessing}\\
+        \hspace*{1em}text preservation; chunk availability
+
+        \textbf{Dataset overview}\\
+        \hspace*{1em}early fact coverage; location hints; misleading overview statements
+
+        \textbf{Chunk-level evidence extraction}\\
+        \hspace*{1em}signal detection; category and role assignment
+
+        \textbf{Evidence collection}\\
+        \hspace*{1em}deduplication; noise filtering; harmful removal of relevant evidence
+
+        \textbf{Provenance core construction}\\
+        \hspace*{1em}coverage without chunk-level evidence; profile shape
+
+        \textbf{Evidence routing}\\
+        \hspace*{1em}entity assignment; relation assignment
+
+        \textbf{Attribute construction}\\
+        \hspace*{1em}generic attribute pattern; duplicate attributes; misplaced values
+
+        \textbf{Semantic requirement evaluation}\\
+        \hspace*{1em}\ac{LLM} judgements; unsupported semantic claims; curation needs
+
+        \textbf{Vocabulary querying and grounding}\\
+        \hspace*{1em}query formulation; retrieved terms; graph context; selected terms; rejected candidates
+
+        \textbf{Overall workflow assessment}\\
+        \hspace*{1em}cross-stage error patterns; reliable stages; development needs
+    \end{minipage}
 \end{table}
 
 The case study uses the two \textsuperscript{1}H \ac{NMR} package variants introduced in \cref{sec:dataset}.
@@ -61,7 +74,7 @@ As an inspection reference, a small set of curator-relevant facts is defined bef
 For the present measurement, these facts include the dataset identity as \textsuperscript{1}H \ac{NMR} data, the observed nucleus, solvent or reference information, pulse sequence, instrument description, observed resonance frequency, and the distinction between raw and derived package resources.
 The observed frequency is treated as a specific acquisition value of the \textsuperscript{1}H channel, recorded in the source files as approximately 500.13~MHz, rather than only as the nominal 500~MHz instrument description.
 These facts were selected because they provide basic acquisition and package-context information that supports curator review of an \ac{NMR} dataset \cite{Schober2018nmrML}.
-The reference expectation is not a formal metadata standard, ground truth benchmark, or complete scientific interpretation of the spectrum.
+The reference expectation is not a formal metadata standard.
 It is a scoped inspection aid for evaluating whether the automatically generated draft contains reviewable, evidence-aware structure.
 
 Across the evaluation, followed facts are described with the labels \emph{placed}, \emph{partial}, \emph{misplaced}, \emph{absent}, and \emph{not available in package}.
@@ -70,10 +83,8 @@ It is \emph{partial} when it is present but underspecified or represented only a
 It is \emph{misplaced} when it is represented under an inappropriate entity, role, relation, or attribute structure.
 It is \emph{absent} when it is available in the source package or intermediate artifacts but not represented in the final draft.
 It is \emph{not available in package} when the corresponding package representation does not contain the required information.
-
 These labels are qualitative inspection categories, not statistically validated performance metrics.
 They are applied within the case study to identify where facts are preserved, lost, or incorrectly transformed.
 The evaluation can therefore support claims about observed workflow behaviour, traceability, and development needs in the selected case.
 It cannot support general claims about extraction accuracy, curator time savings, scientific correctness, or superiority over other systems without additional expert evaluation or benchmark studies.
-
 
