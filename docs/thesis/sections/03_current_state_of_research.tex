@@ -71,7 +71,7 @@ Together, these examples show that accessibility is implemented through reposito
 Interoperability requires shared machine-readable representations and semantics.
 Controlled vocabularies and ontologies are necessary here because they provide stable identifiers, labels, definitions, synonyms, and relations for concepts that would otherwise remain ambiguous strings.
 The \ac{Voc4Cat} provides catalysis-specific terminology in \ac{SKOS} and is used in \ac{NFDI4Cat} contexts to align catalysis metadata with shared community concepts \cite{nfdi4cat2024whitepaper,david_linke_2023_8313340}.
-More specialized resources provide finer-grained semantics where a broad catalysis vocabulary is insufficient: nmrCV supports NMR-specific descriptions associated with nmrML, and QUDT represents quantity kinds, units, dimensions, and datatypes \cite{peters2023fair,nmrmlSpecification,qudt2022schema}.
+More specialized resources provide finer-grained semantics where a broad catalysis vocabulary is insufficient: nmrCV supports NMR-specific descriptions associated with nmrML, and QUDT represents quantity kinds, units, dimensions, and datatypes \cite{peters2023fair,Schober2018nmrML,qudt2022schema}.
 
 Vocabularies alone, however, do not define the complete structure of a dataset.
 A vocabulary can identify a concept such as reaction temperature, but a metadata or data schema must define where that temperature belongs, which entity or activity it describes, what datatype it has, and which unit is attached.
@@ -219,14 +219,14 @@ Conversely, a linking of a value to a quantity kind and unit that are incompatib
 
 The \ac{nmrCV} is the \ac{OWL}-based controlled vocabulary accompanying \ac{nmrML}, an open, vendor-neutral \ac{XML} format for exchanging and storing \ac{NMR} data.
 While the \ac{nmrML} schema defines the document structure, \ac{nmrCV} supplies standardized identifiers for spectroscopy-specific concepts concerning instrumentation and acquisition, spectral data processing, and the description or assignment of spectral results.
-It therefore provides a level of NMR-specific detail that complements broader domain vocabularies such as Voc4Cat \cite{nmrmlSpecification}.
+It therefore provides a level of NMR-specific detail that complements broader domain vocabularies such as Voc4Cat \cite{Schober2018nmrML}.
 While \ac{nmrCV} technically is an \ac{OWL} ontology, it is intended to be used as a controlled vocabulary rather than as a formal ontology with axioms and reasoning.
 
 The scope of nmrCV extends across the NMR data lifecycle.
 Instrument and acquisition context can be described through terms such as \texttt{NMR probe}, \texttt{dwell time}, and \texttt{ninety degree pulse duration}.
 The vocabulary also distinguishes raw or processed data products and processing operations, including \texttt{FID data set}, \texttt{peak-picked spectrum}, and \texttt{baseline correction}.
 Terms for bin boundaries, bin areas, and compound concentrations further support the description of derived or quantified spectral results.
-nmrCV can therefore identify not only how a spectrum was acquired, but also the processing state and interpretation of the resulting data \cite{nmrmlSpecification}.
+nmrCV can therefore identify not only how a spectrum was acquired, but also the processing state and interpretation of the resulting data \cite{Schober2018nmrML}.
 
 
 \section{Text Mining and LLM-Based Extraction Workflows}

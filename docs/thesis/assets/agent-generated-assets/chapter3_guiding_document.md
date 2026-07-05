@@ -45,7 +45,7 @@
 |-----------|--------|------------------------------|----------------|
 | **Target profile** | DCAT-AP+ / ChemDCAT-AP-style profile, schema-validated via JSON Schema | ChemDCAT-AP is the emerging standard; LinkML compiles to SHACL, JSON-LD, Pydantic | `stroemert2026chemdcat`, `chemdcatapDocumentation` |
 | **Quantitative grounding** | QUDT quantity kinds and units; deterministic class assignment | QUDT is standard; ChemDCAT-AP references it for attribute patterns | `qudt2022schema`, `stroemert2026chemdcat` |
-| **Qualitative grounding** | Configurable vocabularies (Voc4Cat, CHMO, nmrCV); vector + lexical retrieval with reciprocal-rank fusion | Voc4Cat is community standard; CHMO for methods; nmrCV for NMR | `nfdi4cat2024whitepaper`, `chmoOboFoundry`, `nmrmlSpecification` |
+| **Qualitative grounding** | Configurable vocabularies (Voc4Cat, CHMO, nmrCV); vector + lexical retrieval with reciprocal-rank fusion | Voc4Cat is community standard; CHMO for methods; nmrCV for NMR | `nfdi4cat2024whitepaper`, `chmoOboFoundry`, `Schober2018nmrML` |
 | **Provenance** | Evidence candidates carry `evidence_text` and `source_context`; file-level provenance preserved | PROV-O is the standard model; ChemDCAT-AP uses it for data-generating activities | `w3c2013provo`, `stroemert2026chemdcat` |
 | **Validation** | JSON Schema validation + SHACL-ready (via LinkML compilation) | LinkML → SHACL is the recommended path; validation is standard practice | `w3c2017shacl`, `stroemert2026chemdcat` |
 | **Repository integration** | Prototype-level export; not yet integrated into Repo4Cat or NOMAD | Repo4Cat (NFDI4Cat repository), NOMAD catalysis plugin, Chemotion ELN (NFDI4Chem) | `kushnarenko2025repo4cat`, `schumann2025nomad`, `steinbeck2023nfdi4chem` |
