@@ -218,41 +218,41 @@ Such a component could include \ac{NER}-style recognition of domain terms and pa
 \subsection{Provenance Core Construction}
 \label{sec:evaluation-core-construction-observations}
 
-\begin{itemize}
-    \item The evaluation basis is the generated provenance core before attribute construction, semantic reconstruction, and vocabulary grounding.
-    \item This stage does not receive the evidence notes inspected above as direct input.
-    \item The provenance core is constructed from the dataset overview artifacts and the current dataset-level draft.
-    \item The stage therefore tests whether the overview representation is sufficient to create the main activity skeleton, not whether all previously detected evidence notes are preserved.
-    \item In the baseline configuration with fixed 1024-token chunks and the 12b model, the raw dataset core is framed as \texttt{NMR Experiment Data}.
-    \item The raw dataset core creates one activity titled \enquote{NMR Data Acquisition and Processing}.
-    \item The raw activity describes automated instrument control and data acquisition using Bruker TopSpin software.
-    \item It places \texttt{Bruker TopSpin} as technical agent, parameter files and shim values as inputs, audit trail generation as a preceding activity, and \texttt{NMR Experiment Data (FID)} as output.
-    \item This preserves the raw signal as a central provenance output and gives the raw package an acquisition-oriented core.
-    \item The raw baseline core does not preserve \texttt{NUC1=<1H>}, \texttt{CDCl3}, \texttt{zg30}, or \texttt{SFO1=500.133088507478} as explicit value-level facts.
-    \item In the same baseline configuration, the ChemSpectra export core is framed as \texttt{Records Dataset}.
-    \item The ChemSpectra core creates one activity titled \enquote{Records Dataset Generation}.
-    \item The activity is described as the creation of a description file and a JSON structure.
-    \item It places \texttt{Text Editor} and \texttt{JSON Editor} as agents, \texttt{Dataset Description} as input, and \texttt{Records Dataset} as output.
-    \item This loses the \textsuperscript{1}H \ac{NMR} spectrum as the central data product at the provenance-core stage.
-    \item The ChemSpectra baseline core also does not preserve the \ac{JCAMP-DX} spectrum, the observed nucleus, the solvent or reference information, the pulse sequence, or the observed frequency as core-level facts.
-    \item The baseline contrast shows that the same workflow configuration creates different provenance interpretations for the two package representations.
-    \item The raw package is interpreted as an acquisition dataset, while the ChemSpectra export is interpreted as generic record generation.
-    \item Additional non-baseline runs show that the provenance core is sensitive to run configuration.
-    \item With the 27b model, the ChemSpectra export is framed as \texttt{1H NMR Spectra of Organic Compounds} and the activity is framed as \texttt{NMR Data Generation}.
-    \item This larger-model ChemSpectra core preserves the \ac{NMR} spectrum frame more clearly than the baseline, but it is not used as the baseline judgement.
-    \item With semantic chunking and the 12b model, the ChemSpectra export drifts toward \texttt{Process Operational Characteristics}, which loses the \ac{NMR}-specific provenance interpretation.
-    \item For the raw dataset, the 27b and semantic-chunking archive runs remain more measurement-oriented than a later configuration-centered rerun, but they differ in how they organize spectra, audit trails, titles, parameters, and pulse-program resources.
-    \item A separate comparison between a 4b model and a 27b model on the raw dataset again shows different core specificity.
-    \item The 4b model produces a generic \texttt{NMR} and \texttt{data processing} frame, while the 27b model produces a more specific \texttt{Bruker Avance III NMR Spectral Data} and \texttt{NMR Data Generation} frame.
-    \item These additional comparisons are treated as robustness observations only.
-    \item They indicate sensitivity to model and chunking configuration, but they do not support a causal claim about model size or chunking method because the evaluation does not contain repeated controlled runs.
-    \item Overall, provenance core construction can establish a plausible activity skeleton, but it does not reliably preserve the selected acquisition-level facts without later attribute construction and grounding.
-    \item The stage is therefore an early provenance-framing step rather than a value-extraction step.
-    \item Its output follows the dataset overview strongly.
-    \item If the overview foregrounds acquisition and raw data resources, the core can become measurement-oriented.
-    \item If the overview foregrounds description files, JSON placeholders, or generic records, the core can drift toward file-production or record-generation interpretations.
-    \item The main curation concern at this stage is the central activity and output interpretation, because later value placement starts from this core structure.
-\end{itemize}
+The provenance core is inspected before attribute construction, semantic reconstruction, and vocabulary grounding.
+This stage does not receive the evidence notes inspected above as direct input.
+It is constructed from the dataset overview artifacts and the current dataset-level draft.
+The inspection therefore evaluates whether the overview representation is sufficient to create the main activity skeleton.
+It does not evaluate whether all previously detected evidence notes are preserved.
+
+In the baseline configuration with fixed 1024-token chunks and the 12b model, the raw dataset core is framed as \texttt{NMR Experiment Data}.
+It creates one activity titled \enquote{NMR Data Acquisition and Processing}.
+The activity describes automated instrument control and data acquisition using Bruker TopSpin software.
+It places \texttt{Bruker TopSpin} as technical agent, parameter files and shim values as inputs, audit trail generation as a preceding activity, and \texttt{NMR Experiment Data (FID)} as output.
+This gives the raw package an acquisition-oriented provenance core and preserves the raw signal as a central data output.
+At the same time, the core does not preserve \texttt{NUC1=<1H>}, \texttt{CDCl3}, \texttt{zg30}, or \texttt{SFO1=500.133088507478} as explicit value-level facts.
+
+The ChemSpectra export behaves differently in the same baseline configuration.
+Its core is framed as \texttt{Records Dataset} and contains one activity titled \enquote{Records Dataset Generation}.
+The activity is described as the creation of a description file and a JSON structure.
+It places \texttt{Text Editor} and \texttt{JSON Editor} as agents, \texttt{Dataset Description} as input, and \texttt{Records Dataset} as output.
+This loses the \textsuperscript{1}H \ac{NMR} spectrum as the central data product at the provenance-core stage.
+It also does not preserve the \ac{JCAMP-DX} spectrum, observed nucleus, solvent or reference information, pulse sequence, or observed frequency as core-level facts.
+The baseline contrast shows that the same workflow configuration creates different provenance interpretations for the two package representations.
+The raw package is interpreted as an acquisition dataset, while the ChemSpectra export is interpreted as generic record generation.
+
+Additional runs are treated only as robustness observations.
+They show that the provenance core is sensitive to run configuration, but they do not support a causal claim about model size or chunking method because the evaluation does not contain repeated controlled runs.
+With the 27b model, the ChemSpectra export is framed as \texttt{1H NMR Spectra of Organic Compounds} and \texttt{NMR Data Generation}, which preserves the \ac{NMR} spectrum frame more clearly than the baseline.
+With semantic chunking and the 12b model, the same package drifts toward \texttt{Process Operational Characteristics}, which loses the \ac{NMR}-specific provenance interpretation.
+For the raw dataset, additional 27b and semantic-chunking runs remain more measurement-oriented than another configuration-centered run, but they differ in how they organize spectra, audit trails, titles, parameters, and pulse-program resources.
+A separate comparison between a 4b model and a 27b model on the raw dataset again shows different core specificity.
+The 4b model produces a generic \texttt{NMR} and \texttt{data processing} frame, while the 27b model produces a more specific \texttt{Bruker Avance III NMR Spectral Data} and \texttt{NMR Data Generation} frame.
+
+The observations show that provenance core construction is mainly an early provenance-framing step, not a value-extraction step.
+Its output follows the dataset overview strongly.
+When the overview foregrounds acquisition and raw data resources, the core can become measurement-oriented.
+When the overview foregrounds description files, JSON placeholders, or generic records, the core can drift toward file-production or record-generation interpretations.
+The main curation concern at this stage is therefore the central activity and output interpretation, because later value placement starts from this core structure.
 
 \subsection{Evidence Routing}
 \label{sec:evaluation-routing-observations}
