@@ -1,22 +1,39 @@
-\label{chap:results}
+\label{chap:results_and_evaluations}
 
-This work resulted in an end-to-end application prototype for \ac{LLM}-assisted semantic metadata extraction from heterogeneous dataset packages.
-The implemented system goes beyond isolated prompt experiments by connecting dataset ingestion, preprocessing, dataset-level overview generation, evidence extraction, \ac{DCAT-AP+} artifact construction, semantic requirement evaluation, reconstruction, vocabulary grounding, and result inspection in one executable workflow.
-The outcome is therefore both a software artifact and a baseline study for investigating how far domain-agnostic metadata extraction can be taken before domain-specific profile extensions are introduced.
+This chapter evaluates the implemented prototype as an end-to-end application for \ac{LLM}-assisted semantic metadata extraction from heterogeneous dataset packages.
+The system is not limited to isolated prompt experiments.
+The system is not limited to isolated prompt experiments.
+Instead, it implements an executable end-to-end workflow that connects dataset ingestion and preprocessing with evidence-backed metadata construction, semantic review, vocabulary grounding, and result inspection.
+The evaluated output is the automatically generated metadata draft before manual curation.
 
-The prototype opens several directions for further development.
-Individual workflow stages such as file summarization, chunking, evidence selection, profile projection, semantic validation, reconstruction, and vocabulary grounding can be refined independently.
-The ordering of these stages can also be studied further, because the implementation persists intermediate artifacts that make the transformation from source package to metadata draft inspectable.
-The evaluation in this chapter therefore does not treat the prototype as a final extraction solution for \ac{NMR} metadata.
-Instead, it examines what can be achieved when heterogeneous dataset packages are processed against \ac{DCAT-AP+} as a reusable starting profile.
+The evaluation is conducted as a case study on two package variants of the same underlying \textsuperscript{1}H \ac{NMR} measurement.
+One variant is the native Bruker archive with detailed vendor-specific acquisition and processing files.
+The other variant is a ChemSpectra-derived export that contains repository-oriented derivative files, including a \ac{JCAMP-DX} spectrum, a rendered spectrum image, an inferred \ac{JSON} file, and a textual dataset description.
+The comparison is therefore not a comparison of different scientific measurements, but a comparison of how different package representations of the same measurement affect metadata extraction.
 
+The outcome of the chapter is both a software result and a case-study baseline.
+It shows how far a domain-agnostic \ac{DCAT-AP+} profile can carry the extraction of curator-relevant metadata before domain-specific \ac{NMR} profile extensions are introduced.
 Using \ac{DCAT-AP+} as the initial profile is central to this interpretation.
 The profile provides a general semantic structure for describing datasets, distributions, provenance, activities, agents, entities, and quantitative attributes without requiring a customized domain profile at the outset.
 The generated metadata drafts can therefore be read as baseline extraction results.
-They show which dataset facts can already be represented through a domain-agnostic profile foundation, and where later domain-specific profile extensions would be needed to capture scientific meaning more precisely.
+They show which dataset facts can already be represented through a reusable profile foundation and where later domain-specific extensions would be needed to capture scientific meaning more precisely.
+
+The evaluation focuses on metadata accessibility and workflow inspectability.
+It asks whether the workflow can turn heterogeneous source packages into profile-compatible metadata drafts, whether important source facts are represented in appropriate parts of the \ac{DCAT-AP+} structure, and whether intermediate artifacts make omissions, repairs, and evidence use visible.
+It does not claim that schema-valid output is automatically scientifically correct.
+Scientific correctness, curator time savings, and broad performance improvements over alternative systems would require additional expert evaluation or benchmark studies.
+
+The chapter first describes the evaluation inputs and the curator-oriented reference result.
+It then compares the baseline metadata affordances of the raw Bruker package and the ChemSpectra export.
+After that, it evaluates the generated metadata drafts, the persisted interim artifacts, and the semantic requirement outcomes.
+The chapter closes by identifying the evaluation gaps that remain.
 
 \section{Evaluation Setup}
 \label{sec:evaluation-setup}
+
+The evaluation setup defines the dataset inputs, the curator-oriented reference result, and the interpretation frame for the results.
+The evaluation does not measure general extraction accuracy across many datasets.
+Instead, it examines how the implemented workflow behaves on two different package representations of the same \textsuperscript{1}H \ac{NMR} measurement.
 
 \subsection{Evaluation Inputs}
 \label{subsec:evaluation-inputs}
@@ -25,23 +42,27 @@ The evaluation starts from two package variants of the same underlying \textsupe
 The first variant is the native Bruker archive.
 It contains the free induction decay and vendor-specific acquisition, processing, audit, pulse-program, and instrument files.
 The second variant is a ChemSpectra-derived export in which the nested raw archive has been removed.
-It contains a JCAMP-DX spectrum, a rendered spectrum image, a small inferred \ac{JSON} file, and a textual dataset description.
+It contains a \ac{JCAMP-DX} spectrum, a rendered spectrum image, a small inferred \ac{JSON} file, and a textual dataset description.
 
 This distinction is important because the two packages expose different metadata affordances.
 The Bruker archive preserves detailed acquisition and provenance information, but most of this information is encoded in domain- and vendor-specific parameter files.
 The ChemSpectra export is closer to a repository access package because it contains a standardized spectral representation and a human-readable description, but it no longer contains the full raw acquisition context.
+Because both packages originate from the same measurement, the comparison also tests whether the workflow can represent different provenance states of related dataset packages.
+One closer to the raw instrument output and one closer to a derived repository-facing export.
 The evaluation therefore treats the two packages as separate baselines for metadata extraction rather than as interchangeable copies of the same dataset.
 
-\subsection{Curator-Oriented Reference Result}
+\subsection{Curator-Oriented Reference Expectation}
 \label{subsec:curator-reference-result}
 
 For the purpose of this evaluation, a helpful result is defined from the perspective of a dataset curator who wants to make the dataset more accessible through a structured metadata profile.
-It is not defined as a complete scientific interpretation of the spectrum.
-Instead, it is defined as a metadata draft that identifies the dataset, describes available distributions, captures central experimental context, separates raw source files from derived representations, and keeps generated claims inspectable through source evidence.
+This reference expectation is not a formal gold standard and does not require a complete scientific interpretation of the spectrum.
+Instead, it describes the kind of metadata draft that would support later review and publication.
+Such a draft should identify the dataset, describe the available distributions, capture central experimental context, distinguish raw source files from derived representations where they are present, and keep generated claims inspectable through source evidence.
 
-For the \textsuperscript{1}H \ac{NMR} package, such a result should identify the dataset as a \textsuperscript{1}H \ac{NMR} dataset and represent central context such as the Bruker Avance 500 MHz instrument, the \textsuperscript{1}H observed nucleus, the CDCl3 solvent, the \texttt{zg30} pulse sequence, and the approximately 500 MHz observation frequency.
-It should also distinguish between the raw Bruker files, the derived JCAMP-DX spectrum, and the rendered spectrum image as different kinds of resources.
-The purpose of this reference result is not to require that every possible instrument parameter is extracted.
+For the \textsuperscript{1}H \ac{NMR} measurement, the draft should identify the dataset as a \textsuperscript{1}H \ac{NMR} dataset and represent central context when it is available in the processed package.
+Relevant facts include the Bruker Avance 500~MHz instrument, the \textsuperscript{1}H observed nucleus, the \texttt{CDCl\textsubscript{3}} solvent, the \texttt{zg30} pulse sequence, and the approximately 500 MHz observation frequency.
+The draft should also represent the available package resources according to their role, for example raw Bruker files in the native archive and derived representations such as the \ac{JCAMP-DX} spectrum or rendered spectrum image in the ChemSpectra export.
+The purpose of this reference expectation is not to require that every possible instrument parameter is extracted.
 Rather, it defines the level of structured, evidence-aware description that would make the package easier to review, correct, and publish.
 
 \subsection{Evaluation Perspective}
