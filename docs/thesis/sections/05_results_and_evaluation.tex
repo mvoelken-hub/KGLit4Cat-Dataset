@@ -39,11 +39,8 @@ The evaluation therefore follows the internal structure of the workflow as prese
     \textbf{Dataset overview}\\
     \hspace*{1em}early fact coverage; location hints; misleading overview statements
 
-    \textbf{Chunk-level evidence extraction}\\
-    \hspace*{1em}signal detection; category and role assignment
-
     \textbf{Evidence collection}\\
-    \hspace*{1em}deduplication; noise filtering; harmful removal of relevant evidence
+    \hspace*{1em}signal detection; category and role assignment; filtering impact
 
     \textbf{Provenance core construction}\\
     \hspace*{1em}coverage without chunk-level evidence; profile shape
@@ -148,7 +145,7 @@ This observation can become relevant for later evidence extraction, because the 
 \subsection{Dataset Overview}
 \label{sec:evaluation-overview-observations}
 
-The dataset overview stage was inspected as orientation output before chunk-level evidence extraction.
+The dataset overview stage was inspected as orientation output before evidence collection.
 It is not treated as source evidence for the reference facts.
 Instead, it is evaluated according to whether it points later extraction steps toward files that are likely to contain relevant information.
 This distinction matters because the overview works at file and package level, while the reference facts often occur as compact parameter records inside individual files.
@@ -178,8 +175,8 @@ It can identify the acquisition files, pulse-program file, instrument-configurat
 It should not be read as value-level fact extraction.
 The selected acquisition facts still have to be checked in chunk-level evidence, where the workflow has access to the relevant source lines rather than only file summaries.
 
-\subsection{Chunk-Level Evidence Extraction}
-\label{sec:evaluation-evidence-extraction-observations}
+\subsection{Evidence Collection}
+\label{sec:evaluation-evidence-collection-observations}
 
 The first inspection basis for this stage is the raw dataset evidence-note output of the baseline configuration.
 This output contains 120 portable notes, 59 contextual notes, and 9 rejected candidate notes.
@@ -192,7 +189,7 @@ The pulse sequence is detected directly from \texttt{10/acqu} as the claim that 
 The solvent is detected directly from \texttt{10/acqus} as the claim that the solvent is \texttt{CDCl3}.
 The instrument description is detected from \texttt{10/uxnmr.info} as the claim that the spectrometer is an \texttt{Avance III NMR spectrometer}.
 The same source context also contains the rounded \textsuperscript{1}H frequency value of 500.13~MHz.
-These observations show that the chunk-level extraction stage can find acquisition and instrument signals that were only indicated at file level in the overview.
+These observations show that evidence collection can find acquisition and instrument signals that were only indicated at file level in the overview.
 
 At the same time, the evidence notes show that detection and semantic placement are not identical.
 The \texttt{CDCl3} solvent note is assigned to \texttt{instrument\_signal} with the role \texttt{parameter}.
@@ -208,8 +205,7 @@ Examples include channel states such as \texttt{NUC2=<off>} through \texttt{NUC8
 The pulse-program file also contributes contextual method information, including a 30 degree flip angle and a 1D program type.
 These notes show that compact instrument files produce many neighbouring signals around the facts selected for evaluation.
 
-The main observation for this stage is that chunk-level extraction is not the primary point of source loss.
-Several selected facts are detected before profile construction.
+The main observation for this stage is that several selected facts are still detected before profile construction.
 However, the coarse category set does not always express the domain role that a curator would assign to the same source line, echoing ontology work in catalysis where reaction roles and catalyst relations require explicit semantic modelling \cite{behr2024reac4cat}.
 This suggests two development directions for ongoing work.
 Domain terms may need to be available already during evidence extraction, instead of being introduced only during vocabulary grounding, as \ac{LLM}-based catalysis text mining also relies on domain knowledge injection and user-specified extraction schemas \cite{walls2025catminer}.
@@ -218,17 +214,6 @@ That direction would require more explicit downstream routing logic, because lat
 Another development direction is a model or component trained specifically for metadata-signal detection, as chemical text-mining work has shown for tasks including NMR data extraction \cite{zhang2024chemicaltextmining}.
 Such a component could include \ac{NER}-style recognition of domain terms and parameter-value pairs, following chemistry-aware extraction pipelines for entities, properties, measurements, and relationships \cite{swain2016chemdataextractor}.
 
-\subsection{Evidence Collection}
-\label{sec:evaluation-evidence-collection-observations}
-
-\begin{itemize}
-    \item Evaluation basis: evidence retained, contextualized, rejected, or filtered after collection.
-    \item Raw dataset: evidence collection contains 113 portable evidence notes, 128 contextual evidence notes, and 12 rejected notes.
-    \item ChemSpectra export: evidence collection contains 84 portable evidence notes, 65 contextual evidence notes, and 33 rejected notes.
-    \item Raw dataset: the larger contextual evidence set reflects the distributed structure of the vendor-format package.
-    \item ChemSpectra export: rejected and contextual evidence includes many noisy values from dense encoded spectrum content.
-    \item Observation: evidence collection preserves relevant facts, but it also carries enough noisy material to make later profile construction vulnerable to misframing.
-\end{itemize}
 
 \subsection{Provenance Core Construction}
 \label{sec:evaluation-core-construction-observations}
