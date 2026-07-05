@@ -588,8 +588,8 @@ The browser-based interface communicates with the workflow \ac{API}, so users do
 \end{figure}
 
 
-\subsection{Workflow Runner}
-\label{sec:workflow_runner}
+\subsection{Workflow Backend}
+\label{sec:workflow_backend}
 
 The workflow backend is primarily implemented in Python as a FastAPI application.
 FastAPI exposes the workflow functionality through an \ac{HTTP} interface and automatically generates interactive endpoint documentation from the implemented route and schema definitions, thereby documenting the required inputs for each workflow stage alongside the backend implementation \cite{ramirezFastAPI}.
@@ -605,12 +605,13 @@ This includes the prompts used for model interactions, deterministic heuristics,
 
 The FastAPI application also manages the lifecycle of the external services used by the workflow.
 During startup, it establishes the Neo4j connection, initiates the configured model and vocabulary setup tasks, and prepares the shared application services.
+The same client interfaces can connect either to services running inside the Docker Compose deployment or to externally hosted Neo4j and Ollama instances over \ac{HTTP}.
 During shutdown, remaining background tasks are cancelled and the Neo4j and Ollama client connections are closed.
 
 \subsection{Ollama Model Server}
 \label{sec:ollama_model_server}
 
-Ollama provides the local model-serving infrastructure for the prototype.
+Ollama provides the local \ac{LLM} serving infrastructure for the prototype.
 It exposes an \ac{HTTP} interface through which the workflow sends generation and embedding requests \cite{ollamaplatform}.
 The selected generation model performs the language-based extraction, classification, evaluation, reconstruction, query-generation, and candidate-selection tasks described in the preceding sections.
 The generation models used in this work are \texttt{gemma3:4b}, \texttt{gemma3:12b}, and \texttt{gemma3:27b} \cite{gemma3technicalreport}.
@@ -638,8 +639,8 @@ The database stores imported vocabulary terms, their literal properties, their r
 
 The database is prepared through a vocabulary-bootstrap procedure, as shown in \cref{fig:vocabulary-bootstrap-neo4j}.
 A vocabulary import starts from a registered \ac{RDF} source and a vocabulary identifier.
-The source can either be a remote vocabulary location or an uploaded \ac{RDF} file.
-The source is parsed into an RDFLib graph and normalized before import \cite{rdflibNeo4j}.
+The source is parsed into an RDFLib graph and normalized before import.
+RDFLib provides the Python-based RDF graph representation used for parsing, traversing, and manipulating the imported triples before they are transferred to Neo4j \cite{rdflib}.
 This normalization replaces blank nodes with generated \ac{URI} identifiers, removes literals that are explicitly marked with unsupported languages, and extracts a short vocabulary description from ontology- or concept-scheme resources.
 Untagged literals are retained.
 
@@ -661,7 +662,7 @@ After import, the backend inspects the available \ac{RDF} types, literal propert
 For each usable resource type, it derives a term scheme and creates the corresponding lookup structures.
 Full-text indexes are created over textual properties such as labels, descriptions, synonyms, and symbols.
 For vector retrieval, each indexed resource is projected into a textual representation using its \ac{URI}, types, and selected properties.
-This text is sent to the Ollama embedding model, and the resulting vector is stored on the corresponding Neo4j node as an \texttt{embedding} property.
+This text is sent to the Ollama embedding model, and the resulting vector is stored on the corresponding node as an \texttt{embedding} property.
 
 The vocabulary-bootstrap procedure is executed independently of an individual extraction run.
 This separates vocabulary preparation from dataset processing.
