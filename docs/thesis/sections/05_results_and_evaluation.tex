@@ -45,14 +45,8 @@ The evaluation therefore follows the internal structure of the workflow as prese
     \textbf{Provenance core construction}\\
     \hspace*{1em}coverage without chunk-level evidence; profile shape
 
-    \textbf{Evidence routing}\\
-    \hspace*{1em}entity assignment; relation assignment
-
-    \textbf{Attribute construction}\\
-    \hspace*{1em}generic attribute pattern; duplicate attributes; misplaced values
-
-    \textbf{Semantic requirement evaluation}\\
-    \hspace*{1em}\ac{LLM} judgements; unsupported semantic claims; curation needs
+    \textbf{Profile Refinement}\\
+    \hspace*{1em}entity assignment; relation assignment; \ac{LLM} judgements; unsupported semantic claims; curation needs
 
     \textbf{Vocabulary querying and grounding}\\
     \hspace*{1em}query formulation; retrieved terms; graph context; selected terms; rejected candidates
@@ -256,46 +250,29 @@ Rather, the observation suggests that intermediate summaries should not be compl
 Related extraction systems use user-specified schemas, domain knowledge injection, iterative prompting, or recursive schema interrogation to keep model outputs aligned with the target structure \cite{walls2025catminer,caufield2024spires}.
 For this workflow, the overview should remain compact, but separate schema-oriented summary views may be needed for candidate activities, data products, agents, and plans before provenance-core construction.
 
-\subsection{Evidence Routing}
-\label{sec:evaluation-routing-observations}
+\subsection{Profile Refinement}
+\label{sec:evaluation-profile-refinement-observations}
 
 \begin{itemize}
-    \item Evaluation basis: comparison between generated core structure, attribute placement, reconstructed draft, and evidence-routing records.
-    \item Raw dataset: evidence is routed into a coherent activity-input-output shape around acquisition and processing.
-    \item Raw dataset: no explicit evaluated entity is created for the activity.
-    \item ChemSpectra export: evidence is routed into a file-generation shape rather than an NMR-measurement shape.
-    \item ChemSpectra export: the instrument evidence is later routed to the technical-agent position, but the broader activity frame remains record generation.
-    \item Observation: evidence routing can improve individual placements while leaving the central activity interpretation unchanged.
-\end{itemize}
-
-\subsection{Attribute Construction}
-\label{sec:evaluation-attribute-observations}
-
-\begin{itemize}
-    \item Evaluation basis: attribute construction output and reconstructed profile draft.
-    \item Raw dataset: attribute construction does not preserve the selected reference facts as explicit attributes in the attribute draft.
-    \item Raw dataset: reconstruction adds a temperature value to the activity and keeps additional quantitative attributes on \texttt{Bruker TopSpin} and parameter-file parents.
-    \item ChemSpectra export: attribute construction attaches the instrument as a qualitative attribute.
-    \item ChemSpectra export: reconstruction adds a numeric solvent peak value to the activity, but does not preserve \texttt{CDCl3} as solvent or reference.
-    \item Observation: attribute construction captures some local numeric values.
-    \item Observation: important curator-facing acquisition facts are still absent or under-specified.
-\end{itemize}
-
-\subsection{Semantic Requirement Evaluation}
-\label{sec:evaluation-requirement-observations}
-
-\begin{itemize}
-    \item Evaluation basis: semantic requirement report for the generated draft.
-    \item Raw dataset: the generated draft is schema-valid.
-    \item Raw dataset: coverage score is \texttt{93.0}, semantic-requirements score is approximately \texttt{0.71}, and source trace score is \texttt{1.0}.
-    \item Raw dataset: dataset title identity, generation activity reality, technical agent kind, method plan presence, and attribute range decomposition are fulfilled.
-    \item Raw dataset: dataset description scope and attribute parent placement are partial.
-    \item Raw dataset: activity evaluation target is missing.
-    \item ChemSpectra export: the generated draft is schema-valid.
-    \item ChemSpectra export: coverage score is \texttt{48.0}, semantic-requirements score is approximately \texttt{0.64}, and source trace score is \texttt{1.0}.
-    \item ChemSpectra export: dataset title identity, generation activity reality, technical agent kind, method plan presence, and attribute range decomposition are fulfilled.
-    \item ChemSpectra export: dataset description scope is partial, activity evaluation target is missing, and attribute parent placement is unanswered.
-    \item Observation: the source trace score confirms evidence support for placed content, but it does not imply preservation of all reference facts.
+    \item The evaluation basis is the comparison between the provenance core, the attribute draft, the reconstructed draft, the projection ledgers, and the semantic requirement report.
+    \item Evidence notes re-enter the workflow mainly during parent-scoped attribute construction and semantic reconstruction.
+    \item The provenance core entries in the projection ledger have no direct evidence-note identifiers, while later attribute projections do.
+    \item The raw dataset receives activity attributes for the \texttt{zg30} pulse program and the \texttt{dirdata.exe} process.
+    \item The raw dataset also receives an origin attribute on user-defined parameters and a control-unit attribute on instrument settings.
+    \item These routed attributes add local details, but they do not change the central activity and output interpretation set by the provenance core.
+    \item The raw draft still does not place \texttt{CDCl3}, \texttt{NUC1=<1H>}, or \texttt{SFO1=500.133088507478} as explicit curator-facing acquisition facts.
+    \item The ChemSpectra export receives attributes from the \ac{JCAMP-DX} spectrum and peak-table region.
+    \item Examples include a number-of-points attribute on the XY data points and data-type, data-class, and peak-table category attributes on the signal-acquisition activity.
+    \item Semantic reconstruction adds a \texttt{MAXX} quantitative attribute to the spectrometer agent.
+    \item This shows that routing can attach source-backed values to profile objects while still choosing scientifically questionable parents for some values.
+    \item The ChemSpectra draft keeps the \ac{NMR} spectral-data frame, but the unsupported 400~MHz instrument description and \texttt{zg1p} plan remain in the draft.
+    \item It still does not preserve the exact observed nucleus, \texttt{CDCl3} solvent or reference information, \texttt{zg30} pulse sequence, or observed frequency as explicit acquisition-level facts.
+    \item Both current drafts are schema-valid and receive a source trace score of \texttt{1.0}.
+    \item The source trace score indicates that placed content can be traced to selected evidence, but it does not indicate that all selected reference facts were preserved or placed under the right parent.
+    \item The raw draft has a coverage score of \texttt{74.0} and a semantic-requirements score of approximately \texttt{0.71}.
+    \item The ChemSpectra draft has a coverage score of \texttt{98.0} and a semantic-requirements score of approximately \texttt{0.79}.
+    \item In both drafts, the activity evaluation target requirement remains missing.
+    \item The combined observation is that refinement can enrich and validate parts of an existing core, but it does not reliably repair a missing target, unsupported core-level specifics, or absent acquisition facts.
 \end{itemize}
 
 \subsection{Vocabulary Querying and Grounding}
