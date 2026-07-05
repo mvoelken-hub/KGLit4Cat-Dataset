@@ -91,18 +91,6 @@ It cannot support general claims about extraction accuracy, curator time savings
 \section{Baseline Evaluation}
 \label{sec:evaluation-baseline-run}
 
-\subsection{Evaluation Basis}
-\label{sec:evaluation-basis}
-
-\begin{itemize}
-    \item Baseline configuration: fixed-token chunking with 1024 tokens per chunk, the smaller cloud generation model, and the \ac{DCAT-AP+} profile.
-    \item The evaluated package variants are the raw dataset and the ChemSpectra export.
-    \item Excluded configuration: fixed-token chunking with 128 tokens per chunk, because the ChemSpectra export run did not complete.
-    \item Robustness-check configuration available later: fixed-token chunking with 1024 tokens per chunk and the larger cloud generation model.
-    \item Robustness-check configuration available later: semantic chunking with the smaller cloud generation model.
-    \item Evaluation basis: source packages, chunks, overview artifacts, evidence collections, profile draft stages, requirement reports, grounding artifacts, and grounded final drafts.
-\end{itemize}
-
 \subsection{Reference Fact Tracing}
 \label{sec:evaluation-reference-fact-tracing}
 
