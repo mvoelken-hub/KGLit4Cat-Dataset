@@ -9,11 +9,11 @@ This work does not claim that schema-valid output is automatically scientificall
 Scientific correctness, curator time savings, and broad performance improvements over alternative systems would require additional evaluation or benchmark studies.
 Therefore, a secondary focus is the software implementation itself.
 A review on the usability of local models on commodity hardware is done.
-This reagrds computing time and cost.
+This regards computing time and cost.
 The effort for the vocabulary database curation is discussed.
 The chapter closes by identifying the evaluation gaps that remain.
 
-\section{Worfklow Evaluation Setup}
+\section{Workflow Evaluation Setup}
 \label{sec:evaluation-setup}
 
 The evaluation is designed as an artifact-based diagnostic case study of the implemented workflow.
@@ -88,3 +88,174 @@ They are applied within the case study to identify where facts are preserved, lo
 The evaluation can therefore support claims about observed workflow behaviour, traceability, and development needs in the selected case.
 It cannot support general claims about extraction accuracy, curator time savings, scientific correctness, or superiority over other systems without additional expert evaluation or benchmark studies.
 
+\section{Baseline Evaluation}
+\label{sec:evaluation-baseline-run}
+
+\subsection{Evaluation Basis}
+\label{sec:evaluation-basis}
+
+\begin{itemize}
+    \item Baseline configuration: fixed-token chunking with 1024 tokens per chunk, the smaller cloud generation model, and the \ac{DCAT-AP+} profile.
+    \item The evaluated package variants are the raw dataset and the ChemSpectra export.
+    \item Excluded configuration: fixed-token chunking with 128 tokens per chunk, because the ChemSpectra export run did not complete.
+    \item Robustness-check configuration available later: fixed-token chunking with 1024 tokens per chunk and the larger cloud generation model.
+    \item Robustness-check configuration available later: semantic chunking with the smaller cloud generation model.
+    \item Evaluation basis: source packages, chunks, overview artifacts, evidence collections, profile draft stages, requirement reports, grounding artifacts, and grounded final drafts.
+\end{itemize}
+
+\subsection{Reference Fact Tracing}
+\label{sec:evaluation-reference-fact-tracing}
+
+\begin{itemize}
+    \item Evaluation basis: original source packages in the thesis \textsuperscript{1}H \ac{NMR} comparison dataset folder.
+    \item Raw dataset: dataset identity is available through Bruker acquisition and processing files and through the title file \texttt{10/pdata/1/title}.
+    \item ChemSpectra export: dataset identity is available in \texttt{dataset\_description.txt} as \texttt{dataset name: 1H NMR} and in \texttt{10.edit.jdx} as an \ac{NMR} spectrum.
+    \item Raw dataset: observed nucleus is available in \texttt{10/acqus} and \texttt{10/acqu} as \texttt{NUC1=<1H>}.
+    \item ChemSpectra export: observed nucleus is available in \texttt{10.edit.jdx}.
+    \item Raw dataset: solvent information is available in acquisition files as \texttt{SOLVENT=<CDCl3>}.
+    \item ChemSpectra export: solvent and reference information is available as \texttt{CDCl3} records.
+    \item Raw dataset: pulse-sequence information is available in acquisition files and in the pulse-program file.
+    \item ChemSpectra export: pulse-sequence information is available in \texttt{10.edit.jdx} as \texttt{.PULSE SEQUENCE=zg30}.
+    \item Raw dataset: instrument information is available in \texttt{10/uxnmr.info} as \texttt{Avance III NMR spectrometer} and \texttt{1H-frequency: 500.13 MHz}.
+    \item ChemSpectra export: instrument information is available in \texttt{dataset\_description.txt} as \texttt{Bruker Avance 500 MHz}.
+    \item Raw dataset: observed resonance frequency is available as \texttt{SFO1=500.133088507478} and as rounded instrument frequency.
+    \item ChemSpectra export: observed resonance frequency is available in \texttt{10.edit.jdx} as \texttt{.OBSERVE FREQUENCY=500.133088507478}.
+    \item Raw dataset: package resources include the binary \texttt{fid} signal, acquisition files, processing files, pulse program, shim values, audit trail, and instrument configuration.
+    \item ChemSpectra export: package resources include the derived \texttt{10.edit.jdx} spectrum, rendered image, empty inference JSON file, and textual dataset description.
+\end{itemize}
+
+\subsection{Preprocessing}
+\label{sec:evaluation-preprocessing-observations}
+
+\begin{itemize}
+    \item Evaluation basis: fixed-token chunk artifacts in the archived baseline result.
+    \item Raw dataset: preprocessing produced fifteen fixed-token chunks.
+    \item ChemSpectra export: preprocessing produced three fixed-token chunks.
+    \item Raw dataset: chunks cover acquisition and processing parameter files, pulse program, shim values, audit trail, title file, instrument configuration, and a placeholder for the binary \texttt{fid} file.
+    \item ChemSpectra export: chunks cover the textual dataset description, the empty \texttt{10.infer.json} file, and the beginning of the \texttt{10.edit.jdx} file.
+    \item ChemSpectra export: the \texttt{10.edit.png} image remains in the package but does not provide textual evidence.
+    \item Observation: the raw dataset provides more distributed text-accessible metadata, while the ChemSpectra export concentrates most relevant metadata in one dense \ac{JCAMP-DX} file.
+\end{itemize}
+
+\subsection{Dataset Overview}
+\label{sec:evaluation-overview-observations}
+
+\begin{itemize}
+    \item Evaluation basis: file-summary and extraction-overview artifacts.
+    \item Raw dataset: many files are recognized as Bruker or \ac{NMR}-related parameter, processing, audit, pulse-program, and instrument-configuration files.
+    \item Raw dataset: the overview ranks several processing files before the direct acquisition files \texttt{10/acqu} and \texttt{10/acqus}.
+    \item Raw dataset: \texttt{10/acqu} and \texttt{10/acqus} receive empty file summaries even though they contain key acquisition facts.
+    \item ChemSpectra export: \texttt{dataset\_description.txt} is ranked first and summarized as the dataset description.
+    \item ChemSpectra export: \texttt{10.infer.json} is ranked second and interpreted as a JSON placeholder.
+    \item ChemSpectra export: \texttt{10.edit.jdx} is ranked third, but its file summary is empty.
+    \item Observation: the overview is more helpful for the raw dataset than for the ChemSpectra export, but neither overview fully prioritizes the most acquisition-relevant source file.
+\end{itemize}
+
+\subsection{Chunk-Level Evidence Extraction}
+\label{sec:evaluation-evidence-extraction-observations}
+
+\begin{itemize}
+    \item Evaluation basis: portable, contextual, rejected, and accumulated evidence artifacts.
+    \item Raw dataset: evidence extraction captures Bruker and TopSpin provenance, instrument configuration, pulse-program information, and multiple parameter-file values.
+    \item Raw dataset: instrument and frequency evidence is captured from \texttt{10/uxnmr.info}.
+    \item Raw dataset: some acquisition-relevant facts remain contextual rather than portable.
+    \item ChemSpectra export: evidence extraction captures the dataset name, instrument, \ac{NMR} spectrum data type, observed frequency, observed nucleus, \texttt{CDCl3} reference and solvent records, and \texttt{zg30} pulse sequence.
+    \item ChemSpectra export: the evidence pool also contains many low-value observations from encoded spectral data, numeric arrays, peak-table content, and file-hash listings.
+    \item Observation: chunk-level extraction detects many reference facts that are later absent from the generated final draft.
+\end{itemize}
+
+\subsection{Evidence Collection}
+\label{sec:evaluation-evidence-collection-observations}
+
+\begin{itemize}
+    \item Evaluation basis: portable, contextual, rejected, and filtered evidence artifacts.
+    \item Raw dataset: evidence collection contains 113 portable evidence notes, 128 contextual evidence notes, and 12 rejected notes.
+    \item ChemSpectra export: evidence collection contains 84 portable evidence notes, 65 contextual evidence notes, and 33 rejected notes.
+    \item Raw dataset: the larger contextual evidence set reflects the distributed structure of the vendor archive.
+    \item ChemSpectra export: rejected and contextual evidence includes many noisy values from dense encoded spectrum content.
+    \item Observation: evidence collection preserves useful facts, but it also carries enough noisy material to make later profile construction vulnerable to misframing.
+\end{itemize}
+
+\subsection{Provenance Core Construction}
+\label{sec:evaluation-core-construction-observations}
+
+\begin{itemize}
+    \item Evaluation basis: \texttt{generated\_core\_draft.json}.
+    \item Raw dataset: core construction creates the dataset title \texttt{NMR Experiment Data}.
+    \item Raw dataset: core construction creates one activity titled \enquote{NMR Data Acquisition and Processing}.
+    \item Raw dataset: the activity uses \texttt{Bruker TopSpin} as technical agent, parameter and shim files as inputs, and \texttt{NMR Experiment Data (FID)} as output.
+    \item ChemSpectra export: core construction creates the dataset title \texttt{Records Dataset}.
+    \item ChemSpectra export: core construction creates one activity titled \enquote{Records Dataset Generation}.
+    \item ChemSpectra export: the activity is framed around file creation and JSON-like records rather than NMR spectral acquisition.
+    \item Observation: the main semantic drift in the ChemSpectra export appears already in the provenance core.
+\end{itemize}
+
+\subsection{Evidence Routing}
+\label{sec:evaluation-routing-observations}
+
+\begin{itemize}
+    \item Evaluation basis: generated core, attribute, and reconstructed drafts, plus evidence query ledgers.
+    \item Raw dataset: evidence is routed into a coherent activity-input-output shape around acquisition and processing.
+    \item Raw dataset: no explicit evaluated entity is created for the activity.
+    \item ChemSpectra export: evidence is routed into a file-generation shape rather than an NMR-measurement shape.
+    \item ChemSpectra export: the instrument evidence is later routed to the technical-agent position, but the broader activity frame remains record generation.
+    \item Observation: evidence routing can improve individual placements while leaving the central activity interpretation unchanged.
+\end{itemize}
+
+\subsection{Attribute Construction}
+\label{sec:evaluation-attribute-observations}
+
+\begin{itemize}
+    \item Evaluation basis: attribute draft and reconstructed draft artifacts.
+    \item Raw dataset: attribute construction does not preserve the selected reference facts as explicit attributes in the attribute draft.
+    \item Raw dataset: reconstruction adds a temperature value to the activity and keeps additional quantitative attributes on \texttt{Bruker TopSpin} and parameter-file parents.
+    \item ChemSpectra export: attribute construction attaches the instrument as a qualitative attribute.
+    \item ChemSpectra export: reconstruction adds a numeric solvent peak value to the activity, but does not preserve \texttt{CDCl3} as solvent or reference.
+    \item Observation: attribute construction captures some local numeric values.
+    \item Observation: important curator-facing acquisition facts are still absent or under-specified.
+\end{itemize}
+
+\subsection{Semantic Requirement Evaluation}
+\label{sec:evaluation-requirement-observations}
+
+\begin{itemize}
+    \item Evaluation basis: \texttt{requirement\_report.json}.
+    \item Raw dataset: the generated draft is schema-valid.
+    \item Raw dataset: coverage score is \texttt{93.0}, semantic-requirements score is approximately \texttt{0.71}, and source trace score is \texttt{1.0}.
+    \item Raw dataset: dataset title identity, generation activity reality, technical agent kind, method plan presence, and attribute range decomposition are fulfilled.
+    \item Raw dataset: dataset description scope and attribute parent placement are partial.
+    \item Raw dataset: activity evaluation target is missing.
+    \item ChemSpectra export: the generated draft is schema-valid.
+    \item ChemSpectra export: coverage score is \texttt{48.0}, semantic-requirements score is approximately \texttt{0.64}, and source trace score is \texttt{1.0}.
+    \item ChemSpectra export: dataset title identity, generation activity reality, technical agent kind, method plan presence, and attribute range decomposition are fulfilled.
+    \item ChemSpectra export: dataset description scope is partial, activity evaluation target is missing, and attribute parent placement is unanswered.
+    \item Observation: the source trace score confirms evidence support for placed content, but it does not imply preservation of all reference facts.
+\end{itemize}
+
+\subsection{Vocabulary Querying and Grounding}
+\label{sec:evaluation-grounding-observations}
+
+\begin{itemize}
+    \item Evaluation basis: \texttt{vocab\_queries.json}, grounding artifacts, and grounded final drafts.
+    \item Raw dataset: grounding produces 35 vocabulary query records.
+    \item ChemSpectra export: grounding produces 14 vocabulary query records.
+    \item Raw dataset: grounding queries include NMR-related resource labels, quantity-kind candidates, and unit candidates.
+    \item ChemSpectra export: grounding queries include \texttt{solvent value}, dataset-name, instrument, and record-generation context.
+    \item Raw dataset: the grounded final draft remains close to the reconstructed profile shape.
+    \item ChemSpectra export: the grounded final draft also remains close to the reconstructed profile shape and does not repair the earlier record-dataset framing.
+    \item Observation: vocabulary grounding enriches selected placed fields but does not compensate for missing or misframed profile construction.
+\end{itemize}
+
+\subsection{Overall Workflow Assessment}
+\label{sec:evaluation-overall-observations}
+
+\begin{itemize}
+    \item Evaluation basis: cross-stage comparison from source facts through chunks, evidence artifacts, profile drafts, requirement reports, grounding artifacts, and final drafts.
+    \item Raw dataset: the workflow preserves a coherent NMR acquisition and processing story.
+    \item Raw dataset: the final draft preserves the raw \texttt{fid} output and related parameter resources.
+    \item Raw dataset: specific acquisition facts such as \texttt{CDCl3}, \texttt{zg30}, and \texttt{500.133088507478} are available in source artifacts but absent or only partial in the final draft.
+    \item ChemSpectra export: the workflow detects many key NMR facts during evidence extraction.
+    \item ChemSpectra export: the final draft keeps only coarse NMR identity and instrument information while losing solvent, pulse sequence, observed nucleus, observed frequency, and the central derived-spectrum resource framing.
+    \item ChemSpectra export: the major failure pattern is not source availability but transformation from detected evidence into the profile core.
+    \item Observation: the baseline supports claims about traceable workflow behavior and diagnostic artifact inspection, but not claims about complete metadata accuracy.
+\end{itemize}
