@@ -95,7 +95,7 @@ It cannot support general claims about extraction accuracy, curator time savings
 \label{sec:evaluation-reference-fact-tracing}
 
 The reference fact tracing step establishes which selected facts are available in the original source package contents before automatic metadata construction.
-The inspected reference facts are limited to the scoped curator-relevant set introduced above: dataset identity as \textsuperscript{1}H \ac{NMR} data, observed nucleus, solvent or reference information, pulse sequence, instrument description, observed resonance frequency, and the distinction between raw and derived package resources.
+The inspected reference facts focus on whether the packages expose the measurement as \textsuperscript{1}H \ac{NMR} data, identify the observed nucleus, preserve solvent or reference information, name the pulse sequence and instrument, report the observed resonance frequency, and distinguish raw from derived resources.
 
 In the raw dataset, the dataset identity is available through Bruker acquisition and processing files and through the human-readable title file \texttt{10/pdata/1/title}.
 The observed nucleus is explicitly recorded in the acquisition files \texttt{10/acqus} and \texttt{10/acqu} as \texttt{NUC1=<1H>}.
@@ -107,7 +107,7 @@ The raw package also contains the binary \texttt{fid} signal, acquisition files,
 In the ChemSpectra export, the dataset identity is stated in \texttt{dataset\_description.txt} as \texttt{dataset name: 1H NMR} and is also implied by the \ac{JCAMP-DX} spectrum file.
 The \texttt{10.edit.jdx} file records the observed nucleus, the \texttt{CDCl3} solvent or reference information, the \texttt{zg30} pulse sequence, and the observed frequency \texttt{500.133088507478}.
 The instrument description is available in the textual dataset description as \texttt{Bruker Avance 500 MHz}.
-Compared with the raw dataset, this package exposes the same measurement through derived resources: the \ac{JCAMP-DX} spectrum, a rendered spectrum image, an empty inference JSON file, and a textual dataset description.
+Compared with the raw dataset, the relevant metadata in this package is concentrated in the \ac{JCAMP-DX} spectrum file and the textual dataset description.
 
 \subsection{Preprocessing}
 \label{sec:evaluation-preprocessing-observations}
