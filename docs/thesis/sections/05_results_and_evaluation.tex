@@ -231,27 +231,26 @@ It places \texttt{Bruker TopSpin} as technical agent, parameter files and shim v
 This gives the raw package an acquisition-oriented provenance core and preserves the raw signal as a central data output.
 At the same time, the core does not preserve \texttt{NUC1=<1H>}, \texttt{CDCl3}, \texttt{zg30}, or \texttt{SFO1=500.133088507478} as explicit value-level facts.
 
-The ChemSpectra export behaves differently in the same baseline configuration.
-Its core is framed as \texttt{Records Dataset} and contains one activity titled \enquote{Records Dataset Generation}.
-The activity is described as the creation of a description file and a JSON structure.
-It places \texttt{Text Editor} and \texttt{JSON Editor} as agents, \texttt{Dataset Description} as input, and \texttt{Records Dataset} as output.
-This loses the \textsuperscript{1}H \ac{NMR} spectrum as the central data product at the provenance-core stage.
-It also does not preserve the \ac{JCAMP-DX} spectrum, observed nucleus, solvent or reference information, pulse sequence, or observed frequency as core-level facts.
-The baseline contrast shows that the same workflow configuration creates different provenance interpretations for the two package representations.
-The raw package is interpreted as an acquisition dataset, while the ChemSpectra export is interpreted as generic record generation.
+The ChemSpectra export also receives an \ac{NMR}-oriented provenance core when the \ac{JCAMP-DX} spectrum is represented in the overview.
+Its core is framed as \texttt{1H NMR Spectral Data of Chemical Compounds} and contains one activity titled \enquote{1H NMR Spectral Data Generation}.
+The output is represented as processed \textsuperscript{1}H \ac{NMR} spectra in \ac{JCAMP-DX} and JSON formats.
+This preserves the derived-spectrum package frame more clearly than the earlier overview stage alone.
+However, the same core also introduces unsupported specific values.
+It states a Bruker Avance III 400~MHz spectrometer and a \texttt{zg1p} plan, while the inspected reference facts identify a Bruker Avance 500~MHz instrument description and the \texttt{zg30} pulse sequence.
+The ChemSpectra core therefore places the package in the correct broad \ac{NMR} spectrum frame, but it does not reliably preserve the exact acquisition-level facts.
+The baseline contrast shows that the two package representations lead to different provenance emphases.
+The raw package is interpreted through acquisition and raw signal output, while the ChemSpectra export is interpreted through derived spectral data.
 
-Additional runs are treated only as robustness observations.
-They show that the provenance core is sensitive to run configuration, but they do not support a causal claim about model size or chunking method because the evaluation does not contain repeated controlled runs.
-With the 27b model, the ChemSpectra export is framed as \texttt{1H NMR Spectra of Organic Compounds} and \texttt{NMR Data Generation}, which preserves the \ac{NMR} spectrum frame more clearly than the baseline.
-With semantic chunking and the 12b model, the same package drifts toward \texttt{Process Operational Characteristics}, which loses the \ac{NMR}-specific provenance interpretation.
-For the raw dataset, additional 27b and semantic-chunking runs remain more measurement-oriented than another configuration-centered run, but they differ in how they organize spectra, audit trails, titles, parameters, and pulse-program resources.
-A separate comparison between a 4b model and a 27b model on the raw dataset again shows different core specificity.
+Additional runs are considered as comparisons outside the baseline evaluation.
+They show that provenance-core framing can vary across run configurations.
+These comparisons indicate configuration-dependent variation, but they are not designed to isolate the individual effects of model size or chunking method.
+A separate comparison between a 4b model and a 27b model on the raw dataset shows different core specificity.
 The 4b model produces a generic \texttt{NMR} and \texttt{data processing} frame, while the 27b model produces a more specific \texttt{Bruker Avance III NMR Spectral Data} and \texttt{NMR Data Generation} frame.
 
 The observations show that provenance core construction is mainly an early provenance-framing step, not a value-extraction step.
 Its output follows the dataset overview strongly.
 When the overview foregrounds acquisition and raw data resources, the core can become measurement-oriented.
-When the overview foregrounds description files, JSON placeholders, or generic records, the core can drift toward file-production or record-generation interpretations.
+When the overview foregrounds the derived spectrum, the core can become spectrum-oriented.
 The main curation concern at this stage is therefore the central activity and output interpretation, because later value placement starts from this core structure.
 
 \subsection{Evidence Routing}
