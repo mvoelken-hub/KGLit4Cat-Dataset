@@ -181,15 +181,41 @@ The selected acquisition facts still have to be checked in chunk-level evidence,
 \subsection{Chunk-Level Evidence Extraction}
 \label{sec:evaluation-evidence-extraction-observations}
 
-\begin{itemize}
-    \item Evaluation basis: portable, contextual, rejected, and accumulated evidence produced during chunk-level extraction.
-    \item Raw dataset: evidence extraction captures Bruker and TopSpin provenance, instrument configuration, pulse-program information, and multiple parameter-file values.
-    \item Raw dataset: instrument and frequency evidence is captured from \texttt{10/uxnmr.info}.
-    \item Raw dataset: some acquisition-relevant facts remain contextual rather than portable.
-    \item ChemSpectra export: evidence extraction captures the dataset name, instrument, \ac{NMR} spectrum data type, observed frequency, observed nucleus, \texttt{CDCl3} reference and solvent records, and \texttt{zg30} pulse sequence.
-    \item ChemSpectra export: the evidence pool also contains many low-value observations from encoded spectral data, numeric arrays, peak-table content, and file-hash listings.
-    \item Observation: chunk-level extraction detects many reference facts that are later absent from the generated final draft.
-\end{itemize}
+The first inspection basis for this stage is the raw dataset evidence-note output of the baseline configuration.
+This output contains 120 portable notes, 59 contextual notes, and 9 rejected candidate notes.
+The portable notes are concentrated in the categories \texttt{resource\_signal}, \texttt{instrument\_signal}, and \texttt{measurement\_signal}.
+The most frequent portable roles are \texttt{parameter} and \texttt{descriptor}, followed by smaller numbers of \texttt{qualitative\_attribute}, \texttt{identity}, and \texttt{context} roles.
+The stage therefore produces a broad signal inventory, but the inventory is still organized through coarse workflow categories rather than domain-specific \ac{NMR} concepts.
+
+Several reference facts are detected at chunk level.
+The pulse sequence is detected directly from \texttt{10/acqu} as the claim that the \ac{NMR} experiment uses the \texttt{zg30} pulse program, with \texttt{PULPROG=<zg30>} as evidence text.
+The solvent is detected directly from \texttt{10/acqus} as the claim that the solvent is \texttt{CDCl3}.
+The instrument description is detected from \texttt{10/uxnmr.info} as the claim that the spectrometer is an \texttt{Avance III NMR spectrometer}.
+The same source context also contains the rounded \textsuperscript{1}H frequency value of 500.13~MHz.
+These observations show that the chunk-level extraction stage can find acquisition and instrument signals that were only indicated at file level in the overview.
+
+At the same time, the evidence notes show that detection and semantic placement are not identical.
+The \texttt{CDCl3} solvent note is assigned to \texttt{instrument\_signal} with the role \texttt{parameter}.
+The source line is therefore found, but the assigned category does not express the curator-facing concept of solvent or reference information.
+The precise observed-frequency value \texttt{SFO1=500.133088507478} is detected in the evidence artifacts, but it is not retained as a clean portable evidence note.
+The observed-nucleus value \texttt{NUC1=<1H>} is detected as a direct candidate note, but it is removed by deterministic lexical deduplication over short structured parameter lines.
+It is merged into a retained \texttt{PULPROG=<zg30>} note, even though the two source facts are not semantically equivalent.
+The observed loss of \texttt{NUC1=<1H>} indicates that lexical deduplication is too permissive for compact structured parameter records.
+In this case, unrelated \texttt{key=value} facts are grouped because they share short syntactic patterns, although they describe different acquisition properties.
+
+The contextual evidence contains neighbouring signals that are technically grounded but less relevant to the selected reference facts.
+Examples include channel states such as \texttt{NUC2=<off>} through \texttt{NUC8=<off>}.
+The pulse-program file also contributes contextual method information, including a 30 degree flip angle and a 1D program type.
+These notes show that compact instrument files produce many neighbouring signals around the facts selected for evaluation.
+
+The main observation for this stage is that chunk-level extraction is not the primary point of source loss.
+Several selected facts are detected before profile construction.
+However, the coarse category set does not always express the domain role that a curator would assign to the same source line.
+This suggests two development directions for later discussion.
+Domain terms may need to be available already during evidence extraction, instead of being introduced only during vocabulary grounding.
+Alternatively, the category harness could be loosened so that the model can emit labels closer to the source signal, such as solvent, observed nucleus, pulse sequence, or observed frequency.
+Another development direction is a model or component trained specifically for metadata-signal detection, including \ac{NER}-style recognition of domain terms and parameter-value pairs at this stage.
+That second direction would require more explicit downstream routing logic, because later stages could no longer rely only on the current fixed category set.
 
 \subsection{Evidence Collection}
 \label{sec:evaluation-evidence-collection-observations}
