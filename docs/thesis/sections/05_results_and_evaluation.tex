@@ -1,17 +1,11 @@
 \label{chap:results_and_evaluations}
 
 This chapter evaluates the implemented prototype as an end-to-end application for \ac{LLM}-assisted semantic metadata extraction from heterogeneous dataset packages.
-The system is not limited to isolated prompt experiments.
-Instead, it implements an executable end-to-end workflow that connects dataset ingestion and preprocessing with evidence-backed metadata construction, semantic review, vocabulary grounding, and result inspection.
+The system is not limited to isolated prompt experiments, but implements an executable workflow that connects dataset ingestion and preprocessing with evidence-backed metadata construction, semantic review, vocabulary grounding, and result inspection.
 The evaluated output is the automatically generated metadata draft before manual curation.
 
-The evaluation is conducted as a case study on two package variants of the same underlying \textsuperscript{1}H \ac{NMR} measurement.
-One variant is the native Bruker archive with detailed vendor-specific acquisition and processing files.
-The other variant is a ChemSpectra-derived export that contains repository-oriented derivative files, including a \ac{JCAMP-DX} spectrum, a rendered spectrum image, an inferred \ac{JSON} file, and a textual dataset description.
-The comparison is therefore not a comparison of different scientific measurements, but a comparison of how different package representations of the same measurement affect metadata extraction.
-
-The outcome of the chapter is both a software result and a case-study baseline.
-It shows how far a domain-agnostic \ac{DCAT-AP+} profile can carry the extraction of curator-relevant metadata before domain-specific \ac{NMR} profile extensions are introduced.
+The chapter treats this output as both a software result and a case-study baseline.
+It examines how far a domain-agnostic \ac{DCAT-AP+} profile can carry the extraction of curator-relevant metadata before domain-specific profile extensions are introduced.
 Using \ac{DCAT-AP+} as the initial profile is central to this interpretation.
 The profile provides a general semantic structure for describing datasets, distributions, provenance, activities, agents, entities, and quantitative attributes without requiring a customized domain profile at the outset.
 The generated metadata drafts can therefore be read as baseline extraction results.
@@ -22,9 +16,8 @@ It asks whether the workflow can turn heterogeneous source packages into profile
 It does not claim that schema-valid output is automatically scientifically correct.
 Scientific correctness, curator time savings, and broad performance improvements over alternative systems would require additional expert evaluation or benchmark studies.
 
-The chapter first describes the evaluation inputs and the curator-oriented reference result.
-It then compares the baseline metadata affordances of the raw Bruker package and the ChemSpectra export.
-After that, it evaluates the generated metadata drafts, the persisted interim artifacts, and the semantic requirement outcomes.
+The chapter first defines the case-study setup and the curator-oriented reference expectation.
+It then evaluates the generated metadata drafts, package affordances, persisted interim artifacts, semantic requirement outcomes, and vocabulary grounding results.
 The chapter closes by identifying the evaluation gaps that remain.
 
 \section{Evaluation Setup}
