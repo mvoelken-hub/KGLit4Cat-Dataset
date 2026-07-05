@@ -28,12 +28,17 @@ It then compares the baseline metadata affordances of the raw Bruker package and
 After that, it evaluates the generated metadata drafts, the persisted interim artifacts, and the semantic requirement outcomes.
 The chapter closes by identifying the evaluation gaps that remain.
 
+
 \section{Evaluation Setup}
 \label{sec:evaluation-setup}
 
-The evaluation setup defines the dataset inputs, the curator-oriented reference result, and the interpretation frame for the results.
+The evaluation setup defines the dataset inputs, the curator-oriented reference expectation, and the interpretation frame for the results.
 The evaluation does not measure general extraction accuracy across many datasets.
 Instead, it examines how the implemented workflow behaves on two different package representations of the same \textsuperscript{1}H \ac{NMR} measurement.
+The focus is on metadata accessibility and workflow inspectability.
+The evaluation asks whether the workflow can turn heterogeneous source packages into profile-compatible metadata drafts, whether important source facts are represented in appropriate parts of the \ac{DCAT-AP+} structure, and whether intermediate artifacts make omissions or repairs visible.
+It does not claim that schema-valid output is automatically scientifically correct.
+Scientific correctness, curator time savings, and broad performance improvements over alternative systems would require additional expert evaluation or benchmark studies.
 
 \subsection{Evaluation Inputs}
 \label{subsec:evaluation-inputs}
@@ -60,18 +65,13 @@ Instead, it describes the kind of metadata draft that would support later review
 Such a draft should identify the dataset, describe the available distributions, capture central experimental context, distinguish raw source files from derived representations where they are present, and keep generated claims inspectable through source evidence.
 
 For the \textsuperscript{1}H \ac{NMR} measurement, the draft should identify the dataset as a \textsuperscript{1}H \ac{NMR} dataset and represent central context when it is available in the processed package.
-Relevant facts include the Bruker Avance 500~MHz instrument, the \textsuperscript{1}H observed nucleus, the \texttt{CDCl\textsubscript{3}} solvent, the \texttt{zg30} pulse sequence, and the approximately 500 MHz observation frequency.
-The draft should also represent the available package resources according to their role, for example raw Bruker files in the native archive and derived representations such as the \ac{JCAMP-DX} spectrum or rendered spectrum image in the ChemSpectra export.
+Relevant facts include the Bruker Avance 500~MHz instrument, the \textsuperscript{1}H observed nucleus, the CDCl\textsubscript{3} solvent, and the \texttt{zg30} pulse sequence.
+The frequency value refers more specifically to the observed resonance frequency of the \textsuperscript{1}H channel during acquisition, which is recorded in the source files as approximately 500.13~MHz.
+This is related to, but more precise than, the nominal 500~MHz instrument description.
+These facts are relevant for \ac{NMR} metadata because they provide basic acquisition context and help distinguish raw, processed, and exchange-oriented representations of the measurement \cite{nmrmlSpecification,steinbeck2023nfdi4chem,Huang2021}.
 The purpose of this reference expectation is not to require that every possible instrument parameter is extracted.
 Rather, it defines the level of structured, evidence-aware description that would make the package easier to review, correct, and publish.
 
-\subsection{Evaluation Perspective}
-\label{subsec:evaluation-perspective}
-
-The evaluation focuses on metadata accessibility and workflow inspectability.
-It asks whether the workflow can turn heterogeneous source packages into profile-compatible metadata drafts, whether important source facts are represented in appropriate parts of the \ac{DCAT-AP+} structure, and whether intermediate artifacts make omissions or repairs visible.
-It does not claim that schema-valid output is automatically scientifically correct.
-Scientific correctness, curator time savings, and broad performance improvements over alternative systems would require additional expert evaluation or benchmark studies.
 
 \section{Baseline Results}
 \label{sec:baseline-results}
