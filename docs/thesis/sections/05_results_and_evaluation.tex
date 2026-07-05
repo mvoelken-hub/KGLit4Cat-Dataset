@@ -21,36 +21,47 @@ It inspects how selected metadata facts are preserved, transformed, omitted, or 
 The evaluation therefore follows the internal structure of the workflow as presented in \cref{tab:evaluation-framework-checklist}.
 
 \begingroup
-\small
-\setlength{\LTleft}{0.04\textwidth}
-\setlength{\LTright}{0.04\textwidth}
-\setlength{\tabcolsep}{0pt}
-\begin{longtable}{@{}p{0.92\textwidth}@{}}
-    \caption{Inspection focus for each workflow stage as evaluation checklist.}
-    \label{tab:evaluation-framework-checklist}\\
+    \begin{center}
+        \captionof{table}{Inspection focus for each workflow stage as evaluation checklist.}
+        \label{tab:evaluation-framework-checklist}
+    \end{center}
+
+    \small
+    \setlength{\parskip}{0.55em}
+    \setlength{\parindent}{0pt}
+
     \textbf{Reference fact tracing}\\
-    \hspace*{1em}source file locations; explicit and implicit statements\\[0.55em]
+    \hspace*{1em}source file locations; explicit and implicit statements
+
     \textbf{Preprocessing}\\
-    \hspace*{1em}text preservation; chunk availability\\[0.55em]
+    \hspace*{1em}text preservation; chunk availability
+
     \textbf{Dataset overview}\\
-    \hspace*{1em}early fact coverage; location hints; misleading overview statements\\[0.55em]
+    \hspace*{1em}early fact coverage; location hints; misleading overview statements
+
     \textbf{Chunk-level evidence extraction}\\
-    \hspace*{1em}signal detection; category and role assignment\\[0.55em]
+    \hspace*{1em}signal detection; category and role assignment
+
     \textbf{Evidence collection}\\
-    \hspace*{1em}deduplication; noise filtering; harmful removal of relevant evidence\\[0.55em]
+    \hspace*{1em}deduplication; noise filtering; harmful removal of relevant evidence
+
     \textbf{Provenance core construction}\\
-    \hspace*{1em}coverage without chunk-level evidence; profile shape\\[0.55em]
+    \hspace*{1em}coverage without chunk-level evidence; profile shape
+
     \textbf{Evidence routing}\\
-    \hspace*{1em}entity assignment; relation assignment\\[0.55em]
+    \hspace*{1em}entity assignment; relation assignment
+
     \textbf{Attribute construction}\\
-    \hspace*{1em}generic attribute pattern; duplicate attributes; misplaced values\\[0.55em]
+    \hspace*{1em}generic attribute pattern; duplicate attributes; misplaced values
+
     \textbf{Semantic requirement evaluation}\\
-    \hspace*{1em}\ac{LLM} judgements; unsupported semantic claims; curation needs\\[0.55em]
+    \hspace*{1em}\ac{LLM} judgements; unsupported semantic claims; curation needs
+
     \textbf{Vocabulary querying and grounding}\\
-    \hspace*{1em}query formulation; retrieved terms; graph context; selected terms; rejected candidates\\[0.55em]
+    \hspace*{1em}query formulation; retrieved terms; graph context; selected terms; rejected candidates
+
     \textbf{Overall workflow assessment}\\
     \hspace*{1em}cross-stage error patterns; reliable stages; development needs
-\end{longtable}
 \endgroup
 
 The case study uses the two \textsuperscript{1}H \ac{NMR} package variants introduced in \cref{sec:dataset}.
