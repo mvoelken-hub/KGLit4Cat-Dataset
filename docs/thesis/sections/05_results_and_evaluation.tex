@@ -220,6 +220,9 @@ Such a component could include \ac{NER}-style recognition of domain terms and pa
 
 \begin{itemize}
     \item The evaluation basis is the generated provenance core before attribute construction, semantic reconstruction, and vocabulary grounding.
+    \item This stage does not receive the evidence notes inspected above as direct input.
+    \item The provenance core is constructed from the dataset overview artifacts and the current dataset-level draft.
+    \item The stage therefore tests whether the overview representation is sufficient to create the main activity skeleton, not whether all previously detected evidence notes are preserved.
     \item In the baseline configuration with fixed 1024-token chunks and the 12b model, the raw dataset core is framed as \texttt{NMR Experiment Data}.
     \item The raw dataset core creates one activity titled \enquote{NMR Data Acquisition and Processing}.
     \item The raw activity describes automated instrument control and data acquisition using Bruker TopSpin software.
@@ -244,6 +247,11 @@ Such a component could include \ac{NER}-style recognition of domain terms and pa
     \item These additional comparisons are treated as robustness observations only.
     \item They indicate sensitivity to model and chunking configuration, but they do not support a causal claim about model size or chunking method because the evaluation does not contain repeated controlled runs.
     \item Overall, provenance core construction can establish a plausible activity skeleton, but it does not reliably preserve the selected acquisition-level facts without later attribute construction and grounding.
+    \item The stage is therefore an early provenance-framing step rather than a value-extraction step.
+    \item Its output follows the dataset overview strongly.
+    \item If the overview foregrounds acquisition and raw data resources, the core can become measurement-oriented.
+    \item If the overview foregrounds description files, JSON placeholders, or generic records, the core can drift toward file-production or record-generation interpretations.
+    \item The main curation concern at this stage is the central activity and output interpretation, because later value placement starts from this core structure.
 \end{itemize}
 
 \subsection{Evidence Routing}
