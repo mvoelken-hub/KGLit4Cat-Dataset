@@ -210,12 +210,13 @@ These notes show that compact instrument files produce many neighbouring signals
 
 The main observation for this stage is that chunk-level extraction is not the primary point of source loss.
 Several selected facts are detected before profile construction.
-However, the coarse category set does not always express the domain role that a curator would assign to the same source line.
-This suggests two development directions for later discussion.
-Domain terms may need to be available already during evidence extraction, instead of being introduced only during vocabulary grounding.
-Alternatively, the category harness could be loosened so that the model can emit labels closer to the source signal, such as solvent, observed nucleus, pulse sequence, or observed frequency.
-Another development direction is a model or component trained specifically for metadata-signal detection, including \ac{NER}-style recognition of domain terms and parameter-value pairs at this stage.
-That second direction would require more explicit downstream routing logic, because later stages could no longer rely only on the current fixed category set.
+However, the coarse category set does not always express the domain role that a curator would assign to the same source line, echoing ontology work in catalysis where reaction roles and catalyst relations require explicit semantic modelling \cite{behr2024reac4cat}.
+This suggests two development directions for ongoing work.
+Domain terms may need to be available already during evidence extraction, instead of being introduced only during vocabulary grounding, as \ac{LLM}-based catalysis text mining also relies on domain knowledge injection and user-specified extraction schemas \cite{walls2025catminer}.
+Alternatively, the category harness could be loosened so that the model can emit labels closer to the source signal, such as solvent, observed nucleus, pulse sequence, or observed frequency, following extraction designs that separate open extraction from later schema definition and canonicalization \cite{zhang2024edc}.
+That direction would require more explicit downstream routing logic, because later stages could no longer rely only on the current fixed category set.
+Another development direction is a model or component trained specifically for metadata-signal detection, as chemical text-mining work has shown for tasks including NMR data extraction \cite{zhang2024chemicaltextmining}.
+Such a component could include \ac{NER}-style recognition of domain terms and parameter-value pairs, following chemistry-aware extraction pipelines for entities, properties, measurements, and relationships \cite{swain2016chemdataextractor}.
 
 \subsection{Evidence Collection}
 \label{sec:evaluation-evidence-collection-observations}
