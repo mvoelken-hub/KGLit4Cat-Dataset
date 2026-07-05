@@ -176,9 +176,15 @@ class OrientationService:
                     )
                     publish_summary_progress()
                     continue
+                file_summary_token_budgeter = self._prompt_token_budgeter()
                 content_windows = self._initial_file_summary_content_windows(
                     extracted_content,
                     num_ctx=self.ollama_client.max_context_length,
+                )
+                content_windows = self._cap_initial_file_summary_content_windows(
+                    content_windows,
+                    num_ctx=self.ollama_client.max_context_length,
+                    token_budgeter=file_summary_token_budgeter,
                 )
                 file_summary_prompt = build_extraction_file_summary_prompt(
                     data_package_name=data_package.file_name,
@@ -224,7 +230,7 @@ class OrientationService:
                                 "Do not enumerate identifiers, paths, timestamps, owners, origins, repeated parameter terms, or numeric tables.",
                             ),
                         ],
-                        token_budgeter=self._prompt_token_budgeter(),
+                        token_budgeter=file_summary_token_budgeter,
                         operation_id=self._prompt_operation_id(
                             "initial_file_summary",
                             file_entry.file_path,
@@ -1393,6 +1399,61 @@ class OrientationService:
             )
             for label, start, end in ranges
         ]
+
+    @staticmethod
+    def _cap_initial_file_summary_content_windows(
+        content_windows: list[ExtractionFileContentWindow],
+        *,
+        num_ctx: int | None,
+        token_budgeter: PromptTokenBudgeter,
+    ) -> list[ExtractionFileContentWindow]:
+        max_window_tokens = max(
+            900,
+            int((num_ctx or 8192) * INITIAL_FILE_SUMMARY_CONTEXT_RATIO),
+        )
+
+        def windows_payload_tokens(windows: list[ExtractionFileContentWindow]) -> int:
+            return token_budgeter.count(
+                "[" + ",".join(window.model_dump_json() for window in windows) + "]"
+            )
+
+        if windows_payload_tokens(content_windows) <= max_window_tokens:
+            return content_windows
+
+        empty_windows = [
+            window.model_copy(update={"text": ""})
+            for window in content_windows
+        ]
+        wrapper_tokens = windows_payload_tokens(empty_windows)
+        available_text_tokens = max(1, max_window_tokens - wrapper_tokens)
+
+        if len(content_windows) == 1:
+            allocations = [available_text_tokens]
+        elif len(content_windows) == 2:
+            first = max(1, int(available_text_tokens * 0.6))
+            allocations = [first, max(1, available_text_tokens - first)]
+        else:
+            first = max(1, int(available_text_tokens * 0.5))
+            remaining = max(1, available_text_tokens - first)
+            middle = max(1, remaining // 2)
+            end = max(1, remaining - middle)
+            allocations = [first, middle, end]
+            if len(content_windows) > 3:
+                allocations.extend([1] * (len(content_windows) - 3))
+
+        capped: list[ExtractionFileContentWindow] = []
+        for window, token_allocation in zip(content_windows, allocations, strict=False):
+            capped.append(
+                window.model_copy(
+                    update={
+                        "text": token_budgeter.truncate(
+                            window.text,
+                            max_tokens=token_allocation,
+                        )
+                    }
+                )
+            )
+        return capped
 
     @staticmethod
     def _initial_file_summary_candidate_files(data_package: Any) -> list[Any]:

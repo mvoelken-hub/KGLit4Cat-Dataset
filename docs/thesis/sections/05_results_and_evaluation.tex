@@ -118,7 +118,8 @@ These settings are relevant for the present \textsuperscript{1}H \ac{NMR} packag
 The raw observed-frequency value \texttt{SFO1= 500.133088507478} illustrates why structured parameter lines survive the gate.
 Its score is calculated as sum of tunable scoring features for reasonable word length, structured-text syntax, and digit density.
 For this line, the gate extracts the alphabetic token \texttt{SFO}, which gives an average word length of three characters and adds \texttt{0.10} for \texttt{reasonable\_word\_length}.
-The line also matches the structured-text pattern \texttt{key = value}, because \texttt{SFO1} is followed by \texttt{=} and a non-empty value; this adds the configured \texttt{structured\_text\_bonus} of \texttt{0.70}.
+The line also matches the structured-text pattern \texttt{key = value}, because \texttt{SFO1} is followed by \texttt{=} and a non-empty value.
+This adds the configured structured-text bonus of \texttt{0.70}.
 At the same time, the line has a high digit ratio: 16 of 24 characters are digits, resulting in a ratio of approximately \texttt{0.67}.
 Since this exceeds the configured \texttt{digit\_ratio\_threshold} of \texttt{0.45}, the gate subtracts \texttt{0.25} for \texttt{too\_many\_digits}.
 The resulting score is therefore \texttt{0.10 + 0.70 - 0.25 = 0.55}, which is above the configured \texttt{keep\_threshold} of \texttt{0.30}.
@@ -139,22 +140,26 @@ In the ChemSpectra baseline chunks, the observed frequency appears in the first 
 Semantic chunking is used as a comparison to test whether such fact splitting is reduced.
 It generates embeddings with \texttt{qwen3-embedding:0.6b} over two-line buffer windows and applies a 128-token minimum, a 1024-token maximum, and a 95th percentile similarity cut-off.
 With this strategy, the raw dataset produces 51 individual chunks and the ChemSpectra export produces 42 individual chunks.
-For the ChemSpectra export, the main \ac{JCAMP-DX} header facts are kept together in one chunk.
 For the raw dataset, semantic chunking still separates some acquisition facts across adjacent parameter-file chunks.
-In this case, semantic chunking improves ChemSpectra header co-location, but it is not necessary for fact preservation and does not clearly improve the raw vendor-format package clearly.
+For the ChemSpectra export, the main \ac{JCAMP-DX} header facts are kept together in one chunk.
+In this case, semantic chunking leads to a different distribution of ChemSpectra header information, with some related facts appearing in the same chunk rather than across separate chunks.
+This observation can become relevant for later evidence extraction, because the \ac{LLM} can only reason over the content of a single chunk at a time.
 
 \subsection{Dataset Overview}
 \label{sec:evaluation-overview-observations}
 
 \begin{itemize}
-    \item Evaluation basis: file summaries and dataset overview produced before chunk-level extraction.
-    \item Raw dataset: many files are recognized as Bruker or \ac{NMR}-related parameter, processing, audit, pulse-program, and instrument-configuration files.
-    \item Raw dataset: the overview ranks several processing files before the direct acquisition files \texttt{10/acqu} and \texttt{10/acqus}.
-    \item Raw dataset: \texttt{10/acqu} and \texttt{10/acqus} receive empty file summaries even though they contain key acquisition facts.
-    \item ChemSpectra export: \texttt{dataset\_description.txt} is ranked first and summarized as the dataset description.
-    \item ChemSpectra export: \texttt{10.infer.json} is ranked second and interpreted as a JSON placeholder.
-    \item ChemSpectra export: \texttt{10.edit.jdx} is ranked third, but its file summary is empty.
-    \item Observation: the overview is more helpful for the raw dataset than for the ChemSpectra export, but neither overview fully prioritizes the most acquisition-relevant source file.
+    \item The evaluation basis is the file-summary and dataset-overview output produced before chunk-level extraction.
+    \item The raw dataset overview recognizes many files as Bruker or \ac{NMR}-related parameter, processing, audit, pulse-program, and instrument-configuration files.
+    \item The raw dataset overview ranks \texttt{10/acqu} first and \texttt{10/acqus} eighth among the inspected source files.
+    \item The raw dataset summaries describe \texttt{10/acqu} and \texttt{10/acqus} as Bruker \textsuperscript{1}H \ac{NMR} experiment parameter files.
+    \item The raw dataset summaries do not expose the specific acquisition facts from these files, such as observed nucleus, solvent, pulse sequence, or observed resonance frequency.
+    \item The raw binary \texttt{fid} file is recognized as a proprietary binary NMR data file with no text-based sampled content.
+    \item The ChemSpectra export ranks \texttt{dataset\_description.txt} first and summarizes it as the dataset description.
+    \item The ChemSpectra export ranks \texttt{10.infer.json} second and interprets it as an empty JSON placeholder.
+    \item The ChemSpectra export ranks \texttt{10.edit.jdx} third, but its file summary is empty.
+    \item The overview is therefore more helpful for orienting the raw dataset than for surfacing the main ChemSpectra \ac{JCAMP-DX} metadata source.
+    \item For both package variants, the overview stage gives useful package orientation but does not yet provide reliable coverage of the selected acquisition-level reference facts.
 \end{itemize}
 
 \subsection{Chunk-Level Evidence Extraction}
