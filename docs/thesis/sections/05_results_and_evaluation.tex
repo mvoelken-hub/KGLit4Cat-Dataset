@@ -112,32 +112,36 @@ Compared with the raw dataset, the relevant metadata in this package is concentr
 \subsection{Preprocessing}
 \label{sec:evaluation-preprocessing-observations}
 
-\begin{itemize}
-    \item The evaluation basis is the chunked text output of the baseline fixed-token configuration, with the semantic chunking variant used as a comparison point for preprocessing behaviour.
-    \item The semantic comparison uses the same 1024-token maximum, a 128-token minimum, a similarity threshold of 95, and a two-line buffer window.
-    \item The baseline preprocessing step does not remove the selected textual reference facts from either package.
-    \item The raw dataset produces 32 individual baseline chunks across 15 source files.
-    \item The ChemSpectra export produces 244 individual baseline chunks across three textual sources.
-    \item In the raw dataset, the acquisition files preserve \texttt{NUC1= <1H>}, \texttt{PULPROG= <zg30>}, \texttt{SFO1= 500.133088507478}, and \texttt{SOLVENT= <CDCl3>} in chunked text.
-    \item A separate raw-dataset chunk preserves the instrument context.
-    \item This chunk includes \texttt{Avance III NMR spectrometer} and \texttt{1H-frequency: 500.13 MHz}.
-    \item The traced facts do not all have the same dependency on neighbouring facts.
-    \item Dataset identity and package-resource distinctions remain interpretable as package-level facts when they appear separately.
-    \item Observed nucleus, observed frequency, and solvent or reference information form a tightly linked acquisition-interpretation group.
-    \item Separating facts within this group can make it harder to interpret values such as \texttt{500.133088507478} as the observed \textsuperscript{1}H resonance frequency.
-    \item Pulse sequence remains individually interpretable as a method fact, even when it is separated from the acquisition-interpretation group.
-    \item Instrument description is related to the acquisition context but is less dependent on being in the same chunk as the individual acquisition parameters.
-    \item In the baseline raw chunks, observed nucleus and pulse-sequence information can appear in neighbouring chunks rather than in the same chunk as solvent and observed frequency.
-    \item The raw chunks therefore preserve the facts but sometimes separate values that are most interpretable as an acquisition-interpretation group.
-    \item In the ChemSpectra export, the dataset description chunk preserves \texttt{dataset name: 1H NMR} and \texttt{Bruker Avance 500 MHz}.
-    \item In the ChemSpectra export, the \ac{JCAMP-DX} header chunks preserve observed frequency, observed nucleus, \texttt{CDCl3} solvent or reference information, and the \texttt{zg30} pulse sequence.
-    \item In the baseline ChemSpectra chunks, the observed frequency appears in the first \ac{JCAMP-DX} header chunk while observed nucleus, solvent or reference information, and pulse sequence appear in the following chunk.
-    \item Most ChemSpectra chunks are generated from encoded spectrum values and other dense numeric content rather than from curator-relevant header metadata.
-    \item In the observed ChemSpectra output, semantic chunking stores 42 chunks instead of 244 because it starts from buffered semantic line windows rather than the same fixed line-budget windows.
-    \item This keeps the main \ac{JCAMP-DX} header facts together in one chunk, but the lower chunk count is implementation-specific and not a general property of semantic chunking.
-    \item In the observed raw-dataset output, semantic chunking stores 51 chunks instead of 32 and still separates some acquisition facts across adjacent parameter-file chunks.
-    \item For this case, semantic chunking improves ChemSpectra header co-location, but it is not necessary for fact preservation and does not clearly improve the raw vendor-format package.
-\end{itemize}
+To begin the evaluation, the preprocessing step is inspected to determine whether the selected reference facts are preserved in the chunk-level evidence.
+The evaluated runs use the gate parameters described in \cref{sec:preprocessing}.
+These settings are relevant for the present \textsuperscript{1}H \ac{NMR} packages because many metadata facts appear as compact parameter records rather than prose.
+The raw observed-frequency value \texttt{SFO1= 500.133088507478} illustrates why structured parameter lines survive the gate.
+Its score is calculated as sum of tunable scoring features for reasonable word length, structured-text syntax, and digit density.
+For this line, the gate extracts the alphabetic token \texttt{SFO}, which gives an average word length of three characters and adds \texttt{0.10} for \texttt{reasonable\_word\_length}.
+The line also matches the structured-text pattern \texttt{key = value}, because \texttt{SFO1} is followed by \texttt{=} and a non-empty value; this adds the configured \texttt{structured\_text\_bonus} of \texttt{0.70}.
+At the same time, the line has a high digit ratio: 16 of 24 characters are digits, resulting in a ratio of approximately \texttt{0.67}.
+Since this exceeds the configured \texttt{digit\_ratio\_threshold} of \texttt{0.45}, the gate subtracts \texttt{0.25} for \texttt{too\_many\_digits}.
+The resulting score is therefore \texttt{0.10 + 0.70 - 0.25 = 0.55}, which is above the configured \texttt{keep\_threshold} of \texttt{0.30}.
+This preservation result is limited to the presented packages, because the text-quality gate is tunable and was inspected here only for this \textsuperscript{1}H \ac{NMR} case.
+
+The baseline chunking step uses fixed-token chunking with a target and maximum size of 1024 tokens.
+This strategy is used for the detailed qualitative inspection because it is faster than semantic chunking and keeps chunks within a size range suitable for the local \ac{LLM} models used in this work.
+It produces 32 individual chunks for the raw dataset across 15 source files and 244 individual chunks for the ChemSpectra export across three textual sources.
+The raw binary \texttt{fid} file and the rendered ChemSpectra image remain package resources, but they do not become substantive textual chunk content.
+In the raw dataset, chunked acquisition files preserve \texttt{NUC1= <1H>}, \texttt{PULPROG= <zg30>}, \texttt{SFO1= 500.133088507478}, and \texttt{SOLVENT= <CDCl3>}.
+A separate chunk preserves the instrument context, including \texttt{Avance III NMR spectrometer} and the rounded \textsuperscript{1}H frequency of 500.13~MHz.
+The main limitation is not fact loss, but fact separation.
+Observed nucleus, observed frequency, and solvent or reference information therefore belong to the same acquisition and interpretation context.
+\ac{nmrCV} treats instrument configuration, sample information such as solvent and reference standards, acquisition settings, and raw spectral data as connected metadata needed to describe and reconstruct an NMR experiment \cite{Schober2018nmrML}.
+In the raw baseline chunks, observed nucleus and pulse-sequence information can appear in neighbouring chunks rather than in the same chunk as solvent and observed frequency.
+In the ChemSpectra baseline chunks, the observed frequency appears in the first \ac{JCAMP-DX} header chunk, while observed nucleus, solvent or reference information, and pulse sequence appear in the following chunk.
+
+Semantic chunking is used as a comparison to test whether such fact splitting is reduced.
+It generates embeddings with \texttt{qwen3-embedding:0.6b} over two-line buffer windows and applies a 128-token minimum, a 1024-token maximum, and a 95th percentile similarity cut-off.
+With this strategy, the raw dataset produces 51 individual chunks and the ChemSpectra export produces 42 individual chunks.
+For the ChemSpectra export, the main \ac{JCAMP-DX} header facts are kept together in one chunk.
+For the raw dataset, semantic chunking still separates some acquisition facts across adjacent parameter-file chunks.
+In this case, semantic chunking improves ChemSpectra header co-location, but it is not necessary for fact preservation and does not clearly improve the raw vendor-format package clearly.
 
 \subsection{Dataset Overview}
 \label{sec:evaluation-overview-observations}
