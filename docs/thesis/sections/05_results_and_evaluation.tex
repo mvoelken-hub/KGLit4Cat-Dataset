@@ -247,11 +247,14 @@ These comparisons indicate configuration-dependent variation, but they are not d
 A separate comparison between a 4b model and a 27b model on the raw dataset shows different core specificity.
 The 4b model produces a generic \texttt{NMR} and \texttt{data processing} frame, while the 27b model produces a more specific \texttt{Bruker Avance III NMR Spectral Data} and \texttt{NMR Data Generation} frame.
 
-The observations show that provenance core construction is mainly an early provenance-framing step, not a value-extraction step.
-Its output follows the dataset overview strongly.
-When the overview foregrounds acquisition and raw data resources, the core can become measurement-oriented.
-When the overview foregrounds the derived spectrum, the core can become spectrum-oriented.
-The main curation concern at this stage is therefore the central activity and output interpretation, because later value placement starts from this core structure.
+These results show that the preceding overview stage can affect how the profile draft is structured.
+Although it is designed as orientation rather than evidence, it can set the interpretive direction for the provenance core because the core prompt is constrained to the supplied overview context.
+When this direction is incomplete or misleading, the core may propagate the misframing into the draft structure.
+Further development should therefore focus on the handoff between dataset overview and provenance-core construction.
+This does not imply that overview generation and schema construction should be collapsed into one model call.
+Rather, the observation suggests that intermediate summaries should not be completely decoupled from the downstream schema task.
+Related extraction systems use user-specified schemas, domain knowledge injection, iterative prompting, or recursive schema interrogation to keep model outputs aligned with the target structure \cite{walls2025catminer,caufield2024spires}.
+For this workflow, the overview should remain compact, but separate schema-oriented summary views may be needed for candidate activities, data products, agents, and plans before provenance-core construction.
 
 \subsection{Evidence Routing}
 \label{sec:evaluation-routing-observations}
