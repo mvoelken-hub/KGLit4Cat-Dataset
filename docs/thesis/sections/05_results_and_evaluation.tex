@@ -95,7 +95,7 @@ It cannot support general claims about extraction accuracy, curator time savings
 \label{sec:evaluation-reference-fact-tracing}
 
 \begin{itemize}
-    \item Evaluation basis: original source packages in the thesis \textsuperscript{1}H \ac{NMR} comparison dataset folder.
+    \item Evaluation basis: original source package contents before automatic metadata construction.
     \item Raw dataset: dataset identity is available through Bruker acquisition and processing files and through the title file \texttt{10/pdata/1/title}.
     \item ChemSpectra export: dataset identity is available in \texttt{dataset\_description.txt} as \texttt{dataset name: 1H NMR} and in \texttt{10.edit.jdx} as an \ac{NMR} spectrum.
     \item Raw dataset: observed nucleus is available in \texttt{10/acqus} and \texttt{10/acqu} as \texttt{NUC1=<1H>}.
@@ -116,7 +116,7 @@ It cannot support general claims about extraction accuracy, curator time savings
 \label{sec:evaluation-preprocessing-observations}
 
 \begin{itemize}
-    \item Evaluation basis: fixed-token chunk artifacts in the archived baseline result.
+    \item Evaluation basis: preprocessing output of the baseline configuration.
     \item Raw dataset: preprocessing produced fifteen fixed-token chunks.
     \item ChemSpectra export: preprocessing produced three fixed-token chunks.
     \item Raw dataset: chunks cover acquisition and processing parameter files, pulse program, shim values, audit trail, title file, instrument configuration, and a placeholder for the binary \texttt{fid} file.
@@ -129,7 +129,7 @@ It cannot support general claims about extraction accuracy, curator time savings
 \label{sec:evaluation-overview-observations}
 
 \begin{itemize}
-    \item Evaluation basis: file-summary and extraction-overview artifacts.
+    \item Evaluation basis: file summaries and dataset overview produced before chunk-level extraction.
     \item Raw dataset: many files are recognized as Bruker or \ac{NMR}-related parameter, processing, audit, pulse-program, and instrument-configuration files.
     \item Raw dataset: the overview ranks several processing files before the direct acquisition files \texttt{10/acqu} and \texttt{10/acqus}.
     \item Raw dataset: \texttt{10/acqu} and \texttt{10/acqus} receive empty file summaries even though they contain key acquisition facts.
@@ -143,7 +143,7 @@ It cannot support general claims about extraction accuracy, curator time savings
 \label{sec:evaluation-evidence-extraction-observations}
 
 \begin{itemize}
-    \item Evaluation basis: portable, contextual, rejected, and accumulated evidence artifacts.
+    \item Evaluation basis: portable, contextual, rejected, and accumulated evidence produced during chunk-level extraction.
     \item Raw dataset: evidence extraction captures Bruker and TopSpin provenance, instrument configuration, pulse-program information, and multiple parameter-file values.
     \item Raw dataset: instrument and frequency evidence is captured from \texttt{10/uxnmr.info}.
     \item Raw dataset: some acquisition-relevant facts remain contextual rather than portable.
@@ -156,10 +156,10 @@ It cannot support general claims about extraction accuracy, curator time savings
 \label{sec:evaluation-evidence-collection-observations}
 
 \begin{itemize}
-    \item Evaluation basis: portable, contextual, rejected, and filtered evidence artifacts.
+    \item Evaluation basis: evidence retained, contextualized, rejected, or filtered after collection.
     \item Raw dataset: evidence collection contains 113 portable evidence notes, 128 contextual evidence notes, and 12 rejected notes.
     \item ChemSpectra export: evidence collection contains 84 portable evidence notes, 65 contextual evidence notes, and 33 rejected notes.
-    \item Raw dataset: the larger contextual evidence set reflects the distributed structure of the vendor archive.
+    \item Raw dataset: the larger contextual evidence set reflects the distributed structure of the vendor-format package.
     \item ChemSpectra export: rejected and contextual evidence includes many noisy values from dense encoded spectrum content.
     \item Observation: evidence collection preserves useful facts, but it also carries enough noisy material to make later profile construction vulnerable to misframing.
 \end{itemize}
@@ -168,7 +168,7 @@ It cannot support general claims about extraction accuracy, curator time savings
 \label{sec:evaluation-core-construction-observations}
 
 \begin{itemize}
-    \item Evaluation basis: \texttt{generated\_core\_draft.json}.
+    \item Evaluation basis: generated provenance core before attribute reconstruction and vocabulary grounding.
     \item Raw dataset: core construction creates the dataset title \texttt{NMR Experiment Data}.
     \item Raw dataset: core construction creates one activity titled \enquote{NMR Data Acquisition and Processing}.
     \item Raw dataset: the activity uses \texttt{Bruker TopSpin} as technical agent, parameter and shim files as inputs, and \texttt{NMR Experiment Data (FID)} as output.
@@ -182,7 +182,7 @@ It cannot support general claims about extraction accuracy, curator time savings
 \label{sec:evaluation-routing-observations}
 
 \begin{itemize}
-    \item Evaluation basis: generated core, attribute, and reconstructed drafts, plus evidence query ledgers.
+    \item Evaluation basis: comparison between generated core structure, attribute placement, reconstructed draft, and evidence-routing records.
     \item Raw dataset: evidence is routed into a coherent activity-input-output shape around acquisition and processing.
     \item Raw dataset: no explicit evaluated entity is created for the activity.
     \item ChemSpectra export: evidence is routed into a file-generation shape rather than an NMR-measurement shape.
@@ -194,7 +194,7 @@ It cannot support general claims about extraction accuracy, curator time savings
 \label{sec:evaluation-attribute-observations}
 
 \begin{itemize}
-    \item Evaluation basis: attribute draft and reconstructed draft artifacts.
+    \item Evaluation basis: attribute construction output and reconstructed profile draft.
     \item Raw dataset: attribute construction does not preserve the selected reference facts as explicit attributes in the attribute draft.
     \item Raw dataset: reconstruction adds a temperature value to the activity and keeps additional quantitative attributes on \texttt{Bruker TopSpin} and parameter-file parents.
     \item ChemSpectra export: attribute construction attaches the instrument as a qualitative attribute.
@@ -207,7 +207,7 @@ It cannot support general claims about extraction accuracy, curator time savings
 \label{sec:evaluation-requirement-observations}
 
 \begin{itemize}
-    \item Evaluation basis: \texttt{requirement\_report.json}.
+    \item Evaluation basis: semantic requirement report for the generated draft.
     \item Raw dataset: the generated draft is schema-valid.
     \item Raw dataset: coverage score is \texttt{93.0}, semantic-requirements score is approximately \texttt{0.71}, and source trace score is \texttt{1.0}.
     \item Raw dataset: dataset title identity, generation activity reality, technical agent kind, method plan presence, and attribute range decomposition are fulfilled.
@@ -224,7 +224,7 @@ It cannot support general claims about extraction accuracy, curator time savings
 \label{sec:evaluation-grounding-observations}
 
 \begin{itemize}
-    \item Evaluation basis: \texttt{vocab\_queries.json}, grounding artifacts, and grounded final drafts.
+    \item Evaluation basis: vocabulary queries, grounding decisions, and grounded final drafts.
     \item Raw dataset: grounding produces 35 vocabulary query records.
     \item ChemSpectra export: grounding produces 14 vocabulary query records.
     \item Raw dataset: grounding queries include NMR-related resource labels, quantity-kind candidates, and unit candidates.
@@ -238,12 +238,12 @@ It cannot support general claims about extraction accuracy, curator time savings
 \label{sec:evaluation-overall-observations}
 
 \begin{itemize}
-    \item Evaluation basis: cross-stage comparison from source facts through chunks, evidence artifacts, profile drafts, requirement reports, grounding artifacts, and final drafts.
+    \item Evaluation basis: cross-stage comparison from source facts through chunks, evidence, profile drafts, requirement reports, grounding, and final drafts.
     \item Raw dataset: the workflow preserves a coherent NMR acquisition and processing story.
     \item Raw dataset: the final draft preserves the raw \texttt{fid} output and related parameter resources.
-    \item Raw dataset: specific acquisition facts such as \texttt{CDCl3}, \texttt{zg30}, and \texttt{500.133088507478} are available in source artifacts but absent or only partial in the final draft.
+    \item Raw dataset: specific acquisition facts such as \texttt{CDCl3}, \texttt{zg30}, and \texttt{500.133088507478} are available in the source material but absent or only partial in the final draft.
     \item ChemSpectra export: the workflow detects many key NMR facts during evidence extraction.
     \item ChemSpectra export: the final draft keeps only coarse NMR identity and instrument information while losing solvent, pulse sequence, observed nucleus, observed frequency, and the central derived-spectrum resource framing.
     \item ChemSpectra export: the major failure pattern is not source availability but transformation from detected evidence into the profile core.
-    \item Observation: the baseline supports claims about traceable workflow behavior and diagnostic artifact inspection, but not claims about complete metadata accuracy.
+    \item Observation: the baseline supports claims about traceable workflow behavior and diagnostic inspection, but not claims about complete metadata accuracy.
 \end{itemize}
