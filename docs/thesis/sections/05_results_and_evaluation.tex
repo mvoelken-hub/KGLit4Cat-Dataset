@@ -113,13 +113,30 @@ Compared with the raw dataset, the relevant metadata in this package is concentr
 \label{sec:evaluation-preprocessing-observations}
 
 \begin{itemize}
-    \item Evaluation basis: preprocessing output of the baseline configuration.
-    \item Raw dataset: preprocessing produced fifteen fixed-token chunks.
-    \item ChemSpectra export: preprocessing produced three fixed-token chunks.
-    \item Raw dataset: chunks cover acquisition and processing parameter files, pulse program, shim values, audit trail, title file, instrument configuration, and a placeholder for the binary \texttt{fid} file.
-    \item ChemSpectra export: chunks cover the textual dataset description, the empty \texttt{10.infer.json} file, and the beginning of the \texttt{10.edit.jdx} file.
-    \item ChemSpectra export: the \texttt{10.edit.png} image remains in the package but does not provide textual evidence.
-    \item Observation: the raw dataset provides more distributed text-accessible metadata, while the ChemSpectra export concentrates most relevant metadata in one dense \ac{JCAMP-DX} file.
+    \item The evaluation basis is the chunked text output of the baseline fixed-token configuration, with the semantic chunking variant used as a comparison point for preprocessing behaviour.
+    \item The semantic comparison uses the same 1024-token maximum, a 128-token minimum, a similarity threshold of 95, and a two-line buffer window.
+    \item The baseline preprocessing step does not remove the selected textual reference facts from either package.
+    \item The raw dataset produces 32 individual baseline chunks across 15 source files.
+    \item The ChemSpectra export produces 244 individual baseline chunks across three textual sources.
+    \item In the raw dataset, the acquisition files preserve \texttt{NUC1= <1H>}, \texttt{PULPROG= <zg30>}, \texttt{SFO1= 500.133088507478}, and \texttt{SOLVENT= <CDCl3>} in chunked text.
+    \item A separate raw-dataset chunk preserves the instrument context.
+    \item This chunk includes \texttt{Avance III NMR spectrometer} and \texttt{1H-frequency: 500.13 MHz}.
+    \item The traced facts do not all have the same dependency on neighbouring facts.
+    \item Dataset identity and package-resource distinctions remain interpretable as package-level facts when they appear separately.
+    \item Observed nucleus, observed frequency, and solvent or reference information form a tightly linked acquisition-interpretation group.
+    \item Separating facts within this group can make it harder to interpret values such as \texttt{500.133088507478} as the observed \textsuperscript{1}H resonance frequency.
+    \item Pulse sequence remains individually interpretable as a method fact, even when it is separated from the acquisition-interpretation group.
+    \item Instrument description is related to the acquisition context but is less dependent on being in the same chunk as the individual acquisition parameters.
+    \item In the baseline raw chunks, observed nucleus and pulse-sequence information can appear in neighbouring chunks rather than in the same chunk as solvent and observed frequency.
+    \item The raw chunks therefore preserve the facts but sometimes separate values that are most interpretable as an acquisition-interpretation group.
+    \item In the ChemSpectra export, the dataset description chunk preserves \texttt{dataset name: 1H NMR} and \texttt{Bruker Avance 500 MHz}.
+    \item In the ChemSpectra export, the \ac{JCAMP-DX} header chunks preserve observed frequency, observed nucleus, \texttt{CDCl3} solvent or reference information, and the \texttt{zg30} pulse sequence.
+    \item In the baseline ChemSpectra chunks, the observed frequency appears in the first \ac{JCAMP-DX} header chunk while observed nucleus, solvent or reference information, and pulse sequence appear in the following chunk.
+    \item Most ChemSpectra chunks are generated from encoded spectrum values and other dense numeric content rather than from curator-relevant header metadata.
+    \item In the observed ChemSpectra output, semantic chunking stores 42 chunks instead of 244 because it starts from buffered semantic line windows rather than the same fixed line-budget windows.
+    \item This keeps the main \ac{JCAMP-DX} header facts together in one chunk, but the lower chunk count is implementation-specific and not a general property of semantic chunking.
+    \item In the observed raw-dataset output, semantic chunking stores 51 chunks instead of 32 and still separates some acquisition facts across adjacent parameter-file chunks.
+    \item For this case, semantic chunking improves ChemSpectra header co-location, but it is not necessary for fact preservation and does not clearly improve the raw vendor-format package.
 \end{itemize}
 
 \subsection{Dataset Overview}
