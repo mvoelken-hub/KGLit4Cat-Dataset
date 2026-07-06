@@ -543,9 +543,12 @@ The verdict for this stage is that vocabulary mapping can normalize already plac
 It does not repair missing facts, misplaced attributes, or an unsuitable provenance frame.
 The grounded final drafts preserve the reconstructed profile shape and do not add missing source facts such as solvent, observed nucleus, the specific pulse-sequence value, or observed resonance frequency.
 Vocabulary grounding is therefore best interpreted as a controlled-term normalization step over the current draft, not as an independent correction step for profile construction.
+The retrieval step is also limited by the underlying embedding model, which is not specifically trained for \ac{NMR} metadata or catalysis terminology.
+Domain-specific language models have been shown to improve scientific and materials text-mining tasks, and fine-tuned models have also been evaluated for chemical text mining including \ac{NMR} data extraction \cite{beltagy2019scibert,gupta2022matscibert,zhang2024chemicaltextmining}.
+This suggests that a domain-adapted embedding or reranking model could sharpen candidate retrieval, but it would not remove the dependency on upstream profile construction.
 
 
-\subsection{Overall Workflow Assessment}
+\section{Overall Workflow Assessment}
 \label{sec:evaluation-overall-observations}
 
 \begin{itemize}
