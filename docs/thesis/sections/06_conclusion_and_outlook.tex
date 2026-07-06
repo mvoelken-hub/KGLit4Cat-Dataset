@@ -1,10 +1,8 @@
 \label{chap:conclusion}
 
-This thesis implemented and evaluated a staged workflow for \ac{LLM}-assisted semantic metadata extraction from heterogeneous dataset packages.
-The workflow deliberately separates source access, preprocessing, chunk-wise evidence extraction, \ac{DCAT-AP+} profile construction, semantic review, manual curation, and vocabulary grounding.
-This design follows the broader idea that information extraction and organization into a target structure should be separated rather than collapsed into one generation step \cite{li2024structuredoutput}.
-The evaluation shows that this separation is valuable because it makes intermediate artifacts inspectable.
-It also shows where the current prototype still loses or misplaces curator-relevant facts.
+The evaluation shows that the implemented workflow is most valuable as an inspectable curation aid and diagnostic baseline.
+Its intermediate artifacts make it possible to trace where curator-relevant facts are preserved, transformed, misplaced, or lost.
+The main result is therefore not a claim of automatic metadata correctness, but a clearer view of which workflow stages already support evidence-aware metadata construction and which stages still require domain-specific development.
 
 For the inspected \textsuperscript{1}H \ac{NMR} packages, preprocessing and chunking do not destroy the selected textual evidence.
 The raw and ChemSpectra-derived packages both retain the relevant source statements for dataset identity, observed nucleus, solvent, pulse sequence, instrument information, observed frequency, and raw or derived package resources.
@@ -42,9 +40,6 @@ The workflow is designed so that different local or externally hosted models can
 Larger models can produce more specific local structures in some comparison runs, but the inspected artifacts do not show a stable improvement that would justify treating the most resource-intensive model as the default option.
 At this stage, the cost of larger \acp{LLM} should therefore be justified by targeted improvements in documented loss points, not by model size alone.
 Domain-adapted retrieval or reranking may be a more direct improvement path than simply increasing generation-model size, because scientific and materials-domain language models have shown advantages for specialized text-mining tasks \cite{beltagy2019scibert,gupta2022matscibert,zhang2024chemicaltextmining}.
-
-\section{Outlook}
-\label{sec:outlook}
 
 The baseline results should be used as an error map for the next development iteration.
 The first priority is to harden preprocessing, evidence filtering, and deduplication for compact structured metadata records.
