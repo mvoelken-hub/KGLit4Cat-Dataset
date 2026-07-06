@@ -18,41 +18,6 @@ The chapter closes by concluding the evaluation gaps that remain.
 
 The evaluation is designed as an artifact-based diagnostic case study of the implemented workflow.
 It inspects how selected metadata facts are preserved, transformed, omitted, or misplaced between the source packages and the automatically generated metadata draft.
-The evaluation therefore follows the internal structure of the workflow as presented in \cref{tab:evaluation-framework-checklist}.
-
-\begingroup
-    \begin{center}
-        \captionof{table}{Inspection focus for each workflow stage as evaluation checklist.}
-        \label{tab:evaluation-framework-checklist}
-    \end{center}
-
-    \small
-    \linespread{0.96}\selectfont
-    \setlength{\parskip}{0.35em}
-    \setlength{\parindent}{0pt}
-
-    \textbf{Reference facts}\\
-    \hspace*{1em}source file locations; explicit and implicit statements
-
-    \textbf{Preprocessing}\\
-    \hspace*{1em}text preservation; chunk availability
-
-    \textbf{Dataset overview}\\
-    \hspace*{1em}early fact coverage; location hints; misleading overview statements
-
-    \textbf{Evidence collection}\\
-    \hspace*{1em}signal detection; category and role assignment; filtering impact
-
-    \textbf{Provenance core construction}\\
-    \hspace*{1em}coverage without chunk-level evidence; profile shape
-
-    \textbf{Profile Refinement}\\
-    \hspace*{1em}entity assignment; \ac{LLM} judgements; unsupported semantic claims; curation needs
-
-    \textbf{Vocabulary querying}\\
-    \hspace*{1em}query formulation; retrieved terms; graph context; selected terms; rejected candidates
-\endgroup
-
 The case study uses the two \textsuperscript{1}H \ac{NMR} package variants introduced in \cref{sec:dataset}.
 Both packages originate from the same underlying measurement, but expose different metadata affordances.
 The raw Bruker archive is closer to the instrument output and contains vendor-specific acquisition and processing files.
@@ -62,9 +27,15 @@ The comparison therefore does not evaluate different scientific measurements, bu
 As an inspection reference, a small set of curator-relevant facts is defined before interpreting the workflow output.
 For the present measurement, these facts include the dataset identity as \textsuperscript{1}H \ac{NMR} data, the observed nucleus, solvent information, pulse sequence, instrument type, observed resonance frequency, and the distinction between raw and derived package resources.
 The observed frequency is treated as a specific acquisition value of the \textsuperscript{1}H channel, recorded in the source files as approximately 500.13~MHz, rather than only as the nominal 500~MHz instrument description.
-These facts were selected because they provide basic acquisition and package-context information that supports curator review of an \ac{NMR} dataset \cite{Schober2018nmrML}.
+These facts were selected because they provide basic acquisition and package-context information that supports manual review of an \ac{NMR} dataset \cite{Schober2018nmrML}.
 The reference expectation is not a formal metadata standard.
 It is a scoped inspection aid for evaluating whether the automatically generated draft contains reviewable, evidence-aware structure.
+
+\Cref{fig:evaluation-flow} should therefore be read as a trace diagram rather than as a separate workflow.
+The orange source node represents the fact set that is followed throughout the case study, while the green nodes represent diagnostic checkpoints in the implemented workflow.
+The left column asks whether the selected facts remain accessible during preprocessing, whether they are already reflected or distorted in the dataset overview, and whether evidence collection detects and categorizes them.
+The right column then follows how the same facts are carried into profile construction and refinement, vocabulary querying, and final draft inspection.
+The orange arrows indicate the inspection trace: at each stage, the evaluation asks whether the reference facts are preserved, transformed, omitted, or misplaced.
 
 Across the evaluation, followed facts are described with the labels \emph{placed}, \emph{partial}, \emph{misplaced}, and \emph{absent}.
 A fact is treated as \emph{placed} when it appears in an appropriate part of the generated profile.
@@ -74,6 +45,87 @@ It is \emph{absent} when it is available in the source package or intermediate a
 These labels are qualitative inspection categories, not statistically validated performance metrics.
 They are applied within the case study to identify where facts are preserved, lost, or incorrectly transformed.
 The evaluation can therefore support claims about observed workflow behaviour, traceability, and development needs in the selected case.
+
+
+\begin{figure}[htbp]
+    \centering
+    \begin{tikzpicture}[
+        node distance=0.42cm and 0.48cm,
+        >=Latex,
+        stage/.style={
+            draw=TUgreen!80!black,
+            fill=TUgreen!7,
+            thick,
+            rounded corners=3pt,
+            align=center,
+            font=\footnotesize,
+            text width=0.39\linewidth,
+            minimum height=0.82cm,
+            inner xsep=4pt,
+            inner ysep=3pt
+        },
+        trace/.style={
+            draw=orange!80!black,
+            fill=orange!14,
+            thick,
+            trapezium,
+            trapezium left angle=70,
+            trapezium right angle=110,
+            align=center,
+            font=\footnotesize,
+            text width=2.4cm,
+            minimum width=3.1cm,
+            minimum height=0.82cm,
+            inner xsep=4pt,
+            inner ysep=3pt
+        },
+        traceitems/.style={
+            align=center,
+            font=\scriptsize,
+            text=orange!75!black,
+            text width=4.4cm
+        },
+        traceflow/.style={->, thick, orange!80!black}
+    ]
+
+    \node[trace] (facts) {\textbf{Traced fact set}};
+
+    \node[traceitems, above=0.08cm of facts] (factlabels) {identity; nucleus; solvent; sequence; instrument; frequency; resources};
+
+    \node[stage, below=of facts] (prep) {\textbf{1. Preprocessing}\\
+    {\scriptsize text preservation; chunk availability}};
+
+    \node[stage, below=of prep] (overview) {\textbf{2. Dataset overview}\\
+    {\scriptsize early fact coverage; location hints; misleading statements}};
+
+    \node[stage, below=of overview] (evidence) {\textbf{3. Evidence collection}\\
+    {\scriptsize signal detection; category and role assignment; filtering impact}};
+
+    \node[stage, right=0.8cm of prep] (profile) {\textbf{4. Profile construction and refinement}\\
+    {\scriptsize provenance coverage; profile shape\\entity assignment; curation needs}};
+
+    \node[stage, below=of profile] (vocab) {\textbf{5. Vocabulary querying}\\
+    {\scriptsize query formulation; retrieved terms; selected and rejected candidates}};
+
+    \node[stage, below=of vocab] (final) {\textbf{6. Final draft inspection}\\
+    {\scriptsize placed; partial; misplaced; absent}};
+
+    \draw[traceflow] (facts) -- (prep);
+    \draw[traceflow] (prep) -- (overview);
+    \draw[traceflow] (overview) -- (evidence);
+    \draw[traceflow]
+    (evidence.east)
+    -- ++(0.35,0)
+    -- ($(profile.west)+(-0.35,0)$)
+    -- (profile.west);
+    \draw[traceflow] (profile) -- (vocab);
+    \draw[traceflow] (vocab) -- (final);
+
+    \end{tikzpicture}
+    \caption{Evaluation flow used to trace selected metadata facts as they are preserved, transformed, or lost across workflow stages.}
+    \label{fig:evaluation-flow}
+\end{figure}
+\FloatBarrier
 
 \section{Baseline Evaluation}
 \label{sec:evaluation-baseline-run}
