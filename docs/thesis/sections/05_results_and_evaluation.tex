@@ -171,9 +171,25 @@ The selected acquisition facts still have to be checked in chunk-level evidence,
 \subsection{Evidence Collection}
 \label{sec:evaluation-evidence-collection-observations}
 
-The first inspection basis for this stage is the raw dataset evidence-note output of the baseline configuration.
+The inspection basis for the next stage is the raw dataset evidence-note output of the baseline configuration.
+The evidence categories are workflow-routing labels rather than domain concepts.
+They separate resource, instrument, measurement, method, software, activity, surrounding-context, and residual metadata signals for later profile construction.
 Across 32 chunks from 15 textual source files, this output contains 120 portable notes, 59 contextual notes, and 9 rejected candidate notes.
+\Cref{fig:evidence-category-distribution-raw-baseline} shows the category distribution for these three evidence groups.
+The horizontal axis lists the evidence categories, while the vertical axis gives the number of evidence notes.
+Blue bars represent portable notes, green bars represent contextual notes, and red bars represent rejected candidate notes.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{figures/evidence_category_distribution_raw_baseline.png}
+    \caption{Distribution of evidence categories in the raw dataset baseline run.}
+    \label{fig:evidence-category-distribution-raw-baseline}
+\end{figure}
+
 The portable notes are concentrated in the categories \texttt{resource\_\allowbreak{}signal}, \texttt{instrument\_\allowbreak{}signal}, and \texttt{measurement\_\allowbreak{}signal}.
+These three categories are nearly balanced, with 34 resource signals, 33 instrument signals, and 32 measurement signals.
+The contextual notes are dominated by \texttt{measurement\_\allowbreak{}signal}, which accounts for 41 of the 59 contextual notes.
+Rejected candidates are comparatively rare and occur mainly in \texttt{resource\_\allowbreak{}signal}.
 The most frequent portable roles are \texttt{parameter} and \texttt{descriptor}, followed by smaller numbers of \texttt{qualitative\_\allowbreak{}attribute}, \texttt{identity}, and \texttt{context} roles.
 The stage therefore produces a broad signal inventory, but the inventory is still organized through coarse workflow categories rather than domain-specific \ac{NMR} concepts.
 
