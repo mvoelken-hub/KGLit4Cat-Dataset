@@ -2,7 +2,7 @@
 
 The implemented prototype is evaluated as an end-to-end application for \ac{LLM}-assisted semantic metadata extraction from heterogeneous dataset packages.
 The system is not limited to isolated prompt experiments.
-Instead, it implements an executable workflow that connects dataset ingestion and preprocessing with evidence-backed metadata construction, semantic review, vocabulary grounding, and result inspection.
+Instead, it implements an executable workflow that connects dataset ingestion and preprocessing with evidence-backed metadata construction, semantic review, and vocabulary grounding.
 The primary evaluation focus is the automatically generated metadata draft without manual curation as a case study baseline.
 It is examined how far a domain-agnostic \ac{DCAT-AP+} profile can carry the extraction of curator-relevant metadata before domain-specific profile extensions are introduced.
 This work does not claim that schema-valid output is automatically scientifically correct.
@@ -11,7 +11,7 @@ Therefore, a secondary focus is the software implementation itself.
 A review on the usability of local models on commodity hardware is done.
 This regards computing time and cost.
 The effort for the vocabulary database curation is discussed.
-The chapter closes by identifying the evaluation gaps that remain.
+The chapter closes by concluding the evaluation gaps that remain.
 
 \section{Workflow Evaluation Setup}
 \label{sec:evaluation-setup}
@@ -30,7 +30,7 @@ The evaluation therefore follows the internal structure of the workflow as prese
     \setlength{\parskip}{0.55em}
     \setlength{\parindent}{0pt}
 
-    \textbf{Reference fact tracing}\\
+    \textbf{Reference facts}\\
     \hspace*{1em}source file locations; explicit and implicit statements
 
     \textbf{Preprocessing}\\
@@ -46,7 +46,7 @@ The evaluation therefore follows the internal structure of the workflow as prese
     \hspace*{1em}coverage without chunk-level evidence; profile shape
 
     \textbf{Profile Refinement}\\
-    \hspace*{1em}entity assignment; relation assignment; \ac{LLM} judgements; unsupported semantic claims; curation needs
+    \hspace*{1em}entity assignment; \ac{LLM} judgements; unsupported semantic claims; curation needs
 
     \textbf{Vocabulary querying and grounding}\\
     \hspace*{1em}query formulation; retrieved terms; graph context; selected terms; rejected candidates
@@ -62,31 +62,28 @@ The ChemSpectra-derived export is closer to a repository-facing package and cont
 The comparison therefore does not evaluate different scientific measurements, but how different representations of the same measurement affect source accessibility, evidence traceability, provenance representation, and profile construction.
 
 As an inspection reference, a small set of curator-relevant facts is defined before interpreting the workflow output.
-For the present measurement, these facts include the dataset identity as \textsuperscript{1}H \ac{NMR} data, the observed nucleus, solvent or reference information, pulse sequence, instrument description, observed resonance frequency, and the distinction between raw and derived package resources.
+For the present measurement, these facts include the dataset identity as \textsuperscript{1}H \ac{NMR} data, the observed nucleus, solvent information, pulse sequence, instrument type, observed resonance frequency, and the distinction between raw and derived package resources.
 The observed frequency is treated as a specific acquisition value of the \textsuperscript{1}H channel, recorded in the source files as approximately 500.13~MHz, rather than only as the nominal 500~MHz instrument description.
 These facts were selected because they provide basic acquisition and package-context information that supports curator review of an \ac{NMR} dataset \cite{Schober2018nmrML}.
 The reference expectation is not a formal metadata standard.
 It is a scoped inspection aid for evaluating whether the automatically generated draft contains reviewable, evidence-aware structure.
 
-Across the evaluation, followed facts are described with the labels \emph{placed}, \emph{partial}, \emph{misplaced}, \emph{absent}, and \emph{not available in package}.
+Across the evaluation, followed facts are described with the labels \emph{placed}, \emph{partial}, \emph{misplaced}, and \emph{absent}.
 A fact is treated as \emph{placed} when it appears in an appropriate part of the generated profile.
 It is \emph{partial} when it is present but underspecified or represented only at a coarse level.
 It is \emph{misplaced} when it is represented under an inappropriate entity, role, relation, or attribute structure.
 It is \emph{absent} when it is available in the source package or intermediate artifacts but not represented in the final draft.
-It is \emph{not available in package} when the corresponding package representation does not contain the required information.
 These labels are qualitative inspection categories, not statistically validated performance metrics.
 They are applied within the case study to identify where facts are preserved, lost, or incorrectly transformed.
 The evaluation can therefore support claims about observed workflow behaviour, traceability, and development needs in the selected case.
-It cannot support general claims about extraction accuracy, curator time savings, scientific correctness, or superiority over other systems without additional expert evaluation or benchmark studies.
 
 \section{Baseline Evaluation}
 \label{sec:evaluation-baseline-run}
 
-\subsection{Reference Fact Tracing}
-\label{sec:evaluation-reference-fact-tracing}
+\subsection{Reference Facts}
+\label{sec:evaluation-reference-facts}
 
-The reference fact tracing step establishes which selected facts are available in the original source package contents before automatic metadata construction.
-The inspected reference facts focus on whether the packages expose the measurement as \textsuperscript{1}H \ac{NMR} data, identify the observed nucleus, preserve solvent or reference information, name the pulse sequence and instrument, report the observed resonance frequency, and distinguish raw from derived resources.
+The inspected reference facts focus on whether the packages expose the measurement as \textsuperscript{1}H \ac{NMR} data, identify the observed nucleus, preserve solvent, name the pulse sequence and instrument, report the observed resonance frequency, and distinguish raw from derived resources.
 
 In the raw dataset, the dataset identity is available through Bruker acquisition and processing files and through the human-readable title file \texttt{10/pdata/1/title}.
 The observed nucleus is explicitly recorded in the acquisition files \texttt{10/acqus} and \texttt{10/acqu} as \texttt{NUC1=<1H>}.
@@ -95,9 +92,9 @@ Instrument information is available in \texttt{10/uxnmr.info}, which identifies 
 The more specific observed resonance frequency is present in the acquisition files as \texttt{SFO1=500.133088507478}.
 The raw package also contains the binary \texttt{fid} signal, acquisition files, processing files, shim values, audit trail, pulse program, and instrument configuration.
 
-In the ChemSpectra export, the dataset identity is stated in \texttt{dataset\_description.txt} as \texttt{dataset name: 1H NMR} and is also implied by the \ac{JCAMP-DX} spectrum file.
-The \texttt{10.edit.jdx} file records the observed nucleus, the \texttt{CDCl3} solvent or reference information, the \texttt{zg30} pulse sequence, and the observed frequency \texttt{500.133088507478}.
-The instrument description is available in the textual dataset description as \texttt{Bruker Avance 500 MHz}.
+In the ChemSpectra export, the dataset is identified in \texttt{dataset\_description.txt} as \textsuperscript{1}H NMR dataset.
+The \texttt{10.edit.jdx} file records the observed nucleus, the \texttt{CDCl3} solvent, the \texttt{zg30} pulse sequence, and the observed frequency \texttt{500.133088507478}.
+The instrument type is available in the textual dataset description as \texttt{Bruker Avance 500 MHz}.
 Compared with the raw dataset, the relevant metadata in this package is concentrated in the \ac{JCAMP-DX} spectrum file and the textual dataset description.
 
 \subsection{Preprocessing}
@@ -108,28 +105,30 @@ The evaluated runs use the gate parameters described in \cref{sec:preprocessing}
 These settings are relevant for the present \textsuperscript{1}H \ac{NMR} packages because many metadata facts appear as compact parameter records rather than prose.
 The raw observed-frequency value \texttt{SFO1= 500.133088507478} illustrates why structured parameter lines survive the gate.
 Its score is calculated as sum of tunable scoring features for reasonable word length, structured-text syntax, and digit density.
-For this line, the gate extracts the alphabetic token \texttt{SFO}, which gives an average word length of three characters and adds \texttt{0.10} for \texttt{reasonable\_word\_length}.
+For this line, the gate extracts the alphabetic token \texttt{SFO}, which gives an average word length of three characters and adds a positive score of \texttt{0.10} for \texttt{reasonable\_\allowbreak{}word\_\allowbreak{}length}.
 The line also matches the structured-text pattern \texttt{key = value}, because \texttt{SFO1} is followed by \texttt{=} and a non-empty value.
-This adds the configured structured-text bonus of \texttt{0.70}.
+This adds the configured structured-text score of \texttt{0.70}.
 At the same time, the line has a high digit ratio: 16 of 24 characters are digits, resulting in a ratio of approximately \texttt{0.67}.
-Since this exceeds the configured \texttt{digit\_ratio\_threshold} of \texttt{0.45}, the gate subtracts \texttt{0.25} for \texttt{too\_many\_digits}.
-The resulting score is therefore \texttt{0.10 + 0.70 - 0.25 = 0.55}, which is above the configured \texttt{keep\_threshold} of \texttt{0.30}.
+Since this exceeds the configured \texttt{digit\_\allowbreak{}ratio\_\allowbreak{}threshold} of \texttt{0.45}, the gate subtracts \texttt{0.25} for \texttt{too\_\allowbreak{}many\_\allowbreak{}digits}.
+The resulting score is therefore \texttt{0.10 + 0.70 - 0.25 = 0.55}, which is above the configured \texttt{keep\_\allowbreak{}threshold} of \texttt{0.30}.
 This preservation result is limited to the presented packages, because the text-quality gate is tunable and was inspected here only for this \textsuperscript{1}H \ac{NMR} case.
+% Needs better wording and more explanation how the individual values and scores were selected and tuned. The current description is only a demonstration of the scoring mechanism.
 
+Next, the chunking step is inspected to determine whether the selected reference facts are preserved in the resulting chunks.
 The baseline chunking step uses fixed-token chunking with a target and maximum size of 1024 tokens.
-This strategy is used for the detailed qualitative inspection because it is faster than semantic chunking and keeps chunks within a size range suitable for the local \ac{LLM} models used in this work.
+This strategy is used for the detailed qualitative inspection because it is the straightforward method of chunking and keeps chunks within a size range suitable for the local \ac{LLM} models used in this work.
 It produces 32 individual chunks for the raw dataset across 15 source files and 244 individual chunks for the ChemSpectra export across three textual sources.
 The raw binary \texttt{fid} file and the rendered ChemSpectra image remain package resources, but they do not become substantive textual chunk content.
 In the raw dataset, chunked acquisition files preserve \texttt{NUC1= <1H>}, \texttt{PULPROG= <zg30>}, \texttt{SFO1= 500.133088507478}, and \texttt{SOLVENT= <CDCl3>}.
 A separate chunk preserves the instrument context, including \texttt{Avance III NMR spectrometer} and the rounded \textsuperscript{1}H frequency of 500.13~MHz.
 The main limitation is not fact loss, but fact separation.
-Observed nucleus, observed frequency, and solvent or reference information therefore belong to the same acquisition and interpretation context.
+Observed nucleus, observed frequency, and solvent therefore belong to the same acquisition and interpretation context.
 \ac{nmrCV} treats instrument configuration, sample information such as solvent and reference standards, acquisition settings, and raw spectral data as connected metadata needed to describe and reconstruct an NMR experiment \cite{Schober2018nmrML}.
-In the raw baseline chunks, observed nucleus and pulse-sequence information can appear in neighbouring chunks rather than in the same chunk as solvent and observed frequency.
-In the ChemSpectra baseline chunks, the observed frequency appears in the first \ac{JCAMP-DX} header chunk, while observed nucleus, solvent or reference information, and pulse sequence appear in the following chunk.
+In the baseline chunks of the raw Bruker dataset, observed nucleus and pulse-sequence information can appear in neighbouring chunks rather than in the same chunk as solvent and observed frequency.
+In the ChemSpectra baseline chunks, the observed frequency appears in the first \ac{JCAMP-DX} header chunk, while observed nucleus, solvent , and pulse sequence appear in the following chunk.
 
 Semantic chunking is used as a comparison to test whether such fact splitting is reduced.
-It generates embeddings with \texttt{qwen3-embedding:0.6b} over two-line buffer windows and applies a 128-token minimum, a 1024-token maximum, and a 95th percentile similarity cut-off.
+It generates embeddings with \texttt{qwen3-embedding:0.6b} over two-line buffer windows and applies a 128-token minimum and a 95th percentile similarity cut-off.
 With this strategy, the raw dataset produces 51 individual chunks and the ChemSpectra export produces 42 individual chunks.
 For the raw dataset, semantic chunking still separates some acquisition facts across adjacent parameter-file chunks.
 For the ChemSpectra export, the main \ac{JCAMP-DX} header facts are kept together in one chunk.
@@ -162,7 +161,7 @@ The overview also assigns broad acquisition, processing, and instrument-setting 
 For the ChemSpectra export, the overview identifies the textual description as a dataset description containing instrument information and a file list.
 It also identifies the \ac{JCAMP-DX} file as a \textsuperscript{1}H \ac{NMR} spectrum with spectral parameters, XY data points, and an automatically generated peak table.
 This is the most important location hint for later extraction because the selected acquisition facts are concentrated in that spectrum file.
-Nevertheless, the overview does not preserve the exact observed nucleus, the \texttt{CDCl3} solvent or reference information, the \texttt{zg30} pulse sequence, or the observed frequency as separate facts.
+Nevertheless, the overview does not preserve the exact observed nucleus, the \texttt{CDCl3} solvent , the \texttt{zg30} pulse sequence, or the observed frequency as separate facts.
 
 Overall, the dataset overview stage provides file-location guidance and package orientation.
 It can identify the acquisition files, pulse-program file, instrument-configuration file, raw signal file, textual dataset description, and \ac{JCAMP-DX} spectrum as relevant resources.
@@ -187,7 +186,7 @@ These observations show that evidence collection can find acquisition and instru
 
 At the same time, the evidence notes show that detection and semantic placement are not identical.
 The \texttt{CDCl3} solvent note is assigned to \texttt{instrument\_signal} with the role \texttt{parameter}.
-The source line is therefore found, but the assigned category does not express the curator-facing concept of solvent or reference information.
+The source line is therefore found, but the assigned category does not express the curator-facing concept of solvent .
 The precise observed-frequency value \texttt{SFO1=500.133088507478} is detected in the evidence artifacts, but it is not retained as a clean portable evidence note.
 The observed-nucleus value \texttt{NUC1=<1H>} is detected as a direct candidate note, but it is removed by deterministic lexical deduplication over short structured parameter lines.
 It is merged into a retained \texttt{PULPROG=<zg30>} note, even though the two source facts are not semantically equivalent.
@@ -250,30 +249,41 @@ Rather, the observation suggests that intermediate summaries should not be compl
 Related extraction systems use user-specified schemas, domain knowledge injection, iterative prompting, or recursive schema interrogation to keep model outputs aligned with the target structure \cite{walls2025catminer,caufield2024spires}.
 For this workflow, the overview should remain compact, but separate schema-oriented summary views may be needed for candidate activities, data products, agents, and plans before provenance-core construction.
 
-\subsection{Profile Refinement}
+\subsection{Profile Refinement and Semantic Evaluation}
 \label{sec:evaluation-profile-refinement-observations}
 
-\begin{itemize}
-    \item The evaluation basis is the comparison between the provenance core, the attribute draft, the reconstructed draft, the projection ledgers, and the semantic requirement report.
-    \item Evidence notes re-enter the workflow mainly during parent-scoped attribute construction and semantic reconstruction.
-    \item The provenance core entries in the projection ledger have no direct evidence-note identifiers, while later attribute projections do.
-    \item The raw dataset receives activity attributes for the \texttt{zg30} pulse program and the \texttt{dirdata.exe} process.
-    \item The raw dataset also receives an origin attribute on user-defined parameters and a control-unit attribute on instrument settings.
-    \item These routed attributes add local details, but they do not change the central activity and output interpretation set by the provenance core.
-    \item The raw draft still does not place \texttt{CDCl3}, \texttt{NUC1=<1H>}, or \texttt{SFO1=500.133088507478} as explicit curator-facing acquisition facts.
-    \item The ChemSpectra export receives attributes from the \ac{JCAMP-DX} spectrum and peak-table region.
-    \item Examples include a number-of-points attribute on the XY data points and data-type, data-class, and peak-table category attributes on the signal-acquisition activity.
-    \item Semantic reconstruction adds a \texttt{MAXX} quantitative attribute to the spectrometer agent.
-    \item This shows that routing can attach source-backed values to profile objects while still choosing scientifically questionable parents for some values.
-    \item The ChemSpectra draft keeps the \ac{NMR} spectral-data frame, but the unsupported 400~MHz instrument description and \texttt{zg1p} plan remain in the draft.
-    \item It still does not preserve the exact observed nucleus, \texttt{CDCl3} solvent or reference information, \texttt{zg30} pulse sequence, or observed frequency as explicit acquisition-level facts.
-    \item Both current drafts are schema-valid and receive a source trace score of \texttt{1.0}.
-    \item The source trace score indicates that placed content can be traced to selected evidence, but it does not indicate that all selected reference facts were preserved or placed under the right parent.
-    \item The raw draft has a coverage score of \texttt{74.0} and a semantic-requirements score of approximately \texttt{0.71}.
-    \item The ChemSpectra draft has a coverage score of \texttt{98.0} and a semantic-requirements score of approximately \texttt{0.79}.
-    \item In both drafts, the activity evaluation target requirement remains missing.
-    \item The combined observation is that refinement can enrich and validate parts of an existing core, but it does not reliably repair a missing target, unsupported core-level specifics, or absent acquisition facts.
-\end{itemize}
+This subsection combines the stages after provenance-core construction and before vocabulary grounding.
+The inspected artifacts are the attribute draft, the reconstructed draft, the projection ledgers, and the semantic requirement report.
+At this point, evidence notes re-enter the workflow mainly through parent-scoped attribute construction and semantic reconstruction.
+The projection ledger shows the stage boundary clearly.
+The provenance-core entries have no direct evidence-note identifiers, while later attribute projections do.
+Semantic requirement evaluation then checks the resulting draft for profile-level requirements such as schema validity, trace support, activity targets, description scope, and attribute placement.
+
+For the raw dataset, refinement adds several source-backed local details.
+The activity receives a \texttt{Pulse Program} attribute with the value \texttt{zg30} and a \texttt{Process} attribute with the value \texttt{dirdata.exe}.
+The input entities also receive an origin attribute for Bruker BioSpin GmbH and a control-unit attribute for the instrument settings.
+These additions show that evidence can be routed into the profile after the core has been created.
+However, they do not change the central activity and output interpretation set by the provenance core.
+The raw draft still does not place \texttt{CDCl3}, \texttt{NUC1=<1H>}, or \texttt{SFO1=500.133088507478} as explicit curator-facing acquisition facts.
+
+For the ChemSpectra export, refinement draws strongly on the \ac{JCAMP-DX} spectrum and peak-table region.
+It adds a number-of-points attribute to the XY data points and adds data-type, data-class, and peak-table-category attributes to the signal-acquisition activity.
+Semantic reconstruction also adds a \texttt{MAXX} quantitative attribute to the spectrometer agent.
+These placements are traceable to source lines, but they show that source-backed routing can still select scientifically questionable parents for some values.
+The ChemSpectra draft keeps the \ac{NMR} spectral-data frame, but the unsupported 400~MHz instrument description and the \texttt{zg1p} plan remain in the draft.
+The exact observed nucleus, \texttt{CDCl3} solvent , \texttt{zg30} pulse sequence, and observed frequency are still not preserved as explicit acquisition-level facts.
+
+Both inspected drafts are schema-valid and receive a source trace score of \texttt{1.0}.
+The raw draft has a coverage score of \texttt{74.0} and a semantic-requirements score of approximately \texttt{0.71}.
+The ChemSpectra draft has a coverage score of \texttt{98.0} and a semantic-requirements score of approximately \texttt{0.79}.
+In both cases, the activity evaluation target requirement remains missing.
+The additional raw-dataset comparison between a 4b model and a 27b model supports the same caution.
+The 4b draft receives a higher semantic-requirements score than the 27b draft, even though its provenance core is more generic and preserves fewer inspected acquisition facts.
+
+The verdict for this workflow stage is therefore limited.
+Profile refinement and semantic evaluation can attach traceable source-backed details and produce schema-valid drafts.
+They mostly enrich the provenance core that already exists instead of correcting its central interpretation.
+The scores and source-trace checks therefore show internal consistency of placed content, not reliable preservation of the curator-relevant acquisition facts.
 
 \subsection{Vocabulary Querying and Grounding}
 \label{sec:evaluation-grounding-observations}
