@@ -326,30 +326,39 @@ $.was_generated_by.had_input_entity[1] = {
 
 Here the input-entity parent already matches the source signal, so the attributes can be placed in a curator-readable structure.
 Less suitable parent shapes lead to weaker attributes.
-In the archived gemma3:12b baseline, the raw draft adds quantitative attributes such as \texttt{DE1=4.5}, \texttt{BF1=100.13}, and unnamed \texttt{298.0} values under parents such as \enquote{Bruker TopSpin} and \enquote{NMR Data Acquisition and Processing}.
+In the gemma3:12b baseline, the raw draft adds quantitative attributes such as \texttt{DE1=4.5}, \texttt{BF1=100.13}, and unnamed \texttt{298.0} values under parents such as \enquote{Bruker TopSpin} and \enquote{NMR Data Acquisition and Processing}.
 In the gemma3:4b comparison run, \texttt{TOPSPIN Version 3.2} appears to be reused as \enquote{pulse sequence length} under a \enquote{pulse program} parent.
 These examples show that attribute construction can attach source-backed details, but the selected attributes and their placement vary across runs.
 Single-run attributes are therefore diagnostic examples, not stable performance evidence.
-The raw drafts still do not consistently place \texttt{CDCl3}, \texttt{NUC1=<1H>}, or \texttt{SFO1=500.133088507478} as explicit curator-facing acquisition facts.
+The attribute enriched drafts still do not consistently place \texttt{CDCl3}, \texttt{NUC1=<1H>}, or \texttt{SFO1=500.133088507478} as explicit curator-facing acquisition facts.
 
 For the ChemSpectra export, refinement draws strongly on the \ac{JCAMP-DX} spectrum and peak-table region.
 It adds a number-of-points attribute to the XY data points and adds data-type, data-class, and peak-table-category attributes to the signal-acquisition activity.
 Semantic reconstruction also adds a \texttt{MAXX} quantitative attribute to the spectrometer agent.
-These placements are traceable to source lines, but they show that source-backed routing can still select scientifically questionable parents for some values.
+These placements are traceable to source lines, but they show that source-backed routing can still select scientifically questionable parent shapes for some attribute values.
 The ChemSpectra draft keeps the \ac{NMR} spectral-data frame, but the unsupported 400~MHz instrument description and the \texttt{zg1p} plan remain in the draft.
 The exact observed nucleus, \texttt{CDCl3} solvent , \texttt{zg30} pulse sequence, and observed frequency are still not preserved as explicit acquisition-level facts.
 
-Both inspected drafts are schema-valid and receive a source trace score of \texttt{1.0}.
-The raw draft has a coverage score of \texttt{74.0} and a semantic-requirements score of approximately \texttt{0.71}.
-The ChemSpectra draft has a coverage score of \texttt{98.0} and a semantic-requirements score of approximately \texttt{0.79}.
-In both cases, the activity evaluation target requirement remains missing.
-The additional raw-dataset comparison between a gemma3:4b model and a gemma3:27b model supports the same caution.
-The gemma3:4b draft receives a higher semantic-requirements score than the gemma3:27b draft, even though the gemma3:27b run gives the pulse-program facts a more suitable local parent shape.
+The next inspection step considers the semantic requirement checks described in the workflow and evaluates how the model interprets these schema-level expectations.
+Across the inspected drafts, the activity evaluation target remains missing.
+The datasets do contain broad measurement context, including spectra and signal acquisition.
+They do not provide enough evidence to safely synthesize a concrete evaluated sample, compound, or studied process.
+However, the ChemSpectra draft already contains \enquote{Signal Acquisition} as an input activity of the spectrum-generation activity.
+The missing requirement therefore does not only reflect limited package metadata.
+It also shows that the distinction between input activity and evaluated activity can become ambiguous in this profile shape.
+The same acquisition process may be interpreted as prior process context, as the activity being characterized, or as both, depending on the intended modelling decision.
+
+The attribute-parent check shows a similar limitation.
+It can be marked fulfilled even when curator inspection still finds questionable placements, such as ChemSpectra extrema attached to the spectrometer agent.
+The raw comparison runs reinforce this caution because the 27b run gives the pulse-program facts a more suitable parent shape than the 4b run, while the aggregate semantic score ranks the 4b run higher.
+This suggests that the general-purpose models can often recognise schema-level roles, but they do not reliably apply domain expertise when deciding which scientific object a value should characterize.
+The semantic checks themselves are also model-generated judgements over a model-generated draft.
+Work on \ac{LLM}-as-a-judge evaluation describes such judgements as scalable but affected by biases and limited reasoning \cite{zheng2023llmjudge}.
 
 The verdict for this workflow stage is therefore limited.
-Profile refinement and semantic evaluation can attach traceable source-backed details and produce schema-valid drafts.
+Profile refinement and semantic evaluation can attach traceable source-backed details and flag some structural gaps.
 They mostly enrich the provenance core that already exists instead of correcting its central interpretation.
-The scores and source-trace checks therefore show internal consistency of placed content, not reliable preservation of the curator-relevant acquisition facts.
+The requirement report is therefore useful for directing curator review, but not for demonstrating reliable preservation of the curator-relevant acquisition facts.
 
 \subsection{Vocabulary Querying and Grounding}
 \label{sec:evaluation-grounding-observations}
@@ -378,4 +387,3 @@ The scores and source-trace checks therefore show internal consistency of placed
     \item Observation: a more metadata-aware overview could improve orientation, but it would not replace chunk-level evidence extraction because the workflow still needs source-line support for placed facts.
     \item Observation: the baseline supports claims about traceable workflow behavior and diagnostic inspection, but not claims about complete metadata accuracy.
 \end{itemize}
-
