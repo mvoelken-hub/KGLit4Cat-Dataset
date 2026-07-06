@@ -195,32 +195,29 @@ The stage therefore produces a broad signal inventory, but the inventory is stil
 
 Several reference facts are detected at chunk level.
 The pulse sequence is detected directly from \texttt{10/acqu} as the claim that the \ac{NMR} experiment uses the \texttt{zg30} pulse program, with \texttt{PULPROG=<zg30>} as evidence text.
+This note is classified as \texttt{resource\_\allowbreak{}signal} with the role \texttt{descriptor}.
+Within the available category set, \texttt{method\_\allowbreak{}signal} would have been the closer routing category, while a domain-specific label such as pulse sequence would have expressed the curator-facing role more directly.
 The solvent is detected directly from \texttt{10/acqus} as the claim that the solvent is \texttt{CDCl3}.
+This note is classified as \texttt{instrument\_\allowbreak{}signal} with the role \texttt{parameter}.
+The \texttt{parameter} role is partly plausible because the solvent appears as an acquisition parameter, but \texttt{instrument\_\allowbreak{}signal} does not express the curator-facing role of \texttt{CDCl3} as solvent or reference context.
+Within the current category set, \texttt{measurement\_\allowbreak{}condition} would have been closer, although a domain-specific solvent or reference label would be more precise.
 The instrument description is detected from \texttt{10/uxnmr.info} as the claim that the spectrometer is an \texttt{Avance III NMR spectrometer}.
-The same source context also contains the rounded \textsuperscript{1}H frequency value of 500.13~MHz.
-These observations show that evidence collection can find acquisition and instrument signals that were only indicated at file level in the overview.
-
-At the same time, the evidence notes show that detection and semantic placement are not identical.
-The \texttt{CDCl3} solvent note is assigned to \texttt{instrument\_signal} with the role \texttt{parameter}.
-The source line is therefore found, but the assigned category does not express the curator-facing concept of solvent .
-The precise observed-frequency value \texttt{SFO1=500.133088507478} is detected in the evidence artifacts, but it is not retained as a clean portable evidence note.
+This note is classified as \texttt{instrument\_\allowbreak{}signal} with the role \texttt{identity}.
+This classification is appropriate because the source line identifies the spectrometer type, so \texttt{instrument\_\allowbreak{}signal} with the role \texttt{identity} matches the curator-facing interpretation.
+The same source context also contains the rounded \textsuperscript{1}H frequency value of 500.13~MHz, but this value is not represented as a separate claim in that note.
 The observed-nucleus value \texttt{NUC1=<1H>} is detected as a direct candidate note, but it is removed by deterministic lexical deduplication over short structured parameter lines.
 It is merged into a retained \texttt{PULPROG=<zg30>} note, even though the two source facts are not semantically equivalent.
 The observed loss of \texttt{NUC1=<1H>} indicates that lexical deduplication is too permissive for compact structured parameter records.
 In this case, unrelated \texttt{key=value} facts are grouped because they share short syntactic patterns, although they describe different acquisition properties.
-
-The contextual evidence contains neighbouring signals that are technically grounded but less relevant to the selected reference facts.
-Examples include channel states such as \texttt{NUC2=<off>} through \texttt{NUC8=<off>}.
-The pulse-program file also contributes contextual method information, including a 30 degree flip angle and a 1D program type.
-These notes show that compact instrument files produce many neighbouring signals around the facts selected for evaluation.
+These observations show that chunk-level evidence collection can recover source-level acquisition and instrument facts that the overview only indicated at file level, but the assigned workflow categories vary in how well they express the curator-facing role of each fact.
 
 The main observation for this stage is that several selected facts are still detected before profile construction.
 However, the coarse category set does not always express the domain role that a curator would assign to the same source line, echoing ontology work in catalysis where reaction roles and catalyst relations require explicit semantic modelling \cite{behr2024reac4cat}.
 This suggests two development directions for ongoing work.
-Domain terms may need to be available already during evidence extraction, instead of being introduced only during vocabulary grounding, as \ac{LLM}-based catalysis text mining also relies on domain knowledge injection and user-specified extraction schemas \cite{walls2025catminer}.
+Domain terms may need to be available already during evidence extraction, instead of being introduced only in downstream stages, as \ac{LLM}-based catalysis text mining also relies on domain knowledge injection and user-specified extraction schemas \cite{walls2025catminer}.
 Alternatively, the category harness could be loosened so that the model can emit labels closer to the source signal, such as solvent, observed nucleus, pulse sequence, or observed frequency, following extraction designs that separate open extraction from later schema definition and canonicalization \cite{zhang2024edc}.
 That direction would require more explicit downstream routing logic, because later stages could no longer rely only on the current fixed category set.
-Another development direction is a model or component trained specifically for metadata-signal detection, as chemical text-mining work has shown for tasks including NMR data extraction \cite{zhang2024chemicaltextmining}.
+Another development direction is a model trained specifically for metadata-signal detection, as chemical text-mining work has shown for tasks including NMR data extraction \cite{zhang2024chemicaltextmining}.
 Such a component could include \ac{NER}-style recognition of domain terms and parameter-value pairs, following chemistry-aware extraction pipelines for entities, properties, measurements, and relationships \cite{swain2016chemdataextractor}.
 
 
