@@ -147,24 +147,12 @@ The scope of \ac{nmrCV} therefore differs from \ac{Voc4Cat}.
 \acf{QUDT} provides a semantic model for physical quantities, units of measure, dimensions, numerical values, and related data structures \cite{qudt2022schema}.
 It distinguishes between a concrete quantity and a quantity kind.
 A quantity has meaning in the context of a specific measurement, whereas a quantity kind is independent of a particular measurement instance \cite{qudt2022schema}.
-
-This distinction is useful for metadata extraction because numerical values are often ambiguous without further semantic context.
-A value such as \texttt{400} becomes more explicit when it is linked to a quantity kind and a unit.
-For example, an NMR spectrometer frequency can be represented by pairing the value with \texttt{quantitykind:\allowbreak Frequency} and \texttt{unit:\allowbreak MegaHZ}.
-
-QUDT also defines relations between units and quantity kinds.
+\ac{QUDT} also defines relations between units and quantity kinds.
 The schema includes relations such as \texttt{qudt:\allowbreak hasQuantityKind}, \texttt{qudt:\allowbreak hasUnit}, and \texttt{qudt:\allowbreak applicableUnit} \cite{qudt2022schema}.
 These relations can support validation and transformation software.
-For example, software can check whether a frequency value is paired with a frequency unit, or convert between compatible units when the required unit definitions are available.
-However, QUDT does not determine which scientific object a value describes.
+For example, a program can check whether a frequency value is paired with a frequency unit, or convert between compatible units when the required unit definitions are available.
+However, \ac{QUDT} does not determine which scientific object a value describes.
 That decision still depends on source evidence and on the target metadata profile.
-
-The three resources therefore operate at different semantic levels.
-Voc4Cat can normalize broad catalysis-relevant method terms.
-nmrCV can identify NMR-specific acquisition, processing, and data-product concepts.
-QUDT can describe quantities and units.
-Together, they illustrate why vocabulary grounding in the workflow cannot be treated as a single lookup task.
-The appropriate vocabulary depends on whether the extracted value describes a method category, a spectroscopy-specific concept, or a quantitative measurement.
 
 \section{Domain-Aware Information Extraction}
 \label{sec:domain-aware-information-extraction}
