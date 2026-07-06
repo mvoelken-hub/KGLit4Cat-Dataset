@@ -8,4 +8,6 @@ technical reports mit last accessed (W3C Quellen)
 
 Motivation:
 
+Chapter 3/5 literature follow-up: Research whether there is domain-near work on LLM-generated review/evaluation judgements for scientific extraction, metadata curation, chemistry, or catalysis. Decide later whether Zheng et al. 2023 belongs in chapter 3 or only in the results discussion of model-generated semantic requirement checks.
+
 Es gibt wenige Benchmarks bezüglich Metadatenextraktion aus heterogenen Katalyse Datensätzen mithifle von Domänenagnostischen Large Language Models. Daher zielt die Arbeit darauf ab einen Domänenagnostischen Ansatz zu verfolgen, welcher Limitationen eines solchen agnostischen Ansatzes aufzeigt woraufhin weitere Arbeiten aufbauend eien Domänenspezifischeren Ansatz verfolgen können, wenn es denn als nötig eingestuft wird.
