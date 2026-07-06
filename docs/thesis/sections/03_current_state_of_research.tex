@@ -69,35 +69,29 @@ It can point to evaluated entities, evaluated activities, used entities, generat
 This distinction matters for experimental metadata.
 It separates the dataset, the activity that produced it, the scientific object or process that was evaluated, and the resources used or produced during the activity.
 
-\ac{DCAT-AP+} also models data-processing chains.
-The data-analysis shape specializes the data-generating activity shape.
-The analysis source-data shape represents source data used by an analysis.
-The analysis dataset shape represents the resulting dataset \cite{dcatapplusDocumentation}.
-These shapes keep primary data generation and later analysis connected.
-They still map to generic \ac{PROV-O} and \ac{DCAT} classes.
+Beyond direct data generation, \ac{DCAT-AP+} uses the same provenance pattern to model data-processing chains.
+In this part of the profile, the data-analysis shape specializes the data-generating activity shape, so an analysis remains an activity in the provenance graph.
+The analysis source-data shape then identifies the data used as input, and the analysis dataset shape identifies the dataset produced by that analysis.
+Together, these shapes keep primary data generation and later analysis in one connected chain while still mapping the profile-specific structures to generic \ac{PROV-O} and \ac{DCAT} classes \cite{dcatapplusDocumentation}.
 
-The second pattern represents recorded attributes.
-The quantitative attribute shape is mapped to \texttt{qudt:Quantity}.
-It has a literal value and a required \texttt{has\_quantity\_type} field \cite{dcatapplusDocumentation}.
-Its unit field is recommended but optional \cite{dcatapplusDocumentation}.
-The qualitative attribute shape represents non-numerical metadata values \cite{dcatapplusDocumentation}.
-Both attribute types can be attached to activities, entities, and agentic entities.
-This gives the profile a generic way to store measurements, settings, identifiers, and categorical observations.
+The second pattern records attributes that describe the activities and entities introduced above.
+For numerical metadata, the quantitative attribute shape is mapped to \texttt{qudt:Quantity} \cite{qudt2022schema}.
+It combines a literal value with a required \texttt{has\_quantity\_type} field, while the unit field is recommended but optional.
+For non-numerical metadata, the qualitative attribute shape provides the corresponding representation.
+Because both attribute types can be attached to activities, entities, and agentic entities, the profile can describe measurements, settings, identifiers, and categorical observations in a generic form \cite{dcatapplusDocumentation}.
 
-The third pattern is controlled classification.
-\ac{DCAT-AP+} uses \texttt{ClassifierMixin} to add \texttt{rdf\_type} and \texttt{type} to central shapes \cite{dcatapplusDocumentation}.
-The \texttt{rdf\_type} slot maps to \texttt{rdf:type}.
-It states that an instance belongs to a formal ontology class.
-The \texttt{type} slot maps to \texttt{dcterms:type}.
-It supports lighter categorization with a controlled term \cite{dcatapplusDocumentation}.
-This keeps formal class membership distinct from vocabulary-based classification.
+The third pattern supports controlled classification.
+It addresses cases where a resource needs both formal ontology typing and lighter vocabulary-based categorization.
+\ac{DCAT-AP+} implements this distinction with \texttt{ClassifierMixin}, which adds \texttt{rdf\_type} and \texttt{type} to central shapes.
+The \texttt{rdf\_type} slot maps to \texttt{rdf:type} and states that an instance belongs to a formal ontology class.
+The \texttt{type} slot maps to \texttt{dcterms:type} and records a controlled term for broader categorization.
+This keeps class membership and controlled-vocabulary classification separate while allowing both to be expressed on the same profile structures \cite{dcatapplusDocumentation}.
 
-The fourth pattern captures optional context.
-\texttt{Plan} is mapped to \texttt{prov:Plan}.
-It represents directive information such as a method, protocol, or procedure \cite{dcatapplusDocumentation}.
-\texttt{Surrounding} is mapped to \texttt{prov:Location}.
-It represents the spatial or environmental context of an activity \cite{dcatapplusDocumentation}.
-The data-generating activity shape can link to these context shapes \cite{dcatapplusDocumentation}.
+The fourth pattern adds optional context to the activities described above.
+It distinguishes between directive context and environmental context.
+\texttt{Plan} is mapped to \texttt{prov:Plan} and represents information such as a method, protocol, or procedure.
+\texttt{Surrounding} is mapped to \texttt{prov:Location} and represents the spatial or environmental setting of an activity.
+By linking data-generating activities to these shapes, the profile can describe not only what was produced, but also according to which procedure and under which contextual conditions it was produced \cite{dcatapplusDocumentation}.
 
 \begin{figure}[H]
     \centering
@@ -107,32 +101,9 @@ The data-generating activity shape can link to these context shapes \cite{dcatap
 \end{figure}
 
 \ac{ChemDCAT-AP} extends \ac{DCAT-AP+} for chemistry and catalysis research data \cite{chemdcatapDocumentation}.
-It is developed jointly by \ac{NFDI4Chem} and \ac{NFDI4Cat} \cite{chemdcatapDocumentation}.
-The profile imports the provenance and attribute patterns of \ac{DCAT-AP+}.
-It then specializes them through \ac{LinkML} inheritance \cite{chemdcatapDocumentation}.
-The accompanying paper frames this as a shared semantically grounded metadata foundation for \ac{NFDI4Chem} and \ac{NFDI4Cat} \cite{stroemert2026chemdcat}.
-The documentation states that every ChemDCAT-AP class extends a \ac{DCAT-AP+} class through \texttt{is\_a}.
-It also states that every ChemDCAT-AP slot inherits from a \ac{DCAT-AP+} slot in the same way \cite{chemdcatapDocumentation}.
-
-ChemDCAT-AP maps schema elements to established semantic resources.
-The documentation names ChEBI, CHEMINF, the Semanticscience Integrated Ontology, and the Named Reaction Ontology as examples \cite{chemdcatapDocumentation}.
-It organizes the profile into modules for material entities, chemical entities, chemical reactions, and dataset-level specializations \cite{chemdcatapDocumentation}.
-Material samples and substance samples specialize entity shapes.
-Chemical reactions specialize activity shapes.
-Reaction-role classes include \texttt{StartingMaterial}, \texttt{Reagent}, and \texttt{ChemicalProduct}.
-They also include \texttt{Catalyst} and \texttt{Reactor} \cite{chemdcatapDocumentation}.
-
-ChemDCAT-AP also replaces some generic attribute patterns with chemistry-specific slots.
-The documentation lists \texttt{inchi}, \texttt{inchikey}, and \texttt{smiles} as dedicated chemical identifier slots.
-It also lists \texttt{molecular\_formula} and \texttt{iupac\_name} for chemical descriptions \cite{chemdcatapDocumentation}.
-It also lists \texttt{has\_temperature}, \texttt{has\_mass}, \texttt{has\_concentration}, and \texttt{has\_yield} as dedicated quantitative slots \cite{chemdcatapDocumentation}.
-The current release is a release candidate.
-NFDI4Chem describes it as an interim stage that will be developed further with community feedback \cite{chemdcatapDocumentation}.
-
-ChemDCAT-AP is therefore a foundation for further profiles.
-It provides reusable chemical and catalysis structures.
-Use-case-specific profiles can still decide which acquisition settings, sample descriptors, instrument parameters, or processing details are required.
-This extension path is important for analytical and catalysis metadata because a generic chemistry profile cannot exhaust every method-specific reporting need.
+The profile shows how generic \ac{DCAT-AP+} provenance and attribute patterns can be specialized through \ac{LinkML} inheritance.
+ChemDCAT-AP illustrates this with material entities, chemical entities, chemical reactions, reaction roles, chemical identifiers, and quantitative chemistry slots \cite{chemdcatapDocumentation}.
+That way, specialized application profiles can use these patterns... 
 
 \section{Vocabulary Resources}
 \label{sec:vocabulary-resources}
