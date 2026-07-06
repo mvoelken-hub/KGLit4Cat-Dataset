@@ -45,19 +45,19 @@ The following section therefore focuses on profile and vocabulary resources for 
 
 Semantic metadata modelling combines structure and terminology.
 An application profile defines how classes and properties are used in a specific context.
-It can also define relations, cardinalities, and value ranges.
+It can also define relations, cardinalities, and value ranges \cite{Hunter2001Combining}.
 \ac{DCAT-AP+} is a \ac{LinkML}-based extension of \ac{DCAT-AP} 3.0.
 It adds a provenance layer for describing how a dataset was generated and what the dataset is about.
 The profile is domain-agnostic.
 Domains can import its generic classes and properties and then specialize them in their own application profiles.
-The profile documentation identifies \ac{ChemDCAT-AP} as the first such domain profile for chemistry and catalysis research data \cite{dcatapplusDocumentation}.
+The profile documentation identifies \ac{ChemDCAT-AP} as the first such domain profile for chemistry and catalysis research data \cite{stroemert2026chemdcat,dcatapplusDocumentation}.
 
 \ac{DCAT-AP+} separates profile constraints from ontology mappings.
 Its \ac{LinkML} classes and slots define usage-specific shapes.
 Their \texttt{class\_uri} and \texttt{slot\_uri} mappings refer to external vocabularies.
 This makes specialization a schema-level operation.
 It does not require every inherited \ac{LinkML} class to become a new \ac{OWL} subclass.
-The design allows a domain profile to keep generic mappings or replace them with more specific terms \cite{dcatapplusDocumentation}.
+The design allows a domain profile to keep generic mappings or replace them with more specific terms \cite{stroemert2026chemdcat,dcatapplusDocumentation}.
 
 Within this framework, \ac{DCAT-AP+} provides four profile patterns.
 \cref{fig:dcat-ap-plus} shows these patterns.
@@ -103,76 +103,68 @@ By linking data-generating activities to these shapes, the profile can describe 
 \ac{ChemDCAT-AP} extends \ac{DCAT-AP+} for chemistry and catalysis research data \cite{chemdcatapDocumentation}.
 The profile shows how generic \ac{DCAT-AP+} provenance and attribute patterns can be specialized through \ac{LinkML} inheritance.
 ChemDCAT-AP illustrates this with material entities, chemical entities, chemical reactions, reaction roles, chemical identifiers, and quantitative chemistry slots \cite{chemdcatapDocumentation}.
-Because downstream profiles import and specialize \ac{DCAT-AP+}, a \ac{DCAT-AP+}-valid draft can serve as a structural starting point for a more specialized profile draft, but additional domain decisions are needed to choose narrower classes, slots, constraints, and mappings \cite{dcatapplusDocumentation}.
+Because downstream profiles import and specialize \ac{DCAT-AP+}, a \ac{DCAT-AP+}-valid draft can serve as a structural starting point for a more specialized profile draft, but additional domain decisions are needed to choose narrower classes, slots, constraints, and mappings \cite{stroemert2026chemdcat,dcatapplusDocumentation}.
 
 \section{Vocabulary Resources}
 \label{sec:vocabulary-resources}
 
-Application profiles and vocabularies play different roles.
-The profile defines the shape of a record.
-Vocabulary resources provide identifiers for terms placed inside that shape.
-For metadata extraction, this distinction matters.
-A workflow can first identify a value.
-It can then place the value in a profile field.
-Only after that step does it map the type, unit, or quantity kind to a controlled term to target shapes that are eligible for such mappings.
-The following resources illustrate broad catalysis terminology, cross-domain quantity semantics, and NMR-specific spectroscopy metadata.
+Application profiles and vocabularies serve complementary roles in semantic metadata modelling.
+An application profile defines the structure of a metadata record, while vocabulary resources provide controlled identifiers for the terms that fill this structure.
+A workflow may first identify a value in the source material and place it in the appropriate profile field.
+Only afterwards can it decide whether the value should be grounded to a controlled term, for example as a method type, unit, quantity kind, or other classifiable term.
+The resources discussed below cover three levels that are relevant for this thesis: broad catalysis terminology, cross-domain quantity and unit semantics, and NMR-specific spectroscopy metadata.
 
 \subsection{Voc4Cat}
 \label{sec:voc4cat}
 
-\ac{Voc4Cat} is a \ac{SKOS} vocabulary for catalysis disciplines \cite{david_linke_2023_8313340}.
-Its GitHub documentation describes it as a community-extended vocabulary for all subdisciplines of catalysis \cite{david_linke_2023_8313340}.
-The Skosmos service describes Voc4Cat as a collection of concepts from catalysis and related disciplines.
-It also states that each concept has a unique resolvable persistent identifier and a textual definition \cite{david_linke_2023_8313340}.
-Within \ac{NFDI4Cat}, Voc4Cat is used as part of ontology-based research-data management for catalysis \cite{nfdi4cat2024whitepaper}.
+\ac{Voc4Cat} is a community-extended \ac{SKOS} vocabulary for catalysis and related disciplines \cite{david_linke_2023_8313340}.
+Its concepts provide resolvable persistent identifiers and textual definitions.
+Within \ac{NFDI4Cat}, \ac{Voc4Cat} is used as part of ontology-based research data management for catalysis \cite{nfdi4cat2024whitepaper}.
 
-\ac{SKOS} supports preferred labels, alternative labels, definitions, notes, semantic relations, and mappings between concepts \cite{w3c2009skos}.
-A metadata record can therefore reference a Voc4Cat concept as a classification term.
-This does not require the described resource to become an instance of an \ac{OWL} class.
-For example, Voc4Cat contains a concept for \enquote{nuclear magnetic resonance spectroscopy}.
-The concept is placed under characterization techniques and has a resolvable URI \cite{david_linke_2023_8313340}.
-This supports method-level normalization of variants such as \texttt{NMR} and \texttt{nuclear magnetic resonance spectroscopy}.
+Because \ac{Voc4Cat} is based on \ac{SKOS}, it supports preferred labels, alternative labels, definitions, notes, semantic relations, and mappings between concepts \cite{w3c2009skos}.
+This makes it suitable for controlled classification in metadata records.
+A record can refer to a \ac{Voc4Cat} concept without treating the described resource as an instance of an \ac{OWL} class.
+For example, \ac{Voc4Cat} contains a concept for \enquote{nuclear magnetic resonance spectroscopy}.
+The concept belongs to the area of characterization techniques and has a resolvable URI \cite{david_linke_2023_8313340}.
+It can therefore normalize method-level variants such as \texttt{NMR} and \texttt{nuclear magnetic resonance spectroscopy}.
 
-Voc4Cat does not replace a method-specific spectroscopy vocabulary.
-Its NMR concept identifies the characterization method.
-It does not provide the full acquisition and processing vocabulary needed for observed nuclei, pulse programs, raw signal types, or spectral processing states.
-For that level, a resource such as nmrCV is more appropriate.
-
-\subsection{Quantities, Units, Dimensions and Types Ontology (QUDT)}
-\label{sec:qudt}
-
-\acf{QUDT} defines a model for physical quantities, units of measure, dimensions, numerical values, and related data structures \cite{qudt2022schema}.
-It distinguishes a quantity from a quantity kind.
-The QUDT documentation explains that a quantity has meaning in the context of a measurement.
-It defines a quantity kind as independent of a particular measurement \cite{qudt2022schema}.
-This distinction is useful for metadata extraction.
-A value such as \texttt{400} becomes more explicit when it is paired with a quantity kind.
-For example, it can be linked to \texttt{quantitykind:\allowbreak Frequency} and \texttt{unit:\allowbreak MegaHZ}.
-
-QUDT also provides relations between units and quantity kinds.
-The schema includes \texttt{qudt:\allowbreak hasQuantityKind}.
-It also includes \texttt{qudt:\allowbreak hasUnit} and \texttt{qudt:\allowbreak applicableUnit} \cite{qudt2022schema}.
-Such relations can support validation and transformation software.
-For example, software can check whether a frequency value is paired with a frequency unit.
-It can also convert a value when compatible unit definitions are available.
-QUDT does not decide which scientific object a value describes.
-That placement remains a profile and evidence-interpretation problem.
+At the same time, \ac{Voc4Cat} does not replace a method-specific spectroscopy vocabulary.
+Its NMR concept identifies the characterization method, but it does not provide the detailed acquisition and processing vocabulary needed for observed nuclei, pulse programs, raw signal types, or spectral processing states.
 
 \subsection{NMR Controlled Vocabulary (nmrCV)}
 \label{sec:nmr-cv}
 
-\ac{nmrCV} accompanies \ac{nmrML}.
-\ac{nmrML} is an open \ac{XML}-based exchange and storage format for \ac{NMR} data \cite{Schober2018nmrML}.
-The nmrML paper states that the format supports controlled-vocabulary terms through nmrCV \cite{Schober2018nmrML}.
-It can represent raw free-induction decay data and acquisition settings.
-It can also represent processing metadata, spectral assignments, chemical structures, and experiment metadata \cite{Schober2018nmrML}.
-It also provides converter, parser, validator, repository, and workflow support for NMR data exchange \cite{Schober2018nmrML}.
+\ac{nmrCV} accompanies \ac{nmrML}, an open \ac{XML}-based exchange and storage format for \ac{NMR} data.
+\ac{nmrML} can represent raw free-induction decay data, acquisition settings, processing metadata, spectral assignments, chemical structures, and experiment metadata.
+It also provides supporting tools such as converters, parsers, validators, repositories, and workflow components for NMR data exchange \cite{Schober2018nmrML}.
+The scope of \ac{nmrCV} therefore differs from \ac{Voc4Cat}.
+\ac{Voc4Cat} can identify NMR as a catalysis-relevant characterization method.
+\ac{nmrCV} can describe spectroscopy-specific acquisition, processing, and data-product concepts \cite{Schober2018nmrML}.
 
-The scope of nmrCV therefore differs from Voc4Cat and QUDT.
-Voc4Cat can identify NMR as a catalysis-relevant characterization method.
+\subsection{Quantities, Units, Dimensions and Types Ontology (QUDT)}
+\label{sec:qudt}
+
+\acf{QUDT} provides a semantic model for physical quantities, units of measure, dimensions, numerical values, and related data structures \cite{qudt2022schema}.
+It distinguishes between a concrete quantity and a quantity kind.
+A quantity has meaning in the context of a specific measurement, whereas a quantity kind is independent of a particular measurement instance \cite{qudt2022schema}.
+
+This distinction is useful for metadata extraction because numerical values are often ambiguous without further semantic context.
+A value such as \texttt{400} becomes more explicit when it is linked to a quantity kind and a unit.
+For example, an NMR spectrometer frequency can be represented by pairing the value with \texttt{quantitykind:\allowbreak Frequency} and \texttt{unit:\allowbreak MegaHZ}.
+
+QUDT also defines relations between units and quantity kinds.
+The schema includes relations such as \texttt{qudt:\allowbreak hasQuantityKind}, \texttt{qudt:\allowbreak hasUnit}, and \texttt{qudt:\allowbreak applicableUnit} \cite{qudt2022schema}.
+These relations can support validation and transformation software.
+For example, software can check whether a frequency value is paired with a frequency unit, or convert between compatible units when the required unit definitions are available.
+However, QUDT does not determine which scientific object a value describes.
+That decision still depends on source evidence and on the target metadata profile.
+
+The three resources therefore operate at different semantic levels.
+Voc4Cat can normalize broad catalysis-relevant method terms.
+nmrCV can identify NMR-specific acquisition, processing, and data-product concepts.
 QUDT can describe quantities and units.
-nmrCV can identify spectroscopy-specific acquisition, processing, and data-product concepts \cite{Schober2018nmrML}.
-This matters when a metadata record must distinguish a generic NMR method from acquisition and processing facts that make an NMR dataset interpretable.
+Together, they illustrate why vocabulary grounding in the workflow cannot be treated as a single lookup task.
+The appropriate vocabulary depends on whether the extracted value describes a method category, a spectroscopy-specific concept, or a quantitative measurement.
 
 \section{Domain-Aware Information Extraction}
 \label{sec:domain-aware-information-extraction}
