@@ -282,10 +282,21 @@ Semantic requirement evaluation then checks the resulting draft for profile-leve
 
 For the raw dataset, inspected runs show that attribute quality depends strongly on the available parent shape.
 The strongest placement occurs in the gemma3:27b comparison run, where a dedicated \enquote{Pulse Program} as input entity of the data generating activity receives the attributes \enquote{Pulse Program Name} with the value \enquote{zg30}, \enquote{Flip Angle} with the value \enquote{30.0}, and a \enquote{ph31 Setting} with the value \enquote{0 2 2 0 1 3 3 1}.
-These attributes are semantically plausible because \texttt{zg30} denotes a one-dimensional Bruker pulse program with nominal 30° excitation, while \texttt{ph31} records a pulse-program phase table, where each integer represents a specific phase value and the order of integers indicates the sequence of phases \cite{kim2019optimization}.
-The relevant parent structure is shown in the following truncated artifact excerpt.
+These attributes are semantically plausible because \texttt{zg30} denotes a one-dimensional Bruker pulse program with nominal 30 degree excitation, while \texttt{ph31} records a pulse-program phase table, where each integer represents a specific phase value and the order of integers indicates the sequence of phases \cite{kim2019optimization}.
+The relevant parent structure is shown in \cref{fig:evaluation-pulse-program-parent-shape}.
+The important point is that \enquote{Pulse Program} is already represented as an input entity of the data-generating activity and can therefore receive pulse-program-specific attributes.
 
-\begin{verbatim}
+\begin{figure}[htbp]
+\begin{lstlisting}[
+    basicstyle=\footnotesize\ttfamily,
+    breaklines=true,
+    backgroundcolor=\color{black!4},
+    frame=single,
+    rulecolor=\color{black!20},
+    framesep=0.55em,
+    xleftmargin=0.4em,
+    xrightmargin=0.4em
+]
 $.was_generated_by[0].had_input_entity[1] = {
   "title": "Pulse Program",
   "description": "Defined pulse program for NMR experiments.",
@@ -298,7 +309,10 @@ $.was_generated_by[0].had_input_entity[1] = {
     {"title": "ph31 Setting", "value": "0 2 2 0 1 3 3 1"}
   ]
 }
-\end{verbatim}
+\end{lstlisting}
+    \caption{Truncated artifact excerpt showing the \enquote{Pulse Program} input entity and its attributes in the 27b comparison run for the raw dataset.}
+    \label{fig:evaluation-pulse-program-parent-shape}
+\end{figure}
 
 Here the input-entity parent already matches the source signal, so the attributes can be placed in a curator-readable structure.
 Less suitable parent shapes lead to weaker attributes.
@@ -340,7 +354,6 @@ The scores and source-trace checks therefore show internal consistency of placed
     \item ChemSpectra export: the grounded final draft also remains close to the reconstructed profile shape and does not repair the earlier record-dataset framing.
     \item Observation: vocabulary grounding enriches selected placed fields but does not compensate for missing or misframed profile construction.
 \end{itemize}
-
 \subsection{Overall Workflow Assessment}
 \label{sec:evaluation-overall-observations}
 
@@ -355,3 +368,4 @@ The scores and source-trace checks therefore show internal consistency of placed
     \item Observation: a more metadata-aware overview could improve orientation, but it would not replace chunk-level evidence extraction because the workflow still needs source-line support for placed facts.
     \item Observation: the baseline supports claims about traceable workflow behavior and diagnostic inspection, but not claims about complete metadata accuracy.
 \end{itemize}
+
