@@ -157,138 +157,94 @@ That decision still depends on source evidence and on the target metadata profil
 \section{Domain-Aware Information Extraction}
 \label{sec:domain-aware-information-extraction}
 
-Profiles and vocabularies define how metadata can be represented.
-They do not automatically supply the metadata values.
-In chemistry, relevant information is often distributed across prose, tables, captions, figures, and diagrams \cite{Fan2024OpenChemIE}.
-Chemical data management also has to handle heterogeneous raw files, instrument formats, parsers, schemas, and missing metadata in instrument outputs \cite{duke2022datastorage}.
-LLM-based chemical extraction reviews describe end-to-end workflows from source collection to structured output and quality assurance \cite{schilling2025text}.
+Profiles and vocabularies define how metadata can be represented, but they do not automatically provide the values that fill a metadata record.
+The extraction step therefore has to identify relevant information in the available source material and preserve enough context to decide what this information describes \cite{Fan2024OpenChemIE}.
+Experimental data management also has to handle heterogeneous raw files, parser outputs, file-format conventions, schemas, and metadata that may be incomplete or implicit in the original source material \cite{duke2022datastorage}.
+For this reason, \ac{LLM}-based information extraction is usually discussed as a workflow rather than as a single model call, including source collection, preprocessing, structured output generation, validation, and quality assurance \cite{schilling2025text}.
 
-ChemDataExtractor is a foundational example of chemistry-aware information extraction.
-It extracts chemical entities, properties, measurements, and relationships from scientific documents \cite{swain2016chemdataextractor}.
-Its pipeline uses chemistry-aware tokenization, part-of-speech tagging, named-entity recognition, phrase parsing, and rule-based grammars \cite{swain2016chemdataextractor}.
-It also processes paragraphs, captions, and tables at document level \cite{swain2016chemdataextractor}.
-This makes it relevant as a precursor to later schema-guided and \ac{LLM}-based extraction systems.
+Earlier domain-specific extraction systems show why such workflows cannot rely only on generic text processing.
+ChemDataExtractor is a foundational example from the molecular sciences.
+It extracts entities, properties, measurements, and relationships from scientific documents \cite{swain2016chemdataextractor}.
+Its pipeline combines domain-sensitive tokenization, part-of-speech tagging, named-entity recognition, phrase parsing, and rule-based grammars, and it can process paragraphs, captions, and tables at document level \cite{swain2016chemdataextractor}.
+Relevant information often depends on specialized notation, measurement expressions, document structure, and relations between textual fragments.
 
-Zhang et al.\ move this domain-aware perspective into catalysis.
-They construct an information-extraction benchmark for catalysis literature \cite{zhang2022knowledge}.
-Their benchmark covers six entity types.
-These are catalyst, reaction, reactant, product, characterization, and treatment \cite{zhang2022knowledge}.
-Their system includes article selection, entity extraction, an entity-aware search engine, and co-occurrence-based correlation analysis \cite{zhang2022knowledge}.
-This work fits the thesis topic because it targets catalysis-specific categories.
-It remains closer to entity extraction and search than to profile-level semantic metadata construction.
+For catalysis, the extraction target becomes more specific.
+Zhang et al.\ construct an information-extraction benchmark for catalysis literature and define six entity types: catalyst, reaction, reactant, product, characterization, and treatment \cite{zhang2022knowledge}.
+Their workflow includes article selection, expert annotation, entity extraction, an entity-aware search engine, and co-occurrence-based correlation analysis \cite{zhang2022knowledge}.
+This moves information extraction closer to the domain of this thesis because the extracted categories correspond to central objects and activities in catalysis research.
+At the same time, the task remains primarily an entity extraction and information-access task.
+It identifies catalysis-relevant spans and makes them searchable, but it does not yet construct a profile-level metadata graph with provenance, attributes, activities, and controlled classifications.
 
-CatMiner applies \ac{LLM}-based extraction to heterogeneous catalysis literature.
-It extracts user-specified structure--environment--property records \cite{walls2025catminer}.
-The method uses domain knowledge injection, iterative prompting, document-wide context handling, and follow-up prompting \cite{walls2025catminer}.
-Its evaluation against a handmade database and manual checks show that domain-specific \ac{LLM} extraction still depends on validation and review \cite{walls2025catminer}.
-Its error analysis reports issues such as vague catalyst names, unrelated context, and confusion between different temperature roles \cite{walls2025catminer}.
-These errors are directly relevant for metadata extraction because they concern semantic placement, not only output formatting.
-
-SPIRES provides a schema-guided approach.
-It recursively interrogates an \ac{LLM} according to a user-defined nested schema \cite{caufield2024spires}.
-It grounds extracted entities against external ontologies and controlled vocabularies \cite{caufield2024spires}.
-The method is designed to assist manual knowledge curation and acquisition \cite{caufield2024spires}.
-SPIRES also discusses hallucination and relation-extraction errors as remaining reliability concerns \cite{caufield2024spires}.
-This keeps human validation within the extraction workflow.
-
-EDC addresses knowledge-graph construction from text.
-It uses three phases called extract, define, and canonicalize \cite{zhang2024edc}.
-The method can operate with a predefined schema or induce one from extracted information \cite{zhang2024edc}.
-It also retrieves relevant schema elements when a schema is too large for the prompt \cite{zhang2024edc}.
-EDC therefore provides a design precedent for separating evidence extraction, schema organization, and canonicalization.
-
-Reac4Cat-Ontology is not an extraction pipeline.
-It still matters for extraction because it shows why catalysis roles require explicit semantics.
-The ontology models reaction experiments, reaction components, roles, and catalyst relations \cite{behr2024reac4cat}.
+Recent \ac{LLM}-based systems extend this line of work by allowing more flexible extraction targets.
+CatMiner extracts user-specified structure--environment--property records from heterogeneous catalysis literature \cite{walls2025catminer}.
+Its design uses domain knowledge injection, iterative prompting, document-wide context handling, and follow-up prompting \cite{walls2025catminer}.
+These strategies are relevant for metadata extraction because experimental values often depend on surrounding context rather than on a single sentence.
+However, CatMiner also shows that domain-specific \ac{LLM} extraction still requires validation and review.
+Its error analysis reports problems such as vague catalyst names, unrelated context, and confusion between different temperature roles \cite{walls2025catminer}.
+These errors point to a semantic placement problem.
+The system may find a plausible value, but assign it to the wrong role or context.
+Reac4Cat-Ontology makes the same issue explicit from a modelling perspective.
 It uses \ac{OWL} description logic and general class axioms to infer reaction-role assignments and catalyst participation \cite{behr2024reac4cat}.
-For metadata extraction, this reinforces a key distinction.
-Detecting a domain term is not the same as assigning it to the correct entity, activity, or role in a structured record.
+For metadata extraction, this shows why term detection is only a first step.
+Extracted values still have to be assigned to the correct entity, activity, role, or attribute.
 
-\section{Domain-Specific Models, Retrieval, and Grounding}
+Schema-guided extraction systems address part of this placement problem by making the target structure explicit.
+\ac{SPIRES} recursively interrogates an \ac{LLM} according to a user-defined nested schema and grounds extracted entities against external ontologies and controlled vocabularies \cite{caufield2024spires}.
+It is designed to support manual knowledge curation and acquisition rather than to remove expert review from the process \cite{caufield2024spires}.
+The system also discusses hallucination and relation-extraction errors as remaining reliability concerns \cite{caufield2024spires}.
+So, extraction can be constrained by a schema and supported by ontology grounding, but human validation remains part of a reliable workflow.
+
+The reviewed work therefore motivates a layered interpretation of domain-aware information extraction.
+Scientific extraction systems show how specialized notation, document structure, and measurement expressions can be handled.
+Catalysis-specific benchmarks define extraction targets that are closer to the entities and activities of interest in this thesis.
+\ac{LLM}-based systems add flexibility and document-wide context handling.
+Schema-guided and ontology-grounded systems show how extraction can be constrained by target structures and controlled identifiers.
+For this thesis, the remaining question is how these ideas can be combined for heterogeneous experimental dataset packages, where the goal is not only to extract isolated entities from literature, but to construct an evidence-backed semantic metadata draft for a target application profile.
+
+\section{Domain Adapted Language Models}
 \label{sec:domain-specific-models-retrieval-grounding}
 
 Extraction also depends on language representations.
-SciBERT is pretrained on scientific publications.
+\ac{SciBERT} is pretrained on scientific publications.
 It improves performance on scientific sequence tagging, sentence classification, and parsing tasks compared with general-domain baselines \cite{beltagy2019scibert}.
-MatSciBERT narrows this approach to materials-science literature.
-It reports improvements over SciBERT for named-entity recognition, relation classification, and abstract classification \cite{gupta2022matscibert}.
+\ac{MatSciBERT} narrows this approach to materials-science literature.
+It reports improvements over \ac{SciBERT} for named-entity recognition, relation classification, and abstract classification \cite{gupta2022matscibert}.
 Zhang et al.\ evaluate fine-tuned \acp{LLM} on five chemical text-mining tasks.
 The tasks include compound entity recognition and reaction role labelling.
 They also include metal-organic framework synthesis extraction, \ac{NMR} data extraction, and reaction paragraph-to-action-sequence conversion \cite{zhang2024chemicaltextmining}.
 These studies support a cautious claim.
 Scientific terminology, formulas, abbreviations, and role distinctions can benefit from domain-adapted representations or task-specific tuning.
 
-For semantic metadata extraction, this observation also applies to retrieval and grounding.
-Vocabulary grounding depends on how source expressions are turned into candidate queries.
-It also depends on how nearby vocabulary terms are ranked and selected.
-Domain-specific encoders or rerankers may therefore help when source wording, profile fields, and vocabulary labels differ.
-This is an inference from the model and grounding literature rather than a result demonstrated for the thesis workflow.
-The claim remains a literature-motivated design hypothesis.
-
-Grounding and retrieval solve a narrower problem than profile construction.
-They can normalize or disambiguate terms that have already been exposed as candidate values.
-They do not decide which entity or activity should own a value.
-They also do not decide whether a quantity describes an instrument, a sample, a reaction condition, or a processing step.
-That decision depends on source evidence and on the target profile.
-
 The reviewed work therefore suggests a layered view.
 ChemDataExtractor emphasizes chemical entities and document-level extraction targets \cite{swain2016chemdataextractor}.
 The catalysis benchmark emphasizes domain entities and annotated extraction targets for catalysis literature \cite{zhang2022knowledge}.
 CatMiner shows schema-like user targets, domain prompting, context handling, and review in catalysis literature extraction \cite{walls2025catminer}.
-SPIRES combines schema-guided extraction with ontology grounding \cite{caufield2024spires}.
-EDC separates open extraction, schema definition, and canonicalization \cite{zhang2024edc}.
-SciBERT shows this for scientific text processing \cite{beltagy2019scibert}.
-MatSciBERT shows it for materials-science text mining \cite{gupta2022matscibert}.
+\ac{SPIRES} combines schema-guided extraction with ontology grounding \cite{caufield2024spires}.
+\ac{SciBERT} shows this for scientific text processing \cite{beltagy2019scibert}.
+\ac{MatSciBERT} shows it for materials-science text mining \cite{gupta2022matscibert}.
 Chemical fine-tuning work shows it for chemical text-mining tasks \cite{zhang2024chemicaltextmining}.
 The open question for this thesis is how these layers behave when they are connected for heterogeneous experimental packages.
 
 \section{Research Gap}
 \label{sec:research-gap}
 
-The reviewed literature does not indicate a lack of building blocks.
-\ac{NFDI4Cat} provides a research-data infrastructure concept for catalysis \cite{wulf2021unified}.
-Repo4Cat provides a repository implementation for catalysis-related sciences \cite{kushnarenko2025repo4cat}.
-The \ac{NOMAD} catalysis plugin provides structured upload and search for experimental catalysis data \cite{schumann2025nomad}.
-\ac{DCAT-AP+} provides generic provenance-rich profile structures \cite{dcatapplusDocumentation}.
-\ac{ChemDCAT-AP} specializes those structures for chemistry and catalysis \cite{chemdcatapDocumentation}.
-The accompanying paper presents ChemDCAT-AP as a shared foundation for \ac{NFDI4Chem} and \ac{NFDI4Cat} \cite{stroemert2026chemdcat}.
-Voc4Cat provides catalysis terminology \cite{david_linke_2023_8313340}.
-\ac{NFDI4Cat} frames that vocabulary as part of ontology-based research-data management for catalysis \cite{nfdi4cat2024whitepaper}.
-nmrML and nmrCV provide an NMR-specific data and vocabulary layer \cite{Schober2018nmrML}.
-ChemDataExtractor provides chemistry-aware extraction from scientific documents \cite{swain2016chemdataextractor}.
-Zhang et al.\ provide a catalysis-specific extraction benchmark and pipeline \cite{zhang2022knowledge}.
-CatMiner provides an \ac{LLM}-based extraction workflow for heterogeneous catalysis literature \cite{walls2025catminer}.
-SPIRES provides schema-guided extraction with ontology grounding \cite{caufield2024spires}.
-EDC provides a staged extraction, schema definition, and canonicalization framework for knowledge-graph construction \cite{zhang2024edc}.
+The reviewed literature shows that the problem is not a lack of individual building blocks.
+Catalysis research data infrastructures such as \ac{NFDI4Cat}, Repo4Cat, and the \ac{NOMAD} catalysis plugin address storage, publication, structured upload, and search for catalysis-related data \cite{wulf2021unified,kushnarenko2025repo4cat,schumann2025nomad}.
+At the representation level, \ac{DCAT-AP+} and \ac{ChemDCAT-AP} provide profile structures for dataset description, provenance, attributes, and domain specialization \cite{dcatapplusDocumentation,chemdcatapDocumentation,stroemert2026chemdcat}.
+At the terminology level, resources such as \ac{Voc4Cat}, \ac{QUDT}, and \ac{nmrCV} provide controlled identifiers for catalysis concepts, quantity and unit semantics, and \ac{NMR}-specific metadata concepts \cite{david_linke_2023_8313340,qudt2022schema,Schober2018nmrML}.
+Information extraction research adds methods for identifying relevant scientific entities, relations, and experimental values, including catalysis-specific extraction benchmarks, \ac{LLM}-based extraction workflows, and schema-guided extraction with ontology grounding \cite{zhang2022knowledge,walls2025catminer,caufield2024spires}.
 
-The remaining gap is operational integration.
-The reviewed systems are strongest when the input is a scientific article, a controlled text corpus, or a schema-guided extraction task over selected passages.
-ChemDataExtractor focuses on chemistry literature \cite{swain2016chemdataextractor}.
-OpenChemIE focuses on document-level reaction extraction from chemistry literature \cite{Fan2024OpenChemIE}.
-Zhang et al.\ focus on catalysis literature \cite{zhang2022knowledge}.
-CatMiner also focuses on catalysis literature \cite{walls2025catminer}.
-SPIRES focuses on schema-guided knowledge extraction from text \cite{caufield2024spires}.
-EDC focuses on knowledge-graph construction from text \cite{zhang2024edc}.
-The thesis case instead starts from heterogeneous experimental dataset packages.
-Such packages can contain PDFs, spreadsheets, local metadata files, images, instrument exports, supplementary tables, binary resources, and partially structured folders.
-Duke et al.\ support this concern at the chemical data-management level by emphasizing parsers, schemas, APIs, and heterogeneous raw files \cite{duke2022datastorage}.
-The nmrML paper supports it at the analytical-data level.
-It shows that reusable NMR data may require raw data, acquisition parameters, and processing metadata.
-It also points to assignments, chemical structures, converters, and validators \cite{Schober2018nmrML}.
+The remaining gap lies in the operational connection between these layers.
+Existing infrastructures and profiles define where metadata can be stored and how it can be represented.
+Vocabulary resources define controlled identifiers that can be used for normalization and semantic grounding.
+Extraction systems show how relevant information can be identified from scientific text.
+However, these components are usually studied or implemented separately.
+They do not by themselves describe an end-to-end procedure that starts with a heterogeneous experimental dataset package and produces an inspectable, evidence-backed metadata draft for a target application profile.
 
-A second gap concerns validity and curation.
-Schema-valid output is necessary for machine-actionable metadata.
-It does not prove scientific correctness.
-CatMiner reports extraction errors that involve vague names, unrelated context, and role confusion \cite{walls2025catminer}.
-SPIRES reports hallucination and relation-extraction errors as remaining concerns \cite{caufield2024spires}.
-Schilling-Wilhelmi et al.\ discuss constrained decoding, domain-specific validation, and quality assurance for \ac{LLM}-based chemical extraction \cite{schilling2025text}.
-These sources support a workflow view in which evidence, profile structure, vocabulary grounding, validation, and human review are complementary controls.
-
-This thesis is positioned in that operational integration gap.
-It does not propose a new catalysis ontology.
-It does not propose a new repository.
-It does not claim to provide a fully automated literature database.
-Instead, the workflow developed in this thesis connects heterogeneous source handling with evidence-oriented extraction.
-It also connects profile projection, semantic review, vocabulary grounding, validation, and artifact-based diagnosis in one prototype workflow.
-The contribution is an examination of how existing standards, vocabularies, and extraction ideas can act as constraints.
-It also examines how they can act as grounding resources in an \ac{LLM}-supported metadata extraction process.
+A second gap concerns the relation between schema validity and scientific validity.
+A metadata record can satisfy a profile schema while still assigning a value to the wrong entity, activity, role, or attribute.
+This is visible in \ac{LLM}-based extraction work, where errors may involve vague names, unrelated context, or confusion between different experimental roles \cite{walls2025catminer}.
+Schema-guided extraction can reduce this problem by making the target structure explicit, but hallucination and relation-extraction errors remain reliability concerns \cite{caufield2024spires}.
+Consequently, a workflow for semantic metadata extraction should not treat automatic profile completion as sufficient.
+It also has to retain source evidence, expose unresolved decisions, support vocabulary grounding, and leave room for human review.
+This thesis therefore examines how existing standards, vocabularies, and extraction approaches can be connected into an evidence-backed and inspectable workflow for semantic metadata drafting.
