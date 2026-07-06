@@ -276,18 +276,37 @@ For this workflow, the overview should remain compact, but separate schema-orien
 \subsection{Profile Refinement and Semantic Evaluation}
 \label{sec:evaluation-profile-refinement-observations}
 
-This subsection combines the stages after provenance-core construction and before vocabulary grounding.
-The inspected artifacts are the attribute draft, the reconstructed draft, the projection ledgers, and the semantic requirement report.
-At this point, evidence notes re-enter the workflow mainly through parent-scoped attribute construction and semantic reconstruction.
-The provenance-core entries have no direct evidence-note identifiers, while later attribute projections do.
+This subsection combines the stages that add attributes to the provenance core and evaluate the resulting draft against semantic requirements.
+At this point, evidence notes re-enter the workflow mainly through parent-scoped attribute construction, where the evidence notes are used to add attribute values to the provenance-core entities.
 Semantic requirement evaluation then checks the resulting draft for profile-level requirements such as schema validity, trace support, activity targets, description scope, and attribute placement.
 
-For the raw dataset, refinement adds several source-backed local details.
-The activity receives a \texttt{Pulse Program} attribute with the value \texttt{zg30} and a \texttt{Process} attribute with the value \texttt{dirdata.exe}.
-The input entities also receive an origin attribute for Bruker BioSpin GmbH and a control-unit attribute for the instrument settings.
-These additions show that evidence can be routed into the profile after the core has been created.
-However, they do not change the central activity and output interpretation set by the provenance core.
-The raw draft still does not place \texttt{CDCl3}, \texttt{NUC1=<1H>}, or \texttt{SFO1=500.133088507478} as explicit curator-facing acquisition facts.
+For the raw dataset, inspected runs show that attribute quality depends strongly on the available parent shape.
+The strongest placement occurs in the gemma3:27b comparison run, where a dedicated \enquote{Pulse Program} as input entity of the data generating activity receives the attributes \enquote{Pulse Program Name} with the value \enquote{zg30}, \enquote{Flip Angle} with the value \enquote{30.0}, and a \enquote{ph31 Setting} with the value \enquote{0 2 2 0 1 3 3 1}.
+These attributes are semantically plausible because \texttt{zg30} denotes the Bruker one-dimensional \textsuperscript{1}H pulse program used here, the 30 degree flip angle describes the radio-frequency excitation angle of that program, and \texttt{ph31} records the phase-table sequence used during acquisition.
+The relevant parent structure is shown in the following truncated artifact excerpt.
+
+\begin{verbatim}
+$.was_generated_by[0].had_input_entity[1] = {
+  "title": "Pulse Program",
+  "description": "Defined pulse program for NMR experiments.",
+  "type": {"title": "NMR pulse sequence", "from_CV": "nmrCV"},
+  "has_quantitative_attribute": [
+    {"title": "Flip Angle", "value": 30.0, "unit": "degrees"}
+  ],
+  "has_qualitative_attribute": [
+    {"title": "Pulse Program Name", "value": "zg30"},
+    {"title": "ph31 Setting", "value": "0 2 2 0 1 3 3 1"}
+  ]
+}
+\end{verbatim}
+
+Here the input-entity parent already matches the source signal, so the attributes can be placed in a curator-readable structure.
+Less suitable parent shapes lead to weaker attributes.
+In the archived gemma3:12b baseline, the raw draft adds quantitative attributes such as \texttt{DE1=4.5}, \texttt{BF1=100.13}, and unnamed \texttt{298.0} values under parents such as \enquote{Bruker TopSpin} and \enquote{NMR Data Acquisition and Processing}.
+In the gemma3:4b comparison run, \texttt{TOPSPIN Version 3.2} appears to be reused as \enquote{pulse sequence length} under a \enquote{pulse program} parent.
+These examples show that attribute construction can attach source-backed details, but the selected attributes and their placement vary across runs.
+Single-run attributes are therefore diagnostic examples, not stable performance evidence.
+The raw drafts still do not consistently place \texttt{CDCl3}, \texttt{NUC1=<1H>}, or \texttt{SFO1=500.133088507478} as explicit curator-facing acquisition facts.
 
 For the ChemSpectra export, refinement draws strongly on the \ac{JCAMP-DX} spectrum and peak-table region.
 It adds a number-of-points attribute to the XY data points and adds data-type, data-class, and peak-table-category attributes to the signal-acquisition activity.
@@ -300,8 +319,8 @@ Both inspected drafts are schema-valid and receive a source trace score of \text
 The raw draft has a coverage score of \texttt{74.0} and a semantic-requirements score of approximately \texttt{0.71}.
 The ChemSpectra draft has a coverage score of \texttt{98.0} and a semantic-requirements score of approximately \texttt{0.79}.
 In both cases, the activity evaluation target requirement remains missing.
-The additional raw-dataset comparison between a 4b model and a 27b model supports the same caution.
-The 4b draft receives a higher semantic-requirements score than the 27b draft, even though its provenance core is more generic and preserves fewer inspected acquisition facts.
+The additional raw-dataset comparison between a gemma3:4b model and a gemma3:27b model supports the same caution.
+The gemma3:4b draft receives a higher semantic-requirements score than the gemma3:27b draft, even though the gemma3:27b run gives the pulse-program facts a more suitable local parent shape.
 
 The verdict for this workflow stage is therefore limited.
 Profile refinement and semantic evaluation can attach traceable source-backed details and produce schema-valid drafts.

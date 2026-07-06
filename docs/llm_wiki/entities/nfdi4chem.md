@@ -2,8 +2,8 @@
 type: entity
 title: "NFDI4Chem"
 created: 2025-06-23
-updated: 2026-07-01
-sources: [nfdi4chem, chemdcat-ap, ols4, steinbeck2020nfdi4chem, chemspectra]
+updated: 2026-07-06
+sources: [nfdi4chem, chemdcat-ap, ols4, steinbeck2020nfdi4chem, chemspectra, nmrml-open-data-standard, nmrlib-bruker-nmr-tools]
 tags: [nfdi, data-infrastructure]
 ---
 
@@ -19,6 +19,7 @@ Chemistry consortium within Germany's NFDI. One of nine consortia funded in the 
 ## Key Components
 - **Chemotion ELN**: Reference electronic laboratory notebook supporting SMILES, InChI, jcamp.dx
 - **ChemSpectra** ([[chemspectra]]): Web-based spectra editor integrated with Chemotion-style ELN/repository workflows; supports JCAMP-DX and mzML plus transfer of selected signals back into host records
+- **NMR data and tooling context**: nmrML ([[nmrml-open-data-standard]]) gives the NMR side a vendor-agnostic XML exchange format, controlled vocabulary, converters, validators, and repository handoff; NMRlib ([[nmrlib-bruker-nmr-tools]]) shows how Bruker/TopSpin experiment setup can be standardized at the instrument-workflow layer.
 - **Smart Lab concept**: ELN + instrument integration + data processing + repository transfer
 - **Federated repositories**: Interconnected for molecule/reaction/characterization data
 - **Terminology Service**: Based on OLS4 ([[ols4]])

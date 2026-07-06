@@ -2,8 +2,8 @@
 type: concept
 title: "FAIR Data Infrastructure for Catalysis"
 created: 2025-06-23
-updated: 2026-07-01
-sources: [nfdi4cat-unified-infrastructure, data-key-resource-catalysis, nfdi4cat-whitepaper, repo4cat, nfdi4chem, nomad-catalysis-plugin, orchestrating-catalysis-data, chemdcat-ap, mardiflow, mardiflow-voc4cat, methane-reforming-reporting-framework, nfdi4chem, marshall2023digital, moshantaf2024advancing, huskova2025improvement, cattesthub, mendes2021opendata, steinbeck2020nfdi4chem, fair-cookbook, chemical-data-storage-architectures, fair-biopharma-rd, fair-digital-twins, fairmat-materials-research, enzymeml-fair-biocatalysis, fair-biocatalytic-science, electrocatalysis-research-database, catalysis-data-infrastructure-ukch, chemspectra]
+updated: 2026-07-06
+sources: [nfdi4cat-unified-infrastructure, data-key-resource-catalysis, nfdi4cat-whitepaper, repo4cat, nfdi4chem, nomad-catalysis-plugin, orchestrating-catalysis-data, chemdcat-ap, mardiflow, mardiflow-voc4cat, methane-reforming-reporting-framework, nfdi4chem, marshall2023digital, moshantaf2024advancing, huskova2025improvement, cattesthub, mendes2021opendata, steinbeck2020nfdi4chem, fair-cookbook, chemical-data-storage-architectures, fair-biopharma-rd, fair-digital-twins, fairmat-materials-research, enzymeml-fair-biocatalysis, fair-biocatalytic-science, electrocatalysis-research-database, catalysis-data-infrastructure-ukch, chemspectra, nmrml-open-data-standard, nmrlib-bruker-nmr-tools]
 tags: [fair-data, data-infrastructure, catalysis, nfdi]
 ---
 
@@ -57,6 +57,7 @@ Catalysis research generates vast, heterogeneous data across subdomains (heterog
 - **Industrial FAIR implementation** ([[fair-biopharma-rd]], [[fair-digital-twins]]): Adjacent evidence that FAIR is not equivalent to open access, and that FAIR requires governance, data stewardship, authentication/authorization, machine-actionable restrictions, knowledge representation, and provenance.
 - **EnzymeML and biocatalysis FAIR practice** ([[enzymeml-fair-biocatalysis]], [[fair-biocatalytic-science]]): Concrete biocatalysis model for FAIR data/software integration, combining exchange formats, STRENDA-style minimum information, raw time-course data, ELNs/LIMSs, APIs, Dataverse/Zenodo-style repositories, DOIs, ontologies, and FAIR software practices.
 - **ChemSpectra analytical-data tooling** ([[chemspectra]]): Shows that FAIR chemistry workflows also need browser-based tooling for open analytical formats, not only repositories and metadata profiles. It connects JCAMP-DX/mzML ingestion, analysis actions, persistent storage of edited/original spectra, PNG derivatives, and machine-readable signal transfer into ELN/repository systems.
+- **NMR standards and tooling** ([[nmrml-open-data-standard]], [[nmrlib-bruker-nmr-tools]]): nmrML provides a vendor-agnostic XML standard, controlled vocabulary, converters, validators, and repository/workflow integrations for NMR data. NMRlib complements this from the instrument side by standardizing Bruker/TopSpin experiment setup, shared pulse-sequence libraries, and laboratory-level exchange of NMR tools.
 
 ## Path Forward
 1. **Mandatory FAIR data depositing** before publication ([[data-key-resource-catalysis]])

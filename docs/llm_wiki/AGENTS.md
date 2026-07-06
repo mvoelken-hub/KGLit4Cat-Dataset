@@ -4,6 +4,14 @@
 
 ## Recent Updates
 
+### [2026-07-06] ingest | Missing literature PDF reconciliation
+Compared all `docs/literature/*.pdf` files against existing source pages and added source pages for PDFs that were not represented:
+- [[docker-compose-service-orchestration-patterns]] - empirical Docker Compose service-orchestration patterns for multi-container software stacks
+- [[nmrml-open-data-standard]] - vendor-agnostic XML standard, controlled vocabulary, converters, validators, and repository/workflow integration for NMR data
+- [[nmrlib-bruker-nmr-tools]] - Bruker/TopSpin NMR experiment setup, shared pulse-sequence libraries, GUI tooling, and laboratory exchange of NMR tools
+
+Confirmed `2404.03868v2.pdf` remains represented as the documented duplicate/preprint of [[zhang2024edc]]. Updated catalysis-data-infrastructure, nfdi4chem, overview, index, and log.
+
 ### [2026-07-01] ingest | ChemSpectra analytical-data tooling
 Added source page for newly acquired PDF:
 - [[chemspectra]] - web-based spectra editor for IR/MS/NMR, open JCAMP-DX/mzML formats, Chemotion ELN/repository integration, and FAIR analytical-data workflows

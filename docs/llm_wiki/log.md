@@ -80,3 +80,11 @@ Added source page for newly added `docs/literature/s13321-020-00481-0.pdf`:
 Updated concept/entity pages: [[catalysis-data-infrastructure]], [[nfdi4chem]]
 Updated catalog and synthesis: [[index]], [[overview]]
 Updated thesis bibliography: `docs/thesis/bibliography/references.bib`
+
+## [2026-07-06] ingest | Missing literature PDF reconciliation
+Compared all `docs/literature/*.pdf` files against `docs/llm_wiki/sources/` and `docs/llm_wiki/index.md`. Added source pages for the three PDFs that were not represented:
+- [[docker-compose-service-orchestration-patterns]] - `docs/literature/2305.11293v2.pdf`
+- [[nmrml-open-data-standard]] - `docs/literature/nmrml-a-community-supported-open-data-standard-for-the-description-storage-and-exchange-of-nmr-data.pdf`
+- [[nmrlib-bruker-nmr-tools]] - `docs/literature/s10858-019-00249-1.pdf`
+
+Confirmed `docs/literature/2404.03868v2.pdf` remains represented as the previously documented duplicate/preprint of [[zhang2024edc]]. Updated concept/entity pages: [[catalysis-data-infrastructure]], [[nfdi4chem]]. Updated catalog and synthesis: [[index]], [[overview]].

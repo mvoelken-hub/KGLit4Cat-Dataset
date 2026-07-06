@@ -2,7 +2,7 @@
 type: concept
 title: "Overview: Catalysis, LLMs, Knowledge Graphs, and FAIR Data"
 created: 2025-06-23
-updated: 2026-07-01
+updated: 2026-07-06
 sources: [all]
 tags: [catalysis, llm, knowledge-graph, ontology, fair-data]
 ---
@@ -28,6 +28,8 @@ Catalysis has a dataset-to-article ratio of ~1/100 — data is simply not shared
 Adjacent FAIR implementation literature sharpens what "FAIR" operationally means: practical recipes and maturity guidance ([[fair-cookbook]]), database schemas/ETL/APIs for chemical laboratories ([[chemical-data-storage-architectures]]), governance and stewardship in industrial R&D ([[fair-biopharma-rd]]), access restrictions and Semantic Web grounding for digital twins ([[fair-digital-twins]]), and FAIRmat/NOMAD-style federated materials infrastructure ([[fairmat-materials-research]]).
 
 ChemSpectra adds a useful analytical-data perspective to that FAIR stack: interoperable chemistry workflows depend not only on repositories and metadata models, but also on browser-based tools that can parse open spectral formats, preserve edited and original spectra, and hand selected signals back into ELN/repository records ([[chemspectra]]).
+
+The NMR-specific additions make that analytical-data layer more explicit. nmrML defines a vendor-agnostic XML standard with controlled vocabulary, converters, validators, and repository/workflow integrations for NMR data ([[nmrml-open-data-standard]]), while NMRlib shows the complementary instrument-workflow side: shared TopSpin pulse-sequence tooling, GUI-guided setup, and exchangeable experiment libraries for Bruker spectrometers ([[nmrlib-bruker-nmr-tools]]).
 
 New catalysis-specific infrastructure sources make that operational gap more concrete: UKCH's Catalysis Data Infrastructure treats publications, datasets, authors, institutions, and themes as linked catalogue entities rather than assuming all data live in one repository ([[catalysis-data-infrastructure-ukch]]); Catalysis-Hub Experimental structures electrocatalysis materials, matrices, testing conditions, spectra, curves, and metadata behind web and API access ([[electrocatalysis-research-database]]); and EnzymeML shows how biocatalysis can combine raw data, reaction conditions, models, APIs, ELNs, repositories, DOIs, and FAIR software into a reusable data flow ([[enzymeml-fair-biocatalysis]], [[fair-biocatalytic-science]]).
 
@@ -128,4 +130,4 @@ Ontology work ranges from foundational theory ([[guarino-fois98]], [[bfo-textboo
 - [[autonomous-protein-engineering]] — Autonomous protein eng. (2025)
 
 ### Peripheral
-- [[eclass-semantic-search]], [[ontology-energy-systems]], [[llama3-lora-qlora]], [[epicure-food-embeddings]], [[methane-reforming-reporting-framework]], textbooks
+- [[eclass-semantic-search]], [[ontology-energy-systems]], [[llama3-lora-qlora]], [[epicure-food-embeddings]], [[methane-reforming-reporting-framework]], [[docker-compose-service-orchestration-patterns]], textbooks

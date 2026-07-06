@@ -123,6 +123,8 @@ Content-oriented catalog of all pages in the LLM Wiki. Organized by category.
 | [[repo4cat]] | Repo4Cat: Data Repository for Catalysis | 2025 | data-infrastructure, nfdi |
 | [[nfdi4chem]] | NFDI4Chem: Research Data Network for Chemistry | 2023 | fair-data, nfdi |
 | [[chemspectra]] | ChemSpectra: a Web-Based Spectra Editor for Analytical Data | 2021 | fair-data, data-infrastructure |
+| [[nmrml-open-data-standard]] | nmrML: Open Data Standard for NMR Data | 2018 | fair-data, data-standard, spectroscopy |
+| [[nmrlib-bruker-nmr-tools]] | NMRlib: Pulse Sequence Tools for Bruker NMR Spectrometers | 2019 | software, spectroscopy |
 | [[nomad-catalysis-plugin]] | NOMAD Catalysis Plugin | 2025 | fair-data, catalysis |
 | [[orchestrating-catalysis-data]] | Orchestrating Catalysis Data for FAIR | N/A | fair-data, nfdi |
 | [[marshall2023digital]] | Achieving Digital Catalysis | 2023 | catalysis, fair-data |
@@ -170,6 +172,7 @@ Content-oriented catalog of all pages in the LLM Wiki. Organized by category.
 | [[informatik-im-fokus]] | Informatik im Fokus (textbook) | N/A | — |
 | [[physikalische-chemie-textbook]] | Physikalische Chemie (textbook) | N/A | catalysis |
 | [[ifac-optimization]] | IFAC Optimization Paper | 2021 | catalysis |
+| [[docker-compose-service-orchestration-patterns]] | Patterns of Multi-Container Composition with Docker Compose | 2024 | software-engineering, data-infrastructure |
 
 ---
 
@@ -177,9 +180,9 @@ Content-oriented catalog of all pages in the LLM Wiki. Organized by category.
 - **catalysis**: 23 pages
 - **llm**: 35 pages
 - **ontology**: 17 pages
-- **fair-data**: 22 pages
+- **fair-data**: 23 pages
 - **knowledge-graph**: 9 pages
-- **data-infrastructure**: 14 pages
+- **data-infrastructure**: 15 pages
 - **nfdi**: 11 pages
 - **bayesian-optimization**: 3 pages
 - **text-mining**: 10 pages
@@ -192,5 +195,12 @@ Content-oriented catalog of all pages in the LLM Wiki. Organized by category.
 - **rag**: 5 pages
 - **structured-output**: 4 pages
 - **biocatalysis**: 2 pages
-- **software**: 1 page
+- **software**: 2 pages
 - **database**: 1 page
+- **data-standard**: 1 page
+- **spectroscopy**: 2 pages
+- **nmr**: 2 pages
+- **software-engineering**: 1 page
+- **containers**: 1 page
+- **orchestration**: 1 page
+- **laboratory-workflows**: 1 page
