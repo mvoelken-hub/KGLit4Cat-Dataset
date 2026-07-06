@@ -179,19 +179,19 @@ Across 32 chunks from 15 textual source files, this output contains 120 portable
 The horizontal axis lists the evidence categories, while the vertical axis gives the number of evidence notes.
 Blue bars represent portable notes, green bars represent contextual notes, and red bars represent rejected candidate notes.
 
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=\textwidth]{figures/evidence_category_distribution_raw_baseline.png}
-    \caption{Distribution of evidence categories in the raw dataset baseline run.}
-    \label{fig:evidence-category-distribution-raw-baseline}
-\end{figure}
-
 The portable notes are concentrated in the categories \texttt{resource\_\allowbreak{}signal}, \texttt{instrument\_\allowbreak{}signal}, and \texttt{measurement\_\allowbreak{}signal}.
 These three categories are nearly balanced, with 34 resource signals, 33 instrument signals, and 32 measurement signals.
 The contextual notes are dominated by \texttt{measurement\_\allowbreak{}signal}, which accounts for 41 of the 59 contextual notes.
 Rejected candidates are comparatively rare and occur mainly in \texttt{resource\_\allowbreak{}signal}.
 The most frequent portable roles are \texttt{parameter} and \texttt{descriptor}, followed by smaller numbers of \texttt{qualitative\_\allowbreak{}attribute}, \texttt{identity}, and \texttt{context} roles.
 The stage therefore produces a broad signal inventory, but the inventory is still organized through coarse workflow categories rather than domain-specific \ac{NMR} concepts.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{figures/evidence_category_distribution_raw_baseline.png}
+    \caption{Distribution of evidence categories in the raw dataset baseline run.}
+    \label{fig:evidence-category-distribution-raw-baseline}
+\end{figure}
 
 Several reference facts are detected at chunk level.
 The pulse sequence is detected directly from \texttt{10/acqu} as the claim that the \ac{NMR} experiment uses the \texttt{zg30} pulse program, with \texttt{PULPROG=<zg30>} as evidence text.
