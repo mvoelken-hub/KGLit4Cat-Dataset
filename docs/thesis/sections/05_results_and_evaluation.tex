@@ -436,22 +436,108 @@ At activity level, a ChemSpectra query for \texttt{NMR spectral data} and \textt
 At agent level, a spectrometer query selects an NMR instrument term.
 At attribute level, the raw-dataset query \texttt{NMR pulse program} with \texttt{zg30} selects \texttt{NMR pulse sequence}.
 These examples indicate that the query formulation and candidate selection can identify domain-near terms from the available vocabulary.
-They do not imply that every selected term is curator-ready, because the selected term often normalizes the general concept rather than the exact source value.
+They do not imply that every selected term is the most narrow candidate, because the selected term often normalizes the general concept rather than the exact source value.
 
-Quantitative grounding is more constrained because QUDT quantity kinds and units are cross-validated through \texttt{qudt:hasQuantityKind}.
-This guard is visible in the ChemSpectra baseline.
-The \texttt{MAXX} attribute retrieves misleading candidates such as maximum-thrust quantity kinds and \texttt{Maxwell} as a unit candidate, and the pair is rejected.
-The \texttt{Number of points} attribute retrieves candidates such as \texttt{Dew Point Temperature} and data-volume terms, and its quantity-unit pair is also rejected.
-These rejections are positive grounding behaviour because they prevent lexical or embedding-neighbour matches from being written as controlled terms.
-However, comparison artifacts also show that cross-validation is not equivalent to semantic correctness.
-One run accepts a mechanically compatible QUDT pair for a \enquote{pulse sequence length} target, selecting \texttt{Time per Count} and \texttt{Second per Number}.
-The pair is graph-compatible, but the source target itself is not a well-formed curator-level quantity.
-The check therefore validates vocabulary compatibility, not the scientific appropriateness of the upstream attribute.
-
+Quantitative grounding is more constrained because \ac{QUDT} quantity kinds and units are cross-validated through triples of the form \texttt{<unit> qudt:hasQuantityKind <quantity-kind>}.
+The flip-angle attribute in the pulse-program example shows both the value and the limitation of this guard.
+Its domain-specific type is grounded through \ac{nmrCV} as \texttt{thirty degree pulse duration}, while the \ac{QUDT} quantity-kind and unit fields remain literal values.
+During execution, the workflow retrieves generic angle concepts and a degree unit, but it does not write these fields because the selected candidates are not directly validated as a \texttt{qudt:hasQuantityKind} pair.
+This is not simply failed grounding.
+The case also shows a granularity mismatch between the domain value and the general quantity vocabulary.
+\ac{QUDT} can represent the value as an angle, but it does not provide an NMR-specific quantity kind for a flip angle.
+At the same time, the current validation rule is strict at the level of closely related \ac{QUDT} angle concepts such as \texttt{Angle} and \texttt{PlaneAngle}, which do not share the same connection to the \texttt{degree} unit.
+The workflow therefore preserves the NMR-specific interpretation through \ac{nmrCV}, while the generic \ac{QUDT} quantity-kind and unit fields remain ungrounded.
 The candidate sets also show that graph traversal is useful only as a constrained aid.
 One-hop graph context helps the selector choose a broader parent term when many specific neighbours are retrieved, as in the pulse-sequence example.
-The same expansion can introduce adjacent but wrong-domain candidates in broad vocabularies and in QUDT.
+The same expansion can introduce adjacent but wrong-domain candidates in broad vocabularies and in \ac{QUDT}.
 Graph traversal should therefore support candidate interpretation, but it should not replace strict candidate rejection rules.
+
+As an additional diagnostic check, the followed reference facts were shaped into synthetic vocabulary-query inputs and submitted to the same vocabulary-query endpoint.
+This does not represent another workflow run, because the facts were manually exposed as eligible query targets.
+\Cref{tab:evaluation-grounding-synthetic-query-results} shows the submitted query inputs and the highest-ranked retrieved candidates.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Synthetic vocabulary-query inputs for followed reference facts and highest-ranked retrieved candidates.}
+    \label{tab:evaluation-grounding-synthetic-query-results}
+    \footnotesize
+    \setlength{\tabcolsep}{4pt}
+    \renewcommand{\arraystretch}{1.18}
+    \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{0.18\textwidth}>{\raggedright\arraybackslash}p{0.34\textwidth}>{\raggedright\arraybackslash}X}
+        \toprule
+        \textbf{Reference fact} & \textbf{Synthetic query input} & \textbf{Highest retrieved candidates} \\
+        \midrule
+        Dataset identity &
+        \ac{nmrCV}:\newline
+        1H NMR spectrum\newline
+        1H NMR spectral data &
+        \texttt{1H spectrum reference compound}\newline
+        \texttt{NMR spectral projection parameter set}\newline
+        \texttt{heteronuclear chemical shift spectrum} \\
+        Observed nucleus &
+        \ac{nmrCV}:\newline
+        NMR observed nucleus\newline
+        observed nucleus 1H proton NMR &
+        \texttt{acquisition nucleus}\newline
+        \texttt{decoupled nucleus flag}\newline
+        \texttt{NMR spectrum by pulse sequence} \\
+        Solvent or reference information &
+        \ac{nmrCV}:\newline
+        NMR solvent reference compound\newline
+        CDCl3 solvent shift reference chloroform &
+        \texttt{1H spectrum reference compound}\newline
+        \texttt{chemical shift standard}\newline
+        \texttt{Chloroform-d} \\
+        Pulse sequence &
+        \ac{nmrCV}:\newline
+        NMR pulse sequence\newline
+        pulse program zg30 NMR sequence &
+        \texttt{NMR pulse sequence}\newline
+        \texttt{pulse sequence literature reference}\newline
+        \texttt{pulse sequence file} \\
+        Instrument description &
+        \ac{nmrCV}:\newline
+        NMR spectrometer\newline
+        Bruker Avance NMR spectrometer &
+        \texttt{Avance I spectrometer}\newline
+        \texttt{NMR instrument type}\newline
+        \texttt{AVANCE II spectrometer} \\
+        Resonance frequency &
+        \ac{QUDT}:\newline
+        frequency\newline
+        observed resonance frequency NMR &
+        \texttt{frequency}\newline
+        \texttt{real part of complex frequency}\newline
+        \texttt{Resonance Energy} \\
+        Frequency unit &
+        \ac{QUDT}:\newline
+        megahertz\newline
+        MHz frequency &
+        \texttt{Megahertz}\newline
+        \texttt{Megahertz Metre}\newline
+        \texttt{Megahertz Kilometre} \\
+        Raw package resource &
+        \ac{nmrCV}:\newline
+        free induction decay raw NMR data\newline
+        Bruker FID file &
+        \texttt{homonuclear decoupling}\newline
+        \texttt{FID file}\newline
+        \texttt{Bruker FID format} \\
+        Derived package resource &
+        \ac{nmrCV}:\newline
+        NMR spectrum\newline
+        JCAMP-DX NMR spectrum &
+        \texttt{1D spectrum}\newline
+        \texttt{conversion to JCAMP-DX}\newline
+        \texttt{NMR spectrum} \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+The diagnostic check supports the dependency-level interpretation of the grounding stage.
+Observed nucleus, pulse sequence, frequency, and frequency unit retrieve close candidates once they are exposed as query targets.
+Solvent and package-resource queries also retrieve relevant candidates, but with stronger ambiguity from adjacent reference-compound, conversion, and file-format terms.
+Several missing final-draft facts are therefore not absent because no vocabulary candidate exists for them, but because they were not placed into fields that the grounding stage could query.
 
 The verdict for this stage is that vocabulary mapping can normalize already placed fields and can abstain from several inappropriate mappings.
 It does not repair missing facts, misplaced attributes, or an unsuitable provenance frame.
