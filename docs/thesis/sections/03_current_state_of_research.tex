@@ -22,13 +22,15 @@ Persistent identifiers, repository landing pages, and access protocols help data
 They do not by themselves describe the scientific content of an experiment.
 A dataset may be indexed while its scientific content remains hard to search.
 Content-level findability therefore needs domain metadata in addition to dataset identifiers.
-
-Repository and infrastructure work in catalysis follows this direction.
-Repo4Cat describes an \ac{NFDI4Cat} repository with support for storage, versioning, APIs, working spaces, and publication workflows \cite{kushnarenko2025repo4cat}.
-The \ac{NOMAD} catalysis plugin supports structured upload of experimental catalysis data \cite{schumann2025nomad}.
-It aligns metadata with \ac{Voc4Cat} terminology and supports search over reactions, materials, conditions, and kinetic properties \cite{schumann2025nomad}.
-Moshantaf et al.\ connect acquisition, analysis, database upload, relationship generation, and API-based exchange in a catalysis laboratory setting \cite{moshantaf2024advancing}.
-Duke et al.\ describe why spreadsheets and file systems are weak foundations for scalable chemical data management \cite{duke2022datastorage}.
+Several infrastructure efforts address this need at different points in the research data lifecycle.
+Repo4Cat focuses on the repository layer.
+It describes an \ac{NFDI4Cat} repository with support for storage, versioning, APIs, working spaces, and publication workflows \cite{kushnarenko2025repo4cat}.
+The \ac{NOMAD} catalysis plugin moves closer to content-level metadata.
+It supports structured upload of experimental catalysis data, aligns metadata with \ac{Voc4Cat} terminology, and supports search over reactions, materials, conditions, and kinetic properties \cite{schumann2025nomad}.
+Moshantaf et al.\ place structured data handling earlier in the laboratory workflow.
+Their system connects acquisition, analysis, database upload, relationship generation, and API-based exchange in a catalysis laboratory setting \cite{moshantaf2024advancing}.
+Related chemistry and materials infrastructure work gives the broader rationale for this shift.
+Duke et al.\ argue that spreadsheets and file systems are weak foundations for scalable chemical data management \cite{duke2022datastorage}.
 Scheffler et al.\ connect reusable materials data to metadata, ontologies, workflows, provenance, and repository infrastructure \cite{scheffler2022fair}.
 
 For semantic metadata extraction, this means that \ac{FAIR} practice needs a representation layer.
@@ -37,25 +39,17 @@ Application profiles provide structural constraints for such records.
 Vocabularies and ontologies provide stable identifiers and semantic relations for the terms used inside them.
 The following section therefore focuses on profile and vocabulary resources for extracted catalysis and chemistry metadata.
 
-\section{Application Profiles and Vocabulary Resources}
-\label{sec:semantic-metadata-standards-resources}
+
+\section{DCAT-AP+ and ChemDCAT-AP}
+\label{sec:dcat-ap-plus-chemdcat-ap}
 
 Semantic metadata modelling combines structure and terminology.
 An application profile defines how classes and properties are used in a specific context.
 It can also define relations, cardinalities, and value ranges.
-A vocabulary resource provides identifiers, labels, definitions, and relations for concepts.
-\ac{SKOS} defines a concept-oriented model for thesauri, classification schemes, and similar knowledge organization systems \cite{w3c2009skos}.
-\ac{QUDT} defines classes and properties for quantities, quantity kinds, units, dimensions, and numerical values \cite{qudt2022schema}.
-This section first introduces \ac{DCAT-AP+} and \ac{ChemDCAT-AP}.
-It then distinguishes vocabulary resources used for term-level grounding.
-
-\subsection{DCAT-AP+ and ChemDCAT-AP}
-\label{sec:dcat-ap-plus-chemdcat-ap}
-
-\ac{DCAT-AP+} is a \ac{LinkML}-based extension of \ac{DCAT-AP} 3.0 \cite{dcatapplusDocumentation}.
-It adds a provenance layer for describing how a dataset was generated and what the dataset is about \cite{dcatapplusDocumentation}.
+\ac{DCAT-AP+} is a \ac{LinkML}-based extension of \ac{DCAT-AP} 3.0.
+It adds a provenance layer for describing how a dataset was generated and what the dataset is about.
 The profile is domain-agnostic.
-Domains can import its generic classes and properties and then specialize them in their own application profiles \cite{dcatapplusDocumentation}.
+Domains can import its generic classes and properties and then specialize them in their own application profiles.
 The profile documentation identifies \ac{ChemDCAT-AP} as the first such domain profile for chemistry and catalysis research data \cite{dcatapplusDocumentation}.
 
 \ac{DCAT-AP+} separates profile constraints from ontology mappings.
@@ -140,7 +134,7 @@ It provides reusable chemical and catalysis structures.
 Use-case-specific profiles can still decide which acquisition settings, sample descriptors, instrument parameters, or processing details are required.
 This extension path is important for analytical and catalysis metadata because a generic chemistry profile cannot exhaust every method-specific reporting need.
 
-\subsection{Vocabulary Resources}
+\section{Vocabulary Resources}
 \label{sec:vocabulary-resources}
 
 Application profiles and vocabularies play different roles.
@@ -152,7 +146,7 @@ It can then place the value in a profile field.
 Only after that step does it map the label, unit, or category to a controlled term.
 The following resources illustrate broad catalysis terminology, cross-domain quantity semantics, and NMR-specific spectroscopy metadata.
 
-\subsubsection{Voc4Cat}
+\subsection{Voc4Cat}
 \label{sec:voc4cat}
 
 \ac{Voc4Cat} is a \ac{SKOS} vocabulary for catalysis disciplines \cite{david_linke_2023_8313340}.
@@ -173,7 +167,7 @@ Its NMR concept identifies the characterization method.
 It does not provide the full acquisition and processing vocabulary needed for observed nuclei, pulse programs, raw signal types, or spectral processing states.
 For that level, a resource such as nmrCV is more appropriate.
 
-\subsubsection{Quantities, Units, Dimensions and Types Ontology (QUDT)}
+\subsection{Quantities, Units, Dimensions and Types Ontology (QUDT)}
 \label{sec:qudt}
 
 \acf{QUDT} defines a model for physical quantities, units of measure, dimensions, numerical values, and related data structures \cite{qudt2022schema}.
@@ -193,7 +187,7 @@ It can also convert a value when compatible unit definitions are available.
 QUDT does not decide which scientific object a value describes.
 That placement remains a profile and evidence-interpretation problem.
 
-\subsubsection{NMR Controlled Vocabulary (nmrCV)}
+\subsection{NMR Controlled Vocabulary (nmrCV)}
 \label{sec:nmr-cv}
 
 \ac{nmrCV} accompanies \ac{nmrML}.

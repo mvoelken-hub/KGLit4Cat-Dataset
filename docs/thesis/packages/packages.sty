@@ -102,6 +102,18 @@
     \pagestyle{plain}%
 }
 \renewcommand{\chaptermark}[1]{\markboth{#1}{}}
+\renewcommand\section{\@startsection{section}{1}{\z@}%
+    {-2.5ex \@plus -1ex \@minus -.2ex}%
+    {1.2ex \@plus .2ex}%
+    {\normalfont\normalsize\bfseries}}
+\renewcommand\subsection{\@startsection{subsection}{2}{\z@}%
+    {-2.25ex \@plus -1ex \@minus -.2ex}%
+    {1ex \@plus .2ex}%
+    {\normalfont\normalsize\bfseries}}
+\renewcommand\subsubsection{\@startsection{subsubsection}{3}{\z@}%
+    {-2ex \@plus -1ex \@minus -.2ex}%
+    {.8ex \@plus .2ex}%
+    {\normalfont\normalsize\bfseries}}
 \renewcommand{\@makechapterhead}[1]{%
     \vspace*{0pt}%
     {\parindent \z@ \raggedright
