@@ -547,18 +547,3 @@ The retrieval step is also limited by the underlying embedding model, which is n
 Domain-specific language models have been shown to improve scientific and materials text-mining tasks, and fine-tuned models have also been evaluated for chemical text mining including \ac{NMR} data extraction \cite{beltagy2019scibert,gupta2022matscibert,zhang2024chemicaltextmining}.
 This suggests that a domain-adapted embedding or reranking model could sharpen candidate retrieval, but it would not remove the dependency on upstream profile construction.
 
-
-\section{Overall Workflow Assessment}
-\label{sec:evaluation-overall-observations}
-
-\begin{itemize}
-    \item Evaluation basis: cross-stage comparison from source facts through chunks, evidence, profile drafts, requirement reports, grounding, and final drafts.
-    \item Raw dataset: the workflow preserves a coherent NMR acquisition and processing story.
-    \item Raw dataset: the final draft preserves the raw \texttt{fid} output and related parameter resources.
-    \item Raw dataset: specific acquisition facts such as \texttt{CDCl3}, \texttt{zg30}, and \texttt{500.133088507478} are available in the source material but absent or only partial in the final draft.
-    \item ChemSpectra export: the workflow detects many key NMR facts during evidence extraction.
-    \item ChemSpectra export: the final draft keeps only coarse NMR identity and instrument information while losing solvent, pulse sequence, observed nucleus, observed frequency, and the central derived-spectrum resource framing.
-    \item ChemSpectra export: the major failure pattern is not source availability but transformation from detected evidence into the profile core.
-    \item Observation: a more metadata-aware overview could improve orientation, but it would not replace chunk-level evidence extraction because the workflow still needs source-line support for placed facts.
-    \item Observation: the baseline supports claims about traceable workflow behavior and diagnostic inspection, but not claims about complete metadata accuracy.
-\end{itemize}

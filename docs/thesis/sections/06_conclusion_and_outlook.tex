@@ -1,15 +1,75 @@
 \label{chap:conclusion}
 
-This chapter summarizes the thesis and provides an outlook for future work.
+This thesis implemented and evaluated a staged workflow for \ac{LLM}-assisted semantic metadata extraction from heterogeneous dataset packages.
+The workflow deliberately separates source access, preprocessing, chunk-wise evidence extraction, \ac{DCAT-AP+} profile construction, semantic review, manual curation, and vocabulary grounding.
+This design follows the broader idea that information extraction and organization into a target structure should be separated rather than collapsed into one generation step \cite{li2024structuredoutput}.
+The evaluation shows that this separation is valuable because it makes intermediate artifacts inspectable.
+It also shows where the current prototype still loses or misplaces curator-relevant facts.
 
-\section{Summary of Contributions}
-\label{sec:summary-of-contributions}
-Recap the main scientific and technical contributions.
+For the inspected \textsuperscript{1}H \ac{NMR} packages, preprocessing and chunking do not destroy the selected textual evidence.
+The raw and ChemSpectra-derived packages both retain the relevant source statements for dataset identity, observed nucleus, solvent, pulse sequence, instrument information, observed frequency, and raw or derived package resources.
+The harder problem begins after this preservation step.
+Chunk-wise extraction can detect metadata signals without a domain-specific \ac{NER} model, but it produces many adjacent notes, relies on coarse workflow categories, and can lose compact parameter facts through filtering or deduplication.
+This confirms the methodical premise that chunking is needed for local provenance and manageable model inputs, especially under local inference constraints and known long-context limitations \cite{liu2024lostmiddle,xu2024ondevice}.
+At the same time, chunking and evidence routing are not a substitute for domain-aware interpretation.
 
-\section{Answers to the Research Questions}
-\label{sec:answers-research-questions}
-Provide concise answers to the defined research questions.
+The \ac{DCAT-AP+} schema gives the model enough structure to create schema-valid and provenance-oriented drafts.
+In the raw package, the generated core can represent an acquisition-oriented activity with the raw signal as a central output.
+In the ChemSpectra export, it can represent a derived-spectrum-oriented package with a preceding acquisition activity.
+This supports the use of \ac{DCAT-AP+} as a generic provenance scaffold.
+However, the evaluation also shows that the generic profile does not by itself resolve the domain interpretation of acquisition facts.
+Evidence notes are translated into attribute values only when the generated parent shape makes that placement plausible.
+Facts such as solvent, observed nucleus, pulse sequence, and resonance frequency therefore require more domain-specific profile shapes if they are to become stable curator-facing metadata rather than generic attributes.
+This matches the role of domain profiles such as ChemDCAT-AP, which specialize generic provenance and attribute patterns through chemical and catalysis-specific structures \cite{stroemert2026chemdcat,chemdcatapDocumentation}.
 
-\section{Future Work}
-\label{sec:future-work}
-Outline realistic next steps for extending the workflow.
+The final drafts should therefore be understood as curation aids, not as finished scientific metadata.
+They provide traceable structure, source-backed fragments, schema-valid drafts, semantic requirement reports, and vocabulary-grounding results that can direct human review.
+They do not yet demonstrate complete metadata accuracy, scientific correctness, or curator time savings.
+The semantic requirement checks are informative as review artifacts, but they are themselves model-generated judgements over model-generated drafts.
+This limitation is consistent with broader observations that \ac{LLM}-as-a-judge approaches can scale evaluation but remain affected by bias and limited reasoning \cite{zheng2023llmjudge}.
+The prototype therefore contributes most clearly as an inspectable workflow and diagnostic baseline rather than as an autonomous metadata curator.
+
+Vocabulary grounding through the Neo4j property graph adds a second type of curation support.
+It can normalize already placed fields to controlled terms from resources such as \ac{nmrCV}, \ac{QUDT}, and catalysis vocabularies, and it can reveal candidate terms that help a curator understand the semantic neighbourhood of a value \cite{Schober2018nmrML,qudt2022schema,david_linke_2023_8313340}.
+The pulse-program example shows that grounding works well when the upstream profile shape already exposes a precise target.
+The synthetic followed-fact queries further show that several facts missing from the final drafts have plausible vocabulary candidates once they are exposed as queryable fields.
+The main limitation is therefore not only vocabulary coverage.
+It is the transformation from detected evidence into suitable profile fields before grounding.
+The property graph is useful as a normalization and inspection resource, but in the current workflow it arrives too late to improve earlier evidence labeling, overview framing, or parent-shape construction.
+
+The evaluation also gives a cautious answer regarding model size and resource cost.
+The workflow is designed so that different local or externally hosted models can be exchanged without changing the implementation.
+Larger models can produce more specific local structures in some comparison runs, but the inspected artifacts do not show a stable improvement that would justify treating the most resource-intensive model as the default option.
+At this stage, the cost of larger \acp{LLM} should therefore be justified by targeted improvements in documented loss points, not by model size alone.
+Domain-adapted retrieval or reranking may be a more direct improvement path than simply increasing generation-model size, because scientific and materials-domain language models have shown advantages for specialized text-mining tasks \cite{beltagy2019scibert,gupta2022matscibert,zhang2024chemicaltextmining}.
+
+\section{Outlook}
+\label{sec:outlook}
+
+The baseline results should be used as an error map for the next development iteration.
+The first priority is to harden preprocessing, evidence filtering, and deduplication for compact structured metadata records.
+The observed loss of distinct \texttt{key=value} acquisition facts shows that lexical similarity is too coarse for parameter files where short records can look similar while describing different scientific properties.
+Future versions should therefore preserve parameter identity more explicitly during evidence merging and should evaluate filtering rules against a broader range of instrument and repository exports.
+
+The second priority is to add domain knowledge earlier in the workflow.
+Two directions are equally justified by the results.
+One direction is domain-aware evidence labeling or \ac{NER}-style signal detection, following chemistry-aware extraction pipelines and chemical text-mining work that identify entities, properties, measurements, and relationships before downstream structuring \cite{swain2016chemdataextractor,zhang2024chemicaltextmining}.
+The other direction is earlier vocabulary retrieval with graph context.
+Instead of using vocabulary grounding only after profile construction, candidate terms from \ac{nmrCV}, \ac{QUDT}, Voc4Cat, and future domain profiles could support evidence classification, schema-oriented summaries, and parent-shape selection.
+This would make vocabulary grounding part of candidate generation and validation, not only a final normalization step.
+
+The third priority is the handoff between dataset overview and provenance-core construction.
+The results show that the overview is not neutral for downstream schema construction, even when it is designed only as orientation.
+Further work should keep the overview compact, but add schema-oriented summary views for candidate activities, data products, agents, plans, and attribute parents.
+Related extraction systems already use user-specified schemas, recursive schema interrogation, domain knowledge injection, or separate extraction and canonicalization phases to keep generation aligned with the target structure \cite{walls2025catminer,caufield2024spires,zhang2024edc}.
+SIMONE should adopt the same lesson at the package level by making the summary handoff explicitly aware of the profile roles that the next stage must fill.
+
+The fourth priority is to evaluate domain-specific profile extensions against the same followed facts.
+The present case study shows that \ac{DCAT-AP+} can carry a generic provenance skeleton, but it does not reliably express \ac{NMR}-specific acquisition facts as first-class curator-facing metadata.
+An \ac{NMR}-specific or catalysis-specific extension should therefore be tested by asking whether solvent, observed nucleus, pulse sequence, observed resonance frequency, sample or evaluated entity, and raw or derived resources move from detected evidence into stable profile fields.
+The same diagnostic labels used in this evaluation can then show whether a change actually reduces loss and misplacement, rather than only producing a more fluent draft.
+
+Finally, the prototype should be evaluated with human curators and additional datasets.
+The present evaluation can locate workflow behaviour and failure points, but it cannot measure time savings, scientific correctness, or general extraction accuracy.
+Future studies should compare curated drafts before and after automated assistance, record the corrections required by domain experts, and include repeated controlled runs across model sizes and chunking configurations.
+Only then can claims about practical curation value, model-cost trade-offs, and general workflow performance be made beyond the diagnostic baseline established here.
