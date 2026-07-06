@@ -227,46 +227,39 @@ However, fixed-token chunking does not guarantee that all related NMR facts are 
 This makes the raw Bruker package more dependent on later evidence aggregation across neighbouring chunks, while the ChemSpectra export provides a more compact header representation for several acquisition-level facts.
 
 \section{Dataset Overview}
-\label{sec:evaluation-overview-observations}
+\label{sec:results-dataset-overview}
 
-The dataset overview is meant to give the workflow a quick map of the package.
-It should answer simple questions such as which files look important, which files look like raw data, and where detailed metadata is likely to be found.
-It is not supposed to be the final evidence for the followed facts.
+The dataset overview is the first stage that interprets the package as a whole.
+It provides a compact orientation about the dataset type, the file structure, and the likely locations of metadata-rich content.
+It is not intended to replace later chunk-level evidence extraction.
+The relevant question is therefore which source files and package roles are made visible before the workflow moves to local evidence collection.
 
-The dataset overview stage was inspected as orientation output before evidence collection.
-It is not treated as source evidence for the reference facts.
-Instead, it is evaluated according to whether it points later extraction steps toward files that are likely to contain relevant information.
-This distinction matters because the overview works at file and package level, while the reference facts often occur as compact parameter records inside individual files.
+The dataset overview stage is inspected as orientation output before evidence collection.
+It is not treated as source evidence for the followed facts.
+This distinction matters because the overview operates at file and package level, while the selected acquisition facts often occur as compact parameter records inside individual files.
+The overview is therefore expected to identify files such as acquisition-parameter files, instrument-configuration files, dataset descriptions, or \ac{JCAMP-DX} spectrum files as relevant locations.
+It does not need to expose values such as \texttt{NUC1=<1H>}, \texttt{SOLVENT=<CDCl3>}, \texttt{PULPROG=<zg30>}, or \texttt{SFO1=500.133088507478} as separate facts.
 
-For the raw dataset, the baseline overview gives source-location guidance.
+For the raw dataset, the baseline overview provides source-location information.
 The two direct acquisition files are ranked first and second.
-Both are summarized as files that contain \enquote{parameter settings for a Bruker NMR experiment} and that configure the instrument and experimental conditions.
-This correctly identifies the acquisition files as important locations for later evidence extraction.
-However, the summary remains generic.
-It does not expose the concrete values \texttt{NUC1=<1H>}, \texttt{SOLVENT=<CDCl3>}, \texttt{PULPROG=<zg30>}, or \texttt{SFO1=500.133088507478}.
+Both are summarized as files that contain parameter settings for a Bruker \ac{NMR} experiment and that configure the instrument and experimental conditions.
+The summary remains generic and does not expose the concrete values \texttt{NUC1=<1H>}, \texttt{SOLVENT=<CDCl3>}, \texttt{PULPROG=<zg30>}, or \texttt{SFO1=500.133088507478}.
 
 Other raw files are also described at file-role level.
-The pulse-program file is described as a \enquote{Bruker NMR pulse program}, which points to the pulse-sequence evidence location, but the overview does not preserve the concrete \texttt{zg30} value.
-The instrument-configuration file is summarized as containing \enquote{configuration information for a Bruker Avance III NMR spectrometer}, which correctly identifies an instrument-context source.
-The rounded \textsuperscript{1}H frequency value is still not surfaced by the overview.
+The pulse-program file is described as a Bruker \ac{NMR} pulse program.
+The instrument-configuration file is summarized as containing configuration information for a Bruker Avance III \ac{NMR} spectrometer.
 The binary signal file is described as raw \ac{NMR} data in a likely proprietary format with empty sampled content.
-This supports the distinction between raw data and textual metadata, but it does not add acquisition values.
-The overview also assigns broad acquisition, processing, and instrument-setting roles to several parameter files, so the resulting orientation is not sharply separated by scientific metadata role.
+The overview therefore distinguishes textual metadata-bearing files from the raw binary signal file at package level.
 
-For the ChemSpectra export, the overview identifies the textual description as a dataset description containing instrument information and a file list.
+For the ChemSpectra export, the overview identifies the textual description as a dataset description that contains instrument information and a file list.
 It also identifies the \ac{JCAMP-DX} file as a \textsuperscript{1}H \ac{NMR} spectrum with spectral parameters, XY data points, and an automatically generated peak table.
-This is the most important location hint for later extraction because the selected acquisition facts are concentrated in that spectrum file.
-Nevertheless, the overview does not preserve the exact observed nucleus, the \texttt{CDCl3} solvent, the \texttt{zg30} pulse sequence, or the observed frequency as separate facts.
+This keeps the two central text sources visible before evidence collection.
+As in the raw-package case, the overview remains at file-summary level and does not expose the exact observed nucleus, the \texttt{CDCl3} solvent, the \texttt{zg30} pulse sequence, or the observed frequency as separate facts.
 
-Overall, this behaviour follows the prompt contract of the overview stage.
-The file-summary prompt asks for compact orientation and explicitly avoids separate metadata, setting, provenance, or numeric signal lists.
-The overview prompt also states that its output is guidance only and not evidence for later extraction calls.
-The evaluation therefore checks whether the overview points to likely source locations and whether its summaries misdirect later stages.
-The selected acquisition facts still have to be checked in chunk-level evidence, where the workflow has access to the relevant source lines rather than only file summaries.
-
-Step assessment: The overview is partly successful.
-It points to the right files and gives a useful first orientation, especially for acquisition files and the \ac{JCAMP-DX} spectrum file.
-However, it stays too general to preserve the exact values being traced, so it cannot be used as proof that those facts survived.
+Overall, the dataset overview gives a file-level and package-level orientation for the inspected packages.
+For the raw Bruker package, it highlights the acquisition files, the pulse-program file, and the instrument-configuration file.
+For the ChemSpectra export, it highlights the dataset description and the \ac{JCAMP-DX} spectrum file.
+The exact acquisition facts remain part of the later chunk-level inspection rather than the overview itself.
 
 \section{Evidence Collection}
 \label{sec:evaluation-evidence-collection-observations}
