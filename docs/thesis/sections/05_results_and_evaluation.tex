@@ -230,20 +230,30 @@ This stage does not receive the evidence notes inspected above as direct input.
 It is constructed from the dataset overview artifacts and the current dataset-level draft.
 The inspection therefore evaluates whether the overview representation is sufficient to create the main activity skeleton.
 In the baseline configuration with fixed 1024-token chunks and the \texttt{gemma3:12b} model, the raw dataset core is framed as \enquote{NMR Experiment Data}.
-The generated dataset-level description is reproduced below.
+The generated dataset-level description is depicted in \cref{fig:evaluation-raw-core-description}.
 
-\noindent\begin{minipage}{0.94\textwidth}
-    \footnotesize
-    \ttfamily
-    \raggedright
-    Dataset documents NMR experiment configuration and raw data.\\
-    dataset\_subject: Nuclear Magnetic Resonance (NMR) spectral data and associated parameters.\\
-    generated\_by: Automated instrument control and data acquisition system (Bruker TopSpin).\\
-    activity\_target: 1H NMR experiment; evaluation focuses on spectral quality and parameter consistency.\\
-    instruments: Bruker NMR spectrometer; software: Bruker TopSpin.\\
-    setting\_plan: Parameter files (proc, specpar, pulseprogram) define acquisition and processing sequences; shim values optimize magnetic field homogeneity; audit trail (audita.txt) tracks experiment history.\\
-    characteristics: Data format includes proprietary FID format; parameter files (text) specify experiment settings; audit trail provides provenance; raw data (fid) is present; multiple parameter files indicate iterative refinement of experimental conditions; file summaries indicate configuration and calibration data alongside raw spectral data; file extensions: txt, fid.
-\end{minipage}
+\begin{figure}[htbp]
+\begin{lstlisting}[
+    basicstyle=\footnotesize\ttfamily,
+    breaklines=true,
+    backgroundcolor=\color{black!4},
+    frame=single,
+    rulecolor=\color{black!20},
+    framesep=0.55em,
+    xleftmargin=0.4em,
+    xrightmargin=0.4em
+]
+Dataset documents NMR experiment configuration and raw data.
+dataset_subject: Nuclear Magnetic Resonance (NMR) spectral data and associated parameters.
+generated_by: Automated instrument control and data acquisition system (Bruker TopSpin).
+activity_target: 1H NMR experiment; evaluation focuses on spectral quality and parameter consistency.
+instruments: Bruker NMR spectrometer; software: Bruker TopSpin.
+setting_plan: Parameter files (proc, specpar, pulseprogram) define acquisition and processing sequences; shim values optimize magnetic field homogeneity; audit trail (audita.txt) tracks experiment history.
+characteristics: Data format includes proprietary FID format; parameter files (text) specify experiment settings; audit trail provides provenance; raw data (fid) is present; multiple parameter files indicate iterative refinement of experimental conditions; file summaries indicate configuration and calibration data alongside raw spectral data; file extensions: txt, fid.
+\end{lstlisting}
+    \caption{Generated dataset-level description in the archived 12b baseline provenance-core draft for the raw dataset.}
+    \label{fig:evaluation-raw-core-description}
+\end{figure}
 
 The description is already semi-structured by the prompt and repeatedly foregrounds files, formats, parameter resources, shim values, and audit information.
 It therefore gives the core step a provenance-oriented package frame, but it still does not surface the selected acquisition values as separate facts.
@@ -297,7 +307,7 @@ The important point is that \enquote{Pulse Program} is already represented as an
     xleftmargin=0.4em,
     xrightmargin=0.4em
 ]
-$.was_generated_by[0].had_input_entity[1] = {
+$.was_generated_by.had_input_entity[1] = {
   "title": "Pulse Program",
   "description": "Defined pulse program for NMR experiments.",
   "type": {"title": "NMR pulse sequence", "from_CV": "nmrCV"},
