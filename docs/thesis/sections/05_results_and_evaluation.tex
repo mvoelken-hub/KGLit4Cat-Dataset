@@ -162,9 +162,10 @@ It also identifies the \ac{JCAMP-DX} file as a \textsuperscript{1}H \ac{NMR} spe
 This is the most important location hint for later extraction because the selected acquisition facts are concentrated in that spectrum file.
 Nevertheless, the overview does not preserve the exact observed nucleus, the \texttt{CDCl3} solvent , the \texttt{zg30} pulse sequence, or the observed frequency as separate facts.
 
-Overall, the dataset overview stage provides file-location guidance and package orientation.
-It can identify the acquisition files, pulse-program file, instrument-configuration file, raw signal file, textual dataset description, and \ac{JCAMP-DX} spectrum as relevant resources.
-It should not be read as value-level fact extraction.
+Overall, this behaviour follows the prompt contract of the overview stage.
+The file-summary prompt asks for compact orientation and explicitly avoids separate metadata, setting, provenance, or numeric signal lists.
+The overview prompt also states that its output is guidance only and not evidence for later extraction calls.
+The evaluation therefore checks whether the overview points to likely source locations and whether its summaries misdirect later stages.
 The selected acquisition facts still have to be checked in chunk-level evidence, where the workflow has access to the relevant source lines rather than only file summaries.
 
 \subsection{Evidence Collection}
