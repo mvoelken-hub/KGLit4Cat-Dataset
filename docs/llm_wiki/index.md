@@ -96,6 +96,7 @@ Content-oriented catalog of all pages in the LLM Wiki. Organized by category.
 | [[instructgpt-rlhf]] | Training Language Models to Follow Instructions with Human Feedback | 2022 | llm, alignment |
 | [[toolformer]] | Toolformer | 2023 | llm, tool-use |
 | [[pagedattention-vllm]] | PagedAttention / vLLM | 2023 | llm, serving |
+| [[llm-as-a-judge-mt-bench-chatbot-arena]] | Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena | 2023 | llm, evaluation, benchmark |
 | [[rag-survey]] | RAG Survey | 2024 | rag, survey |
 | [[self-rag]] | Self-RAG | 2024 | rag, self-reflection |
 | [[lost-in-the-middle]] | Lost in the Middle | 2024 | llm, long-context |
@@ -178,7 +179,7 @@ Content-oriented catalog of all pages in the LLM Wiki. Organized by category.
 
 ## Tag Index
 - **catalysis**: 23 pages
-- **llm**: 35 pages
+- **llm**: 36 pages
 - **ontology**: 17 pages
 - **fair-data**: 23 pages
 - **knowledge-graph**: 9 pages
@@ -190,7 +191,9 @@ Content-oriented catalog of all pages in the LLM Wiki. Organized by category.
 - **ontology-matching**: 4 pages
 - **formal-ontology**: 2 pages
 - **agent**: 3 pages
-- **benchmark**: 2 pages
+- **benchmark**: 3 pages
+- **evaluation**: 1 page
+- **llm-judge**: 1 page
 - **chemical-reasoning**: 2 pages
 - **rag**: 5 pages
 - **structured-output**: 4 pages

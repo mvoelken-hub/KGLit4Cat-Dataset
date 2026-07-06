@@ -48,6 +48,8 @@ The fresh LLM foundations batch clarifies the technical substrate behind these a
 
 Recent IE-specific additions reinforce this operational view. [[llm-generative-information-extraction-survey]] shows that LLM-based IE is moving toward generative, universal, low-resource, retrieval-assisted workflows while still struggling with hallucination and schema mismatch. [[openchemie]] adds the chemistry-specific reminder that document-level extraction often spans text, tables, figures, diagrams, OCR, and domain-specific integration logic.
 
+LLM-based evaluation adds a related caution. [[llm-as-a-judge-mt-bench-chatbot-arena]] shows that strong LLM judges can approximate aggregate human preferences for chatbot responses in benchmark settings, but also documents position bias, verbosity bias, possible self-enhancement effects, and limited reasoning. For SIMONE-like workflows, this supports using LLM semantic checks as scalable review artifacts, not as proof of scientific or curator-level correctness.
+
 ### Ontology Development
 Ontology work ranges from foundational theory ([[guarino-fois98]], [[bfo-textbook]]) to catalysis-specific implementations ([[chemdcat-ap]], [[ontologies4cat]], [[reac4cat-ontology]], [[ontology-reaction-classification]]). Reac4Cat is especially important because it demonstrates how OWL description logic and GCAs can infer reaction roles and catalyst relations in process-linked catalysis knowledge graphs. LLMs are now being used to automate ontology construction ([[llm-kg-ontology-generation]]) and matching ([[complex-ontology-matching-llm]], [[lakermap-ontology-matching]], [[hgnn-ontology-matching]]).
 

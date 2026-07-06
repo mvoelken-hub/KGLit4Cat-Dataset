@@ -4,6 +4,12 @@
 
 ## Recent Updates
 
+### [2026-07-06] ingest | LLM-as-a-judge evaluation source
+Downloaded Zheng et al. 2023 from arXiv and added:
+- [[llm-as-a-judge-mt-bench-chatbot-arena]] - MT-Bench, Chatbot Arena, GPT-4-as-judge agreement with human preferences, and judge limitations including position bias, verbosity bias, possible self-enhancement bias, and limited reasoning
+
+Updated concept pages: llm-foundations, structured-output-reliability. Updated overview, index, and log.
+
 ### [2026-07-06] ingest | Missing literature PDF reconciliation
 Compared all `docs/literature/*.pdf` files against existing source pages and added source pages for PDFs that were not represented:
 - [[docker-compose-service-orchestration-patterns]] - empirical Docker Compose service-orchestration patterns for multi-container software stacks

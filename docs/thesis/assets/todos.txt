@@ -6,3 +6,6 @@ whitepaper nfdi4cat mit authoren und mit zenodo (version number oder last access
 Bei authroenaufählung gucken ob immer eine Komma zwischen den Authoren stehen muss
 technical reports mit last accessed (W3C Quellen)
 
+Motivation:
+
+Es gibt wenige Benchmarks bezüglich Metadatenextraktion aus heterogenen Katalyse Datensätzen mithifle von Domänenagnostischen Large Language Models. Daher zielt die Arbeit darauf ab einen Domänenagnostischen Ansatz zu verfolgen, welcher Limitationen eines solchen agnostischen Ansatzes aufzeigt woraufhin weitere Arbeiten aufbauend eien Domänenspezifischeren Ansatz verfolgen können, wenn es denn als nötig eingestuft wird.

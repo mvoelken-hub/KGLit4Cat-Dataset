@@ -2,8 +2,8 @@
 type: concept
 title: "Structured Output Reliability"
 created: 2026-06-26
-updated: 2026-06-29
-sources: [neural-text-degeneration, grammar-constrained-decoding, structured-output-ie-go, llm-generative-information-extraction-survey, self-rag, lost-in-the-middle, instructgpt-rlhf, dagdelen2024structured, spires-ontogpt]
+updated: 2026-07-06
+sources: [neural-text-degeneration, grammar-constrained-decoding, structured-output-ie-go, llm-generative-information-extraction-survey, self-rag, lost-in-the-middle, instructgpt-rlhf, dagdelen2024structured, spires-ontogpt, llm-as-a-judge-mt-bench-chatbot-arena]
 tags: [llm, structured-output, text-mining]
 ---
 
@@ -23,5 +23,8 @@ Structured extraction asks an LLM to do two different jobs at once: understand t
 - [[self-rag]] retrieves and critiques evidence adaptively, helping outputs stay grounded.
 - [[dagdelen2024structured]] and [[spires-ontogpt]] show applied patterns for schema-oriented scientific extraction.
 
+## Evaluation Caution
+[[llm-as-a-judge-mt-bench-chatbot-arena]] supports LLM-based review as a scalable proxy for some human preference judgments, while documenting position bias, verbosity bias, possible self-enhancement bias, and limited reasoning. For ontology-driven metadata extraction, this means model-generated semantic checks should remain inspectable review artifacts rather than standalone correctness metrics.
+
 ## Relevance to SIMONE
-The strongest pattern for ontology-driven metadata extraction is layered: retrieve evidence, generate candidate content, organize it into schema-valid output, ground terms against vocabularies, then validate the serialized result. This supports more defensible thesis claims than treating the LLM as a one-shot JSON generator.
+The strongest pattern for ontology-driven metadata extraction is layered: retrieve evidence, generate candidate content, organize it into schema-valid output, ground terms against vocabularies, validate the serialized result, and expose any model-generated review judgements for human inspection. This supports more defensible thesis claims than treating the LLM as a one-shot JSON generator or as an authoritative evaluator.

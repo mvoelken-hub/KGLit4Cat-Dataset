@@ -88,3 +88,9 @@ Compared all `docs/literature/*.pdf` files against `docs/llm_wiki/sources/` and 
 - [[nmrlib-bruker-nmr-tools]] - `docs/literature/s10858-019-00249-1.pdf`
 
 Confirmed `docs/literature/2404.03868v2.pdf` remains represented as the previously documented duplicate/preprint of [[zhang2024edc]]. Updated concept/entity pages: [[catalysis-data-infrastructure]], [[nfdi4chem]]. Updated catalog and synthesis: [[index]], [[overview]].
+
+## [2026-07-06] ingest | LLM-as-a-judge evaluation source added
+Downloaded Zheng et al. 2023 from arXiv as `docs/literature/judging-llm-as-a-judge-with-mt-bench-and-chatbot-arena-2306.05685.pdf` and added source page:
+- [[llm-as-a-judge-mt-bench-chatbot-arena]] - MT-Bench, Chatbot Arena, GPT-4-as-judge agreement with human preferences, and judge limitations including position bias, verbosity bias, possible self-enhancement bias, and limited reasoning.
+
+Updated concept pages: [[llm-foundations]], [[structured-output-reliability]]. Updated catalog and synthesis: [[index]], [[overview]].
