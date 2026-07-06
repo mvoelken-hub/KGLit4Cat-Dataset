@@ -614,7 +614,7 @@ During shutdown, remaining background tasks are cancelled and the Neo4j and Olla
 Ollama provides the local \ac{LLM} serving infrastructure for the prototype.
 It exposes an \ac{HTTP} interface through which the workflow sends generation and embedding requests \cite{ollamaplatform}.
 The selected generation model performs the language-based extraction, classification, evaluation, reconstruction, query-generation, and candidate-selection tasks described in the preceding sections.
-The generation models used in this work are \texttt{gemma3:4b}, \texttt{gemma3:12b}, and \texttt{gemma3:27b} \cite{gemma3technicalreport}.
+The generation models used in this work are gemma3:4b, gemma3:12b, and gemma3:27b \cite{gemma3technicalreport}.
 They belong to the same Gemma 3 model family, but differ in parameter count and therefore in resource demand.
 The 4B, 12B, and 27B Gemma 3 variants support long-context generation and are available as multimodal models with text and image input.
 In this workflow, however, they are used only through their text-generation interface.
