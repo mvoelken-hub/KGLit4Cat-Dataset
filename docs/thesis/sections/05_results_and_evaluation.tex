@@ -117,7 +117,7 @@ This preservation result is limited to the presented packages, because the text-
 Next, the chunking step is inspected to determine whether the selected reference facts are preserved in the resulting chunks.
 The baseline chunking step uses fixed-token chunking with a target and maximum size of 1024 tokens.
 This strategy is used for the detailed qualitative inspection because it is the straightforward method of chunking and keeps chunks within a size range suitable for the local \ac{LLM} models used in this work.
-It produces 32 individual chunks for the raw dataset across 15 source files and 244 individual chunks for the ChemSpectra export across three textual sources.
+It produces 32 individual chunks for the raw dataset across 15 source files and 33 individual chunks for the ChemSpectra export across three textual sources.
 The raw binary \texttt{fid} file and the rendered ChemSpectra image remain package resources, but they do not become substantive textual chunk content.
 In the raw dataset, chunked acquisition files preserve \texttt{NUC1= <1H>}, \texttt{PULPROG= <zg30>}, \texttt{SFO1= 500.133088507478}, and \texttt{SOLVENT= <CDCl3>}.
 A separate chunk preserves the instrument context, including \texttt{Avance III NMR spectrometer} and the rounded \textsuperscript{1}H frequency of 500.13~MHz.
@@ -125,15 +125,14 @@ The main limitation is not fact loss, but fact separation.
 Observed nucleus, observed frequency, and solvent therefore belong to the same acquisition and interpretation context.
 \ac{nmrCV} treats instrument configuration, sample information such as solvent and reference standards, acquisition settings, and raw spectral data as connected metadata needed to describe and reconstruct an NMR experiment \cite{Schober2018nmrML}.
 In the baseline chunks of the raw Bruker dataset, observed nucleus and pulse-sequence information can appear in neighbouring chunks rather than in the same chunk as solvent and observed frequency.
-In the ChemSpectra baseline chunks, the observed frequency appears in the first \ac{JCAMP-DX} header chunk, while observed nucleus, solvent , and pulse sequence appear in the following chunk.
+In the ChemSpectra baseline chunks, the first \ac{JCAMP-DX} header chunk preserves observed frequency, observed nucleus, solvent and reference information, and pulse sequence together.
 
 Semantic chunking is used as a comparison to test whether such fact splitting is reduced.
 It generates embeddings with \texttt{qwen3-embedding:0.6b} over two-line buffer windows and applies a 128-token minimum and a 95th percentile similarity cut-off.
 With this strategy, the raw dataset produces 51 individual chunks and the ChemSpectra export produces 42 individual chunks.
 For the raw dataset, semantic chunking still separates some acquisition facts across adjacent parameter-file chunks.
-For the ChemSpectra export, the main \ac{JCAMP-DX} header facts are kept together in one chunk.
-In this case, semantic chunking leads to a different distribution of ChemSpectra header information, with some related facts appearing in the same chunk rather than across separate chunks.
-This observation can become relevant for later evidence extraction, because the \ac{LLM} can only reason over the content of a single chunk at a time.
+For the ChemSpectra export, the main \ac{JCAMP-DX} header facts are also kept together in one chunk.
+In this case, semantic chunking changes the overall chunk distribution of the derived spectrum file, but it does not change the preservation of the inspected header facts.
 
 \subsection{Dataset Overview}
 \label{sec:evaluation-overview-observations}
