@@ -1,14 +1,16 @@
 \label{chap:conclusion}
 
+This thesis developed and evaluated an LLM-supported workflow for transforming heterogeneous experimental source packages into draft semantic metadata profiles.
+The workflow combines preprocessing, chunking, evidence extraction, DCAT-AP+-based profile construction, semantic requirement checking, and vocabulary grounding in an inspectable pipeline.
+Its main achievement is not fully automatic metadata curation, but the creation of a traceable workflow that shows how curator-relevant facts move from source files into structured metadata drafts.
 The evaluation shows that the implemented workflow is most valuable as an inspectable curation aid and diagnostic baseline.
-Its intermediate artifacts make it possible to trace where curator-relevant facts are preserved, transformed, misplaced, or lost.
+The generated intermediate artifacts make it possible to inspect where facts are preserved, transformed, misplaced, or lost during the extraction process.
 The main result is therefore not a claim of automatic metadata correctness, but a clearer view of which workflow stages already support evidence-aware metadata construction and which stages still require domain-specific development.
 
-For the inspected \textsuperscript{1}H \ac{NMR} packages, preprocessing and chunking do not destroy the selected textual evidence.
+For the inspected \textsuperscript{1}H \ac{NMR} packages, preprocessing and chunking preserve the selected textual evidence.
 The raw and ChemSpectra-derived packages both retain the relevant source statements for dataset identity, observed nucleus, solvent, pulse sequence, instrument information, observed frequency, and raw or derived package resources.
-The harder problem begins after this preservation step.
 Chunk-wise extraction can detect metadata signals without a domain-specific \ac{NER} model, but it produces many adjacent notes, relies on coarse workflow categories, and can lose compact parameter facts through filtering or deduplication.
-This confirms the methodical premise that chunking is needed for local provenance and manageable model inputs, especially under local inference constraints and known long-context limitations \cite{liu2024lostmiddle,xu2024ondevice}.
+This supports the methodical premise that chunking can be used for local provenance and manageable model inputs, especially under local inference constraints and known long-context limitations \cite{liu2024lostmiddle,xu2024ondevice}.
 At the same time, chunking and evidence routing are not a substitute for domain-aware interpretation.
 
 The \ac{DCAT-AP+} schema gives the model enough structure to create schema-valid and provenance-oriented drafts.
@@ -47,7 +49,7 @@ The observed loss of distinct \texttt{key=value} acquisition facts shows that le
 Future versions should therefore preserve parameter identity more explicitly during evidence merging and should evaluate filtering rules against a broader range of instrument and repository exports.
 
 The second priority is to add domain knowledge earlier in the workflow.
-Two directions are equally justified by the results.
+Two directions are justified by the results.
 One direction is domain-aware evidence labeling or \ac{NER}-style signal detection, following chemistry-aware extraction pipelines and chemical text-mining work that identify entities, properties, measurements, and relationships before downstream structuring \cite{swain2016chemdataextractor,zhang2024chemicaltextmining}.
 The other direction is earlier vocabulary retrieval with graph context.
 Instead of using vocabulary grounding only after profile construction, candidate terms from \ac{nmrCV}, \ac{QUDT}, Voc4Cat, and future domain profiles could support evidence classification, schema-oriented summaries, and parent-shape selection.
@@ -57,7 +59,7 @@ The third priority is the handoff between dataset overview and provenance-core c
 The results show that the overview is not neutral for downstream schema construction, even when it is designed only as orientation.
 Further work should keep the overview compact, but add schema-oriented summary views for candidate activities, data products, agents, plans, and attribute parents.
 Related extraction systems already use user-specified schemas, recursive schema interrogation, domain knowledge injection, or separate extraction and canonicalization phases to keep generation aligned with the target structure \cite{walls2025catminer,caufield2024spires,zhang2024edc}.
-SIMONE should adopt the same lesson at the package level by making the summary handoff explicitly aware of the profile roles that the next stage must fill.
+Future versions of the workflow should adopt the same lesson at the package level by making the summary handoff explicitly aware of the profile roles that the next stage must fill.
 
 The fourth priority is to evaluate domain-specific profile extensions against the same followed facts.
 The present case study shows that \ac{DCAT-AP+} can carry a generic provenance skeleton, but it does not reliably express \ac{NMR}-specific acquisition facts as first-class curator-facing metadata.
