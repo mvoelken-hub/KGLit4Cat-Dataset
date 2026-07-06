@@ -135,7 +135,6 @@ The evaluation can therefore support claims about observed workflow behaviour, t
 \end{figure}
 \FloatBarrier
 
-
 \section{Preprocessing}
 \label{sec:results-preprocessing}
 
@@ -151,11 +150,24 @@ They appear as compact parameter records in vendor files.
 A typical example is the observed-frequency line \texttt{SFO1= 500.133088507478}.
 The text-quality gate is therefore expected to avoid discarding such lines merely because they contain many digits or have little natural-language structure.
 
-For the example line, the key--value syntax provides a strong positive signal.
+The preprocessing interface exposes the active gate parameters and the resulting line-level filtering decisions, as shown in \cref{fig:text-quality-gate-inspection}.
+This is important for the evaluation because compact parameter records and noisy technical lines can look similar from the outside.
+The inspection view makes it possible to check whether relevant acquisition lines remain available after filtering rather than assuming that all vendor-file content is passed unchanged to later stages.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figures/text-quality-gate-inspection.png}
+    \caption{Preprocessing inspection view with configurable text-quality gate parameters.
+    The interface shows the active symbol-ratio threshold, digit-ratio threshold, keep-score threshold, and structured-text bonus.
+    The retained text view also exposes line-level filtering decisions, which makes the effect of the gate inspectable during workflow evaluation.}
+    \label{fig:text-quality-gate-inspection}
+\end{figure}
+
+For the example line \texttt{SFO1= 500.133088507478}, the key--value syntax provides a strong positive signal.
 The short alphabetic token \texttt{SFO} also counts as a readable token.
 The high digit ratio is penalized, but this penalty does not outweigh the structured-text signal.
-As shown in \cref{tab:text-quality-gate-example}, the resulting score remains above the configured keep threshold.
-The line therefore remains available for later workflow stages.
+\Cref{tab:text-quality-gate-example} shows the resulting decision.
+The final score remains above the configured keep threshold, so the line remains available for later workflow stages.
 
 \begin{table}[htbp]
     \centering
@@ -181,13 +193,14 @@ The line therefore remains available for later workflow stages.
         \bottomrule
     \end{tabular}
 \end{table}
+\FloatBarrier
 
 This example shows that the preprocessing configuration can preserve compact acquisition parameters in the inspected \textsuperscript{1}H \ac{NMR} packages.
 The result should not be read as a general validation of the gate for all vendor formats.
 The thresholds are tunable, and the present evaluation only inspects whether the selected case retains the source lines needed for the later metadata trace.
 
 After text filtering, the retained text is divided into chunks.
-Chunking is the step that creates the text passages inspected by the later extraction prompts.
+Chunking creates the text passages inspected by the later extraction prompts.
 It does not interpret the facts yet.
 The relevant question is whether selected source facts remain visible in the chunks and whether related facts stay close enough to be interpreted together.
 The baseline run uses fixed-token chunking with a target and maximum size of 1024 tokens.
@@ -196,18 +209,8 @@ This simple strategy keeps the passages within a size range suitable for the loc
 With this configuration, the raw Bruker package is represented by 32 textual chunks from 15 source files.
 The ChemSpectra export is represented by 33 textual chunks from three textual sources.
 The raw binary \texttt{fid} file and the rendered ChemSpectra image remain package resources, but they do not contribute substantive text content to the chunk set.
-\Cref{fig:chunking-inspection-raw-bruker} illustrates the inspection view for the raw Bruker package.
-The view keeps the file origin of each chunk visible and reports how many retained text lines are included per source file.
-This supports the qualitative inspection of both fact preservation and fact separation.
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.95\textwidth]{figures/chunks-result.png}
-    \caption{Chunking inspection view for the raw Bruker package. The workflow keeps the package structure visible by reporting how many chunks and retained text lines originate from each source file.}
-    \label{fig:chunking-inspection-raw-bruker}
-\end{figure}
-
-The selected facts are not lost during chunking.
+The selected facts are not lost during chunking. 
 In the raw package, acquisition-file chunks preserve lines such as \texttt{NUC1= <1H>}, \texttt{PULPROG= <zg30>}, \texttt{SFO1= 500.133088507478}, and \texttt{SOLVENT= <CDCl3>}.
 Another chunk preserves the broader instrument context, including the \texttt{Avance III NMR spectrometer} and the rounded \textsuperscript{1}H frequency of 500.13~MHz.
 In the ChemSpectra export, the first \ac{JCAMP-DX} header chunk keeps observed frequency, observed nucleus, solvent, reference information, and pulse sequence together.
