@@ -310,7 +310,6 @@ The important point is that \enquote{Pulse Program} is already represented as an
 $.was_generated_by.had_input_entity[1] = {
   "title": "Pulse Program",
   "description": "Defined pulse program for NMR experiments.",
-  "type": {"title": "NMR pulse sequence", "from_CV": "nmrCV"},
   "has_quantitative_attribute": [
     {"title": "Flip Angle", "value": 30.0, "unit": "degrees"}
   ],
@@ -358,21 +357,108 @@ Work on \ac{LLM}-as-a-judge evaluation describes such judgements as scalable but
 The verdict for this workflow stage is therefore limited.
 Profile refinement and semantic evaluation can attach traceable source-backed details and flag some structural gaps.
 They mostly enrich the provenance core that already exists instead of correcting its central interpretation.
-The requirement report is therefore useful for directing curator review, but not for demonstrating reliable preservation of the curator-relevant acquisition facts.
+The requirement report is therefore informative for directing curator review, but not for demonstrating reliable preservation of the curator-relevant acquisition facts.
 
 \subsection{Vocabulary Querying and Grounding}
 \label{sec:evaluation-grounding-observations}
 
-\begin{itemize}
-    \item Evaluation basis: vocabulary queries, grounding decisions, and grounded final drafts.
-    \item Raw dataset: grounding produces 35 vocabulary query records.
-    \item ChemSpectra export: grounding produces 14 vocabulary query records.
-    \item Raw dataset: grounding queries include NMR-related resource labels, quantity-kind candidates, and unit candidates.
-    \item ChemSpectra export: grounding queries include \texttt{solvent value}, dataset-name, instrument, and record-generation context.
-    \item Raw dataset: the grounded final draft remains close to the reconstructed profile shape.
-    \item ChemSpectra export: the grounded final draft also remains close to the reconstructed profile shape and does not repair the earlier record-dataset framing.
-    \item Observation: vocabulary grounding enriches selected placed fields but does not compensate for missing or misframed profile construction.
-\end{itemize}
+The vocabulary mapping component is evaluated as a mostly independent workflow stage.
+Previous stages determine how many vocabulary queries are produced and which field types are eligible for vocabulary queries.
+The mapping decision itself can then be inspected from the query records, retrieved candidates, normalization decisions, and candidate-selection prompts.
+For this reason, questionable upstream targets are not evaluated again in detail here.
+They are treated as dependencies of the grounding stage.
+In the current baseline artifacts, both package variants produce 25 vocabulary query records.
+Comparison artifacts produce different query counts because their generated drafts contain different numbers and types of fields that can be grounded.
+
+The pulse-program case shows the strongest positive pattern.
+In the comparison run where the raw dataset contains a dedicated \enquote{Pulse Program} input entity, grounding receives a target that already matches the source signal.
+The parent entity is mapped to the \ac{nmrCV} term \texttt{NMR pulse sequence}.
+Its \texttt{Pulse Program Name} attribute preserves the source value \texttt{zg30}, while the flip-angle attribute is also recognised as an NMR pulse concept and mapped to \texttt{thirty degree pulse duration}.
+The \texttt{ph31} setting remains ungrounded, which is acceptable because it is a specific phase-program value rather than a general vocabulary concept.
+This example shows that grounding can produce plausible terms when the upstream profile shape gives it a precise target.
+The mapping captures the controlled concept as \texttt{NMR pulse sequence}, while the vendor-specific program name \texttt{zg30} remains available as the source value.
+\Cref{fig:evaluation-pulse-program-grounding-shape} shows the corresponding grounded excerpt.
+
+\begin{figure}[htbp]
+\begin{lstlisting}[
+    basicstyle=\footnotesize\ttfamily,
+    breaklines=true,
+    backgroundcolor=\color{black!4},
+    frame=single,
+    rulecolor=\color{black!20},
+    framesep=0.55em,
+    xleftmargin=0.4em,
+    xrightmargin=0.4em
+]
+$.was_generated_by.had_input_entity[1] = {
+  "title": "Pulse Program",
+  "type": {
+    "id": "http://nmrML.org/nmrCV#NMR:1400037",
+    "title": "NMR pulse sequence",
+    "from_CV": "nmrCV"
+  },
+  "has_quantitative_attribute": [{
+    "title": "Flip Angle",
+    "value": 30.0,
+    "has_quantity_type": "Flip Angle",
+    "unit": "degrees",
+    "rdf_type": {
+      "id": "https://qudt.org/schema/qudt/Quantity",
+      "title": "Quantity",
+      "from_CV": "http://qudt.org/schema/qudt"
+    },
+    "type": {
+      "id": "http://nmrML.org/nmrCV#NMR:1000411",
+      "title": "thirty degree pulse duration",
+      "from_CV": "nmrCV"
+    }
+  }],
+  "has_qualitative_attribute": [{
+    "title": "Pulse Program Name",
+    "value": "zg30",
+    "type": {
+      "id": "http://nmrML.org/nmrCV#NMR:1400122",
+      "title": "pulse sequence file",
+      "from_CV": "nmrCV"
+    }
+  }, {
+    "title": "ph31 Setting",
+    "value": "0 2 2 0 1 3 3 1"
+  }]
+}
+\end{lstlisting}
+    \caption{Truncated grounded excerpt showing controlled-vocabulary mappings for the pulse-program input entity in the 27b comparison run for the raw dataset.}
+    \label{fig:evaluation-pulse-program-grounding-shape}
+\end{figure}
+
+Type grounding works across several levels of the generated profile.
+At activity level, a ChemSpectra query for \texttt{NMR spectral data} and \texttt{1H NMR} selects the broader \ac{nmrCV} term \texttt{NMR spectrum}.
+At agent level, a spectrometer query selects an NMR instrument term.
+At attribute level, the raw-dataset query \texttt{NMR pulse program} with \texttt{zg30} selects \texttt{NMR pulse sequence}.
+These examples indicate that the query formulation and candidate selection can identify domain-near terms from the available vocabulary.
+They do not imply that every selected term is curator-ready, because the selected term often normalizes the general concept rather than the exact source value.
+
+Quantitative grounding is more constrained because QUDT quantity kinds and units are cross-validated through \texttt{qudt:hasQuantityKind}.
+This guard is visible in the ChemSpectra baseline.
+The \texttt{MAXX} attribute retrieves misleading candidates such as maximum-thrust quantity kinds and \texttt{Maxwell} as a unit candidate, and the pair is rejected.
+The \texttt{Number of points} attribute retrieves candidates such as \texttt{Dew Point Temperature} and data-volume terms, and its quantity-unit pair is also rejected.
+These rejections are positive grounding behaviour because they prevent lexical or embedding-neighbour matches from being written as controlled terms.
+However, comparison artifacts also show that cross-validation is not equivalent to semantic correctness.
+One run accepts a mechanically compatible QUDT pair for a \enquote{pulse sequence length} target, selecting \texttt{Time per Count} and \texttt{Second per Number}.
+The pair is graph-compatible, but the source target itself is not a well-formed curator-level quantity.
+The check therefore validates vocabulary compatibility, not the scientific appropriateness of the upstream attribute.
+
+The candidate sets also show that graph traversal is useful only as a constrained aid.
+One-hop graph context helps the selector choose a broader parent term when many specific neighbours are retrieved, as in the pulse-sequence example.
+The same expansion can introduce adjacent but wrong-domain candidates in broad vocabularies and in QUDT.
+Graph traversal should therefore support candidate interpretation, but it should not replace strict candidate rejection rules.
+
+The verdict for this stage is that vocabulary mapping can normalize already placed fields and can abstain from several inappropriate mappings.
+It does not repair missing facts, misplaced attributes, or an unsuitable provenance frame.
+The grounded final drafts preserve the reconstructed profile shape and do not add missing source facts such as solvent, observed nucleus, the specific pulse-sequence value, or observed resonance frequency.
+Vocabulary grounding is therefore best interpreted as a controlled-term normalization step over the current draft, not as an independent correction step for profile construction.
+
+
 \subsection{Overall Workflow Assessment}
 \label{sec:evaluation-overall-observations}
 
