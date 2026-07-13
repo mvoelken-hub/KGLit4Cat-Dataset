@@ -1,26 +1,5 @@
 
 
-\section*{Ollama Environment Configuration}
-
-The Ollama model server is configured through environment variables in the Docker Compose deployment.
-These settings affect runtime behavior such as model retention, cache representation, memory mapping, and optional acceleration features.
-They are implementation parameters of the model-serving infrastructure and do not change the semantic extraction, evaluation, reconstruction, or vocabulary-mapping logic of the workflow.
-
-\begin{verbatim}
-OLLAMA_KV_CACHE_TYPE=q8_0
-OLLAMA_KEEP_ALIVE=-1
-OLLAMA_FLASH_ATTENTION=1
-OLLAMA_NO_MMAP=0
-\end{verbatim}
-
-\begin{itemize}
-    \item \texttt{OLLAMA\_KV\_CACHE\_TYPE=q8\_0} configures the representation of the key--value cache used during model inference.
-    The prototype uses \texttt{q8\_0} to reduce memory consumption compared with an unquantized cache representation.
-    \item \texttt{OLLAMA\_KEEP\_ALIVE=-1} keeps loaded models resident in memory after requests instead of unloading them between individual calls.
-    This reduces repeated model-loading overhead during long workflow runs.
-    \item \texttt{OLLAMA\_FLASH\_ATTENTION=1} enables Flash Attention when it is supported by the deployment environment.
-    \item \texttt{OLLAMA\_NO\_MMAP=0} leaves memory mapping enabled.
-\end{itemize}
-
-In addition to these environment variables, the Docker Compose configuration can expose available NVIDIA devices to the Ollama container.
-This allows the same workflow implementation to run with CPU inference, local \ac{GPU} acceleration, or a remote Ollama instance on a dedicated inference server.
+\setcounter{figure}{0}
+\renewcommand{\thefigure}{A.\arabic{figure}}
+\input{sections/appendix_workflow_prompts}

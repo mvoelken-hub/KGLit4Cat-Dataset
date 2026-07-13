@@ -1,24 +1,28 @@
 \label{chap:Introduction}
 
-This chapter introduces the motivation, problem statement, research questions, objectives, scope, and thesis structure.
+Catalysis research generates complex and heterogeneous experimental data.
+A single dataset may contain information about catalyst materials, synthesis and treatment steps, reactor configurations, operating conditions, analytical measurements, processing parameters, and performance results.
+These elements become scientifically meaningful only when their experimental context is preserved.
+For example, a conversion value, an \ac{NMR} spectrum, or a kinetic measurement cannot be interpreted reliably without information about the investigated material, the sample preparation, the applied method, and the conditions under which the data were produced \cite{mendes2021opendata,mendes2025data}.
 
+This need for contextual information is directly connected to the \ac{FAIR} principles.
+Catalysis data should not only be stored and made accessible, but also be described in a way that allows researchers and machines to find, interpret, compare, and reuse them \cite{wilkinson2016fair,mendes2025data}.
+However, much of the relevant metadata is still embedded in heterogeneous file structures, instrument exports, tables, laboratory notes, captions, or human-readable descriptions.
+As a result, experimental information may technically be available, while still being difficult to transform into machine-actionable metadata.
 
-Describe why semantic metadata extraction from catalytic experiments matters for reuse, comparability, and Findable, Accessible, Interoperable, and Reusable (FAIR) data practices.
+Semantic metadata standards and controlled vocabularies offer a way to address this problem.
+Application profiles such as \ac{DCAT-AP+} and \ac{ChemDCAT-AP} define structured ways to describe datasets, activities, entities, attributes, and provenance relations \cite{stroemert2026chemdcat,dcatapplusDocumentation,chemdcatapDocumentation}.
+Vocabulary resources such as \ac{Voc4Cat}, \ac{QUDT}, and \ac{nmrCV} provide controlled identifiers for catalysis concepts, quantities, units, and \ac{NMR}-specific metadata \cite{david_linke_2023_8313340,qudt2022schema,Schober2018nmrML}.
+Together, these resources can support interoperable and reusable data descriptions.
+Nevertheless, they do not automatically extract the required information from real experimental dataset packages.
 
-Explain the gap between available experimental information and machine-actionable semantic metadata.
+This creates an operational gap between available experimental data and semantically structured metadata records.
+Manual curation can close this gap, but it is time-consuming, difficult to scale, and dependent on domain expertise.
+Large Language Models (LLMs) offer a promising approach for supporting this process because they can interpret heterogeneous textual sources and generate structured outputs \cite{dagdelen2024structured,schilling2025text,xu2024generativeie}.
+However, automatic extraction alone is not sufficient.
+The resulting metadata must remain traceable to source evidence, validated against a target structure, grounded in controlled vocabularies, and inspectable by human curators.
 
-State the central research question and supporting sub-questions.
-
-Define what this thesis covers and what is intentionally out of scope.
-
-Summarize the research and implementation strategy used in this thesis.
-
-Briefly describe the content of the following chapters.
-
-Introduce the abbreviations for LLM, FAIR, NFDI4Cat.
-
-Sample paragraphs:
-
-The FAIR principles describe research data that can be found, accessed, interpreted across systems, and reused in new contexts. For catalytic experiments, these principles are particularly demanding because data originate from heterogeneous instruments, reactor setups, material histories, and evaluation procedures. A dataset may be findable through a persistent identifier and still be difficult to reuse if the meaning of its columns, units, samples, or reaction conditions is only understandable from a human-readable lab note. FAIR catalysis data therefore require metadata that identify the relevant entities, preserve provenance, and express relations between materials, measurements, methods, and publications \cite{mendes2021opendata,mendes2025data}.
-
-NFDI4Cat addresses these requirements by developing infrastructure for catalysis-related sciences in which experimental data can be documented, exchanged, and interpreted across institutional and disciplinary boundaries. This includes repository concepts, metadata workflows, and ontology-based approaches for connecting catalysis and process research data \cite{nfdi4cat2024whitepaper,kushnarenko2025repo4cat}. Recent work around the Novel Materials Discovery Laboratory (NOMAD) and catalysis-specific plugins illustrates how domain metadata can be embedded into larger research-data platforms so that synthesis, characterization, and testing data become part of a coherent FAIR data environment \cite{schumann2025nomad}. NFDI4Cat-related work also emphasizes community vocabularies such as Voc4Cat, a catalysis vocabulary developed in the NFDI4Cat context, which provide controlled terms and definitions for catalysis workflows and can be queried or embedded in workflow tools \cite{veluvali2025bridging}. Such infrastructures depend on semantic models because interoperability cannot be achieved by file storage alone; it requires shared meaning for the terms and relations used in the data.
+This thesis is motivated by the need for a workflow that connects these layers.
+It investigates how an LLM-supported process can extract metadata signals from heterogeneous catalytic experiment datasets and organize them into an evidence-backed semantic metadata draft.
+The goal is not to replace expert curation, but to reduce the manual effort required to produce structured, \ac{FAIR}-oriented metadata and to make the extraction process more transparent, reproducible, and semantically grounded.
+In this work, \ac{NMR} datasets serve as a test case because they combine raw instrument data, processing parameters, standardized exchange formats, and chemically meaningful spectral information within a compact but realistic experimental package \cite{Schober2018nmrML}.
