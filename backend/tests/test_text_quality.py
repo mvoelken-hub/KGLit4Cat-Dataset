@@ -66,6 +66,29 @@ class TextQualityConfigTests(unittest.TestCase):
         self.assertEqual(result.kind, DecisionKind.DROP)
         self.assertIn("numeric_array", result.reason)
 
+    def test_fixed_width_metadata_with_padding_spaces_is_kept(self):
+        """Whitespace used to align a value must not be mistaken for line noise."""
+        result = classify_text_line("Run Time                                     8 min")
+
+        self.assertEqual(result.kind, DecisionKind.KEEP)
+        self.assertNotIn("repeated_char_noise", result.reason)
+
+        for line in [
+            "Setpoint                                     On",
+            "(Initial)                                    50 °C",
+        ]:
+            with self.subTest(line=line):
+                short_key_result = classify_text_line(line)
+                self.assertEqual(short_key_result.kind, DecisionKind.KEEP)
+                self.assertIn("structured_text", short_key_result.reason)
+
+    def test_repeated_non_whitespace_characters_remain_noise(self):
+        """Divider lines should still be removed by the repeated-character rule."""
+        result = classify_text_line("----------------------------------------")
+
+        self.assertEqual(result.kind, DecisionKind.DROP)
+        self.assertIn("repeated_char_noise", result.reason)
+
 
 if __name__ == "__main__":
     unittest.main()

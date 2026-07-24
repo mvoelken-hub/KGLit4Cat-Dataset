@@ -318,7 +318,7 @@ h2 { margin: 0; font-size: clamp(1.6rem, 3vw, 2.6rem); letter-spacing: -0.04em; 
 .grounding-empty-state p { margin: 0; }
 .grounding-empty-state button { width: fit-content; }
 .grounding-result-dialog { width: min(1040px, 94vw); max-height: 88vh; background: #fff; grid-template-rows: auto minmax(0, 1fr); }
-.grounding-result-dialog-body { min-height: 0; overflow: auto; display: grid; align-content: start; gap: 10px; }
+.grounding-result-dialog-body { min-height: 0; overflow: auto; display: grid; grid-auto-rows: max-content; align-content: start; gap: 10px; }
 .grounding-query-inspection-summary button { padding-top: 0.3rem; padding-bottom: 0.3rem; }
 .grounding-query-inspection-head { border: 1px solid var(--line); border-radius: 8px; background: rgba(248,250,247,0.7); overflow: hidden; }
 .grounding-query-inspection-head dl { margin: 0; display: grid; }
@@ -452,7 +452,7 @@ h2 { margin: 0; font-size: clamp(1.6rem, 3vw, 2.6rem); letter-spacing: -0.04em; 
 .ollama-dialog .ollama-status-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .ollama-dialog .ollama-runtime-form { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; }
 .ollama-dialog .ollama-runtime-form button { width: fit-content; }
-.curated-editor-dialog { width: min(1480px, calc(100vw - 32px)); height: min(880px, calc(100vh - 32px)); grid-template-rows: auto minmax(0, 1fr); }
+.vocab-dialog.curated-editor-dialog { width: min(1480px, calc(100vw - 32px)); height: min(880px, calc(100vh - 32px)); grid-template-rows: auto minmax(0, 1fr); }
 .curated-editor-dialog-body { min-height: 0; overflow: hidden; padding: 16px 20px 20px; }
 .curated-editor-dialog-body .json-editor { height: 100%; min-height: 0; margin-top: 0; }
 .curated-editor-dialog-body .json-editor-sidebar,

@@ -110,13 +110,16 @@ const longDenseTokenRe = /\S{80,}/;
 const mostlyHexRe = /^[0-9a-fA-F\s:,-]{40,}$/;
 const mostlyNumericRe = /^\s*[-+]?\d+(?:[.,]\d+)?(?:[eE][-+]?\d+)?(?:[\s,;]+[-+]?\d+(?:[.,]\d+)?(?:[eE][-+]?\d+)?){5,}\s*$/;
 const base64ishRe = /^[A-Za-z0-9+/=_-]{80,}$/;
-const repeatedCharRe = /(.)\1{20,}/;
+// Fixed-width exports use long whitespace runs to align key/value metadata.
+// Only repeated non-whitespace characters indicate likely line noise.
+const repeatedCharRe = /(\S)\1{20,}/;
 const controlCharRe = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/gu;
 const structuredTextRes = [
   /^\s*[-*\u00e2\u20ac\u00a2]\s+\S+/,
   /^\s*#{1,6}\s+\S+/,
   /^\s*[A-Za-z0-9_#.\-$ ]{2,80}\s*[:=]\s*\S+/,
   /^\s*"?[A-Za-z0-9_#.\-$ ]+"?\s*:\s*/,
+  /^\s*\S.*?\s{2,}\S.*$/,
 ];
 
 function entropy(value: string) {

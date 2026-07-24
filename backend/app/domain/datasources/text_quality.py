@@ -44,7 +44,10 @@ MOSTLY_NUMERIC_RE = re.compile(
     r"(?:[\s,;]+[-+]?\d+(?:[.,]\d+)?(?:[eE][-+]?\d+)?){5,}\s*$"
 )
 BASE64ISH_RE = re.compile(r"^[A-Za-z0-9+/=_-]{80,}$")
-REPEATED_CHAR_RE = re.compile(r"(.)\1{20,}")
+# Ignore padding whitespace in fixed-width text exports.  Long runs of a
+# non-whitespace character are still a useful noise signal (for example,
+# divider lines), but aligned key/value metadata often contains many spaces.
+REPEATED_CHAR_RE = re.compile(r"(\S)\1{20,}")
 
 
 def classify_text_line(
@@ -169,5 +172,6 @@ def _looks_like_structured_text(s: str) -> bool:
         r"^\s*#{1,6}\s+\S+",
         r"^\s*[A-Za-z0-9_#.\-$ ]{2,80}\s*[:=]\s*\S+",
         r"^\s*\"?[A-Za-z0-9_#.\-$ ]+\"?\s*:\s*",
+        r"^\s*\S.*?\s{2,}\S.*$",
     ]
     return any(re.search(pattern, s) for pattern in structured_patterns)
