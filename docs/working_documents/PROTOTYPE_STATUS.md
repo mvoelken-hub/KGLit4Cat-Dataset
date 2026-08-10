@@ -21,6 +21,20 @@ This document is the implementation-facing counterpart to `WORKFLOW.md`. It reco
 
 The backend extraction implementation is split by workflow responsibility: `WorkflowService` orchestrates task scheduling, progress, state, and result retrieval; stage services handle orientation, evidence extraction, profile projection, and final vocabulary grounding. Deterministic extraction helpers remain in `app.domain.extraction` rather than in runtime services.
 
+## Parallel Standalone Workflow Package
+
+[PARSE4Cat](https://github.com/smnclmns/PARSE4Cat) is the separate,
+dependency-free Python package for Preprocessing, Analysis, RDF Construction,
+and Semantic Enrichment for Catalysis. It is not wired into the FastAPI workflow
+yet. The package owns stage ordering and boundary artifacts while storage, LLM,
+schema-validation, and vocabulary operations are injected as callables.
+
+The graph-construction result exposes initial, core, attribute, and reconstructed
+draft snapshots. Only the reconstructed snapshot crosses into classification,
+matching the active workflow's profile/grounding boundary. Adoption should be
+incremental: add backend adapters and parity tests for one stage before routing
+that API stage through PARSE4Cat.
+
 ## Current Workflow Entrypoints
 
 Stepwise workflow:

@@ -16,6 +16,28 @@ Each decision should include:
 
 ## Decisions
 
+### 2026-08-10: Develop PARSE4Cat In A Separate Repository
+
+Decision: Develop the installable, framework-independent workflow core as
+PARSE4Cat: Preprocessing, Analysis, RDF Construction, and Semantic Enrichment
+for Catalysis. Keep it in a dedicated repository with the `parse4cat` Python
+namespace and no dependency on the SIMONE backend. Keep the active FastAPI
+workflow unchanged until backend adapters and parity tests demonstrate
+equivalent behavior stage by stage.
+
+Reason: The current workflow responsibilities are separated conceptually but
+remain coupled through large backend services, persistence, task management,
+Ollama, and Neo4j. Stable input/output boundaries allow business logic to move
+out incrementally without a flag-day rewrite of the API.
+
+Tradeoff: The first PARSE4Cat version owns contracts and stage orchestration
+while the current backend still owns the production algorithms. Both
+implementations will coexist in separate repositories during migration.
+
+Revisit trigger: Replace an API stage's service logic only after its adapter can
+produce equivalent boundary artifacts and pass focused parity tests against the
+current workflow.
+
 ### 2026-07-03: Remove Dataset-Description Mining
 
 Decision: Remove the description-mining step that extracted atomic facts from the top-level dataset description and added them to the evidence context before provenance core construction. The `description_mining.py` module, `_mine_dataset_description` method, `save_description_facts` repository method, `description_facts.json` artifact, and related tests were deleted.

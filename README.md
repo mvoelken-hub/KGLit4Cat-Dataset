@@ -14,6 +14,12 @@ The prototype aims to turn an uploaded dataset archive into a progressively refi
 
 The active backend workflow is evidence extraction, profile draft construction and validation, optional curation, final vocabulary grounding, and result persistence. Vocabulary grounding operates on fields already placed in the profile draft; it is the last enrichment step before the final result is saved. Some older "initial draft" and "patch review" names still exist in the frontend for compatibility, but manual patch review is no longer the active backend pipeline.
 
+The framework-independent workflow core is developed separately as
+[PARSE4Cat](https://github.com/smnclmns/PARSE4Cat). It defines preprocessing,
+analysis, RDF construction, and semantic-enrichment boundaries without changing
+the active FastAPI workflow. Backend adapters can adopt that package one stage
+at a time before the current service business logic is replaced.
+
 ## Running the App
 
 ### Prerequisites
