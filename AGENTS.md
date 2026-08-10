@@ -15,7 +15,6 @@
 *~1,500 tokens/session saved*
 - `C:\Users\simcl\.codex\skills\simone\SKILL.md` (~8-9KB) and `C:\Users\simcl\.codex\skills\caveman\SKILL.md` (~5KB) are read at the start of nearly every session. They are stable — do not re-read within a session.
 - `C:\Users\simcl\.codex\plugins\cache\ponytail\ponytail.md` (~5KB) also read frequently.
-- Graphify skill: `C:\Users\simcl\.codex\skills\graphify\SKILL.md` (~33KB) — only read when graphify usage is unclear.
 
 ### Environment
 *~800 tokens/session saved*
@@ -39,10 +38,5 @@
 *~300 tokens/session saved*
 - Avoid escaped double quotes (`\"`) inside `rg` patterns in PowerShell — they break parsing. Use single-quoted rg patterns: `rg -n '<StepPanel|number='` instead of `rg -n "<StepPanel|number=\""`.
 - For `Select-String`, prefer `-Pattern` with single-quoted regex.
-
-### Graphify Commands
-*~200 tokens/session saved*
-- `graphify query "<natural language query>"` — semantic codebase search. Check `Test-Path graphify-out/graph.json` first.
-- `graphify extract . --no-viz --force --exclude "*.md" --exclude "*.yml"` — rebuild graph after code changes. Run from project root.
 
 <!-- headroom:learn:end -->

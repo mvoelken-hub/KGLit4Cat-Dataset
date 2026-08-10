@@ -215,20 +215,6 @@ latexmkrc
 .backups/
 main.out
 
-# Graphify local cache and transient files
-graphify-out/
-graphify-out/cache/
-graphify-out/cost.json
-graphify-out/.graphify_python
-graphify-out/.graphify_root
-graphify-out/.graphify_ast.json
-graphify-out/.graphify_extract.json
-graphify-out/.graphify_semantic*.json
-graphify-out/.graphify_cached.json
-graphify-out/.graphify_uncached.txt
-graphify-out/.graphify_chunk_*.json
-graphify-out/.needs_update
 .codex/hooks.json
-.codex/graphify
 .headroom/
 literature/
