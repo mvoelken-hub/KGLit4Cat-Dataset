@@ -1,6 +1,6 @@
 # Semantic Inference Module for Ontology-driven Node Extraction (SIMONE)
 
-My thesis work contributes an automated extraction approach that turns heterogeneous catalysis research data into structured, reusable, and FAIR-compliant datasets.
+This workflow is an automated extraction approach that turns heterogeneous catalysis research data into structured, reusable, and FAIR-compliant datasets. SIMONE will be implemented as the metadata extraction part in the KGLit4Cat service (https://nfdi4cat.org/Services/KGLit4Cat.html) for automated knowledge graph creation. 
 
 ## Research Context
 
