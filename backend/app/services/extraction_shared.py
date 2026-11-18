@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import re
 import time
@@ -32,7 +33,10 @@ from app.domain.extraction import (
     VOCAB_FALLBACK_QUERY_SYSTEM_PROMPT,
     VOCAB_QUERY_FORMULATION_SYSTEM_PROMPT,
     VOCAB_OBJECT_GROUNDING_SELECTION_SYSTEM_PROMPT,
+    ChatModelUnavailableError,
     ChunkingRequiredError,
+    InitialContextFailedError,
+    chat_model_unavailable_message,
     CompleteWorkflowProgress,
     CompleteWorkflowStepProgress,
     CurationLedgerRecord,
@@ -235,6 +239,7 @@ if TYPE_CHECKING:
 
 
 ExtractionTargetStage = Literal["context", "profile", "grounding", "complete"]
+CHAT_MODEL_PREFLIGHT_TIMEOUT_SECONDS = 45.0
 INITIAL_OVERVIEW_TOP_FILE_LIMIT = 16
 INITIAL_OVERVIEW_PREVIEW_LINE_LIMIT = 80
 INITIAL_OVERVIEW_MAX_LINE_CHARS = 500

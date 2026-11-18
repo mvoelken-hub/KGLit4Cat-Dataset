@@ -30,6 +30,42 @@ class ChunkingRequiredError(Exception):
     pass
 
 
+class ChatModelUnavailableError(Exception):
+    """The configured chat model cannot serve requests (auth, quota, missing, unreachable)."""
+
+
+class InitialContextFailedError(Exception):
+    """Initial file understanding ran but produced no usable file summaries."""
+
+
+def chat_model_unavailable_message(model: str | None, exc: BaseException) -> str:
+    """Build an actionable message for a failed chat-model preflight call."""
+    model_label = f"'{model}'" if model else "(not configured)"
+    status_code = getattr(exc, "status_code", None)
+    detail = str(exc).strip() or type(exc).__name__
+    if status_code == 401:
+        hint = (
+            "Ollama Cloud rejected the request as unauthorized. "
+            "Run `simone signin-ollama` once for this Ollama data volume."
+        )
+    elif status_code == 402:
+        hint = (
+            "Ollama Cloud usage credits are exhausted. Add credits or set "
+            "OLLAMA_CHAT_MODEL to a local model (`simone models`)."
+        )
+    elif status_code == 404:
+        hint = (
+            "The model is not available on the Ollama host. Pull it first "
+            "(`simone models` or `ollama pull <model>`)."
+        )
+    elif status_code is None:
+        hint = "Ollama could not be reached. Check `simone status` and the Ollama container."
+    else:
+        hint = "Check `simone status` and the Ollama logs."
+    code_label = f" (status code {status_code})" if status_code is not None else ""
+    return f"Chat model {model_label} is unavailable{code_label}: {detail} {hint}"
+
+
 class ExtractionResultNotFoundError(Exception):
     pass
 

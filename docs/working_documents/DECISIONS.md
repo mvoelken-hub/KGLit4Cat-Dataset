@@ -16,6 +16,16 @@ Each decision should include:
 
 ## Decisions
 
+### 2026-11-13: Fail Fast On An Unavailable Chat Model And On Failed File Understanding
+
+Decision: Initial file understanding, evidence extraction, and the complete workflow call a chat-model preflight (`verify_chat`) before scheduling their background task. Auth (401), quota (402), missing-model (404), and connection errors are raised immediately as `ChatModelUnavailableError` (HTTP 503) with an actionable hint; a slow first model load (timeout) does not block the stage. When initial file understanding ran but every text-extractable file summary failed, the summary status is `failed`, evidence extraction stops with `InitialContextFailedError` (HTTP 409) naming the first underlying error, and the failed state stays persisted. A failed overview with valid file summaries is non-fatal: evidence extraction keeps the summaries and continues without the overview. A rerun of initial file understanding no longer short-circuits on a previously failed run. The summary status now distinguishes `completed`, `partial`, and `failed`.
+
+Reason: A PDF-publication test run produced eight 401 summary failures that were recorded as warnings, reported the stage as completed, and then made the evidence stage discard the initial context and fail with the misleading message "Run initial file understanding before chunk extraction." The workflow could not tell an infrastructure failure from a missing step.
+
+Tradeoff: Stage starts now issue one extra chat request, and a first-time local model load can delay the start response by up to the preflight timeout.
+
+Revisit trigger: Revisit if the preflight request itself becomes a bottleneck, or if evidence extraction should optionally run without any file summaries.
+
 ### 2026-08-10: Develop PARSE4Cat In A Separate Repository
 
 Decision: Develop the installable, framework-independent workflow core as

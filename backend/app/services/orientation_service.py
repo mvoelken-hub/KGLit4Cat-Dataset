@@ -306,11 +306,12 @@ class OrientationService:
 
         state.initial_file_summaries = summaries
         summarized_count = len(summaries)
-        if summarized_count == len(summaries) and summaries:
+        if summarized_count > 0 and failed_count == 0:
             state.initial_file_summary_status = "completed"
         elif summarized_count > 0:
             state.initial_file_summary_status = "partial"
-        elif skipped_count > 0:
+        elif failed_count == 0 and skipped_count > 0:
+            # Only non-text resources (e.g. images): nothing to summarize.
             state.initial_file_summary_status = "completed"
         else:
             state.initial_file_summary_status = "failed"

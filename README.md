@@ -247,6 +247,8 @@ simone signin-ollama
 
 If Ollama prints a connect link, open it in your browser and complete the sign-in. The credential is stored in `data/docker/ollama/data`, so you normally only need this once per local data volume.
 
+If the health check reports `status code: 402` ("Add usage credits or subscribe"), the sign-in worked but the Ollama Cloud quota is exhausted. Add credits, or switch to a local chat model: pull it (for example `docker exec kglit4cat-dataset-ollama-1 ollama pull gemma4:26b`), then set `OLLAMA_CHAT_MODEL` in `.env` or use `simone models` → chat model → apply. Extraction stages check the chat model before they start and report these errors directly.
+
 ### Neo4j Data Maintenance
 
 Neo4j stores local data in `data/docker/neo4j/data`. The password is applied only when this data directory is initialized. Changing `NEO4J_PASSWORD` later does not change the persisted database password.

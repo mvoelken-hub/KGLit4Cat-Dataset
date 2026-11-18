@@ -80,6 +80,26 @@ class WorkflowService(
             if result is not None and resume and not force_profile_rebuild:
                 return result, TaskStatus.COMPLETED
 
+        persisted_state = self._with_initial_context_fallback(
+            data_package_id=data_package_id,
+            state=self._load_run_state_or_none(
+                data_package_id,
+                chunking_strategy=chunking_strategy,
+                chat_model=chat_model,
+            ),
+            chunking_strategy=chunking_strategy,
+            chat_model=chat_model,
+        )
+        if (
+            persisted_state is not None
+            and persisted_state.initial_file_summary_status == "failed"
+        ):
+            raise InitialContextFailedError(
+                self._initial_file_summary_failure_message(data_package_id, persisted_state)
+            )
+
+        await self._ensure_chat_model_available()
+
         if not resume:
             self._clear_downstream_extraction_outputs(data_package_id)
             self._clear_prompt_diagnostics(data_package_id)
@@ -211,22 +231,32 @@ class WorkflowService(
             if force_rerun:
                 raise ValueError("Cannot force-rerun initial context while it is already running.")
             return TaskStatus.RUNNING
+        persisted_state = self._load_run_state_or_none(data_package_id)
+        # A run whose file summaries all failed is not reusable: rerun it
+        # instead of reporting the failed context as completed.
+        previous_run_failed = (
+            persisted_state is not None
+            and persisted_state.initial_file_summary_status == "failed"
+        )
         if (
             not force_rerun
+            and not previous_run_failed
             and task_info is not None
             and task_info.status == TaskStatus.COMPLETED
-            and self._load_run_state_or_none(data_package_id) is not None
+            and persisted_state is not None
         ):
             return TaskStatus.COMPLETED
 
-        persisted_state = self._load_run_state_or_none(data_package_id)
         if (
             not force_rerun
+            and not previous_run_failed
             and persisted_state is not None
             and persisted_state.initial_file_summary_status is not None
             and persisted_state.initial_extraction_overview_status is not None
         ):
             return TaskStatus.COMPLETED
+
+        await self._ensure_chat_model_available()
 
         if force_rerun:
             self.output_repository.clear_initial_context(data_package_id)
@@ -407,6 +437,8 @@ class WorkflowService(
         ):
             exception = task_info.task.exception()
             raise exception if exception else Exception("Complete workflow task crashed without an exception.")
+
+        await self._ensure_chat_model_available()
 
         if force_rerun:
             self.output_repository.clear_extraction_run(data_package_id)
@@ -1210,6 +1242,21 @@ class WorkflowService(
             )
         self._update_progress(data_package_id, progress)
 
+        # Checked before the run state is rebuilt and saved, so the persisted
+        # "failed" status (and its diagnostics) survive for the user to inspect.
+        if (
+            persisted_state is not None
+            and persisted_state.initial_file_summary_status == "failed"
+        ):
+            failure_message = self._initial_file_summary_failure_message(
+                data_package_id,
+                persisted_state,
+            )
+            progress.stage = "initial_context_failed"
+            progress.warnings = [*warnings, failure_message]
+            self._update_progress(data_package_id, progress)
+            raise InitialContextFailedError(failure_message)
+
         if persisted_state and persisted_state.ranked_files:
             ranking = FileRankingResult(files=persisted_state.ranked_files)
         elif persisted_state and persisted_state.initial_file_summaries:
@@ -1933,6 +1980,54 @@ class WorkflowService(
 
     def _current_chat_model(self) -> str | None:
         return self.ollama_client.chat_model if self.ollama_client else None
+
+    async def _ensure_chat_model_available(self) -> None:
+        """Fail fast when the configured chat model cannot answer requests.
+
+        Without this check, auth/quota/missing-model errors only surface as
+        per-file or per-chunk failures inside background tasks. A slow first
+        model load is not treated as a failure: on timeout the stage starts and
+        the task itself waits for the model.
+        """
+        verify_chat = getattr(self.ollama_client, "verify_chat", None)
+        if not inspect.iscoroutinefunction(verify_chat):
+            return
+        try:
+            await asyncio.wait_for(
+                verify_chat(),
+                timeout=CHAT_MODEL_PREFLIGHT_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Chat model preflight timed out; continuing while the model loads",
+                extra={"chat_model": self._current_chat_model()},
+            )
+        except Exception as exc:
+            raise ChatModelUnavailableError(
+                chat_model_unavailable_message(self._current_chat_model(), exc)
+            ) from exc
+
+    def _initial_file_summary_failure_message(
+        self,
+        data_package_id: str,
+        state: ExtractionRunState,
+    ) -> str:
+        progress = state.initial_file_summary_progress
+        failed_files = progress.failed_files if progress is not None else 0
+        first_reason = next(
+            (
+                warning
+                for warning in self._load_warnings_or_empty(data_package_id)
+                if warning.startswith("Initial file summary failed for ")
+            ),
+            None,
+        )
+        reason_text = f" First error: {first_reason}" if first_reason else ""
+        return (
+            f"Initial file understanding failed for all {failed_files} text-extractable file(s), "
+            "so chunk evidence extraction cannot start."
+            f"{reason_text} Fix the chat model (see `simone status`) and rerun initial file understanding."
+        )
 
     def _load_warnings_or_empty(self, data_package_id: str) -> list[str]:
         if self.output_repository is None:

@@ -47,19 +47,33 @@ class EvidenceService:
         chunk_repair_mode: ChunkRepairMode = "deferred",
         evidence_critic_granularity: EvidenceCriticGranularity = "per_chunk",
     ) -> ExtractionRunState:
-        preserve_initial_context = (
+        summaries_match = (
             persisted_state is not None
             and self._initial_file_summaries_match_current_run(
                 summaries=persisted_state.initial_file_summaries,
                 status=persisted_state.initial_file_summary_status,
                 ranking=ranking,
             )
+        )
+        overview_matches = (
+            summaries_match
+            and persisted_state is not None
             and self._initial_overview_matches_current_run(
                 overview=persisted_state.initial_extraction_overview,
                 status=persisted_state.initial_extraction_overview_status,
                 ranking=ranking,
             )
         )
+        # Initial file understanding treats a failed overview as non-fatal
+        # ("continuing without overview"). Keep the valid file summaries and the
+        # explicit failed status instead of discarding the whole initial context.
+        overview_failed = (
+            summaries_match
+            and persisted_state is not None
+            and persisted_state.initial_extraction_overview_status == "failed"
+        )
+        preserve_initial_context = overview_matches or overview_failed
+        preserve_overview = overview_matches
         preserve_completed_chunks = preserve_initial_context
         persisted_by_key = {
             self._chunk_result_key(result): result
@@ -127,7 +141,7 @@ class EvidenceService:
             ),
             initial_extraction_overview=(
                 persisted_state.initial_extraction_overview
-                if preserve_initial_context and persisted_state
+                if preserve_overview and persisted_state
                 else None
             ),
             initial_extraction_overview_status=(

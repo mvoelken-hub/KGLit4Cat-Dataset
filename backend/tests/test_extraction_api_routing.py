@@ -6,12 +6,26 @@ from fastapi.testclient import TestClient
 from app.api.v1.extraction import router
 from app.core.task_registry import TaskStatus
 from app.dependencies import get_workflow_service
-from app.domain.extraction import CompleteWorkflowProgress
+from app.domain.extraction import (
+    ChatModelUnavailableError,
+    CompleteWorkflowProgress,
+    InitialContextFailedError,
+)
 
 
 class FakeWorkflowService:
     async def get_complete_workflow_progress(self, data_package_id: str):
         return TaskStatus.UNKNOWN, CompleteWorkflowProgress(data_package_id=data_package_id)
+
+
+class UnavailableChatWorkflowService(FakeWorkflowService):
+    async def run_initial_context(self, **_kwargs):
+        raise ChatModelUnavailableError("Chat model 'chat' is unavailable (status code 402)")
+
+
+class FailedInitialContextWorkflowService(FakeWorkflowService):
+    async def run_extraction(self, **_kwargs):
+        raise InitialContextFailedError("Initial file understanding failed for all 2 file(s)")
 
 
 def make_test_client(fake_service: FakeWorkflowService) -> TestClient:
@@ -35,6 +49,25 @@ class ExtractionApiRoutingTests(unittest.TestCase):
 
         self.assertEqual(client.post("/api/v1/extraction/run", json={}).status_code, 404)
         self.assertEqual(client.get("/api/v1/extraction/result/package-id").status_code, 404)
+
+    def test_unavailable_chat_model_maps_to_service_unavailable(self):
+        client = make_test_client(UnavailableChatWorkflowService())
+
+        response = client.post("/api/v1/extraction/stages/orientation/package-id")
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("402", response.json()["detail"])
+
+    def test_failed_initial_context_maps_to_conflict(self):
+        client = make_test_client(FailedInitialContextWorkflowService())
+
+        response = client.post(
+            "/api/v1/extraction/stages/evidence",
+            json={"data_package_id": "package-id"},
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("failed for all 2", response.json()["detail"])
 
 
 if __name__ == "__main__":

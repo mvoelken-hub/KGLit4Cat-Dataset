@@ -6,7 +6,11 @@ from unittest.mock import patch
 from app.core.task_registry import TaskInfo, TaskRegistry, TaskStatus, TaskType
 from app.domain.datasources import ContentChunk, DataPackage, FileEntry
 from app.domain.extraction import (
+    ChatModelUnavailableError,
     ChunkingRequiredError,
+    InitialContextFailedError,
+    InitialFileSummaryProgress,
+    chat_model_unavailable_message,
     DefinedTerm,
     EvidenceAssessment,
     EvidenceAssessmentContext,
@@ -5470,6 +5474,273 @@ class WorkflowServiceWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(grounded.defined_term)
         self.assertEqual(grounded.source_value, "unknown")
         self.assertEqual(grounded.extracted_object.type, "unknown")
+
+
+class FakeStatusError(Exception):
+    def __init__(self, message: str, status_code: int | None):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+class FakeChatClient:
+    """Minimal chat client exposing an async verify_chat, like OllamaClientWrapper."""
+
+    def __init__(self, error: Exception | None = None, delay: float = 0.0):
+        self.chat_model = "chat"
+        self.max_context_length = 4096
+        self.error = error
+        self.delay = delay
+        self.verify_calls = 0
+
+    async def verify_chat(self) -> bool:
+        self.verify_calls += 1
+        if self.delay:
+            await asyncio.sleep(self.delay)
+        if self.error is not None:
+            raise self.error
+        return True
+
+
+def failed_initial_context_state() -> ExtractionRunState:
+    return ExtractionRunState(
+        chat_model="chat",
+        ranked_files=[RankedFile(rank=1, file_path="README.md")],
+        initial_file_summaries=[],
+        initial_file_summary_progress=InitialFileSummaryProgress(
+            total_files=2,
+            processed_files=0,
+            summarized_files=0,
+            skipped_files=0,
+            failed_files=2,
+        ),
+        initial_file_summary_status="failed",
+        initial_extraction_overview=None,
+        initial_extraction_overview_status="failed",
+    )
+
+
+class ChatModelAvailabilityTests(unittest.IsolatedAsyncioTestCase):
+    def test_unavailable_message_explains_auth_quota_and_connection_errors(self):
+        unauthorized = chat_model_unavailable_message(
+            "gemma4:31b-cloud",
+            FakeStatusError("unauthorized", 401),
+        )
+        self.assertIn("status code 401", unauthorized)
+        self.assertIn("simone signin-ollama", unauthorized)
+
+        quota = chat_model_unavailable_message(
+            "gemma4:31b-cloud",
+            FakeStatusError("Add usage credits or subscribe", 402),
+        )
+        self.assertIn("status code 402", quota)
+        self.assertIn("OLLAMA_CHAT_MODEL", quota)
+
+        unreachable = chat_model_unavailable_message("chat", ConnectionError("refused"))
+        self.assertIn("could not be reached", unreachable)
+        self.assertIn("simone status", unreachable)
+
+    async def test_initial_context_preflight_failure_raises_before_task_or_cleanup(self):
+        service, task_registry, output_repository = make_service([], with_initial_context=False)
+        service.ollama_client = FakeChatClient(  # type: ignore[assignment]
+            error=FakeStatusError("Add usage credits or subscribe", 402),
+        )
+        output_repository.initial_file_summary_status = "completed"
+
+        with self.assertRaises(ChatModelUnavailableError) as raised:
+            await service.run_initial_context(data_package_id="package-id", force_rerun=True)
+
+        self.assertIn("402", str(raised.exception))
+        self.assertIsNone(task_registry.get_task_info("initial-context:package-id"))
+        # force_rerun must not clear previous artifacts when the model is unusable.
+        self.assertEqual(output_repository.initial_file_summary_status, "completed")
+
+    async def test_initial_context_preflight_timeout_still_starts_the_stage(self):
+        service, task_registry, _ = make_service([], with_initial_context=False)
+        client = FakeChatClient(delay=0.2)
+        service.ollama_client = client  # type: ignore[assignment]
+
+        with patch("app.services.workflow_service.CHAT_MODEL_PREFLIGHT_TIMEOUT_SECONDS", 0.01):
+            status = await service.run_initial_context(data_package_id="package-id")
+
+        self.assertEqual(status, TaskStatus.RUNNING)
+        self.assertEqual(client.verify_calls, 1)
+        await task_registry.wait_for_task("initial-context:package-id", timeout=2)
+
+    async def test_initial_context_reruns_when_previous_summaries_all_failed(self):
+        service, task_registry, output_repository = make_service([], with_initial_context=False)
+        output_repository.run_state = failed_initial_context_state()
+
+        status = await service.run_initial_context(data_package_id="package-id")
+
+        self.assertEqual(status, TaskStatus.RUNNING)
+        await task_registry.wait_for_task("initial-context:package-id", timeout=2)
+
+    async def test_run_extraction_preflight_failure_raises_before_task(self):
+        service, task_registry, _ = make_service([[make_chunk()]])
+        service.ollama_client = FakeChatClient(  # type: ignore[assignment]
+            error=FakeStatusError("unauthorized", 401),
+        )
+
+        with self.assertRaises(ChatModelUnavailableError):
+            await service.run_extraction(data_package_id="package-id", profile_identifier="profile")
+
+        self.assertIsNone(
+            task_registry.get_task_info("extraction:evidence:package-id:semantic:chat")
+        )
+
+    async def test_run_extraction_reports_failed_file_summaries_precisely(self):
+        service, task_registry, output_repository = make_service([[make_chunk()]])
+        output_repository.run_state = failed_initial_context_state()
+        output_repository.warnings = [
+            "Initial file summary failed for paper.pdf: Ollama API error after 3 attempt(s): "
+            "Unauthorized (status code: 401)",
+        ]
+
+        with self.assertRaises(InitialContextFailedError) as raised:
+            await service.run_extraction(data_package_id="package-id", profile_identifier="profile")
+
+        message = str(raised.exception)
+        self.assertIn("failed for all 2", message)
+        self.assertIn("status code: 401", message)
+        self.assertNotIn("Run initial file understanding before chunk extraction", message)
+        self.assertIsNone(
+            task_registry.get_task_info("extraction:evidence:package-id:semantic:chat")
+        )
+        # The failed status stays persisted for inspection instead of being reset.
+        self.assertEqual(output_repository.run_state.initial_file_summary_status, "failed")
+
+    def test_prepare_run_state_keeps_summaries_when_only_overview_failed(self):
+        service, _, _ = make_service([[make_chunk()]])
+        summary = ExtractionFileSummary(file_path="README.md", data_format="markdown")
+        persisted_state = ExtractionRunState(
+            chat_model="chat",
+            ranked_files=[RankedFile(rank=1, file_path="README.md")],
+            initial_file_summaries=[summary],
+            initial_file_summary_status="completed",
+            initial_extraction_overview=None,
+            initial_extraction_overview_status="failed",
+            dataset_summary="README dataset.",
+        )
+
+        state = service._prepare_run_state(
+            ranking=FileRankingResult(files=[RankedFile(rank=1, file_path="README.md")]),
+            ordered_chunks=[make_chunk()],
+            persisted_state=persisted_state,
+            profile_identifier="profile",
+            vocab_query_config=ExtractionVocabQueryConfig(),
+        )
+
+        self.assertEqual(state.initial_file_summaries, [summary])
+        self.assertEqual(state.initial_file_summary_status, "completed")
+        self.assertIsNone(state.initial_extraction_overview)
+        self.assertEqual(state.initial_extraction_overview_status, "failed")
+        self.assertEqual(state.dataset_summary, "README dataset.")
+
+    def test_prepare_run_state_still_drops_mismatched_overview(self):
+        service, _, _ = make_service([[make_chunk()]])
+        ranked_files = [
+            RankedFile(rank=1, file_path="README.md"),
+            RankedFile(rank=2, file_path="other.md"),
+        ]
+        stale_overview = overview_for_file("README.md").model_copy(
+            update={"source_file_paths": ["other.md", "README.md"]}
+        )
+        persisted_state = ExtractionRunState(
+            chat_model="chat",
+            ranked_files=ranked_files,
+            initial_file_summaries=[
+                ExtractionFileSummary(file_path="README.md", data_format="markdown"),
+                ExtractionFileSummary(file_path="other.md", data_format="markdown"),
+            ],
+            initial_file_summary_status="completed",
+            initial_extraction_overview=stale_overview,
+            initial_extraction_overview_status="structured",
+        )
+
+        state = service._prepare_run_state(
+            ranking=FileRankingResult(files=ranked_files),
+            ordered_chunks=[make_chunk()],
+            persisted_state=persisted_state,
+            profile_identifier="profile",
+            vocab_query_config=ExtractionVocabQueryConfig(),
+        )
+
+        self.assertIsNone(state.initial_file_summary_status)
+        self.assertIsNone(state.initial_extraction_overview_status)
+
+
+class InitialFileSummaryStatusTests(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def _package(*files: tuple[str, bytes]) -> DataPackage:
+        return DataPackage(
+            file_name="package",
+            files=[
+                FileEntry(
+                    file_path=path,
+                    file_name=path,
+                    file_extension="." + path.rsplit(".", 1)[-1],
+                    raw_content=content,
+                )
+                for path, content in files
+            ],
+        )
+
+    async def _run_summaries(self, data_package: DataPackage, failing_paths: set[str]) -> ExtractionRunState:
+        service, _, _ = make_service([[make_chunk()]])
+        service.ollama_client.ollama_client = SimpleNamespace()  # type: ignore[attr-defined]
+        state = ExtractionRunState(profile_identifier="profile")
+
+        async def fake_generate(*_args, **kwargs):
+            file_path = kwargs["diagnostic_metadata"]["file_path"]
+            if file_path in failing_paths:
+                raise MaxRetriesExceeded(
+                    last_error=OutputParsingError("unauthorized"),
+                    failed_response="",
+                    first_response="",
+                    usage=RunUsage(requests=1),
+                )
+            return CompletionResult(
+                output=ExtractionFileSummary(
+                    file_path=file_path,
+                    data_format="text",
+                    information_summary="Describes the measurement.",
+                ),
+                usage=RunUsage(requests=1),
+            )
+
+        with patch("app.services.workflow_service.generate_structured", side_effect=fake_generate):
+            await service._generate_initial_file_summaries(
+                data_package_id="package-id",
+                data_package=data_package,
+                state=state,
+                warnings=[],
+            )
+        return state
+
+    async def test_status_is_partial_when_some_files_fail(self):
+        state = await self._run_summaries(
+            self._package(("a.txt", b"alpha text"), ("b.txt", b"beta text")),
+            failing_paths={"b.txt"},
+        )
+
+        self.assertEqual(state.initial_file_summary_status, "partial")
+        self.assertEqual([summary.file_path for summary in state.initial_file_summaries], ["a.txt"])
+
+    async def test_status_is_completed_when_all_files_succeed(self):
+        state = await self._run_summaries(
+            self._package(("a.txt", b"alpha text"), ("b.txt", b"beta text")),
+            failing_paths=set(),
+        )
+
+        self.assertEqual(state.initial_file_summary_status, "completed")
+
+    async def test_status_is_failed_when_text_files_fail_next_to_skipped_images(self):
+        state = await self._run_summaries(
+            self._package(("a.txt", b"alpha text"), ("plot.png", b"\x89PNG")),
+            failing_paths={"a.txt"},
+        )
+
+        self.assertEqual(state.initial_file_summary_status, "failed")
 
 
 if __name__ == "__main__":

@@ -261,7 +261,10 @@ from app.domain.extraction.vocabulary import (
 )
 
 from app.domain.extraction.workflow import (
+    ChatModelUnavailableError,
     ChunkingRequiredError,
+    InitialContextFailedError,
+    chat_model_unavailable_message,
     ChunkRepairMode,
     CompleteWorkflowProgress,
     CompleteWorkflowStepProgress,
@@ -514,7 +517,10 @@ __all__ = [
     "build_schema_constrained_patch_schema",
     "parse_schema_constrained_patch_result",
     "schema_for_json_pointer",
+    "ChatModelUnavailableError",
     "ChunkingRequiredError",
+    "InitialContextFailedError",
+    "chat_model_unavailable_message",
     "ChunkRepairMode",
     "CompleteWorkflowProgress",
     "CompleteWorkflowStepProgress",
